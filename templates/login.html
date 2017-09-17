@@ -1,0 +1,16 @@
+
+
+    <h3>Login</h3>
+    <p>The ever so coveted blockchain login.</p>
+    <p>Just like signup and friend request. Login will provide you with a 'to' address.</p>
+    <p>Login will also provide a code to enter</p>
+    <p>Use the 'to' address and code to create a login entry on the blockchain</p>
+    <p>The service you are trying to login to will download the block and receive the code with the 'to' address.</p>
+    <p>This enables login</p>
+    <form action="/login" method="POST">
+        Auth Code: <input type="text" name="auth_code" value="{{auth_code}}" />
+        <br>
+        To: <input type="text" name="to" value="{{rel_gen}}" />
+        <br>
+        <input type="submit" >
+    </form>
