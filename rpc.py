@@ -10,7 +10,7 @@ from ecdsa.util import randrange_from_seed__trytryagain
 with open('config.json') as f:
     config = json.loads(f.read())
 
-key = config.get('private_key').decode('hex')
+key = config.get('private_key')
 # print sk.get_verifying_key().to_string().encode('hex')
 # vk2 = VerifyingKey.from_string(pk.decode('hex'))
 # print vk2.verify(signature, "message")
@@ -52,8 +52,9 @@ def post_block():
 def friend_request():
     # add it to friend request pool to be included in a block
 
-    sk = SigningKey.from_string(key)
-    signature = sk.sign_deterministic(request.form.get('to'))  # indexer reference baked into request's "return signature"
+    sk = SigningKey.from_string(key.decode('hex'))
+    print hashlib.sha256(request.form.get('to')+key).digest().encode('hex')
+    signature = sk.sign_deterministic(hashlib.sha256(request.form.get('to')+key).digest().encode('hex'))  # indexer reference baked into request's "return signature"
     friend_request = {
         'to': request.form.get('to'),
         'rid': signature.encode('hex')

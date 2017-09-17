@@ -9,7 +9,8 @@ from ecdsa import SigningKey
 with open('config.json') as f:
     config = json.loads(f.read())
 
-sk = SigningKey.from_string(config.get('private_key').decode('hex'))
+key = config.get('private_key')
+sk = SigningKey.from_string(key.decode('hex'))
 
 def generate_block(blocks, coinbase, block_reward, friend_requests, friend_accepts):
     block = {
@@ -45,7 +46,7 @@ if __name__ == "__main__":
                     continue
                 block_height = i
                 for friend_request in block.get('friend_requests'):
-                    sig = sk.sign_deterministic(friend_request['to'])
+                    sig = sk.sign_deterministic(hashlib.sha256(friend_request['to']+key).digest().encode('hex'))
                     if friend_request['rid'] == sig.encode('hex'):
                         print 'FOUND'
                         with open('friend_requests.json', 'a+') as f:
