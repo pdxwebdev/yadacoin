@@ -35,7 +35,6 @@ if __name__ == "__main__":
     args = parser.parse_args()
     if args.runtype == 'node':
         block_height = 0
-        friends_list = []
         while 1:
             # first thing we'll do is search for friend requests
             with open('blockchain.json', 'r') as f:
@@ -57,37 +56,46 @@ if __name__ == "__main__":
                             existing.append(friend_request)
                             f.seek(0)
                             f.truncate()
-                            friend_requests = dict([(c['rid'], c) for c in existing])
-                            f.write(json.dumps([c for e, c in friend_requests.iteritems()], indent=4))
+                            friend_requests_dict = dict([(c['rid'], c) for c in existing])
+                            friend_requests = [c for e, c in friend_requests.iteritems()]
+                            f.write(json.dumps(friend_requests, indent=4))
                             f.truncate()
                     else:
+                        friend_requests = {}
                         print 'NOT FOUND'
                         print friend_request['rid']
                         print friend_request['to']
                         print sk.sign(friend_request['to']).encode('hex')
                         print sk.get_verifying_key().to_string().encode('hex')
 
+                with open('friend_requests.json', 'r') as f:                    
+                    try:
+                        friend_requests = json.loads(f.read())
+                    except:
+                        friend_requests = []
+
                 for friend_accept in block.get('friend_accepts'):
-                    sig = sk.sign_deterministic(friend_accept['from'])
-                    if friend_request['rid'] == sig.encode('hex'):
-                        print 'FOUND'
-                        with open('friend_requests.json', 'a+') as f:
-                            try:
-                                existing = json.loads(f.read())
-                            except:
-                                existing = []
-                            existing.append(friend_request)
-                            f.seek(0)
-                            f.truncate()
-                            friend_requests = dict([(c['rid'], c) for c in existing])
-                            f.write(json.dumps([c for e, c in friend_requests.iteritems()], indent=4))
-                            f.truncate()
-                    else:
-                        print 'NOT FOUND'
-                        print friend_request['rid']
-                        print friend_request['to']
-                        print sk.sign(friend_request['to']).encode('hex')
-                        print sk.get_verifying_key().to_string().encode('hex')
+                    for friend_request in friend_requests:
+                        sig = sk.sign_deterministic(hashlib.sha256(friend_request['to']+key).digest().encode('hex'))
+                        if friend_accept['rid'] == sig.encode('hex'):
+                            print 'FOUND'
+                            with open('friend_accepts.json', 'a+') as f:
+                                try:
+                                    existing = json.loads(f.read())
+                                except:
+                                    existing = []
+                                existing.append(friend_request)
+                                f.seek(0)
+                                f.truncate()
+                                friend_requests = dict([(c['rid'], c) for c in existing])
+                                f.write(json.dumps([c for e, c in friend_requests.iteritems()], indent=4))
+                                f.truncate()
+                        else:
+                            print 'NOT FOUND'
+                            print friend_request['rid']
+                            print friend_request['to']
+                            print sk.sign(friend_request['to']).encode('hex')
+                            print sk.get_verifying_key().to_string().encode('hex')
 
             time.sleep(1)
     elif args.runtype == 'mine':

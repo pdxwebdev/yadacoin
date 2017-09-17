@@ -2,16 +2,52 @@
 <head>
 </head>
 <body>
-    <h3>Friend Request</h3>
+    <h3>Signup Request</h3>
+    <p>This site will generate a friend reqeust with its own signature (rid) and 'to'.</p>
+    <p>Then the 'to' will be passed to this form. Submitting will create an accept.</p>
+    <p>irl you would scan a qr code containing the 'to' address and generate your own accept in the blockchain.</p>
+    <h4>person 1</h4>
     <form action="/friend-request" method="POST">
-        to: <input type="text" name="to" />
+        Sign up for this site: <input type="text" name="to" value="asldkfjasldkj42l3k4j23l4" />
+        <br>
+        <input type="submit" >
+    </form>
+    <h4>person 2</h4>
+    <form action="/friend-request" method="POST">
+        Sign up for this site: <input type="text" name="to" value="234234234sdsdfgsdfgdsfl4" />
         <br>
         <input type="submit" >
     </form>
 
-    <h3>Friend Request Search</h3>
-    <form action="/friend-request-search" method="POST">
-        recipient signature: <input type="text" name="sig" />
+    <h3>Login</h3>
+    <p>The ever so coveted blockchain login.</p>
+    <p>Just like signup and friend request. Login will provide you with a 'to' address.</p>
+    <p>Login will also provide a code to enter</p>
+    <p>Use the 'to' address and code to create a login entry on the blockchain</p>
+    <p>The service you are trying to login to will download the block and receive the code with the 'to' address.</p>
+    <p>This enable login</p>
+    <form action="/login" method="POST">
+        Auth Code: <input type="text" name="code" />
+        <br>
+        To: <input type="text" name="to" value="asldkfjasldkj42l3k4j23l4" />
+        <br>
+        <input type="submit" >
+    </form>
+
+    <h3>Friend Request Person 2</h3>
+    <p>This will generate a friend request on the block chain.</p>
+    <p>Again, irl this address would be in a qr code that you would scan and use it to create a friend request on the block chain.</p>
+    <form action="/friend-request" method="POST">
+        Friend Request person on this site: <input type="text" name="to" value="234234234sdsdfgsdfgdsfl4" />
+        <br>
+        <input type="submit" >
+    </form>
+
+    <h3>Accept Friend Request from Person 1</h3>
+    <p>This will generate a friend request on the block chain.</p>
+    <p>Again, irl this address would be in a qr code that you would scan and use it to create a friend request on the block chain.</p>
+    <form action="/friend-request" method="POST">
+        Friend Request person on this site: <input type="text" name="to" value="234234234sdsdfgsdfgdsfl4" />
         <br>
         <input type="submit" >
     </form>
