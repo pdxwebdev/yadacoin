@@ -27,63 +27,73 @@ app = Flask(__name__)
 
 @app.route('/')
 def index():
-    session.setdefault('rel_gen1', str(uuid4()))
-    session.setdefault('rel_gen2', str(uuid4()))
-    session['auth_code1'] = str(uuid4())
-    session['auth_code2'] = str(uuid4())
-
     sk = SigningKey.from_string(key.decode('hex'))
-    signature = sk.sign_deterministic(hashlib.sha256(session['rel_gen1']+key).digest().encode('hex'))  # indexer reference baked into request's "return signature"
-    friend_request1 = {
-        'to': session['rel_gen1'],
-        'rid': signature.encode('hex')
-    }
-    signature = sk.sign_deterministic(hashlib.sha256(session['rel_gen2']+key).digest().encode('hex'))  # indexer reference baked into request's "return signature"
-    friend_request2 = {
-        'to': session['rel_gen2'],
-        'rid': signature.encode('hex')
-    }
-
-    with open('miner_friend_requests.json', 'r+') as f:
-        existing = json.loads(f.read())
-        existing.append(friend_request1)
-        existing.append(friend_request2)
-        friend_requests_dict = dict([(c['rid'], c) for c in existing])
-        friend_requests = [c for e, c in friend_requests_dict.iteritems()]
-        print friend_requests
-        f.seek(0)
-        f.write(json.dumps(friend_requests, indent=4))
-        f.truncate()
-
+    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
+    hashsig1 = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
+    hashsig2 = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    print hashsig1
     return render_template(
         'index.html',
-        rel_gen1=session['rel_gen1'],
-        auth_code1=session['auth_code1'],
-        rel_gen2=session['rel_gen2'],
-        auth_code2=session['auth_code2']
+        rel_gen1=hashsig1,
+        rel_gen2=hashsig2,
     )
 
 
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'GET':
-        return render_template('login.html', rel_gen=request.args['rel_gen'], auth_code=request.args['auth_code'])
-
+@app.route('/sign')
+def sign():
     sk = SigningKey.from_string(key.decode('hex'))
-    print hashlib.sha256(request.form.get('to')+key).digest().encode('hex')
+    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
+    hashsig = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    rid = hashlib.sha256(hashsig+request.args['input_signature']).digest().encode('hex')
+    print 'sign signature: ', hashsig
+    print 'sign input_signature: ', request.args['input_signature']
+    return render_template('sign.html', ref=request.args['ref'], final_signature=rid)
 
-    login = {
-        'to': request.form.get('to'),
-        'auth_code': request.form.get('auth_code')
-    }
-    with open('miner_logins.json', 'r+') as f:
-        existing = json.loads(f.read())
-        existing.append(login)
+
+@app.route('/create-login')
+def create_login():
+    sk = SigningKey.from_string(key.decode('hex'))
+    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
+    hashsig = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    print 'create_login signature: ', hashsig
+    return render_template('create-login.html', ref=request.args['ref'], signature=hashsig)
+
+
+@app.route('/login', methods=['POST'])
+def login():
+    sk = SigningKey.from_string(key.decode('hex'))
+    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
+    hashsig = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    rid = hashlib.sha256(request.form['input_signature']+hashsig).digest().encode('hex')
+    print 'login signature: ', hashsig
+    print 'login input_signature: ', request.form['input_signature']
+    with open('blockchain.json', 'r') as f:
+        blocks = json.loads(f.read()).get('blocks')
+    for block in blocks:
+        if rid in block.get('relationships'):
+            return json.dumps({'authenticated': True})
+    return json.dumps({'authenticated': False})
+
+
+@app.route('/relate', methods=['POST'])
+def relate():
+    # idempotent
+    relationship = {'rid': request.form['final_signature']}
+    with open('miner_relationships.json', 'a+') as f:
+        try:
+            existing = json.loads(f.read())
+        except:
+            existing = []
+        existing.append(relationship)
         f.seek(0)
-        f.write(json.dumps(existing, indent=4))
         f.truncate()
+        relationships_dict = dict([(c['rid'], c) for c in existing])
+        relationships = [c for e, c in relationships_dict.iteritems()]
+        f.write(json.dumps(relationships, indent=4))
+        f.truncate()
+    return json.dumps(relationship)
 
-    return json.dumps(existing)
 
 @app.route('/get-block/<index>')
 def get_block(index=None):
@@ -113,29 +123,6 @@ def post_block():
     print request.content_type
     print request.get_json()
     return json.dumps(request.get_json())
-
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    # add it to friend request pool to be included in a block
-    if request.method == 'GET':
-        return render_template('register.html', rel_gen=request.args['rel_gen'])
-
-    sk = SigningKey.from_string(key.decode('hex'))
-    print hashlib.sha256(request.form.get('to')+key).digest().encode('hex')
-    signature = sk.sign_deterministic(hashlib.sha256(request.form.get('to')+key).digest().encode('hex'))  # indexer reference baked into request's "return signature"
-    friend_accept = {
-        'to': request.form.get('to'),
-        'rid': signature.encode('hex')
-    }
-    with open('miner_friend_accepts.json', 'r+') as f:
-        existing = json.loads(f.read())
-        existing.append(friend_accept)
-        f.seek(0)
-        f.write(json.dumps(existing, indent=4))
-        f.truncate()
-
-    return json.dumps(existing)
 
 
 @app.route('/friend-request', methods=['GET', 'POST'])
