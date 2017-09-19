@@ -50,11 +50,11 @@ if __name__ == "__main__":
         rids = []
         for block in blocks:
             for relationship in block['relationships']:
-                rids.append(relationship)
+                rids.append(relationship['rid'])
 
         with open('miner_relationships.json', 'r+') as f:
             relationships = json.loads(f.read())
-            relationships = [relationship['rid'] for relationship in relationships if relationship['rid'] not in rids]
+            relationships = [relationship for relationship in relationships if relationship['rid'] not in rids]
             if relationships:
                 f.seek(0)
                 f.write('[]')

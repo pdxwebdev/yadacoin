@@ -25,26 +25,50 @@ key = config.get('private_key')
 
 app = Flask(__name__)
 
-@app.route('/')
-def index():
+
+def generate_signature():
     sk = SigningKey.from_string(key.decode('hex'))
     signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
-    hashsig1 = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
-    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
-    hashsig2 = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
-    print hashsig1
+    return hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+
+
+@app.route('/')
+def index():
+    hashsig = generate_signature()
+    print hashsig
+    with open('friend_requests-5000.json', 'r') as f:
+        try:
+            friend_requests = json.loads(f.read())
+            friend_request = friend_requests[len(friend_requests)-1]
+        except:
+            friend_request = {}
+    if friend_request.get('signature'):
+        requester_rid = hashlib.sha256(friend_request.get('signature')+hashsig).digest().encode('hex')
+    else:
+        requester_rid = None
+
     return render_template(
         'index.html',
-        rel_gen1=hashsig1,
-        rel_gen2=hashsig2,
+        rel_gen=hashsig,
+        requested_rid=friend_request.get('requested_rid'),
+        requester_rid=requester_rid,
+        input_signature=friend_request.get('signature')
     )
+
+
+@app.route('/send-friend-request', methods=['GET', 'POST'])
+def send_friend_request():
+    hashsig = generate_signature()
+    return render_template(
+        'send-friend-request.html',
+        ref=request.args.get('ref'),
+        signature=hashsig,
+        requested_rid=request.args.get('requested_rid'))
 
 
 @app.route('/sign')
 def sign():
-    sk = SigningKey.from_string(key.decode('hex'))
-    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
-    hashsig = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    hashsig = generate_signature()
     rid = hashlib.sha256(hashsig+request.args['input_signature']).digest().encode('hex')
     print 'sign signature: ', hashsig
     print 'sign input_signature: ', request.args['input_signature']
@@ -53,26 +77,23 @@ def sign():
 
 @app.route('/create-login')
 def create_login():
-    sk = SigningKey.from_string(key.decode('hex'))
-    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
-    hashsig = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    hashsig = generate_signature()
     print 'create_login signature: ', hashsig
     return render_template('create-login.html', ref=request.args['ref'], signature=hashsig)
 
 
 @app.route('/login', methods=['POST'])
 def login():
-    sk = SigningKey.from_string(key.decode('hex'))
-    signature = sk.sign_deterministic(hashlib.sha256(key).digest().encode('hex'))
-    hashsig = hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+    hashsig = generate_signature()
     rid = hashlib.sha256(request.form['input_signature']+hashsig).digest().encode('hex')
     print 'login signature: ', hashsig
     print 'login input_signature: ', request.form['input_signature']
     with open('blockchain.json', 'r') as f:
         blocks = json.loads(f.read()).get('blocks')
     for block in blocks:
-        if rid in block.get('relationships'):
-            return json.dumps({'authenticated': True})
+        for relationship in block.get('relationships'):
+            if rid == relationship['rid']:
+                return json.dumps({'authenticated': True})
     return json.dumps({'authenticated': False})
 
 
@@ -128,37 +149,48 @@ def post_block():
 @app.route('/friend-request', methods=['GET', 'POST'])
 def friend_request():
     # add it to friend request pool to be included in a block
-    if request.method == 'GET':
-        return render_template('friend-request.html', rel_gen=request.args['rel_gen'])
-    sk = SigningKey.from_string(key.decode('hex'))
-    print hashlib.sha256(request.form.get('to')+key).digest().encode('hex')
-    signature = sk.sign_deterministic(hashlib.sha256(request.form.get('to')+key).digest().encode('hex'))  # indexer reference baked into request's "return signature"
     friend_request = {
-        'to': request.form.get('to'),
-        'rid': signature.encode('hex')
+        'signature': request.form.get('signature'),
+        'requested_rid': request.form.get('requested_rid')
     }
-    with open('miner_friend_requests.json', 'r+') as f:
-        existing = json.loads(f.read())
+    with open('friend_requests-5000.json', 'a+') as f:
+        try:
+            existing = json.loads(f.read())
+        except:
+            existing = []
         existing.append(friend_request)
         f.seek(0)
+        f.truncate()
         f.write(json.dumps(existing, indent=4))
         f.truncate()
 
     return json.dumps(existing)
 
 
-@app.route('/friend-accept', methods=['POST'])
-def friend_accept():
+@app.route('/accept-friend-request', methods=['GET', 'POST'])
+def accept_friend_request():
     # add it to friend request pool to be included in a block
-    signature = sk.sign(request.form.get('to'))
-    friend_accepts = {
-        'to': request.form.get('to'),
-        'rid': signature.encode('hex')
+    if request.method == 'GET':
+        return render_template(
+            'accept-friend-request.html',
+            requester_rid=request.args['requester_rid'],
+            requested_rid=request.args['requested_rid'],
+            input_signature=request.args['input_signature'],
+        )
+    hashsig = generate_signature()
+    relationship = {
+        'rid': hashlib.sha256(request.form['input_signature']+hashsig).digest().encode('hex'),
+        'requester_rid': request.form['requester_rid'],
+        'requested_rid': request.form['requested_rid']
     }
-    with open('miner_friend_accepts.json', 'r+') as f:
-        existing = json.loads(f.read())
-        existing.append(friend_request)
+    with open('miner_relationships.json', 'a+') as f:
+        try:
+            existing = json.loads(f.read())
+        except:
+            existing = []
+        existing.append(relationship)
         f.seek(0)
+        f.truncate()
         f.write(json.dumps(existing, indent=4))
         f.truncate()
 

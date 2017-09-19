@@ -3,12 +3,12 @@
 </head>
 <body>
     <h2>Person 1</h2>
-    <iframe src="http://localhost:5001/sign?ref=http%3A%2F%2Flocalhost%3A5000%2Frelate&input_signature={{rel_gen1}}" width=500 height=375></iframe>
+    <iframe src="http://localhost:5001/sign?ref=http%3A%2F%2Flocalhost%3A5000%2Frelate&input_signature={{rel_gen}}" width=500 height=375></iframe>
     <iframe src="http://localhost:5001/create-login?ref=http%3A%2F%2Flocalhost%3A5000%2Flogin" width=500 height=375></iframe>
-    <iframe src="http://localhost:5001/friend-request?rel_gen={{rel_gen2}}" width=500 height=375></iframe>
+    <iframe src="http://localhost:5001/send-friend-request?ref=http%3A%2F%2Flocalhost%3A5000%2Ffriend-request" width=500 height=375></iframe>
     <h2>Person 2</h2>
-    <iframe src="http://localhost:5002/sign?ref=http%3A%2F%2Flocalhost%3A5000%2Frelate&input_signature={{rel_gen2}}" width=500 height=375></iframe>
+    <iframe src="http://localhost:5002/sign?ref=http%3A%2F%2Flocalhost%3A5000%2Frelate&input_signature={{rel_gen}}" width=500 height=375></iframe>
     <iframe src="http://localhost:5002/create-login?ref=http%3A%2F%2Flocalhost%3A5000%2Flogin" width=500 height=375></iframe>
-    <iframe src="http://localhost:5002/friend-request?rel_gen={{rel_gen1}}" width=500 height=375></iframe>
+    <iframe src="http://localhost:5002/accept-friend-request?input_signature={{input_signature}}&requester_rid={{requester_rid}}&requested_rid={{requested_rid}}" width=500 height=375></iframe>
 </body>
 </html>
