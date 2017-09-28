@@ -6,7 +6,7 @@ import time
 from uuid import uuid4
 from ecdsa import SigningKey
 
-def generate_block(blocks, coinbase, block_reward, relationships):
+def generate_block(blocks, coinbase, block_reward, transactions):
     block = {
         'index': len(blocks),
         'prevHash': blocks[len(blocks)-1]['hash'] if len(blocks) > 0 else '',
@@ -15,7 +15,7 @@ def generate_block(blocks, coinbase, block_reward, relationships):
             'value': block_reward
         },
         'nonce': str(uuid4()),
-        'relationships': relationships
+        'transactions': transactions
     }
     block['hash'] = hashlib.sha256(json.dumps(block)).digest().encode('hex')
     return block
@@ -47,20 +47,14 @@ if __name__ == "__main__":
         with open('blockchain.json') as f:
             blocks = json.loads(f.read()).get('blocks')
 
-        rids = []
-        for block in blocks:
-            for relationship in block['relationships']:
-                rids.append(relationship['rid'])
-
-        with open('miner_relationships.json', 'r+') as f:
-            relationships = json.loads(f.read())
-            relationships = [relationship for relationship in relationships if relationship['rid'] not in rids]
-            if relationships:
+        with open('miner_transactions.json', 'r+') as f:
+            transactions = json.loads(f.read())
+            if transactions:
                 f.seek(0)
                 f.write('[]')
                 f.truncate()
 
-        if not relationships and len(blocks):
+        if not transactions and len(blocks):
             print 'not genesis and no transactions. Idle time: %s\r' % ii
             ii += 1
             time.sleep(1)
@@ -78,7 +72,7 @@ if __name__ == "__main__":
                 # create the block with the reward
                 # gather friend requests from the network
 
-                block = generate_block(blocks, coinbase, block_reward, relationships)
+                block = generate_block(blocks, coinbase, block_reward, transactions)
 
                 with open('blockchain.json', 'r+') as f:
                     blocks = json.loads(f.read()).get('blocks')
