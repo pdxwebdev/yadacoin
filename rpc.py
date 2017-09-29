@@ -4,7 +4,7 @@ import os
 import argparse
 
 from uuid import uuid4
-from flask import Flask, request, render_template, session
+from flask import Flask, request, render_template, session, redirect
 from ecdsa import NIST384p, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from simplecrypt import encrypt, decrypt, DecryptionException
@@ -37,7 +37,7 @@ class TransacationFactory(object):
         self.private_key = private_key
         self.value = value
         self.fee = fee
-        self.shared_secret = TU.hash(shared_secret)
+        self.shared_secret = shared_secret
         self.bulletin_secret = TU.generate_deterministic_signature()
         self.relationship = self.generate_relationship()
         self.encrypted_relationship = TU.encrypt(self.relationship.to_json())
@@ -133,6 +133,10 @@ class TU(object):  # Transaction Utilities
         return encrypt(private_key, message).encode('hex')
 
     @staticmethod
+    def decrypt(message):
+        return decrypt(private_key, message)
+
+    @staticmethod
     def save(items):
         if not isinstance(items, list):
             items = [items.__dict__(), ]
@@ -187,22 +191,40 @@ class BU(object):  # Blockchain Utilities
                 except DecryptionException:
                     continue
 
+    @staticmethod
+    def get_transactions_by_rid(selector):
+        ds = TU.generate_deterministic_signature()
+        selectors = [
+            TU.hash(ds+selector),
+            TU.hash(selector+ds)
+        ]
+
+        transactions = []
+        for block in BU.get_blocks():
+            for transaction in block.get('transactions'):
+                try:
+                    if transaction.get('rid') in selectors:
+                        transactions.append(transaction)
+                except DecryptionException:
+                    continue
+        return transactions
+
 
 @app.route('/')
-def index():
+def index():  # demo site
     bulletin_secret = TU.generate_deterministic_signature()
     print bulletin_secret
-
+    shared_secret = str(uuid4())
+    print 'shared_secret: ', shared_secret
+    session['challenge_code'] = str(uuid4())
     return render_template(
         'index.html',
         bulletin_secret=bulletin_secret,
-        shared_secret=str(uuid4()),
-        challenge=str(uuid4())
+        shared_secret=shared_secret
     )
 
-
 @app.route('/create-relationship', methods=['GET', 'POST'])
-def create_relationship():
+def create_relationship():  # demo site
     if request.method == 'GET':
         bulletin_secret = request.args.get('bulletin_secret')
         shared_secret = request.args.get('shared_secret')
@@ -216,53 +238,58 @@ def create_relationship():
 
     existing = BU.get_transaction_by_rid(bulletin_secret)
 
+    state = 'send' if not existing else 'receive'
+
     transaction = TransacationFactory(
         bulletin_secret,
         shared_secret,
-        'send' if not existing else 'receive'
+        state
     )
 
     TU.save(transaction.transaction)
 
     my_bulletin_secret = TU.generate_deterministic_signature()
-    return render_template(
-        'create-relationship.html',
-        ref=request.args.get('ref'),
-        shared_secret=shared_secret,
-        bulletin_secret=my_bulletin_secret)
+    if state == 'send':
+        return render_template(
+            'create-relationship.html',
+            ref=request.args.get('ref'),
+            shared_secret=shared_secret,
+            bulletin_secret=my_bulletin_secret)
+    else:
+        challenge = encrypt(shared_secret, session['challenge_code']).encode('hex')
+        return redirect(
+            'http://localhost:5001/process-challenge?challenge=%s&bulletin_secret=%s&ref=%s' % (
+                challenge,
+                my_bulletin_secret,
+                'http%3A%2F%2Flocalhost%3A5000%2Flogin')
+        )
 
 
 @app.route('/process-challenge')
-def process_challenge():
-    transaction = BU.get_transaction_by_rid(request.args.get('rel_gen'))
-    answer = encrypt(
-        transaction['relationship']['shared_secret'],
-        request.args.get('challenge')
+def process_challenge():  # demo site
+    transactions = BU.get_transactions_by_rid(request.args.get('bulletin_secret'))
+    for transaction in transactions:
+        try:
+            relationship = json.loads(TU.decrypt(transaction['relationship'].decode('hex')))
+        except:
+            pass
+    print 'shared_secret: ', relationship['shared_secret']
+    answer = decrypt(
+        relationship['shared_secret'],
+        request.args.get('challenge').decode('hex')
     )
     return render_template(
-        'send-friend-request.html',
+        'process-challenge.html',
         ref=request.args.get('ref'),
+        bulletin_secret=TU.generate_deterministic_signature(),
         answer=answer
     )
 
 @app.route('/login', methods=['POST'])
-def login():
-    hashsig = TU.generate_deterministic_signature()
-    rid = hashlib.sha256(request.form['input_signature']+hashsig).digest().encode('hex')
-    print 'login signature: ', hashsig
-    print 'login input_signature: ', request.form['input_signature']
-    with open('blockchain.json', 'r') as f:
-        blocks = json.loads(f.read()).get('blocks')
-    for block in blocks:
-        for relationship in block.get('transactions'):
-            try:
-                decrypted = decrypt(key, relationship['body'].decode('hex'))
-            except DecryptionException:
-                continue
-
-            transaction = json.loads(decrypted)
-            if rid == transaction['rid']:
-                return json.dumps({'authenticated': True})
+def login():  # demo site
+    transaction = BU.get_transaction_by_rid(request.form.get('bulletin_secret'))
+    if session['challenge_code'] == request.form.get('answer'):
+        return json.dumps({'authenticated': True})
     return json.dumps({'authenticated': False})
 
 
