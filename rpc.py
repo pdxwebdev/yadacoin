@@ -28,41 +28,55 @@ app = Flask(__name__)
 
 
 class TransacationFactory(object):
-    def __init__(self, receiver_sig, shared_secret, value=1, fee=0.1):
-        self.sender_sig = TU.generate_deterministic_signature()
+    def __init__(self, receiver_sig, shared_secret, mode='send', value=1, fee=0.1):
+        print '!!!!', mode
+        self.receiver_sig = receiver_sig
+        self.mode = mode
+        self.rid = self.generate_rid()
         self.public_key = public_key
         self.private_key = private_key
         self.value = value
         self.fee = fee
-        self.shared_secret = shared_secret
-        relationship = self.generate_relationship()
-        self.encrypted_relationship = self.encrypt(relationship.to_json())
+        self.shared_secret = TU.hash(shared_secret)
+        self.bulletin_secret = TU.generate_deterministic_signature()
+        self.relationship = self.generate_relationship()
+        self.encrypted_relationship = TU.encrypt(self.relationship.to_json())
         self.transaction_signature = self.generate_transaction_signature()
-        return self.generate_transaction()
+        self.transaction = self.generate_transaction()
+
+    def generate_rid(self):
+        if self.mode == 'send':
+            string = TU.generate_deterministic_signature() + self.receiver_sig
+        else:
+            string = self.receiver_sig + TU.generate_deterministic_signature()
+        return hashlib.sha256(string).digest().encode('hex')
 
     def generate_relationship(self):
-        return Relationship(self.rid, self.shared_secret)
+        return Relationship(
+            self.shared_secret,
+            self.bulletin_secret
+        )
 
     def generate_transaction(self):
         return Transaction(
+            self.rid,
             self.transaction_signature,
-            self.relationship,
+            self.encrypted_relationship,
             self.public_key,
             self.value,
             self.fee
         )
 
     def generate_transaction_signature(self):
-        TU.generate_signature(
-            self.encrypted_relationship +
-            self.value +
-            self.fee
+        return TU.generate_signature(
+            self.rid + self.encrypted_relationship + str(self.value) + str(self.fee)
         )
 
 
 class Transaction(object):
-    def __init__(self, signature, relationship, public_key, value=1, fee=0.1):
-        self.signature = signature
+    def __init__(self, rid, transaction_signature, relationship, public_key, value=1, fee=0.1):
+        self.rid = rid
+        self.transaction_signature = transaction_signature
         self.relationship = relationship
         self.public_key = public_key
         self.value = value
@@ -70,7 +84,8 @@ class Transaction(object):
 
     def __dict__(self):
         return {
-            'id': self.signature,
+            'rid': self.rid,
+            'id': self.transaction_signature,
             'relationship': self.relationship,
             'public_key': self.public_key,
             'value': self.value,
@@ -82,14 +97,14 @@ class Transaction(object):
 
 
 class Relationship(object):
-    def __init__(self, rid, shared_secret):
-        self.rid = rid
+    def __init__(self, shared_secret, bulletin_secret):
         self.shared_secret = shared_secret
+        self.bulletin_secret = bulletin_secret
 
     def __dict__(self):
         return {
-            'rid': self.rid,
-            'shared_secret': self.shared_secret
+            'shared_secret': self.shared_secret,
+            'bulletin_secret': self.bulletin_secret
         }
 
     def to_json(self):
@@ -115,7 +130,7 @@ class TU(object):  # Transaction Utilities
 
     @staticmethod
     def encrypt(message):
-        return encrypt(key, message).encode('hex')
+        return encrypt(private_key, message).encode('hex')
 
     @staticmethod
     def save(items):
@@ -136,59 +151,99 @@ class TU(object):  # Transaction Utilities
             f.truncate()
 
 
+class BU(object):  # Blockchain Utilities
+    @staticmethod
+    def get_blocks():
+        with open('blockchain.json', 'r') as f:
+            blocks = json.loads(f.read()).get('blocks')
+        return blocks
+
+    @staticmethod
+    def get_relationships():
+        relationships = []
+        for block in BU.get_blocks():
+            for transaction in block.get('transactions'):
+                try:
+                    decrypted = decrypt(key, transaction['relationship'].decode('hex'))
+                    relationship = json.loads(decrypted)
+                    relationships.append(relationship)
+                except DecryptionException:
+                    continue
+        return relationships
+
+    @staticmethod
+    def get_transaction_by_rid(selector):
+        ds = TU.generate_deterministic_signature()
+        selectors = [
+            TU.hash(ds+selector),
+            TU.hash(selector+ds)
+        ]
+
+        for block in BU.get_blocks():
+            for transaction in block.get('transactions'):
+                try:
+                    if transaction.get('rid') in selectors:
+                        return transaction
+                except DecryptionException:
+                    continue
+
+
 @app.route('/')
 def index():
-    hashsig = TU.generate_deterministic_signature()
-    print hashsig
+    bulletin_secret = TU.generate_deterministic_signature()
+    print bulletin_secret
 
     return render_template(
         'index.html',
-        rel_gen=hashsig,
-        shared_secret=str(uuid4())
+        bulletin_secret=bulletin_secret,
+        shared_secret=str(uuid4()),
+        challenge=str(uuid4())
     )
 
 
-@app.route('/send-friend-request', methods=['GET', 'POST'])
-def send_friend_request():
+@app.route('/create-relationship', methods=['GET', 'POST'])
+def create_relationship():
+    if request.method == 'GET':
+        bulletin_secret = request.args.get('bulletin_secret')
+        shared_secret = request.args.get('shared_secret')
+        requester_rid = request.args.get('requester_rid')
+        requested_rid = request.args.get('requested_rid')
+    else:
+        bulletin_secret = request.form.get('bulletin_secret')
+        shared_secret = request.form.get('shared_secret')
+        requester_rid = request.form.get('requester_rid')
+        requested_rid = request.form.get('requested_rid')
+
+    existing = BU.get_transaction_by_rid(bulletin_secret)
+
     transaction = TransacationFactory(
-        request.args['input_signature'],
-        request.args['shared_secret']
+        bulletin_secret,
+        shared_secret,
+        'send' if not existing else 'receive'
     )
-    TU.save(transaction)
+
+    TU.save(transaction.transaction)
+
+    my_bulletin_secret = TU.generate_deterministic_signature()
+    return render_template(
+        'create-relationship.html',
+        ref=request.args.get('ref'),
+        shared_secret=shared_secret,
+        bulletin_secret=my_bulletin_secret)
+
+
+@app.route('/process-challenge')
+def process_challenge():
+    transaction = BU.get_transaction_by_rid(request.args.get('rel_gen'))
+    answer = encrypt(
+        transaction['relationship']['shared_secret'],
+        request.args.get('challenge')
+    )
     return render_template(
         'send-friend-request.html',
         ref=request.args.get('ref'),
-        signature=hashsig,
-        requested_rid=request.args.get('requested_rid'))
-
-
-@app.route('/accept-friend-request', methods=['GET', 'POST'])
-def accept_friend_request():
-    # add it to friend request pool to be included in a block
-    if request.method == 'GET':
-        return render_template(
-            'accept-friend-request.html',
-            shared_secret=shared_secret,
-        )
-    hashsig = generate_deterministic_signature()
-    relationship = {
-        'rid': hashlib.sha256(request.form['input_signature']+hashsig).digest().encode('hex'),
-        'requester_rid': request.form['requester_rid'],
-        'requested_rid': request.form['requested_rid']
-    }
-    with open('miner_transactions.json', 'a+') as f:
-        try:
-            existing = json.loads(f.read())
-        except:
-            existing = []
-        existing.append(relationship)
-        f.seek(0)
-        f.truncate()
-        f.write(json.dumps(existing, indent=4))
-        f.truncate()
-
-    return json.dumps(existing)
-
+        answer=answer
+    )
 
 @app.route('/login', methods=['POST'])
 def login():
