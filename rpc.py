@@ -28,27 +28,31 @@ app = Flask(__name__)
 
 
 class TransacationFactory(object):
-    def __init__(self, receiver_sig, shared_secret, mode='send', value=1, fee=0.1):
+    def __init__(self, bulletin_secret, shared_secret, mode='send', value=1, fee=0.1, requester_rid=None, requested_rid=None):
         print '!!!!', mode
-        self.receiver_sig = receiver_sig
+        self.bulletin_secret = bulletin_secret
         self.mode = mode
+        self.requester_rid = requester_rid
+        self.requested_rid = requested_rid
         self.rid = self.generate_rid()
         self.public_key = public_key
         self.private_key = private_key
         self.value = value
         self.fee = fee
         self.shared_secret = shared_secret
-        self.bulletin_secret = TU.generate_deterministic_signature()
         self.relationship = self.generate_relationship()
         self.encrypted_relationship = TU.encrypt(self.relationship.to_json())
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
 
     def generate_rid(self):
+        my_bulletin_secret = TU.generate_deterministic_signature()
+        if my_bulletin_secret == self.bulletin_secret:
+            raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         if self.mode == 'send':
-            string = TU.generate_deterministic_signature() + self.receiver_sig
+            string = my_bulletin_secret + self.bulletin_secret
         else:
-            string = self.receiver_sig + TU.generate_deterministic_signature()
+            string = self.bulletin_secret + my_bulletin_secret
         return hashlib.sha256(string).digest().encode('hex')
 
     def generate_relationship(self):
@@ -64,7 +68,9 @@ class TransacationFactory(object):
             self.encrypted_relationship,
             self.public_key,
             self.value,
-            self.fee
+            self.fee,
+            self.requester_rid,
+            self.requested_rid
         )
 
     def generate_transaction_signature(self):
@@ -74,13 +80,15 @@ class TransacationFactory(object):
 
 
 class Transaction(object):
-    def __init__(self, rid, transaction_signature, relationship, public_key, value=1, fee=0.1):
+    def __init__(self, rid, transaction_signature, relationship, public_key, value=1, fee=0.1, requester_rid=None, requested_rid=None):
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
         self.public_key = public_key
         self.value = value
         self.fee = fee
+        self.requester_rid = requester_rid
+        self.requested_rid = requested_rid
 
     def __dict__(self):
         return {
@@ -89,7 +97,9 @@ class Transaction(object):
             'relationship': self.relationship,
             'public_key': self.public_key,
             'value': self.value,
-            'fee': self.fee
+            'fee': self.fee,
+            'requester_rid': self.requester_rid,
+            'requested_rid': self.requested_rid
         }
 
     def to_json(self):
@@ -163,12 +173,26 @@ class BU(object):  # Blockchain Utilities
         return blocks
 
     @staticmethod
+    def get_transactions():
+        transactions = []
+        for block in BU.get_blocks():
+            for transaction in block.get('transactions'):
+                try:
+                    decrypted = decrypt(private_key, transaction['relationship'].decode('hex'))
+                    relationship = json.loads(decrypted)
+                    transaction['relationship'] = relationship
+                    transactions.append(transaction)
+                except DecryptionException:
+                    continue
+        return transactions
+
+    @staticmethod
     def get_relationships():
         relationships = []
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
                 try:
-                    decrypted = decrypt(key, transaction['relationship'].decode('hex'))
+                    decrypted = decrypt(private_key, transaction['relationship'].decode('hex'))
                     relationship = json.loads(decrypted)
                     relationships.append(relationship)
                 except DecryptionException:
@@ -217,10 +241,12 @@ def index():  # demo site
     shared_secret = str(uuid4())
     print 'shared_secret: ', shared_secret
     session['challenge_code'] = str(uuid4())
+    existing = BU.get_transactions()
     return render_template(
         'index.html',
         bulletin_secret=bulletin_secret,
-        shared_secret=shared_secret
+        shared_secret=shared_secret,
+        existing=existing
     )
 
 @app.route('/create-relationship', methods=['GET', 'POST'])
@@ -236,6 +262,10 @@ def create_relationship():  # demo site
         requester_rid = request.form.get('requester_rid')
         requested_rid = request.form.get('requested_rid')
 
+    test = BU.get_transactions_by_rid(bulletin_secret)  # temporary duplicate prevention
+    if len(test) > 1:
+        return json.dumps(test)
+
     existing = BU.get_transaction_by_rid(bulletin_secret)
 
     state = 'send' if not existing else 'receive'
@@ -243,7 +273,11 @@ def create_relationship():  # demo site
     transaction = TransacationFactory(
         bulletin_secret,
         shared_secret,
-        state
+        state,
+        1,
+        0.1,
+        requester_rid,
+        requested_rid
     )
 
     TU.save(transaction.transaction)
