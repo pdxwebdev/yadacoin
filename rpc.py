@@ -42,7 +42,7 @@ class TransacationFactory(object):
         self.fee = fee
         self.shared_secret = shared_secret
         self.relationship = self.generate_relationship()
-        self.cipher = Crypt(self.shared_secret)
+        self.cipher = Crypt(bulletin_secret)
         self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
@@ -125,7 +125,8 @@ class Relationship(object):
 
 class Crypt(object):  # Relationship Utilities
     def __init__(self, shared_secret):
-        self.key = pbkdf2.PBKDF2(shared_secret, 'salt', 400).read(32)
+        self.key = PBKDF2(shared_secret, 'salt', 400).read(32)
+
     def encrypt(self, s):
         from Crypto import Random
         BS = AES.block_size
@@ -133,6 +134,7 @@ class Crypt(object):  # Relationship Utilities
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         return (iv + cipher.encrypt(buffer(s))).encode('hex')
+
     def decrypt(self, enc):
         enc = enc.decode("hex")
         iv = enc[:16]
@@ -197,7 +199,7 @@ class BU(object):  # Blockchain Utilities
                     relationship = json.loads(decrypted)
                     transaction['relationship'] = relationship
                     transactions.append(transaction)
-                except DecryptionException:
+                except:
                     continue
         return transactions
 
@@ -211,7 +213,7 @@ class BU(object):  # Blockchain Utilities
                     decrypted = cipher.decrypt(private_key, transaction['relationship'].decode('hex'))
                     relationship = json.loads(decrypted)
                     relationships.append(relationship)
-                except DecryptionException:
+                except:
                     continue
         return relationships
 
@@ -228,7 +230,7 @@ class BU(object):  # Blockchain Utilities
                 try:
                     if transaction.get('rid') in selectors:
                         return transaction
-                except DecryptionException:
+                except:
                     continue
 
     @staticmethod
@@ -245,7 +247,7 @@ class BU(object):  # Blockchain Utilities
                 try:
                     if transaction.get('rid') in selectors:
                         transactions.append(transaction)
-                except DecryptionException:
+                except:
                     continue
         return transactions
 
@@ -270,7 +272,15 @@ def index():  # demo site
     )
     qr.add_data(json.dumps({
         'shared_secret': shared_secret,
-        'bulletin_secret': bulletin_secret
+        'bulletin_secret': bulletin_secret,
+        'blockchainurl': 'http://{host}:{post}/post-transaction'.format(
+            host=config.get('host'),
+            post=config.get('port'),
+        ),
+        'callbackurl': 'http://{host}:{post}/create-relationship'.format(
+            host=config.get('host'),
+            post=config.get('port')
+        )
     }))
     qr.make(fit=True)
 
@@ -295,10 +305,10 @@ def create_relationship():  # demo site
         requester_rid = request.args.get('requester_rid')
         requested_rid = request.args.get('requested_rid')
     else:
-        bulletin_secret = request.form.get('bulletin_secret')
-        shared_secret = request.form.get('shared_secret')
-        requester_rid = request.form.get('requester_rid')
-        requested_rid = request.form.get('requested_rid')
+        bulletin_secret = request.json.get('bulletin_secret')
+        shared_secret = request.json.get('shared_secret')
+        requester_rid = request.json.get('requester_rid')
+        requested_rid = request.json.get('requested_rid')
 
     test = BU.get_transactions_by_rid(bulletin_secret)  # temporary duplicate prevention
     if len(test) > 1:
@@ -327,15 +337,16 @@ def create_relationship():  # demo site
             ref=request.args.get('ref'),
             shared_secret=shared_secret,
             bulletin_secret=my_bulletin_secret)
-    else:
-        cipher = Crypt(shared_secret)
-        challenge = cipher.encrypt(session['challenge_code']).encode('hex')
-        return redirect(
-            'http://localhost:5001/process-challenge?challenge=%s&bulletin_secret=%s&ref=%s' % (
-                challenge,
-                my_bulletin_secret,
-                'http%3A%2F%2Flocalhost%3A5000%2Flogin')
-        )
+    #else:
+        #cipher = Crypt(shared_secret)
+        #challenge = cipher.encrypt(session['challenge_code']).encode('hex')
+        #return redirect(
+        #    'http://localhost:5001/process-challenge?challenge=%s&bulletin_secret=%s&ref=%s' % (
+        #        challenge,
+        #        my_bulletin_secret,
+        #        'http%3A%2F%2Flocalhost%3A5000%2Flogin')
+        #)
+    return ''
 
 
 @app.route('/process-challenge')
@@ -395,6 +406,28 @@ def post_block():
     print request.get_json()
     return json.dumps(request.get_json())
 
+
+@app.route('/post-transaction', methods=['POST'])
+def post_transactions():
+    items = request.json
+    if not isinstance(items, list):
+        items = [items, ]
+    else:
+        items = [item for item in items]
+    with open('miner_transactions.json', 'a+') as f:
+        try:
+            existing = json.loads(f.read())
+        except:
+            existing = []
+        existing.extend(items)
+        f.seek(0)
+        f.truncate()
+        f.write(json.dumps(existing, indent=4))
+        f.truncate()
+    print request.content_type
+    print request.get_json()
+    return json.dumps(request.get_json())
+
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
-app.run(port=config.get('port'))
+app.run(host=config.get('host'), port=config.get('port'))
