@@ -7,7 +7,8 @@ from uuid import uuid4
 from flask import Flask, request, render_template, session, redirect
 from ecdsa import NIST384p, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
-from simplecrypt import encrypt, decrypt, DecryptionException
+from Crypto.Cipher import AES
+from pbkdf2 import PBKDF2
 
 
 parser = argparse.ArgumentParser(description='Process some integers.')
@@ -41,7 +42,8 @@ class TransacationFactory(object):
         self.fee = fee
         self.shared_secret = shared_secret
         self.relationship = self.generate_relationship()
-        self.encrypted_relationship = TU.encrypt(self.relationship.to_json())
+        self.cipher = Crypt(self.shared_secret)
+        self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
 
@@ -121,6 +123,26 @@ class Relationship(object):
         return json.dumps(self.__dict__())
 
 
+class Crypt(object):  # Relationship Utilities
+    def __init__(self, shared_secret):
+        self.key = pbkdf2.PBKDF2(shared_secret, 'salt', 400).read(32)
+    def encrypt(self, s):
+        from Crypto import Random
+        BS = AES.block_size
+        iv = Random.new().read(BS)
+        s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
+        cipher = AES.new(self.key, AES.MODE_CBC, iv)
+        return (iv + cipher.encrypt(buffer(s))).encode('hex')
+    def decrypt(self, enc):
+        enc = enc.decode("hex")
+        iv = enc[:16]
+        print iv
+        enc = enc[16:]
+        cipher = AES.new(self.key, AES.MODE_CBC, iv)
+        s = cipher.decrypt(enc)
+        return s[0:-ord(s[-1])]
+
+
 class TU(object):  # Transaction Utilities
     @staticmethod
     def hash(message):
@@ -137,14 +159,6 @@ class TU(object):  # Transaction Utilities
         sk = SigningKey.from_string(private_key.decode('hex'))
         signature = sk.sign(message)
         return signature.encode('hex')
-
-    @staticmethod
-    def encrypt(message):
-        return encrypt(private_key, message).encode('hex')
-
-    @staticmethod
-    def decrypt(message):
-        return decrypt(private_key, message)
 
     @staticmethod
     def save(items):
@@ -178,7 +192,8 @@ class BU(object):  # Blockchain Utilities
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
                 try:
-                    decrypted = decrypt(private_key, transaction['relationship'].decode('hex'))
+                    cipher = Crypt(private_key)
+                    decrypted = cipher.decrypt(transaction['relationship'].decode('hex'))
                     relationship = json.loads(decrypted)
                     transaction['relationship'] = relationship
                     transactions.append(transaction)
@@ -192,7 +207,8 @@ class BU(object):  # Blockchain Utilities
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
                 try:
-                    decrypted = decrypt(private_key, transaction['relationship'].decode('hex'))
+                    cipher = Crypt(private_key)
+                    decrypted = cipher.decrypt(private_key, transaction['relationship'].decode('hex'))
                     relationship = json.loads(decrypted)
                     relationships.append(relationship)
                 except DecryptionException:
@@ -242,11 +258,33 @@ def index():  # demo site
     print 'shared_secret: ', shared_secret
     session['challenge_code'] = str(uuid4())
     existing = BU.get_transactions()
+
+    import qrcode
+    from io import BytesIO
+    import base64
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(json.dumps({
+        'shared_secret': shared_secret,
+        'bulletin_secret': bulletin_secret
+    }))
+    qr.make(fit=True)
+
+    out = BytesIO()
+    qr_img = qr.make_image()
+    qr_img = qr_img.convert("RGBA")
+    qr_img.save(out, 'PNG')
+    out.seek(0)
     return render_template(
         'index.html',
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
-        existing=existing
+        existing=existing,
+        qrcode=u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
     )
 
 @app.route('/create-relationship', methods=['GET', 'POST'])
@@ -290,7 +328,8 @@ def create_relationship():  # demo site
             shared_secret=shared_secret,
             bulletin_secret=my_bulletin_secret)
     else:
-        challenge = encrypt(shared_secret, session['challenge_code']).encode('hex')
+        cipher = Crypt(shared_secret)
+        challenge = cipher.encrypt(session['challenge_code']).encode('hex')
         return redirect(
             'http://localhost:5001/process-challenge?challenge=%s&bulletin_secret=%s&ref=%s' % (
                 challenge,
