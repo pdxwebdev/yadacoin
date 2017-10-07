@@ -2,7 +2,10 @@ import json
 import hashlib
 import os
 import argparse
+import qrcode
+import base64
 
+from io import BytesIO
 from uuid import uuid4
 from flask import Flask, request, render_template, session, redirect
 from ecdsa import NIST384p, SigningKey
@@ -29,10 +32,11 @@ app = Flask(__name__)
 
 
 class TransacationFactory(object):
-    def __init__(self, bulletin_secret, shared_secret, mode='send', value=1, fee=0.1, requester_rid=None, requested_rid=None):
+    def __init__(self, bulletin_secret, shared_secret, mode='send', value=1, fee=0.1, requester_rid=None, requested_rid=None, challenge_code=None):
         print '!!!!', mode
         self.bulletin_secret = bulletin_secret
         self.mode = mode
+        self.challenge_code = challenge_code
         self.requester_rid = requester_rid
         self.requested_rid = requested_rid
         self.rid = self.generate_rid()
@@ -42,7 +46,7 @@ class TransacationFactory(object):
         self.fee = fee
         self.shared_secret = shared_secret
         self.relationship = self.generate_relationship()
-        self.cipher = Crypt(bulletin_secret)
+        self.cipher = Crypt(private_key)
         self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
@@ -72,7 +76,8 @@ class TransacationFactory(object):
             self.value,
             self.fee,
             self.requester_rid,
-            self.requested_rid
+            self.requested_rid,
+            self.challenge_code
         )
 
     def generate_transaction_signature(self):
@@ -82,7 +87,7 @@ class TransacationFactory(object):
 
 
 class Transaction(object):
-    def __init__(self, rid, transaction_signature, relationship, public_key, value=1, fee=0.1, requester_rid=None, requested_rid=None):
+    def __init__(self, rid, transaction_signature, relationship, public_key, value=1, fee=0.1, requester_rid=None, requested_rid=None, challenge_code=None):
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
@@ -91,18 +96,24 @@ class Transaction(object):
         self.fee = fee
         self.requester_rid = requester_rid
         self.requested_rid = requested_rid
+        self.challenge_code = challenge_code
 
     def __dict__(self):
-        return {
+        ret = {
             'rid': self.rid,
             'id': self.transaction_signature,
             'relationship': self.relationship,
             'public_key': self.public_key,
             'value': self.value,
-            'fee': self.fee,
-            'requester_rid': self.requester_rid,
-            'requested_rid': self.requested_rid
+            'fee': self.fee
         }
+        if self.requester_rid:
+            ret['requester_rid'] = self.requester_rid
+        if self.requested_rid:
+            ret['requested_rid'] = self.requested_rid
+        if self.challenge_code:
+            ret['challenge_code'] = self.challenge_code
+        return ret
 
     def to_json(self):
         return json.dumps(self.__dict__())
@@ -126,7 +137,6 @@ class Relationship(object):
 class Crypt(object):  # Relationship Utilities
     def __init__(self, shared_secret):
         self.key = PBKDF2(shared_secret, 'salt', 400).read(32)
-
     def encrypt(self, s):
         from Crypto import Random
         BS = AES.block_size
@@ -134,11 +144,9 @@ class Crypt(object):  # Relationship Utilities
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         return (iv + cipher.encrypt(buffer(s))).encode('hex')
-
     def decrypt(self, enc):
         enc = enc.decode("hex")
         iv = enc[:16]
-        print iv
         enc = enc[16:]
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         s = cipher.decrypt(enc)
@@ -195,7 +203,7 @@ class BU(object):  # Blockchain Utilities
             for transaction in block.get('transactions'):
                 try:
                     cipher = Crypt(private_key)
-                    decrypted = cipher.decrypt(transaction['relationship'].decode('hex'))
+                    decrypted = cipher.decrypt(transaction['relationship'])
                     relationship = json.loads(decrypted)
                     transaction['relationship'] = relationship
                     transactions.append(transaction)
@@ -210,7 +218,7 @@ class BU(object):  # Blockchain Utilities
             for transaction in block.get('transactions'):
                 try:
                     cipher = Crypt(private_key)
-                    decrypted = cipher.decrypt(private_key, transaction['relationship'].decode('hex'))
+                    decrypted = cipher.decrypt(transaction['relationship'])
                     relationship = json.loads(decrypted)
                     relationships.append(relationship)
                 except:
@@ -218,37 +226,55 @@ class BU(object):  # Blockchain Utilities
         return relationships
 
     @staticmethod
-    def get_transaction_by_rid(selector):
+    def get_transaction_by_rid(selector, rid=False, raw=False):
         ds = TU.generate_deterministic_signature()
-        selectors = [
-            TU.hash(ds+selector),
-            TU.hash(selector+ds)
-        ]
+        if not rid:
+            selectors = [
+                TU.hash(ds+selector),
+                TU.hash(selector+ds)
+            ]
+        else:
+            selectors = [selector, ]
 
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
-                try:
-                    if transaction.get('rid') in selectors:
-                        return transaction
-                except:
-                    continue
+                if transaction.get('rid') in selectors:
+                    if 'relationship' in transaction:
+                        if not raw:
+                            try:
+                                cipher = Crypt(private_key)
+                                decrypted = cipher.decrypt(transaction['relationship'])
+                                relationship = json.loads(decrypted)
+                                transaction['relationship'] = relationship
+                            except:
+                                continue
+                    return transaction
 
     @staticmethod
-    def get_transactions_by_rid(selector):
+    def get_transactions_by_rid(selector, rid=False, raw=False):
         ds = TU.generate_deterministic_signature()
-        selectors = [
-            TU.hash(ds+selector),
-            TU.hash(selector+ds)
-        ]
+        if not rid:
+            selectors = [
+                TU.hash(ds+selector),
+                TU.hash(selector+ds)
+            ]
+        else:
+            selectors = [selector, ]
 
         transactions = []
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
-                try:
-                    if transaction.get('rid') in selectors:
-                        transactions.append(transaction)
-                except:
-                    continue
+                if transaction.get('rid') in selectors:
+                    if 'relationship' in transaction:
+                        if not raw:
+                            try:
+                                cipher = Crypt(private_key)
+                                decrypted = cipher.decrypt(transaction['relationship'])
+                                relationship = json.loads(decrypted)
+                                transaction['relationship'] = relationship
+                            except:
+                                continue
+                    transactions.append(transaction)
         return transactions
 
 
@@ -258,12 +284,8 @@ def index():  # demo site
     print bulletin_secret
     shared_secret = str(uuid4())
     print 'shared_secret: ', shared_secret
-    session['challenge_code'] = str(uuid4())
     existing = BU.get_transactions()
 
-    import qrcode
-    from io import BytesIO
-    import base64
     qr = qrcode.QRCode(
         version=1,
         error_correction=qrcode.constants.ERROR_CORRECT_L,
@@ -273,7 +295,7 @@ def index():  # demo site
     qr.add_data(json.dumps({
         'shared_secret': shared_secret,
         'bulletin_secret': bulletin_secret,
-        'blockchainurl': 'http://{host}:{post}/post-transaction'.format(
+        'blockchainurl': 'http://{host}:{post}/transaction'.format(
             host=config.get('host'),
             post=config.get('port'),
         ),
@@ -316,7 +338,7 @@ def create_relationship():  # demo site
 
     existing = BU.get_transaction_by_rid(bulletin_secret)
 
-    state = 'send' if not existing else 'receive'
+    state = 'receive'  # forcing receive until a real workflow is created
 
     transaction = TransacationFactory(
         bulletin_secret,
@@ -349,32 +371,49 @@ def create_relationship():  # demo site
     return ''
 
 
-@app.route('/process-challenge')
-def process_challenge():  # demo site
-    transactions = BU.get_transactions_by_rid(request.args.get('bulletin_secret'))
-    for transaction in transactions:
-        try:
-            relationship = json.loads(TU.decrypt(transaction['relationship'].decode('hex')))
-        except:
-            pass
-    print 'shared_secret: ', relationship['shared_secret']
-    answer = decrypt(
-        relationship['shared_secret'],
-        request.args.get('challenge').decode('hex')
+@app.route('/login', methods=['GET', 'POST'])
+def login():  # demo site
+    session['challenge_code'] = str(uuid4())
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
     )
-    return render_template(
-        'process-challenge.html',
-        ref=request.args.get('ref'),
-        bulletin_secret=TU.generate_deterministic_signature(),
-        answer=answer
+    qr.add_data(json.dumps({
+        'callbackurl': 'http://{host}:{post}/transaction'.format(
+            host=config.get('host'),
+            post=config.get('port')
+        ),
+        'challenge_code': session['challenge_code'],
+        'bulletin_secret': TU.generate_deterministic_signature()
+    }))
+    qr.make(fit=True)
+
+    out = BytesIO()
+    qr_img = qr.make_image()
+    qr_img = qr_img.convert("RGBA")
+    qr_img.save(out, 'PNG')
+    out.seek(0)
+    return render_template('process-challenge.html',
+        qrcode=u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
     )
 
-@app.route('/login', methods=['POST'])
-def login():  # demo site
-    transaction = BU.get_transaction_by_rid(request.form.get('bulletin_secret'))
-    if session['challenge_code'] == request.form.get('answer'):
-        return json.dumps({'authenticated': True})
-    return json.dumps({'authenticated': False})
+@app.route('/login-status')
+def login_status():
+    for block in BU.get_blocks():
+        for transaction in block['transactions']:
+            if 'challenge_code' in transaction and session['challenge_code'] == transaction['challenge_code']:
+                tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
+                for test in tests:
+                    if 'relationship' in test and 'shared_secret' in test['relationship']:
+                        friend = test
+                cipher = Crypt(hashlib.sha256(friend['relationship']['shared_secret']).digest().encode('hex'))
+                answer = cipher.decrypt(transaction['answer'])
+                if answer == transaction['challenge_code']:
+                    return json.dumps({'authenticated': True, 'rid': transaction['rid']})
+    return session['challenge_code']
+
 
 
 @app.route('/get-block/<index>')
@@ -407,26 +446,34 @@ def post_block():
     return json.dumps(request.get_json())
 
 
-@app.route('/post-transaction', methods=['POST'])
-def post_transactions():
-    items = request.json
-    if not isinstance(items, list):
-        items = [items, ]
+@app.route('/transaction', methods=['GET', 'POST'])
+def transaction():
+    if request.method == 'POST':
+        items = request.json
+        if not isinstance(items, list):
+            items = [items, ]
+        else:
+            items = [item for item in items]
+        with open('miner_transactions.json', 'a+') as f:
+            try:
+                existing = json.loads(f.read())
+            except:
+                existing = []
+            existing.extend(items)
+            f.seek(0)
+            f.truncate()
+            f.write(json.dumps(existing, indent=4))
+            f.truncate()
+        print request.content_type
+        print request.get_json()
+        return json.dumps(request.get_json())
     else:
-        items = [item for item in items]
-    with open('miner_transactions.json', 'a+') as f:
-        try:
-            existing = json.loads(f.read())
-        except:
-            existing = []
-        existing.extend(items)
-        f.seek(0)
-        f.truncate()
-        f.write(json.dumps(existing, indent=4))
-        f.truncate()
-    print request.content_type
-    print request.get_json()
-    return json.dumps(request.get_json())
+        rid = request.args.get('rid')
+        print rid
+        transaction = BU.get_transaction_by_rid(rid, rid=True, raw=True)
+        print transaction
+        return json.dumps(transaction)
+
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
