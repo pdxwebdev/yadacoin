@@ -1,12 +1,1 @@
-
-    <h3>Accept Friend Request</h3>
-    <p>If all fields are populated then person 2 has received a friend request from person 1</p>
-    <form action="{{ref}}" method="POST">
-        requested_rid (person 2): <input type="text" name="requested_rid" value="{{requested_rid}}" />
-        <br>
-        requester_rid (person 1: <input type="text" name="requester_rid" value="{{requester_rid}}" />
-        <br>
-        input signature: <input type="text" name="input_signature" value="{{input_signature}}" />
-        <br>
-        <input type="submit" >
-    </form>
+<img src="{{qrcode}}">{{bulletin_secret}}<br>{{rid}}

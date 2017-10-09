@@ -55,11 +55,8 @@ class TransacationFactory(object):
         my_bulletin_secret = TU.generate_deterministic_signature()
         if my_bulletin_secret == self.bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
-        if self.mode == 'send':
-            string = my_bulletin_secret + self.bulletin_secret
-        else:
-            string = self.bulletin_secret + my_bulletin_secret
-        return hashlib.sha256(string).digest().encode('hex')
+        rids = sorted([my_bulletin_secret, self.bulletin_secret], key=str.lower)
+        return hashlib.sha256(rids[0] + rids[1]).digest().encode('hex')
 
     def generate_relationship(self):
         return Relationship(
@@ -277,6 +274,44 @@ class BU(object):  # Blockchain Utilities
                     transactions.append(transaction)
         return transactions
 
+    @staticmethod
+    def get_bulletins(bulletin_secret):
+        bulletins = []
+        for block in BU.get_blocks():
+            for transaction in block.get('transactions'):
+                if 'post_text' in transaction:
+                    try:
+                        cipher = Crypt(bulletin_secret)
+                        decrypted = cipher.decrypt(transaction['post_text'])
+                        transaction['post_text'] = decrypted
+                    except:
+                        continue
+                    bulletins.append(transaction)
+        return bulletins
+
+    @staticmethod
+    def get_second_degree_transactions_by_rid(rid):
+        transactions = []
+        for block in BU.get_blocks():
+            for transaction in block.get('transactions'):
+                if transaction.get('requester_rid') == rid or transaction.get('requested_rid') == rid:
+                    transactions.append(transaction)
+        return transactions
+
+def get_logged_in_user():
+    user = None
+    for block in BU.get_blocks():
+        for transaction in block['transactions']:
+            if 'challenge_code' in transaction and session['challenge_code'] == transaction['challenge_code']:
+                tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
+                for test in tests:
+                    if 'relationship' in test and 'shared_secret' in test['relationship']:
+                        friend = test
+                cipher = Crypt(hashlib.sha256(friend['relationship']['shared_secret']).digest().encode('hex'))
+                answer = cipher.decrypt(transaction['answer'])
+                if answer == transaction['challenge_code']:
+                    user = {'authenticated': True, 'rid': transaction['rid']}
+    return user
 
 @app.route('/')
 def index():  # demo site
@@ -401,19 +436,79 @@ def login():  # demo site
 
 @app.route('/login-status')
 def login_status():
-    for block in BU.get_blocks():
-        for transaction in block['transactions']:
-            if 'challenge_code' in transaction and session['challenge_code'] == transaction['challenge_code']:
-                tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
-                for test in tests:
-                    if 'relationship' in test and 'shared_secret' in test['relationship']:
-                        friend = test
-                cipher = Crypt(hashlib.sha256(friend['relationship']['shared_secret']).digest().encode('hex'))
-                answer = cipher.decrypt(transaction['answer'])
-                if answer == transaction['challenge_code']:
-                    return json.dumps({'authenticated': True, 'rid': transaction['rid']})
-    return session['challenge_code']
+    user = get_logged_in_user()
+    return json.dumps(user)
 
+@app.route('/show-user')
+def show_user():
+    authed_user = get_logged_in_user()
+    user = BU.get_transaction_by_rid(request.args['rid'], rid=True)
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(json.dumps({
+        'bulletin_secret': user['relationship']['bulletin_secret'],
+        'requested_rid': user['rid'],
+        'requester_rid': authed_user['rid'],
+        'blockchainurl': 'http://{host}:{post}/transaction'.format(
+            host=config.get('host'),
+            post=config.get('port'),
+        ),
+    }))
+    qr.make(fit=True)
+
+    out = BytesIO()
+    qr_img = qr.make_image()
+    qr_img = qr_img.convert("RGBA")
+    qr_img.save(out, 'PNG')
+    out.seek(0)
+    qr_code = u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
+    return render_template('show-user.html', qrcode=qr_code, bulletin_secret=user['relationship']['bulletin_secret'])
+
+
+
+@app.route('/show-friend-request')
+def show_friend_request():
+    authed_user = get_logged_in_user()
+
+    transaction = BU.get_transaction_by_rid(request.args.get('rid'), rid=True, raw=True)
+
+    requested_transaction = BU.get_transaction_by_rid(transaction['requester_rid'], rid=True)
+
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(json.dumps({
+        'bulletin_secret': requested_transaction['relationship']['bulletin_secret'],
+        'requested_rid': transaction['requested_rid'],
+        'requester_rid': transaction['requester_rid'],
+        'blockchainurl': 'http://{host}:{post}/transaction'.format(
+            host=config.get('host'),
+            post=config.get('port'),
+        )
+    }))
+    qr.make(fit=True)
+
+    out = BytesIO()
+    qr_img = qr.make_image()
+    qr_img = qr_img.convert("RGBA")
+    qr_img.save(out, 'PNG')
+    out.seek(0)
+    qr_code = u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
+    return render_template('accept-friend-request.html', qrcode=qr_code, rid=requested_transaction['rid'], bulletin_secret=requested_transaction['relationship']['bulletin_secret'])
+
+
+@app.route('/show-users')
+def show_users():
+    users = BU.get_transactions()
+    return render_template('show-users.html', users=users)
 
 
 @app.route('/get-block/<index>')
@@ -474,6 +569,75 @@ def transaction():
         print transaction
         return json.dumps(transaction)
 
+
+@app.route('/bulletins')
+def bulletin():
+    bulletin_secret = request.args.get('bulletin_secret')
+    bulletins = BU.get_bulletins(bulletin_secret)
+    return json.dumps(bulletins)
+
+
+@app.route('/get-graph')
+def get_graph():
+    graph = {
+        'friend_requests': [],
+        'sent_friend_requests': [],
+        'friends': [],
+        'my_posts': [],
+        'friend_posts': [],
+        'logins': []
+    }
+    bulletin_secret = request.args.get('bulletin_secret')
+    # we need to first get our relationship
+    my_friend = BU.get_transaction_by_rid(bulletin_secret)
+
+    # now search for our rid in requester and requested transactions
+    possible_friends = BU.get_second_degree_transactions_by_rid(my_friend.get('rid'))
+    possible_friends_indexed = dict([(x.get('rid'), x) for x in possible_friends])
+
+    # sent friend requests
+    sent_friend_requests = []
+    requester_rids = set([x.get('rid') for x in possible_friends if x.get('requester_rid') == my_friend['rid']])
+    requested_rids = set([x.get('rid') for x in possible_friends if x.get('requester_rid') != my_friend['rid']])
+    for x in requester_rids:
+        found = False
+        for i in requested_rids:
+            if i == x:
+                found = True
+                break
+        if not found:
+            friend_request = possible_friends_indexed[x]
+            if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
+                sent_friend_requests.append(possible_friends_indexed[x])
+
+    # received friend requests
+    friend_requests = []
+    requester_rids = set([x.get('rid') for x in possible_friends if x.get('requested_rid') == my_friend['rid']])
+    requested_rids = set([x.get('rid') for x in possible_friends if x.get('requested_rid') != my_friend['rid']])
+    for x in requester_rids:
+        found = False
+        for i in requested_rids:
+            if i == x:
+                found = True
+                break
+        if not found:
+            friend_request = possible_friends_indexed[x]
+            if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
+                friend_requests.append(friend_request)
+
+    for x in sent_friend_requests:
+        if len(BU.get_transactions_by_rid(x['rid'], rid=True, raw=True)):
+            graph['friends'].append(x)
+        else:
+            graph['sent_friend_requests'].append(x)
+
+    for x in friend_requests:
+        if len(BU.get_transactions_by_rid(x['rid'], rid=True, raw=True)):
+            graph['friends'].append(x)
+        else:
+            graph['friend_requests'].append(x)
+
+    return json.dumps(graph, indent=4)
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
