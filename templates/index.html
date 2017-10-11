@@ -1,7 +1,211 @@
 <html>
 <head>
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+
+    <!-- Optional theme -->
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+
+    <script
+  src="https://code.jquery.com/jquery-2.2.4.min.js"
+  integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44="
+  crossorigin="anonymous"></script>
+    <!-- Latest compiled and minified JavaScript -->
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
+    <script src="/static/angular.js" type="text/javascript"></script>
+    <script type="text/javascript">
+        var app = angular.module("yadacoin", []); 
+        app.config(function($interpolateProvider){
+            $interpolateProvider.startSymbol('{[{').endSymbol('}]}');
+        });
+        app.controller("friendRequests", function($scope, $http) {
+            var int = setInterval(function(){
+                $scope.get_user();
+            }, 3000);
+            $scope.graph = {friend_posts: [{post_text:'hello'}]};
+            var data;
+            $scope.user = {};
+            $scope.get_user = function() {
+            }
+
+            $http.get('/login-status').then(function(res) {
+                $scope.user = res.data;
+                if ($scope.user.authenticated) {
+                    clearInterval(int);
+
+                    $http.get('/get-graph?bulletin_secret=' + $scope.user.bulletin_secret).then(function(res2) {
+                        $scope.graph = res2.data;
+                        $('.list-group-item')[0].click();
+                    });
+                } else {
+                    console.log('nope');
+                }
+            });
+            $scope.get_user();
+            $scope.switch = function(el) {
+                $(el.currentTarget).siblings('a.active').removeClass("active");
+                $(el.currentTarget).addClass("active");
+                var index = $(el.currentTarget).index();
+                $("div.bhoechie-tab>div.bhoechie-tab-content").removeClass("active");
+                $("div.bhoechie-tab>div.bhoechie-tab-content").eq(index).addClass("active");
+            }
+        });
+    </script>
+    <style type="text/css">
+        /*  bhoechie tab */
+        div.bhoechie-tab-container{
+          z-index: 10;
+          background-color: #ffffff;
+          padding: 0 !important;
+          border-radius: 4px;
+          -moz-border-radius: 4px;
+          border:1px solid #ddd;
+          margin-top: 20px;
+          margin-left: 50px;
+          -webkit-box-shadow: 0 6px 12px rgba(0,0,0,.175);
+          box-shadow: 0 6px 12px rgba(0,0,0,.175);
+          -moz-box-shadow: 0 6px 12px rgba(0,0,0,.175);
+          background-clip: padding-box;
+          opacity: 0.97;
+          filter: alpha(opacity=97);
+        }
+        div.bhoechie-tab-menu{
+          padding-right: 0;
+          padding-left: 0;
+          padding-bottom: 0;
+        }
+        div.bhoechie-tab-menu div.list-group{
+          margin-bottom: 0;
+        }
+        div.bhoechie-tab-menu div.list-group>a{
+          margin-bottom: 0;
+        }
+        div.bhoechie-tab-menu div.list-group>a .glyphicon,
+        div.bhoechie-tab-menu div.list-group>a .fa {
+          color: #5A55A3;
+        }
+        div.bhoechie-tab-menu div.list-group>a:first-child{
+          border-top-right-radius: 0;
+          -moz-border-top-right-radius: 0;
+        }
+        div.bhoechie-tab-menu div.list-group>a:last-child{
+          border-bottom-right-radius: 0;
+          -moz-border-bottom-right-radius: 0;
+        }
+        div.bhoechie-tab-menu div.list-group>a.active,
+        div.bhoechie-tab-menu div.list-group>a.active .glyphicon,
+        div.bhoechie-tab-menu div.list-group>a.active .fa{
+          background-color: #5A55A3;
+          background-image: #5A55A3;
+          color: #ffffff;
+        }
+        div.bhoechie-tab-menu div.list-group>a.active:after{
+          content: '';
+          position: absolute;
+          left: 100%;
+          top: 50%;
+          margin-top: -13px;
+          border-left: 0;
+          border-bottom: 13px solid transparent;
+          border-top: 13px solid transparent;
+          border-left: 10px solid #5A55A3;
+        }
+
+        div.bhoechie-tab-content{
+          background-color: #ffffff;
+          /* border: 1px solid #eeeeee; */
+          padding-left: 20px;
+          padding-top: 10px;
+        }
+
+        div.bhoechie-tab div.bhoechie-tab-content:not(.active){
+          display: none;
+        }
+    </style>
 </head>
 <body>
-    <img src="{{qrcode}}" />
+    <div class="container" ng-app="yadacoin" ng-controller="friendRequests">
+        <div class="row">
+            <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12 bhoechie-tab-container">
+                <div class="col-lg-3 col-md-3 col-sm-3 col-xs-3 bhoechie-tab-menu">
+                  <div class="list-group">
+                    <a href="#" class="list-group-item active text-center" ng-if="user.authenticated == false">
+                      <h4 class="glyphicon glyphicon-plane"></h4><br/>Register
+                    </a>
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false">
+                      <h4 class="glyphicon glyphicon-road"></h4><br/>Login
+                    </a>
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
+                      <h4 class="glyphicon glyphicon-credit-card"></h4><br/>Posts
+                    </a>
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
+                      <h4 class="glyphicon glyphicon-home"></h4><br/>Friends
+                    </a>
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
+                      <h4 class="glyphicon glyphicon-home"></h4><br/>Friend Requests
+                    </a>
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
+                      <h4 class="glyphicon glyphicon-cutlery"></h4><br/>Sent Requests
+                    </a>
+                  </div>
+                </div>
+                <div class="col-lg-9 col-md-9 col-sm-9 col-xs-9 bhoechie-tab">
+                    <!-- flight section -->
+                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == false">
+                        <center>
+                          <h2 style="margin-top: 0;color:#55518a">Register</h2>
+                          <h3 style="margin-top: 0;color:#55518a">True freedom of expression awaits!</h3>
+                          <h4 style="margin-top: 0;color:#55518a">Scan the qr code with the yadacode mobile app by tapping the 'scan friend' button.</h4>
+
+                            <img src="{{register_qrcode}}" />
+                        </center>
+                    </div>
+                    <!-- train section -->
+                    <div class="bhoechie-tab-content" ng-if="user.authenticated == false">
+                        <center>
+                          <h2 style="margin-top: 0;color:#55518a">Login</h2>
+                          <h3 style="margin-top: 0;color:#55518a">Welcome back, seriously!</h3>
+                          <h4 style="margin-top: 0;color:#55518a">Scan the qr code with the yadacode mobile app by tapping the 'login' button.</h4>
+
+                            <img src="{{login_qrcode}}" />
+                        </center>
+                    </div>
+                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == true">
+                        <center>
+                          <h1 class="glyphicon glyphicon-credit-card" style="font-size:12em;color:#55518a"></h1>
+                          <h2 style="margin-top: 0;color:#55518a">Post</h2>
+                          <h3 style="margin-top: 0;color:#55518a">This is where all the action is.</h3>
+                        </center>
+                        <li ng-repeat="post in graph.friend_posts">{[{post.post_text}]}</li>
+                    </div>
+                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == true">
+                        <center>
+                          <h1 class="glyphicon glyphicon-credit-card" style="font-size:12em;color:#55518a"></h1>
+                          <h2 style="margin-top: 0;color:#55518a">Friends</h2>
+                          <h3 style="margin-top: 0;color:#55518a">Friends don't shake hands, friends hug.</h3>
+                        </center>
+                        <li ng-repeat="friend in graph.friends">{[{friend.rid}]}</li>
+                    </div>
+        
+                    <!-- hotel search -->
+                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
+                        <center>
+                          <h1 class="glyphicon glyphicon-home" style="font-size:12em;color:#55518a"></h1>
+                          <h2 style="margin-top: 0;color:#55518a">Friend Requests</h2>
+                          <h3 style="margin-top: 0;color:#55518a">People wanting to connect with you are shown here.</h3>
+                        </center>
+                        <li ng-repeat="friend_request in graph.friend_requests">{[{friend_request.rid}]}</li>
+                    </div>
+                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
+                        <center>
+                          <h1 class="glyphicon glyphicon-cutlery" style="font-size:12em;color:#55518a"></h1>
+                          <h2 style="margin-top: 0;color:#55518a">Sent friend requests</h2>
+                          <h3 style="margin-top: 0;color:#55518a">Your love will not go unnoticed. Stay strong!</h3>
+                        </center>
+                        <li ng-repeat="friend_request in graph.sent_friend_requests">{[{friend_request.rid}]}</li>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
 </body>
 </html>
