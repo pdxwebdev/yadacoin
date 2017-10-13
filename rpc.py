@@ -336,14 +336,8 @@ def index():  # demo site
     qr.add_data(json.dumps({
         'shared_secret': shared_secret,
         'bulletin_secret': bulletin_secret,
-        'blockchainurl': 'http://{host}:{post}/transaction'.format(
-            host=config.get('host'),
-            post=config.get('port'),
-        ),
-        'callbackurl': 'http://{host}:{post}/create-relationship'.format(
-            host=config.get('host'),
-            post=config.get('port')
-        )
+        'blockchainurl': '/transaction',
+        'callbackurl': '/create-relationship'
     }))
     qr.make(fit=True)
 
@@ -360,14 +354,8 @@ def index():  # demo site
         border=4,
     )
     qr.add_data(json.dumps({
-        'callbackurl': 'http://{host}:{post}/transaction'.format(
-            host=config.get('host'),
-            post=config.get('port')
-        ),
-        'blockchainurl': 'http://{host}:{post}/transaction'.format(
-            host=config.get('host'),
-            post=config.get('port'),
-        ),
+        'callbackurl': '/transaction',
+        'blockchainurl': '/transaction',
         'challenge_code': session['challenge_code'],
         'bulletin_secret': TU.generate_deterministic_signature()
     }))
@@ -459,10 +447,7 @@ def show_user():
         'bulletin_secret': user['relationship']['bulletin_secret'],
         'requested_rid': user['rid'],
         'requester_rid': authed_user['rid'],
-        'blockchainurl': 'http://{host}:{post}/transaction'.format(
-            host=config.get('host'),
-            post=config.get('port'),
-        ),
+        'blockchainurl': '/transaction',
     }))
     qr.make(fit=True)
 
@@ -494,10 +479,7 @@ def show_friend_request():
         'bulletin_secret': requested_transaction['relationship']['bulletin_secret'],
         'requested_rid': transaction['requested_rid'],
         'requester_rid': transaction['requester_rid'],
-        'blockchainurl': 'http://{host}:{post}/transaction'.format(
-            host=config.get('host'),
-            post=config.get('port'),
-        )
+        'blockchainurl': '/transaction'
     }))
     qr.make(fit=True)
 
