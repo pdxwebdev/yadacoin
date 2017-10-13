@@ -24,23 +24,24 @@
             $scope.graph = {friend_posts: [{post_text:'hello'}]};
             var data;
             $scope.user = {};
-            $scope.get_user = function() {
+            
+            $scope.get_user = function(){
+                $http.get('/login-status').then(function(res) {
+                    $scope.user = res.data;
+                    if ($scope.user.authenticated) {
+                        clearInterval(int);
+
+                        $http.get('/get-graph?bulletin_secret=' + $scope.user.bulletin_secret).then(function(res2) {
+                            $scope.graph = res2.data;
+                            $('.list-group-item')[0].click();
+                        });
+                    } else {
+                        console.log('nope');
+                    }
+                });
             }
-
-            $http.get('/login-status').then(function(res) {
-                $scope.user = res.data;
-                if ($scope.user.authenticated) {
-                    clearInterval(int);
-
-                    $http.get('/get-graph?bulletin_secret=' + $scope.user.bulletin_secret).then(function(res2) {
-                        $scope.graph = res2.data;
-                        $('.list-group-item')[0].click();
-                    });
-                } else {
-                    console.log('nope');
-                }
-            });
             $scope.get_user();
+            var int = setInterval($scope.get_user, 3000);
             $scope.switch = function(el) {
                 $(el.currentTarget).siblings('a.active').removeClass("active");
                 $(el.currentTarget).addClass("active");
@@ -128,10 +129,10 @@
             <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12 bhoechie-tab-container">
                 <div class="col-lg-3 col-md-3 col-sm-3 col-xs-3 bhoechie-tab-menu">
                   <div class="list-group">
-                    <a href="#" class="list-group-item active text-center" ng-if="user.authenticated == false">
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false" ng-click="switch($event)">
                       <h4 class="glyphicon glyphicon-plane"></h4><br/>Register
                     </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false">
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false" ng-click="switch($event)">
                       <h4 class="glyphicon glyphicon-road"></h4><br/>Login
                     </a>
                     <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
@@ -150,7 +151,7 @@
                 </div>
                 <div class="col-lg-9 col-md-9 col-sm-9 col-xs-9 bhoechie-tab">
                     <!-- flight section -->
-                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == false">
+                    <div class="bhoechie-tab-content" ng-if="user.authenticated == false">
                         <center>
                           <h2 style="margin-top: 0;color:#55518a">Register</h2>
                           <h3 style="margin-top: 0;color:#55518a">True freedom of expression awaits!</h3>
@@ -169,7 +170,7 @@
                             <img src="{{login_qrcode}}" />
                         </center>
                     </div>
-                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == true">
+                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
                         <center>
                           <h1 class="glyphicon glyphicon-credit-card" style="font-size:12em;color:#55518a"></h1>
                           <h2 style="margin-top: 0;color:#55518a">Post</h2>
@@ -177,7 +178,7 @@
                         </center>
                         <li ng-repeat="post in graph.friend_posts">{[{post.post_text}]}</li>
                     </div>
-                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == true">
+                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
                         <center>
                           <h1 class="glyphicon glyphicon-credit-card" style="font-size:12em;color:#55518a"></h1>
                           <h2 style="margin-top: 0;color:#55518a">Friends</h2>

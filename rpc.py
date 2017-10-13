@@ -364,6 +364,10 @@ def index():  # demo site
             host=config.get('host'),
             post=config.get('port')
         ),
+        'blockchainurl': 'http://{host}:{post}/transaction'.format(
+            host=config.get('host'),
+            post=config.get('port'),
+        ),
         'challenge_code': session['challenge_code'],
         'bulletin_secret': TU.generate_deterministic_signature()
     }))
