@@ -56,7 +56,7 @@ class TransacationFactory(object):
         if my_bulletin_secret == self.bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         rids = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
-        return hashlib.sha256(rids[0] + rids[1]).digest().encode('hex')
+        return hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
     def generate_relationship(self):
         return Relationship(
