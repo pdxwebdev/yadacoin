@@ -18,7 +18,7 @@
             $interpolateProvider.startSymbol('{[{').endSymbol('}]}');
         });
         app.controller("friendRequests", function($scope, $http) {
-            var int = setInterval(function(){
+            $scope.intervalId = setInterval(function(){
                 $scope.get_user();
             }, 3000);
             $scope.graph = {friend_posts: [{post_text:'hello'}]};
@@ -29,11 +29,9 @@
                 $http.get('/login-status').then(function(res) {
                     $scope.user = res.data;
                     if ($scope.user.authenticated) {
-                        clearInterval(int);
-
-                        $http.get('/get-graph?bulletin_secret=' + $scope.user.bulletin_secret).then(function(res2) {
+                        clearInterval($scope.intervalId);
+                        $http.get('/get-graph-mobile?bulletin_secret=' + $scope.user.bulletin_secret).then(function(res2) {
                             $scope.graph = res2.data;
-                            $('.list-group-item')[0].click();
                         });
                     } else {
                         console.log('nope');
@@ -41,7 +39,6 @@
                 });
             }
             $scope.get_user();
-            var int = setInterval($scope.get_user, 3000);
             $scope.switch = function(el) {
                 $(el.currentTarget).siblings('a.active').removeClass("active");
                 $(el.currentTarget).addClass("active");

@@ -5,6 +5,16 @@ import requests
 import time
 from uuid import uuid4
 from ecdsa import SigningKey
+from block import Block, BlockFactory
+from transaction import Transaction
+from blockchainutils import BU
+from transactionutils import TU
+
+def verify_block(block):
+    pass
+
+def verify_transaction(transaction):
+    signature = transaction.signature
 
 def generate_block(blocks, coinbase, block_reward, transactions):
     block = {
@@ -32,66 +42,53 @@ if __name__ == "__main__":
     with open(args.conf) as f:
         config = json.loads(f.read())
 
-    key = config.get('private_key')
-    sk = SigningKey.from_string(key.decode('hex'))
+    public_key = config.get('public_key')
+    private_key = config.get('private_key')
+    TU.private_key = private_key
+    sk = SigningKey.from_string(private_key.decode('hex'))
 
     # default run state will be to mine some blocks!
 
     # proof of work time!
-    ii = 0
+    coinbase = config.get('coinbase')
+    block_reward = config.get('block_reward')
+    difficulty = config.get('difficulty')
+
+    blocks = BU.get_block_objs()  # verifies as the blocks are created so no need to call block.verify() on each block
+    print 'waiting for transactions...'
     while 1:
-        coinbase = config.get('coinbase')
-        block_reward = config.get('block_reward')
-        difficulty = config.get('difficulty')
-
-        with open('blockchain.json') as f:
-            blocks = json.loads(f.read()).get('blocks')
-
         with open('miner_transactions.json', 'r+') as f:
-            transactions = json.loads(f.read())
-            if transactions:
+            transactions_parsed = json.loads(f.read())
+            if transactions_parsed:
                 f.seek(0)
                 f.write('[]')
                 f.truncate()
+            transactions = []
+            for txn in transactions_parsed:
+                transaction = Transaction(
+                    transaction_signature=txn.get('id'),
+                    rid=txn.get('rid', ''),
+                    relationship=txn.get('relationship', ''),
+                    public_key=txn.get('public_key'),
+                    value=txn.get('value'),
+                    fee=txn.get('fee'),
+                    requester_rid=txn.get('requester_rid', ''),
+                    requested_rid=txn.get('requested_rid', ''),
+                    challenge_code=txn.get('challenge_code', ''),
+                    answer=txn.get('answer', ''),
+                    txn_hash=txn.get('hash', '')
+                )
+                transactions.append(transaction)
 
         if not transactions and len(blocks):
-            print 'not genesis and no transactions. Idle time: %s\r' % ii
-            ii += 1
-            time.sleep(1)
-            continue
+            pass
+        elif not transactions and not len(blocks):
+            BlockFactory.mine(transactions, coinbase, block_reward, difficulty, public_key, private_key)
+            print 'waiting for transactions...'
+            blocks = BU.get_block_objs()
+        else:
+            BlockFactory.mine(transactions, coinbase, block_reward, difficulty, public_key, private_key)
+            print 'waiting for transactions...'
+            blocks = BU.get_block_objs()
 
-        latest_block = blocks[len(blocks)-1] if len(blocks) > 1 else generate_block([], coinbase, block_reward, [])
-        nonce = latest_block.get('nonce')
-        i = 0
-        while 1:
-            hash_test = hashlib.sha256("%s%s" % (nonce, i)).digest().encode('hex')
-            print hash_test
-            if hash_test.endswith(difficulty):
-                print 'got a block!'
-                print 'verify answer, nonce: ', nonce, 'interation: ', i, 'hash: ', hashlib.sha256("%s%s" % (nonce, i)).hexdigest()
-                # create the block with the reward
-                # gather friend requests from the network
-
-                block = generate_block(blocks, coinbase, block_reward, transactions)
-
-                with open('blockchain.json', 'r+') as f:
-                    blocks = json.loads(f.read()).get('blocks')
-                    blocks.append(block)
-                    f.seek(0)
-                    f.write(json.dumps({'blocks': blocks}, indent=4))
-                    f.truncate()
-
-                # now communicate that out to the network
-                with open('peers.json') as f:
-                    peers = json.loads(f.read()).get('peers')
-                for ip in [x.get('ip') for x in peers]:
-                    res = requests.post(
-                        'http://%s/post-block' % ip,
-                        json.dumps(block),
-                        headers={'Content-type': 'application/json'}
-                    )
-                    print res.content
-                break
-            i += 1
-        ii = 0
         time.sleep(1)
