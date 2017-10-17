@@ -7,11 +7,12 @@ import base64
 
 from io import BytesIO
 from uuid import uuid4
-from ecdsa import NIST384p, SigningKey
+from ecdsa import SECP256k1, SigningKey, VerifyingKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-
+from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
+from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from transactionutils import TU
 
 class TransactionFactory(object):
@@ -46,18 +47,16 @@ class TransactionFactory(object):
         else:
             self.rid = ''
             self.encrypted_relationship = ''
-        self.transaction_signature = self.generate_transaction_signature()
         self.hash = hashlib.sha256(
             self.rid +
-            self.transaction_signature +
             self.encrypted_relationship +
-            self.public_key +
             str(self.value) +
             str(self.fee) +
             self.requester_rid +
             self.requested_rid +
             self.challenge_code
         ).digest().encode('hex')
+        self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
 
     def generate_rid(self):
@@ -88,9 +87,7 @@ class TransactionFactory(object):
         )
 
     def generate_transaction_signature(self):
-        return TU.generate_signature(
-            self.rid + self.encrypted_relationship + str(self.value) + str(self.fee)
-        )
+        return TU.generate_signature(self.hash)
 
 
 class Transaction(object):
@@ -124,9 +121,7 @@ class Transaction(object):
     def verify(self):
         verify_hash = hashlib.sha256(
             self.rid +
-            self.transaction_signature +
             self.relationship +
-            self.public_key +
             str(self.value) +
             str(self.fee) +
             self.requester_rid +
@@ -135,10 +130,11 @@ class Transaction(object):
             self.answer
         ).digest().encode('hex')
 
-        if verify_hash == self.hash:
-            return True
-        else:
+        if verify_hash != self.hash:
             raise BaseException("transaction is invalid")
+        print 'pubkey',self.public_key
+        if not VerifyMessage(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')), BitcoinMessage(self.hash, magic=''), self.transaction_signature):
+            raise BaseException("transaction signature is invalid")
 
     def toDict(self):
         ret = {

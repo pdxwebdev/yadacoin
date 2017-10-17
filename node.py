@@ -4,7 +4,7 @@ import json
 import requests
 import time
 from uuid import uuid4
-from ecdsa import SigningKey
+from ecdsa import SigningKey, SECP256k1
 from block import Block, BlockFactory
 from transaction import Transaction
 from blockchainutils import BU
@@ -45,7 +45,7 @@ if __name__ == "__main__":
     public_key = config.get('public_key')
     private_key = config.get('private_key')
     TU.private_key = private_key
-    sk = SigningKey.from_string(private_key.decode('hex'))
+    BU.private_key = private_key
 
     # default run state will be to mine some blocks!
 

@@ -7,11 +7,13 @@ import base64
 
 from io import BytesIO
 from uuid import uuid4
-from ecdsa import NIST384p, SigningKey
+from ecdsa import SECP256k1, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
 from transactionutils import TU
+from bitcoin.wallet import CBitcoinSecret
+from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 
 
 class BU(object):  # Blockchain Utilities
@@ -31,6 +33,7 @@ class BU(object):  # Blockchain Utilities
         for block in blocks:
             block_objs.append(Block(
                 block_index=block.get('index'),
+                public_key=block.get('public_key'),
                 prev_hash=block.get('prevHash'),
                 nonce=block.get('nonce'),
                 transactions=[Transaction(
@@ -49,7 +52,8 @@ class BU(object):  # Blockchain Utilities
                 block_hash=block.get('hash'),
                 merkle_root=block.get('merkleRoot'),
                 answer=block.get('answer', ''),
-                difficulty=block.get('difficulty')
+                difficulty=block.get('difficulty'),
+                signature=block.get('signature')                
             ))
         return block_objs
 
@@ -175,3 +179,9 @@ class BU(object):  # Blockchain Utilities
                 if transaction.get('requester_rid') in rids or transaction.get('requested_rid') in rids:
                     transactions.append(transaction)
         return transactions
+
+    @classmethod
+    def generate_signature(cls, message):
+        key = CBitcoinSecret(cls.private_key)
+        signature = SignMessage(key, BitcoinMessage(message, magic=''))
+        return signature

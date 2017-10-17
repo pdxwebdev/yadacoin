@@ -7,10 +7,12 @@ import base64
 
 from io import BytesIO
 from uuid import uuid4
-from ecdsa import NIST384p, SigningKey
+from ecdsa import SECP256k1, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
+from bitcoin.wallet import CBitcoinSecret
+from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 
 
 class TU(object):  # Transaction Utilities
@@ -22,15 +24,15 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_deterministic_signature(cls):
-        sk = SigningKey.from_string(cls.private_key.decode('hex'))
-        signature = sk.sign_deterministic(hashlib.sha256(cls.private_key).digest().encode('hex'))
-        return hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+        key = CBitcoinSecret(cls.private_key)
+        signature = SignMessage(key, BitcoinMessage(cls.private_key, magic=''))
+        return signature.encode('hex')
 
     @classmethod
     def generate_signature(cls, message):
-        sk = SigningKey.from_string(cls.private_key.decode('hex'))
-        signature = sk.sign(message)
-        return signature.encode('hex')
+        key = CBitcoinSecret(cls.private_key)
+        signature = SignMessage(key, BitcoinMessage(message, magic=''))
+        return signature
 
     @classmethod
     def save(cls, items):

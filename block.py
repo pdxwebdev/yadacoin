@@ -7,12 +7,14 @@ import base64
 
 from io import BytesIO
 from uuid import uuid4
-from ecdsa import NIST384p, SigningKey
+from ecdsa import SECP256k1, SigningKey, VerifyingKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
 from transaction import TransactionFactory, Transaction
 from blockchainutils import BU
+from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
+from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 
 class BlockFactory(object):
@@ -59,6 +61,7 @@ class BlockFactory(object):
             self.answer + 
             self.difficulty
         ).digest().encode('hex')
+        self.signature = BU.generate_signature(self.hash)
         self.block = Block(
             block_index=self.index,
             prev_hash=self.prev_hash,
@@ -67,7 +70,9 @@ class BlockFactory(object):
             block_hash=self.hash,
             merkle_root=self.merkle_root,
             answer=self.answer,
-            difficulty=self.difficulty
+            difficulty=self.difficulty,
+            public_key=self.public_key,
+            signature=self.signature
         )
 
     def get_transaction_hashes(self):
@@ -126,7 +131,9 @@ class Block(object):
         block_hash='',
         merkle_root='',
         answer='',
-        difficulty=''
+        difficulty='',
+        public_key='',
+        signature=''
     ):
         self.index = block_index
         self.prev_hash = prev_hash
@@ -138,6 +145,8 @@ class Block(object):
         self.hash = block_hash
         self.answer = answer
         self.difficulty = difficulty
+        self.public_key = public_key
+        self.signature = signature
         self.verify()
 
     def verify(self):
@@ -155,12 +164,15 @@ class Block(object):
                 self.prev_hash +
                 self.nonce +
                 self.merkle_root +
-                self.answer + 
+                self.answer +
                 self.difficulty).hexdigest()
             if self.hash != hashtest:
                 raise BaseException('Invalid block')
         except:
             raise
+
+        if not VerifyMessage(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')), BitcoinMessage(self.hash, magic=''), self.signature):
+            raise BaseException("block signature is invalid")
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -190,13 +202,15 @@ class Block(object):
     def toDict(self):
         return {
             'index': self.index,
+            'public_key': self.public_key,
             'prevHash': self.prev_hash,
             'nonce': self.nonce,
             'transactions': [x.toDict() for x in self.transactions],
             'hash': self.hash,
             'merkleRoot': self.merkle_root,
             'answer': self.answer,
-            'difficulty': self.difficulty
+            'difficulty': self.difficulty,
+            'signature': self.signature
         }
 
     def toJson(self):
