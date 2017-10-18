@@ -13,6 +13,7 @@ from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+from crypt import Crypt
 from transactionutils import TU
 
 class TransactionFactory(object):
@@ -60,7 +61,7 @@ class TransactionFactory(object):
         self.transaction = self.generate_transaction()
 
     def generate_rid(self):
-        my_bulletin_secret = TU.generate_deterministic_signature()
+        my_bulletin_secret = TU.get_bulletin_secret()
         if my_bulletin_secret == self.bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         rids = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
@@ -103,7 +104,8 @@ class Transaction(object):
         requested_rid='',
         challenge_code='',
         txn_hash='',
-        answer=''
+        answer='',
+        post_text=''
     ):
         self.rid = rid
         self.transaction_signature = transaction_signature
@@ -115,7 +117,8 @@ class Transaction(object):
         self.requested_rid = requested_rid if requested_rid else ''
         self.challenge_code = challenge_code if challenge_code else ''
         self.hash = txn_hash
-        self.answer = answer
+        self.answer = answer if answer else ''
+        self.post_text = post_text
         self.verify()
 
     def verify(self):
@@ -127,14 +130,15 @@ class Transaction(object):
             self.requester_rid +
             self.requested_rid +
             self.challenge_code +
-            self.answer
+            self.answer +
+            self.post_text
         ).digest().encode('hex')
 
         if verify_hash != self.hash:
             raise BaseException("transaction is invalid")
-        print 'pubkey',self.public_key
-        if not VerifyMessage(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')), BitcoinMessage(self.hash, magic=''), self.transaction_signature):
-            raise BaseException("transaction signature is invalid")
+        result = VerifyMessage(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')), BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+        if not result:
+            raise BaseException("transaction signature did not verify")
 
     def toDict(self):
         ret = {
@@ -144,7 +148,8 @@ class Transaction(object):
             'public_key': self.public_key,
             'value': self.value,
             'fee': self.fee,
-            'hash': self.hash
+            'hash': self.hash,
+            'post_text': self.post_text
         }
         if self.requester_rid:
             ret['requester_rid'] = self.requester_rid
@@ -173,24 +178,3 @@ class Relationship(object):
 
     def to_json(self):
         return json.dumps(self.toDict())
-
-
-class Crypt(object):  # Relationship Utilities
-    def __init__(self, shared_secret):
-        self.key = PBKDF2(shared_secret, 'salt', 400).read(32)
-
-    def encrypt(self, s):
-        from Crypto import Random
-        BS = AES.block_size
-        iv = Random.new().read(BS)
-        s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return (iv + cipher.encrypt(buffer(s))).encode('hex')
-
-    def decrypt(self, enc):
-        enc = enc.decode("hex")
-        iv = enc[:16]
-        enc = enc[16:]
-        cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        s = cipher.decrypt(enc)
-        return s[0:-ord(s[-1])]

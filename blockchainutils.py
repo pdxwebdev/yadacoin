@@ -47,7 +47,8 @@ class BU(object):  # Blockchain Utilities
                         requested_rid=txn.get('requested_rid', ''),
                         challenge_code=txn.get('challenge_code', ''),
                         answer=txn.get('answer', ''),
-                        txn_hash=txn.get('hash', '')
+                        txn_hash=txn.get('hash', ''),
+                        post_text=txn.get('post_text', '')
                     ) for txn in block.get('transactions')],
                 block_hash=block.get('hash'),
                 merkle_root=block.get('merkleRoot'),
@@ -60,7 +61,8 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_transactions(cls, raw=False):
         from block import Block
-        from transaction import Transaction, Crypt
+        from transaction import Transaction
+        from crypt import Crypt
         transactions = []
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
@@ -80,7 +82,8 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_relationships(cls):
         from block import Block
-        from transaction import Transaction, Crypt
+        from transaction import Transaction
+        from crypt import Crypt
         relationships = []
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
@@ -96,8 +99,9 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_transaction_by_rid(cls, selector, rid=False, raw=False):
         from block import Block
-        from transaction import Transaction, Crypt
-        ds = TU.generate_deterministic_signature()
+        from transaction import Transaction
+        from crypt import Crypt
+        ds = TU.get_bulletin_secret()
         if not rid:
             selectors = [
                 TU.hash(ds+selector),
@@ -123,8 +127,9 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_transactions_by_rid(cls, selector, rid=False, raw=False):
         from block import Block
-        from transaction import Transaction, Crypt
-        ds = TU.generate_deterministic_signature()
+        from transaction import Transaction
+        from crypt import Crypt
+        ds = TU.get_bulletin_secret()
         if not rid:
             selectors = [
                 TU.hash(ds+selector),
@@ -152,7 +157,8 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_bulletins(cls, bulletin_secret):
         from block import Block
-        from transaction import Transaction, Crypt
+        from transaction import Transaction
+        from crypt import Crypt
         bulletins = []
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):

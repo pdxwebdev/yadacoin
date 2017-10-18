@@ -13,6 +13,7 @@ from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
 from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
+from crypt import Crypt
 
 
 class TU(object):  # Transaction Utilities
@@ -23,10 +24,15 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256(message).digest().encode('hex')
 
     @classmethod
+    def get_bulletin_secret(cls):
+        cipher = Crypt(cls.private_key)
+        return hashlib.sha256(cipher.encrypt_consistent(cls.private_key)).digest().encode('hex')
+
+    @classmethod
     def generate_deterministic_signature(cls):
         key = CBitcoinSecret(cls.private_key)
         signature = SignMessage(key, BitcoinMessage(cls.private_key, magic=''))
-        return signature.encode('hex')
+        return hashlib.sha256(signature.encode('hex')).digest().encode('hex')
 
     @classmethod
     def generate_signature(cls, message):

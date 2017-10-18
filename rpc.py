@@ -54,7 +54,7 @@ def get_logged_in_user():
 
 @app.route('/')
 def index():  # demo site
-    bulletin_secret = TU.generate_deterministic_signature()
+    bulletin_secret = TU.get_bulletin_secret()
     shared_secret = str(uuid4())
     existing = BU.get_transactions()
 
@@ -88,7 +88,7 @@ def index():  # demo site
         'callbackurl': '/transaction',
         'blockchainurl': '/transaction',
         'challenge_code': session['challenge_code'],
-        'bulletin_secret': TU.generate_deterministic_signature()
+        'bulletin_secret': TU.get_bulletin_secret()
     }))
     qr.make(fit=True)
 
@@ -137,7 +137,7 @@ def create_relationship():  # demo site
 
     TU.save(transaction.transaction)
 
-    my_bulletin_secret = TU.generate_deterministic_signature()
+    my_bulletin_secret = TU.get_bulletin_secret()
 
     return json.dumps({"success": True})
 
@@ -261,7 +261,8 @@ def transaction():
                 requested_rid=txn.get('requested_rid', ''),
                 challenge_code=txn.get('challenge_code', ''),
                 answer=txn.get('answer', ''),
-                txn_hash=txn.get('hash', '')
+                txn_hash=txn.get('hash', ''),
+                post_text=txn.get('post_text', '')
             )
             transactions.append(transaction)
         with open('miner_transactions.json', 'a+') as f:
@@ -298,7 +299,7 @@ def get_graph_mobile():
 
 @app.route('/get-graph')
 def get_graph():
-    graph = Graph(TU.generate_deterministic_signature(), for_me=True)
+    graph = Graph(TU.get_bulletin_secret(), for_me=True)
 
     return graph.toJson()
 

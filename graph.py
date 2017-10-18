@@ -48,7 +48,7 @@ class Graph(object):
 
         possible_friends = BU.get_second_degree_transactions_by_rids(rids)
 
-        self.my_posts.extend(BU.get_bulletins(TU.generate_deterministic_signature()))
+        self.my_posts.extend(BU.get_bulletins(TU.get_bulletin_secret()))
 
         for friend in self.friends:
             self.request_accept_or_request(possible_friends, friend)
