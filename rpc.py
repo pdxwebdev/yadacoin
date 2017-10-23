@@ -39,17 +39,17 @@ app = Flask(__name__)
 
 def get_logged_in_user():
     user = None
+    tests = []
     for block in BU.get_blocks():
         for transaction in block['transactions']:
             if 'challenge_code' in transaction and session['challenge_code'] == transaction['challenge_code']:
                 tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
                 for test in tests:
                     if 'relationship' in test and 'shared_secret' in test['relationship']:
-                        friend = test
-                cipher = Crypt(hashlib.sha256(friend['relationship']['shared_secret']).digest().encode('hex'))
-                answer = cipher.decrypt(transaction['answer'])
-                if answer == transaction['challenge_code']:
-                    user = {'authenticated': True, 'rid': transaction['rid'], 'bulletin_secret': friend['relationship']['bulletin_secret']}
+                        cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
+                        answer = cipher.decrypt(transaction['answer'])
+                        if answer == transaction['challenge_code']:
+                            user = {'authenticated': True, 'rid': transaction['rid'], 'bulletin_secret': test['relationship']['bulletin_secret']}
     return user if user else {'authenticated': False}
 
 @app.route('/')
@@ -58,25 +58,6 @@ def index():  # demo site
     shared_secret = str(uuid4())
     existing = BU.get_transactions()
 
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(json.dumps({
-        'shared_secret': shared_secret,
-        'bulletin_secret': bulletin_secret,
-        'blockchainurl': '/transaction',
-        'callbackurl': '/create-relationship'
-    }))
-    qr.make(fit=True)
-
-    reg_out = BytesIO()
-    qr_img = qr.make_image()
-    qr_img = qr_img.convert("RGBA")
-    qr_img.save(reg_out, 'PNG')
-    reg_out.seek(0)
     session.setdefault('challenge_code', str(uuid4()))
     qr = qrcode.QRCode(
         version=1,
@@ -85,10 +66,10 @@ def index():  # demo site
         border=4,
     )
     qr.add_data(json.dumps({
-        'callbackurl': '/transaction',
-        'blockchainurl': '/transaction',
         'challenge_code': session['challenge_code'],
-        'bulletin_secret': TU.get_bulletin_secret()
+        'bulletin_secret': TU.get_bulletin_secret(),
+        'shared_secret': shared_secret,
+        'callbackurl': config.get('callbackurl')
     }))
     qr.make(fit=True)
 
@@ -103,7 +84,8 @@ def index():  # demo site
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
         existing=existing,
-        register_qrcode=u"data:image/png;base64," + base64.b64encode(reg_out.getvalue()).decode('ascii'),
+        challenge_code=session['challenge_code'],
+        users=BU.get_transactions(),
         login_qrcode=u"data:image/png;base64," + base64.b64encode(login_out.getvalue()).decode('ascii')
     )
 
@@ -119,10 +101,6 @@ def create_relationship():  # demo site
         shared_secret = request.json.get('shared_secret', '')
         requester_rid = request.json.get('requester_rid', '')
         requested_rid = request.json.get('requested_rid', '')
-
-    test = BU.get_transactions_by_rid(bulletin_secret)  # temporary duplicate prevention
-    if len(test) > 1:
-        return json.dumps(test)
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
@@ -160,8 +138,7 @@ def show_user():
     qr.add_data(json.dumps({
         'bulletin_secret': user['relationship']['bulletin_secret'],
         'requested_rid': user['rid'],
-        'requester_rid': authed_user['rid'],
-        'blockchainurl': '/transaction',
+        'requester_rid': authed_user['rid']
     }))
     qr.make(fit=True)
 
@@ -192,8 +169,7 @@ def show_friend_request():
     qr.add_data(json.dumps({
         'bulletin_secret': requested_transaction['relationship']['bulletin_secret'],
         'requested_rid': transaction['requested_rid'],
-        'requester_rid': transaction['requester_rid'],
-        'blockchainurl': '/transaction'
+        'requester_rid': transaction['requester_rid']
     }))
     qr.make(fit=True)
 

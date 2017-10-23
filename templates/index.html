@@ -127,10 +127,7 @@
                 <div class="col-lg-3 col-md-3 col-sm-3 col-xs-3 bhoechie-tab-menu">
                   <div class="list-group">
                     <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-plane"></h4><br/>Register
-                    </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-road"></h4><br/>Login
+                      <h4 class="glyphicon glyphicon-road"></h4><br/>Register / Login
                     </a>
                     <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
                       <h4 class="glyphicon glyphicon-credit-card"></h4><br/>Posts
@@ -144,27 +141,22 @@
                     <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
                       <h4 class="glyphicon glyphicon-cutlery"></h4><br/>Sent Requests
                     </a>
+                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
+                      <h4 class="glyphicon glyphicon-cutlery"></h4><br/>Find New Friends
+                    </a>
                   </div>
                 </div>
                 <div class="col-lg-9 col-md-9 col-sm-9 col-xs-9 bhoechie-tab">
                     <!-- flight section -->
-                    <div class="bhoechie-tab-content" ng-if="user.authenticated == false">
-                        <center>
-                          <h2 style="margin-top: 0;color:#55518a">Register</h2>
-                          <h3 style="margin-top: 0;color:#55518a">True freedom of expression awaits!</h3>
-                          <h4 style="margin-top: 0;color:#55518a">Scan the qr code with the yadacode mobile app by tapping the 'scan friend' button.</h4>
-
-                            <img src="{{register_qrcode}}" />
-                        </center>
-                    </div>
                     <!-- train section -->
                     <div class="bhoechie-tab-content" ng-if="user.authenticated == false">
                         <center>
-                          <h2 style="margin-top: 0;color:#55518a">Login</h2>
+                          <h2 style="margin-top: 0;color:#55518a">Register / Login</h2>
                           <h3 style="margin-top: 0;color:#55518a">Welcome back, seriously!</h3>
-                          <h4 style="margin-top: 0;color:#55518a">Scan the qr code with the yadacode mobile app by tapping the 'login' button.</h4>
-
+                          <h4 style="margin-top: 0;color:#55518a">Scan the qr code with the yadacode mobile app by tapping the 'register / login' button.</h4>
+                            {{challenge_code}}
                             <img src="{{login_qrcode}}" />
+                            }
                         </center>
                     </div>
                     <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
@@ -200,6 +192,16 @@
                           <h3 style="margin-top: 0;color:#55518a">Your love will not go unnoticed. Stay strong!</h3>
                         </center>
                         <li ng-repeat="friend_request in graph.sent_friend_requests">{[{friend_request.rid}]}</li>
+                    </div>
+                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
+                        <center>
+                          <h1 class="glyphicon glyphicon-cutlery" style="font-size:12em;color:#55518a"></h1>
+                          <h2 style="margin-top: 0;color:#55518a">Sent friend requests</h2>
+                          <h3 style="margin-top: 0;color:#55518a">Your love will not go unnoticed. Stay strong!</h3>
+                        </center>
+                        {% for user in users %}
+                            <a href="/show-user?rid={{user.rid}}">{{user.rid}}</a><br>
+                        {% endfor %}
                     </div>
                 </div>
             </div>
