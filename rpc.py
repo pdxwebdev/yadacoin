@@ -36,6 +36,23 @@ BU.private_key = private_key
 
 app = Flask(__name__)
 
+def make_qr(data):
+    qr = qrcode.QRCode(
+        version=1,
+        error_correction=qrcode.constants.ERROR_CORRECT_L,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(data)
+    qr.make(fit=True)
+
+    out = BytesIO()
+    qr_img = qr.make_image()
+    qr_img = qr_img.convert("RGBA")
+    qr_img.save(out, 'PNG')
+    out.seek(0)
+    return u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
+
 
 def get_logged_in_user():
     user = None
@@ -51,6 +68,7 @@ def get_logged_in_user():
                         if answer == transaction['challenge_code']:
                             user = {'authenticated': True, 'rid': transaction['rid'], 'bulletin_secret': test['relationship']['bulletin_secret']}
     return user if user else {'authenticated': False}
+
 
 @app.route('/')
 def index():  # demo site
@@ -78,6 +96,12 @@ def index():  # demo site
     qr_img = qr_img.convert("RGBA")
     qr_img.save(login_out, 'PNG')
     login_out.seek(0)
+    authed_user = get_logged_in_user()
+
+    if authed_user['authenticated']:
+        rid = authed_user['rid']
+    else:
+        rid = ''
 
     return render_template(
         'index.html',
@@ -85,7 +109,7 @@ def index():  # demo site
         shared_secret=shared_secret,
         existing=existing,
         challenge_code=session['challenge_code'],
-        users=BU.get_transactions(),
+        users=set([x['rid'] for x in BU.get_transactions() if x['rid'] != rid]),
         login_qrcode=u"data:image/png;base64," + base64.b64encode(login_out.getvalue()).decode('ascii')
     )
 
@@ -128,27 +152,19 @@ def login_status():
 def show_user():
     authed_user = get_logged_in_user()
     user = BU.get_transaction_by_rid(request.args['rid'], rid=True)
-
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(json.dumps({
+    dict_data = {
         'bulletin_secret': user['relationship']['bulletin_secret'],
         'requested_rid': user['rid'],
         'requester_rid': authed_user['rid']
-    }))
-    qr.make(fit=True)
-
-    out = BytesIO()
-    qr_img = qr.make_image()
-    qr_img = qr_img.convert("RGBA")
-    qr_img.save(out, 'PNG')
-    out.seek(0)
-    qr_code = u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
-    return render_template('show-user.html', qrcode=qr_code, bulletin_secret=user['relationship']['bulletin_secret'])
+    }
+    data = json.dumps(dict_data)
+    qr_code = make_qr(data)
+    return render_template(
+        'show-user.html',
+        qrcode=qr_code,
+        data=json.dumps(dict_data, indent=4),
+        bulletin_secret=user['relationship']['bulletin_secret']
+    )
 
 
 
@@ -159,33 +175,49 @@ def show_friend_request():
     transaction = BU.get_transaction_by_rid(request.args.get('rid'), rid=True, raw=True)
 
     requested_transaction = BU.get_transaction_by_rid(transaction['requester_rid'], rid=True)
-
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    qr.add_data(json.dumps({
+    dict_data = {
         'bulletin_secret': requested_transaction['relationship']['bulletin_secret'],
         'requested_rid': transaction['requested_rid'],
         'requester_rid': transaction['requester_rid']
-    }))
-    qr.make(fit=True)
+    }
+    data = json.dumps(dict_data)
+    qr_code = make_qr(data)
+    return render_template(
+        'accept-friend-request.html',
+        qrcode=qr_code,
+        data=json.dumps(dict_data, indent=4),
+        rid=requested_transaction['rid'],
+        bulletin_secret=requested_transaction['relationship']['bulletin_secret']
+    )
+peer_to_rid = {}
+rid_to_peer = {}
+@app.route('/add-peer')
+def add_peer():
+    #authed_user = get_logged_in_user()97280cbf727b15077366c7c88eaa467659f86435f469998079593a82f3f9db98
+    peer_to_rid[request.args['peer_id']] = request.args['rid']
+    rid_to_peer[request.args['rid']] = request.args['peer_id']
+    print peer_to_rid
+    print rid_to_peer
+    return 'ok'
 
-    out = BytesIO()
-    qr_img = qr.make_image()
-    qr_img = qr_img.convert("RGBA")
-    qr_img.save(out, 'PNG')
-    out.seek(0)
-    qr_code = u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
-    return render_template('accept-friend-request.html', qrcode=qr_code, rid=requested_transaction['rid'], bulletin_secret=requested_transaction['relationship']['bulletin_secret'])
+@app.route('/get-peer')
+def get_peer():
+    #authed_user = get_logged_in_user()
+    #TODO: verify this user is has a friend request from the rid
+    # graph = Graph()
+    if 'rid' in request.args:
+        return json.dumps({'peerId': rid_to_peer[request.args['rid']]})
 
+    if 'peer_id' in request.args:
+        return json.dumps({'rid': peer_to_rid[request.args['peer_id']]})
+
+    return '{}'
 
 @app.route('/show-users')
 def show_users():
     users = BU.get_transactions()
-    return render_template('show-users.html', users=users)
+    rids = set([x['rid'] for x in users])
+    return render_template('show-users.html', users=rids)
 
 
 @app.route('/get-block/<index>')

@@ -92,16 +92,10 @@ class Graph(object):
                     friend_requests.append(friend_request)
 
         for x in sent_friend_requests:
-            if len(BU.get_transactions_by_rid(x['rid'], rid=True, raw=True)):
-                self.friends.append(x)
-            else:
-                self.sent_friend_requests.append(x)
+            self.sent_friend_requests.append(x)
 
         for x in friend_requests:
-            if len(BU.get_transactions_by_rid(x['rid'], rid=True, raw=True)):
-                self.friends.append(x)
-            else:
-                self.friend_requests.append(x)
+            self.friend_requests.append(x)
 
         # get bulletins posted by friends
         for friend in self.friends:
