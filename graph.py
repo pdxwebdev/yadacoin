@@ -25,6 +25,7 @@ class Graph(object):
         self.my_posts = []
         self.friend_posts = []
         self.logins = []
+        self.messages = []
 
         if for_me:
             return self.with_private_key()
@@ -61,6 +62,7 @@ class Graph(object):
     def request_accept_or_request(self, possible_friends, node):
         possible_friends_indexed = dict([(x.get('rid'), x) for x in possible_friends])
 
+        lookup_rids = []
         # sent friend requests
         sent_friend_requests = []
         requester_rids = set([x.get('rid') for x in possible_friends if x.get('requester_rid') == node['rid']])
@@ -74,7 +76,8 @@ class Graph(object):
             if not found:
                 friend_request = possible_friends_indexed[x]
                 if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
-                    sent_friend_requests.append(possible_friends_indexed[x])
+                    self.sent_friend_requests.append(possible_friends_indexed[x])
+                    lookup_rids.append(friend_request.get('rid'))
 
         # received friend requests
         friend_requests = []
@@ -89,13 +92,8 @@ class Graph(object):
             if not found:
                 friend_request = possible_friends_indexed[x]
                 if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
-                    friend_requests.append(friend_request)
-
-        for x in sent_friend_requests:
-            self.sent_friend_requests.append(x)
-
-        for x in friend_requests:
-            self.friend_requests.append(x)
+                    self.friend_requests.append(friend_request)
+                    lookup_rids.append(friend_request.get('rid'))
 
         # get bulletins posted by friends
         for friend in self.friends:
@@ -109,6 +107,12 @@ class Graph(object):
             bulletin_secret = server_friend['relationship']['bulletin_secret']
             self.friend_posts.extend(BU.get_bulletins(bulletin_secret))
 
+        already_added = []
+        for transaction in BU.get_transactions_by_rid(lookup_rids, rid=True, raw=True):
+            if transaction.get('hash') not in already_added:
+                already_added.append(transaction.get('hash'))
+                self.messages.append(transaction)
+
         self.friends.append(node)
 
     def toDict(self):
@@ -118,7 +122,8 @@ class Graph(object):
             'friend_requests': self.friend_requests,
             'my_posts': self.my_posts,
             'friend_posts': self.friend_posts,
-            'logins': self.logins
+            'logins': self.logins,
+            'messages': self.messages
         }
 
     def toJson(self):

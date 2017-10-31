@@ -193,7 +193,7 @@ peer_to_rid = {}
 rid_to_peer = {}
 @app.route('/add-peer')
 def add_peer():
-    #authed_user = get_logged_in_user()97280cbf727b15077366c7c88eaa467659f86435f469998079593a82f3f9db98
+    #authed_user = get_logged_in_user()
     peer_to_rid[request.args['peer_id']] = request.args['rid']
     rid_to_peer[request.args['rid']] = request.args['peer_id']
     print peer_to_rid

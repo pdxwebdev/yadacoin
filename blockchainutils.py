@@ -108,7 +108,8 @@ class BU(object):  # Blockchain Utilities
                 TU.hash(selector+ds)
             ]
         else:
-            selectors = [selector, ]
+            if not isinstance(selector, list):
+                selectors = [selector, ]
 
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
@@ -136,7 +137,10 @@ class BU(object):  # Blockchain Utilities
                 TU.hash(selector+ds)
             ]
         else:
-            selectors = [selector, ]
+            if not isinstance(selector, list):
+                selectors = [selector, ]
+            else:
+                selectors = selector
 
         transactions = []
         for block in BU.get_blocks():
