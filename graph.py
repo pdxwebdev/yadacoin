@@ -60,11 +60,14 @@ class Graph(object):
         self.request_accept_or_request(possible_friends, self.node)
 
     def request_accept_or_request(self, possible_friends, node):
-        possible_friends_indexed = dict([(x.get('rid'), x) for x in possible_friends])
+        possible_friends_indexed = {}
+        for x in possible_friends:
+            if x.get('rid') not in possible_friends_indexed:
+                possible_friends_indexed[x.get('rid')] = []
+            possible_friends_indexed[x.get('rid')].append(x)
 
         lookup_rids = []
         # sent friend requests
-        sent_friend_requests = []
         requester_rids = set([x.get('rid') for x in possible_friends if x.get('requester_rid') == node['rid']])
         requested_rids = set([x.get('rid') for x in possible_friends if x.get('requester_rid') != node['rid']])
         for x in requester_rids:
@@ -74,13 +77,13 @@ class Graph(object):
                     found = True
                     break
             if not found:
-                friend_request = possible_friends_indexed[x]
-                if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
-                    self.sent_friend_requests.append(possible_friends_indexed[x])
-                    lookup_rids.append(friend_request.get('rid'))
+                friend_requests = possible_friends_indexed[x]
+                for friend_request in friend_requests:
+                    if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
+                        self.sent_friend_requests.append(friend_request)
+                        lookup_rids.append(friend_request.get('rid'))
 
         # received friend requests
-        friend_requests = []
         requester_rids = set([x.get('rid') for x in possible_friends if x.get('requested_rid') == node['rid']])
         requested_rids = set([x.get('rid') for x in possible_friends if x.get('requested_rid') != node['rid']])
         for x in requester_rids:
@@ -90,10 +93,11 @@ class Graph(object):
                     found = True
                     break
             if not found:
-                friend_request = possible_friends_indexed[x]
-                if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
-                    self.friend_requests.append(friend_request)
-                    lookup_rids.append(friend_request.get('rid'))
+                friend_requests = possible_friends_indexed[x]
+                for friend_request in friend_requests:
+                    if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
+                        self.friend_requests.append(friend_request)
+                        lookup_rids.append(friend_request.get('rid'))
 
         # get bulletins posted by friends
         for friend in self.friends:
