@@ -24,6 +24,12 @@ class BU(object):  # Blockchain Utilities
         return blocks
 
     @classmethod
+    def get_block_by_id(cls, id):
+        for block in cls.get_blocks():
+            if block.get('id') == id:
+                return block
+
+    @classmethod
     def get_block_objs(cls):
         from block import Block
         from transaction import Transaction, Crypt
@@ -48,7 +54,8 @@ class BU(object):  # Blockchain Utilities
                         challenge_code=txn.get('challenge_code', ''),
                         answer=txn.get('answer', ''),
                         txn_hash=txn.get('hash', ''),
-                        post_text=txn.get('post_text', '')
+                        post_text=txn.get('post_text', ''),
+                        to=txn.get('to', '')
                     ) for txn in block.get('transactions')],
                 block_hash=block.get('hash'),
                 merkle_root=block.get('merkleRoot'),
@@ -57,6 +64,67 @@ class BU(object):  # Blockchain Utilities
                 signature=block.get('signature')                
             ))
         return block_objs
+#  miner -> person 1 -> person 2
+#  | mine coin | requester_rid and rid is miner.bulletin_secret + miner.bulletin_secret | 
+    @classmethod
+    def get_wallet_ballances(cls):
+        from block import Block
+        from transaction import Transaction, Crypt
+        with open('blockchain.json', 'r') as f:
+            blocks = json.loads(f.read()).get('blocks')
+        to_transactions = {}
+        for block in blocks:
+            for txn in block.get('transactions')[1:]:
+                transaction = Transaction(
+                    transaction_signature=txn.get('id', ''),
+                    rid=txn.get('rid', ''),
+                    relationship=txn.get('relationship', ''),
+                    public_key=txn.get('public_key', ''),
+                    value=txn.get('value', ''),
+                    fee=txn.get('fee', ''),
+                    requester_rid=txn.get('requester_rid', ''),
+                    requested_rid=txn.get('requested_rid', ''),
+                    challenge_code=txn.get('challenge_code', ''),
+                    answer=txn.get('answer', ''),
+                    txn_hash=txn.get('hash', ''),
+                    post_text=txn.get('post_text', ''),
+                    to=txn.get('to', '')
+                )
+                if transaction.to not in to_transactions:
+                    to_transactions[transaction.to] = 0
+                to_transactions[transaction.to] += float(transaction.value)
+
+        return to_transactions
+
+    @classmethod
+    def get_unspent_transactions(cls):
+        from block import Block
+        from transaction import Transaction, Crypt
+        with open('blockchain.json', 'r') as f:
+            blocks = json.loads(f.read()).get('blocks')
+        unspent_transactions = {}
+        for block in blocks:
+            for txn in block.get('transactions')[1:]:
+                transaction = Transaction(
+                    transaction_signature=txn.get('id', ''),
+                    rid=txn.get('rid', ''),
+                    relationship=txn.get('relationship', ''),
+                    public_key=txn.get('public_key', ''),
+                    value=txn.get('value', ''),
+                    fee=txn.get('fee', ''),
+                    requester_rid=txn.get('requester_rid', ''),
+                    requested_rid=txn.get('requested_rid', ''),
+                    challenge_code=txn.get('challenge_code', ''),
+                    answer=txn.get('answer', ''),
+                    txn_hash=txn.get('hash', ''),
+                    post_text=txn.get('post_text', ''),
+                    to=txn.get('to', '')
+                )
+                if transaction.to not in unspent_transactions:
+                    unspent_transactions[transaction.to] = []
+                unspent_transactions[transaction.to].append(transaction.value)
+
+        return unspent_transactions
 
     @classmethod
     def get_transactions(cls, raw=False):
@@ -195,3 +263,10 @@ class BU(object):  # Blockchain Utilities
         key = CBitcoinSecret(cls.private_key)
         signature = SignMessage(key, BitcoinMessage(message, magic=''))
         return signature
+
+    @classmethod
+    def get_transaction_by_id(cls, id):
+        for block in BU.get_blocks():
+            for transaction in block.get('transactions'):
+                if transaction.get('id') == id:
+                    return transaction

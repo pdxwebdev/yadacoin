@@ -12,6 +12,7 @@ from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
 from flask import Flask, request, render_template, session, redirect
+from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from blockchainutils import BU
 from transactionutils import TU
 from transaction import *
@@ -27,6 +28,7 @@ with open(args.conf) as f:
     config = json.loads(f.read())
 
 public_key = config.get('public_key')
+my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
 private_key = config.get('private_key')
 TU.private_key = private_key
 BU.private_key = private_key
@@ -83,12 +85,14 @@ def index():  # demo site
         box_size=10,
         border=4,
     )
-    qr.add_data(json.dumps({
+    data = {
         'challenge_code': session['challenge_code'],
         'bulletin_secret': TU.get_bulletin_secret(),
         'shared_secret': shared_secret,
-        'callbackurl': config.get('callbackurl')
-    }))
+        'callbackurl': config.get('callbackurl'),
+        'to': my_address
+    }
+    qr.add_data(json.dumps(data))
     qr.make(fit=True)
 
     login_out = BytesIO()
@@ -108,9 +112,10 @@ def index():  # demo site
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
         existing=existing,
+        data=json.dumps(data, indent=4),
         challenge_code=session['challenge_code'],
         users=set([x['rid'] for x in BU.get_transactions() if x['rid'] != rid]),
-        login_qrcode=u"data:image/png;base64," + base64.b64encode(login_out.getvalue()).decode('ascii')
+        login_qrcode=u"data:image/png;base64," + base64.b64encode(login_out.getvalue()).decode('ascii'),
     )
 
 @app.route('/create-relationship', methods=['GET', 'POST'])
@@ -120,11 +125,13 @@ def create_relationship():  # demo site
         shared_secret = request.args.get('shared_secret', '')
         requester_rid = request.args.get('requester_rid', '')
         requested_rid = request.args.get('requested_rid', '')
+        to = request.args.get('to', '')
     else:
         bulletin_secret = request.json.get('bulletin_secret', '')
         shared_secret = request.json.get('shared_secret', '')
         requester_rid = request.json.get('requester_rid', '')
         requested_rid = request.json.get('requested_rid', '')
+        to = request.args.get('to', '')
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
@@ -134,7 +141,8 @@ def create_relationship():  # demo site
         requester_rid=requester_rid,
         requested_rid=requested_rid,
         public_key=public_key,
-        private_key=private_key
+        private_key=private_key,
+        to=to
     )
 
     TU.save(transaction.transaction)
@@ -163,7 +171,8 @@ def show_user():
         'show-user.html',
         qrcode=qr_code,
         data=json.dumps(dict_data, indent=4),
-        bulletin_secret=user['relationship']['bulletin_secret']
+        bulletin_secret=user['relationship']['bulletin_secret'],
+        to=user['to']
     )
 
 
@@ -270,7 +279,8 @@ def transaction():
                 challenge_code=txn.get('challenge_code', ''),
                 answer=txn.get('answer', ''),
                 txn_hash=txn.get('hash', ''),
-                post_text=txn.get('post_text', '')
+                post_text=txn.get('post_text', ''),
+                to=txn.get('to', '')
             )
             transactions.append(transaction)
         with open('miner_transactions.json', 'a+') as f:

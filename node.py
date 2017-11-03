@@ -77,7 +77,8 @@ if __name__ == "__main__":
                     challenge_code=txn.get('challenge_code', ''),
                     answer=txn.get('answer', ''),
                     txn_hash=txn.get('hash', ''),
-                    post_text=txn.get('post_text', '')
+                    post_text=txn.get('post_text', ''),
+                    to=txn.get('to', '')
                 )
                 transactions.append(transaction)
 

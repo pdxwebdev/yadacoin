@@ -46,10 +46,14 @@ class BlockFactory(object):
                     challenge_code=txn.get('challenge_code', '')
                 )
             transaction_objs.append(transaction_obj)
-        transaction_objs.append(TransactionFactory(
+
+        coinbase_txn = TransactionFactory(
             public_key=self.public_key,
             private_key=self.private_key,
-            value=block_reward).generate_transaction())
+            value=block_reward,
+            to=str(P2PKHBitcoinAddress.from_pubkey(coinbase.decode('hex')))
+        ).generate_transaction()
+        transaction_objs.append(coinbase_txn)
         self.transactions = transaction_objs
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
@@ -192,6 +196,9 @@ class Block(object):
             self.verify_merkle_root = hashes[0]
 
     def save(self):
+        for transaction in self.transactions:
+            if BU.get_transaction_by_id(transaction.transaction_signature):
+                return
         with open('blockchain.json', 'r+') as f:
             blocks = BU.get_blocks()
             blocks.append(self.toDict())

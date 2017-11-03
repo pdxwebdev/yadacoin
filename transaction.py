@@ -27,7 +27,8 @@ class TransactionFactory(object):
         requested_rid='',
         challenge_code='',
         public_key='',
-        private_key=''
+        private_key='',
+        to=''
     ):
         self.bulletin_secret = bulletin_secret
         self.challenge_code = challenge_code
@@ -38,6 +39,7 @@ class TransactionFactory(object):
         self.value = value
         self.fee = fee
         self.shared_secret = shared_secret
+        self.to = to
         if bulletin_secret:
             self.rid = self.generate_rid()
             self.relationship = self.generate_relationship()
@@ -55,7 +57,8 @@ class TransactionFactory(object):
             str(self.fee) +
             self.requester_rid +
             self.requested_rid +
-            self.challenge_code
+            self.challenge_code +
+            self.to
         ).digest().encode('hex')
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
@@ -84,7 +87,8 @@ class TransactionFactory(object):
             self.requester_rid,
             self.requested_rid,
             self.challenge_code,
-            self.hash
+            self.hash,
+            to=self.to
         )
 
     def generate_transaction_signature(self):
@@ -105,7 +109,8 @@ class Transaction(object):
         challenge_code='',
         txn_hash='',
         answer='',
-        post_text=''
+        post_text='',
+        to=''
     ):
         self.rid = rid
         self.transaction_signature = transaction_signature
@@ -119,6 +124,7 @@ class Transaction(object):
         self.hash = txn_hash
         self.answer = answer if answer else ''
         self.post_text = post_text
+        self.to = to
         self.verify()
 
     def verify(self):
@@ -131,7 +137,8 @@ class Transaction(object):
             self.requested_rid +
             self.challenge_code +
             self.answer +
-            self.post_text
+            self.post_text +
+            self.to
         ).digest().encode('hex')
 
         if verify_hash != self.hash:
@@ -149,7 +156,8 @@ class Transaction(object):
             'value': self.value,
             'fee': self.fee,
             'hash': self.hash,
-            'post_text': self.post_text
+            'post_text': self.post_text,
+            'to': self.to
         }
         if self.requester_rid:
             ret['requester_rid'] = self.requester_rid
