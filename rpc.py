@@ -131,7 +131,7 @@ def create_relationship():  # demo site
         shared_secret = request.json.get('shared_secret', '')
         requester_rid = request.json.get('requester_rid', '')
         requested_rid = request.json.get('requested_rid', '')
-        to = request.args.get('to', '')
+        to = request.json.get('to', '')
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
