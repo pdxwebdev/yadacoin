@@ -43,7 +43,9 @@ class BlockFactory(object):
                     fee=txn.get('fee', ''),
                     requester_rid=txn.get('requester_rid', ''),
                     requested_rid=txn.get('requested_rid', ''),
-                    challenge_code=txn.get('challenge_code', '')
+                    challenge_code=txn.get('challenge_code', ''),
+                    to=txn.get('to', ''),
+                    inputs=txn.get('inputs', '')
                 )
             transaction_objs.append(transaction_obj)
 
@@ -51,7 +53,8 @@ class BlockFactory(object):
             public_key=self.public_key,
             private_key=self.private_key,
             value=block_reward,
-            to=str(P2PKHBitcoinAddress.from_pubkey(coinbase.decode('hex')))
+            to=str(P2PKHBitcoinAddress.from_pubkey(coinbase.decode('hex'))),
+            coinbase=True
         ).generate_transaction()
         transaction_objs.append(coinbase_txn)
         self.transactions = transaction_objs
@@ -123,6 +126,7 @@ class BlockFactory(object):
                 block.block.save()
                 break
             i += 1
+        return block.block
 
 
 class Block(object):

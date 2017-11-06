@@ -68,7 +68,12 @@ def get_logged_in_user():
                         cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
                         answer = cipher.decrypt(transaction['answer'])
                         if answer == transaction['challenge_code']:
-                            user = {'authenticated': True, 'rid': transaction['rid'], 'bulletin_secret': test['relationship']['bulletin_secret']}
+                            user = {
+                                'balance': BU.get_wallet_balance(transaction['to']),
+                                'authenticated': True,
+                                'rid': transaction['rid'],
+                                'bulletin_secret': test['relationship']['bulletin_secret']
+                            }
     return user if user else {'authenticated': False}
 
 
@@ -109,6 +114,7 @@ def index():  # demo site
 
     return render_template(
         'index.html',
+        user=authed_user,
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
         existing=existing,
@@ -133,6 +139,8 @@ def create_relationship():  # demo site
         requested_rid = request.json.get('requested_rid', '')
         to = request.json.get('to', '')
 
+    inputs = BU.get_wallet_unspent_transactions(my_address)
+
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
@@ -142,7 +150,24 @@ def create_relationship():  # demo site
         requested_rid=requested_rid,
         public_key=public_key,
         private_key=private_key,
-        to=to
+        to=to,
+        inputs=[Input(
+            transaction_signature=input_txn.get('id', ''),
+            rid=input_txn.get('rid', ''),
+            relationship=input_txn.get('relationship', ''),
+            public_key=input_txn.get('public_key', ''),
+            value=input_txn.get('value', ''),
+            fee=input_txn.get('fee', ''),
+            requester_rid=input_txn.get('requester_rid', ''),
+            requested_rid=input_txn.get('requested_rid', ''),
+            challenge_code=input_txn.get('challenge_code', ''),
+            answer=input_txn.get('answer', ''),
+            txn_hash=input_txn.get('hash', ''),
+            post_text=input_txn.get('post_text', ''),
+            to=input_txn.get('to', ''),
+            inputs=input_txn.get('inputs', ''),
+            coinbase=True
+        ) for input_txn in inputs]
     )
 
     TU.save(transaction.transaction)
@@ -163,7 +188,8 @@ def show_user():
     dict_data = {
         'bulletin_secret': user['relationship']['bulletin_secret'],
         'requested_rid': user['rid'],
-        'requester_rid': authed_user['rid']
+        'requester_rid': authed_user['rid'],
+        'to': user['to']
     }
     data = json.dumps(dict_data)
     qr_code = make_qr(data)
@@ -280,7 +306,24 @@ def transaction():
                 answer=txn.get('answer', ''),
                 txn_hash=txn.get('hash', ''),
                 post_text=txn.get('post_text', ''),
-                to=txn.get('to', '')
+                to=txn.get('to', ''),
+                inputs=[Input(
+                    transaction_signature=input_txn.get('id', ''),
+                    rid=input_txn.get('rid', ''),
+                    relationship=input_txn.get('relationship', ''),
+                    public_key=input_txn.get('public_key', ''),
+                    value=input_txn.get('value', ''),
+                    fee=input_txn.get('fee', ''),
+                    requester_rid=input_txn.get('requester_rid', ''),
+                    requested_rid=input_txn.get('requested_rid', ''),
+                    challenge_code=input_txn.get('challenge_code', ''),
+                    answer=input_txn.get('answer', ''),
+                    txn_hash=input_txn.get('hash', ''),
+                    post_text=input_txn.get('post_text', ''),
+                    to=input_txn.get('to', ''),
+                    inputs=input_txn.get('inputs', ''),
+                    coinbase=True
+                ) for input_txn in txn.get('inputs', '')]
             )
             transactions.append(transaction)
         with open('miner_transactions.json', 'a+') as f:
@@ -320,6 +363,15 @@ def get_graph():
     graph = Graph(TU.get_bulletin_secret(), for_me=True)
 
     return graph.toJson()
+
+@app.route('/wallet')
+def get_wallet():
+    address = request.args.get('address')
+    wallet = {
+        'balance': BU.get_wallet_balance(address),
+        'unspent_transactions': BU.get_wallet_unspent_transactions(address)
+    }
+    return json.dumps(wallet, indent=4)
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'

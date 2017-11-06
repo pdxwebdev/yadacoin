@@ -28,7 +28,9 @@ class TransactionFactory(object):
         challenge_code='',
         public_key='',
         private_key='',
-        to=''
+        to='',
+        inputs='',
+        coinbase=False
     ):
         self.bulletin_secret = bulletin_secret
         self.challenge_code = challenge_code
@@ -40,6 +42,9 @@ class TransactionFactory(object):
         self.fee = fee
         self.shared_secret = shared_secret
         self.to = to
+        self.inputs = inputs
+        self.coinbase = coinbase
+        inputs_concat_sorted = ''.join(self.get_input_hashes())
         if bulletin_secret:
             self.rid = self.generate_rid()
             self.relationship = self.generate_relationship()
@@ -58,10 +63,14 @@ class TransactionFactory(object):
             self.requester_rid +
             self.requested_rid +
             self.challenge_code +
-            self.to
+            self.to +
+            inputs_concat_sorted
         ).digest().encode('hex')
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
+
+    def get_input_hashes(self):
+        return sorted([str(x.hash) for x in self.inputs], key=str.lower)
 
     def generate_rid(self):
         my_bulletin_secret = TU.get_bulletin_secret()
@@ -88,7 +97,9 @@ class TransactionFactory(object):
             self.requested_rid,
             self.challenge_code,
             self.hash,
-            to=self.to
+            to=self.to,
+            inputs=self.inputs,
+            coinbase=self.coinbase
         )
 
     def generate_transaction_signature(self):
@@ -110,7 +121,9 @@ class Transaction(object):
         txn_hash='',
         answer='',
         post_text='',
-        to=''
+        to='',
+        inputs='',
+        coinbase=False
     ):
         self.rid = rid
         self.transaction_signature = transaction_signature
@@ -125,9 +138,12 @@ class Transaction(object):
         self.answer = answer if answer else ''
         self.post_text = post_text
         self.to = to
+        self.inputs = inputs
+        self.coinbase = coinbase
         self.verify()
 
     def verify(self):
+        inputs_concat_sorted = ''.join(self.get_input_hashes())
         verify_hash = hashlib.sha256(
             self.rid +
             self.relationship +
@@ -138,7 +154,8 @@ class Transaction(object):
             self.challenge_code +
             self.answer +
             self.post_text +
-            self.to
+            self.to +
+            inputs_concat_sorted
         ).digest().encode('hex')
 
         if verify_hash != self.hash:
@@ -146,6 +163,51 @@ class Transaction(object):
         result = VerifyMessage(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')), BitcoinMessage(self.hash, magic=''), self.transaction_signature)
         if not result:
             raise BaseException("transaction signature did not verify")
+
+        if self.coinbase:
+            return
+
+        # verify spend
+        total_input = 0
+        for txn in self.inputs:
+            total_input += float(txn.value)
+
+        if total_input < float(self.value):
+            raise BaseException("Not enough inputs for transaction spend")
+
+    def get_input_hashes(self):
+        return sorted([str(x.hash) for x in self.inputs], key=str.lower)
+
+    def toDict(self):
+        ret = {
+            'rid': self.rid,
+            'id': self.transaction_signature,
+            'relationship': self.relationship,
+            'public_key': self.public_key,
+            'value': self.value,
+            'fee': self.fee,
+            'hash': self.hash,
+            'post_text': self.post_text,
+            'to': self.to,
+            'inputs': [x.toDict() for x in self.inputs]
+        }
+        if self.requester_rid:
+            ret['requester_rid'] = self.requester_rid
+        if self.requested_rid:
+            ret['requested_rid'] = self.requested_rid
+        if self.challenge_code:
+            ret['challenge_code'] = self.challenge_code
+        if self.answer:
+            ret['answer'] = self.answer
+        return ret
+
+    def toJson(self):
+        return json.dumps(self.toDict(), indent=4)
+
+
+class Input(Transaction):
+    def verify(self):
+        pass
 
     def toDict(self):
         ret = {
@@ -168,9 +230,6 @@ class Transaction(object):
         if self.answer:
             ret['answer'] = self.answer
         return ret
-
-    def toJson(self):
-        return json.dumps(self.toDict(), indent=4)
 
 
 class Relationship(object):
