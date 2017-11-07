@@ -119,7 +119,7 @@ class Graph(object):
 
         self.friends.append(node)
 
-    def toDict(self):
+    def to_dict(self):
         return {
             'friends': self.friends,
             'sent_friend_requests': self.sent_friend_requests,
@@ -130,5 +130,5 @@ class Graph(object):
             'messages': self.messages
         }
 
-    def toJson(self):
-        return json.dumps(self.toDict(), indent=4)
+    def to_json(self):
+        return json.dumps(self.to_dict(), indent=4)

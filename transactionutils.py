@@ -43,9 +43,9 @@ class TU(object):  # Transaction Utilities
     @classmethod
     def save(cls, items):
         if not isinstance(items, list):
-            items = [items.toDict(), ]
+            items = [items.to_dict(), ]
         else:
-            items = [item.toDict() for item in items]
+            items = [item.to_dict() for item in items]
 
         with open('miner_transactions.json', 'a+') as f:
             try:

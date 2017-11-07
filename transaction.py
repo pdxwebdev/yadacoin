@@ -30,6 +30,8 @@ class TransactionFactory(object):
         private_key='',
         to='',
         inputs='',
+        outputs='',
+        answer='',
         coinbase=False
     ):
         self.bulletin_secret = bulletin_secret
@@ -42,9 +44,12 @@ class TransactionFactory(object):
         self.fee = fee
         self.shared_secret = shared_secret
         self.to = to
+        self.answer = answer
+        self.outputs = outputs
         self.inputs = inputs
         self.coinbase = coinbase
-        inputs_concat_sorted = ''.join(self.get_input_hashes())
+        inputs_concat = self.get_input_hashes()
+        outputs_concat = self.get_output_hashes()
         if bulletin_secret:
             self.rid = self.generate_rid()
             self.relationship = self.generate_relationship()
@@ -58,19 +63,22 @@ class TransactionFactory(object):
         self.hash = hashlib.sha256(
             self.rid +
             self.encrypted_relationship +
-            str(self.value) +
             str(self.fee) +
             self.requester_rid +
             self.requested_rid +
             self.challenge_code +
-            self.to +
-            inputs_concat_sorted
+            inputs_concat +
+            outputs_concat
         ).digest().encode('hex')
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
 
     def get_input_hashes(self):
-        return sorted([str(x.hash) for x in self.inputs], key=str.lower)
+        return ''.join(sorted([str(x.hash) for x in self.inputs], key=str.lower))
+
+    def get_output_hashes(self):
+        outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'])
+        return ''.join([x['to']+str(x['value']) for x in outputs_sorted])
 
     def generate_rid(self):
         my_bulletin_secret = TU.get_bulletin_secret()
@@ -91,14 +99,14 @@ class TransactionFactory(object):
             self.transaction_signature,
             self.encrypted_relationship,
             self.public_key,
-            str(self.value),
             str(self.fee),
             self.requester_rid,
             self.requested_rid,
             self.challenge_code,
             self.hash,
-            to=self.to,
             inputs=self.inputs,
+            outputs=self.outputs,
+            answer=self.answer,
             coinbase=self.coinbase
         )
 
@@ -113,7 +121,6 @@ class Transaction(object):
         transaction_signature='',
         relationship='',
         public_key='',
-        value='1',
         fee='0.1',
         requester_rid='',
         requested_rid='',
@@ -121,15 +128,14 @@ class Transaction(object):
         txn_hash='',
         answer='',
         post_text='',
-        to='',
         inputs='',
+        outputs='',
         coinbase=False
     ):
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
         self.public_key = public_key
-        self.value = str(value)
         self.fee = str(fee)
         self.requester_rid = requester_rid if requester_rid else ''
         self.requested_rid = requested_rid if requested_rid else ''
@@ -137,25 +143,44 @@ class Transaction(object):
         self.hash = txn_hash
         self.answer = answer if answer else ''
         self.post_text = post_text
-        self.to = to
         self.inputs = inputs
+        self.outputs = outputs
         self.coinbase = coinbase
         self.verify()
 
+    @classmethod
+    def from_dict(cls, txn):
+        return cls(
+            transaction_signature=txn.get('id'),
+            rid=txn.get('rid', ''),
+            relationship=txn.get('relationship', ''),
+            public_key=txn.get('public_key'),
+            fee=txn.get('fee'),
+            requester_rid=txn.get('requester_rid', ''),
+            requested_rid=txn.get('requested_rid', ''),
+            challenge_code=txn.get('challenge_code', ''),
+            answer=txn.get('answer', ''),
+            txn_hash=txn.get('hash', ''),
+            post_text=txn.get('post_text', ''),
+            inputs=[Input.from_dict(input_txn) for input_txn in txn.get('inputs', '')],
+            outputs=[Output.from_dict(output_txn) for output_txn in txn.get('outputs', '')],
+            coinbase=txn.get('coinbase', '')
+        )
+
     def verify(self):
-        inputs_concat_sorted = ''.join(self.get_input_hashes())
+        inputs_concat = self.get_input_hashes()
+        outputs_concat = self.get_output_hashes()
         verify_hash = hashlib.sha256(
             self.rid +
             self.relationship +
-            str(self.value) +
             str(self.fee) +
             self.requester_rid +
             self.requested_rid +
             self.challenge_code +
             self.answer +
             self.post_text +
-            self.to +
-            inputs_concat_sorted
+            inputs_concat +
+            outputs_concat
         ).digest().encode('hex')
 
         if verify_hash != self.hash:
@@ -164,32 +189,40 @@ class Transaction(object):
         if not result:
             raise BaseException("transaction signature did not verify")
 
-        if self.coinbase:
-            return
-
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            total_input += float(txn.value)
+            for output in txn.outputs:
+                total_input += float(output.value)
 
-        if total_input < float(self.value):
-            raise BaseException("Not enough inputs for transaction spend")
+        if self.coinbase:
+            return 
+
+        total_output = 0
+        for txn in self.outputs:
+            total_output += float(txn.value)
+
+        if total_input != (total_output + float(self.fee)):
+            raise BaseException("inputs and outputs sum must match")
 
     def get_input_hashes(self):
-        return sorted([str(x.hash) for x in self.inputs], key=str.lower)
+        return ''.join(sorted([str(x.hash) for x in self.inputs], key=str.lower))
 
-    def toDict(self):
+    def get_output_hashes(self):
+        outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'])
+        return ''.join([x['to']+str(x['value']) for x in outputs_sorted])
+
+    def to_dict(self):
         ret = {
             'rid': self.rid,
             'id': self.transaction_signature,
             'relationship': self.relationship,
             'public_key': self.public_key,
-            'value': self.value,
             'fee': self.fee,
             'hash': self.hash,
             'post_text': self.post_text,
-            'to': self.to,
-            'inputs': [x.toDict() for x in self.inputs]
+            'inputs': [x.to_dict() for x in self.inputs],
+            'outputs': [x.to_dict() for x in self.outputs]
         }
         if self.requester_rid:
             ret['requester_rid'] = self.requester_rid
@@ -201,35 +234,32 @@ class Transaction(object):
             ret['answer'] = self.answer
         return ret
 
-    def toJson(self):
-        return json.dumps(self.toDict(), indent=4)
+    def to_json(self):
+        return json.dumps(self.to_dict(), indent=4)
 
 
 class Input(Transaction):
     def verify(self):
         pass
 
-    def toDict(self):
-        ret = {
-            'rid': self.rid,
-            'id': self.transaction_signature,
-            'relationship': self.relationship,
-            'public_key': self.public_key,
-            'value': self.value,
-            'fee': self.fee,
-            'hash': self.hash,
-            'post_text': self.post_text,
-            'to': self.to
+
+class Output(object):
+    def __init__(self, to, value):
+        self.to = to
+        self.value = value
+
+    @classmethod
+    def from_dict(cls, txn):
+        return cls(
+            to=txn.get('to', ''),
+            value=txn.get('value', '')
+        )
+
+    def to_dict(self):
+        return {
+            'to': self.to,
+            'value': self.value
         }
-        if self.requester_rid:
-            ret['requester_rid'] = self.requester_rid
-        if self.requested_rid:
-            ret['requested_rid'] = self.requested_rid
-        if self.challenge_code:
-            ret['challenge_code'] = self.challenge_code
-        if self.answer:
-            ret['answer'] = self.answer
-        return ret
 
 
 class Relationship(object):
@@ -237,11 +267,11 @@ class Relationship(object):
         self.shared_secret = shared_secret
         self.bulletin_secret = bulletin_secret
 
-    def toDict(self):
+    def to_dict(self):
         return {
             'shared_secret': self.shared_secret,
             'bulletin_secret': self.bulletin_secret
         }
 
     def to_json(self):
-        return json.dumps(self.toDict())
+        return json.dumps(self.to_dict())

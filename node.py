@@ -6,7 +6,7 @@ import time
 from uuid import uuid4
 from ecdsa import SigningKey, SECP256k1
 from block import Block, BlockFactory
-from transaction import Transaction, Input
+from transaction import Transaction, Input, Output
 from blockchainutils import BU
 from transactionutils import TU
 from transaction import TransactionFactory
@@ -66,38 +66,7 @@ if __name__ == "__main__":
                 f.truncate()
             transactions = []
             for txn in transactions_parsed:
-                transaction = Transaction(
-                    transaction_signature=txn.get('id'),
-                    rid=txn.get('rid', ''),
-                    relationship=txn.get('relationship', ''),
-                    public_key=txn.get('public_key'),
-                    value=txn.get('value'),
-                    fee=txn.get('fee'),
-                    requester_rid=txn.get('requester_rid', ''),
-                    requested_rid=txn.get('requested_rid', ''),
-                    challenge_code=txn.get('challenge_code', ''),
-                    answer=txn.get('answer', ''),
-                    txn_hash=txn.get('hash', ''),
-                    post_text=txn.get('post_text', ''),
-                    to=txn.get('to', ''),
-                    inputs=[Input(
-                        transaction_signature=input_txn.get('id', ''),
-                        rid=input_txn.get('rid', ''),
-                        relationship=input_txn.get('relationship', ''),
-                        public_key=input_txn.get('public_key', ''),
-                        value=input_txn.get('value', ''),
-                        fee=input_txn.get('fee', ''),
-                        requester_rid=input_txn.get('requester_rid', ''),
-                        requested_rid=input_txn.get('requested_rid', ''),
-                        challenge_code=input_txn.get('challenge_code', ''),
-                        answer=input_txn.get('answer', ''),
-                        txn_hash=input_txn.get('hash', ''),
-                        post_text=input_txn.get('post_text', ''),
-                        to=input_txn.get('to', ''),
-                        inputs=input_txn.get('inputs', ''),
-                        coinbase=True
-                    ) for input_txn in txn.get('inputs', '')]
-                )
+                transaction = Transaction.from_dict(txn)
                 transactions.append(transaction)
 
         if not transactions and len(blocks):
@@ -107,10 +76,17 @@ if __name__ == "__main__":
             txn = TransactionFactory(
                 public_key=public_key,
                 private_key=private_key,
-                value=10,
                 fee=0.1,
-                to='1CHVGmXNZgznyYVHzs64WcDVYn3aV8Gj4u',
-                coinbase=True,
+                outputs=[
+                    Output(
+                        to='1CHVGmXNZgznyYVHzs64WcDVYn3aV8Gj4u',
+                        value=10
+                    ),
+                    Output(
+                        to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
+                        value=39.9
+                    )
+                ],
                 inputs=block.transactions
             ).generate_transaction()
             BlockFactory.mine([txn,], coinbase, 1, difficulty, public_key, private_key)

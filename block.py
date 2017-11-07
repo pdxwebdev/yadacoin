@@ -11,7 +11,7 @@ from ecdsa import SECP256k1, SigningKey, VerifyingKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from transaction import TransactionFactory, Transaction
+from transaction import TransactionFactory, Transaction, Output
 from blockchainutils import BU
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
@@ -34,26 +34,16 @@ class BlockFactory(object):
                 txn.verify()
                 transaction_obj = txn
             else:
-                transaction_obj = Transaction(
-                    transaction_signature=txn.get('id', ''),
-                    rid=txn.get('rid', ''),
-                    relationship=txn.get('relationship', ''),
-                    public_key=txn.get('public_key', ''),
-                    value=txn.get('value', ''),
-                    fee=txn.get('fee', ''),
-                    requester_rid=txn.get('requester_rid', ''),
-                    requested_rid=txn.get('requested_rid', ''),
-                    challenge_code=txn.get('challenge_code', ''),
-                    to=txn.get('to', ''),
-                    inputs=txn.get('inputs', '')
-                )
+                transaction_obj = Transaction.from_dict(txn)
             transaction_objs.append(transaction_obj)
 
         coinbase_txn = TransactionFactory(
             public_key=self.public_key,
             private_key=self.private_key,
-            value=block_reward,
-            to=str(P2PKHBitcoinAddress.from_pubkey(coinbase.decode('hex'))),
+            outputs=[Output(
+                value=block_reward,
+                to=str(P2PKHBitcoinAddress.from_pubkey(coinbase.decode('hex')))
+            )],
             coinbase=True
         ).generate_transaction()
         transaction_objs.append(coinbase_txn)
@@ -157,6 +147,27 @@ class Block(object):
         self.signature = signature
         self.verify()
 
+    @classmethod
+    def from_dict(cls, block):
+        transactions = []
+        for txn in block.get('transactions'):
+            # TODO: do validify checking for coinbase transactions
+            txn['coinbase'] = True if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] else False
+            transactions.append(Transaction.from_dict(txn))
+
+        return cls(
+            block_index=block.get('index'),
+            public_key=block.get('public_key'),
+            prev_hash=block.get('prevHash'),
+            nonce=block.get('nonce'),
+            transactions=transactions,
+            block_hash=block.get('hash'),
+            merkle_root=block.get('merkleRoot'),
+            answer=block.get('answer'),
+            difficulty=block.get('difficulty'),
+            signature=block.get('id')
+        )
+
     def verify(self):
         try:
             txns = self.get_transaction_hashes()
@@ -205,24 +216,24 @@ class Block(object):
                 return
         with open('blockchain.json', 'r+') as f:
             blocks = BU.get_blocks()
-            blocks.append(self.toDict())
+            blocks.append(self.to_dict())
             f.seek(0)
             f.write(json.dumps({'blocks': blocks}, indent=4))
             f.truncate()
 
-    def toDict(self):
+    def to_dict(self):
         return {
             'index': self.index,
             'public_key': self.public_key,
             'prevHash': self.prev_hash,
             'nonce': self.nonce,
-            'transactions': [x.toDict() for x in self.transactions],
+            'transactions': [x.to_dict() for x in self.transactions],
             'hash': self.hash,
             'merkleRoot': self.merkle_root,
-            'answer': self.answer,
             'difficulty': self.difficulty,
-            'signature': self.signature
+            'answer': self.answer,
+            'id': self.signature
         }
 
-    def toJson(self):
-        return json.dumps(self.toDict())
+    def to_json(self):
+        return json.dumps(self.to_dict())

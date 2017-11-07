@@ -38,50 +38,7 @@ class BU(object):  # Blockchain Utilities
             blocks = json.loads(f.read()).get('blocks')
         block_objs = []
         for block in blocks:
-            block_objs.append(Block(
-                block_index=block.get('index'),
-                public_key=block.get('public_key'),
-                prev_hash=block.get('prevHash'),
-                nonce=block.get('nonce'),
-                transactions=[Transaction(
-                        transaction_signature=txn.get('id', ''),
-                        rid=txn.get('rid', ''),
-                        relationship=txn.get('relationship', ''),
-                        public_key=txn.get('public_key', ''),
-                        value=txn.get('value', ''),
-                        fee=txn.get('fee', ''),
-                        requester_rid=txn.get('requester_rid', ''),
-                        requested_rid=txn.get('requested_rid', ''),
-                        challenge_code=txn.get('challenge_code', ''),
-                        answer=txn.get('answer', ''),
-                        txn_hash=txn.get('hash', ''),
-                        post_text=txn.get('post_text', ''),
-                        to=txn.get('to', ''),
-                        inputs=[Input(
-                            transaction_signature=input_txn.get('id', ''),
-                            rid=input_txn.get('rid', ''),
-                            relationship=input_txn.get('relationship', ''),
-                            public_key=input_txn.get('public_key', ''),
-                            value=input_txn.get('value', ''),
-                            fee=input_txn.get('fee', ''),
-                            requester_rid=input_txn.get('requester_rid', ''),
-                            requested_rid=input_txn.get('requested_rid', ''),
-                            challenge_code=input_txn.get('challenge_code', ''),
-                            answer=input_txn.get('answer', ''),
-                            txn_hash=input_txn.get('hash', ''),
-                            post_text=input_txn.get('post_text', ''),
-                            to=input_txn.get('to', ''),
-                            inputs=input_txn.get('inputs', ''),
-                            coinbase=True
-                        ) for input_txn in txn.get('inputs', '')],
-                        coinbase=True if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) == txn.get('to', '') else False
-                    ) for i, txn in enumerate(block.get('transactions'))],
-                block_hash=block.get('hash'),
-                merkle_root=block.get('merkleRoot'),
-                answer=block.get('answer', ''),
-                difficulty=block.get('difficulty'),
-                signature=block.get('signature')                
-            ))
+            block_objs.append(Block.from_dict(block))
         return block_objs
     #  miner -> person 1 -> person 2
     #  | mine coin | requester_rid and rid is miner.bulletin_secret + miner.bulletin_secret | 
@@ -110,47 +67,13 @@ class BU(object):  # Blockchain Utilities
         unspent_transactions = {}
         for block in blocks:
             for txn in block.get('transactions'):
-                transaction = Transaction(
-                    transaction_signature=txn.get('id', ''),
-                    rid=txn.get('rid', ''),
-                    relationship=txn.get('relationship', ''),
-                    public_key=txn.get('public_key', ''),
-                    value=txn.get('value', ''),
-                    fee=txn.get('fee', ''),
-                    requester_rid=txn.get('requester_rid', ''),
-                    requested_rid=txn.get('requested_rid', ''),
-                    challenge_code=txn.get('challenge_code', ''),
-                    answer=txn.get('answer', ''),
-                    txn_hash=txn.get('hash', ''),
-                    post_text=txn.get('post_text', ''),
-                    to=txn.get('to', ''),
-                    inputs=[Input(
-                        transaction_signature=input_txn.get('id', ''),
-                        rid=input_txn.get('rid', ''),
-                        relationship=input_txn.get('relationship', ''),
-                        public_key=input_txn.get('public_key', ''),
-                        value=input_txn.get('value', ''),
-                        fee=input_txn.get('fee', ''),
-                        requester_rid=input_txn.get('requester_rid', ''),
-                        requested_rid=input_txn.get('requested_rid', ''),
-                        challenge_code=input_txn.get('challenge_code', ''),
-                        answer=input_txn.get('answer', ''),
-                        txn_hash=input_txn.get('hash', ''),
-                        post_text=input_txn.get('post_text', ''),
-                        to=input_txn.get('to', ''),
-                        inputs=input_txn.get('inputs', ''),
-                        coinbase=True
-                    ) for v, input_txn in enumerate(txn.get('inputs', ''))],
-                    coinbase=True
-                )
+                transaction = Transaction.from_dict(txn)
                 if transaction.to not in unspent_transactions:
                     unspent_transactions[transaction.to] = {}
-                unspent_transactions[transaction.to][transaction.transaction_signature] = transaction.toDict()
+                unspent_transactions[transaction.to][transaction.transaction_signature] = transaction.to_dict()
                 for spend in transaction.inputs:
-                    try:
-                        del unspent_transactions[spend.to][spend.id]
-                    except:
-                        pass
+                    unspent_transactions[spend.to][spend.transaction_signature]['value'] = float(unspent_transactions[spend.to][spend.transaction_signature]['value'])
+                    unspent_transactions[spend.to][spend.transaction_signature]['value'] -= float(transaction.value)
         utxn = {}
         for i, x in unspent_transactions.items():
             for j, y in x.items():
