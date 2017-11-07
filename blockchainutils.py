@@ -48,10 +48,11 @@ class BU(object):  # Blockchain Utilities
         balances = {}
         for idx, txns in unspent_transactions.items():
             for txn in txns:
-                print 'idx:', idx
                 if idx not in balances:
                     balances[idx] = 0
-                balances[idx] += float(txn['value'])
+                for output in txn['outputs']:
+                    if output['to'] == idx:
+                        balances[idx] += float(output['value'])
         return balances
 
     @classmethod
@@ -67,13 +68,16 @@ class BU(object):  # Blockchain Utilities
         unspent_transactions = {}
         for block in blocks:
             for txn in block.get('transactions'):
+                txn['coinbase'] = True if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] else False
                 transaction = Transaction.from_dict(txn)
-                if transaction.to not in unspent_transactions:
-                    unspent_transactions[transaction.to] = {}
-                unspent_transactions[transaction.to][transaction.transaction_signature] = transaction.to_dict()
-                for spend in transaction.inputs:
-                    unspent_transactions[spend.to][spend.transaction_signature]['value'] = float(unspent_transactions[spend.to][spend.transaction_signature]['value'])
-                    unspent_transactions[spend.to][spend.transaction_signature]['value'] -= float(transaction.value)
+                for output in transaction.outputs:
+                    if output.to not in unspent_transactions:
+                        unspent_transactions[output.to] = {}
+                    unspent_transactions[output.to][transaction.transaction_signature] = transaction.to_dict()
+                for input_txn in transaction.inputs:
+                    for output in input_txn.outputs:
+                        del unspent_transactions[output.to][input_txn.transaction_signature]
+
         utxn = {}
         for i, x in unspent_transactions.items():
             for j, y in x.items():
