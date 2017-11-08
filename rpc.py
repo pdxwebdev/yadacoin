@@ -139,20 +139,35 @@ def create_relationship():  # demo site
         requested_rid = request.json.get('requested_rid', '')
         to = request.json.get('to', '')
 
-    inputs = BU.get_wallet_unspent_transactions(my_address)
+    input_txns = BU.get_wallet_unspent_transactions(my_address)
+
+    inputs = [Input.from_dict(input_txn) for input_txn in input_txns]
+
+    input_sum = 0
+    for x in inputs:
+        txn = BU.get_transaction_by_id(x.id, instance=True)
+        for txn_output in txn.outputs:
+            if txn_output.to == my_address:
+                input_sum += txn_output.value
+
+    return_change_output = Output(
+        to=my_address,
+        value=input_sum-1.1
+    )
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
-        value=1,
         fee=0.1,
         requester_rid=requester_rid,
         requested_rid=requested_rid,
         public_key=public_key,
         private_key=private_key,
-        to=to,
-        inputs=[Input.from_dict(input_txn) for input_txn in inputs],
-        outputs=[Output.from_dict(output_txn) for output_txn in outputs]
+        inputs=inputs,
+        outputs=[
+            Output(to=to, value=1),
+            return_change_output
+        ]
     )
 
     TU.save(transaction.transaction)
@@ -278,6 +293,7 @@ def transaction():
             items = [item for item in items]
         transactions = []
         for txn in items:
+            print json.dumps(txn, indent=4)
             transaction = Transaction.from_dict(txn)
             transactions.append(transaction)
         with open('miner_transactions.json', 'a+') as f:

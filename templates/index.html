@@ -18,9 +18,9 @@
             $interpolateProvider.startSymbol('{[{').endSymbol('}]}');
         });
         app.controller("friendRequests", function($scope, $http) {
-            $scope.intervalId = setInterval(function(){
-                $scope.get_user();
-            }, 3000);
+            //$scope.intervalId = setInterval(function(){
+            //    $scope.get_user();
+            //}, 3000);
             $scope.graph = {friend_posts: [{post_text:'hello'}]};
             var data;
             $scope.user = {};

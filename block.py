@@ -31,10 +31,10 @@ class BlockFactory(object):
         transaction_objs = []
         for txn in transactions:
             if isinstance(txn, Transaction):
-                txn.verify()
                 transaction_obj = txn
             else:
                 transaction_obj = Transaction.from_dict(txn)
+            transaction_obj.verify()
             transaction_objs.append(transaction_obj)
 
         coinbase_txn = TransactionFactory(
@@ -113,7 +113,6 @@ class BlockFactory(object):
                     private_key=private_key,
                     answer=hashlib.sha256("%s%s" % (prev_nonce, i)).hexdigest(),
                     difficulty=difficulty)
-                block.block.save()
                 break
             i += 1
         return block.block

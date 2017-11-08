@@ -73,6 +73,7 @@ if __name__ == "__main__":
             pass
         elif not transactions and not len(blocks):
             block = BlockFactory.mine(transactions, coinbase, 50, difficulty, public_key, private_key)
+            block.save()
             txn = TransactionFactory(
                 public_key=public_key,
                 private_key=private_key,
@@ -87,13 +88,15 @@ if __name__ == "__main__":
                         value=39.9
                     )
                 ],
-                inputs=block.transactions
+                inputs=[Input(x.transaction_signature) for x in block.transactions]
             ).generate_transaction()
-            BlockFactory.mine([txn,], coinbase, 1, difficulty, public_key, private_key)
+            block2 = BlockFactory.mine([txn,], coinbase, 1, difficulty, public_key, private_key)
+            block2.save()
             print 'waiting for transactions...'
             blocks = BU.get_block_objs()
         else:
-            BlockFactory.mine(transactions, coinbase, block_reward, difficulty, public_key, private_key)
+            block = BlockFactory.mine(transactions, coinbase, block_reward, difficulty, public_key, private_key)
+            block.save()
             print 'waiting for transactions...'
             blocks = BU.get_block_objs()
 

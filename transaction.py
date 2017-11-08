@@ -15,6 +15,7 @@ from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from crypt import Crypt
 from transactionutils import TU
+from blockchainutils import BU
 
 class TransactionFactory(object):
     def __init__(
@@ -74,11 +75,16 @@ class TransactionFactory(object):
         self.transaction = self.generate_transaction()
 
     def get_input_hashes(self):
-        return ''.join(sorted([str(x.hash) for x in self.inputs], key=str.lower))
+        input_hashes = []
+        for x in self.inputs:
+            txn = BU.get_transaction_by_id(x.id, instance=True)
+            input_hashes.append(str(txn.transaction_signature))
+
+        return ''.join(sorted(input_hashes, key=str.lower))
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'])
-        return ''.join([x['to']+str(x['value']) for x in outputs_sorted])
+        return ''.join([x['to']+str(float(x['value'])) for x in outputs_sorted])
 
     def generate_rid(self):
         my_bulletin_secret = TU.get_bulletin_secret()
@@ -146,7 +152,6 @@ class Transaction(object):
         self.inputs = inputs
         self.outputs = outputs
         self.coinbase = coinbase
-        self.verify()
 
     @classmethod
     def from_dict(cls, txn):
@@ -183,34 +188,42 @@ class Transaction(object):
             outputs_concat
         ).digest().encode('hex')
 
+        address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
         if verify_hash != self.hash:
             raise BaseException("transaction is invalid")
-        result = VerifyMessage(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')), BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+        result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
         if not result:
             raise BaseException("transaction signature did not verify")
 
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            for output in txn.outputs:
-                total_input += float(output.value)
+            txn_input = Transaction.from_dict(BU.get_transaction_by_id(txn.id))
+            for output in txn_input.outputs:
+                if str(output.to) == str(address):
+                    total_input += float(output.value)
 
         if self.coinbase:
-            return 
+            return
 
         total_output = 0
         for txn in self.outputs:
             total_output += float(txn.value)
-
-        if total_input != (total_output + float(self.fee)):
+        print total_input, total_output, self.fee
+        if float(total_input) != (float(total_output) + float(self.fee)):
             raise BaseException("inputs and outputs sum must match")
 
     def get_input_hashes(self):
-        return ''.join(sorted([str(x.hash) for x in self.inputs], key=str.lower))
+        input_hashes = []
+        for x in self.inputs:
+            txn = BU.get_transaction_by_id(x.id, instance=True)
+            input_hashes.append(str(txn.transaction_signature))
+
+        return ''.join(sorted(input_hashes, key=str.lower))
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'])
-        return ''.join([x['to']+str(x['value']) for x in outputs_sorted])
+        return ''.join([x['to']+str(float(x['value'])) for x in outputs_sorted])
 
     def to_dict(self):
         ret = {
@@ -238,9 +251,20 @@ class Transaction(object):
         return json.dumps(self.to_dict(), indent=4)
 
 
-class Input(Transaction):
-    def verify(self):
-        pass
+class Input(object):
+    def __init__(self, signature):
+        self.id = signature
+
+    @classmethod
+    def from_dict(cls, txn):
+        return cls(
+            signature=txn.get('id', ''),
+        )
+
+    def to_dict(self):
+        return {
+            'id': self.id
+        }
 
 
 class Output(object):

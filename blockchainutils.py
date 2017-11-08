@@ -74,8 +74,10 @@ class BU(object):  # Blockchain Utilities
                     if output.to not in unspent_transactions:
                         unspent_transactions[output.to] = {}
                     unspent_transactions[output.to][transaction.transaction_signature] = transaction.to_dict()
-                for input_txn in transaction.inputs:
+                for txn_input in transaction.inputs:
+                    input_txn = BU.get_transaction_by_id(txn_input.id, instance=True)
                     for output in input_txn.outputs:
+                        print input_txn.transaction_signature
                         del unspent_transactions[output.to][input_txn.transaction_signature]
 
         utxn = {}
@@ -230,8 +232,12 @@ class BU(object):  # Blockchain Utilities
         return signature
 
     @classmethod
-    def get_transaction_by_id(cls, id):
+    def get_transaction_by_id(cls, id, instance=False):
+        from transaction import Transaction, Input, Crypt
         for block in BU.get_blocks():
             for transaction in block.get('transactions'):
                 if transaction.get('id') == id:
-                    return transaction
+                    if instance:
+                        return Transaction.from_dict(transaction)
+                    else:
+                        return transaction
