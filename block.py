@@ -47,6 +47,16 @@ class BlockFactory(object):
             coinbase=True
         ).generate_transaction()
         transaction_objs.append(coinbase_txn)
+        for transaction in transaction_objs:
+            address = str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex')))
+            utxns_input_ids = []
+            for utxn in BU.get_wallet_unspent_transactions(address):
+                for input_txn in utxn['inputs']:
+                    utxns_input_ids.append(input_txn['id'])
+            for txn in transaction.inputs:
+                if txn.id in utxns_input_ids:
+                    print "double spend attempt"
+                    return
         self.transactions = transaction_objs
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)

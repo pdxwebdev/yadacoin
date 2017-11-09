@@ -209,9 +209,9 @@ class Transaction(object):
         total_output = 0
         for txn in self.outputs:
             total_output += float(txn.value)
-        print total_input, total_output, self.fee
-        if float(total_input) != (float(total_output) + float(self.fee)):
-            raise BaseException("inputs and outputs sum must match")
+        total = float(total_output) + float(self.fee)
+        if str(total_input) != str(total):
+            raise BaseException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), blah))
 
     def get_input_hashes(self):
         input_hashes = []

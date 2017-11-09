@@ -68,8 +68,11 @@ def get_logged_in_user():
                         cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
                         answer = cipher.decrypt(transaction['answer'])
                         if answer == transaction['challenge_code']:
+                            for txn_output in transaction['outputs']:
+                                if txn_output['to'] != my_address:
+                                    to = txn_output['to']
                             user = {
-                                'balance': BU.get_wallet_balance(transaction['to']),
+                                'balance': BU.get_wallet_balance(to),
                                 'authenticated': True,
                                 'rid': transaction['rid'],
                                 'bulletin_secret': test['relationship']['bulletin_secret']
@@ -185,11 +188,14 @@ def login_status():
 def show_user():
     authed_user = get_logged_in_user()
     user = BU.get_transaction_by_rid(request.args['rid'], rid=True)
+    for output in user['outputs']:
+        if output['to'] != my_address:
+            to = output['to']
     dict_data = {
         'bulletin_secret': user['relationship']['bulletin_secret'],
         'requested_rid': user['rid'],
         'requester_rid': authed_user['rid'],
-        'to': user['to']
+        'to': to
     }
     data = json.dumps(dict_data)
     qr_code = make_qr(data)
@@ -198,7 +204,7 @@ def show_user():
         qrcode=qr_code,
         data=json.dumps(dict_data, indent=4),
         bulletin_secret=user['relationship']['bulletin_secret'],
-        to=user['to']
+        to=to
     )
 
 
@@ -293,8 +299,8 @@ def transaction():
             items = [item for item in items]
         transactions = []
         for txn in items:
-            print json.dumps(txn, indent=4)
             transaction = Transaction.from_dict(txn)
+            transaction.verify()
             transactions.append(transaction)
         with open('miner_transactions.json', 'a+') as f:
             try:
@@ -345,4 +351,4 @@ def get_wallet():
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
-app.run(host=config.get('host'), port=config.get('port'))
+app.run(host=config.get('host'), port=config.get('port'), threaded=True)

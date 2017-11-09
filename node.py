@@ -90,14 +90,35 @@ if __name__ == "__main__":
                 ],
                 inputs=[Input(x.transaction_signature) for x in block.transactions]
             ).generate_transaction()
-            block2 = BlockFactory.mine([txn,], coinbase, 1, difficulty, public_key, private_key)
-            block2.save()
+            block = BlockFactory.mine([txn], coinbase, 1, difficulty, public_key, private_key)
+            block.save()
+            txn = TransactionFactory(
+                public_key=public_key,
+                private_key=private_key,
+                fee=0.1,
+                outputs=[
+                    Output(
+                        to='17zdem7KTKQgNzxu5YChLTcTa9xMNyn4Dg',
+                        value=10
+                    ),
+                    Output(
+                        to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
+                        value=30.8
+                    )
+                ],
+                inputs=[Input(x.transaction_signature) for x in block.transactions]
+            ).generate_transaction()
+            block = BlockFactory.mine([txn], coinbase, 1, difficulty, public_key, private_key)
+            block.save()
+
+            
             print 'waiting for transactions...'
             blocks = BU.get_block_objs()
         else:
             block = BlockFactory.mine(transactions, coinbase, block_reward, difficulty, public_key, private_key)
-            block.save()
-            print 'waiting for transactions...'
-            blocks = BU.get_block_objs()
+            if block:
+                block.save()
+                print 'waiting for transactions...'
+                blocks = BU.get_block_objs()
 
         time.sleep(1)

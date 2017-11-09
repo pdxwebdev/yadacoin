@@ -68,17 +68,21 @@ class BU(object):  # Blockchain Utilities
         unspent_transactions = {}
         for block in blocks:
             for txn in block.get('transactions'):
-                txn['coinbase'] = True if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] else False
                 transaction = Transaction.from_dict(txn)
                 for output in transaction.outputs:
                     if output.to not in unspent_transactions:
                         unspent_transactions[output.to] = {}
                     unspent_transactions[output.to][transaction.transaction_signature] = transaction.to_dict()
-                for txn_input in transaction.inputs:
-                    input_txn = BU.get_transaction_by_id(txn_input.id, instance=True)
+
+                for input_txn in txn['inputs']:
+                    input_txn = BU.get_transaction_by_id(input_txn['id'], instance=True)
                     for output in input_txn.outputs:
-                        print input_txn.transaction_signature
-                        del unspent_transactions[output.to][input_txn.transaction_signature]
+                        for this_txn_output in transaction.outputs:
+                            if this_txn_output.to == output.to:
+                                try:
+                                    del unspent_transactions[output.to][input_txn.transaction_signature]
+                                except KeyError:
+                                    pass
 
         utxn = {}
         for i, x in unspent_transactions.items():
@@ -91,7 +95,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_unspent_transactions(cls, address):
-        return cls.get_unspent_transactions().get(address)
+        return cls.get_unspent_transactions().get(address, [])
 
     @classmethod
     def get_transactions(cls, raw=False):
