@@ -74,15 +74,12 @@ class BU(object):  # Blockchain Utilities
                         unspent_transactions[output.to] = {}
                     unspent_transactions[output.to][transaction.transaction_signature] = transaction.to_dict()
 
-                for input_txn in txn['inputs']:
-                    input_txn = BU.get_transaction_by_id(input_txn['id'], instance=True)
-                    for output in input_txn.outputs:
-                        for this_txn_output in transaction.outputs:
-                            if this_txn_output.to == output.to:
-                                try:
-                                    del unspent_transactions[output.to][input_txn.transaction_signature]
-                                except KeyError:
-                                    pass
+                address = P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex'))
+                for input_txn in transaction.inputs:
+                    try:
+                        del unspent_transactions[address][input_txn.id]
+                    except KeyError:
+                        pass
 
         utxn = {}
         for i, x in unspent_transactions.items():
