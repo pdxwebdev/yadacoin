@@ -56,7 +56,7 @@ class BlockFactory(object):
             for txn in transaction.inputs:
                 if txn.id in utxns_input_ids:
                     print "double spend attempt"
-                    return False
+                    return
         self.transactions = transaction_objs
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
@@ -125,7 +125,8 @@ class BlockFactory(object):
                     difficulty=difficulty)
                 break
             i += 1
-        return block.block
+        if block.block:
+            return block.block
 
 
 class Block(object):

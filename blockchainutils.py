@@ -73,8 +73,10 @@ class BU(object):  # Blockchain Utilities
                     if output.to not in unspent_transactions:
                         unspent_transactions[output.to] = {}
                     unspent_transactions[output.to][transaction.transaction_signature] = transaction.to_dict()
-
-                address = P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex'))
+        for block in blocks:
+            for txn in block.get('transactions'):
+                transaction = Transaction.from_dict(txn)
+                address = str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex')))
                 for input_txn in transaction.inputs:
                     try:
                         del unspent_transactions[address][input_txn.id]
