@@ -260,6 +260,12 @@ def show_users():
     rids = set([x['rid'] for x in users])
     return render_template('show-users.html', users=rids)
 
+@app.route('/get-rid')
+def get_rid():
+    my_bulletin_secret = TU.get_bulletin_secret()
+    rids = sorted([str(my_bulletin_secret), str(requeset.args.get('bulletin_secret'))], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    return json.dumps({'rid': rid})
 
 @app.route('/get-block/<index>')
 def get_block(index=None):
@@ -330,7 +336,6 @@ def bulletin():
 def get_graph_mobile():
     bulletin_secret = request.args.get('bulletin_secret')
     graph = Graph(bulletin_secret)
-
     return graph.to_json()
 
 
