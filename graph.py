@@ -14,6 +14,7 @@ from pbkdf2 import PBKDF2
 from blockchainutils import BU
 from transactionutils import TU
 from transaction import *
+from crypt import Crypt
 
 
 class Graph(object):
@@ -62,6 +63,27 @@ class Graph(object):
         # now search for our rid in requester and requested transactions
         possible_friends = BU.get_second_degree_transactions_by_rids(self.node.get('rid'))
         self.request_accept_or_request(possible_friends, self.node)
+
+        mutual_bulletin_secrets = []
+        for transaction in BU.get_transactions_by_rid([x.get('rid') for x in possible_friends], rid=True):
+            if 'relationship' in transaction:
+                if 'bulletin_secret' in transaction['relationship']:
+                    mutual_bulletin_secrets.append(transaction['relationship']['bulletin_secret'])
+
+        for block in BU.get_blocks():
+            for transaction in block['transactions']:
+                for bs in mutual_bulletin_secrets:
+                    try:
+                        crypt = Crypt(bs)
+                        decrypted = crypt.decrypt(transaction['relationship'])
+                        data = json.loads(decrypted)
+                        if 'postText' in data:
+                            transaction['relationship'] = data
+                            self.friend_posts = transaction
+                    except:
+                        pass
+
+
 
     def request_accept_or_request(self, possible_friends, node):
         possible_friends_indexed = {}
