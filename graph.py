@@ -64,8 +64,11 @@ class Graph(object):
         possible_friends = BU.get_second_degree_transactions_by_rids(self.node.get('rid'))
         self.request_accept_or_request(possible_friends, self.node)
 
+        to_check = [x.get('requester_rid') for x in possible_friends]
+        to_check.extend([x.get('requested_rid') for x in possible_friends])
+
         mutual_bulletin_secrets = []
-        for transaction in BU.get_transactions_by_rid([x.get('rid') for x in possible_friends], rid=True):
+        for transaction in BU.get_transactions_by_rid(to_check, rid=True):
             if 'relationship' in transaction:
                 if 'bulletin_secret' in transaction['relationship']:
                     mutual_bulletin_secrets.append(transaction['relationship']['bulletin_secret'])
@@ -74,7 +77,7 @@ class Graph(object):
             for transaction in block['transactions']:
                 for bs in mutual_bulletin_secrets:
                     try:
-                        crypt = Crypt(bs)
+                        crypt = Crypt(hashlib.sha256(bs).hexdigest())
                         decrypted = crypt.decrypt(transaction['relationship'])
                         data = json.loads(decrypted)
                         if 'postText' in data:
