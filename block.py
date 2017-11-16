@@ -47,17 +47,27 @@ class BlockFactory(object):
             coinbase=True
         ).generate_transaction()
         transaction_objs.append(coinbase_txn)
+
+        used = []
+        verified_txns = []
         for transaction in transaction_objs:
+            bad_txn = False
             address = str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex')))
-            utxns_input_ids = []
+            utxns = []
             for utxn in BU.get_wallet_unspent_transactions(address):
-                for input_txn in utxn['inputs']:
-                    utxns_input_ids.append(input_txn['id'])
-            for txn in transaction.inputs:
-                if txn.id in utxns_input_ids:
-                    print "double spend attempt"
-                    return
-        self.transactions = transaction_objs
+                utxns.append(utxn['id'])
+
+            for input_txn in transaction.inputs:
+                if input_txn.id not in utxns or (transaction.public_key, input_txn.id) in used:
+                    print json.dumps(transaction.to_dict(), indent=4)
+                    bad_txn = True
+                used.append((transaction.public_key, input_txn.id))
+
+            if not bad_txn:
+                print transaction
+                verified_txns.append(transaction)
+
+        self.transactions = verified_txns
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
         self.hash = hashlib.sha256(
@@ -115,7 +125,7 @@ class BlockFactory(object):
                 # create the block with the reward
                 # gather friend requests from the network
 
-                block = cls(
+                block_factory = cls(
                     transactions=transactions,
                     coinbase=coinbase,
                     block_reward=block_reward,
@@ -125,8 +135,10 @@ class BlockFactory(object):
                     difficulty=difficulty)
                 break
             i += 1
-        if block.block:
-            return block.block
+        try:
+            return getattr(block_factory, 'block')
+        except:
+            pass
 
 
 class Block(object):
