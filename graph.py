@@ -82,7 +82,7 @@ class Graph(object):
                         data = json.loads(decrypted)
                         if 'postText' in data:
                             transaction['relationship'] = data
-                            self.friend_posts = transaction
+                            self.friend_posts.append(transaction)
                     except:
                         pass
 
