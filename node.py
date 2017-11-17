@@ -103,7 +103,7 @@ if __name__ == "__main__":
                     ),
                     Output(
                         to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
-                        value=29.8
+                        value=30.8
                     )
                 ],
                 inputs=[Input(x.transaction_signature) for x in block.transactions]
@@ -121,7 +121,7 @@ if __name__ == "__main__":
                     ),
                     Output(
                         to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
-                        value=19.7
+                        value=21.7
                     )
                 ],
                 inputs=[Input(x.transaction_signature) for x in block.transactions]
