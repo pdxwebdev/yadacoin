@@ -103,7 +103,25 @@ if __name__ == "__main__":
                     ),
                     Output(
                         to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
-                        value=30.8
+                        value=29.8
+                    )
+                ],
+                inputs=[Input(x.transaction_signature) for x in block.transactions]
+            ).generate_transaction()
+            block = BlockFactory.mine([txn], coinbase, 1, difficulty, public_key, private_key)
+            block.save()
+            txn = TransactionFactory(
+                public_key=public_key,
+                private_key=private_key,
+                fee=0.1,
+                outputs=[
+                    Output(
+                        to='17QMNym1PoWd2wM3JVih83HMStv55qoE8E',
+                        value=10
+                    ),
+                    Output(
+                        to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
+                        value=19.7
                     )
                 ],
                 inputs=[Input(x.transaction_signature) for x in block.transactions]
