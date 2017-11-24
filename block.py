@@ -24,16 +24,12 @@ db = mongo_client.yadacoin
 
 
 class BlockFactory(object):
-    def __init__(self, transactions, coinbase, public_key, private_key, answer, difficulty, next_difficulty):
+    def __init__(self, transactions, coinbase, public_key, private_key):
         blocks = BU.get_blocks()
         self.index = blocks.count()
         self.prev_hash = blocks[blocks.count()-1]['hash'] if blocks.count() > 0 else ''
-        self.nonce = str(uuid4())
         self.public_key = public_key
         self.private_key = private_key
-        self.answer = answer
-        self.difficulty = difficulty
-        self.next_difficulty = next_difficulty
 
         transaction_objs = []
         fee_sum = 0
@@ -77,29 +73,22 @@ class BlockFactory(object):
         self.transactions = verified_txns
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
-        self.hash = hashlib.sha256(
-            str(self.index) +
-            self.prev_hash +
-            self.nonce +
-            self.merkle_root +
-            self.answer + 
-            self.difficulty +
-            self.next_difficulty
-        ).digest().encode('hex')
-        self.signature = BU.generate_signature(self.hash)
         self.block = Block(
             block_index=self.index,
             prev_hash=self.prev_hash,
-            nonce=self.nonce,
             transactions=self.transactions,
-            block_hash=self.hash,
             merkle_root=self.merkle_root,
-            answer=self.answer,
-            difficulty=self.difficulty,
-            next_difficulty=self.next_difficulty,
-            public_key=self.public_key,
-            signature=self.signature
+            public_key=self.public_key
         )
+
+    @classmethod
+    def generate_hash(cls, block, nonce):
+        return hashlib.sha256(
+            str(block.index) +
+            block.prev_hash +
+            str(nonce) +
+            block.merkle_root
+        ).hexdigest()
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -119,49 +108,32 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def mine(cls, transactions, coinbase, difficulty, public_key, private_key):
-        i = 0
+    def mine(cls, transactions, coinbase, difficulty, public_key, private_key, callback=None):
         blocks = BU.get_block_objs()
-        start = time.time()
         import itertools, sys
         spinner = itertools.cycle(['-', '/', '|', '\\'])
+        block_factory = cls(
+            transactions=transactions,
+            coinbase=coinbase,
+            public_key=public_key,
+            private_key=private_key)
+        nonce = 0
         while 1:
-            sys.stdout.write(spinner.next())  # write the next character
-            sys.stdout.flush()                # flush stdout buffer (actual character display)
-            sys.stdout.write('\b')            # erase the last written char
-            if blocks:
-                prev_nonce = blocks[-1].nonce
-            else:
-                prev_nonce = 'genesis block'
-            hash_test = hashlib.sha256("%s%s" % (prev_nonce, i)).digest().encode('hex')
+            if callback:
+                callback()
+            hash_test = cls.generate_hash(block_factory.block, str(nonce))
             # print hash_test
             if hash_test.startswith(difficulty):
-                if time.time() - start < 60:
-                    next_difficulty = difficulty + '0'
-                elif time.time() - start > 240:
-                    next_difficulty = difficulty[:-1]
-                else:
-                    next_difficulty = difficulty
-
-                print 'block discovered: {previous nonce:', prev_nonce + ',', 'interation:', str(i) + ',', 'hash: ', hashlib.sha256("%s%s" % (prev_nonce, i)).hexdigest()
                 # create the block with the reward
                 # gather friend requests from the network
-                block_factory = cls(
-                    transactions=transactions,
-                    coinbase=coinbase,
-                    public_key=public_key,
-                    private_key=private_key,
-                    answer=hashlib.sha256("%s%s" % (prev_nonce, i)).hexdigest(),
-                    difficulty=difficulty,
-                    next_difficulty=next_difficulty)
-
+                block = block_factory.block
+                block.hash = hash_test
+                block.nonce = nonce
+                block.signature = BU.generate_signature(hash_test)
                 start = time.time()
                 break
-            i += 1
-        try:
-            return getattr(block_factory, 'block')
-        except:
-            pass
+            nonce += 1
+        return block
 
 
 class Block(object):
@@ -173,9 +145,6 @@ class Block(object):
         transactions='',
         block_hash='',
         merkle_root='',
-        answer='',
-        difficulty='',
-        next_difficulty='',
         public_key='',
         signature=''
     ):
@@ -187,12 +156,8 @@ class Block(object):
         self.set_merkle_root(txn_hashes)
         self.merkle_root = merkle_root
         self.hash = block_hash
-        self.answer = answer
-        self.difficulty = difficulty
-        self.next_difficulty = next_difficulty
         self.public_key = public_key
         self.signature = signature
-        self.verify()
 
     @classmethod
     def from_dict(cls, block):
@@ -210,9 +175,6 @@ class Block(object):
             transactions=transactions,
             block_hash=block.get('hash'),
             merkle_root=block.get('merkleRoot'),
-            answer=block.get('answer'),
-            difficulty=block.get('difficulty'),
-            next_difficulty=block.get('nextDifficulty'),
             signature=block.get('id')
         )
 
@@ -229,11 +191,8 @@ class Block(object):
             hashtest = hashlib.sha256(
                 str(self.index) +
                 self.prev_hash +
-                self.nonce +
-                self.merkle_root +
-                self.answer +
-                self.difficulty +
-                self.next_difficulty).hexdigest()
+                str(self.nonce) +
+                self.merkle_root).hexdigest()
             if self.hash != hashtest:
                 raise BaseException('Invalid block')
         except:
@@ -263,11 +222,6 @@ class Block(object):
 
         if fee_sum != (coinbase_sum - reward):
             raise BaseException("Coinbase output total does not equal block reward + transaction fees")
-
-        latest_block = db.blocks.find({'index': self.index - 1}).limit(1).sort([('$natural',-1)])
-        if latest_block.count():
-            if latest_block[0]['nextDifficulty'] != self.difficulty:
-                raise BaseException("Block difficulty does not match difficulty set by previous block")
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -299,9 +253,6 @@ class Block(object):
             'transactions': [x.to_dict() for x in self.transactions],
             'hash': self.hash,
             'merkleRoot': self.merkle_root,
-            'difficulty': self.difficulty,
-            'nextDifficulty': self.next_difficulty,
-            'answer': self.answer,
             'id': self.signature
         }
 

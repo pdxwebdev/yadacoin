@@ -3,6 +3,9 @@ import hashlib
 import json
 import requests
 import time
+import re
+import itertools
+import sys
 from uuid import uuid4
 from ecdsa import SigningKey, SECP256k1
 from block import Block, BlockFactory
@@ -15,6 +18,12 @@ from transaction import TransactionFactory
 
 def verify_block(block):
     pass
+
+spinner = itertools.cycle(['-', '/', '|', '\\'])
+def output():
+    sys.stdout.write(spinner.next())  # write the next character
+    sys.stdout.flush()                # flush stdout buffer (actual character display)
+    sys.stdout.write('\b')            # erase the last written char
 
 def verify_transaction(transaction):
     signature = transaction.signature
@@ -43,7 +52,7 @@ if __name__ == "__main__":
 
     blocks = BU.get_block_objs()  # verifies as the blocks are created so no need to call block.verify() on each block
     if len(blocks):
-        difficulty = blocks[-1].next_difficulty
+        difficulty = re.search(r'^[0]+', blocks[-1].hash).group(0)
     else:
         difficulty = '000'
     print '//// YADA COIN MINER ////'
@@ -56,6 +65,7 @@ if __name__ == "__main__":
                 f = open('miner_transactions.json', 'w+')
                 f.write('{}')
                 f.close()
+
             with open('miner_transactions.json', 'r+') as f:
                 transactions_parsed = json.loads(f.read())
                 if transactions_parsed:
@@ -67,19 +77,30 @@ if __name__ == "__main__":
                     transaction = Transaction.from_dict(txn)
                     transactions.append(transaction)
 
+            start = time.time()
             if not transactions and len(blocks):
-                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key)
+                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output)
                 if block:
                     block.save()
             elif not transactions and not len(blocks):
-                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key)
+                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output)
                 if block:
                     block.save()
             else:
-                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key)
+                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output)
                 if block:
                     block.save()
+
+            print 'block discovered: {nonce:', str(block.nonce) + ',', 'hash: ', block.hash
+
+            if time.time() - start < 60:
+                difficulty = difficulty + '0'
+            elif time.time() - start > 240:
+                difficulty = difficulty[:-1]
+            else:
+                difficulty = difficulty
+
             blocks = BU.get_block_objs()
-            difficulty = block.next_difficulty
+
     elif args.runtype == 'block_getter':
         pass
