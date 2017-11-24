@@ -79,6 +79,24 @@ def get_logged_in_user():
                             }
     return user if user else {'authenticated': False}
 
+@app.route('/reset')
+def reset():
+    with open('blockchain.json', 'w') as f:
+        f.write(json.dumps({'blocks':[]},indent=4))
+    return 'ok'
+
+@app.route('/blockchain')
+def get_blockchain():
+    with open('blockchain.json') as f:
+        data = f.read()
+    if request.args.get('poplastblock'):
+        blocks = json.loads(data)
+        blocks['blocks'].pop()
+        with open('blockchain.json', 'w') as f:
+            f.write(json.dumps(blocks, indent=4))
+        with open('blockchain.json') as f:
+            data = f.read()
+    return json.dumps(json.loads(data), indent=4)
 
 @app.route('/')
 def index():  # demo site
@@ -356,4 +374,4 @@ def get_wallet():
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
-app.run(host=config.get('host'), port=config.get('port'), threaded=True)
+#app.run(host=config.get('host'), port=config.get('port'), threaded=True)

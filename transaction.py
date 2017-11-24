@@ -211,7 +211,7 @@ class Transaction(object):
             total_output += float(txn.value)
         total = float(total_output) + float(self.fee)
         if str(total_input) != str(total):
-            raise BaseException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), blah))
+            raise BaseException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     def get_input_hashes(self):
         input_hashes = []
