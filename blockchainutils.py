@@ -5,6 +5,7 @@ import argparse
 import qrcode
 import base64
 
+from pymongo import MongoClient
 from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey
@@ -16,12 +17,13 @@ from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
+mongo_client = MongoClient()
+db = mongo_client.yadacoin
 
 class BU(object):  # Blockchain Utilities
     @classmethod
     def get_blocks(cls):
-        with open('blockchain.json', 'r') as f:
-            blocks = json.loads(f.read()).get('blocks')
+        blocks = db.blocks.find().sort([('index',1)])
         return blocks
 
     @classmethod
@@ -34,8 +36,7 @@ class BU(object):  # Blockchain Utilities
     def get_block_objs(cls):
         from block import Block
         from transaction import Transaction, Input, Crypt
-        with open('blockchain.json', 'r') as f:
-            blocks = json.loads(f.read()).get('blocks')
+        blocks = cls.get_blocks()
         block_objs = []
         for block in blocks:
             block_objs.append(Block.from_dict(block))
@@ -63,8 +64,7 @@ class BU(object):  # Blockchain Utilities
     def get_unspent_transactions(cls):
         from block import Block
         from transaction import Transaction, Input, Crypt
-        with open('blockchain.json', 'r') as f:
-            blocks = json.loads(f.read()).get('blocks')
+        blocks = cls.get_blocks()
         unspent_transactions = {}
         for block in blocks:
             for txn in block.get('transactions'):
@@ -244,3 +244,26 @@ class BU(object):  # Blockchain Utilities
                         return Transaction.from_dict(transaction)
                     else:
                         return transaction
+
+    @classmethod
+    def get_block_reward(cls, block=None):
+        try:
+            with open('block_rewards.json', 'r') as f:
+                block_rewards = json.loads(f.read())
+        except:
+            raise BaseException("Block reward file not found")
+
+        blocks = [x for x in cls.get_blocks()]
+
+        for t, block_reward in enumerate(block_rewards):
+            if block:
+                if block.index >= int(block_reward['block']) and block.index < int(block_rewards[t+1]['block']):
+                    break
+            else:
+                if len(blocks) == 0:
+                    break
+                if (blocks[-1]['index'] + 1) >= int(block_reward['block']) and (blocks[-1]['index'] + 1) < int(block_rewards[t+1]['block']):
+                    break
+
+        return float(block_reward['reward'])
+

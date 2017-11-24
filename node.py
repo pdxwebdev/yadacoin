@@ -11,25 +11,13 @@ from blockchainutils import BU
 from transactionutils import TU
 from transaction import TransactionFactory
 
+
+
 def verify_block(block):
     pass
 
 def verify_transaction(transaction):
     signature = transaction.signature
-
-def generate_block(blocks, coinbase, block_reward, transactions):
-    block = {
-        'index': len(blocks),
-        'prevHash': blocks[len(blocks)-1]['hash'] if len(blocks) > 0 else '',
-        'reward': {
-            'to': coinbase,
-            'value': block_reward
-        },
-        'nonce': str(uuid4()),
-        'transactions': transactions
-    }
-    block['hash'] = hashlib.sha256(json.dumps(block)).digest().encode('hex')
-    return block
 
 if __name__ == "__main__":
 
@@ -52,91 +40,46 @@ if __name__ == "__main__":
 
     # proof of work time!
     coinbase = config.get('coinbase')
-    block_reward = config.get('block_reward')
-    difficulty = config.get('difficulty')
 
     blocks = BU.get_block_objs()  # verifies as the blocks are created so no need to call block.verify() on each block
-    print 'waiting for transactions...'
-    while 1:
-        with open('miner_transactions.json', 'r+') as f:
-            transactions_parsed = json.loads(f.read())
-            if transactions_parsed:
-                f.seek(0)
-                f.write('[]')
-                f.truncate()
-            transactions = []
-            for txn in transactions_parsed:
-                transaction = Transaction.from_dict(txn)
-                transactions.append(transaction)
+    if len(blocks):
+        difficulty = blocks[-1].next_difficulty
+    else:
+        difficulty = '000'
+    print '//// YADA COIN MINER ////'
+    print "Welcome!! Mining beginning with difficulty of:", difficulty
+    if args.runtype == 'node':
+        while 1:
+            try:
+                open('miner_transactions.json', 'r')
+            except:
+                f = open('miner_transactions.json', 'w+')
+                f.write('{}')
+                f.close()
+            with open('miner_transactions.json', 'r+') as f:
+                transactions_parsed = json.loads(f.read())
+                if transactions_parsed:
+                    f.seek(0)
+                    f.write('[]')
+                    f.truncate()
+                transactions = []
+                for txn in transactions_parsed:
+                    transaction = Transaction.from_dict(txn)
+                    transactions.append(transaction)
 
-        if not transactions and len(blocks):
-            pass
-        elif not transactions and not len(blocks):
-            block = BlockFactory.mine(transactions, coinbase, 50, difficulty, public_key, private_key)
-            block.save()
-            txn = TransactionFactory(
-                public_key=public_key,
-                private_key=private_key,
-                fee=0.1,
-                outputs=[
-                    Output(
-                        to='1CHVGmXNZgznyYVHzs64WcDVYn3aV8Gj4u',
-                        value=10
-                    ),
-                    Output(
-                        to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
-                        value=39.9
-                    )
-                ],
-                inputs=[Input(x.transaction_signature) for x in block.transactions]
-            ).generate_transaction()
-            block = BlockFactory.mine([txn], coinbase, 1, difficulty, public_key, private_key)
-            block.save()
-            txn = TransactionFactory(
-                public_key=public_key,
-                private_key=private_key,
-                fee=0.1,
-                outputs=[
-                    Output(
-                        to='17zdem7KTKQgNzxu5YChLTcTa9xMNyn4Dg',
-                        value=10
-                    ),
-                    Output(
-                        to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
-                        value=30.8
-                    )
-                ],
-                inputs=[Input(x.transaction_signature) for x in block.transactions]
-            ).generate_transaction()
-            block = BlockFactory.mine([txn], coinbase, 1, difficulty, public_key, private_key)
-            block.save()
-            txn = TransactionFactory(
-                public_key=public_key,
-                private_key=private_key,
-                fee=0.1,
-                outputs=[
-                    Output(
-                        to='17QMNym1PoWd2wM3JVih83HMStv55qoE8E',
-                        value=10
-                    ),
-                    Output(
-                        to='14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ',
-                        value=21.7
-                    )
-                ],
-                inputs=[Input(x.transaction_signature) for x in block.transactions]
-            ).generate_transaction()
-            block = BlockFactory.mine([txn], coinbase, 1, difficulty, public_key, private_key)
-            block.save()
-
-            
-            print 'waiting for transactions...'
+            if not transactions and len(blocks):
+                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key)
+                if block:
+                    block.save()
+            elif not transactions and not len(blocks):
+                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key)
+                if block:
+                    block.save()
+            else:
+                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key)
+                if block:
+                    block.save()
             blocks = BU.get_block_objs()
-        else:
-            block = BlockFactory.mine(transactions, coinbase, block_reward, difficulty, public_key, private_key)
-            if block:
-                block.save()
-                print 'waiting for transactions...'
-                blocks = BU.get_block_objs()
-
-        time.sleep(1)
+            difficulty = block.next_difficulty
+    elif args.runtype == 'block_getter':
+        pass
