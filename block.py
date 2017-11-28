@@ -22,7 +22,7 @@ from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 class BlockFactory(object):
     def __init__(self, transactions, coinbase, public_key, private_key):
         blocks = BU.get_blocks()
-        self.index = BU.get_latest_block().get('index', 0)
+        self.index = BU.get_latest_block().get('index', -1) + 1
         self.prev_hash = blocks[blocks.count()-1]['hash'] if blocks.count() > 0 else ''
         self.public_key = public_key
         self.private_key = private_key
@@ -129,7 +129,7 @@ class BlockFactory(object):
                 block.signature = BU.generate_signature(hash_test)
                 block.save()
                 status.value = 'mined'
-                current_index.value = block.index
+                current_index.value = block.index + 1
                 break
             if current_index.value > initial_current_index:
                 status.value = 'exited'
