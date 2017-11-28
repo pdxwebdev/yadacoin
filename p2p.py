@@ -26,20 +26,19 @@ def connect(sid, environ):
 def newblock(sid, data):
     print("new block ", data)
     block = data
-
-    if BU.get_latest_block().count():
-        biggest_index = BU.get_latest_block()[0]['index']
+    latest_block = BU.get_latest_block()
+    if latest_block:
+        biggest_index = latest_block.get('index')
     else:
         biggest_index = -1
     if biggest_index == block['index']:
         # implement tie breaker with 51% vote
-        pass
+        print "our chains are the same size, voting not yet implemented"
     elif biggest_index < block['index']:
         collection.insert(block)
         print 'inserting new externally sourced block!'
     else:
-        print 'my chain is longer!', BU.get_latest_block()[0]['index'], blocks_sorted[-1]['index']
-        return
+        print 'my chain is longer!', biggest_index, block['index']
     print 'on_getblocksreply', 'done!'
 
 @sio.on('getblocks', namespace='/chat')

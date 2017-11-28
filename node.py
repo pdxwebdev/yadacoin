@@ -36,8 +36,8 @@ class ChatNamespace(BaseNamespace):
             blocks.append(block)
 
         blocks_sorted = sorted([x.to_dict() for x in blocks], key=lambda x: x['index'])
-        if BU.get_latest_block().count():
-            biggest_index = BU.get_latest_block()[0]['index']
+        if len(BU.get_latest_block()):
+            biggest_index = BU.get_latest_block().get('index')
         else:
             biggest_index = -1
         if blocks_sorted:
@@ -73,7 +73,7 @@ def verify_transaction(transaction):
 def new_block_checker(current_index):
     while 1:
         try:
-            current_index.value = BU.get_latest_block()[0]['index']
+            current_index.value = BU.get_latest_block().get('index')
         except:
             pass
         time.sleep(1)
@@ -117,8 +117,8 @@ if __name__ == "__main__":
             chat_namespace.emit('getblocks')
         socketIO.wait(seconds=1)
         block = BU.get_latest_block()
-        if block.count():
-            latest_block_index = Value('i', int(block[0]['index']))
+        if block:
+            latest_block_index = Value('i', int(block['index']))
         else:
             latest_block_index = Value('i', 0)
         p = Process(target=new_block_checker, args=(latest_block_index,))
@@ -148,7 +148,7 @@ if __name__ == "__main__":
             p2.start()
             p2.join()
 
-            block = BU.get_latest_block()[0]
+            block = BU.get_latest_block()
             chat_namespace.emit('new block', block)
             if status.value == 'mined':
                 print 'block discovered: {nonce:', str(block['nonce']) + ',', 'hash: ', block['hash'] + '}'

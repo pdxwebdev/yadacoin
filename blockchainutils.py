@@ -26,7 +26,11 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_latest_block(cls):
-        return cls.collection.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
+        res = cls.collection.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
+        if res.count():
+            return res[0]
+        else:
+            return {}
 
     @classmethod
     def get_block_by_id(cls, id):
