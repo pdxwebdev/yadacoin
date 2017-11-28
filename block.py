@@ -22,7 +22,7 @@ from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 class BlockFactory(object):
     def __init__(self, transactions, coinbase, public_key, private_key):
         blocks = BU.get_blocks()
-        self.index = blocks.count()
+        self.index = BU.get_latest_block().get('index', 0)
         self.prev_hash = blocks[blocks.count()-1]['hash'] if blocks.count() > 0 else ''
         self.public_key = public_key
         self.private_key = private_key
