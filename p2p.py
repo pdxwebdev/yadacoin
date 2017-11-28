@@ -7,7 +7,7 @@ from blockchainutils import BU
 
 
 mongo_client = MongoClient()
-db = mongo_client.yadacointest
+db = mongo_client.yadacoin
 collection = db.blocks
 BU.collection = collection
 sio = socketio.Server()

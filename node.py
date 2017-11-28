@@ -19,7 +19,7 @@ from pymongo import MongoClient
 
 
 mongo_client = MongoClient()
-db = mongo_client.yadacointest
+db = mongo_client.yadacoin
 collection = db.blocks
 BU.collection = collection
 Block.collection = collection
@@ -40,14 +40,18 @@ class ChatNamespace(BaseNamespace):
             biggest_index = BU.get_latest_block()[0]['index']
         else:
             biggest_index = -1
-        if biggest_index < blocks_sorted[-1]['index']:
+        if blocks_sorted:
+            biggest_index_incoming = blocks_sorted[-1]['index']
+        else:
+            biggest_index_incoming = -1
+        if blocks_sorted and biggest_index < biggest_index_incoming:
             collection.remove({})
             print 'truncating!'
             for block in blocks_sorted:
                 collection.insert(block)
                 print 'inserting!'
         else:
-            print 'my chain is longer!', BU.get_latest_block()[0]['index'], blocks_sorted[-1]['index']
+            print 'my chain is longer!', biggest_index, biggest_index_incoming
             return
         print 'on_getblocksreply', 'done!'
 
