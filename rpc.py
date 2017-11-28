@@ -16,8 +16,12 @@ from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from blockchainutils import BU
 from transactionutils import TU
 from transaction import *
+from block import Block
 from graph import Graph
+from pymongo import MongoClient
 
+mongo_client = MongoClient()
+db = mongo_client.yadacoin
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
@@ -285,14 +289,28 @@ def get_rid():
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
     return json.dumps({'rid': rid})
 
-@app.route('/get-block/<index>')
-def get_block(index=None):
-    return json.dumps({'hi':index})
+@app.route('/get-block')
+def get_block():
+    blocks = db.blocks.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
+    return json.dumps(blocks[0] if blocks.count() else {}, indent=4), 404
+
+
+@app.route('/post-block', methods=['POST'])
+def post_block():
+    block = Block.from_dict(request.json)
+    block.verify()
+    my_latest_block = BU.get_latest_block()
+    if my_latest_block[0].get('index') - block.index == 1:
+        block.save()
+        return '{"status": "ok"}'
+    else:
+        return '{"status": "error"}', 400
 
 
 @app.route('/get-latest-block')
 def get_latest_block():
-    return json.dumps({'hi':'latest block'})
+    blocks = BU.get_latest_block()
+    return json.dumps(blocks[0], indent=4)
 
 
 @app.route('/get-chain')
@@ -306,11 +324,6 @@ def get_peers():
     with open('peers.json') as f:
         peers = f.read()
     return json.dumps({'peers': peers})
-
-
-@app.route('/post-block', methods=['POST'])
-def post_block():
-    return json.dumps(request.get_json())
 
 
 @app.route('/transaction', methods=['GET', 'POST'])
@@ -374,4 +387,4 @@ def get_wallet():
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
-#app.run(host=config.get('host'), port=config.get('port'), threaded=True)
+app.run(host=config.get('host'), port=config.get('port'), threaded=True)

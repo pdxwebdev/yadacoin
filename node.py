@@ -7,6 +7,8 @@ import re
 import itertools
 import sys
 from uuid import uuid4
+from multiprocessing import Process, Value, Array
+from socketIO_client import SocketIO, BaseNamespace
 from ecdsa import SigningKey, SECP256k1
 from block import Block, BlockFactory
 from transaction import Transaction, Input, Output
@@ -15,6 +17,12 @@ from transactionutils import TU
 from transaction import TransactionFactory
 
 
+class ChatNamespace(BaseNamespace):
+    def on_reply(self, *args):
+        print 'on_chat_response', args
+
+    def on_error(self, event, *args):
+        print 'error'
 
 def verify_block(block):
     pass
@@ -27,6 +35,14 @@ def output():
 
 def verify_transaction(transaction):
     signature = transaction.signature
+
+def new_block_checker(current_index):
+    while 1:
+        try:
+            current_index.value = BU.get_latest_block()[0]['index']
+        except:
+            pass
+        time.sleep(1)
 
 if __name__ == "__main__":
 
@@ -58,6 +74,20 @@ if __name__ == "__main__":
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     if args.runtype == 'node':
+        with open('peers.json') as f:
+            peers = json.loads(f.read())
+        for peer in peers:
+            socketIO = SocketIO(peer['ip'], 8000)
+            chat_namespace = socketIO.define(ChatNamespace, '/chat')
+            chat_namespace.emit('chat message', block)
+
+        block = BU.get_latest_block()
+        if block.count():
+            latest_block_index = Value('i', int(block[0]['index']))
+        else:
+            latest_block_index = Value('i', 0)
+        p = Process(target=new_block_checker, args=(latest_block_index,))
+        p.start()
         while 1:
             try:
                 open('miner_transactions.json', 'r')
@@ -78,27 +108,24 @@ if __name__ == "__main__":
                     transactions.append(transaction)
 
             start = time.time()
-            if not transactions and len(blocks):
-                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output)
-                if block:
-                    block.save()
-            elif not transactions and not len(blocks):
-                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output)
-                if block:
-                    block.save()
-            else:
-                block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output)
-                if block:
-                    block.save()
+            status = Array('c', 'asldkjf')
+            p2 = Process(target=BlockFactory.mine, args=(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status))
+            p2.start()
+            p2.join()
 
-            print 'block discovered: {nonce:', str(block.nonce) + ',', 'hash: ', block.hash
+            block = BU.get_latest_block()[0]
 
-            if time.time() - start < 60:
-                difficulty = difficulty + '0'
-            elif time.time() - start > 240:
-                difficulty = difficulty[:-1]
+            if status.value == 'mined':
+                print 'block discovered: {nonce:', str(block['nonce']) + ',', 'hash: ', block['hash'] + '}'
+                if time.time() - start < 60:
+                    difficulty = difficulty + '0'
+                elif time.time() - start > 240:
+                    difficulty = difficulty[:-1]
+                else:
+                    difficulty = difficulty
             else:
-                difficulty = difficulty
+                print 'block chain updated, restarting mining from latest block'
+                difficulty = re.search(r'^[0]+', block['hash']).group(0)
 
             blocks = BU.get_block_objs()
 

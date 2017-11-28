@@ -7,7 +7,6 @@ import base64
 import time
 
 from decimal import Decimal
-from pymongo import MongoClient
 from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey, VerifyingKey
@@ -18,9 +17,6 @@ from transaction import TransactionFactory, Transaction, Output
 from blockchainutils import BU
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-
-mongo_client = MongoClient()
-db = mongo_client.yadacoin
 
 
 class BlockFactory(object):
@@ -108,7 +104,10 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def mine(cls, transactions, coinbase, difficulty, public_key, private_key, callback=None):
+    def mine(cls, transactions, coinbase, difficulty, public_key, private_key, callback=None, current_index=None, status=None):
+        from pymongo import MongoClient
+        mongo_client = MongoClient()
+        db = mongo_client.yadacoin
         blocks = BU.get_block_objs()
         import itertools, sys
         spinner = itertools.cycle(['-', '/', '|', '\\'])
@@ -117,6 +116,7 @@ class BlockFactory(object):
             coinbase=coinbase,
             public_key=public_key,
             private_key=private_key)
+        initial_current_index = current_index.value
         nonce = 0
         while 1:
             if callback:
@@ -130,10 +130,14 @@ class BlockFactory(object):
                 block.hash = hash_test
                 block.nonce = nonce
                 block.signature = BU.generate_signature(hash_test)
-                start = time.time()
+                block.save()
+                status.value = 'mined'
+                current_index.value = block.index
+                break
+            if current_index.value > initial_current_index:
+                status.value = 'exited'
                 break
             nonce += 1
-        return block
 
 
 class Block(object):
@@ -188,11 +192,7 @@ class Block(object):
             raise
 
         try:
-            hashtest = hashlib.sha256(
-                str(self.index) +
-                self.prev_hash +
-                str(self.nonce) +
-                self.merkle_root).hexdigest()
+            hashtest = BlockFactory.generate_hash(self, str(self.nonce))
             if self.hash != hashtest:
                 raise BaseException('Invalid block')
         except:
@@ -241,6 +241,9 @@ class Block(object):
             self.verify_merkle_root = hashes[0]
 
     def save(self):
+        from pymongo import MongoClient
+        mongo_client = MongoClient()
+        db = mongo_client.yadacoin
         self.verify()
         db.blocks.insert(self.to_dict())
 

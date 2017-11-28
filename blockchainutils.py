@@ -5,7 +5,6 @@ import argparse
 import qrcode
 import base64
 
-from pymongo import MongoClient
 from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey
@@ -17,14 +16,22 @@ from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
-mongo_client = MongoClient()
-db = mongo_client.yadacoin
 
 class BU(object):  # Blockchain Utilities
     @classmethod
     def get_blocks(cls):
+        from pymongo import MongoClient
+        mongo_client = MongoClient()
+        db = mongo_client.yadacoin
         blocks = db.blocks.find().sort([('index',1)])
         return blocks
+
+    @classmethod
+    def get_latest_block(cls):
+        from pymongo import MongoClient
+        mongo_client = MongoClient()
+        db = mongo_client.yadacoin
+        return db.blocks.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
 
     @classmethod
     def get_block_by_id(cls, id):
