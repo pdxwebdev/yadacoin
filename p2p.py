@@ -8,7 +8,8 @@ from blockchainutils import BU
 
 mongo_client = MongoClient()
 db = mongo_client.yadacointest
-BU.collection = db.blocks
+collection = db.blocks
+BU.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
 
