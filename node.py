@@ -20,12 +20,36 @@ from pymongo import MongoClient
 
 mongo_client = MongoClient()
 db = mongo_client.yadacointest
-BU.collection = db.blocks
-Block.collection = db.blocks
+collection = db.blocks
+BU.collection = collection
+Block.collection = collection
 
 class ChatNamespace(BaseNamespace):
     def on_reply(self, *args):
         print 'on_chat_response', args
+
+    def on_getblocksreply(self, *args):
+        blocks = []
+        for block_dict in args[0]:
+            block = Block.from_dict(block_dict)
+            block.verify()
+            blocks.append(block)
+
+        blocks_sorted = sorted([x.to_dict() for x in blocks], key=lambda x: x['index'])
+        if BU.get_latest_block().count():
+            biggest_index = BU.get_latest_block()[0]['index']
+        else:
+            biggest_index = -1
+        if biggest_index < blocks_sorted[-1]['index']:
+            collection.remove({})
+            print 'truncating!'
+            for block in blocks_sorted:
+                collection.insert(block)
+                print 'inserting!'
+        else:
+            print 'my chain is longer!', BU.get_latest_block()[0]['index'], blocks_sorted[-1]['index']
+            return
+        print 'on_getblocksreply', 'done!'
 
     def on_error(self, event, *args):
         print 'error'
@@ -86,7 +110,8 @@ if __name__ == "__main__":
         for peer in peers:
             socketIO = SocketIO(peer['ip'], 8000)
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
-
+            chat_namespace.emit('getblocks')
+        socketIO.wait(seconds=1)
         block = BU.get_latest_block()
         if block.count():
             latest_block_index = Value('i', int(block[0]['index']))
