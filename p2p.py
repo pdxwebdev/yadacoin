@@ -24,7 +24,22 @@ def connect(sid, environ):
 @sio.on('new block', namespace='/chat')
 def newblock(sid, data):
     print("new block ", data)
-    sio.emit('reply', room=sid, namespace='/chat')
+    block = data
+
+    if BU.get_latest_block().count():
+        biggest_index = BU.get_latest_block()[0]['index']
+    else:
+        biggest_index = -1
+    if biggest_index == block['index']:
+        # implement tie breaker with 51% vote
+        pass
+    elif biggest_index < block['index']:
+        collection.insert(block)
+        print 'inserting new externally sourced block!'
+    else:
+        print 'my chain is longer!', BU.get_latest_block()[0]['index'], blocks_sorted[-1]['index']
+        return
+    print 'on_getblocksreply', 'done!'
 
 @sio.on('getblocks', namespace='/chat')
 def getblocks(sid):
