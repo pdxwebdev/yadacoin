@@ -18,20 +18,15 @@ from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 
 class BU(object):  # Blockchain Utilities
+    collection = None
     @classmethod
     def get_blocks(cls):
-        from pymongo import MongoClient
-        mongo_client = MongoClient()
-        db = mongo_client.yadacoin
-        blocks = db.blocks.find().sort([('index',1)])
+        blocks = cls.collection.find().sort([('index',1)])
         return blocks
 
     @classmethod
     def get_latest_block(cls):
-        from pymongo import MongoClient
-        mongo_client = MongoClient()
-        db = mongo_client.yadacoin
-        return db.blocks.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
+        return cls.collection.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
 
     @classmethod
     def get_block_by_id(cls, id):

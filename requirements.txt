@@ -17,5 +17,7 @@ python-bitcoinlib==0.8.0
 qrcode==5.3
 requests==2.18.4
 six==1.11.0
+socketIO-client==0.7.2
 urllib3==1.22
+websocket-client==0.44.0
 Werkzeug==0.12.2

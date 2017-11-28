@@ -20,8 +20,10 @@ from block import Block
 from graph import Graph
 from pymongo import MongoClient
 
+
 mongo_client = MongoClient()
 db = mongo_client.yadacoin
+collection = db.blocks
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
@@ -291,7 +293,7 @@ def get_rid():
 
 @app.route('/get-block')
 def get_block():
-    blocks = db.blocks.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
+    blocks = collection.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
     return json.dumps(blocks[0] if blocks.count() else {}, indent=4), 404
 
 

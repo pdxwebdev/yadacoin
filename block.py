@@ -105,9 +105,6 @@ class BlockFactory(object):
 
     @classmethod
     def mine(cls, transactions, coinbase, difficulty, public_key, private_key, callback=None, current_index=None, status=None):
-        from pymongo import MongoClient
-        mongo_client = MongoClient()
-        db = mongo_client.yadacoin
         blocks = BU.get_block_objs()
         import itertools, sys
         spinner = itertools.cycle(['-', '/', '|', '\\'])
@@ -241,11 +238,8 @@ class Block(object):
             self.verify_merkle_root = hashes[0]
 
     def save(self):
-        from pymongo import MongoClient
-        mongo_client = MongoClient()
-        db = mongo_client.yadacoin
         self.verify()
-        db.blocks.insert(self.to_dict())
+        self.collection.insert(self.to_dict())
 
     def to_dict(self):
         return {

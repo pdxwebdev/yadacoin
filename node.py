@@ -15,7 +15,13 @@ from transaction import Transaction, Input, Output
 from blockchainutils import BU
 from transactionutils import TU
 from transaction import TransactionFactory
+from pymongo import MongoClient
 
+
+mongo_client = MongoClient()
+db = mongo_client.yadacointest
+BU.collection = db.blocks
+Block.collection = db.blocks
 
 class ChatNamespace(BaseNamespace):
     def on_reply(self, *args):
@@ -76,10 +82,10 @@ if __name__ == "__main__":
     if args.runtype == 'node':
         with open('peers.json') as f:
             peers = json.loads(f.read())
+
         for peer in peers:
             socketIO = SocketIO(peer['ip'], 8000)
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
-            chat_namespace.emit('chat message', block)
 
         block = BU.get_latest_block()
         if block.count():
@@ -114,7 +120,7 @@ if __name__ == "__main__":
             p2.join()
 
             block = BU.get_latest_block()[0]
-
+            chat_namespace.emit('chat message', block)
             if status.value == 'mined':
                 print 'block discovered: {nonce:', str(block['nonce']) + ',', 'hash: ', block['hash'] + '}'
                 if time.time() - start < 60:
