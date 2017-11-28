@@ -145,7 +145,7 @@ if __name__ == "__main__":
             p2.join()
 
             block = BU.get_latest_block()[0]
-            chat_namespace.emit('chat message', block)
+            chat_namespace.emit('new block', block)
             if status.value == 'mined':
                 print 'block discovered: {nonce:', str(block['nonce']) + ',', 'hash: ', block['hash'] + '}'
                 if time.time() - start < 60:

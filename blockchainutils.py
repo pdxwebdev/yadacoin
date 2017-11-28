@@ -21,7 +21,7 @@ class BU(object):  # Blockchain Utilities
     collection = None
     @classmethod
     def get_blocks(cls):
-        blocks = cls.collection.find().sort([('index',1)])
+        blocks = cls.collection.find({}, {'_id': 0}).sort([('index',1)])
         return blocks
 
     @classmethod
