@@ -78,6 +78,20 @@ def new_block_checker(current_index):
             pass
         time.sleep(1)
 
+def get_peers(peer_pool):
+    with open('peers.json') as f:
+        peers = json.loads(f.read())
+    for peer in peers:
+        try:
+            socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+            chat_namespace = socketIO.define(ChatNamespace, '/chat')
+            chat_namespace.emit('getblocks')
+            socketIO.wait(seconds=1)
+            peer_pool.append(socketIO)
+            return chat_namespace
+        except:
+            pass
+
 if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description='Process some integers.')
@@ -108,14 +122,9 @@ if __name__ == "__main__":
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     if args.runtype == 'node':
-        with open('peers.json') as f:
-            peers = json.loads(f.read())
-
-        for peer in peers:
-            socketIO = SocketIO(peer['ip'], 8000)
-            chat_namespace = socketIO.define(ChatNamespace, '/chat')
-            chat_namespace.emit('getblocks')
-        socketIO.wait(seconds=1)
+        peer_pool = []
+        chat_namespace = get_peers(peer_pool)
+        print len(peer_pool), 'peers'
         block = BU.get_latest_block()
         if block:
             latest_block_index = Value('i', int(block['index']))
@@ -147,7 +156,7 @@ if __name__ == "__main__":
             p2 = Process(target=BlockFactory.mine, args=(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status))
             p2.start()
             p2.join()
-
+            # check for more peers to add to peer_pool
             block = BU.get_latest_block()
             chat_namespace.emit('new block', block)
             if status.value == 'mined':
