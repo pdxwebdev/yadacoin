@@ -87,8 +87,7 @@ def get_peers(peer_pool):
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
             chat_namespace.emit('getblocks')
             socketIO.wait(seconds=1)
-            peer_pool.append(socketIO)
-            return chat_namespace
+            peer_pool.append(chat_namespace)
         except:
             pass
 
@@ -158,7 +157,8 @@ if __name__ == "__main__":
             p2.join()
             # check for more peers to add to peer_pool
             block = BU.get_latest_block()
-            chat_namespace.emit('new block', block)
+            for peer in peer_pool:
+                peer.emit('new block', block)
             if status.value == 'mined':
                 print 'block discovered: {nonce:', str(block['nonce']) + ',', 'hash: ', block['hash'] + '}'
                 if time.time() - start < 60:

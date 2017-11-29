@@ -25,7 +25,11 @@ def connect(sid, environ):
 @sio.on('new block', namespace='/chat')
 def newblock(sid, data):
     print("new block ", data)
-    block = data
+    try:
+        block = Block.from_dict(data)
+        block.verify()
+    except:
+        return
     latest_block = BU.get_latest_block()
     if latest_block:
         biggest_index = latest_block.get('index')
