@@ -2,7 +2,11 @@ certifi==2017.7.27.1
 chardet==3.0.4
 click==6.7
 ecdsa==0.13
+enum-compat==0.0.2
+enum34==1.1.6
+eventlet==0.21.0
 Flask==0.12.2
+greenlet==0.4.12
 idna==2.6
 itsdangerous==0.24
 Jinja2==2.9.6
@@ -13,6 +17,8 @@ Pillow==4.3.0
 pycrypto==2.6.1
 pymongo==3.5.1
 python-bitcoinlib==0.8.0
+python-engineio==2.0.1
+python-socketio==1.8.3
 qrcode==5.3
 requests==2.18.4
 six==1.11.0
