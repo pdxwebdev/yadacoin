@@ -36,6 +36,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_signature(cls, message):
+        print cls.private_key
         key = CBitcoinSecret(cls.private_key)
         signature = SignMessage(key, BitcoinMessage(message, magic=''))
         return signature

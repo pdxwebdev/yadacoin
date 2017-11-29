@@ -15,12 +15,15 @@ from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
 from transaction import TransactionFactory, Transaction, Output
 from blockchainutils import BU
+from transactionutils import TU
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 
 class BlockFactory(object):
     def __init__(self, transactions, coinbase, public_key, private_key):
+        BU.private_key = private_key
+        TU.private_key = private_key
         blocks = BU.get_blocks()
         self.index = BU.get_latest_block().get('index', -1) + 1
         self.prev_hash = blocks[blocks.count()-1]['hash'] if blocks.count() > 0 else ''
