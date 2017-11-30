@@ -36,7 +36,7 @@ class BU(object):  # Blockchain Utilities
     def get_block_by_index(cls, index):
         res = cls.collection.find({'index': index}, {'_id': 0})
         if res.count():
-            return block[0]
+            return res[0]
 
     @classmethod
     def get_block_objs(cls):
