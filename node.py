@@ -16,6 +16,7 @@ from blockchainutils import BU
 from transactionutils import TU
 from transaction import TransactionFactory
 from pymongo import MongoClient
+from blockchain import Blockchain
 
 
 mongo_client = MongoClient()
@@ -45,11 +46,19 @@ class ChatNamespace(BaseNamespace):
         else:
             biggest_index_incoming = -1
         if blocks_sorted and biggest_index < biggest_index_incoming:
+            blockchain = Blockchain(blocks_sorted)
+            try:
+                blockchain.verify()
+            except:
+                print 'peer blockchain did not verify, aborting update'
+                return
             collection.remove({})
             print 'truncating!'
             for block in blocks_sorted:
-                collection.insert(block)
-                print 'inserting!'
+                block_obj = Block.from_dict(block)
+                block_obj.verify()
+                block_obj.save()
+                print 'saving!'
         else:
             print 'my chain is longer!', biggest_index, biggest_index_incoming
             return
@@ -114,6 +123,8 @@ if __name__ == "__main__":
     coinbase = config.get('coinbase')
 
     blocks = BU.get_block_objs()  # verifies as the blocks are created so no need to call block.verify() on each block
+    blockchain = Blockchain(blocks)
+    blockchain.verify()
     if len(blocks):
         difficulty = re.search(r'^[0]+', blocks[-1].hash).group(0)
     else:

@@ -4,6 +4,7 @@ import eventlet.wsgi
 from pymongo import MongoClient
 from flask import Flask, render_template
 from blockchainutils import BU
+from blockchain import Blockchain
 
 
 mongo_client = MongoClient()
@@ -29,6 +30,7 @@ def newblock(sid, data):
         block = Block.from_dict(data)
         block.verify()
     except:
+        print "block is bad"
         return
     latest_block = BU.get_latest_block()
     if latest_block:
@@ -39,7 +41,8 @@ def newblock(sid, data):
         # implement tie breaker with 51% vote
         print "our chains are the same size, voting not yet implemented"
     elif biggest_index < block['index']:
-        collection.insert(block)
+        block.verify()
+        block.save()
         print 'inserting new externally sourced block!'
     else:
         print 'my chain is longer!', biggest_index, block['index']
@@ -55,6 +58,8 @@ def disconnect(sid):
     print('disconnect ', sid)
 
 if __name__ == '__main__':
+    blockchain = Blockchain(BU.get_blocks())
+    blockchain.verify()
     # wrap Flask application with engineio's middleware
     app = socketio.Middleware(sio, app)
 
