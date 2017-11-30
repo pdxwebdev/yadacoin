@@ -5,12 +5,14 @@ from pymongo import MongoClient
 from flask import Flask, render_template
 from blockchainutils import BU
 from blockchain import Blockchain
+from block import Block
 
 
 mongo_client = MongoClient()
 db = mongo_client.yadacoin
 collection = db.blocks
 BU.collection = collection
+Block.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
 
@@ -29,9 +31,9 @@ def newblock(sid, data):
     try:
         incoming_block = Block.from_dict(data)
         incoming_block.verify()
-    except:
+    except Exception as e:
         print "block is bad"
-        return
+        raise e
     block = BU.get_block_by_index(incoming_block.index)
     if block:
         # we have the same block. let the voting begin!
@@ -48,8 +50,8 @@ def newblock(sid, data):
         try:
             blockchain.verify()
             incoming_block.save()
-        except:
-            print 'incoming block does not belong here'
+        except Exception as e:
+            raise e
 
 votes = {}
 @sio.on('blockvotereply', namespace='/chat')
@@ -78,9 +80,8 @@ def blockvotereply(sid, data):
             except:
                 print 'incoming block does not belong here'
 
-    except:
-        print "block is bad"
-        return
+    except Exception as e:
+        raise e
 
 @sio.on('getblocks', namespace='/chat')
 def getblocks(sid):
