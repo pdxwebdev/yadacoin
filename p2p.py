@@ -53,6 +53,41 @@ def newblock(sid, data):
         except Exception as e:
             raise e
 
+@sio.on('getblocksreply', namespace='/chat')
+def getblocksreply(self, data):
+    blocks = []
+    for block_dict in data:
+        block = Block.from_dict(block_dict)
+        block.verify()
+        blocks.append(block)
+
+    blocks_sorted = sorted(blocks, key=lambda x: x.index)
+    if len(BU.get_latest_block()):
+        biggest_index = BU.get_latest_block().get('index')
+    else:
+        biggest_index = -1
+    if blocks_sorted:
+        biggest_index_incoming = blocks_sorted[-1].index
+    else:
+        biggest_index_incoming = -1
+    if blocks_sorted and biggest_index < biggest_index_incoming:
+        blockchain = Blockchain(blocks_sorted)
+        try:
+            blockchain.verify()
+        except:
+            print 'peer blockchain did not verify, aborting update'
+            return
+        collection.remove({})
+        print 'truncating!'
+        for block in blocks_sorted:
+            block.verify()
+            block.save()
+            print 'saving!'
+    else:
+        print 'my chain is longer!', biggest_index, biggest_index_incoming
+        return
+    print 'on_getblocksreply', 'done!'
+
 votes = {}
 @sio.on('blockvotereply', namespace='/chat')
 def blockvotereply(sid, data):

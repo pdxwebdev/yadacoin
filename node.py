@@ -42,7 +42,7 @@ class ChatNamespace(BaseNamespace):
         else:
             biggest_index = -1
         if blocks_sorted:
-            biggest_index_incoming = blocks_sorted[-1]['index']
+            biggest_index_incoming = blocks_sorted[-1].index
         else:
             biggest_index_incoming = -1
         if blocks_sorted and biggest_index < biggest_index_incoming:
@@ -55,14 +55,17 @@ class ChatNamespace(BaseNamespace):
             collection.remove({})
             print 'truncating!'
             for block in blocks_sorted:
-                block_obj = Block.from_dict(block)
-                block_obj.verify()
-                block_obj.save()
+                block.verify()
+                block.save()
                 print 'saving!'
         else:
             print 'my chain is longer!', biggest_index, biggest_index_incoming
             return
         print 'on_getblocksreply', 'done!'
+
+    def on_getblocks(self, *args):
+        print("getblocks ")
+        self.emit('getblocksreply', [x for x in BU.get_blocks()])
 
     def on_error(self, event, *args):
         print 'error'
@@ -97,8 +100,8 @@ def get_peers(peer_pool):
             chat_namespace.emit('getblocks')
             socketIO.wait(seconds=1)
             peer_pool.append(chat_namespace)
-        except:
-            pass
+        except Exception as e:
+            raise e
 
 if __name__ == "__main__":
 
