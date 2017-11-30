@@ -33,10 +33,10 @@ class BU(object):  # Blockchain Utilities
             return {}
 
     @classmethod
-    def get_block_by_id(cls, id):
-        for block in cls.get_blocks():
-            if block.get('id') == id:
-                return block
+    def get_block_by_index(cls, index):
+        res = cls.collection.find({'index': index}, {'_id': 0})
+        if res.count():
+            return block[0]
 
     @classmethod
     def get_block_objs(cls):

@@ -12,6 +12,8 @@ class Blockchain(object):
                     block_obj = Block.from_dict(block)
                     new_block_array.append(block_obj)
             self.blocks = new_block_array
+        else:
+            self.blocks = []
 
     def verify(self):
         last_block = None

@@ -36,7 +36,7 @@ class ChatNamespace(BaseNamespace):
             block.verify()
             blocks.append(block)
 
-        blocks_sorted = sorted([x.to_dict() for x in blocks], key=lambda x: x['index'])
+        blocks_sorted = sorted(blocks, key=lambda x: x.index)
         if len(BU.get_latest_block()):
             biggest_index = BU.get_latest_block().get('index')
         else:

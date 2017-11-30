@@ -27,26 +27,60 @@ def connect(sid, environ):
 def newblock(sid, data):
     print("new block ", data)
     try:
-        block = Block.from_dict(data)
-        block.verify()
+        incoming_block = Block.from_dict(data)
+        incoming_block.verify()
     except:
         print "block is bad"
         return
-    latest_block = BU.get_latest_block()
-    if latest_block:
-        biggest_index = latest_block.get('index')
+    block = BU.get_block_by_index(incoming_block.index)
+    if block:
+        # we have the same block. let the voting begin!
+        if incoming_block.index not in votes:
+            votes[incoming_block.index] = {}
+        votes[incoming_block.index][incoming_block.signature] = 1
+        sio.emit('getblockvote', data=incoming_block.to_dict(), skip_sid=sid, namespace='/chat')
     else:
-        biggest_index = -1
-    if biggest_index == block['index']:
-        # implement tie breaker with 51% vote
-        print "our chains are the same size, voting not yet implemented"
-    elif biggest_index < block['index']:
+        # dry run this block in the blockchain. Does it belong?
+        blocks = BU.get_block_objs()
+        blocks.append(incoming_block)
+        blocks_sorted = sorted(blocks, key=lambda x: x.index)
+        blockchain = Blockchain(blocks_sorted)
+        try:
+            blockchain.verify()
+            incoming_block.save()
+        except:
+            print 'incoming block does not belong here'
+
+votes = {}
+@sio.on('blockvotereply', namespace='/chat')
+def blockvotereply(sid, data):
+    try:
+        block = Block.from_dict(data)
         block.verify()
-        block.save()
-        print 'inserting new externally sourced block!'
-    else:
-        print 'my chain is longer!', biggest_index, block['index']
-    print 'on_getblocksreply', 'done!'
+        if block.index not in votes:
+            votes[block.index] = {}
+        if block.signature not in votes[block.index]:
+            votes[block.index][block.signature] = 0
+        votes[block.index][block.signature] += 1
+
+        peers = len(sio.manager.rooms['/chat'])
+
+        if float(votes[block.index][block.signature]) / float(peers)  > 0.51:
+            blocks = [x for x in BU.get_block_objs() if x.index != block.index]
+            blocks.append(block)
+            blocks_sorted = sorted(blocks, key=lambda x: x.index)
+            blockchain = Blockchain(blocks_sorted)
+            try:
+                blockchain.verify()
+                delete_block = Block.from_dict(BU.get_block_by_index(block.index))
+                delete_block.delete()
+                block.save()
+            except:
+                print 'incoming block does not belong here'
+
+    except:
+        print "block is bad"
+        return
 
 @sio.on('getblocks', namespace='/chat')
 def getblocks(sid):

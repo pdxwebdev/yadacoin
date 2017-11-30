@@ -244,6 +244,9 @@ class Block(object):
         self.verify()
         self.collection.insert(self.to_dict())
 
+    def delete(self):
+        self.collection.remove(self.index)
+
     def to_dict(self):
         return {
             'index': self.index,
