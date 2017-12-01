@@ -31,7 +31,7 @@ class BlockFactory(object):
         self.private_key = private_key
 
         transaction_objs = []
-        fee_sum = 0
+        fee_sum = 0.0
         for txn in transactions:
             if isinstance(txn, Transaction):
                 transaction_obj = txn
@@ -39,7 +39,7 @@ class BlockFactory(object):
                 transaction_obj = Transaction.from_dict(txn)
             transaction_obj.verify()
             transaction_objs.append(transaction_obj)
-            fee_sum += transaction_obj.fee
+            fee_sum += float(transaction_obj.fee)
         block_reward = BU.get_block_reward()
         coinbase_txn = TransactionFactory(
             public_key=self.public_key,
