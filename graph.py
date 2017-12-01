@@ -31,6 +31,7 @@ class Graph(object):
         rids = sorted([str(TU.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         self.rid = rid
+        self.human_hash = humanhash.humanize(self.rid)
 
         if for_me:
             return self.with_private_key()
@@ -157,7 +158,8 @@ class Graph(object):
             'friend_posts': self.friend_posts,
             'logins': self.logins,
             'messages': self.messages,
-            'rid': self.rid
+            'rid': self.rid,
+            'human_hash': self.human_hash
         }
 
     def to_json(self):

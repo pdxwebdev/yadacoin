@@ -7,6 +7,7 @@ enum34==1.1.6
 eventlet==0.21.0
 Flask==0.12.2
 greenlet==0.4.12
+humanhash==0.0.1
 idna==2.6
 itsdangerous==0.24
 Jinja2==2.9.6
