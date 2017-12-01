@@ -222,7 +222,7 @@ def create_relationship():  # demo site
         try:
             socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
-            chat_namespace.emit('newtransaction', transaction.to_dict())
+            chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
             socketIO.wait(seconds=1)
         except Exception as e:
             raise e
