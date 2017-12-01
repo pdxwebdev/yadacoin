@@ -6,6 +6,7 @@ from flask import Flask, render_template
 from blockchainutils import BU
 from blockchain import Blockchain
 from block import Block
+from transaction import Transaction
 
 
 mongo_client = MongoClient()
@@ -52,6 +53,27 @@ def newblock(sid, data):
             incoming_block.save()
         except Exception as e:
             raise e
+
+@sio.on('newtransaction', namespace='/chat')
+def newtransaction(sid, data):
+    print("new transaction ", data)
+    try:
+        incoming_txn = Transaction.from_dict(data)
+        incoming_txn.verify()
+    except Exception as e:
+        print "transaction is bad"
+        raise e
+
+    try:
+        with open('miner_transactions.json') as f:
+            data = json.loads(f.read())
+
+        with open('miner_transactions.json', 'w') as f:
+            data.append(incoming_txn.to_dict())
+            f.write(json.dumps(data))
+
+    except Exception as e:
+        raise e
 
 @sio.on('getblocksreply', namespace='/chat')
 def getblocksreply(self, data):

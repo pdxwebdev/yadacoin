@@ -63,6 +63,26 @@ class ChatNamespace(BaseNamespace):
             return
         print 'on_getblocksreply', 'done!'
 
+    def on_newtransaction(sid, *args):
+        print("new transaction ", args[0])
+        try:
+            incoming_txn = Transaction.from_dict(args[0])
+            incoming_txn.verify()
+        except Exception as e:
+            print "transaction is bad"
+            raise e
+
+        try:
+            with open('miner_transactions.json') as f:
+                data = json.loads(f.read())
+
+            with open('miner_transactions.json', 'w') as f:
+                data.append(incoming_txn.to_dict())
+                f.write(json.dumps(data))
+
+        except Exception as e:
+            raise e
+
     def on_getblocks(self, *args):
         print("getblocks ")
         self.emit('getblocksreply', [x for x in BU.get_blocks()])

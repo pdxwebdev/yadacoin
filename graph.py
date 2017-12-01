@@ -4,6 +4,7 @@ import os
 import argparse
 import qrcode
 import base64
+import humanhash
 
 from io import BytesIO
 from uuid import uuid4

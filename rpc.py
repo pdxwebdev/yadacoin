@@ -19,11 +19,14 @@ from transaction import *
 from block import Block
 from graph import Graph
 from pymongo import MongoClient
+from socketIO_client import SocketIO, BaseNamespace
 
 
 mongo_client = MongoClient()
 db = mongo_client.yadacoin
 collection = db.blocks
+BU.collection = collection
+TU.collection = collection
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
@@ -41,6 +44,9 @@ BU.private_key = private_key
 # print sk.get_verifying_key().to_string().encode('hex')
 # vk2 = VerifyingKey.from_string(pk.decode('hex'))
 # print vk2.verify(signature, "message")
+class ChatNamespace(BaseNamespace):
+    def on_error(self, event, *args):
+        print 'error'
 
 app = Flask(__name__)
 
@@ -170,12 +176,21 @@ def create_relationship():  # demo site
 
     inputs = [Input.from_dict(input_txn) for input_txn in input_txns]
 
+    needed_inputs = []
     input_sum = 0
+    done = False
     for x in inputs:
         txn = BU.get_transaction_by_id(x.id, instance=True)
         for txn_output in txn.outputs:
             if txn_output.to == my_address:
                 input_sum += txn_output.value
+                needed_inputs.append(x)
+                if input_sum >= 1.1:
+                    done = True
+                    break
+        if done == True:
+            break
+
 
     return_change_output = Output(
         to=my_address,
@@ -190,7 +205,7 @@ def create_relationship():  # demo site
         requested_rid=requested_rid,
         public_key=public_key,
         private_key=private_key,
-        inputs=inputs,
+        inputs=needed_inputs,
         outputs=[
             Output(to=to, value=1),
             return_change_output
@@ -201,6 +216,16 @@ def create_relationship():  # demo site
 
     my_bulletin_secret = TU.get_bulletin_secret()
 
+    with open('peers.json') as f:
+        peers = json.loads(f.read())
+    for peer in peers:
+        try:
+            socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+            chat_namespace = socketIO.define(ChatNamespace, '/chat')
+            chat_namespace.emit('newtransaction', transaction.to_dict())
+            socketIO.wait(seconds=1)
+        except Exception as e:
+            raise e
     return json.dumps({"success": True})
 
 @app.route('/login-status')
@@ -308,6 +333,14 @@ def post_block():
     else:
         return '{"status": "error"}', 400
 
+@app.route('/search')
+def search():
+    phrase = request.args.get('phrase')
+    graph = Graph(TU.get_bulletin_secret(), for_me=True)
+    for friend in graph.friends:
+        if humanhash.humanize(friend.rid) == phrase:
+            return json.dumps(friend, indent=4)
+    return '{}', 404
 
 @app.route('/get-latest-block')
 def get_latest_block():
@@ -351,6 +384,16 @@ def transaction():
             f.truncate()
             f.write(json.dumps(existing, indent=4))
             f.truncate()
+        with open('peers.json') as f:
+            peers = json.loads(f.read())
+        for peer in peers:
+            try:
+                socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+                chat_namespace = socketIO.define(ChatNamespace, '/chat')
+                chat_namespace.emit('newtransaction', transaction.to_dict())
+                socketIO.wait(seconds=1)
+            except Exception as e:
+                raise e
         return json.dumps(request.get_json())
     else:
         rid = request.args.get('rid')
@@ -369,7 +412,9 @@ def bulletin():
 def get_graph_mobile():
     bulletin_secret = request.args.get('bulletin_secret')
     graph = Graph(bulletin_secret)
-    return graph.to_json()
+    graph_dict = graph.to_dict()
+    graph_dict['registered'] = graph.rid in [x.get('rid') for x in graph.friends]
+    return json.dumps(graph_dict, indent=4)
 
 
 @app.route('/get-graph')

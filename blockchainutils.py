@@ -64,7 +64,11 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_balance(cls, address):
-        return cls.get_wallet_balances().get(address)
+        balance = cls.get_wallet_balances().get(address)
+        if balance:
+            return balance
+        else:
+            return 0
 
     @classmethod
     def get_unspent_transactions(cls):
