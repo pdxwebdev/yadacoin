@@ -77,8 +77,13 @@ class ChatNamespace(BaseNamespace):
                 data = json.loads(f.read())
 
             with open('miner_transactions.json', 'w') as f:
-                data.append(incoming_txn.to_dict())
-                f.write(json.dumps(data))
+                abort = False
+                for x in data:
+                    if x.get('id') == incoming_txn.signature:
+                        abort = True
+                if not abort:
+                    data.append(incoming_txn.to_dict())
+                    f.write(json.dumps(data, indent=4))
 
         except Exception as e:
             raise e
