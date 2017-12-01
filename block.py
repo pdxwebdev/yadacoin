@@ -168,7 +168,10 @@ class Block(object):
         transactions = []
         for txn in block.get('transactions'):
             # TODO: do validify checking for coinbase transactions
-            txn['coinbase'] = True if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] else False
+            if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1:
+                txn['coinbase'] = True  
+            else:
+                txn['coinbase'] = False
             transactions.append(Transaction.from_dict(txn))
 
         return cls(
@@ -221,7 +224,7 @@ class Block(object):
             raise BaseException("Block reward file not found")
 
         if fee_sum != (coinbase_sum - reward):
-            raise BaseException("Coinbase output total does not equal block reward + transaction fees")
+            raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
