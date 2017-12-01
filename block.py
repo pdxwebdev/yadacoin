@@ -6,7 +6,7 @@ import qrcode
 import base64
 import time
 
-from decimal import Decimal
+from decimal import Decimal, getcontext
 from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey, VerifyingKey
@@ -186,6 +186,7 @@ class Block(object):
         )
 
     def verify(self):
+        getcontext().prec = 8
         try:
             txns = self.get_transaction_hashes()
             self.set_merkle_root(txns)
@@ -223,7 +224,7 @@ class Block(object):
         except:
             raise BaseException("Block reward file not found")
 
-        if fee_sum != (coinbase_sum - reward):
+        if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
             raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
     def get_transaction_hashes(self):
