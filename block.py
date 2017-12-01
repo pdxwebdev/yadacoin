@@ -208,10 +208,10 @@ class Block(object):
                 for output in txn.outputs:
                     coinbase_sum += float(output.value)
 
-        fee_sum = 0
+        fee_sum = 0.0
         for txn in self.transactions:
             if not txn.coinbase:
-                fee_sum += txn.fee
+                fee_sum += float(txn.fee)
         reward = BU.get_block_reward(self)
 
         try:

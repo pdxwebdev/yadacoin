@@ -172,14 +172,14 @@ if __name__ == "__main__":
         p.start()
         while 1:
             try:
-                open('miner_transactions.json', 'r')
+                with open('miner_transactions.json', 'r') as f:
+                    transactions_parsed = json.loads(f.read())
             except:
-                f = open('miner_transactions.json', 'w+')
-                f.write('{}')
-                f.close()
+                with open('miner_transactions.json', 'w') as f:
+                    f.write('[]')
+                    transactions_parsed = []
 
             with open('miner_transactions.json', 'r+') as f:
-                transactions_parsed = json.loads(f.read())
                 if transactions_parsed:
                     f.seek(0)
                     f.write('[]')
