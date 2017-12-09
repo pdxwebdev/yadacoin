@@ -112,7 +112,7 @@ class BU(object):  # Blockchain Utilities
         from transaction import Transaction
         from crypt import Crypt
         transactions = []
-        for block in BU.get_blocks():
+        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 try:
                     if 'relationship' not in transaction:
@@ -159,7 +159,7 @@ class BU(object):  # Blockchain Utilities
             if not isinstance(selector, list):
                 selectors = [selector, ]
 
-        for block in BU.get_blocks():
+        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 if transaction.get('rid') in selectors:
                     if 'relationship' in transaction:
@@ -191,7 +191,7 @@ class BU(object):  # Blockchain Utilities
                 selectors = selector
 
         transactions = []
-        for block in BU.get_blocks():
+        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 if transaction.get('rid') in selectors:
                     if 'relationship' in transaction:
@@ -212,7 +212,7 @@ class BU(object):  # Blockchain Utilities
         from transaction import Transaction
         from crypt import Crypt
         bulletins = []
-        for block in BU.get_blocks():
+        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 if 'post_text' in transaction:
                     try:
@@ -232,7 +232,7 @@ class BU(object):  # Blockchain Utilities
         if not isinstance(rids, list):
             rids = [rids, ]
         transactions = []
-        for block in BU.get_blocks():
+        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 if transaction.get('requester_rid') in rids or transaction.get('requested_rid') in rids:
                     transactions.append(transaction)

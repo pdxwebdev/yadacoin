@@ -46,6 +46,7 @@ class Graph(object):
                     return self.without_private_key()
 
     def with_private_key(self):
+
         self.friends = BU.get_transactions()
 
         rids = []
@@ -57,9 +58,10 @@ class Graph(object):
         possible_friends = BU.get_second_degree_transactions_by_rids(rids)
 
         self.my_posts.extend(BU.get_bulletins(TU.get_bulletin_secret()))
-
+        nodes = []
         for friend in self.friends:
-            self.request_accept_or_request(possible_friends, friend)
+            nodes.append(self.request_accept_or_request(possible_friends, friend))
+        self.friends.extend(nodes)
 
     def without_private_key(self):
         # now search for our rid in requester and requested transactions
@@ -75,7 +77,7 @@ class Graph(object):
                 if 'bulletin_secret' in transaction['relationship']:
                     mutual_bulletin_secrets.append(transaction['relationship']['bulletin_secret'])
 
-        for block in BU.get_blocks():
+        for block in BU.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block['transactions']:
                 for bs in mutual_bulletin_secrets:
                     try:
@@ -148,7 +150,7 @@ class Graph(object):
                 already_added.append(transaction.get('hash'))
                 self.messages.append(transaction)
 
-        self.friends.append(node)
+        return node
 
     def to_dict(self):
         return {

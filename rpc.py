@@ -4,6 +4,7 @@ import os
 import argparse
 import qrcode
 import base64
+import humanhash
 
 from io import BytesIO
 from uuid import uuid4
@@ -286,8 +287,6 @@ def add_peer():
     #authed_user = get_logged_in_user()
     peer_to_rid[request.args['peer_id']] = request.args['rid']
     rid_to_peer[request.args['rid']] = request.args['peer_id']
-    print peer_to_rid
-    print rid_to_peer
     return 'ok'
 
 @app.route('/get-peer')
@@ -336,17 +335,47 @@ def post_block():
 @app.route('/search')
 def search():
     phrase = request.args.get('phrase')
+    bulletin_secret = request.args.get('bulletin_secret')
     graph = Graph(TU.get_bulletin_secret(), for_me=True)
     for friend in graph.friends:
-        if humanhash.humanize(friend.rid) == phrase:
-            return json.dumps(friend, indent=4)
+        if humanhash.humanize(friend['rid']) == phrase:
+            my_bulletin_secret = TU.get_bulletin_secret()
+            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            for output in friend['outputs']:
+                if output['to'] != my_address:
+                    to = output['to']
+            return json.dumps({
+                'bulletin_secret': friend['relationship']['bulletin_secret'],
+                'requested_rid': friend['rid'],
+                'requester_rid': rid,
+                'to': to
+            }, indent=4)
     return '{}', 404
+
+@app.route('/fcm-token', methods=['POST'])
+def fcm_token():
+    token = request.json.get('token')
+    rid = request.json.get('rid')
+    shared_secret = request.json.get('shared_secret')
+    txn = BU.get_transaction_by_rid(rid, rid=True) 
+    if txn['relationship']['shared_secret'] == shared_secret:
+        mongo_client.yadacoinsite.fcmtokens.insert({
+            'rid': rid,
+            'token': token
+        })
+        return '', 200
+    return '', 400
+
+@app.route('/deeplink')
+def deeplink():
+    import urllib
+    return redirect('myapp://' + urllib.quote(request.args.get('txn')))
 
 @app.route('/get-latest-block')
 def get_latest_block():
     blocks = BU.get_latest_block()
     return json.dumps(blocks[0], indent=4)
-
 
 @app.route('/get-chain')
 def get_chain():
