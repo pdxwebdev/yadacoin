@@ -79,7 +79,7 @@ class ChatNamespace(BaseNamespace):
             with open('miner_transactions.json', 'w') as f:
                 abort = False
                 for x in data:
-                    if x.get('id') == incoming_txn.signature:
+                    if x.get('id') == incoming_txn.transaction_signature:
                         abort = True
                 if not abort:
                     data.append(incoming_txn.to_dict())
