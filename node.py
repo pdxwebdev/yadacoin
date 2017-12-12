@@ -155,7 +155,7 @@ if __name__ == "__main__":
     if len(blocks):
         difficulty = re.search(r'^[0]+', blocks[-1].hash).group(0)
     else:
-        difficulty = '0000'
+        difficulty = '000'
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     if args.runtype == 'node':
