@@ -155,7 +155,7 @@ if __name__ == "__main__":
     if len(blocks):
         difficulty = re.search(r'^[0]+', blocks[-1].hash).group(0)
     else:
-        difficulty = '000'
+        difficulty = '0000'
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     if args.runtype == 'node':
@@ -208,12 +208,12 @@ if __name__ == "__main__":
             chat_namespace = get_peers(peer_pool)
             if status.value == 'mined':
                 print 'block discovered: {nonce:', str(block['nonce']) + ',', 'hash: ', block['hash'] + '}'
-                if time.time() - start < 30:
-                    difficulty = difficulty + '0'
-                elif time.time() - start > 60:
-                    difficulty = difficulty[:-1]
-                else:
-                    difficulty = difficulty
+                #if time.time() - start < 30:
+                #    difficulty = difficulty + '0'
+                #elif time.time() - start > 60:
+                #    difficulty = difficulty[:-1]
+                #else:
+                #    difficulty = difficulty
             else:
                 print 'block chain updated, restarting mining from latest block'
                 difficulty = re.search(r'^[0]+', block['hash']).group(0)
