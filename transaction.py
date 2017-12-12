@@ -119,6 +119,11 @@ class TransactionFactory(object):
     def generate_transaction_signature(self):
         return TU.generate_signature(self.hash)
 
+class InvalidTransactionException(BaseException):
+    pass
+
+class InvalidTransactionSignatureException(BaseException):
+    pass
 
 class Transaction(object):
     def __init__(
@@ -190,10 +195,10 @@ class Transaction(object):
 
         address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
         if verify_hash != self.hash:
-            raise BaseException("transaction is invalid")
+            raise InvalidTransactionException("transaction is invalid")
         result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
         if not result:
-            raise BaseException("transaction signature did not verify")
+            raise InvalidTransactionSignatureException("transaction signature did not verify")
 
         # verify spend
         total_input = 0
@@ -217,6 +222,8 @@ class Transaction(object):
         input_hashes = []
         for x in self.inputs:
             txn = BU.get_transaction_by_id(x.id, instance=True)
+            if not txn:
+                raise MissingInputTransactionException("This transaction is not in the blockchain.")
             input_hashes.append(str(txn.transaction_signature))
 
         return ''.join(sorted(input_hashes, key=str.lower))

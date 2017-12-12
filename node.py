@@ -67,7 +67,6 @@ class ChatNamespace(BaseNamespace):
         print("new transaction ", args[0])
         try:
             incoming_txn = Transaction.from_dict(args[0])
-            incoming_txn.verify()
         except Exception as e:
             print "transaction is bad"
             raise e
@@ -185,9 +184,15 @@ if __name__ == "__main__":
                     f.write('[]')
                     f.truncate()
                 transactions = []
+                rejected = []
                 for txn in transactions_parsed:
                     transaction = Transaction.from_dict(txn)
-                    transactions.append(transaction)
+                    try:
+                        transaction.verify()
+                        transactions.append(transaction)
+                    except:
+                        rejected.append(txn)
+                f.write(json.dumps(rejected))
 
             start = time.time()
             status = Array('c', 'asldkjf')

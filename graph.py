@@ -40,10 +40,9 @@ class Graph(object):
             nodes = BU.get_transactions_by_rid(bulletin_secret, raw=True)
             # select the transaction that is not created by me
             for node in nodes:
-                # print json.dumps(node, indent=4)
-                if 'relationship' in node and 'bulletin_secret' not in node['relationship']:
-                    self.node = node
-                    return self.without_private_key()
+                if 'relationship' in node and node.get('relationship'):
+                    self.friends.append(node)
+                    self.without_private_key(node)
 
     def with_private_key(self):
 
@@ -63,11 +62,10 @@ class Graph(object):
             nodes.append(self.request_accept_or_request(possible_friends, friend))
         self.friends.extend(nodes)
 
-    def without_private_key(self):
+    def without_private_key(self, node):
         # now search for our rid in requester and requested transactions
-        possible_friends = BU.get_second_degree_transactions_by_rids(self.node.get('rid'))
-        self.request_accept_or_request(possible_friends, self.node)
-
+        possible_friends = BU.get_second_degree_transactions_by_rids(node.get('rid'))
+        friend = self.request_accept_or_request(possible_friends, node)
         to_check = [x.get('requester_rid') for x in possible_friends]
         to_check.extend([x.get('requested_rid') for x in possible_friends])
 

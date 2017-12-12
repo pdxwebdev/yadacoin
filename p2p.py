@@ -17,7 +17,7 @@ BU.collection = collection
 Block.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
-
+collection.remove({})
 @app.route('/')
 def index():
     """Serve the client-side application."""
@@ -60,7 +60,6 @@ def newtransaction(sid, data):
     print("new transaction ", data)
     try:
         incoming_txn = Transaction.from_dict(data)
-        incoming_txn.verify()
     except Exception as e:
         print "transaction is bad"
         raise e

@@ -191,18 +191,18 @@ class BU(object):  # Blockchain Utilities
                 selectors = selector
 
         transactions = []
-        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
+        blocks = cls.collection.find({"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}})
+        for block in blocks:
             for transaction in block.get('transactions'):
-                if transaction.get('rid') in selectors:
-                    if 'relationship' in transaction:
-                        if not raw:
-                            try:
-                                cipher = Crypt(cls.private_key)
-                                decrypted = cipher.decrypt(transaction['relationship'])
-                                relationship = json.loads(decrypted)
-                                transaction['relationship'] = relationship
-                            except:
-                                continue
+                if 'relationship' in transaction:
+                    if not raw:
+                        try:
+                            cipher = Crypt(cls.private_key)
+                            decrypted = cipher.decrypt(transaction['relationship'])
+                            relationship = json.loads(decrypted)
+                            transaction['relationship'] = relationship
+                        except:
+                            continue
                     transactions.append(transaction)
         return transactions
 

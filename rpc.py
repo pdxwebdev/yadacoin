@@ -21,6 +21,7 @@ from block import Block
 from graph import Graph
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
+from pyfcm import FCMNotification
 
 
 mongo_client = MongoClient()
@@ -42,6 +43,8 @@ my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
 private_key = config.get('private_key')
 TU.private_key = private_key
 BU.private_key = private_key
+api_key = config.get('fcm_key')
+push_service = FCMNotification(api_key=api_key)
 # print sk.get_verifying_key().to_string().encode('hex')
 # vk2 = VerifyingKey.from_string(pk.decode('hex'))
 # print vk2.verify(signature, "message")
@@ -355,15 +358,39 @@ def search():
 
 @app.route('/fcm-token', methods=['POST'])
 def fcm_token():
-    token = request.json.get('token')
-    rid = request.json.get('rid')
+    try:
+        token = request.json.get('token')
+        rid = request.json.get('rid')
+        shared_secret = request.json.get('shared_secret')
+        txn = BU.get_transaction_by_rid(rid, rid=True) 
+        if txn['relationship']['shared_secret'] == shared_secret:
+            mongo_client.yadacoinsite.fcmtokens.update({'rid': rid}, {
+                'rid': rid,
+                'token': token
+            }, upsert=True)
+            return '', 200
+        return '', 400
+    except Exception as e:
+        return '', 4000
+
+@app.route('/request-notification', methods=['POST'])
+def request_notification():
     shared_secret = request.json.get('shared_secret')
+    requested_rid = request.json.get('requested_rid')
+    rid = request.json.get('rid')
+    data = json.loads(request.json.get('data'))
     txn = BU.get_transaction_by_rid(rid, rid=True) 
     if txn['relationship']['shared_secret'] == shared_secret:
-        mongo_client.yadacoinsite.fcmtokens.insert({
-            'rid': rid,
-            'token': token
-        })
+        res = mongo_client.yadacoinsite.fcmtokens.find({
+            'rid': requested_rid
+        });
+        for token in res:
+            result = push_service.notify_single_device(
+                registration_id=token['token'],
+                message_title='New Friend Request!',
+                message_body='You have a new friend request to approve!',
+                data_message=data
+            )
         return '', 200
     return '', 400
 
@@ -393,6 +420,7 @@ def get_peers():
 @app.route('/transaction', methods=['GET', 'POST'])
 def transaction():
     if request.method == 'POST':
+        from transaction import InvalidTransactionException, InvalidTransactionSignatureException
         items = request.json
         if not isinstance(items, list):
             items = [items, ]
@@ -401,7 +429,12 @@ def transaction():
         transactions = []
         for txn in items:
             transaction = Transaction.from_dict(txn)
-            transaction.verify()
+            try:
+                transaction.verify()
+            except InvalidTransactionException:
+                return '', 400
+            except InvalidTransactionSignatureException:
+                return '', 400
             transactions.append(transaction)
         with open('miner_transactions.json', 'a+') as f:
             try:
