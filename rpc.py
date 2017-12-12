@@ -385,12 +385,19 @@ def request_notification():
             'rid': requested_rid
         });
         for token in res:
-            result = push_service.notify_single_device(
-                registration_id=token['token'],
-                message_title='New Friend Request!',
-                message_body='You have a new friend request to approve!',
-                data_message=data
-            )
+            if data.get('accept'):
+                result = push_service.notify_single_device(
+                    registration_id=token['token'],
+                    message_title='Friend Request Accepted!',
+                    message_body='Your friend request was approved!'
+                )
+            else:
+                result = push_service.notify_single_device(
+                    registration_id=token['token'],
+                    message_title='New Friend Request!',
+                    message_body='You have a new friend request to approve!',
+                    data_message=data
+                )
         return '', 200
     return '', 400
 

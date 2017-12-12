@@ -208,9 +208,9 @@ if __name__ == "__main__":
             chat_namespace = get_peers(peer_pool)
             if status.value == 'mined':
                 print 'block discovered: {nonce:', str(block['nonce']) + ',', 'hash: ', block['hash'] + '}'
-                if time.time() - start < 60:
+                if time.time() - start < 30:
                     difficulty = difficulty + '0'
-                elif time.time() - start > 240:
+                elif time.time() - start > 60:
                     difficulty = difficulty[:-1]
                 else:
                     difficulty = difficulty
