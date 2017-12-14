@@ -69,7 +69,7 @@ class ChatNamespace(BaseNamespace):
             incoming_txn = Transaction.from_dict(args[0])
         except Exception as e:
             print "transaction is bad"
-            raise e
+            print e
 
         try:
             with open('miner_transactions.json') as f:
@@ -85,7 +85,7 @@ class ChatNamespace(BaseNamespace):
                     f.write(json.dumps(data, indent=4))
 
         except Exception as e:
-            raise e
+            print e
 
     def on_getblocks(self, *args):
         print("getblocks ")
@@ -125,7 +125,7 @@ def get_peers(peer_pool):
             socketIO.wait(seconds=1)
             peer_pool.append(chat_namespace)
         except Exception as e:
-            raise e
+            print e
 
 if __name__ == "__main__":
 
