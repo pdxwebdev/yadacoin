@@ -36,24 +36,33 @@ def newblock(sid, data):
     except Exception as e:
         print "block is bad"
         raise e
-    block = BU.get_block_by_index(incoming_block.index)
+    try:
+        block = BU.get_block_by_index(incoming_block.index)
+    except:
+        return
     if block:
         # we have the same block. let the voting begin!
-        if incoming_block.index not in votes:
-            votes[incoming_block.index] = {}
-        votes[incoming_block.index][incoming_block.signature] = 1
-        sio.emit('getblockvote', data=incoming_block.to_dict(), skip_sid=sid, namespace='/chat')
+        try:
+            if incoming_block.index not in votes:
+                votes[incoming_block.index] = {}
+            votes[incoming_block.index][incoming_block.signature] = 1
+            sio.emit('getblockvote', data=incoming_block.to_dict(), skip_sid=sid, namespace='/chat')
+        except:
+            print 'there was a problem when initializing a vote on a new block'
     else:
         # dry run this block in the blockchain. Does it belong?
-        blocks = BU.get_block_objs()
-        blocks.append(incoming_block)
-        blocks_sorted = sorted(blocks, key=lambda x: x.index)
-        blockchain = Blockchain(blocks_sorted)
+        try:
+            blocks = BU.get_block_objs()
+            blocks.append(incoming_block)
+            blocks_sorted = sorted(blocks, key=lambda x: x.index)
+            blockchain = Blockchain(blocks_sorted)
+        except:
+            print 'something went wrong with the blockchain dry run of new block'
         try:
             blockchain.verify()
             incoming_block.save()
         except Exception as e:
-            raise e
+            print e
 
 @sio.on('newtransaction', namespace='/chat')
 def newtransaction(sid, data):
@@ -62,7 +71,7 @@ def newtransaction(sid, data):
         incoming_txn = Transaction.from_dict(data)
     except Exception as e:
         print "transaction is bad"
-        raise e
+        print e
 
     try:
         with open('miner_transactions.json') as f:
@@ -78,42 +87,45 @@ def newtransaction(sid, data):
                 f.write(json.dumps(data, indent=4))
 
     except Exception as e:
-        raise e
+        print e
 
 @sio.on('getblocksreply', namespace='/chat')
 def getblocksreply(self, data):
-    blocks = []
-    for block_dict in data:
-        block = Block.from_dict(block_dict)
-        block.verify()
-        blocks.append(block)
-
-    blocks_sorted = sorted(blocks, key=lambda x: x.index)
-    if len(BU.get_latest_block()):
-        biggest_index = BU.get_latest_block().get('index')
-    else:
-        biggest_index = -1
-    if blocks_sorted:
-        biggest_index_incoming = blocks_sorted[-1].index
-    else:
-        biggest_index_incoming = -1
-    if blocks_sorted and biggest_index < biggest_index_incoming:
-        blockchain = Blockchain(blocks_sorted)
-        try:
-            blockchain.verify()
-        except:
-            print 'peer blockchain did not verify, aborting update'
-            return
-        collection.remove({})
-        print 'truncating!'
-        for block in blocks_sorted:
+    try:
+        blocks = []
+        for block_dict in data:
+            block = Block.from_dict(block_dict)
             block.verify()
-            block.save()
-            print 'saving!'
-    else:
-        print 'my chain is longer!', biggest_index, biggest_index_incoming
-        return
-    print 'on_getblocksreply', 'done!'
+            blocks.append(block)
+
+        blocks_sorted = sorted(blocks, key=lambda x: x.index)
+        if len(BU.get_latest_block()):
+            biggest_index = BU.get_latest_block().get('index')
+        else:
+            biggest_index = -1
+        if blocks_sorted:
+            biggest_index_incoming = blocks_sorted[-1].index
+        else:
+            biggest_index_incoming = -1
+        if blocks_sorted and biggest_index < biggest_index_incoming:
+            blockchain = Blockchain(blocks_sorted)
+            try:
+                blockchain.verify()
+            except:
+                print 'peer blockchain did not verify, aborting update'
+                return
+            collection.remove({})
+            print 'truncating!'
+            for block in blocks_sorted:
+                block.verify()
+                block.save()
+                print 'saving!'
+        else:
+            print 'my chain is longer!', biggest_index, biggest_index_incoming
+            return
+        print 'on_getblocksreply', 'done!'
+    except Exception as e:
+        print e
 
 votes = {}
 @sio.on('blockvotereply', namespace='/chat')
