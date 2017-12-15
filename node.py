@@ -123,7 +123,7 @@ def get_peers(peer_pool):
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
             chat_namespace.emit('getblocks')
             socketIO.wait(seconds=1)
-            peer_pool.append(chat_namespace)
+            peer_pool.append((chat_namespace, socketIO))
         except Exception as e:
             print e
 
@@ -201,9 +201,9 @@ if __name__ == "__main__":
             p2.join()
             # check for more peers to add to peer_pool
             block = BU.get_latest_block()
-            for peer in peer_pool:
+            for peer, socket in peer_pool:
                 peer.emit('new block', block)
-                peer.wait(seconds=1)
+                socket.wait(seconds=1)
                 peer.disconnect()
             peer_pool = []
             chat_namespace = get_peers(peer_pool)
