@@ -196,9 +196,12 @@ if __name__ == "__main__":
 
             start = time.time()
             status = Array('c', 'asldkjf')
-            p2 = Process(target=BlockFactory.mine, args=(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status))
-            p2.start()
-            p2.join()
+            try:
+                p2 = Process(target=BlockFactory.mine, args=(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status))
+                p2.start()
+                p2.join()
+            except:
+                print "block mining failed"
             # check for more peers to add to peer_pool
             block = BU.get_latest_block()
             for peer, socket in peer_pool:

@@ -35,7 +35,8 @@ def newblock(sid, data):
         incoming_block.verify()
     except Exception as e:
         print "block is bad"
-        raise e
+        print e
+        return
     try:
         block = BU.get_block_by_index(incoming_block.index)
     except:
@@ -155,7 +156,7 @@ def blockvotereply(sid, data):
                 print 'incoming block does not belong here'
 
     except Exception as e:
-        raise e
+        print e
 
 @sio.on('getblocks', namespace='/chat')
 def getblocks(sid):
