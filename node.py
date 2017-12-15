@@ -203,6 +203,7 @@ if __name__ == "__main__":
             block = BU.get_latest_block()
             for peer in peer_pool:
                 peer.emit('new block', block)
+                socketIO.wait(seconds=1)
                 peer.disconnect()
             peer_pool = []
             chat_namespace = get_peers(peer_pool)
