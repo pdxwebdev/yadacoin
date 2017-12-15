@@ -37,6 +37,10 @@ def newblock(sid, data):
         print "block is bad"
         print e
         return
+    except BaseException as e:
+        print "block is bad"
+        print e
+        return
     try:
         block = BU.get_block_by_index(incoming_block.index)
     except:
@@ -64,6 +68,8 @@ def newblock(sid, data):
             incoming_block.save()
         except Exception as e:
             print e
+        except BaseException as e:
+            print e
 
 @sio.on('newtransaction', namespace='/chat')
 def newtransaction(sid, data):
@@ -71,6 +77,9 @@ def newtransaction(sid, data):
     try:
         incoming_txn = Transaction.from_dict(data)
     except Exception as e:
+        print "transaction is bad"
+        print e
+    except BaseException as e:
         print "transaction is bad"
         print e
 
@@ -88,6 +97,8 @@ def newtransaction(sid, data):
                 f.write(json.dumps(data, indent=4))
 
     except Exception as e:
+        print e
+    except BaseException as e:
         print e
 
 @sio.on('getblocksreply', namespace='/chat')
@@ -127,6 +138,8 @@ def getblocksreply(self, data):
         print 'on_getblocksreply', 'done!'
     except Exception as e:
         print e
+    except BaseException as e:
+        print e
 
 votes = {}
 @sio.on('blockvotereply', namespace='/chat')
@@ -156,6 +169,8 @@ def blockvotereply(sid, data):
                 print 'incoming block does not belong here'
 
     except Exception as e:
+        print e
+    except BaseException as e:
         print e
 
 @sio.on('getblocks', namespace='/chat')
