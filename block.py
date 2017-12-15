@@ -130,7 +130,10 @@ class BlockFactory(object):
                 block.hash = hash_test
                 block.nonce = nonce
                 block.signature = BU.generate_signature(hash_test)
-                block.save()
+                try:
+                    block.save()
+                except:
+                    print 'error: already saved this index'
                 status.value = 'mined'
                 current_index.value = block.index + 1
                 break
