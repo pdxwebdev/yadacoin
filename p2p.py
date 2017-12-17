@@ -2,12 +2,16 @@ import socketio
 import eventlet
 import eventlet.wsgi
 import json
+import time
+from multiprocessing import Process, Value, Array
 from pymongo import MongoClient
+from socketIO_client import SocketIO, BaseNamespace
 from flask import Flask, render_template
 from blockchainutils import BU
 from blockchain import Blockchain
 from block import Block
 from transaction import Transaction
+from node import node
 
 
 mongo_client = MongoClient()
@@ -18,16 +22,12 @@ Block.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
 collection.remove({})
-@app.route('/')
-def index():
-    """Serve the client-side application."""
-    return render_template('index.html')
 
-@sio.on('connect', namespace='/chat')
-def connect(sid, environ):
-    print("connect ", sid)
 
-@sio.on('new block', namespace='/chat')
+def getblocks(sid):
+    print("getblocks ")
+    sio.emit('getblocksreply', data=[x for x in BU.get_blocks()], room=sid, namespace='/chat')
+
 def newblock(sid, data):
     print("new block ", data)
     try:
@@ -71,7 +71,6 @@ def newblock(sid, data):
         except BaseException as e:
             print e
 
-@sio.on('newtransaction', namespace='/chat')
 def newtransaction(sid, data):
     print("new transaction ", data)
     try:
@@ -101,7 +100,6 @@ def newtransaction(sid, data):
     except BaseException as e:
         print e
 
-@sio.on('getblocksreply', namespace='/chat')
 def getblocksreply(self, data):
     try:
         blocks = []
@@ -141,8 +139,7 @@ def getblocksreply(self, data):
     except BaseException as e:
         print e
 
-votes = {}
-@sio.on('blockvotereply', namespace='/chat')
+
 def blockvotereply(sid, data):
     try:
         block = Block.from_dict(data)
@@ -173,16 +170,83 @@ def blockvotereply(sid, data):
     except BaseException as e:
         print e
 
-@sio.on('getblocks', namespace='/chat')
-def getblocks(sid):
-    print("getblocks ")
-    sio.emit('getblocksreply', data=[x for x in BU.get_blocks()], room=sid, namespace='/chat')
+def new_block_checker(current_index):
+    while 1:
+        try:
+            current_index.value = BU.get_latest_block().get('index')
+        except:
+            pass
+        time.sleep(1)
 
-@sio.on('disconnect', namespace='/chat')
-def disconnect(sid):
-    print('disconnect ', sid)
+def get_peers(peers):
+    connected = {}
+    while 1:
+        for peer in peers:
+            if peer['ip'] in connected:
+                if not connected[peer['ip']]['sio'].connected:
+                    print 'reconnecting'
+                    socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+                    connected[peer['ip']]['sio'] = socketIO
+                    connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
+                else:
+                    try:
+                        connected[peer['ip']]['namespace'].emit('custom', namespace='/chat')
+                    except:
+                        raise
+                    print 'already connected'
+            else:
+                try:
+                    socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+                    if socketIO.connected:
+                        print 'connected'
+                        connected[peer['ip']] = {}
+                        connected[peer['ip']]['sio'] = socketIO
+                        connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
+                except:
+                    print 'nah'
+        time.sleep(1)
+
+class ChatNamespace(BaseNamespace):
+    pass
+
+@sio.on('custom', namespace='/chat')
+def custom(sid):
+    print("custom hahahahaha ")
+
+@sio.on('connect', namespace='/chat')
+def connect(sid, environ):
+    print("connect ", sid)
+
+@sio.on('new block', namespace='/chat')
+def sio_newblock(sid, data):
+    newblock(sid, data)
+
+@sio.on('newtransaction', namespace='/chat')
+def sio_newtransaction(sid, data):
+    newtransaction(sid, data)
+
+@sio.on('getblocksreply', namespace='/chat')
+def sio_getblocksreply(sid, data):
+    getblocksreply(sid, data)
+
+@sio.on('blockvotereply', namespace='/chat')
+def sio_blockvotereply(sid, data):
+    blockvotereply(sid, data)
+
+@sio.on('getblocks', namespace='/chat')
+def sio_getblocks(sid):
+    getblocks(sid)
 
 if __name__ == '__main__':
+    with open('config.json') as f:
+        config = json.loads(f.read())
+
+    with open('peers.json') as f:
+        peers = json.loads(f.read())
+
+    p = Process(target=get_peers, args=(peers,))
+    p.start()
+    node(config)
     blockchain = Blockchain(BU.get_blocks())
     blockchain.verify()
     # wrap Flask application with engineio's middleware
