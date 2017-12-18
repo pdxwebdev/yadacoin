@@ -37,7 +37,7 @@ def getblocks(sid):
     print("getblocks ")
     sio.emit('getblocksreply', data=[x for x in BU.get_blocks()], room=sid, namespace='/chat')
     print 'sent blocks!'
-
+votes = {}
 def newblock(sid, data):
     print("new block ", data)
     try:
