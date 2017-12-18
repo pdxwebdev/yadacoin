@@ -236,7 +236,7 @@ def custom(sid):
 def connect(sid, environ):
     print("connect ", sid)
 
-@sio.on('new block', namespace='/chat')
+@sio.on('newblock', namespace='/chat')
 def sio_newblock(sid, data):
     newblock(sid, data)
 

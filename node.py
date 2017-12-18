@@ -7,8 +7,10 @@ import re
 import itertools
 import sys
 from uuid import uuid4
-from multiprocessing import Process, Value, Array
+from multiprocessing import Process, Value, Array, Pool
 from ecdsa import SigningKey, SECP256k1
+from socketIO_client import SocketIO, BaseNamespace
+from requests.exceptions import ConnectionError
 from block import Block, BlockFactory
 from transaction import Transaction, Input, Output
 from blockchainutils import BU
@@ -44,6 +46,10 @@ def new_block_checker(current_index):
         except:
             pass
         time.sleep(1)
+
+class ChatNamespace(BaseNamespace):
+    def on_error(self, event, *args):
+        print 'error'
 
 def node(config):
     public_key = config.get('public_key')
@@ -100,10 +106,35 @@ def node(config):
         start = time.time()
         status = Array('c', 'asldkjf')
 
-        BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-        if time.time() - start < 30:
+        block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+        with open('peers.json') as f:
+            peers = json.loads(f.read())
+        if len(peers):
+            peers = [(x, block, difficulty) for x in peers]
+            print len(peers), 'peers'
+            try:
+                pool.terminate()
+            except:
+                pass
+            pool = Pool(processes=len(peers))
+            pool.map_async(connect, peers)
+
+        if time.time() - start < 10:
             difficulty = difficulty + '0'
-        elif time.time() - start > 60:
+        elif time.time() - start > 20:
             difficulty = difficulty[:-1]
         else:
             difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
+
+def connect(obj):
+    try:
+        peer, block, difficulty = obj
+        print 'broadcasting', peer['ip'], 'block index', block.index, 'difficulty', difficulty
+        socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+        socketIO.wait(seconds=1)
+        chat_namespace = socketIO.define(ChatNamespace, '/chat')
+        chat_namespace.emit('newblock', block.to_dict())
+        socketIO.wait(seconds=1)
+        socketIO.disconnect()
+    except:
+        pass

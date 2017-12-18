@@ -136,7 +136,7 @@ class BlockFactory(object):
                     print 'error: already saved this index'
                 status.value = 'mined'
                 current_index.value = block.index + 1
-                break
+                return block
             if current_index.value > initial_current_index:
                 status.value = 'exited'
                 break
