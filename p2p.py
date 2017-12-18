@@ -27,6 +27,7 @@ collection.remove({})
 def getblocks(sid):
     print("getblocks ")
     sio.emit('getblocksreply', data=[x for x in BU.get_blocks()], room=sid, namespace='/chat')
+    print 'sent blocks!'
 
 def newblock(sid, data):
     print("new block ", data)
@@ -100,46 +101,6 @@ def newtransaction(sid, data):
     except BaseException as e:
         print e
 
-def getblocksreply(self, data):
-    try:
-        blocks = []
-        for block_dict in data:
-            block = Block.from_dict(block_dict)
-            block.verify()
-            blocks.append(block)
-
-        blocks_sorted = sorted(blocks, key=lambda x: x.index)
-        if len(BU.get_latest_block()):
-            biggest_index = BU.get_latest_block().get('index')
-        else:
-            biggest_index = -1
-        if blocks_sorted:
-            biggest_index_incoming = blocks_sorted[-1].index
-        else:
-            biggest_index_incoming = -1
-        if blocks_sorted and biggest_index < biggest_index_incoming:
-            blockchain = Blockchain(blocks_sorted)
-            try:
-                blockchain.verify()
-            except:
-                print 'peer blockchain did not verify, aborting update'
-                return
-            collection.remove({})
-            print 'truncating!'
-            for block in blocks_sorted:
-                block.verify()
-                block.save()
-                print 'saving!'
-        else:
-            print 'my chain is longer!', biggest_index, biggest_index_incoming
-            return
-        print 'on_getblocksreply', 'done!'
-    except Exception as e:
-        print e
-    except BaseException as e:
-        print e
-
-
 def blockvotereply(sid, data):
     try:
         block = Block.from_dict(data)
@@ -190,7 +151,8 @@ def get_peers(peers):
                     connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
                 else:
                     try:
-                        connected[peer['ip']]['namespace'].emit('custom', namespace='/chat')
+                        connected[peer['ip']]['namespace'].emit('getblocks', namespace='/chat')
+                        print 'sent!'
                     except:
                         raise
                     print 'already connected'
@@ -207,7 +169,54 @@ def get_peers(peers):
         time.sleep(1)
 
 class ChatNamespace(BaseNamespace):
-    pass
+    def on_connect(self):
+        print 'client connected!'
+    
+    def on_getblocksreply(self, *args):
+        print 'getblocksreply'
+        try:
+            blocks = []
+            for block_dict in args:
+                block = Block.from_dict(block_dict)
+                block.verify()
+                blocks.append(block)
+
+            blocks_sorted = sorted(blocks, key=lambda x: x.index)
+            if len(BU.get_latest_block()):
+                biggest_index = BU.get_latest_block().get('index')
+            else:
+                biggest_index = -1
+            if blocks_sorted:
+                biggest_index_incoming = blocks_sorted[-1].index
+            else:
+                biggest_index_incoming = -1
+            if blocks_sorted and biggest_index < biggest_index_incoming:
+                blockchain = Blockchain(blocks_sorted)
+                try:
+                    blockchain.verify()
+                except:
+                    print 'peer blockchain did not verify, aborting update'
+                    return
+                collection.remove({})
+                print 'truncating!'
+                for block in blocks_sorted:
+                    block.verify()
+                    block.save()
+                    print 'saving!'
+            else:
+                print 'my chain is longer!', biggest_index, biggest_index_incoming
+                return
+            print 'on_getblocksreply', 'done!'
+        except Exception as e:
+            print e
+        except BaseException as e:
+            print e
+
+    def on_error(self, error):
+        print error
+
+    def on_message(self, message):
+        print message
 
 @sio.on('custom', namespace='/chat')
 def custom(sid):
