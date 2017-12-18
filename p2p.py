@@ -166,7 +166,8 @@ def get_peers(peers):
                         connected[peer['ip']]['sio'] = socketIO
                         connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
                 except:
-                    print 'nah'
+                    pass
+        time.sleep(1)
 
 class ChatNamespace(BaseNamespace):
     def on_connect(self):
@@ -253,13 +254,13 @@ if __name__ == '__main__':
     with open('peers.json') as f:
         peers = json.loads(f.read())
 
-    #p = Process(target=get_peers, args=(peers,))
-    #p.start()
+    p = Process(target=get_peers, args=(peers,))
+    p.start()
     node(config)
-    #blockchain = Blockchain(BU.get_blocks())
-    #blockchain.verify()
+    blockchain = Blockchain(BU.get_blocks())
+    blockchain.verify()
     # wrap Flask application with engineio's middleware
     app = socketio.Middleware(sio, app)
 
     # deploy as an eventlet WSGI server
-    #eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
+    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)

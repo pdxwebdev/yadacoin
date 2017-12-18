@@ -120,7 +120,7 @@ class BlockFactory(object):
         nonce = 0
         while 1:
             if callback:
-                callback()
+                callback(current_index.value)
             hash_test = cls.generate_hash(block_factory.block, str(nonce))
             # print hash_test
             if hash_test.startswith(difficulty):

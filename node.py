@@ -28,10 +28,11 @@ def verify_block(block):
     pass
 
 spinner = itertools.cycle(['-', '/', '|', '\\'])
-def output():
-    sys.stdout.write(spinner.next())  # write the next character
+def output(current_index):
+    string = spinner.next() + ' block height: ' + str(current_index+1)
+    sys.stdout.write(string)  # write the next character
     sys.stdout.flush()                # flush stdout buffer (actual character display)
-    sys.stdout.write('\b')            # erase the last written char
+    sys.stdout.write(''.join(['\b' for i in range(len(string))])) # erase the last written char
 
 def verify_transaction(transaction):
     signature = transaction.signature
