@@ -152,6 +152,7 @@ def get_peers(peers):
                 else:
                     try:
                         connected[peer['ip']]['namespace'].emit('getblocks', namespace='/chat')
+                        connected[peer['ip']]['sio'].wait(seconds=1)
                         print 'sent!'
                     except:
                         raise
@@ -166,7 +167,6 @@ def get_peers(peers):
                         connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
                 except:
                     print 'nah'
-        time.sleep(1)
 
 class ChatNamespace(BaseNamespace):
     def on_connect(self):
@@ -176,7 +176,7 @@ class ChatNamespace(BaseNamespace):
         print 'getblocksreply'
         try:
             blocks = []
-            for block_dict in args:
+            for block_dict in args[0]:
                 block = Block.from_dict(block_dict)
                 block.verify()
                 blocks.append(block)

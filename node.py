@@ -60,9 +60,9 @@ def node(config):
     blockchain = Blockchain(blocks)
     blockchain.verify()
     if len(blocks):
-        difficulty = '0000000'#re.search(r'^[0]+', blocks[-1].hash).group(0)
+        difficulty = re.search(r'^[0]+', blocks[-1].hash).group(0)
     else:
-        difficulty = '0000000'
+        difficulty = '000'
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     block = BU.get_latest_block()
