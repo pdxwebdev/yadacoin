@@ -270,8 +270,11 @@ if __name__ == '__main__':
         peers = json.loads(f.read())
 
     for peer in peers:
-        res = requests.get('http://{peer}:8000/getblocks'.format(peer=peer['ip']))
-        print res
+        try:
+            res = requests.get('http://{peer}:8000/getblocks'.format(peer=peer['ip']))
+            print res
+        except:
+            pass
     p = Process(target=get_peers, args=(peers,))
     p.start()
     p2 = Process(target=node, args=(config, ))
