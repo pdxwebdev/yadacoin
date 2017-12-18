@@ -3,7 +3,9 @@ import eventlet
 import eventlet.wsgi
 import json
 import time
-from multiprocessing import Process, Value, Array
+import signal
+import sys
+from multiprocessing import Process, Value, Array, Pool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from flask import Flask, render_template
@@ -23,6 +25,13 @@ sio = socketio.Server()
 app = Flask(__name__)
 collection.remove({})
 
+
+def signal_handler(signal, frame):
+        print('Closing...')
+        p.terminate()
+        p2.terminate
+        sys.exit(0)
+signal.signal(signal.SIGINT, signal_handler)
 
 def getblocks(sid):
     print("getblocks ")
@@ -256,7 +265,8 @@ if __name__ == '__main__':
 
     p = Process(target=get_peers, args=(peers,))
     p.start()
-    node(config)
+    p2 = Process(target=node, args=(config, ))
+    p2.start()
     blockchain = Blockchain(BU.get_blocks())
     blockchain.verify()
     # wrap Flask application with engineio's middleware

@@ -461,6 +461,7 @@ def transaction():
                 chat_namespace = socketIO.define(ChatNamespace, '/chat')
                 chat_namespace.emit('newtransaction', transaction.to_dict())
                 socketIO.wait(seconds=1)
+                chat_namespace.disconnect()
             except Exception as e:
                 raise e
         return json.dumps(request.get_json())
