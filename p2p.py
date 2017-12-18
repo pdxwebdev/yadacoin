@@ -9,7 +9,7 @@ import requests
 from multiprocessing import Process, Value, Array, Pool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
-from flask import Flask, render_template
+from flask import Flask, render_template, request
 from blockchainutils import BU
 from blockchain import Blockchain
 from block import Block
@@ -153,7 +153,27 @@ def new_block_checker(current_index):
 def get_peers(peers):
     connected = {}
     while 1:
+        blocks = BU.get_blocks()
+        blockchain = Blockchain(blocks)
+        
+        missing_block = blockchain.first_missing()
         for peer in peers:
+            if missing_block:
+                try:
+                    test_blocks = []
+                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip']), index=missing_block.index)
+                    inbound_block = json.loads(res.content)
+                    block = Block.from_dict(inbound_block)
+                    block.verify()
+                    test_blocks.extend(blocks)
+                    test_blocks.append(block)
+                    blocks_sorted = sorted(test_blocks, key=lambda x: x.index)
+                    test_blockchain = Blockchain(blocks_sorted)
+                    test_blockchain.verify()
+                    block.save()
+                    break
+                except:
+                    pass
             if peer['ip'] in connected:
                 if not connected[peer['ip']]['sio'].connected:
                     print 'reconnecting'
@@ -233,6 +253,11 @@ class ChatNamespace(BaseNamespace):
 @app.route('/getblocks')
 def app_getblocks():
     return json.dumps([x for x in BU.get_blocks()])
+
+@app.route('/getblock')
+def app_getblock():
+    idx = int(request.args.get('index'))
+    return json.dumps(BU.get_block_by_index(idx))
 
 @sio.on('custom', namespace='/chat')
 def custom(sid):

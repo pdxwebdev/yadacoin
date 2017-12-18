@@ -27,3 +27,14 @@ class Blockchain(object):
                 if block.index - last_block.index != 1:
                     raise BaseException("invalid block chain: indexes are not consecutive:", last_block.index, block.index)
             last_block = block
+
+    def first_missing(self):
+        last_block = None
+        for block in self.blocks:
+            block.verify()
+            for txn in block.transactions:
+                txn.verify()
+            if last_block:
+                if int(block.index) - int(last_block.index) > 1:
+                    return block
+            last_block = block
