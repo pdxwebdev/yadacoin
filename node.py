@@ -45,7 +45,6 @@ def new_block_checker(current_index):
         time.sleep(1)
 
 def node(config):
-
     public_key = config.get('public_key')
     private_key = config.get('private_key')
     TU.private_key = private_key
@@ -72,32 +71,36 @@ def node(config):
         latest_block_index = Value('i', 0)
     p = Process(target=new_block_checker, args=(latest_block_index,))
     p.start()
-    try:
-        with open('miner_transactions.json', 'r') as f:
-            transactions_parsed = json.loads(f.read())
-    except:
-        with open('miner_transactions.json', 'w') as f:
-            f.write('[]')
-            transactions_parsed = []
+    while 1:
+        try:
+            with open('miner_transactions.json', 'r') as f:
+                transactions_parsed = json.loads(f.read())
+        except:
+            with open('miner_transactions.json', 'w') as f:
+                f.write('[]')
+                transactions_parsed = []
 
-    with open('miner_transactions.json', 'r+') as f:
-        if transactions_parsed:
-            f.seek(0)
-            f.write('[]')
-            f.truncate()
-        transactions = []
-        rejected = []
-        for txn in transactions_parsed:
-            transaction = Transaction.from_dict(txn)
-            try:
-                transaction.verify()
-                transactions.append(transaction)
-            except:
-                rejected.append(txn)
-        f.write(json.dumps(rejected))
+        with open('miner_transactions.json', 'r+') as f:
+            if transactions_parsed:
+                f.seek(0)
+                f.write('[]')
+                f.truncate()
+            transactions = []
+            rejected = []
+            for txn in transactions_parsed:
+                transaction = Transaction.from_dict(txn)
+                try:
+                    transaction.verify()
+                    transactions.append(transaction)
+                except:
+                    rejected.append(txn)
+            f.write(json.dumps(rejected))
 
-    start = time.time()
-    status = Array('c', 'asldkjf')
+        start = time.time()
+        status = Array('c', 'asldkjf')
 
-    p2 = Process(target=BlockFactory.mine, args=(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status))
-    p2.start()
+        BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+        if start - time.time() < 60:
+            difficulty = difficulty + '0'
+        else:
+            difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
