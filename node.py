@@ -101,7 +101,9 @@ def node(config):
         status = Array('c', 'asldkjf')
 
         BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-        if start - time.time() < 60:
+        if time.time() - start < 30:
             difficulty = difficulty + '0'
+        elif time.time() - start > 60:
+            difficulty = difficulty[:-1]
         else:
             difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
