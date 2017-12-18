@@ -5,6 +5,7 @@ import json
 import time
 import signal
 import sys
+import requests
 from multiprocessing import Process, Value, Array, Pool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
@@ -29,7 +30,7 @@ collection.remove({})
 def signal_handler(signal, frame):
         print('Closing...')
         p.terminate()
-        p2.terminate
+        p2.terminate()
         sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -37,6 +38,7 @@ def getblocks(sid):
     print("getblocks ")
     sio.emit('getblocksreply', data=[x for x in BU.get_blocks()], room=sid, namespace='/chat')
     print 'sent blocks!'
+
 votes = {}
 def newblock(sid, data):
     print("new block ", data)
@@ -228,6 +230,10 @@ class ChatNamespace(BaseNamespace):
     def on_message(self, message):
         print message
 
+@app.route('/getblocks')
+def getblocks():
+    return json.dumps([x for x in BU.get_blocks()])
+
 @sio.on('custom', namespace='/chat')
 def custom(sid):
     print("custom hahahahaha ")
@@ -263,6 +269,9 @@ if __name__ == '__main__':
     with open('peers.json') as f:
         peers = json.loads(f.read())
 
+    for peer in peers:
+        res = requests.get('http://{peer}:8000/getblocks'.format(peer=peer['ip']))
+        print res
     p = Process(target=get_peers, args=(peers,))
     p.start()
     p2 = Process(target=node, args=(config, ))
