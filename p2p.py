@@ -231,7 +231,7 @@ class ChatNamespace(BaseNamespace):
         print message
 
 @app.route('/getblocks')
-def getblocks():
+def app_getblocks():
     return json.dumps([x for x in BU.get_blocks()])
 
 @sio.on('custom', namespace='/chat')
@@ -269,12 +269,30 @@ if __name__ == '__main__':
     with open('peers.json') as f:
         peers = json.loads(f.read())
 
+    chains = []
     for peer in peers:
         try:
-            res = requests.get('http://{peer}:8000/getblocks'.format(peer=peer['ip']))
-            print res
+            res = requests.get('http://{peer}:8000/getblocks'.format(peer=peer['ip']), timeout=1)
+            chain = json.loads(res.content)
+            chains.append(chain)
         except:
             pass
+
+    biggest_chain = {}
+    for chain in chains:
+        if not biggest_chain:
+            biggest_chain = chain
+        if len(chain) > len(biggest_chain) and chain[-1]['index'] > biggest_chain[-1]['index']:
+            biggest_chain = chain
+
+    blocks = BU.get_blocks()
+    latest_block = BU.get_latest_block()
+
+    if len(biggest_chain) > blocks.count() and biggest_chain[-1]['index'] > latest_block.get('index'):
+        collection.remove({})
+        for block in biggest_chain:
+            collection.insert(block)
+
     p = Process(target=get_peers, args=(peers,))
     p.start()
     p2 = Process(target=node, args=(config, ))
