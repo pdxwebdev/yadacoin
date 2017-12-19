@@ -11,20 +11,19 @@ from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from flask import Flask, render_template, request
 from blockchainutils import BU
-from blockchain import Blockchain
+from blockchain import Blockchain, BlockChainException
 from block import Block
 from transaction import Transaction
 from node import node
 
 
-mongo_client = MongoClient()
+mongo_client = MongoClient('localhost')
 db = mongo_client.yadacoin
 collection = db.blocks
 BU.collection = collection
 Block.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
-collection.remove({})
 
 
 def signal_handler(signal, frame):
@@ -156,23 +155,27 @@ def get_peers(peers):
         blocks = BU.get_blocks()
         blockchain = Blockchain(blocks)
         
-        missing_block = blockchain.first_missing()
+        index_to_replace = blockchain.find_error_block()
         for peer in peers:
-            if missing_block:
+            if index_to_replace:
+                print 'fixing missing block, index:', index_to_replace
                 try:
                     test_blocks = []
-                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip']), index=missing_block.index)
+                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=index_to_replace), timeout=1)
                     inbound_block = json.loads(res.content)
                     block = Block.from_dict(inbound_block)
                     block.verify()
-                    test_blocks.extend(blocks)
+                    collection.remove({'index': index_to_replace})
+                    test_blocks.extend([Block.from_dict(x) for x in BU.get_blocks() if x.get('index') < index_to_replace])
                     test_blocks.append(block)
                     blocks_sorted = sorted(test_blocks, key=lambda x: x.index)
                     test_blockchain = Blockchain(blocks_sorted)
                     test_blockchain.verify()
                     block.save()
-                    break
+                except BlockChainException as e:
+                    collection.remove({'index': index_to_replace - 1})
                 except:
+                    print 'passed peer'
                     pass
             if peer['ip'] in connected:
                 if not connected[peer['ip']]['sio'].connected:
@@ -186,16 +189,22 @@ def get_peers(peers):
                         connected[peer['ip']]['sio'].wait(seconds=1)
                         print 'sent!'
                     except:
-                        raise
+                        pass
                     print 'already connected'
             else:
                 try:
-                    socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
-                    if socketIO.connected:
-                        print 'connected'
-                        connected[peer['ip']] = {}
-                        connected[peer['ip']]['sio'] = socketIO
-                        connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
+                    #test for timeout
+                    proc = Process(target=SocketIO, args=(peer['ip'], 8000), kwargs={'wait_for_connection': False})
+                    proc.start()
+                    proc.join(4)
+                    if proc.exitcode:
+                        socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+
+                        if socketIO.connected:
+                            print 'connected'
+                            connected[peer['ip']] = {}
+                            connected[peer['ip']]['sio'] = socketIO
+                            connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
                 except:
                     pass
         time.sleep(1)

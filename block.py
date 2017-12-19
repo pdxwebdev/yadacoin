@@ -252,7 +252,7 @@ class Block(object):
         self.collection.insert(self.to_dict())
 
     def delete(self):
-        self.collection.remove(self.index)
+        self.collection.remove({"index": self.index})
 
     def to_dict(self):
         return {
