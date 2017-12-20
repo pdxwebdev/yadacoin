@@ -178,8 +178,6 @@ def get_peers(peers, config):
             if int(latest_block_local.index) > max_block_height:
                 output("I have the longest blockchain. I'm the shining example.")
                 # start the competition again
-                print 'mining!!!'
-                node(config)
                 continue
             print "i don't have the longest chain", max_block_height, latest_block_local.index
             if max_block_height - int(latest_block_local.index) > 1:
@@ -269,8 +267,6 @@ def get_peers(peers, config):
                 time.sleep(1)
                 continue
         else:
-            print 'mining!!!'
-            node(config)
             print 'loop'
         time.sleep(1)
 
@@ -338,10 +334,10 @@ if __name__ == '__main__':
     with open('peers.json') as f:
         peers = json.loads(f.read())
 
-    if args.mode == 'mine':
-        print 'hey'
+    if args.mode == 'sync':
         get_peers(peers, config)
-        print 'hey2'
+    elif args.mode == 'mine':
+        node(config)
     elif args.mode == 'serve':
         # wrap Flask application with engineio's middleware
         app = socketio.Middleware(sio, app)
