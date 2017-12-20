@@ -213,12 +213,12 @@ def get_peers(peers, config):
                     pass
                 
             highest_sig_count = max([len(x) for i, x in blocks.items()])
-            if len([len(x) for i, x in block.items() if len(x) == highest_sig_count]) > 1:
+            if len([len(x) for i, x in blocks.items() if len(x) == highest_sig_count]) > 1:
                 # if there's a tie, pick a winner by getting the lowest value signature
                 min_sig = base64.b64encode(min([base64.b64decode(x) for x in blocks.keys()]))
                 winning_block = blocks[min_sig][0]
             else:
-                winning_block = [x for i, x in block.items() if len(x) == highest_sig_count][0]
+                winning_block = [x for i, x in blocks.items() if len(x) == highest_sig_count][0]
 
             BU.collection.remove({"index": winning_block.index})
             BU.collection.insert(winning_block.to_dict())
