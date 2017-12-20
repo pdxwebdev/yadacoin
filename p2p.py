@@ -216,11 +216,11 @@ def get_peers(peers, config):
                         if not blocks:
                             continue
 
-                        winning_block = get_winning_block(blocks)
-                        print winning_block
-                        BU.collection.remove({"index": winning_block.index})
-                        BU.collection.insert(winning_block.to_dict())
-                        try_height += 1
+                    winning_block = get_winning_block(blocks)
+                    print winning_block
+                    BU.collection.remove({"index": winning_block.index})
+                    BU.collection.insert(winning_block.to_dict())
+                    try_height += 1
 
             blocks = {}
             if int(latest_block_local.index) == max_block_height:
