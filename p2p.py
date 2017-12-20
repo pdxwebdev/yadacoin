@@ -168,66 +168,63 @@ def get_peers(peers, config):
             except:
                 pass
 
-        if not block_heights:
-            output('no peers')
-            continue
+        if block_heights:
+            max_block_height = max([x for i, x in block_heights.items()])
+            peers_with_longest_chain = [i for i, x in block_heights.items() if x == max_block_height]
 
-        max_block_height = max([x for i, x in block_heights.items()])
-        peers_with_longest_chain = [i for i, x in block_heights.items() if x == max_block_height]
+            latest_block_local = Block.from_dict(BU.get_latest_block())
+            previous_block = Block.from_dict(BU.get_block_by_index(latest_block_local.index - 1))
+            if int(latest_block_local.index) > max_block_height:
+                output("I have the longest blockchain. I'm the shining example.")
+                continue
 
-        latest_block_local = Block.from_dict(BU.get_latest_block())
-        previous_block = Block.from_dict(BU.get_block_by_index(latest_block_local.index - 1))
-        if int(latest_block_local.index) > max_block_height:
-            output("I have the longest blockchain. I'm the shining example.")
-            continue
+            if max_block_height - int(latest_block_local.index) > 1:
+                output("MASSIVELY OUT OF SYNC!!! RESTART NODE!!!")
+                continue
 
-        if max_block_height - int(latest_block_local.index) > 1:
-            output("MASSIVELY OUT OF SYNC!!! RESTART NODE!!!")
-            continue
+            blocks = {}
+            if int(latest_block_local.index) == max_block_height:
+                # i'm one of the top dogs, count me in
+                blocks[latest_block_local.signature] = []
+                blocks[latest_block_local.signature].append(latest_block_local)
+                count_me_in = True
+            else:
+                count_me_in = False
 
-        blocks = {}
-        if int(latest_block_local.index) == max_block_height:
-            # i'm one of the top dogs, count me in
-            blocks[latest_block_local.signature] = []
-            blocks[latest_block_local.signature].append(latest_block_local)
-            count_me_in = True
+            for peer in peers_with_longest_chain:
+                #take a vote, gather blocks for this height from all peers
+                try:
+                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=1)
+                    inbound_block = json.loads(res.content)
+                    block = Block.from_dict(inbound_block)
+                    block.verify()
+                    if count_me_in:
+                        if block.prev_hash != previous_block.hash:
+                            # not a valid next block
+                            continue
+                    else:
+                        if block.prev_hash != latest_block_local.hash:
+                            # I'm probably way behind
+                            continue
+                    if block.signature not in blocks:
+                        blocks[block.signature] = []
+                    blocks[block.signature].append(block)
+                except:
+                    pass
+                
+            highest_sig_count = max([len(x) for i, x in blocks.items()])
+            if len([len(x) for i, x in block.items() if len(x) == highest_sig_count]) > 1:
+                # if there's a tie, pick a winner by getting the lowest value signature
+                min_sig = base64.b64encode(min([base64.b64decode(x) for x in blocks.keys()]))
+                winning_block = blocks[min_sig][0]
+            else:
+                winning_block = [x for i, x in block.items() if len(x) == highest_sig_count][0]
+
+            BU.collection.remove({"index": winning_block.index})
+            BU.collection.insert(winning_block.to_dict())
         else:
-            count_me_in = False
-
-        for peer in peers_with_longest_chain:
-            #take a vote, gather blocks for this height from all peers
-            try:
-                res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=1)
-                inbound_block = json.loads(res.content)
-                block = Block.from_dict(inbound_block)
-                block.verify()
-                if count_me_in:
-                    if block.prev_hash != previous_block.hash:
-                        # not a valid next block
-                        continue
-                else:
-                    if block.prev_hash != latest_block_local.hash:
-                        # I'm probably way behind
-                        continue
-                if block.signature not in blocks:
-                    blocks[block.signature] = []
-                blocks[block.signature].append(block)
-            except:
-                pass
-            
-        highest_sig_count = max([len(x) for i, x in blocks.items()])
-        if len([len(x) for i, x in block.items() if len(x) == highest_sig_count]) > 1:
-            # if there's a tie, pick a winner by getting the lowest value signature
-            min_sig = base64.b64encode(min([base64.b64decode(x) for x in blocks.keys()]))
-            winning_block = blocks[min_sig][0]
-        else:
-            winning_block = [x for i, x in block.items() if len(x) == highest_sig_count][0]
-
-        BU.collection.remove({"index": winning_block.index})
-        BU.collection.insert(winning_block.to_dict())
-
-        # start the competition again
-        node(config)
+            # start the competition again
+            node(config)
 
 class ChatNamespace(BaseNamespace):
     def on_connect(self):
