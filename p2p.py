@@ -285,7 +285,7 @@ def app_getblocks():
 
 @app.route('/getblockheight')
 def app_getblockheight():
-    return json.dumps({'block_height': BU.get_lastest_block().get('index')})
+    return json.dumps({'block_height': BU.get_latest_block().get('index')})
 
 @app.route('/getblock')
 def app_getblock():
