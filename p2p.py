@@ -82,10 +82,8 @@ def newblock(sid, data):
             print 'something went wrong with the blockchain dry run of new block'
         try:
             incoming_block.save()
-        except Exception as e:
-            print e
-        except BaseException as e:
-            print e
+        except:
+            print 'error while saving'
 
 def newtransaction(sid, data):
     print("new transaction ", data)
