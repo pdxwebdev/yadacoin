@@ -63,12 +63,11 @@ def node(config):
     coinbase = config.get('coinbase')
 
     blocks = BU.get_block_objs()  # verifies as the blocks are created so no need to call block.verify() on each block
-    blockchain = Blockchain(blocks)
-    blockchain.verify()
+
     if len(blocks):
-        difficulty = re.search(r'^[0]+', blocks[-1].hash).group(0)
+        difficulty = '0000'
     else:
-        difficulty = '000'
+        difficulty = '0000'
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     block = BU.get_latest_block()
@@ -78,53 +77,53 @@ def node(config):
         latest_block_index = Value('i', 0)
     p = Process(target=new_block_checker, args=(latest_block_index,))
     p.start()
-    while 1:
-        try:
-            with open('miner_transactions.json', 'r') as f:
-                transactions_parsed = json.loads(f.read())
-        except:
-            with open('miner_transactions.json', 'w') as f:
-                f.write('[]')
-                transactions_parsed = []
+    try:
+        with open('miner_transactions.json', 'r') as f:
+            transactions_parsed = json.loads(f.read())
+    except:
+        with open('miner_transactions.json', 'w') as f:
+            f.write('[]')
+            transactions_parsed = []
 
-        with open('miner_transactions.json', 'r+') as f:
-            if transactions_parsed:
-                f.seek(0)
-                f.write('[]')
-                f.truncate()
-            transactions = []
-            rejected = []
-            for txn in transactions_parsed:
-                transaction = Transaction.from_dict(txn)
-                try:
-                    transaction.verify()
-                    transactions.append(transaction)
-                except:
-                    rejected.append(txn)
-            f.write(json.dumps(rejected))
-
-        start = time.time()
-        status = Array('c', 'asldkjf')
-
-        block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-        with open('peers.json') as f:
-            peers = json.loads(f.read())
-        if len(peers):
-            peers = [(x, block, difficulty) for x in peers]
-            print len(peers), 'peers'
+    with open('miner_transactions.json', 'r+') as f:
+        if transactions_parsed:
+            f.seek(0)
+            f.write('[]')
+            f.truncate()
+        transactions = []
+        rejected = []
+        for txn in transactions_parsed:
+            transaction = Transaction.from_dict(txn)
             try:
-                pool.terminate()
+                transaction.verify()
+                transactions.append(transaction)
             except:
-                pass
-            pool = Pool(processes=len(peers))
-            pool.map_async(connect, peers)
+                rejected.append(txn)
+        f.write(json.dumps(rejected))
 
-        if time.time() - start < 10:
-            difficulty = difficulty + '0'
-        elif time.time() - start > 20:
-            difficulty = difficulty[:-1]
-        else:
-            difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
+    start = time.time()
+    status = Array('c', 'asldkjf')
+
+    block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+    with open('peers.json') as f:
+        peers = json.loads(f.read())
+    if len(peers):
+        peers = [(x, block, difficulty) for x in peers]
+        print len(peers), 'peers'
+        try:
+            pool.terminate()
+        except:
+            pass
+        pool = Pool(processes=len(peers))
+        pool.map_async(connect, peers)
+    """
+    if time.time() - start < 10:
+        difficulty = difficulty + '0'
+    elif time.time() - start > 20:
+        difficulty = difficulty[:-1]
+    else:
+        difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
+    """
 
 def connect(obj):
     try:
