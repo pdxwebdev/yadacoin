@@ -77,10 +77,10 @@ def newblock(sid, data):
             blocks.append(incoming_block)
             blocks_sorted = sorted(blocks, key=lambda x: x.index)
             blockchain = Blockchain(blocks_sorted)
+            blockchain.verify()
         except:
             print 'something went wrong with the blockchain dry run of new block'
         try:
-            blockchain.verify()
             incoming_block.save()
         except Exception as e:
             print e
@@ -215,14 +215,15 @@ def get_peers(peers, config):
                         except:
                             pass
 
-                        if not blocks:
-                            continue
+                    if not blocks:
+                        continue
 
                     winning_block = get_winning_block(blocks)
                     print winning_block
                     BU.collection.remove({"index": winning_block.index})
                     BU.collection.insert(winning_block.to_dict())
                     try_height += 1
+                    continue
 
             blocks = {}
             if max_block_height == int(latest_block_local.index):
@@ -244,16 +245,20 @@ def get_peers(peers, config):
                     block.verify()
                     if count_me_in:
                         if block.prev_hash != previous_block.hash:
+                            print 'continue'
                             # not a valid next block
                             continue
                     else:
                         if block.prev_hash != latest_block_local.hash:
+                            print 'continue'
                             # I'm probably way behind
                             continue
                     if block.signature not in blocks:
                         blocks[block.signature] = []
                     blocks[block.signature].append(block)
+                    print 'got here'
                 except:
+                    print 'passing'
                     pass
 
             if blocks:
@@ -262,6 +267,7 @@ def get_peers(peers, config):
 
                 BU.collection.remove({"index": winning_block.index})
                 BU.collection.insert(winning_block.to_dict())
+                time.sleep(1)
                 continue
         else:
             print 'mining!!!'
