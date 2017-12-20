@@ -34,7 +34,6 @@ def output(string):
 
 def signal_handler(signal, frame):
         print('Closing...')
-        p.terminate()
         sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -173,7 +172,9 @@ def get_peers(peers, config):
             max_block_height = max([x for i, x in block_heights.items()])
 
             latest_block_local = Block.from_dict(BU.get_latest_block())
-            previous_block = Block.from_dict(BU.get_block_by_index(latest_block_local.index - 1))
+            previous_block_dict = BU.get_block_by_index(latest_block_local.index - 1)
+            if previous_block_dict:
+                previous_block = Block.from_dict(previous_block_dict)
             if int(latest_block_local.index) > max_block_height:
                 output("I have the longest blockchain. I'm the shining example.")
                 # start the competition again
@@ -284,57 +285,6 @@ def get_winning_block(blocks):
         winning_block = [x for i, x in blocks.items() if len(x) == highest_sig_count][0][0]
     return winning_block
 
-
-class ChatNamespace(BaseNamespace):
-    def on_connect(self):
-        print 'client connected!'
-    
-    def on_getblocksreply(self, *args):
-        print 'getblocksreply'
-        try:
-            blocks = []
-            for block_dict in args[0]:
-                block = Block.from_dict(block_dict)
-                block.verify()
-                blocks.append(block)
-
-            blocks_sorted = sorted(blocks, key=lambda x: x.index)
-            if len(BU.get_latest_block()):
-                biggest_index = BU.get_latest_block().get('index')
-            else:
-                biggest_index = -1
-            if blocks_sorted:
-                biggest_index_incoming = blocks_sorted[-1].index
-            else:
-                biggest_index_incoming = -1
-            if blocks_sorted and biggest_index < biggest_index_incoming:
-                blockchain = Blockchain(blocks_sorted)
-                try:
-                    blockchain.verify()
-                except:
-                    print 'peer blockchain did not verify, aborting update'
-                    return
-                collection.remove({})
-                print 'truncating!'
-                for block in blocks_sorted:
-                    block.verify()
-                    block.save()
-                    print 'saving!'
-            else:
-                print 'my chain is longer!', biggest_index, biggest_index_incoming
-                return
-            print 'on_getblocksreply', 'done!'
-        except Exception as e:
-            print e
-        except BaseException as e:
-            print e
-
-    def on_error(self, error):
-        print error
-
-    def on_message(self, message):
-        print message
-
 @app.route('/getblocks')
 def app_getblocks():
     return json.dumps([x for x in BU.get_blocks()])
@@ -377,16 +327,24 @@ def sio_getblocks(sid):
     getblocks(sid)
 
 if __name__ == '__main__':
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('mode', nargs=None, help='server or node')
+    args = parser.parse_args()
+
     with open('config.json') as f:
         config = json.loads(f.read())
 
     with open('peers.json') as f:
         peers = json.loads(f.read())
 
-    p = Process(target=get_peers, args=(peers, config))
-    p.start()
-    # wrap Flask application with engineio's middleware
-    app = socketio.Middleware(sio, app)
+    if args.mode == 'mine':
+        print 'hey'
+        get_peers(peers, config)
+        print 'hey2'
+    elif args.mode == 'serve':
+        # wrap Flask application with engineio's middleware
+        app = socketio.Middleware(sio, app)
 
-    # deploy as an eventlet WSGI server
-    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
+        # deploy as an eventlet WSGI server
+        eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
