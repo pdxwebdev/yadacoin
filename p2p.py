@@ -6,6 +6,7 @@ import time
 import signal
 import sys
 import requests
+import base64
 from multiprocessing import Process, Value, Array, Pool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
@@ -26,10 +27,14 @@ sio = socketio.Server()
 app = Flask(__name__)
 
 
+def output(string):
+    sys.stdout.write(string)  # write the next character
+    sys.stdout.flush()                # flush stdout buffer (actual character display)
+    sys.stdout.write(''.join(['\b' for i in range(len(string))])) # erase the last written char
+
 def signal_handler(signal, frame):
         print('Closing...')
         p.terminate()
-        p2.terminate()
         sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -149,65 +154,80 @@ def new_block_checker(current_index):
             pass
         time.sleep(1)
 
-def get_peers(peers):
+def get_peers(peers, config):
     connected = {}
     while 1:
-        blocks = BU.get_blocks()
-        blockchain = Blockchain(blocks)
-        
-        index_to_replace = blockchain.find_error_block()
+        synced = False
+        highest_height = 0
+        block_heights = {}
         for peer in peers:
-            if index_to_replace:
-                print 'fixing missing block, index:', index_to_replace
-                try:
-                    test_blocks = []
-                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=index_to_replace), timeout=1)
-                    inbound_block = json.loads(res.content)
-                    block = Block.from_dict(inbound_block)
-                    block.verify()
-                    collection.remove({'index': index_to_replace})
-                    test_blocks.extend([Block.from_dict(x) for x in BU.get_blocks() if x.get('index') < index_to_replace])
-                    test_blocks.append(block)
-                    blocks_sorted = sorted(test_blocks, key=lambda x: x.index)
-                    test_blockchain = Blockchain(blocks_sorted)
-                    test_blockchain.verify()
-                    block.save()
-                except BlockChainException as e:
-                    collection.remove({'index': index_to_replace - 1})
-                except:
-                    print 'passed peer'
-                    pass
-            if peer['ip'] in connected:
-                if not connected[peer['ip']]['sio'].connected:
-                    print 'reconnecting'
-                    socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
-                    connected[peer['ip']]['sio'] = socketIO
-                    connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
-                else:
-                    try:
-                        connected[peer['ip']]['namespace'].emit('getblocks', namespace='/chat')
-                        connected[peer['ip']]['sio'].wait(seconds=1)
-                        print 'sent!'
-                    except:
-                        pass
-                    print 'already connected'
-            else:
-                try:
-                    #test for timeout
-                    proc = Process(target=SocketIO, args=(peer['ip'], 8000), kwargs={'wait_for_connection': False})
-                    proc.start()
-                    proc.join(4)
-                    if proc.exitcode:
-                        socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+            try:
+                res = requests.get('http://{peer}:8000/getblockheight'.format(peer=peer['ip']), timeout=1)
+                height = int(json.loads(res.content).get('block_height'))
+                block_heights[peer['ip']] = int(height)
+            except:
+                pass
 
-                        if socketIO.connected:
-                            print 'connected'
-                            connected[peer['ip']] = {}
-                            connected[peer['ip']]['sio'] = socketIO
-                            connected[peer['ip']]['namespace'] = socketIO.define(ChatNamespace, '/chat')
-                except:
-                    pass
-        time.sleep(1)
+        if not block_heights:
+            output('no peers')
+            continue
+
+        max_block_height = max([x for i, x in block_heights.items()])
+        peers_with_longest_chain = [i for i, x in block_heights.items() if x == max_block_height]
+
+        latest_block_local = Block.from_dict(BU.get_latest_block())
+        previous_block = Block.from_dict(BU.get_block_by_index(latest_block_local.index - 1))
+        if int(latest_block_local.index) > max_block_height:
+            output("I have the longest blockchain. I'm the shining example.")
+            continue
+
+        if max_block_height - int(latest_block_local.index) > 1:
+            output("MASSIVELY OUT OF SYNC!!! RESTART NODE!!!")
+            continue
+
+        blocks = {}
+        if int(latest_block_local.index) == max_block_height:
+            # i'm one of the top dogs, count me in
+            blocks[latest_block_local.signature] = []
+            blocks[latest_block_local.signature].append(latest_block_local)
+            count_me_in = True
+        else:
+            count_me_in = False
+
+        for peer in peers_with_longest_chain:
+            #take a vote, gather blocks for this height from all peers
+            try:
+                res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=1)
+                inbound_block = json.loads(res.content)
+                block = Block.from_dict(inbound_block)
+                block.verify()
+                if count_me_in:
+                    if block.prev_hash != previous_block.hash:
+                        # not a valid next block
+                        continue
+                else:
+                    if block.prev_hash != latest_block_local.hash:
+                        # I'm probably way behind
+                        continue
+                if block.signature not in blocks:
+                    blocks[block.signature] = []
+                blocks[block.signature].append(block)
+            except:
+                pass
+            
+        highest_sig_count = max([len(x) for i, x in blocks.items()])
+        if len([len(x) for i, x in block.items() if len(x) == highest_sig_count]) > 1:
+            # if there's a tie, pick a winner by getting the lowest value signature
+            min_sig = base64.b64encode(min([base64.b64decode(x) for x in blocks.keys()]))
+            winning_block = blocks[min_sig][0]
+        else:
+            winning_block = [x for i, x in block.items() if len(x) == highest_sig_count][0]
+
+        BU.collection.remove({"index": winning_block.index})
+        BU.collection.insert(winning_block.to_dict())
+
+        # start the competition again
+        node(config)
 
 class ChatNamespace(BaseNamespace):
     def on_connect(self):
@@ -263,6 +283,10 @@ class ChatNamespace(BaseNamespace):
 def app_getblocks():
     return json.dumps([x for x in BU.get_blocks()])
 
+@app.route('/getblockheight')
+def app_getblockheight():
+    return json.dumps({'block_height': BU.get_lastest_block().get('index')})
+
 @app.route('/getblock')
 def app_getblock():
     idx = int(request.args.get('index'))
@@ -303,36 +327,8 @@ if __name__ == '__main__':
     with open('peers.json') as f:
         peers = json.loads(f.read())
 
-    chains = []
-    for peer in peers:
-        try:
-            res = requests.get('http://{peer}:8000/getblocks'.format(peer=peer['ip']), timeout=1)
-            chain = json.loads(res.content)
-            chains.append(chain)
-        except:
-            pass
-
-    biggest_chain = {}
-    for chain in chains:
-        if not biggest_chain:
-            biggest_chain = chain
-        if len(chain) > len(biggest_chain) and chain[-1]['index'] > biggest_chain[-1]['index']:
-            biggest_chain = chain
-
-    blocks = BU.get_blocks()
-    latest_block = BU.get_latest_block()
-
-    if len(biggest_chain) > blocks.count() and biggest_chain[-1]['index'] > latest_block.get('index'):
-        collection.remove({})
-        for block in biggest_chain:
-            collection.insert(block)
-
-    p = Process(target=get_peers, args=(peers,))
+    p = Process(target=get_peers, args=(peers, config))
     p.start()
-    p2 = Process(target=node, args=(config, ))
-    p2.start()
-    blockchain = Blockchain(BU.get_blocks())
-    blockchain.verify()
     # wrap Flask application with engineio's middleware
     app = socketio.Middleware(sio, app)
 
