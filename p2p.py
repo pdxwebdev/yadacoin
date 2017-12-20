@@ -177,6 +177,9 @@ def get_peers(peers, config):
             previous_block = Block.from_dict(BU.get_block_by_index(latest_block_local.index - 1))
             if int(latest_block_local.index) > max_block_height:
                 output("I have the longest blockchain. I'm the shining example.")
+                # start the competition again
+                print 'mining!!!'
+                node(config)
                 continue
 
             if max_block_height - int(latest_block_local.index) > 1:
@@ -255,10 +258,6 @@ def get_peers(peers, config):
 
                 BU.collection.remove({"index": winning_block.index})
                 BU.collection.insert(winning_block.to_dict())
-        else:
-            # start the competition again
-            print 'mining!!!'
-            node(config)
 
 
 def get_winning_block(blocks):        
@@ -376,4 +375,4 @@ if __name__ == '__main__':
     app = socketio.Middleware(sio, app)
 
     # deploy as an eventlet WSGI server
-    #eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
+    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
