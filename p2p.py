@@ -169,95 +169,99 @@ def get_peers(peers, config):
             except:
                 pass
 
-        if block_heights:
-            max_block_height = max([x for i, x in block_heights.items()])
-            peers_with_longest_chain = [i for i, x in block_heights.items() if x == max_block_height]
+        if not block_heights:
+            print 'no block heights'
+            print 'mining!!!'
+            node(config)
+            continue
+        max_block_height = max([x for i, x in block_heights.items()])
+        peers_with_longest_chain = [i for i, x in block_heights.items() if x == max_block_height]
 
-            latest_block_local = Block.from_dict(BU.get_latest_block())
-            previous_block = Block.from_dict(BU.get_block_by_index(latest_block_local.index - 1))
-            if int(latest_block_local.index) > max_block_height:
-                output("I have the longest blockchain. I'm the shining example.")
-                # start the competition again
-                print 'mining!!!'
-                node(config)
-                continue
+        latest_block_local = Block.from_dict(BU.get_latest_block())
+        previous_block = Block.from_dict(BU.get_block_by_index(latest_block_local.index - 1))
+        if int(latest_block_local.index) > max_block_height:
+            output("I have the longest blockchain. I'm the shining example.")
+            # start the competition again
+            print 'mining!!!'
+            node(config)
+            continue
 
-            if max_block_height - int(latest_block_local.index) > 1:
-                try_height = int(latest_block_local.index)
-                while try_height < max_block_height:
-                    delta_max_dict = BU.get_block_by_index(try_height - 1)
-                    if not delta_max_dict:
-                        try_height -= 1
+        if max_block_height - int(latest_block_local.index) > 1:
+            try_height = int(latest_block_local.index)
+            while try_height < max_block_height:
+                delta_max_dict = BU.get_block_by_index(try_height - 1)
+                if not delta_max_dict:
+                    try_height -= 1
+                    continue
+                delta_max = Block.from_dict(delta_max_dict)
+                print 'latest', delta_max.index
+                output("MASSIVELY OUT OF SYNC!!! SLOWLY REPAIRING!!! BOCK %s" %try_height)
+                blocks = {}
+                for peer in peers:
+                    try:
+                        res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=try_height), timeout=0.01)
+                        inbound_block = json.loads(res.content)
+                        block = Block.from_dict(inbound_block)
+                        block.verify()
+
+                        if block.prev_hash != delta_max.hash:
+                            if try_height > 0:
+                                output('YOU NEED TO GO BACK FURTHER!')
+                                try_height -= 1
+                                continue
+
+                        if block.signature not in blocks:
+                            blocks[block.signature] = []
+
+                        blocks[block.signature].append(block)
+                    except:
+                        pass
+
+                    if not blocks:
                         continue
-                    delta_max = Block.from_dict(delta_max_dict)
-                    print 'latest', delta_max.index
-                    output("MASSIVELY OUT OF SYNC!!! SLOWLY REPAIRING!!! BOCK %s" %try_height)
-                    blocks = {}
-                    for peer in peers:
-                        try:
-                            res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=try_height), timeout=0.01)
-                            inbound_block = json.loads(res.content)
-                            block = Block.from_dict(inbound_block)
-                            block.verify()
-
-                            if block.prev_hash != delta_max.hash:
-                                if try_height > 0:
-                                    output('YOU NEED TO GO BACK FURTHER!')
-                                    try_height -= 1
-                                    continue
-
-                            if block.signature not in blocks:
-                                blocks[block.signature] = []
-
-                            blocks[block.signature].append(block)
-                        except:
-                            pass
-
-                        if not blocks:
-                            continue
-
-                    winning_block = get_winning_block(blocks)
-                    print winning_block
-                    BU.collection.remove({"index": winning_block.index})
-                    BU.collection.insert(winning_block.to_dict())
-                    try_height += 1
-
-            blocks = {}
-            if int(latest_block_local.index) == max_block_height:
-                # i'm one of the top dogs, count me in
-                blocks[latest_block_local.signature] = []
-                blocks[latest_block_local.signature].append(latest_block_local)
-                count_me_in = True
-            else:
-                count_me_in = False
-
-            for peer in peers_with_longest_chain:
-                #take a vote, gather blocks for this height from all peers
-                try:
-                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=0.01)
-                    inbound_block = json.loads(res.content)
-                    block = Block.from_dict(inbound_block)
-                    block.verify()
-                    if count_me_in:
-                        if block.prev_hash != previous_block.hash:
-                            # not a valid next block
-                            continue
-                    else:
-                        if block.prev_hash != latest_block_local.hash:
-                            # I'm probably way behind
-                            continue
-                    if block.signature not in blocks:
-                        blocks[block.signature] = []
-                    blocks[block.signature].append(block)
-                except:
-                    pass
-
-            if blocks:
 
                 winning_block = get_winning_block(blocks)
-
+                print winning_block
                 BU.collection.remove({"index": winning_block.index})
                 BU.collection.insert(winning_block.to_dict())
+                try_height += 1
+
+        blocks = {}
+        if int(latest_block_local.index) == max_block_height:
+            # i'm one of the top dogs, count me in
+            blocks[latest_block_local.signature] = []
+            blocks[latest_block_local.signature].append(latest_block_local)
+            count_me_in = True
+        else:
+            count_me_in = False
+
+        for peer in peers_with_longest_chain:
+            #take a vote, gather blocks for this height from all peers
+            try:
+                res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=0.01)
+                inbound_block = json.loads(res.content)
+                block = Block.from_dict(inbound_block)
+                block.verify()
+                if count_me_in:
+                    if block.prev_hash != previous_block.hash:
+                        # not a valid next block
+                        continue
+                else:
+                    if block.prev_hash != latest_block_local.hash:
+                        # I'm probably way behind
+                        continue
+                if block.signature not in blocks:
+                    blocks[block.signature] = []
+                blocks[block.signature].append(block)
+            except:
+                pass
+
+        if blocks:
+
+            winning_block = get_winning_block(blocks)
+
+            BU.collection.remove({"index": winning_block.index})
+            BU.collection.insert(winning_block.to_dict())
 
 
 def get_winning_block(blocks):        
