@@ -154,6 +154,7 @@ def new_block_checker(current_index):
             pass
         time.sleep(1)
 
+
 def get_peers(peers, config):
     connected = {}
     while 1:
@@ -162,7 +163,7 @@ def get_peers(peers, config):
         block_heights = {}
         for peer in peers:
             try:
-                res = requests.get('http://{peer}:8000/getblockheight'.format(peer=peer['ip']), timeout=1)
+                res = requests.get('http://{peer}:8000/getblockheight'.format(peer=peer['ip']), timeout=0.01)
                 height = int(json.loads(res.content).get('block_height'))
                 block_heights[peer['ip']] = int(height)
             except:
@@ -179,8 +180,44 @@ def get_peers(peers, config):
                 continue
 
             if max_block_height - int(latest_block_local.index) > 1:
-                output("MASSIVELY OUT OF SYNC!!! RESTART NODE!!!")
-                continue
+                try_height = int(latest_block_local.index)
+                while try_height < max_block_height:
+                    delta_max_dict = BU.get_block_by_index(try_height - 1)
+                    if not delta_max_dict:
+                        try_height -= 1
+                        continue
+                    delta_max = Block.from_dict(delta_max_dict)
+                    print 'latest', delta_max.index
+                    output("MASSIVELY OUT OF SYNC!!! SLOWLY REPAIRING!!! BOCK %s" %try_height)
+                    blocks = {}
+                    for peer in peers:
+                        try:
+                            res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=try_height), timeout=0.01)
+                            inbound_block = json.loads(res.content)
+                            block = Block.from_dict(inbound_block)
+                            block.verify()
+
+                            if block.prev_hash != delta_max.hash:
+                                if try_height > 0:
+                                    output('YOU NEED TO GO BACK FURTHER!')
+                                    try_height -= 1
+                                    continue
+
+                            if block.signature not in blocks:
+                                blocks[block.signature] = []
+
+                            blocks[block.signature].append(block)
+                        except:
+                            pass
+
+                        if not blocks:
+                            continue
+
+                        winning_block = get_winning_block(blocks)
+                        print winning_block
+                        BU.collection.remove({"index": winning_block.index})
+                        BU.collection.insert(winning_block.to_dict())
+                        try_height += 1
 
             blocks = {}
             if int(latest_block_local.index) == max_block_height:
@@ -194,7 +231,7 @@ def get_peers(peers, config):
             for peer in peers_with_longest_chain:
                 #take a vote, gather blocks for this height from all peers
                 try:
-                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=1)
+                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=0.01)
                     inbound_block = json.loads(res.content)
                     block = Block.from_dict(inbound_block)
                     block.verify()
@@ -211,20 +248,29 @@ def get_peers(peers, config):
                     blocks[block.signature].append(block)
                 except:
                     pass
-                
-            highest_sig_count = max([len(x) for i, x in blocks.items()])
-            if len([len(x) for i, x in blocks.items() if len(x) == highest_sig_count]) > 1:
-                # if there's a tie, pick a winner by getting the lowest value signature
-                min_sig = base64.b64encode(min([base64.b64decode(x) for x in blocks.keys()]))
-                winning_block = blocks[min_sig][0]
-            else:
-                winning_block = [x for i, x in blocks.items() if len(x) == highest_sig_count][0]
 
-            BU.collection.remove({"index": winning_block.index})
-            BU.collection.insert(winning_block.to_dict())
+            if blocks:
+
+                winning_block = get_winning_block(blocks)
+
+                BU.collection.remove({"index": winning_block.index})
+                BU.collection.insert(winning_block.to_dict())
         else:
             # start the competition again
+            print 'mining!!!'
             node(config)
+
+
+def get_winning_block(blocks):        
+    highest_sig_count = max([len(x) for i, x in blocks.items()])
+    if len([len(x) for i, x in blocks.items() if len(x) == highest_sig_count]) > 1:
+        # if there's a tie, pick a winner by getting the lowest value signature
+        min_sig = base64.b64encode(min([base64.b64decode(x) for x in blocks.keys()]))
+        winning_block = blocks[min_sig][0]
+    else:
+        winning_block = [x for i, x in blocks.items() if len(x) == highest_sig_count][0][0]
+    return winning_block
+
 
 class ChatNamespace(BaseNamespace):
     def on_connect(self):
@@ -330,4 +376,4 @@ if __name__ == '__main__':
     app = socketio.Middleware(sio, app)
 
     # deploy as an eventlet WSGI server
-    eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
+    #eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
