@@ -209,7 +209,11 @@ def app_getblockheight():
 @app.route('/getblock')
 def app_getblock():
     idx = int(request.args.get('index'))
-    return json.dumps(BU.get_block_by_index(idx))
+    block = BU.get_block_by_index(idx)
+    if block:
+        return json.dumps(block)
+    else:
+        return '{}'
 
 @sio.on('custom', namespace='/chat')
 def custom(sid):
