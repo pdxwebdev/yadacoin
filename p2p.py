@@ -89,7 +89,7 @@ def sync(peers, config):
             next_index = 0
         for peer in peers:
             try:
-                res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=next_index), timeout=0.01)
+                res = requests.get('http://{peer}:8000/getblockcandidate?index={index}'.format(peer=peer['ip'], index=next_index), timeout=0.01)
                 content = json.loads(res.content)
                 if not content:
                     print 'continue'
@@ -140,6 +140,15 @@ def app_getblock():
     block = BU.get_block_by_index(idx)
     if block:
         return json.dumps(block)
+    else:
+        return '{}'
+
+@app.route('/getblockcandidate')
+def app_getblockcandidate():
+    idx = int(request.args.get('index'))
+    res = db.consensus.find({'peer': 'me', 'index': idx})
+    if block.count():
+        return json.dumps(res[0]['block'])
     else:
         return '{}'
 
