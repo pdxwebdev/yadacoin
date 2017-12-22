@@ -145,7 +145,7 @@ def app_getblock():
 @app.route('/getblockcandidate')
 def app_getblockcandidate():
     idx = int(request.args.get('index'))
-    res = db.consensus.find({'peer': 'me', 'index': idx})
+    res = db.consensus.find({'index': idx})
     if res.count():
         return json.dumps(res[0]['block'])
     else:
