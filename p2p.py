@@ -38,53 +38,6 @@ def signal_handler(signal, frame):
         sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
-def getblocks(sid):
-    print("getblocks ")
-    sio.emit('getblocksreply', data=[x for x in BU.get_blocks()], room=sid, namespace='/chat')
-    print 'sent blocks!'
-
-votes = {}
-def newblock(sid, data):
-    print("new block ", data)
-    try:
-        incoming_block = Block.from_dict(data)
-        incoming_block.verify()
-    except Exception as e:
-        print "block is bad"
-        print e
-        return
-    except BaseException as e:
-        print "block is bad"
-        print e
-        return
-    try:
-        block = BU.get_block_by_index(incoming_block.index)
-    except:
-        return
-    if block:
-        # we have the same block. let the voting begin!
-        try:
-            if incoming_block.index not in votes:
-                votes[incoming_block.index] = {}
-            votes[incoming_block.index][incoming_block.signature] = 1
-            sio.emit('getblockvote', data=incoming_block.to_dict(), skip_sid=sid, namespace='/chat')
-        except:
-            print 'there was a problem when initializing a vote on a new block'
-    else:
-        # dry run this block in the blockchain. Does it belong?
-        try:
-            blocks = BU.get_block_objs()
-            blocks.append(incoming_block)
-            blocks_sorted = sorted(blocks, key=lambda x: x.index)
-            blockchain = Blockchain(blocks_sorted)
-            blockchain.verify()
-        except:
-            print 'something went wrong with the blockchain dry run of new block'
-        try:
-            incoming_block.save()
-        except:
-            print 'error while saving'
-
 def newtransaction(sid, data):
     print("new transaction ", data)
     try:
@@ -108,36 +61,6 @@ def newtransaction(sid, data):
             if not abort:
                 data.append(incoming_txn.to_dict())
                 f.write(json.dumps(data, indent=4))
-
-    except Exception as e:
-        print e
-    except BaseException as e:
-        print e
-
-def blockvotereply(sid, data):
-    try:
-        block = Block.from_dict(data)
-        block.verify()
-        if block.index not in votes:
-            votes[block.index] = {}
-        if block.signature not in votes[block.index]:
-            votes[block.index][block.signature] = 0
-        votes[block.index][block.signature] += 1
-
-        peers = len(sio.manager.rooms['/chat'])
-
-        if float(votes[block.index][block.signature]) / float(peers)  > 0.51:
-            blocks = [x for x in BU.get_block_objs() if x.index != block.index]
-            blocks.append(block)
-            blocks_sorted = sorted(blocks, key=lambda x: x.index)
-            blockchain = Blockchain(blocks_sorted)
-            try:
-                blockchain.verify()
-                delete_block = Block.from_dict(BU.get_block_by_index(block.index))
-                delete_block.delete()
-                block.save()
-            except:
-                print 'incoming block does not belong here'
 
     except Exception as e:
         print e
@@ -219,33 +142,9 @@ def app_getblock():
     else:
         return '{}'
 
-@sio.on('custom', namespace='/chat')
-def custom(sid):
-    print("custom hahahahaha ")
-
-@sio.on('connect', namespace='/chat')
-def connect(sid, environ):
-    print("connect ", sid)
-
-@sio.on('newblock', namespace='/chat')
-def sio_newblock(sid, data):
-    newblock(sid, data)
-
 @sio.on('newtransaction', namespace='/chat')
 def sio_newtransaction(sid, data):
     newtransaction(sid, data)
-
-@sio.on('getblocksreply', namespace='/chat')
-def sio_getblocksreply(sid, data):
-    getblocksreply(sid, data)
-
-@sio.on('blockvotereply', namespace='/chat')
-def sio_blockvotereply(sid, data):
-    blockvotereply(sid, data)
-
-@sio.on('getblocks', namespace='/chat')
-def sio_getblocks(sid):
-    getblocks(sid)
 
 if __name__ == '__main__':
     import argparse

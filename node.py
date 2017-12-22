@@ -106,17 +106,9 @@ def node(config):
         status = Array('c', 'asldkjf')
 
         block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-        with open('peers.json') as f:
-            peers = json.loads(f.read())
-        if len(peers):
-            peers = [(x, block, difficulty) for x in peers]
-            print len(peers), 'peers'
-            try:
-                pool.terminate()
-            except:
-                pass
-            pool = Pool(processes=len(peers))
-            pool.map_async(connect, peers)
+        dup_test = BU.collection.find({'id': block.signature})
+        if not dup_test.count():
+            db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
         """
         if time.time() - start < 10:
             difficulty = difficulty + '0'
@@ -125,16 +117,3 @@ def node(config):
         else:
             difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
         """
-
-def connect(obj):
-    try:
-        peer, block, difficulty = obj
-        print 'broadcasting', peer['ip'], 'block index', block.index, 'difficulty', difficulty
-        socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
-        socketIO.wait(seconds=1)
-        chat_namespace = socketIO.define(ChatNamespace, '/chat')
-        chat_namespace.emit('newblock', block.to_dict())
-        socketIO.wait(seconds=1)
-        socketIO.disconnect()
-    except:
-        socketIO.disconnect()
