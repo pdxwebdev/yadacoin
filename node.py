@@ -137,4 +137,4 @@ def connect(obj):
         socketIO.wait(seconds=1)
         socketIO.disconnect()
     except:
-        pass
+        socketIO.disconnect()

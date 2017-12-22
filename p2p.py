@@ -25,6 +25,7 @@ BU.collection = collection
 Block.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
+collection.remove({})
 
 
 def output(string):
@@ -152,134 +153,50 @@ def new_block_checker(current_index):
         time.sleep(1)
 
 
-def get_peers(peers, config):
+def sync(peers, config):
     connected = {}
     while 1:
         synced = False
         block_heights = {}
+        latest_block = BU.get_latest_block()
+        if latest_block:
+            next_index = int(latest_block.get('index')) + 1
+        else:
+            next_index = 0
         for peer in peers:
             try:
-                res = requests.get('http://{peer}:8000/getblockheight'.format(peer=peer['ip']), timeout=0.01)
-                height = int(json.loads(res.content).get('block_height'))
-                print 'height', height
-                print 'peer', peer['ip']
-                block_heights[peer['ip']] = int(height)
+                res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=next_index), timeout=0.01)
+                block = Block.from_dict(json.loads(res.content))
+                sofar = db.consensus.find({'peer': peer['ip'], 'index': next_index})
+                if not sofar.count():
+                    if latest_block and latest_block.get('hash') == block.prev_hash:
+                        db.consensus.insert({'peer': peer['ip'], 'index': next_index, 'id': block.signature, 'block': block.to_dict()})
+                    else:
+                        db.consensus.insert({'peer': peer['ip'], 'index': next_index, 'id': block.signature, 'block': block.to_dict()})
+                print 'not blah'
             except:
+                print 'blah'
                 pass
 
-        if block_heights:
-            print 'entered'
-            max_block_height = max([x for i, x in block_heights.items()])
-
-            latest_block_local = Block.from_dict(BU.get_latest_block())
-            previous_block_dict = BU.get_block_by_index(latest_block_local.index - 1)
-            if previous_block_dict:
-                previous_block = Block.from_dict(previous_block_dict)
-            if int(latest_block_local.index) > max_block_height:
-                output("I have the longest blockchain. I'm the shining example.")
-                # start the competition again
+        consensus = db.consensus.find({'index': next_index})
+        counts = {}
+        peers_already_used = []
+        winning_block = {}
+        for record in consensus:
+            if record['peer'] in peers_already_used:
                 continue
-            print "i don't have the longest chain", max_block_height, latest_block_local.index
-            if max_block_height - int(latest_block_local.index) > 1:
-                print 'there is a gap'
-                try_height = int(latest_block_local.index)
-                while try_height < max_block_height:
-                    delta_max_dict = BU.get_block_by_index(try_height - 1)
-                    if not delta_max_dict:
-                        try_height -= 1
-                        continue
-                    delta_max = Block.from_dict(delta_max_dict)
-                    print 'latest', delta_max.index
-                    output("MASSIVELY OUT OF SYNC!!! SLOWLY REPAIRING!!! BOCK %s" %try_height)
-                    blocks = {}
-                    for peer in peers:
-                        try:
-                            res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=try_height), timeout=0.01)
-                            inbound_block = json.loads(res.content)
-                            block = Block.from_dict(inbound_block)
-                            block.verify()
+            peers_already_used.append(record['peer'])
+            if record['id'] not in counts:
+                counts[record['id']] = 0
+            counts[record['id']] += 1
+            if (float(counts[record['id']]) / float(len(peers))) > 0.51:
+                winning_block = record['block']
+        if winning_block:
+            winning_block_obj = Block.from_dict(winning_block)
+            winning_block_obj.save()
 
-                            if block.prev_hash != delta_max.hash:
-                                if try_height > 0:
-                                    output('YOU NEED TO GO BACK FURTHER!')
-                                    try_height -= 1
-                                    continue
+        time.sleep(5)
 
-                            if block.signature not in blocks:
-                                blocks[block.signature] = []
-
-                            blocks[block.signature].append(block)
-                        except:
-                            pass
-
-                    if not blocks:
-                        continue
-
-                    winning_block = get_winning_block(blocks)
-                    print winning_block
-                    BU.collection.remove({"index": winning_block.index})
-                    BU.collection.insert(winning_block.to_dict())
-                    try_height += 1
-                    continue
-
-            blocks = {}
-            if max_block_height == int(latest_block_local.index):
-                # i'm one of the top dogs, count me in
-                blocks[latest_block_local.signature] = []
-                blocks[latest_block_local.signature].append(latest_block_local)
-                count_me_in = True
-            else:
-                count_me_in = False
-
-            peers_with_longest_chain = [i for i, x in block_heights.items() if x == max_block_height]
-            for peer in peers_with_longest_chain:
-                print 'all up in here'
-                #take a vote, gather blocks for this height from all peers
-                try:
-                    res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer, index=max_block_height), timeout=0.01)
-                    inbound_block = json.loads(res.content)
-                    block = Block.from_dict(inbound_block)
-                    block.verify()
-                    if count_me_in:
-                        if block.prev_hash != previous_block.hash:
-                            print 'continue'
-                            # not a valid next block
-                            continue
-                    else:
-                        if block.prev_hash != latest_block_local.hash:
-                            print 'continue'
-                            # I'm probably way behind
-                            continue
-                    if block.signature not in blocks:
-                        blocks[block.signature] = []
-                    blocks[block.signature].append(block)
-                    print 'got here'
-                except:
-                    print 'passing'
-                    pass
-
-            if blocks:
-                print 'we have blocks'
-                winning_block = get_winning_block(blocks)
-
-                BU.collection.remove({"index": winning_block.index})
-                BU.collection.insert(winning_block.to_dict())
-                time.sleep(1)
-                continue
-        else:
-            print 'loop'
-        time.sleep(1)
-
-
-def get_winning_block(blocks):        
-    highest_sig_count = max([len(x) for i, x in blocks.items()])
-    if len([len(x) for i, x in blocks.items() if len(x) == highest_sig_count]) > 1:
-        # if there's a tie, pick a winner by getting the lowest value signature
-        min_sig = base64.b64encode(min([base64.b64decode(x) for x in blocks.keys()]))
-        winning_block = blocks[min_sig][0]
-    else:
-        winning_block = [x for i, x in blocks.items() if len(x) == highest_sig_count][0][0]
-    return winning_block
 
 @app.route('/getblocks')
 def app_getblocks():
@@ -335,7 +252,7 @@ if __name__ == '__main__':
         peers = json.loads(f.read())
 
     if args.mode == 'sync':
-        get_peers(peers, config)
+        sync(peers, config)
     elif args.mode == 'mine':
         node(config)
     elif args.mode == 'serve':
