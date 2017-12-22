@@ -26,6 +26,7 @@ Block.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
 collection.remove({})
+db.consensus.remove({})
 
 
 def output(string):
