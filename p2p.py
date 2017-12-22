@@ -25,8 +25,6 @@ BU.collection = collection
 Block.collection = collection
 sio = socketio.Server()
 app = Flask(__name__)
-collection.remove({})
-db.consensus.remove({})
 
 
 def output(string):
@@ -168,6 +166,8 @@ if __name__ == '__main__':
         peers = json.loads(f.read())
 
     if args.mode == 'sync':
+        #collection.remove({})
+        #db.consensus.remove({})
         sync(peers, config)
     elif args.mode == 'mine':
         node(config)

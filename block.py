@@ -131,7 +131,6 @@ class BlockFactory(object):
                 block.nonce = nonce
                 block.signature = BU.generate_signature(hash_test)
                 status.value = 'mined'
-                current_index.value = block.index + 1
                 return block
             if current_index.value > initial_current_index:
                 status.value = 'exited'

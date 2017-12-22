@@ -65,9 +65,9 @@ def node(config):
     blocks = BU.get_block_objs()  # verifies as the blocks are created so no need to call block.verify() on each block
 
     if len(blocks):
-        difficulty = '0000'
+        difficulty = '000'
     else:
-        difficulty = '0000'
+        difficulty = '000'
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     block = BU.get_latest_block()
@@ -106,9 +106,13 @@ def node(config):
         status = Array('c', 'asldkjf')
 
         block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-        dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
-        if not dup_test.count():
-            db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+        if block:
+            dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
+            if not dup_test.count():
+                print 'candidate submitted'
+                db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+        else:
+            print 'greatest block height changed during mining'
         """
         if time.time() - start < 10:
             difficulty = difficulty + '0'
