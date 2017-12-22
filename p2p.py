@@ -104,7 +104,7 @@ def sync(peers, config):
                 print 'not blah'
             except:
                 print 'blah'
-                pass
+                raise
 
         consensus = db.consensus.find({'index': next_index})
         counts = {}
@@ -147,7 +147,7 @@ def app_getblock():
 def app_getblockcandidate():
     idx = int(request.args.get('index'))
     res = db.consensus.find({'peer': 'me', 'index': idx})
-    if block.count():
+    if res.count():
         return json.dumps(res[0]['block'])
     else:
         return '{}'
