@@ -106,7 +106,7 @@ def node(config):
         status = Array('c', 'asldkjf')
 
         block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-        dup_test = db.consensus.find({'peer': 'me', 'id': block.signature})
+        dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
         if not dup_test.count():
             db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
         """
