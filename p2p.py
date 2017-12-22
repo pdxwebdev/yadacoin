@@ -104,7 +104,6 @@ def sync(peers, config):
                 print 'not blah'
             except:
                 print 'blah'
-                raise
 
         consensus = db.consensus.find({'index': next_index})
         counts = {}
