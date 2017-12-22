@@ -166,6 +166,10 @@ def sync(peers, config):
         for peer in peers:
             try:
                 res = requests.get('http://{peer}:8000/getblock?index={index}'.format(peer=peer['ip'], index=next_index), timeout=0.01)
+                content = json.loads(res.content)
+                if not content:
+                    print 'continue'
+                    continue
                 block = Block.from_dict(json.loads(res.content))
                 sofar = db.consensus.find({'peer': peer['ip'], 'index': next_index})
                 if not sofar.count():
@@ -195,7 +199,7 @@ def sync(peers, config):
             winning_block_obj = Block.from_dict(winning_block)
             winning_block_obj.save()
 
-        time.sleep(5)
+        time.sleep(1)
 
 
 @app.route('/getblocks')
