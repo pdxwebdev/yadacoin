@@ -87,21 +87,26 @@ def sync(peers, config):
             next_index = 0
         for peer in peers:
             try:
-                res = requests.get('http://{peer}:8000/getblockcandidate?index={index}'.format(peer=peer['ip'], index=next_index), timeout=0.01)
-                content = json.loads(res.content)
-                if not content:
-                    print 'continue'
-                    continue
-                block = Block.from_dict(json.loads(res.content))
                 sofar = db.consensus.find({'peer': peer['ip'], 'index': next_index})
-                if not sofar.count():
+                if sofar.count():
+                    print 'already have', next_index, "from", peer['ip']
+                else:
+                    res = requests.get('http://{peer}:8000/getblockcandidate?index={index}'.format(peer=peer['ip'], index=next_index), timeout=1)
+                    content = json.loads(res.content)
+                    print content
+                    if not content:
+                        print 'continue', peer['ip'], next_index
+                        continue
+                    block = Block.from_dict(json.loads(res.content))
+                    sofar = db.consensus.find({'peer': peer['ip'], 'index': next_index})
                     if latest_block and latest_block.get('hash') == block.prev_hash:
                         db.consensus.insert({'peer': peer['ip'], 'index': next_index, 'id': block.signature, 'block': block.to_dict()})
                     else:
                         db.consensus.insert({'peer': peer['ip'], 'index': next_index, 'id': block.signature, 'block': block.to_dict()})
-                print 'not blah'
+                    print 'got', next_index, 'from', peer['ip']
             except:
-                print 'blah'
+                print 'blah', peer['ip']
+
 
         consensus = db.consensus.find({'index': next_index})
         counts = {}
@@ -119,8 +124,6 @@ def sync(peers, config):
         if winning_block:
             winning_block_obj = Block.from_dict(winning_block)
             winning_block_obj.save()
-
-        time.sleep(1)
 
 
 @app.route('/getblocks')
