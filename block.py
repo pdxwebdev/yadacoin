@@ -39,8 +39,13 @@ class BlockFactory(object):
                 transaction_obj = Transaction.from_dict(txn)
             transaction_obj.verify()
             #check double spend
-            res = BU.check_double_spend(transaction_obj)
-            if not res:
+            res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex'))))
+            unspent_ids = [x['id'] for x in res]
+            failed = False
+            for x in transaction_obj.inputs:
+                if x.id not in unspent_ids:
+                    failed = True
+            if not failed:
                 transaction_objs.append(transaction_obj)
                 fee_sum += float(transaction_obj.fee)
         block_reward = BU.get_block_reward()

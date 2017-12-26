@@ -124,14 +124,29 @@ class BU(object):  # Blockchain Utilities
             }
         ])
 
+        coinbases = BU.collection.aggregate([
+            {"$unwind": "$transactions" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {
+                "$match": {
+                    "txn.inputs": { "$exists": True, "$size": 0}
+                }
+            }
+        ])
 
+        all_txns = [x for x in unspent] + [x for x in coinbases]
         utxn = {}
-        for x in unspent:
+        for x in all_txns:
             address = str(P2PKHBitcoinAddress.from_pubkey(x['txn']['public_key'].decode('hex')))
             if address not in utxn:
                 utxn[address] = []
             utxn[address].append(x['txn'])
-        print utxn
+
         return utxn
 
     @classmethod
