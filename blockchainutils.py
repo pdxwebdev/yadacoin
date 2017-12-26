@@ -15,6 +15,7 @@ from transactionutils import TU
 from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+from bson.son import SON
 
 
 class BU(object):  # Blockchain Utilities
