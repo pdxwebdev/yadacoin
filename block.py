@@ -236,7 +236,14 @@ class Block(object):
     def save(self):
         self.verify()
         for txn in self.transactions:
-            if BU.check_double_spend(txn):
+            address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
+            unspent = BU.get_wallet_unspent_transactions(address)
+            unspent_ids = [x['id'] for x in unspent]
+            failed = False
+            for x in txn.inputs:
+                if x.id not in unspent_ids:
+                    failed = True
+            if failed:
                 raise BaseException('double spend', txn)
 
         self.collection.insert(self.to_dict())
