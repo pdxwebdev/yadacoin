@@ -230,10 +230,11 @@ class Block(object):
 
     def save(self):
         self.verify()
-        if BU.check_double_spend(self):
-            raise BaseException('double spend', self)
-        else:
-            self.collection.insert(self.to_dict())
+        for txn in self.transactions:
+            if BU.check_double_spend(txn):
+                raise BaseException('double spend', txn)
+
+        self.collection.insert(self.to_dict())
 
     def delete(self):
         self.collection.remove({"index": self.index})
