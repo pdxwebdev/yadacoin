@@ -263,17 +263,49 @@ class BU(object):  # Blockchain Utilities
         except:
             raise BaseException("Block reward file not found")
 
-        blocks = [x for x in cls.get_blocks()]
+        latest_block = BU.get_latest_block()
+        if latest_block:
+            block_count = (latest_block['index'] + 1)
+        else:
+            block_count = 0
+
 
         for t, block_reward in enumerate(block_rewards):
             if block:
                 if block.index >= int(block_reward['block']) and block.index < int(block_rewards[t+1]['block']):
                     break
             else:
-                if len(blocks) == 0:
+                if block_count == 0:
                     break
-                if (blocks[-1]['index'] + 1) >= int(block_reward['block']) and (blocks[-1]['index'] + 1) < int(block_rewards[t+1]['block']):
+                if block_count >= int(block_reward['block']) and block_count < int(block_rewards[t+1]['block']):
                     break
 
         return float(block_reward['reward'])
 
+    @classmethod
+    def check_double_spend(transaction_obj):
+        res = BU.collection.aggregate([
+            {"$unwind": "$transactions" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {"$unwind": "$txn.inputs" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "input_id": "$txn.inputs.id",
+                    "public_key": "$txn.public_key"
+                }
+            },
+            {"$sort": SON([("count", -1), ("input_id", -1)])},
+            {"$match":
+                {
+                    "public_key": transaction_obj.public_key,
+                    "input_id": transaction_obj.transaction_signature
+                }
+            }
+        ])
+        return [x for x in res]

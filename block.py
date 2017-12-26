@@ -38,8 +38,11 @@ class BlockFactory(object):
             else:
                 transaction_obj = Transaction.from_dict(txn)
             transaction_obj.verify()
-            transaction_objs.append(transaction_obj)
-            fee_sum += float(transaction_obj.fee)
+            #check double spend
+            res = BU.check_double_spend(transaction_obj)
+            if not res:
+                transaction_objs.append(transaction_obj)
+                fee_sum += float(transaction_obj.fee)
         block_reward = BU.get_block_reward()
         coinbase_txn = TransactionFactory(
             public_key=self.public_key,
@@ -52,24 +55,7 @@ class BlockFactory(object):
         ).generate_transaction()
         transaction_objs.append(coinbase_txn)
 
-        used = []
-        verified_txns = []
-        for transaction in transaction_objs:
-            bad_txn = False
-            address = str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex')))
-            utxns = []
-            for utxn in BU.get_wallet_unspent_transactions(address):
-                utxns.append(utxn['id'])
-
-            for input_txn in transaction.inputs:
-                if input_txn.id not in utxns or (transaction.public_key, input_txn.id) in used:
-                    bad_txn = True
-                used.append((transaction.public_key, input_txn.id))
-
-            if not bad_txn:
-                verified_txns.append(transaction)
-
-        self.transactions = verified_txns
+        self.transactions = transaction_objs
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
         self.block = Block(
@@ -244,7 +230,10 @@ class Block(object):
 
     def save(self):
         self.verify()
-        self.collection.insert(self.to_dict())
+        if BU.check_double_spend(self):
+            raise BaseException('double spend', self)
+        else:
+            self.collection.insert(self.to_dict())
 
     def delete(self):
         self.collection.remove({"index": self.index})

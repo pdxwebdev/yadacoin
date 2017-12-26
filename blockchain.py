@@ -17,7 +17,7 @@ class Blockchain(object):
         else:
             self.blocks = []
 
-    def verify(self):
+    def verify(self, progress):
         last_block = None
         for block in self.blocks:
             block.verify()
@@ -29,6 +29,7 @@ class Blockchain(object):
                 if block.index - last_block.index != 1:
                     raise BlockChainException("invalid block chain: indexes are not consecutive:", last_block.index, block.index)
             last_block = block
+            progress(str(int(float(block.index + 1) / float(len(self.blocks)) * 100)))
 
     def find_error_block(self):
         last_block = None
