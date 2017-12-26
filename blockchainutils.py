@@ -285,52 +285,53 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def check_double_spend(cls, transaction_obj):
-        res = BU.collection.aggregate([
-            {"$unwind": "$transactions" },
-            {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$transactions"
-                }
-            },
-            {"$unwind": "$txn.inputs" },
-            {
-                "$project": {
-                    "_id": 0,
-                    "input_id": "$txn.inputs.id",
-                    "public_key": "$txn.public_key"
-                }
-            },
-            {"$sort": SON([("count", -1), ("input_id", -1)])},
-            {"$match":
+        for txn_input in transaction_obj.inputs:
+            res = BU.collection.aggregate([
+                {"$unwind": "$transactions" },
                 {
-                    "public_key": transaction_obj.public_key,
-                    "input_id": transaction_obj.transaction_signature
-                }
-            }
-        ])
-        res_consensus = BU.consensus.aggregate([
-            {"$unwind": "$block.transactions" },
-            {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$block.transactions"
-                }
-            },
-            {"$unwind": "$txn.inputs" },
-            {
-                "$project": {
-                    "_id": 0,
-                    "input_id": "$txn.inputs.id",
-                    "public_key": "$txn.public_key"
-                }
-            },
-            {"$sort": SON([("count", -1), ("input_id", -1)])},
-            {"$match":
+                    "$project": {
+                        "_id": 0,
+                        "txn": "$transactions"
+                    }
+                },
+                {"$unwind": "$txn.inputs" },
                 {
-                    "public_key": transaction_obj.public_key,
-                    "input_id": transaction_obj.transaction_signature
+                    "$project": {
+                        "_id": 0,
+                        "input_id": "$txn.inputs.id",
+                        "public_key": "$txn.public_key"
+                    }
+                },
+                {"$sort": SON([("count", -1), ("input_id", -1)])},
+                {"$match":
+                    {
+                        "public_key": transaction_obj.public_key,
+                        "input_id": txn_input.id
+                    }
                 }
-            }
-        ])
+            ])
+            res_consensus = BU.consensus.aggregate([
+                {"$unwind": "$block.transactions" },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "txn": "$block.transactions"
+                    }
+                },
+                {"$unwind": "$txn.inputs" },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "input_id": "$txn.inputs.id",
+                        "public_key": "$txn.public_key"
+                    }
+                },
+                {"$sort": SON([("count", -1), ("input_id", -1)])},
+                {"$match":
+                    {
+                        "public_key": transaction_obj.public_key,
+                        "input_id": txn_input.id
+                    }
+                }
+            ])
         return [x for x in res] + [x for x in res_consensus]
