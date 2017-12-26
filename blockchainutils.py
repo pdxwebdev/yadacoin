@@ -283,7 +283,7 @@ class BU(object):  # Blockchain Utilities
         return float(block_reward['reward'])
 
     @classmethod
-    def check_double_spend(transaction_obj):
+    def check_double_spend(cls, transaction_obj):
         res = BU.collection.aggregate([
             {"$unwind": "$transactions" },
             {
