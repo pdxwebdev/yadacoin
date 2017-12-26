@@ -59,4 +59,5 @@ for x in res:
             double_spends[x['public_key']][x['input_id']] = x
     else:
         double_spends[x['public_key']] = {}
+        double_spends[x['public_key']][x['input_id']] = x
 print "double spends", json.dumps(double_spends, indent=4)

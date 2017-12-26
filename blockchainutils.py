@@ -73,34 +73,65 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_unspent_transactions(cls):
-        from block import Block
-        from transaction import Transaction, Input, Crypt
-        blocks = cls.get_blocks()
-        unspent_transactions = {}
-        for block in blocks:
-            for txn in block.get('transactions'):
-                transaction = Transaction.from_dict(txn)
-                for output in transaction.outputs:
-                    if output.to not in unspent_transactions:
-                        unspent_transactions[output.to] = {}
-                    unspent_transactions[output.to][transaction.transaction_signature] = transaction.to_dict()
-        for block in blocks:
-            for txn in block.get('transactions'):
-                transaction = Transaction.from_dict(txn)
-                address = str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex')))
-                for input_txn in transaction.inputs:
-                    try:
-                        del unspent_transactions[address][input_txn.id]
-                    except KeyError:
-                        pass
+        
+        spent = BU.collection.aggregate([
+            {"$unwind": "$transactions" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {"$unwind": "$txn.inputs" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "spent": {
+                        "$concat": ["$txn.inputs.id", "$txn.public_key"]
+                    }
+                }
+            }
+        ])
+
+        unspent = BU.collection.aggregate([
+            {"$unwind": "$transactions" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {"$unwind": "$txn.inputs" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": 1,
+                    "desc": {
+                        "$concat": ["$txn.id", "$txn.public_key"]
+                    }
+                }
+            },
+            {
+                "$match": {
+                    "desc": {"$nin": [x['spent'] for x in spent]}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": 1
+                }
+            }
+        ])
+
 
         utxn = {}
-        for i, x in unspent_transactions.items():
-            for j, y in x.items():
-                if i not in utxn:
-                    utxn[i] = []
-                utxn[i].append(y)
-
+        for x in unspent:
+            address = str(P2PKHBitcoinAddress.from_pubkey(x['txn']['public_key'].decode('hex')))
+            if address not in utxn:
+                utxn[address] = []
+            utxn[address].append(x['txn'])
+        print utxn
         return utxn
 
     @classmethod
