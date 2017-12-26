@@ -285,6 +285,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def check_double_spend(cls, transaction_obj):
+        double_spends = []
         for txn_input in transaction_obj.inputs:
             res = BU.collection.aggregate([
                 {"$unwind": "$transactions" },
@@ -334,4 +335,5 @@ class BU(object):  # Blockchain Utilities
                     }
                 }
             ])
-        return [x for x in res] + [x for x in res_consensus]
+            double_spends.extend([x for x in res] + [x for x in res_consensus])
+        return double_spends
