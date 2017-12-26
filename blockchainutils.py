@@ -311,29 +311,5 @@ class BU(object):  # Blockchain Utilities
                     }
                 }
             ])
-            res_consensus = BU.consensus.aggregate([
-                {"$unwind": "$block.transactions" },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "txn": "$block.transactions"
-                    }
-                },
-                {"$unwind": "$txn.inputs" },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "input_id": "$txn.inputs.id",
-                        "public_key": "$txn.public_key"
-                    }
-                },
-                {"$sort": SON([("count", -1), ("input_id", -1)])},
-                {"$match":
-                    {
-                        "public_key": transaction_obj.public_key,
-                        "input_id": txn_input.id
-                    }
-                }
-            ])
-            double_spends.extend([x for x in res] + [x for x in res_consensus])
+            double_spends.extend([x for x in res])
         return double_spends
