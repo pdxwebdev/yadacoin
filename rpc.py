@@ -27,8 +27,11 @@ from pyfcm import FCMNotification
 mongo_client = MongoClient()
 db = mongo_client.yadacoin
 collection = db.blocks
+consensus = db.consensus
 BU.collection = collection
 TU.collection = collection
+BU.consensus = consensus
+TU.consensus = consensus
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',

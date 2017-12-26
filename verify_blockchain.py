@@ -32,7 +32,7 @@ blocks = BU.get_blocks()
 blockchain = Blockchain(blocks)
 blockchain.verify(output)
 
-res = BU.collection.aggregate([
+res = col.aggregate([
     {"$unwind": "$transactions" },
     {
         "$project": {
@@ -48,12 +48,15 @@ res = BU.collection.aggregate([
             "public_key": "$txn.public_key"
         }
     },
-    {"$sort": SON([("count", -1), ("input_id", -1)])},
-    {"$match": [
-        {
-            "public_key": transaction_obj.public_key,
-            "id": transaction_obj.transaction_signature
-        }
-    ]}
+    {"$sort": SON([("count", -1), ("input_id", -1)])}
 ])
-print json.dumps([x for x in res], indent=4)
+double_spends = {}
+for x in res:
+    if x['public_key'] in double_spends:
+        if x['input_id'] in double_spends[x['public_key']]:
+            print "we have a double spend", x
+        else:
+            double_spends[x['public_key']][x['input_id']] = x
+    else:
+        double_spends[x['public_key']] = {}
+print "double spends", json.dumps(double_spends, indent=4)

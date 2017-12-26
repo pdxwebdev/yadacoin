@@ -21,8 +21,11 @@ from node import node
 mongo_client = MongoClient('localhost')
 db = mongo_client.yadacoin
 collection = db.blocks
+consensus = db.consensus
 BU.collection = collection
 Block.collection = collection
+BU.consensus = consensus
+Block.consensus = consensus
 sio = socketio.Server()
 app = Flask(__name__)
 
