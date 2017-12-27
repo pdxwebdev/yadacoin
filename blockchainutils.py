@@ -48,32 +48,82 @@ class BU(object):  # Blockchain Utilities
         for block in blocks:
             block_objs.append(Block.from_dict(block))
         return block_objs
-    #  miner -> person 1 -> person 2
-    #  | mine coin | requester_rid and rid is miner.bulletin_secret + miner.bulletin_secret | 
-    @classmethod
-    def get_wallet_balances(cls):
-        unspent_transactions = cls.get_unspent_transactions()
-        balances = {}
-        for idx, txns in unspent_transactions.items():
-            for txn in txns:
-                if idx not in balances:
-                    balances[idx] = 0
-                for output in txn['outputs']:
-                    if output['to'] == idx:
-                        balances[idx] += float(output['value'])
-        return balances
 
     @classmethod
     def get_wallet_balance(cls, address):
-        balance = cls.get_wallet_balances().get(address)
+        unspent_transactions = cls.get_wallet_unspent_transactions(address)
+        balance = 0
+        for txn in unspent_transactions:
+            for output in txn['outputs']:
+                if address == output['to']:
+                    balance += float(output['value'])
         if balance:
             return balance
         else:
             return 0
 
     @classmethod
-    def get_unspent_transactions(cls):
+    def get_wallet_unspent_transactions(cls, address):
         
+        received = BU.collection.aggregate([
+            {"$unwind": "$transactions" },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {"$unwind": "$txn.outputs" },
+            {
+                "$match": {
+                    "txn.outputs.to": address
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "public_key": "$txn.public_key",
+                    "txn": "$txn"
+                }
+            }
+        ])
+        ids = []
+        reverse_public_key = ''
+        for x in received:
+            ids.append(x['txn']['id'])
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
+            if xaddress == address:
+                reverse_public_key = x['public_key']
+
+        # no reverse means you never spent anything
+        # so all transactions are unspent
+        if not reverse_public_key:
+            received = BU.collection.aggregate([
+                {"$unwind": "$transactions" },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "txn": "$transactions"
+                    }
+                },
+                {
+                    "$match": {
+                        "txn.outputs.to": address
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "public_key": "$txn.public_key",
+                        "txn": "$txn"
+                    }
+                }
+            ])
+            unspent_formatted = []
+            for x in received:
+                unspent_formatted.append(x['txn'])
+            return unspent_formatted
+
         spent = BU.collection.aggregate([
             {"$unwind": "$transactions" },
             {
@@ -84,14 +134,23 @@ class BU(object):  # Blockchain Utilities
             },
             {"$unwind": "$txn.inputs" },
             {
+                "$match": {
+                    "txn.public_key": reverse_public_key
+                }
+            },
+            {
                 "$project": {
                     "_id": 0,
-                    "spent": {
-                        "$concat": ["$txn.inputs.id", "$txn.public_key"]
-                    }
+                    "public_key": "$txn.public_key",
+                    "input_id": "$txn.inputs.id",
+                    "txn": "$txn"
                 }
             }
         ])
+
+        ids_spent_by_me = []
+        for x in spent:
+            ids_spent_by_me.append(x['input_id'])
 
         unspent = BU.collection.aggregate([
             {"$unwind": "$transactions" },
@@ -101,57 +160,23 @@ class BU(object):  # Blockchain Utilities
                     "txn": "$transactions"
                 }
             },
-            {"$unwind": "$txn.inputs" },
-            {
-                "$project": {
-                    "_id": 0,
-                    "txn": 1,
-                    "desc": {
-                        "$concat": ["$txn.id", "$txn.public_key"]
-                    }
-                }
-            },
             {
                 "$match": {
-                    "desc": {"$nin": [x['spent'] for x in spent]}
+                    "txn.outputs.to": address,
+                    "txn.id": {"$nin": ids_spent_by_me}
                 }
             },
             {
                 "$project": {
                     "_id": 0,
-                    "txn": 1
+                    "txn": "$txn"
                 }
             }
         ])
-
-        coinbases = BU.collection.aggregate([
-            {"$unwind": "$transactions" },
-            {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$transactions"
-                }
-            },
-            {
-                "$match": {
-                    "txn.inputs": { "$exists": True, "$size": 0}
-                }
-            }
-        ])
-
-        all_txns = [x for x in unspent] + [x for x in coinbases]
-        utxn = {}
-        for x in all_txns:
-            address = str(P2PKHBitcoinAddress.from_pubkey(x['txn']['public_key'].decode('hex')))
-            if address not in utxn:
-                utxn[address] = []
-            utxn[address].append(x['txn'])
-
-        return utxn
-
-    @classmethod
-    def get_wallet_unspent_transactions(cls, address):
-        return cls.get_unspent_transactions().get(address, [])
+        unspent_formatted = []
+        for x in unspent:
+            unspent_formatted.append(x['txn'])
+        return unspent_formatted
 
     @classmethod
     def get_transactions(cls, raw=False):
