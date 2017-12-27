@@ -78,41 +78,43 @@ def node(config):
     p = Process(target=new_block_checker, args=(latest_block_index,))
     p.start()
     while 1:
-        try:
-            with open('miner_transactions.json', 'r') as f:
-                transactions_parsed = json.loads(f.read())
-        except:
-            with open('miner_transactions.json', 'w') as f:
-                f.write('[]')
-                transactions_parsed = []
-
-        with open('miner_transactions.json', 'r+') as f:
-            if transactions_parsed:
-                f.seek(0)
-                f.write('[]')
-                f.truncate()
-            transactions = []
-            rejected = []
-            for txn in transactions_parsed:
-                transaction = Transaction.from_dict(txn)
-                try:
-                    transaction.verify()
-                    transactions.append(transaction)
-                except:
-                    rejected.append(txn)
-            f.write(json.dumps(rejected))
 
         start = time.time()
         status = Array('c', 'asldkjf')
 
-        block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-        if block:
-            dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
-            if not dup_test.count():
-                print 'candidate submitted'
+        dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
+        if not dup_test.count():
+            try:
+                with open('miner_transactions.json', 'r') as f:
+                    transactions_parsed = json.loads(f.read())
+            except:
+                with open('miner_transactions.json', 'w') as f:
+                    f.write('[]')
+                    transactions_parsed = []
+
+            with open('miner_transactions.json', 'r+') as f:
+                if transactions_parsed:
+                    f.seek(0)
+                    f.write('[]')
+                    f.truncate()
+                transactions = []
+                rejected = []
+                for txn in transactions_parsed:
+                    transaction = Transaction.from_dict(txn)
+                    try:
+                        transaction.verify()
+                        transactions.append(transaction)
+                    except:
+                        rejected.append(txn)
+                f.write(json.dumps(rejected))
+            block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+
+            if block:
+                print 'candidate submitted', block.transactions, block.index
                 db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
-        else:
-            print 'greatest block height changed during mining'
+            else:
+                print 'greatest block height changed during mining'
+
         """
         if time.time() - start < 10:
             difficulty = difficulty + '0'

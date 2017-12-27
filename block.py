@@ -157,7 +157,7 @@ class Block(object):
         transactions = []
         for txn in block.get('transactions'):
             # TODO: do validify checking for coinbase transactions
-            if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1:
+            if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1 and not txn.get('relationship'):
                 txn['coinbase'] = True  
             else:
                 txn['coinbase'] = False
@@ -246,7 +246,11 @@ class Block(object):
             if failed:
                 raise BaseException('double spend', txn)
 
-        self.collection.insert(self.to_dict())
+        res = self.collection.find({"index": (int(self.index) - 1)})
+        if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:
+            self.collection.insert(self.to_dict())
+        else:
+            print "CRITICAL: block rejected..."
 
     def delete(self):
         self.collection.remove({"index": self.index})
