@@ -99,6 +99,7 @@ class BU(object):  # Blockchain Utilities
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
             if xaddress == address:
                 reverse_public_key = x['public_key']
+                break
 
         # no reverse means you never spent anything
         # so all transactions are unspent
