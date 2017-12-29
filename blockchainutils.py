@@ -66,6 +66,11 @@ class BU(object):  # Blockchain Utilities
     def get_wallet_unspent_transactions(cls, address):
         
         received = BU.collection.aggregate([
+            {
+                "$match": {
+                    "transactions.outputs.to": address
+                }
+            },
             {"$unwind": "$transactions" },
             {
                 "$project": {
@@ -99,6 +104,11 @@ class BU(object):  # Blockchain Utilities
         # so all transactions are unspent
         if not reverse_public_key:
             received = BU.collection.aggregate([
+                {
+                    "$match": {
+                        "transactions.outputs.to": address
+                    }
+                },
                 {"$unwind": "$transactions" },
                 {
                     "$project": {
@@ -125,6 +135,11 @@ class BU(object):  # Blockchain Utilities
             return unspent_formatted
 
         spent = BU.collection.aggregate([
+            {
+                "$match": {
+                    "transactions.public_key": reverse_public_key
+                }
+            },
             {"$unwind": "$transactions" },
             {
                 "$project": {
@@ -153,6 +168,11 @@ class BU(object):  # Blockchain Utilities
             ids_spent_by_me.append(x['input_id'])
 
         unspent = BU.collection.aggregate([
+            {
+                "$match": {
+                    "transactions.outputs.to": address
+                }
+            },
             {"$unwind": "$transactions" },
             {
                 "$project": {
