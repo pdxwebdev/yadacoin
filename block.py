@@ -42,9 +42,13 @@ class BlockFactory(object):
             res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex'))))
             unspent_ids = [x['id'] for x in res]
             failed = False
+            used_ids_in_this_txn = []
             for x in transaction_obj.inputs:
                 if x.id not in unspent_ids:
                     failed = True
+                if x.id in used_ids_in_this_txn:
+                    failed = True
+                used_ids_in_this_txn.append(x.id)
             if not failed:
                 transaction_objs.append(transaction_obj)
                 fee_sum += float(transaction_obj.fee)
@@ -240,9 +244,13 @@ class Block(object):
             unspent = BU.get_wallet_unspent_transactions(address)
             unspent_ids = [x['id'] for x in unspent]
             failed = False
+            used_ids_in_this_txn = []
             for x in txn.inputs:
                 if x.id not in unspent_ids:
                     failed = True
+                if x.id in used_ids_in_this_txn:
+                    failed = True
+                used_ids_in_this_txn.append(x.id)
             if failed:
                 raise BaseException('double spend', txn)
 
