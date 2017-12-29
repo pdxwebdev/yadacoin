@@ -54,10 +54,11 @@ double_spends = {}
 for x in res:
     if x['public_key'] in double_spends:
         if x['input_id'] in double_spends[x['public_key']]:
-            print "we have a double spend", x
+            raise BaseException('double spend')
         else:
-            double_spends[x['public_key']][x['input_id']] = x
+            double_spends[x['public_key']][x['input_id']] = 1
     else:
         double_spends[x['public_key']] = {}
-        double_spends[x['public_key']][x['input_id']] = x
-print "double spends", json.dumps(double_spends, indent=4)
+        double_spends[x['public_key']][x['input_id']] = 1
+
+print 'no double spends!'
