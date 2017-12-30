@@ -22,6 +22,7 @@ from graph import Graph
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from pyfcm import FCMNotification
+from multiprocessing import Process, Value, Array, Pool
 
 
 mongo_client = MongoClient()
@@ -392,7 +393,8 @@ def request_notification():
                 result = push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='Friend Request Accepted!',
-                    message_body='Your friend request was approved!'
+                    message_body='Your friend request was approved!',
+                    data_message=data
                 )
             else:
                 result = push_service.notify_single_device(
@@ -430,7 +432,7 @@ def get_peers():
 @app.route('/transaction', methods=['GET', 'POST'])
 def transaction():
     if request.method == 'POST':
-        from transaction import InvalidTransactionException, InvalidTransactionSignatureException
+        from transaction import InvalidTransactionException, InvalidTransactionSignatureException, MissingInputTransactionException
         items = request.json
         if not isinstance(items, list):
             items = [items, ]
@@ -445,34 +447,32 @@ def transaction():
                 return '', 400
             except InvalidTransactionSignatureException:
                 return '', 400
+            except MissingInputTransactionException:
+                pass
             transactions.append(transaction)
-        with open('miner_transactions.json', 'a+') as f:
-            try:
-                existing = json.loads(f.read())
-            except:
-                existing = []
-            existing.extend([x.to_dict() for x in transactions])
-            f.seek(0)
-            f.truncate()
-            f.write(json.dumps(existing, indent=4))
-            f.truncate()
-        with open('peers.json') as f:
-            peers = json.loads(f.read())
-        for peer in peers:
-            try:
-                socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
-                chat_namespace = socketIO.define(ChatNamespace, '/chat')
-                chat_namespace.emit('newtransaction', transaction.to_dict())
-                socketIO.wait(seconds=1)
-                chat_namespace.disconnect()
-            except Exception as e:
-                raise e
+
+        for x in transactions:
+            db.miner_transactions.insert(x.to_dict())
+        job = Process(target=txn_broadcast_job, args=(transaction,))
+        job.start()
         return json.dumps(request.get_json())
     else:
         rid = request.args.get('rid')
         transaction = BU.get_transactions_by_rid(rid, rid=True, raw=True)
         return json.dumps(transaction)
 
+def txn_broadcast_job(transaction):
+    with open('peers.json') as f:
+        peers = json.loads(f.read())
+    for peer in peers:
+        try:
+            socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+            chat_namespace = socketIO.define(ChatNamespace, '/chat')
+            chat_namespace.emit('newtransaction', transaction.to_dict())
+            socketIO.wait(seconds=1)
+            chat_namespace.disconnect()
+        except Exception as e:
+            raise e
 
 @app.route('/bulletins')
 def bulletin():

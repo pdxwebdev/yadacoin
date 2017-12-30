@@ -29,6 +29,9 @@ Block.consensus = consensus
 sio = socketio.Server()
 app = Flask(__name__)
 
+class ChatNamespace(BaseNamespace):
+    def on_error(self, event, *args):
+        print 'error'
 
 def output(string):
     sys.stdout.write(string)  # write the next character
@@ -52,18 +55,10 @@ def newtransaction(sid, data):
         print e
 
     try:
-        with open('miner_transactions.json') as f:
-            data = json.loads(f.read())
-
-        with open('miner_transactions.json', 'w') as f:
-            abort = False
-            for x in data:
-                if x.get('id') == incoming_txn.transaction_signature:
-                    abort = True
-            if not abort:
-                data.append(incoming_txn.to_dict())
-                f.write(json.dumps(data, indent=4))
-
+        dup_check = db.miner_transactions.find({'id': incoming_txn.transaction_signature})
+        if dup_check.count():
+            return
+        db.miner_transactions.insert(incoming_txn.to_dict())
     except Exception as e:
         print e
     except BaseException as e:
@@ -107,7 +102,26 @@ def sync(peers, config):
                     else:
                         db.consensus.insert({'peer': peer['ip'], 'index': next_index, 'id': block.signature, 'block': block.to_dict()})
                     print 'got', next_index, 'from', peer['ip']
+
+                    data = db.miner_transactions.find()
+                    if data.count():
+                        for txn in data:
+                            res = db.blocks.find({"transactions.id": txn['id']})
+                            if res.count():
+                                db.miner_transactions.remove({'id': txn['id']})
+                            else:
+                                try:
+                                    transaction = Transaction.from_dict(txn)
+                                    transaction.verify()
+                                    socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+                                    chat_namespace = socketIO.define(ChatNamespace, '/chat')
+                                    chat_namespace.emit('newtransaction', txn)
+                                    socketIO.wait(seconds=1)
+                                    chat_namespace.disconnect()
+                                except:
+                                    print 'failed to broadcast transaction'
             except:
+                raise
                 print 'blah', peer['ip']
 
 
