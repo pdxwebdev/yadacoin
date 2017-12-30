@@ -15,9 +15,10 @@ from block import Block, BlockFactory
 from transaction import Transaction, Input, Output
 from blockchainutils import BU
 from transactionutils import TU
-from transaction import TransactionFactory
+from transaction import TransactionFactory, InvalidTransactionSignatureException
 from pymongo import MongoClient
 from blockchain import Blockchain
+from bitcoin.wallet import P2PKHBitcoinAddress
 
 
 mongo_client = MongoClient()
@@ -84,30 +85,35 @@ def node(config):
 
         dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
         if not dup_test.count():
-            try:
-                with open('miner_transactions.json', 'r') as f:
-                    transactions_parsed = json.loads(f.read())
-            except:
-                with open('miner_transactions.json', 'w') as f:
-                    f.write('[]')
-                    transactions_parsed = []
-
-            with open('miner_transactions.json', 'r+') as f:
-                if transactions_parsed:
-                    f.seek(0)
-                    f.write('[]')
-                    f.truncate()
-                transactions = []
-                rejected = []
-                for txn in transactions_parsed:
+            transactions = db.miner_transactions.find()
+            transaction_objs = []
+            for txn in transactions:
+                try:
                     transaction = Transaction.from_dict(txn)
-                    try:
-                        transaction.verify()
-                        transactions.append(transaction)
-                    except:
-                        rejected.append(txn)
-                f.write(json.dumps(rejected))
-            block = BlockFactory.mine(transactions, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+                    transaction.verify()
+                    #check double spend
+                    res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex'))))
+                    unspent_ids = [x['id'] for x in res]
+                    failed = False
+                    used_ids_in_this_txn = []
+                    for x in transaction.inputs:
+                        if x.id not in unspent_ids:
+                            failed = True
+                        if x.id in used_ids_in_this_txn:
+                            failed = True
+                        used_ids_in_this_txn.append(x.id)
+                    if failed:
+                        db.miner_transactions.remove({'id': transaction.transaction_signature})
+                        print 'transaction removed', transaction.transaction_signature
+                    else:
+                        transaction_objs.append(transaction)
+                except InvalidTransactionSignatureException as e:
+                    db.miner_transactions.remove({'id': transaction.transaction_signature})
+                except Exception as e:
+                    print e
+                    print 'rejected transaction', txn['id']
+            print 'starting to mine...'
+            block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
 
             if block:
                 print 'candidate submitted', block.transactions, block.index

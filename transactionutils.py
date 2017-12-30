@@ -47,13 +47,5 @@ class TU(object):  # Transaction Utilities
         else:
             items = [item.to_dict() for item in items]
 
-        with open('miner_transactions.json', 'a+') as f:
-            try:
-                existing = json.loads(f.read())
-            except:
-                existing = []
-            existing.extend(items)
-            f.seek(0)
-            f.truncate()
-            f.write(json.dumps(existing, indent=4))
-            f.truncate()
+        for item in items:
+            cls.miner_transactions.insert(item)
