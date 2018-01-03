@@ -15,7 +15,7 @@ from block import Block, BlockFactory
 from transaction import Transaction, Input, Output
 from blockchainutils import BU
 from transactionutils import TU
-from transaction import TransactionFactory, InvalidTransactionSignatureException
+from transaction import TransactionFactory, InvalidTransactionSignatureException, MissingInputTransactionException
 from pymongo import MongoClient
 from blockchain import Blockchain
 from bitcoin.wallet import P2PKHBitcoinAddress
@@ -107,6 +107,8 @@ def node(config):
                         print 'transaction removed', transaction.transaction_signature
                     else:
                         transaction_objs.append(transaction)
+                except MissingInputTransactionException as e:
+                    print 'missing this input transaction, will try again later'
                 except InvalidTransactionSignatureException as e:
                     db.miner_transactions.remove({'id': transaction.transaction_signature})
                 except Exception as e:
