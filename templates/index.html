@@ -128,6 +128,9 @@
             <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12 bhoechie-tab-container">
                 <div class="col-lg-3 col-md-3 col-sm-3 col-xs-3 bhoechie-tab-menu">
                   <div class="list-group">
+                    <a href="#" class="list-group-item text-center active" ng-if="user.authenticated == false" ng-click="switch($event)">
+                      <h4 class="glyphicon glyphicon-home"></h4><br/>Home
+                    </a>
                     <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false" ng-click="switch($event)">
                       <h4 class="glyphicon glyphicon-road"></h4><br/>Register / Login
                     </a>
@@ -151,10 +154,16 @@
                 <div class="col-lg-9 col-md-9 col-sm-9 col-xs-9 bhoechie-tab">
                     <!-- flight section -->
                     <!-- train section -->
+                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == false">
+                        <center>
+                          <h2 style="margin-top: 0;color:#55518a">Yada Coin</h2>
+                          <h2 style="margin-top: 0;color:#55518a">A blockchain based social graph.</h2>
+                          <h4 style="margin-top: 0;color:#55518a"><a href="/static/yadacoin-whitepaper.pdf" target="_blank">Read the Whitepaper</a></h4>
+                        </center>
+                    </div>
                     <div class="bhoechie-tab-content" ng-if="user.authenticated == false">
                         <center>
                           <h2 style="margin-top: 0;color:#55518a">Register / Login</h2>
-                          <h3 style="margin-top: 0;color:#55518a">Welcome back, seriously!</h3>
                           <h4 style="margin-top: 0;color:#55518a">Scan the qr code with the yadacode mobile app by tapping the 'register / login' button.</h4>
                             {{challenge_code}}
                             <button ng-click="get_user()">Check Login</button>
