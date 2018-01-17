@@ -119,7 +119,13 @@ def get_blockchain():
     return json.dumps(json.loads(data), indent=4)
 
 @app.route('/')
-def index():  # demo site
+def index():
+    return render_template(
+        'index.html',
+        )
+
+@app.route('/demo')
+def demo():
     bulletin_secret = TU.get_bulletin_secret()
     shared_secret = str(uuid4())
     existing = BU.get_transactions()
@@ -154,7 +160,7 @@ def index():  # demo site
         rid = ''
 
     return render_template(
-        'index.html',
+        'demo.html',
         user=authed_user,
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
