@@ -28,9 +28,9 @@ con = MongoClient('localhost')
 db = con.yadacoin
 col = db.blocks
 BU.collection = col
-blocks = BU.get_blocks()
-blockchain = Blockchain(blocks)
-blockchain.verify(output)
+#blocks = BU.get_blocks()
+#blockchain = Blockchain(blocks)
+#blockchain.verify(output)
 
 res = col.aggregate([
     {"$unwind": "$transactions" },
@@ -51,14 +51,15 @@ res = col.aggregate([
     {"$sort": SON([("count", -1), ("input_id", -1)])}
 ])
 double_spends = {}
+real_double_spends = []
 for x in res:
     if x['public_key'] in double_spends:
         if x['input_id'] in double_spends[x['public_key']]:
-            raise BaseException('double spend')
+            real_double_spends.append((x['public_key'], x['input_id']))
         else:
             double_spends[x['public_key']][x['input_id']] = 1
     else:
         double_spends[x['public_key']] = {}
         double_spends[x['public_key']][x['input_id']] = 1
-
+print real_double_spends
 print 'no double spends!'

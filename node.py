@@ -94,22 +94,27 @@ def node(config):
                     #check double spend
                     res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex'))))
                     unspent_ids = [x['id'] for x in res]
-                    failed = False
+                    failed1 = False
+                    failed2 = False
                     used_ids_in_this_txn = []
                     for x in transaction.inputs:
                         if x.id not in unspent_ids:
-                            failed = True
+                            failed1 = True
                         if x.id in used_ids_in_this_txn:
-                            failed = True
+                            failed2 = True
                         used_ids_in_this_txn.append(x.id)
-                    if failed:
+                    if failed1:
                         db.miner_transactions.remove({'id': transaction.transaction_signature})
-                        print 'transaction removed', transaction.transaction_signature
+                        print 'transaction removed: input presumably spent already, not in unspent outputs', transaction.transaction_signature
+                    elif failed2:
+                        db.miner_transactions.remove({'id': transaction.transaction_signature})
+                        print 'transaction removed: using an input used by another transaction in this block', transaction.transaction_signature
                     else:
                         transaction_objs.append(transaction)
                 except MissingInputTransactionException as e:
                     print 'missing this input transaction, will try again later'
                 except InvalidTransactionSignatureException as e:
+                    print 'InvalidTransactionSignatureException: transaction removed'
                     db.miner_transactions.remove({'id': transaction.transaction_signature})
                 except Exception as e:
                     print e
