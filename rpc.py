@@ -29,6 +29,7 @@ mongo_client = MongoClient()
 db = mongo_client.yadacoin
 collection = db.blocks
 consensus = db.consensus
+txncache = db.txncache
 BU.collection = collection
 TU.collection = collection
 BU.consensus = consensus
@@ -79,25 +80,26 @@ def make_qr(data):
 def get_logged_in_user():
     user = None
     tests = []
-    for block in BU.get_blocks():
-        for transaction in block['transactions']:
-            if 'challenge_code' in transaction and session['challenge_code'] == transaction['challenge_code']:
-                tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
-                for test in tests:
-                    if 'relationship' in test and 'shared_secret' in test['relationship']:
-                        cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
-                        answer = cipher.decrypt(transaction['answer'])
-                        if answer == transaction['challenge_code']:
-                            for txn_output in transaction['outputs']:
-                                if txn_output['to'] != my_address:
-                                    to = txn_output['to']
-                            user = {
-                                'balance': BU.get_wallet_balance(to),
-                                'authenticated': True,
-                                'rid': transaction['rid'],
-                                'bulletin_secret': test['relationship']['bulletin_secret']
-                            }
-    return user if user else {'authenticated': False}
+    try:
+        transaction = collection.find({'challenge_code': session['challenge_code']})[0]
+        tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
+        for test in tests:
+            if 'relationship' in test and 'shared_secret' in test['relationship']:
+                cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
+                answer = cipher.decrypt(transaction['answer'])
+                if answer == transaction['challenge_code']:
+                    for txn_output in transaction['outputs']:
+                        if txn_output['to'] != my_address:
+                            to = txn_output['to']
+                    user = {
+                        'balance': BU.get_wallet_balance(to),
+                        'authenticated': True,
+                        'rid': transaction['rid'],
+                        'bulletin_secret': test['relationship']['bulletin_secret']
+                    }
+        return user if user else {'authenticated': False}
+    except:
+        return {'authenticated': False}
 
 @app.route('/reset')
 def reset():
@@ -124,12 +126,21 @@ def index():
         'index.html',
         )
 
+@app.route('/team')
+def team():
+    return render_template(
+        'team.html',
+        )
+
 @app.route('/demo')
 def demo():
     bulletin_secret = TU.get_bulletin_secret()
     shared_secret = str(uuid4())
-    existing = BU.get_transactions()
-
+    existing = [x for x in txncache.find()]
+    new = BU.get_transactions(skip=[txn['id'] for txn in existing])
+    for txn in new:
+        txncache.insert(txn)
+    existing.extend(new)
     session.setdefault('challenge_code', str(uuid4()))
     qr = qrcode.QRCode(
         version=1,
@@ -167,7 +178,7 @@ def demo():
         existing=existing,
         data=json.dumps(data, indent=4),
         challenge_code=session['challenge_code'],
-        users=set([x['rid'] for x in BU.get_transactions() if x['rid'] != rid]),
+        users=set([x['rid'] for x in existing if x['rid'] != rid]),
         login_qrcode=u"data:image/png;base64," + base64.b64encode(login_out.getvalue()).decode('ascii'),
     )
 
