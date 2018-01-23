@@ -107,35 +107,101 @@
               <a class="nav-link" href="/">Home <span class="sr-only">(current)</span></a>
             </li>
             <li class="nav-item">
-              <a class="nav-link" href="/static/app/www/index.html" target="_blank">App</a>
+              <a class="nav-link" href="/team">Team</a>
             </li>
             <li class="nav-item active">
               <a class="nav-link" href="/demo">Demo</a>
-            </li>
-            <li class="nav-item">
-              <a class="nav-link" href="/team">Team</a>
             </li>
         </div>
       </nav>
     </header>
     <div class="container" ng-app="yadacoin" ng-controller="friendRequests">
-
       <form class="form-signin">
-        <h2 class="form-signin-heading">Scan this code</h2>
-        <p>Use the android app to scan this code.</p>
+        <h1>Demo</h1>
+        <h2>Step 1: Open the app</h2>
+        <p>Download the android app <a href="https://play.google.com/store/apps/details?id=io.yadacoin.mobile" target="_blank"><img width="200" src="/static/android.png"></a></p>
+        <p>Or open the app on your ios device in either chrome or safari. (Apple app store has a short list of approved crypto currencies. We are not yet on that list) <a href="/static/app/www/index.html" target="_blank">App</a></p>
+        <hr class="featurette-divider">
+
+        <h2>Step 2: Wait for coins</h2>
+        <p><img src="/static/step1.png"></p>
+        <p>As soon as you open the app. You will automatically begin receiving yada coins. New coins take an average of ten minutes to appear.</p>
+        <hr class="featurette-divider">
+
+        <h2 class="form-signin-heading">Step 3: Register</h2>
+        <p><img src="/static/step2.png"></p>
+        <p><strong>Option 1: Just register</strong></p>
+        <ol>
+          <li>Once you have at least 2 coins, you can register. This is how you would register for any service using yada. While registration is required for this demo, registration would not be required in normal use.</li>
+          <li>Tap the red button that appears after coins are received.</li>
+          <li>Tap ok on the dialogs to approve the transaction.</li>
+          <li>This will demonstrate the registration workflow using yada.</li>
+        </ol>
+        <p><strong>Option 2: Register and Login</strong></p>
+        <ol>
+          <li>Use the <a href="https://play.google.com/store/apps/details?id=io.yadacoin.mobile" target="_blank">android app</a> to scan the below QR code which will register and log you in simultaneously.</li>
+          <li>Tap 'ok' on the dialogs to approve the transaction.</li>
+          <li>If you choose this method, continue to click the 'check login' button. Once your login has been processed on the blockchain, click this button to activate your authenticated session.</li>
+        </ol>
         <button class="btn btn-primary" ng-click="get_user()">Check Login</button>
+        <div class="qr-container">
+          <img src="{{login_qrcode}}" />
+          <h2>The information contained in this QR Code:</h2>
+          <pre>{{data}}</pre>
+        </div>
+        <hr class="featurette-divider">
+
+        <h2>Step 4: Request a Friend</h2>
+        <p><img src="/static/step3.png"></p>
+        <ol>
+          <li>Again, once you have at least 2 coins, you can request a friend. Simply have the friend you wish to request follow steps one through three.</li>
+          <li>Refresh after about ten minutes and your screen should now look like the above screen shot.</a>
+          <li>Then ask them their four work phrase on the app's home page.</li>
+          <li>Tap or click the 'new friend' button and you will be presented with a dialog box with a text input.</li>
+          <li>Paste or type the four word phrase.</li>
+          <li>Tap or click the 'use phrase' button.</li>
+          <li>Tap ok on the dialogs to approve the transaction.</li>
+        </ol>
+        <p><img src="/static/step4.png"></p>
+        <hr class="featurette-divider">
+
+        <h2>Step 5: Accept your Request</h2>
+        <h4>Warning: For the time being, you cannot accept friend requests using the browser based-app.</h4>
+        <ol>
+          <li>Again, once you have at least 3 coins, you can accept a friend.</li>
+          <li>Tap the menu toggler on the top left of the app, then tap the 'friend requests' option.</li>
+          <li>You will see the relationship identifier of the request in the list. Tap it.</li>
+          <p><img src="/static/step5.png"></p>
+          <li>Finally, you will see the request information and an 'accept' button. Tap it.</li>
+          <p><img src="/static/step6.png"></p>
+          <li>Tap ok on the dialogs to approve the transaction.</li>
+          <li>After about ten minutes, enter the 'friends' section from the menu using the toggler.</li>
+          <li>You will now see a new relationship identifier in your friends list.</li>
+          <p><img src="/static/step7.png"></p>
+        </ol>
+        <hr class="featurette-divider">
+
+        <h2>Step 6: Share Content With Your New Friend</h2>
+        <ol>
+          <li>You must have at least 1 coin.</li>
+          <li>Tap or click the 'new post' button.</li>
+          <li>Paste your link or short message.</li>
+          <li>Tap or click the 'post' button.</li>
+          <p><img src="/static/step8.png"></p>
+          <li>Wait about ten minutes and then refresh.</li>
+          <li>You and your friends can now enjoy the content you just shared!</li>
+        </ol>
       </form>
-      <div class="qr-container">
-        <img src="{{login_qrcode}}" />
-        <h2>The information contained in this QR Code:</h2>
-        <pre>{{data}}</pre>
+      <div class="container" style="text-align:center; background-color:white;">
+        <h1>Thank you for completing the demo!</h1>
+        <h2>Head over to our <a href="/team">team</a> page and picture your face in a glorious circle!</h2>
+        <h3>Give us a shout with any questions or comments!</h3>
+        <h4>info@yadacoin.io</h4>
       </div>
     </div> <!-- /container -->
-  
-
-      <footer class="container">
-        <p class="float-right"><a href="#">Back to top</a></p>
-        <p>© 2017 Yadacoin · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
-      </footer>
+    <footer class="container">
+      <p class="float-right"><a href="#">Back to top</a></p>
+      <p>© 2017 Yadacoin · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+    </footer>
 </body>
 </html>
