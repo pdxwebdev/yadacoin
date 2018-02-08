@@ -351,8 +351,9 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_block_reward(cls, block=None):
         try:
-            with open('block_rewards.json', 'r') as f:
-                block_rewards = json.loads(f.read())
+            f = open('block_rewards.json', 'r')
+            block_rewards = json.loads(f.read())
+            f.close()
         except:
             raise BaseException("Block reward file not found")
 

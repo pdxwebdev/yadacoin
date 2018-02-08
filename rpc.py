@@ -23,40 +23,15 @@ from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from pyfcm import FCMNotification
 from multiprocessing import Process, Value, Array, Pool
+from flask_cors import CORS
 
 
-mongo_client = MongoClient()
-db = mongo_client.yadacoin
-collection = db.blocks
-consensus = db.consensus
-BU.collection = collection
-TU.collection = collection
-BU.consensus = consensus
-TU.consensus = consensus
-
-parser = argparse.ArgumentParser(description='Process some integers.')
-parser.add_argument('--conf',
-                help='set your config file')
-args = parser.parse_args()
-
-with open(args.conf) as f:
-    config = json.loads(f.read())
-
-public_key = config.get('public_key')
-my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
-private_key = config.get('private_key')
-TU.private_key = private_key
-BU.private_key = private_key
-api_key = config.get('fcm_key')
-push_service = FCMNotification(api_key=api_key)
-# print sk.get_verifying_key().to_string().encode('hex')
-# vk2 = VerifyingKey.from_string(pk.decode('hex'))
-# print vk2.verify(signature, "message")
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
         print 'error'
 
 app = Flask(__name__)
+CORS(app)
 
 def make_qr(data):
     qr = qrcode.QRCode(
@@ -79,24 +54,38 @@ def make_qr(data):
 def get_logged_in_user():
     user = None
     tests = []
-    for block in BU.get_blocks():
-        for transaction in block['transactions']:
-            if 'challenge_code' in transaction and session['challenge_code'] == transaction['challenge_code']:
-                tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
-                for test in tests:
-                    if 'relationship' in test and 'shared_secret' in test['relationship']:
-                        cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
-                        answer = cipher.decrypt(transaction['answer'])
-                        if answer == transaction['challenge_code']:
-                            for txn_output in transaction['outputs']:
-                                if txn_output['to'] != my_address:
-                                    to = txn_output['to']
-                            user = {
-                                'balance': BU.get_wallet_balance(to),
-                                'authenticated': True,
-                                'rid': transaction['rid'],
-                                'bulletin_secret': test['relationship']['bulletin_secret']
-                            }
+    res = mongo_client.yadacoin.blocks.aggregate([
+        {
+            "$match": {
+                "transactions.challenge_code": session['challenge_code']
+            }
+        },
+        {
+            '$unwind': "$transactions"
+        },
+        {
+            "$match": {
+                "transactions.challenge_code": session['challenge_code']
+            }
+        }
+    ])
+    for transaction in res:
+        transaction = transaction['transactions']
+        tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
+        for test in tests:
+            if 'relationship' in test and 'shared_secret' in test['relationship']:
+                cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
+                answer = cipher.decrypt(transaction['answer'])
+                if answer == transaction['challenge_code']:
+                    for txn_output in transaction['outputs']:
+                        if txn_output['to'] != my_address:
+                            to = txn_output['to']
+                    user = {
+                        'balance': BU.get_wallet_balance(to),
+                        'authenticated': True,
+                        'rid': transaction['rid'],
+                        'bulletin_secret': test['relationship']['bulletin_secret']
+                    }
     return user if user else {'authenticated': False}
 
 @app.route('/reset')
@@ -122,7 +111,7 @@ def get_blockchain():
 def index():  # demo site
     bulletin_secret = TU.get_bulletin_secret()
     shared_secret = str(uuid4())
-    existing = BU.get_transactions()
+    friends = [x for x in mongo_client.yadacoinsite.friends.find()]
 
     session.setdefault('challenge_code', str(uuid4()))
     qr = qrcode.QRCode(
@@ -158,12 +147,25 @@ def index():  # demo site
         user=authed_user,
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
-        existing=existing,
+        existing=friends,
         data=json.dumps(data, indent=4),
         challenge_code=session['challenge_code'],
-        users=set([x['rid'] for x in BU.get_transactions() if x['rid'] != rid]),
+        users=set([x['rid'] for x in friends if x['rid'] != rid]),
         login_qrcode=u"data:image/png;base64," + base64.b64encode(login_out.getvalue()).decode('ascii'),
     )
+
+@app.route('/register')
+def register():
+    shared_secret = str(uuid4())
+    session.setdefault('challenge_code', str(uuid4()))
+    data = {
+        'challenge_code': session['challenge_code'],
+        'bulletin_secret': TU.get_bulletin_secret(),
+        'shared_secret': shared_secret,
+        'callbackurl': config.get('callbackurl'),
+        'to': my_address
+    }
+    return json.dumps(data, indent=4)
 
 @app.route('/create-relationship', methods=['GET', 'POST'])
 def create_relationship():  # demo site
@@ -180,9 +182,15 @@ def create_relationship():  # demo site
         requested_rid = request.json.get('requested_rid', '')
         to = request.json.get('to', '')
 
+    miner_transactions = db.miner_transactions.find()
+    mtxn_ids = []
+    for mtxn in miner_transactions:
+        for mtxninput in mtxn['inputs']:
+            mtxn_ids.append(mtxninput['id'])
+
     input_txns = BU.get_wallet_unspent_transactions(my_address)
 
-    inputs = [Input.from_dict(input_txn) for input_txn in input_txns]
+    inputs = [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
 
     needed_inputs = []
     input_sum = 0
@@ -222,18 +230,9 @@ def create_relationship():  # demo site
 
     TU.save(transaction.transaction)
 
-    my_bulletin_secret = TU.get_bulletin_secret()
-
-    with open('peers.json') as f:
-        peers = json.loads(f.read())
-    for peer in peers:
-        try:
-            socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
-            chat_namespace = socketIO.define(ChatNamespace, '/chat')
-            chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
-            socketIO.wait(seconds=1)
-        except Exception as e:
-            raise e
+    db.miner_transactions.insert(transaction.transaction.to_dict())
+    job = Process(target=txn_broadcast_job, args=(transaction.transaction,))
+    job.start()
     return json.dumps({"success": True})
 
 @app.route('/login-status')
@@ -318,7 +317,7 @@ def show_users():
 @app.route('/get-rid')
 def get_rid():
     my_bulletin_secret = TU.get_bulletin_secret()
-    rids = sorted([str(my_bulletin_secret), str(requeset.args.get('bulletin_secret'))], key=str.lower)
+    rids = sorted([str(my_bulletin_secret), str(request.args.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
     return json.dumps({'rid': rid})
 
@@ -341,24 +340,35 @@ def post_block():
 
 @app.route('/search')
 def search():
+    mongo_client = MongoClient('localhost')
     phrase = request.args.get('phrase')
     bulletin_secret = request.args.get('bulletin_secret')
-    graph = Graph(TU.get_bulletin_secret(), for_me=True)
-    for friend in graph.friends:
-        if humanhash.humanize(friend['rid']) == phrase:
-            my_bulletin_secret = TU.get_bulletin_secret()
-            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-            for output in friend['outputs']:
-                if output['to'] != my_address:
-                    to = output['to']
-            return json.dumps({
-                'bulletin_secret': friend['relationship']['bulletin_secret'],
-                'requested_rid': friend['rid'],
-                'requester_rid': rid,
-                'to': to
-            }, indent=4)
-    return '{}', 404
+    my_bulletin_secret = TU.get_bulletin_secret()
+    if phrase == 'triple-quebec-nevada-lion':
+        return json.dumps({
+            'bulletin_secret': my_bulletin_secret,
+            "challenge_code": "1b02fff6-a842-4eea-b6c4-bae97fdf1742",
+             "callbackurl": "http://71.237.161.227:5000/create-relationship",
+            "shared_secret": "87b0c9ac-2387-48a5-b230-9a2c4148d641",
+            'to': my_address
+        }, indent=4)
+
+    rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    try:
+        friend = mongo_client.yadacoinsite.friends.find({'humanized': phrase})[0]
+        for output in friend['outputs']:
+            if output['to'] != my_address:
+                to = output['to']
+        return json.dumps({
+            'bulletin_secret': friend['relationship']['bulletin_secret'],
+            'requested_rid': friend['rid'],
+            'requester_rid': rid,
+            'to': to
+        }, indent=4)
+    except:
+        raise
+        return '{}', 404
 
 @app.route('/fcm-token', methods=['POST'])
 def fcm_token():
@@ -394,14 +404,16 @@ def request_notification():
                     registration_id=token['token'],
                     message_title='Friend Request Accepted!',
                     message_body='Your friend request was approved!',
-                    data_message=data
+                    data_message=data,
+                    extra_kwargs={'priority': 'high'}
                 )
             else:
                 result = push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='New Friend Request!',
                     message_body='You have a new friend request to approve!',
-                    data_message=data
+                    data_message=data,
+                    extra_kwargs={'priority': 'high'}
                 )
         return '', 200
     return '', 400
@@ -449,6 +461,8 @@ def transaction():
                 return '', 400
             except MissingInputTransactionException:
                 pass
+            except:
+                return '', 400
             transactions.append(transaction)
 
         for x in transactions:
@@ -484,7 +498,7 @@ def bulletin():
 @app.route('/get-graph-mobile')
 def get_graph_mobile():
     bulletin_secret = request.args.get('bulletin_secret')
-    graph = Graph(bulletin_secret)
+    graph = Graph(bulletin_secret, push_service=push_service)
     graph_dict = graph.to_dict()
     graph_dict['registered'] = graph.rid in [x.get('rid') for x in graph.friends]
     return json.dumps(graph_dict, indent=4)
@@ -505,6 +519,94 @@ def get_wallet():
     }
     return json.dumps(wallet, indent=4)
 
+@app.route('/faucet')
+def faucet():
+    address = request.args.get('address')
+    if len(address) < 36:
+        exists = mongo_client.yadacoinsite.faucet.find({
+            'address': address
+        })
+        if not exists.count():
+            mongo_client.yadacoinsite.faucet.insert({
+                'address': address,
+                'active': True
+            })
+        return json.dumps({'status': 'ok'})
+    else:
+        return json.dumps({'status': 'error'}), 400
+
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
-app.run(host=config.get('host'), port=config.get('port'), threaded=True)
+if __name__ == '__main__':
+    mongo_client = MongoClient('localhost')
+    db = mongo_client.yadacoin
+    collection = db.blocks
+    consensus = db.consensus
+    miner_transactions = db.miner_transactions
+    BU.collection = collection
+    TU.collection = collection
+    BU.consensus = consensus
+    TU.consensus = consensus
+    BU.miner_transactions = miner_transactions
+    TU.miner_transactions = miner_transactions
+
+    parser = argparse.ArgumentParser(description='Process some integers.')
+    parser.add_argument('--conf',
+                    help='set your config file')
+    args = parser.parse_args()
+
+    with open(args.conf) as f:
+        config = json.loads(f.read())
+
+    public_key = config.get('public_key')
+    my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
+
+    private_key = config.get('private_key')
+    TU.private_key = private_key
+    BU.private_key = private_key
+    api_key = config.get('fcm_key')
+    push_service = FCMNotification(api_key=api_key)
+
+
+    for transaction in BU.get_transactions():
+        exists = mongo_client.yadacoinsite.friends.find({'id': transaction['id']})
+        if not exists.count():
+            transaction['humanized'] = humanhash.humanize(transaction['rid'])
+            mongo_client.yadacoinsite.friends.insert(transaction)
+        bulletin_secret = transaction['relationship']['bulletin_secret']
+        exists = mongo_client.yadacoinsite.posts.find({
+            'id': transaction.get('id')
+        })
+        if exists.count():
+            if not exists[0]['skip']:
+                transaction['relationship'] = {'postText': exists[0]['postText']}
+                self.friend_posts.append(transaction)
+            continue
+        try:
+            data = transaction['relationship']
+            if 'postText' in data:
+                mongo_client.yadacoinsite.posts.remove({'id': transaction.get('id')})
+                transaction['relationship'] = data
+                self.friend_posts.append(transaction)
+                mongo_client.yadacoinsite.posts.insert({
+                    'postText': data['postText'],
+                    'rid': transaction.get('rid'),
+                    'id': transaction.get('id'),
+                    'requester_rid': transaction.get('requester_rid'),
+                    'requested_rid': transaction.get('requested_rid'),
+                    'skip': False
+                })
+        except:
+            raise
+            mongo_client.yadacoinsite.posts.insert({
+                'postText': data['postText'],
+                'rid': transaction.get('rid'),
+                'id': transaction.get('id'),
+                'requester_rid': transaction.get('requester_rid'),
+                'requested_rid': transaction.get('requested_rid'),
+                'skip': True
+            })
+    my_posts = BU.get_bulletins(TU.get_bulletin_secret())
+    for my_post in my_posts:
+        mongo_client.yadacoinsite.my_posts.insert(my_post)
+    app.run(host=config.get('host'), port=config.get('port'), threaded=True)
