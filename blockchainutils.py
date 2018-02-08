@@ -200,7 +200,7 @@ class BU(object):  # Blockchain Utilities
         return unspent_formatted
 
     @classmethod
-    def get_transactions(cls, raw=False):
+    def get_transactions(cls, raw=False, skip=None):
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
@@ -208,7 +208,11 @@ class BU(object):  # Blockchain Utilities
         for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 try:
+                    if transaction.get('id') in skip:
+                        continue
                     if 'relationship' not in transaction:
+                        continue
+                    if not transaction['relationship']:
                         continue
                     if not raw:
                         cipher = Crypt(cls.private_key)

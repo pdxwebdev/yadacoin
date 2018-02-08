@@ -1,225 +1,265 @@
 <html>
 <head>
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap.min.css" integrity="sha384-BVYiiSIFeK1dGmJRAkycuHAHRg32OmUcww7on3RYdg4Va+PmSTsz/K68vbdEjh4u" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/css/bootstrap.min.css" integrity="sha384-Zug+QiDoJOrZ5t4lssLdxGhVrurbmBWopoEl+M6BdEfwnCJZtKxi1KgxUyJq13dy" crossorigin="anonymous">
 
-    <!-- Optional theme -->
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/css/bootstrap-theme.min.css" integrity="sha384-rHyoN1iRsVXV4nD0JutlnGaslCJuC7uwjduW9SVrLvRYooPp2bWYgmgJQIXwl/Sp" crossorigin="anonymous">
+    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
+    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>
+    <style tyle="text/css">
+    /* GLOBAL STYLES
+-------------------------------------------------- */
+/* Padding below the footer and lighter body text */
 
-    <script
-  src="https://code.jquery.com/jquery-2.2.4.min.js"
-  integrity="sha256-BbhdlvQf/xTY9gja0Dq3HiwQF8LaCRTXxZKRutelT44="
-  crossorigin="anonymous"></script>
-    <!-- Latest compiled and minified JavaScript -->
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/3.3.7/js/bootstrap.min.js" integrity="sha384-Tc5IQib027qvyjSMfHjOMaLkfuWVxZxUPnCJA7l2mCWNIpG9mGCD8wGNIcPD7Txa" crossorigin="anonymous"></script>
-    <script src="/static/angular.js" type="text/javascript"></script>
-    <script type="text/javascript">
-        var app = angular.module("yadacoin", []); 
-        app.config(function($interpolateProvider){
-            $interpolateProvider.startSymbol('{[{').endSymbol('}]}');
-        });
-        app.controller("friendRequests", function($scope, $http) {
-            //$scope.intervalId = setInterval(function(){
-            //    $scope.get_user();
-            //}, 3000);
-            $scope.graph = {friend_posts: [{post_text:'hello'}]};
-            var data;
-            $scope.user = {};
-            
-            $scope.get_user = function(){
-                $http.get('/login-status').then(function(res) {
-                    $scope.user = res.data;
-                    if ($scope.user.authenticated) {
-                        clearInterval($scope.intervalId);
-                        $http.get('/get-graph-mobile?bulletin_secret=' + $scope.user.bulletin_secret).then(function(res2) {
-                            $scope.graph = res2.data;
-                        });
-                    } else {
-                        console.log('nope');
-                    }
-                });
-            }
-            $scope.get_user();
-            $scope.switch = function(el) {
-                $(el.currentTarget).siblings('a.active').removeClass("active");
-                $(el.currentTarget).addClass("active");
-                var index = $(el.currentTarget).index();
-                $("div.bhoechie-tab>div.bhoechie-tab-content").removeClass("active");
-                $("div.bhoechie-tab>div.bhoechie-tab-content").eq(index).addClass("active");
-            }
-        });
-    </script>
-    <script src="/static/peer.js" type="text/javascript"></script>
-    <style type="text/css">
-        /*  bhoechie tab */
-        div.bhoechie-tab-container{
-          z-index: 10;
-          background-color: #ffffff;
-          padding: 0 !important;
-          border-radius: 4px;
-          -moz-border-radius: 4px;
-          border:1px solid #ddd;
-          margin-top: 20px;
-          margin-left: 50px;
-          -webkit-box-shadow: 0 6px 12px rgba(0,0,0,.175);
-          box-shadow: 0 6px 12px rgba(0,0,0,.175);
-          -moz-box-shadow: 0 6px 12px rgba(0,0,0,.175);
-          background-clip: padding-box;
-          opacity: 0.97;
-          filter: alpha(opacity=97);
-        }
-        div.bhoechie-tab-menu{
-          padding-right: 0;
-          padding-left: 0;
-          padding-bottom: 0;
-        }
-        div.bhoechie-tab-menu div.list-group{
-          margin-bottom: 0;
-        }
-        div.bhoechie-tab-menu div.list-group>a{
-          margin-bottom: 0;
-        }
-        div.bhoechie-tab-menu div.list-group>a .glyphicon,
-        div.bhoechie-tab-menu div.list-group>a .fa {
-          color: #5A55A3;
-        }
-        div.bhoechie-tab-menu div.list-group>a:first-child{
-          border-top-right-radius: 0;
-          -moz-border-top-right-radius: 0;
-        }
-        div.bhoechie-tab-menu div.list-group>a:last-child{
-          border-bottom-right-radius: 0;
-          -moz-border-bottom-right-radius: 0;
-        }
-        div.bhoechie-tab-menu div.list-group>a.active,
-        div.bhoechie-tab-menu div.list-group>a.active .glyphicon,
-        div.bhoechie-tab-menu div.list-group>a.active .fa{
-          background-color: #5A55A3;
-          background-image: #5A55A3;
-          color: #ffffff;
-        }
-        div.bhoechie-tab-menu div.list-group>a.active:after{
-          content: '';
-          position: absolute;
-          left: 100%;
-          top: 50%;
-          margin-top: -13px;
-          border-left: 0;
-          border-bottom: 13px solid transparent;
-          border-top: 13px solid transparent;
-          border-left: 10px solid #5A55A3;
-        }
+body {
+  padding-top: 3rem;
+  padding-bottom: 3rem;
+  color: #5a5a5a;
+}
 
-        div.bhoechie-tab-content{
-          background-color: #ffffff;
-          /* border: 1px solid #eeeeee; */
-          padding-left: 20px;
-          padding-top: 10px;
-        }
 
-        div.bhoechie-tab div.bhoechie-tab-content:not(.active){
-          display: none;
-        }
-    </style>
+/* CUSTOMIZE THE CAROUSEL
+-------------------------------------------------- */
+
+/* Carousel base class */
+.carousel {
+  margin-bottom: 4rem;
+}
+/* Since positioning the image, we need to help out the caption */
+.carousel-caption {
+  bottom: 3rem;
+  z-index: 10;
+  background-color:black;
+  opacity:.8;
+  padding: 20px;
+}
+
+/* Declare heights because of positioning of img element */
+.carousel-item {
+  height: 32rem;
+  background-color: #777;
+}
+.carousel-item > img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  min-width: 100%;
+  height: 32rem;
+}
+
+
+/* MARKETING CONTENT
+-------------------------------------------------- */
+
+/* Center align the text within the three columns below the carousel */
+.marketing .col-lg-4 {
+  margin-bottom: 1.5rem;
+  text-align: center;
+}
+.marketing h2 {
+  font-weight: 400;
+}
+.marketing .col-lg-4 p {
+  margin-right: .75rem;
+  margin-left: .75rem;
+}
+
+
+/* Featurettes
+------------------------- */
+
+.featurette-divider {
+  margin: 5rem 0; /* Space out the Bootstrap <hr> more */
+}
+
+/* Thin out the marketing headings */
+.featurette-heading {
+  font-weight: 300;
+  line-height: 1;
+  letter-spacing: -.05rem;
+}
+
+
+/* RESPONSIVE CSS
+-------------------------------------------------- */
+
+@media (min-width: 40em) {
+  /* Bump up size of carousel content */
+  .carousel-caption p {
+    margin-bottom: 1.25rem;
+    font-size: 1.25rem;
+    line-height: 1.4;
+  }
+
+  .featurette-heading {
+    font-size: 50px;
+  }
+}
+
+@media (min-width: 62em) {
+  .featurette-heading {
+    margin-top: 7rem;
+  }
+}
+</style>
+<!-- start Mixpanel --><script type="text/javascript">(function(e,a){if(!a.__SV){var b=window;try{var c,l,i,j=b.location,g=j.hash;c=function(a,b){return(l=a.match(RegExp(b+"=([^&]*)")))?l[1]:null};g&&c(g,"state")&&(i=JSON.parse(decodeURIComponent(c(g,"state"))),"mpeditor"===i.action&&(b.sessionStorage.setItem("_mpcehash",g),history.replaceState(i.desiredHash||"",e.title,j.pathname+j.search)))}catch(m){}var k,h;window.mixpanel=a;a._i=[];a.init=function(b,c,f){function e(b,a){var c=a.split(".");2==c.length&&(b=b[c[0]],a=c[1]);b[a]=function(){b.push([a].concat(Array.prototype.slice.call(arguments,
+0)))}}var d=a;"undefined"!==typeof f?d=a[f]=[]:f="mixpanel";d.people=d.people||[];d.toString=function(b){var a="mixpanel";"mixpanel"!==f&&(a+="."+f);b||(a+=" (stub)");return a};d.people.toString=function(){return d.toString(1)+".people (stub)"};k="disable time_event track track_pageview track_links track_forms register register_once alias unregister identify name_tag set_config reset people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user".split(" ");
+for(h=0;h<k.length;h++)e(d,k[h]);a._i.push([b,c,f])};a.__SV=1.2;b=e.createElement("script");b.type="text/javascript";b.async=!0;b.src="undefined"!==typeof MIXPANEL_CUSTOM_LIB_URL?MIXPANEL_CUSTOM_LIB_URL:"file:"===e.location.protocol&&"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js".match(/^\/\//)?"https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js":"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";c=e.getElementsByTagName("script")[0];c.parentNode.insertBefore(b,c)}})(document,window.mixpanel||[]);
+mixpanel.init("4e29328ef697408a91a5aad0552705af");
+mixpanel.track("index page");</script><!-- end Mixpanel -->
 </head>
 <body>
-    <h1>{% if user.balance %}Balance: {{user.balance}}{% endif %}</h1>
-    <div class="container" ng-app="yadacoin" ng-controller="friendRequests">
-        <div class="row">
-            <div class="col-lg-12 col-md-12 col-sm-12 col-xs-12 bhoechie-tab-container">
-                <div class="col-lg-3 col-md-3 col-sm-3 col-xs-3 bhoechie-tab-menu">
-                  <div class="list-group">
-                    <a href="#" class="list-group-item text-center active" ng-if="user.authenticated == false" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-home"></h4><br/>Home
-                    </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == false" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-road"></h4><br/>Register / Login
-                    </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-credit-card"></h4><br/>Posts
-                    </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-home"></h4><br/>Friends
-                    </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-home"></h4><br/>Friend Requests
-                    </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-cutlery"></h4><br/>Sent Requests
-                    </a>
-                    <a href="#" class="list-group-item text-center" ng-if="user.authenticated == true" ng-click="switch($event)">
-                      <h4 class="glyphicon glyphicon-cutlery"></h4><br/>Find New Friends
-                    </a>
-                  </div>
-                </div>
-                <div class="col-lg-9 col-md-9 col-sm-9 col-xs-9 bhoechie-tab">
-                    <!-- flight section -->
-                    <!-- train section -->
-                    <div class="bhoechie-tab-content active" ng-if="user.authenticated == false">
-                        <center>
-                          <h2 style="margin-top: 0;color:#55518a">Yada Coin</h2>
-                          <h2 style="margin-top: 0;color:#55518a">A blockchain based social graph.</h2>
-                          <h4 style="margin-top: 0;color:#55518a"><a href="/static/yadacoin-whitepaper.pdf" target="_blank">Read the Whitepaper</a></h4>
-                        </center>
-                    </div>
-                    <div class="bhoechie-tab-content" ng-if="user.authenticated == false">
-                        <center>
-                          <h2 style="margin-top: 0;color:#55518a">Register / Login</h2>
-                          <h4 style="margin-top: 0;color:#55518a">Scan the qr code with the yadacode mobile app by tapping the 'register / login' button.</h4>
-                            {{challenge_code}}
-                            <button ng-click="get_user()">Check Login</button>
-                            <img src="{{login_qrcode}}" />
-                            {{data}}
-                        </center>
-                    </div>
-                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
-                        <center>
-                          <h1 class="glyphicon glyphicon-credit-card" style="font-size:12em;color:#55518a"></h1>
-                          <h2 style="margin-top: 0;color:#55518a">Post</h2>
-                          <h3 style="margin-top: 0;color:#55518a">This is where all the action is.</h3>
-                        </center>
-                        <li ng-repeat="post in graph.friend_posts">{[{post.post_text}]}</li>
-                    </div>
-                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
-                        <center>
-                          <h1 class="glyphicon glyphicon-credit-card" style="font-size:12em;color:#55518a"></h1>
-                          <h2 style="margin-top: 0;color:#55518a">Friends</h2>
-                          <h3 style="margin-top: 0;color:#55518a">Friends don't shake hands, friends hug.</h3>
-                        </center>
-                        <li ng-repeat="friend in graph.friends">{[{friend.rid}]}</li>
-                    </div>
-        
-                    <!-- hotel search -->
-                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
-                        <center>
-                          <h1 class="glyphicon glyphicon-home" style="font-size:12em;color:#55518a"></h1>
-                          <h2 style="margin-top: 0;color:#55518a">Friend Requests</h2>
-                          <h3 style="margin-top: 0;color:#55518a">People wanting to connect with you are shown here.</h3>
-                        </center>
-                        <li ng-repeat="friend_request in graph.friend_requests">
-                            <a href="show-friend-request?rid={[{friend_request.rid}]}">{[{friend_request.rid}]}</a>
-                        </li>
-                    </div>
-                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
-                        <center>
-                          <h1 class="glyphicon glyphicon-cutlery" style="font-size:12em;color:#55518a"></h1>
-                          <h2 style="margin-top: 0;color:#55518a">Sent friend requests</h2>
-                          <h3 style="margin-top: 0;color:#55518a">Your love will not go unnoticed. Stay strong!</h3>
-                        </center>
-                        <li ng-repeat="friend_request in graph.sent_friend_requests">{[{friend_request.rid}]}</li>
-                    </div>
-                    <div class="bhoechie-tab-content" ng-if="user.authenticated == true">
-                        <center>
-                          <h1 class="glyphicon glyphicon-cutlery" style="font-size:12em;color:#55518a"></h1>
-                          <h2 style="margin-top: 0;color:#55518a">Sent friend requests</h2>
-                          <h3 style="margin-top: 0;color:#55518a">Your love will not go unnoticed. Stay strong!</h3>
-                        </center>
-                        {% for user in users %}
-                            <a href="/show-user?rid={{user}}">{{user}}</a><br>
-                        {% endfor %}
-                    </div>
-                </div>
-            </div>
+    <header>
+      <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
+        <a class="navbar-brand" href="/">Yadacoin</a>
+        <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
+          <span class="navbar-toggler-icon"></span>
+        </button>
+        <div class="collapse navbar-collapse" id="navbarCollapse">
+          <ul class="navbar-nav mr-auto">
+            <li class="nav-item active">
+              <a class="nav-link" href="/">Home <span class="sr-only">(current)</span></a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/team">Team</a>
+            </li>
+            <li class="nav-item">
+              <a class="nav-link" href="/demo">Demo</a>
+            </li>
+          </ul>
         </div>
-    </div>
-</body>
+      </nav>
+    </header>
+
+    <main role="main">
+
+      <div id="myCarousel" class="carousel slide" data-ride="carousel">
+        <ol class="carousel-indicators">
+          <li data-target="#myCarousel" data-slide-to="0" class="active"></li>
+          <li data-target="#myCarousel" data-slide-to="1" class=""></li>
+          <li data-target="#myCarousel" data-slide-to="2" class=""></li>
+        </ol>
+        <div class="carousel-inner">
+          <div class="carousel-item active">
+            <img class="first-slide" src="/static/banner1.png" alt="First slide">
+            <div class="container">
+              <div class="carousel-caption text-left">
+                <h1>Decentralized Social Media</h1>
+                <p>Instead of huge monolithic sites with groups and pages, etc. Yada enables micro-sites, much like mobile apps, to focus on a specific context.</p>
+                <p><a class="btn btn-lg btn-primary" href="/static/yadacoin-whitepaper.pdf" role="button">Read our white paper</a></p>
+              </div>
+            </div>
+          </div>
+          <div class="carousel-item">
+            <img class="second-slide" src="/static/banner4.png" alt="Second slide">
+            <div class="container">
+              <div class="carousel-caption">
+                <h1>Hack Your Growth</h1>
+                <p>Invite, Register, and Log In are all simplified to one-click. It has never been easier for new and existing users to join and use your site. Yada allows your users seamlessly transition between your sites.</p>
+                <p><a class="btn btn-lg btn-primary" href="/demo" role="button">Try our demo</a></p>
+              </div>
+            </div>
+          </div>
+          <div class="carousel-item">
+            <img class="third-slide" src="/static/banner3.png" alt="Third slide">
+            <div class="container">
+              <div class="carousel-caption text-right">
+                <h1>Anti-Censorship</h1>
+                <p>Yada is a blockchain based social graph. A place where you can permanently store your audience without the possibility of losing them for any reason.</p>
+                <p><a class="btn btn-lg btn-primary" href="/static/yadacoin-whitepaper.pdf" role="button">Read our white paper</a></p>
+              </div>
+            </div>
+          </div>
+        </div>
+        <a class="carousel-control-prev" href="#myCarousel" role="button" data-slide="prev">
+          <span class="carousel-control-prev-icon" aria-hidden="true"></span>
+          <span class="sr-only">Previous</span>
+        </a>
+        <a class="carousel-control-next" href="#myCarousel" role="button" data-slide="next">
+          <span class="carousel-control-next-icon" aria-hidden="true"></span>
+          <span class="sr-only">Next</span>
+        </a>
+      </div>
+
+
+      <!-- Marketing messaging and featurettes
+      ================================================== -->
+      <!-- Wrap the rest of the page in another container to center all the content. -->
+
+      <div class="container marketing">
+
+        <!-- Three columns of text below the carousel -->
+        <div class="row">
+          <div class="col-lg-4">
+            <img class="rounded-circle" src="/static/2phones.png" alt="Generic placeholder image" width="140" height="140">
+            <h2>Decentralized</h2>
+            <p>Instead of huge monolithic sites with groups and pages, etc. Yada enables micro-sites, much like mobile apps, to focus on a specific context.</p>
+            <p><a class="btn btn-secondary" href="/static/yadacoin-whitepaper.pdf" role="button">Read our white paper »</a></p>
+          </div><!-- /.col-lg-4 -->
+          <div class="col-lg-4">
+            <img class="rounded-circle" src="/static/suspended.png" alt="Generic placeholder image" width="140" height="140">
+            <h2>Anti-Censorship</h2>
+            <p>Yada is a blockchain based social graph. A place where you can permanently store your audience without the possibility of losing them for any reason.</p>
+            <p><a class="btn btn-secondary" href="/static/yadacoin-whitepaper.pdf" role="button">Read our white paper »</a></p>
+          </div><!-- /.col-lg-4 -->
+          <div class="col-lg-4">
+            <img class="rounded-circle" src="/static/2phones3.png" alt="Generic placeholder image" width="140" height="140">
+            <h2>Hack Your Growth</h2>
+            <p>Invite, Register, and Log In are all simplified to one-click. It has never been easier for new and existing users to join and use your site.</p>
+            <p><a class="btn btn-secondary" href="/demo" role="button">Try our demo »</a></p>
+          </div><!-- /.col-lg-4 -->
+        </div><!-- /.row -->
+
+
+        <!-- START THE FEATURETTES -->
+
+        <hr class="featurette-divider">
+
+        <div class="row featurette">
+          <div class="col-md-7">
+            <h2 class="featurette-heading">Next Generation Invitations. <span class="text-muted">They'll blow your mind.</span></h2>
+            <p class="lead">Imagine being able to seamlessly drop your entire social graph into any site or app.</p>
+          </div>
+          <div class="col-md-5">
+            <img class="featurette-image img-fluid mx-auto" data-src="holder.js/500x500/auto" alt="500x500" style="width: 500px; height: 500px;" src="/static/2phones.png" data-holder-rendered="true">
+          </div>
+        </div>
+
+        <hr class="featurette-divider">
+
+        <div class="row featurette">
+          <div class="col-md-7 order-md-2">
+            <h2 class="featurette-heading">The greater good. <span class="text-muted">Just got greater.</span></h2>
+            <p class="lead">When users make friends or post content, the market capitalization for Yada coin increases. All users will become evangelists.</p>
+          </div>
+          <div class="col-md-5 order-md-1">
+            <img class="featurette-image img-fluid mx-auto"  alt="500x500" style="width: 500px; height: 500px;" src="static/marketcap.png" data-holder-rendered="true">
+          </div>
+        </div>
+
+        <hr class="featurette-divider">
+
+        <div class="row featurette">
+          <div class="col-md-7">
+            <h2 class="featurette-heading">Silence me? <span class="text-muted">I don't think so.</span></h2>
+            <p class="lead">If you've been blocked or banned from other services based on your controversial content, then Yada is your BFF.</p>
+          </div>
+          <div class="col-md-5">
+            <img class="featurette-image img-fluid mx-auto" data-src="holder.js/500x500/auto" alt="500x500" style="width: 500px; height: 500px;" src="/static/suspended.png" data-holder-rendered="true">
+          </div>
+        </div>
+
+        <hr class="featurette-divider">
+
+        <!-- /END THE FEATURETTES -->
+
+      </div><!-- /.container -->
+
+
+      <!-- FOOTER -->
+      <footer class="container">
+        <p class="float-right"><a href="#">Back to top</a></p>
+        <p>© 2017 Yadacoin · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+      </footer>
+    </main>
+  </body>
 </html>
