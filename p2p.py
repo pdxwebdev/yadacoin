@@ -8,6 +8,7 @@ import sys
 import requests
 import base64
 import humanhash
+import re
 from multiprocessing import Process, Value, Array, Pool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
@@ -21,14 +22,6 @@ from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 
-mongo_client = MongoClient('localhost')
-db = mongo_client.yadacoin
-collection = db.blocks
-consensus = db.consensus
-BU.collection = collection
-Block.collection = collection
-BU.consensus = consensus
-Block.consensus = consensus
 sio = socketio.Server()
 app = Flask(__name__)
 
@@ -67,6 +60,27 @@ def newtransaction(sid, data):
     except BaseException as e:
         print e
 
+def newblock(sid, data):
+    print("new block ", data)
+    try:
+        incoming_block = Block.from_dict(data)
+    except Exception as e:
+        print "block is bad"
+        print e
+    except BaseException as e:
+        print "block is bad"
+        print e
+
+    try:
+        dup_check = db.consensus.find({'id': incoming_block.signature})
+        if dup_check.count():
+            return
+        db.consensus.insert(incoming_block.to_dict())
+    except Exception as e:
+        print e
+    except BaseException as e:
+        print e
+
 def new_block_checker(current_index):
     while 1:
         try:
@@ -75,80 +89,89 @@ def new_block_checker(current_index):
             pass
         time.sleep(1)
 
-def sync(peers, config):
+def consensus(peers, config):
+    from pymongo import MongoClient
+    mongo_client = MongoClient('localhost')
+    db = mongo_client.yadacoin
+    collection = db.blocks
+    consensus = db.consensus
+    BU.collection = collection
+    Block.collection = collection
+    BU.consensus = consensus
+    Block.consensus = consensus
     synced = False
     block_heights = {}
     latest_block = BU.get_latest_block()
+    blockchain_difficulty = 0
+    for block in BU.get_blocks():
+        blockchain_difficulty += len(re.search(r'^[0]+', block.get('hash')).group(0))
+    print blockchain_difficulty
+    data = db.miner_transactions.find({}, {'_id': False})
+    for txn in data:
+        res = db.blocks.find({"transactions.id": txn['id']})
+        if res.count():
+            db.miner_transactions.remove({'id': txn['id']})
+
     if latest_block:
         next_index = int(latest_block.get('index')) + 1
     else:
         next_index = 0
-    for peer in peers:
-        try:
-            sofar = db.consensus.find({'peer': peer['ip'], 'index': next_index})
-            if not sofar.count():
-                try:
-                    res = requests.get('http://{peer}:8000/getblockcandidate?index={index}'.format(peer=peer['ip'], index=next_index), timeout=1, headers={'Connection':'close'})
-                except:
-                    continue
-                content = json.loads(res.content)
-                if not content:
-                    continue
-                block = Block.from_dict(json.loads(res.content))
-                res.connection.close()
-                sofar = db.consensus.find({'peer': peer['ip'], 'index': next_index})
-                if latest_block and latest_block.get('hash') == block.prev_hash:
-                    db.consensus.insert({'peer': peer['ip'], 'index': next_index, 'id': block.signature, 'block': block.to_dict()})
-                else:
-                    db.consensus.insert({'peer': peer['ip'], 'index': next_index, 'id': block.signature, 'block': block.to_dict()})
-
-
-                data = db.miner_transactions.find({}, {'_id': False})
-                if data.count():
-                    for txn in data:
-                        res = db.blocks.find({"transactions.id": txn['id']})
-                        if res.count():
-                            db.miner_transactions.remove({'id': txn['id']})
-                        else:
-                            try:
-                                transaction = Transaction.from_dict(txn)
-                                transaction.verify()
-                                socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
-                                chat_namespace = socketIO.define(ChatNamespace, '/chat')
-                                chat_namespace.emit('newtransaction', txn)
-                                socketIO.wait(seconds=1)
-                                chat_namespace.disconnect()
-                                socketIO.disconnect()
-                            except MissingInputTransactionException as e:
-                                print 'missing transaction for transaction input'
-                            except:
-                                print 'failed to broadcast transaction to', peer['ip']
-
-                            try:
-                                chat_namespace.disconnect()
-                                socketIO.disconnect()
-                            except:
-                                pass
-        except:
-            raise
-
 
     consensus = db.consensus.find({'index': next_index})
-    counts = {}
+    highest_difficulty = 0
     peers_already_used = []
     winning_block = {}
     for record in consensus:
-        if record['peer'] in peers_already_used:
-            continue
-        peers_already_used.append(record['peer'])
-        if record['id'] not in counts:
-            counts[record['id']] = 0
-        counts[record['id']] += 1
-        if (float(counts[record['id']]) / float(len(peers))) > 0.51:
+        difficulty = len(re.search(r'^[0]+', record['block'].get('hash')).group(0))
+        if difficulty > highest_difficulty:
+            highest_difficulty = difficulty
             winning_block = record['block']
+    
     if winning_block:
-        winning_block_obj = Block.from_dict(winning_block)
-        winning_block_obj.save()
+        if latest_block.get('hash') == winning_block.get('prevHash'):
+            # everything jives with our current history, everyone is happy
+            winning_block_obj = Block.from_dict(winning_block)
+            winning_block_obj.save()
+        else:
+            #need to rebase
+            prev_hash = winning_block.get('prevHash')
+            find_index = next_index - 1
+            while 1:
+                prev_block = db.consensus.find({'index': find_index, 'block.hash': prev_hash})
+                if prev_block.count():
+                    prev_block = prev_block[0]
+                    difficulty += len(re.search(r'^[0]+', prev_block.get('hash')).group(0))
+                    if (difficulty + highest_difficulty) > blockchain_difficulty:
+                        db.blocks.remove({'index': latest_block.get('index'), 'hash': latest_block.get('hash')})
+                        block = Block.from_dict(prev_block)
+                        block.save()
+                        break
+                else:
+                    for peer in peers:
+                        try:
+                            res = requests.get(
+                                'http://{peer}:5000/getblockcandidate?index={index}&hash={hash}'.format(
+                                    peer=peer,
+                                    index=next_index,
+                                    hash=prev_hash),
+                                timeout=1)
+                            resdata = json.loads(res.content)
+                            break
+                        except:
+                            resdata = None
+
+                    if resdata:
+                        prev_hash = data.get('prevHash')
+                        find_index -= 1
+                        if find_index < 0:
+                            break
+                    else:
+                        print 'block not found on network, fubar'
+                        break
+                        #this is bad
+    else:
+        print 'no winning block', next_index
+
 
 def faucet(peers, config):
     public_key = config.get('public_key')
@@ -262,7 +285,11 @@ def app_getblock():
 @app.route('/getblockcandidate')
 def app_getblockcandidate():
     idx = int(request.args.get('index'))
-    res = db.consensus.find({'index': idx})
+    block_hash = request.args.get('hash')
+    q = {'index': idx}
+    if block_hash:
+        q['hash'] = block_hash
+    res = db.consensus.find(q)
     if res.count():
         return json.dumps(res[0]['block'])
     else:
@@ -271,6 +298,10 @@ def app_getblockcandidate():
 @sio.on('newtransaction', namespace='/chat')
 def sio_newtransaction(sid, data):
     newtransaction(sid, data)
+
+@sio.on('newblock', namespace='/chat')
+def sio_newblock(sid, data):
+    newblock(sid, data)
 
 if __name__ == '__main__':
     import argparse
@@ -284,18 +315,19 @@ if __name__ == '__main__':
     with open('peers.json') as f:
         peers = json.loads(f.read())
 
-    if args.mode == 'sync':
+    if args.mode == 'consensus':
         while 1:
-            p = Process(target=sync, args=(peers, config))
+            p = Process(target=consensus, args=(peers, config))
             p.start()
             p.join()
+            time.sleep(1)
     elif args.mode == 'friends':
         BU.private_key = config['private_key']
         while 1:
             add_friends()
             time.sleep(1)
     elif args.mode == 'mine':
-        node(config)
+        node(config, peers)
     elif args.mode == 'serve':
         # wrap Flask application with engineio's middleware
         app = socketio.Middleware(sio, app)

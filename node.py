@@ -52,7 +52,7 @@ class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
         print 'error'
 
-def node(config):
+def node(config, peers):
     public_key = config.get('public_key')
     private_key = config.get('private_key')
     TU.private_key = private_key
@@ -69,13 +69,43 @@ def node(config):
         difficulty = '000'
     else:
         difficulty = '000'
+
+
     print '//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     block = BU.get_latest_block()
-    if block:
-        latest_block_index = Value('i', int(block['index']))
-    else:
-        latest_block_index = Value('i', 0)
+    if not block:
+        genesis_block = Block.from_dict({
+            "nonce" : 8153,
+            "index" : 0,
+            "hash" : "000dcccd6beb576cadebf0bab1f53c0b75f0d85d6b4ebfae24d7640a703c1856",
+            "transactions" : [ 
+                {
+                    "public_key" : "037349fe3a9fc5d13dae523baaa83a05856018d2b0df769a8047c4692c53eb5cc1",
+                    "inputs" : [],
+                    "fee" : "0.1",
+                    "hash" : "300d98126fbbba7354a6c1d0060398c292b5ec314c636f74c8edc5291e7674a8",
+                    "relationship" : "",
+                    "post_text" : "",
+                    "outputs" : [ 
+                        {
+                            "to" : "14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ",
+                            "value" : 50.0000000000000000
+                        }
+                    ],
+                    "rid" : "",
+                    "id" : "HwigxNWHeG0n6bVQXog3t62VlLJ/ilhkP1m19y/z18d3QqVrDxeVo1bZQd3jG1C2+GZ7LGbFsz2ekRJyv6KPF2A="
+                }
+            ],
+            "public_key" : "037349fe3a9fc5d13dae523baaa83a05856018d2b0df769a8047c4692c53eb5cc1",
+            "prevHash" : "",
+            "id" : "INFWIvJ18Ez1TH6841bUv8T+BBNUhYXIb/3X6LyhmLE2dTXqbSG/7cTeR1MCNMCMRFSOBwnZhHQymUKhsqcOSQ0=",
+            "merkleRoot" : "0d069b93dcbb5cb8a2ad61db32bbcef16719c4380a65d79c1aa27982a12f21d4"
+        })
+        genesis_block.save()
+        block = BU.get_latest_block()
+
+    latest_block_index = Value('i', int(block['index']))
     p = Process(target=new_block_checker, args=(latest_block_index,))
     p.start()
     while 1:
@@ -84,6 +114,7 @@ def node(config):
         status = Array('c', 'asldkjf')
 
         dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
+        pending_txns = db.miner_transactions.find()
         if not dup_test.count():
             transactions = db.miner_transactions.find()
             transaction_objs = []
@@ -123,8 +154,19 @@ def node(config):
             block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
 
             if block:
-                print 'candidate submitted', block.transactions, block.index
-                db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+                dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
+                if not dup_test.count():
+                    print 'candidate submitted', block.transactions, block.index
+                    db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+                    for peer in peers:
+                        try:
+                            socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+                            chat_namespace = socketIO.define(ChatNamespace, '/chat')
+                            chat_namespace.emit('newblock', block.to_dict())
+                            socketIO.wait(seconds=1)
+                            socketIO.disconnect()
+                        except Exception as e:
+                            print e
             else:
                 print 'greatest block height changed during mining'
 

@@ -28,9 +28,9 @@ con = MongoClient('localhost')
 db = con.yadacoin
 col = db.blocks
 BU.collection = col
-#blocks = BU.get_blocks()
-#blockchain = Blockchain(blocks)
-#blockchain.verify(output)
+blocks = BU.get_blocks()
+blockchain = Blockchain(blocks)
+blockchain.verify(output)
 
 res = col.aggregate([
     {"$unwind": "$transactions" },
