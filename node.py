@@ -166,7 +166,7 @@ def node(config, peers):
                             socketIO.wait(seconds=1)
                             socketIO.disconnect()
                         except Exception as e:
-                            print e
+                            pass
             else:
                 print 'greatest block height changed during mining'
 

@@ -136,34 +136,62 @@ def consensus(peers, config):
             #need to rebase
             prev_hash = winning_block.get('prevHash')
             find_index = next_index - 1
+            test_chain = []
             while 1:
                 prev_block = db.consensus.find({'index': find_index, 'block.hash': prev_hash})
                 if prev_block.count():
                     prev_block = prev_block[0]
                     difficulty += len(re.search(r'^[0]+', prev_block.get('hash')).group(0))
-                    if (difficulty + highest_difficulty) > blockchain_difficulty:
+                    test_chain.append(prev_block)
+                    next_prev_block = db.blocks.find({'index': find_index - 1 , 'block.hash': prev_block.get('prevHash')})
+                    if (difficulty + highest_difficulty) > blockchain_difficulty and next_prev_block.count():
                         db.blocks.remove({'index': latest_block.get('index'), 'hash': latest_block.get('hash')})
-                        block = Block.from_dict(prev_block)
-                        block.save()
+                        for test_block in test_chain:
+                            block = Block.from_dict(test_block)
+                            block.save()
+                        test_chain = []
                         break
+                    if find_index == 0:
+                        #this chain went all the way to zero and still wasn't longer
+                        #this should be an edge case and would normally only happen in the case of an attack
+                        test_chain = []
+                        break
+                    if next_prev_block.count():
+                        for peer in peers:
+                            try:
+                                res = requests.get(
+                                    'http://{peer}:5000/getblock?index={index}&hash={hash}'.format(
+                                        peer=peer,
+                                        index=find_index - 1,
+                                        hash=prev_block.get('prevHash')),
+                                    timeout=1,
+                                    headers={'Connection':'close'})
+                                resdata = json.loads(res.content)
+                                test_chain.append(resdata)
+                                break
+                            except:
+                                resdata = None
+
                 else:
                     for peer in peers:
                         try:
                             res = requests.get(
-                                'http://{peer}:5000/getblockcandidate?index={index}&hash={hash}'.format(
+                                'http://{peer}:5000/getblock?index={index}&hash={hash}'.format(
                                     peer=peer,
                                     index=next_index,
                                     hash=prev_hash),
-                                timeout=1)
+                                timeout=1,
+                                headers={'Connection':'close'})
                             resdata = json.loads(res.content)
                             break
                         except:
                             resdata = None
 
                     if resdata:
+                        test_chain.append(resdata)
                         prev_hash = data.get('prevHash')
                         find_index -= 1
-                        if find_index < 0:
+                        if find_index == 0:
                             break
                     else:
                         print 'block not found on network, fubar'
@@ -276,22 +304,13 @@ def app_getblockheight():
 @app.route('/getblock')
 def app_getblock():
     idx = int(request.args.get('index'))
-    block = BU.get_block_by_index(idx)
-    if block:
-        return json.dumps(block)
-    else:
-        return '{}'
-
-@app.route('/getblockcandidate')
-def app_getblockcandidate():
-    idx = int(request.args.get('index'))
     block_hash = request.args.get('hash')
     q = {'index': idx}
     if block_hash:
         q['hash'] = block_hash
-    res = db.consensus.find(q)
-    if res.count():
-        return json.dumps(res[0]['block'])
+    res = db.blocks.find(q)
+    if block:
+        return json.dumps(block)
     else:
         return '{}'
 
@@ -321,11 +340,6 @@ if __name__ == '__main__':
             p.start()
             p.join()
             time.sleep(1)
-    elif args.mode == 'friends':
-        BU.private_key = config['private_key']
-        while 1:
-            add_friends()
-            time.sleep(1)
     elif args.mode == 'mine':
         node(config, peers)
     elif args.mode == 'serve':
@@ -336,3 +350,8 @@ if __name__ == '__main__':
         eventlet.wsgi.server(eventlet.listen(('', 8000)), app)
     elif args.mode == 'faucet':
         faucet(peers, config)
+    elif args.mode == 'friends':
+        BU.private_key = config['private_key']
+        while 1:
+            add_friends()
+            time.sleep(1)
