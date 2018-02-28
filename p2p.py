@@ -40,6 +40,9 @@ def signal_handler(signal, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 def newtransaction(sid, data):
+    from pymongo import MongoClient
+    mongo_client = MongoClient('localhost')
+    db = mongo_client.yadacoin
     print("new transaction ", data)
     try:
         incoming_txn = Transaction.from_dict(data)
@@ -61,6 +64,9 @@ def newtransaction(sid, data):
         print e
 
 def newblock(sid, data):
+    from pymongo import MongoClient
+    mongo_client = MongoClient('localhost')
+    db = mongo_client.yadacoin
     print("new block ", data)
     try:
         incoming_block = Block.from_dict(data)
@@ -75,7 +81,10 @@ def newblock(sid, data):
         dup_check = db.consensus.find({'id': incoming_block.signature})
         if dup_check.count():
             return
-        db.consensus.insert(incoming_block.to_dict())
+        db.consensus.insert({
+            'block': incoming_block.to_dict(),
+            'index': incoming_block.to_dict().get('index'),
+            'id': incoming_block.to_dict().get('id')})
     except Exception as e:
         print e
     except BaseException as e:
@@ -102,10 +111,44 @@ def consensus(peers, config):
     synced = False
     block_heights = {}
     latest_block = BU.get_latest_block()
+    if not latest_block:
+        genesis_block = Block.from_dict({
+            "nonce": 8153,
+            "index": 0,
+            "hash": "000dcccd6beb576cadebf0bab1f53c0b75f0d85d6b4ebfae24d7640a703c1856",
+            "transactions": [
+                {
+                    "public_key": "037349fe3a9fc5d13dae523baaa83a05856018d2b0df769a8047c4692c53eb5cc1",
+                    "inputs": [],
+                    "fee": "0.1",
+                    "hash": "300d98126fbbba7354a6c1d0060398c292b5ec314c636f74c8edc5291e7674a8",
+                    "relationship": "",
+                    "post_text": "",
+                    "outputs": [
+                        {
+                            "to": "14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ",
+                            "value": 50.0000000000000000
+                        }
+                    ],
+                    "rid": "",
+                    "id": "HwigxNWHeG0n6bVQXog3t62VlLJ/ilhkP1m19y/z18d3QqVrDxeVo1bZQd3jG1C2+GZ7LGbFsz2ekRJyv6KPF2A="
+                }
+            ],
+            "public_key": "037349fe3a9fc5d13dae523baaa83a05856018d2b0df769a8047c4692c53eb5cc1",
+            "prevHash": "",
+            "id": "INFWIvJ18Ez1TH6841bUv8T+BBNUhYXIb/3X6LyhmLE2dTXqbSG/7cTeR1MCNMCMRFSOBwnZhHQymUKhsqcOSQ0=",
+            "merkleRoot": "0d069b93dcbb5cb8a2ad61db32bbcef16719c4380a65d79c1aa27982a12f21d4"
+        })
+        genesis_block.save()
+        latest_block = genesis_block.to_dict()
+        db.consensus.insert({
+            'block': genesis_block.to_dict(),
+            'index': genesis_block.to_dict().get('index'),
+            'id': genesis_block.to_dict().get('id')})
     blockchain_difficulty = 0
     for block in BU.get_blocks():
         blockchain_difficulty += len(re.search(r'^[0]+', block.get('hash')).group(0))
-    print blockchain_difficulty
+
     data = db.miner_transactions.find({}, {'_id': False})
     for txn in data:
         res = db.blocks.find({"transactions.id": txn['id']})
@@ -118,6 +161,13 @@ def consensus(peers, config):
         next_index = 0
 
     consensus = db.consensus.find({'index': next_index})
+    if not consensus.count():
+        #is there a gap?
+        gap_test = db.consensus.find({}).limit(1).sort([('index',-1)])[0]
+        if gap_test['index'] > next_index:
+            next_index = gap_test['index']
+            consensus = db.consensus.find({'index': gap_test['index']})
+
     highest_difficulty = 0
     peers_already_used = []
     winning_block = {}
@@ -126,7 +176,7 @@ def consensus(peers, config):
         if difficulty > highest_difficulty:
             highest_difficulty = difficulty
             winning_block = record['block']
-    
+
     if winning_block:
         if latest_block.get('hash') == winning_block.get('prevHash'):
             # everything jives with our current history, everyone is happy
@@ -135,12 +185,14 @@ def consensus(peers, config):
         else:
             #need to rebase
             prev_hash = winning_block.get('prevHash')
-            find_index = next_index - 1
+            find_index = next_index
+
             test_chain = []
             while 1:
-                prev_block = db.consensus.find({'index': find_index, 'block.hash': prev_hash})
+                prev_block = db.consensus.find({'index': find_index, 'block.prevHash': prev_hash})
                 if prev_block.count():
-                    prev_block = prev_block[0]
+                    prev_block = prev_block[0]['block']
+
                     difficulty += len(re.search(r'^[0]+', prev_block.get('hash')).group(0))
                     test_chain.append(prev_block)
                     next_prev_block = db.blocks.find({'index': find_index - 1 , 'block.hash': prev_block.get('prevHash')})
@@ -157,41 +209,57 @@ def consensus(peers, config):
                         test_chain = []
                         break
                     if next_prev_block.count():
+                        prev_hash = next_prev_block.get('prevHash')
+                        find_index -= 1
+                    else:
                         for peer in peers:
                             try:
                                 res = requests.get(
-                                    'http://{peer}:5000/getblock?index={index}&hash={hash}'.format(
-                                        peer=peer,
+                                    'http://{peer}:8000/getblock?index={index}&hash={hash}'.format(
+                                        peer=peer['ip'],
                                         index=find_index - 1,
                                         hash=prev_block.get('prevHash')),
                                     timeout=1,
                                     headers={'Connection':'close'})
+
                                 resdata = json.loads(res.content)
-                                test_chain.append(resdata)
+                                db.consensus.insert({
+                                    'block': resdata,
+                                    'index': resdata['index'],
+                                    'id': resdata['id']})
+                                prev_hash = resdata.get('prevHash')
+                                find_index -= 1
                                 break
                             except:
+                                raise
                                 resdata = None
 
                 else:
+
                     for peer in peers:
                         try:
                             res = requests.get(
-                                'http://{peer}:5000/getblock?index={index}&hash={hash}'.format(
-                                    peer=peer,
-                                    index=next_index,
+                                'http://{peer}:8000/getblock?index={index}&hash={hash}'.format(
+                                    peer=peer['ip'],
+                                    index=find_index -1,
                                     hash=prev_hash),
                                 timeout=1,
                                 headers={'Connection':'close'})
                             resdata = json.loads(res.content)
+
                             break
                         except:
+                            raise
                             resdata = None
 
                     if resdata:
-                        test_chain.append(resdata)
-                        prev_hash = data.get('prevHash')
+                        db.consensus.insert({
+                            'block': resdata,
+                            'index': resdata['index'],
+                            'id': resdata['id']})
+                        prev_hash = resdata.get('prevHash')
                         find_index -= 1
-                        if find_index == 0:
+                        if find_index < 0:
                             break
                     else:
                         print 'block not found on network, fubar'
@@ -202,6 +270,7 @@ def consensus(peers, config):
 
 
 def faucet(peers, config):
+    from pymongo import MongoClient
     public_key = config.get('public_key')
     my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
     private_key = config.get('private_key')
@@ -339,7 +408,6 @@ if __name__ == '__main__':
             p = Process(target=consensus, args=(peers, config))
             p.start()
             p.join()
-            time.sleep(1)
     elif args.mode == 'mine':
         node(config, peers)
     elif args.mode == 'serve':
