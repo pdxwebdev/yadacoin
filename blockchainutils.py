@@ -344,15 +344,13 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_transaction_by_id(cls, id, instance=False):
         from transaction import Transaction, Input, Crypt
-        try:
-            block = cls.collection.find({"transactions.id": id})[0]
-            for transaction in block['transactions']:
-                if instance:
-                    return Transaction.from_dict(transaction)
-                else:
-                    return transaction
-        except:
-            return None
+        for block in cls.collection.find({"transactions.id": id}):
+            for txn in block['transactions']:
+                if txn['id'] == id:
+                    if instance:
+                        return Transaction.from_dict(txn)
+                    else:
+                        return txn
 
     @classmethod
     def get_block_reward(cls, block=None):
