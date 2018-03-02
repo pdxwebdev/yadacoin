@@ -64,7 +64,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_unspent_transactions(cls, address):
-        
+
         received = BU.collection.aggregate([
             {
                 "$match": {
@@ -344,11 +344,15 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_transaction_by_id(cls, id, instance=False):
         from transaction import Transaction, Input, Crypt
-        for transaction in cls.collection.find({"transactions.id": id}):
-            if instance:
-                return Transaction.from_dict(transaction)
-            else:
-                return transaction
+        try:
+            block = cls.collection.find({"transactions.id": id})[0]
+            for transaction in block['transactions']:
+                if instance:
+                    return Transaction.from_dict(transaction)
+                else:
+                    return transaction
+        except:
+            return None
 
     @classmethod
     def get_block_reward(cls, block=None):

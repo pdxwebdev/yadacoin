@@ -240,19 +240,20 @@ class Block(object):
     def save(self):
         self.verify()
         for txn in self.transactions:
-            address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
-            unspent = BU.get_wallet_unspent_transactions(address)
-            unspent_ids = [x['id'] for x in unspent]
-            failed = False
-            used_ids_in_this_txn = []
-            for x in txn.inputs:
-                if x.id not in unspent_ids:
-                    failed = True
-                if x.id in used_ids_in_this_txn:
-                    failed = True
-                used_ids_in_this_txn.append(x.id)
-            if failed:
-                raise BaseException('double spend', txn)
+            if txn.inputs:
+                address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
+                unspent = BU.get_wallet_unspent_transactions(address)
+                unspent_ids = [x['id'] for x in unspent]
+                failed = False
+                used_ids_in_this_txn = []
+                for x in txn.inputs:
+                    if x.id not in unspent_ids:
+                        failed = True
+                    if x.id in used_ids_in_this_txn:
+                        failed = True
+                    used_ids_in_this_txn.append(x.id)
+                if failed:
+                    raise BaseException('double spend', txn)
 
         res = self.collection.find({"index": (int(self.index) - 1)})
         if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:

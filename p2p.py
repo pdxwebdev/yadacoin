@@ -145,9 +145,6 @@ def consensus(peers, config):
             'block': genesis_block.to_dict(),
             'index': genesis_block.to_dict().get('index'),
             'id': genesis_block.to_dict().get('id')})
-    blockchain_difficulty = 0
-    for block in BU.get_blocks():
-        blockchain_difficulty += len(re.search(r'^[0]+', block.get('hash')).group(0))
 
     data = db.miner_transactions.find({}, {'_id': False})
     for txn in data:
@@ -182,7 +179,11 @@ def consensus(peers, config):
             # everything jives with our current history, everyone is happy
             winning_block_obj = Block.from_dict(winning_block)
             winning_block_obj.save()
+            print 'winning block inserted at: ', winning_block.get('index')
         else:
+            blockchain_difficulty = 0
+            for block in BU.get_blocks():
+                blockchain_difficulty += len(re.search(r'^[0]+', block.get('hash')).group(0))
             #need to rebase
             prev_hash = winning_block.get('prevHash')
             find_index = next_index
@@ -342,6 +343,7 @@ def faucet(peers, config):
             new_inputs.append(Input.from_dict(transaction.transaction.to_dict()))
             x['last_id'] = transaction.transaction.transaction_signature
             mongo_client.yadacoinsite.faucet.update({'_id': x['_id']}, x)
+            print 'saved. sending...'
             for peer in peers:
                 try:
                     socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
