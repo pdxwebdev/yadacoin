@@ -352,12 +352,16 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_block_reward(cls, block=None):
-        try:
-            f = open('block_rewards.json', 'r')
-            block_rewards = json.loads(f.read())
-            f.close()
-        except:
-            raise BaseException("Block reward file not found")
+        if getattr(cls, 'block_rewards', None):
+            block_rewards = cls.block_rewards
+        else:
+            print 'OPENING FILE: Recommend setting block_rewards class attribute'
+            try:
+                f = open('block_rewards.json', 'r')
+                block_rewards = json.loads(f.read())
+                f.close()
+            except:
+                raise BaseException("Block reward file not found")
 
         latest_block = BU.get_latest_block()
         if latest_block:

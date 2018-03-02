@@ -372,14 +372,17 @@ def app_getblockheight():
 
 @app.route('/getblock')
 def app_getblock():
+    from pymongo import MongoClient
+    mongo_client = MongoClient('localhost')
+    db = mongo_client.yadacoin
     idx = int(request.args.get('index'))
     block_hash = request.args.get('hash')
     q = {'index': idx}
     if block_hash:
         q['hash'] = block_hash
-    res = db.blocks.find(q)
-    if block:
-        return json.dumps(block)
+    res = db.blocks.find(q, {'_id': 0})
+    if res.count():
+        return json.dumps(res[0])
     else:
         return '{}'
 

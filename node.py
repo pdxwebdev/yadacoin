@@ -15,7 +15,7 @@ from block import Block, BlockFactory
 from transaction import Transaction, Input, Output
 from blockchainutils import BU
 from transactionutils import TU
-from transaction import TransactionFactory, InvalidTransactionSignatureException, MissingInputTransactionException
+from transaction import TransactionFactory, InvalidTransactionSignatureException, MissingInputTransactionException, InvalidTransactionException
 from pymongo import MongoClient
 from blockchain import Blockchain
 from bitcoin.wallet import P2PKHBitcoinAddress
@@ -26,6 +26,13 @@ db = mongo_client.yadacoin
 collection = db.blocks
 BU.collection = collection
 Block.collection = collection
+
+try:
+    f = open('block_rewards.json', 'r')
+    BU.block_rewards = json.loads(f.read())
+    f.close()
+except:
+    raise BaseException("Block reward file not found")
 
 def verify_block(block):
     pass
@@ -107,11 +114,12 @@ def node(config, peers):
 
     latest_block_index = Value('i', int(block['index']))
     p = Process(target=new_block_checker, args=(latest_block_index,))
+
+    status = Array('c', 'asldkjf')
     p.start()
     while 1:
 
         start = time.time()
-        status = Array('c', 'asldkjf')
 
         dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
         pending_txns = db.miner_transactions.find()
@@ -146,6 +154,9 @@ def node(config, peers):
                     print 'missing this input transaction, will try again later'
                 except InvalidTransactionSignatureException as e:
                     print 'InvalidTransactionSignatureException: transaction removed'
+                    db.miner_transactions.remove({'id': transaction.transaction_signature})
+                except InvalidTransactionException as e:
+                    print 'InvalidTransactionException: transaction removed'
                     db.miner_transactions.remove({'id': transaction.transaction_signature})
                 except Exception as e:
                     print e

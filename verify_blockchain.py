@@ -24,6 +24,12 @@ private_key = config.get('private_key')
 TU.private_key = private_key
 BU.private_key = private_key
 
+try:
+    f = open('block_rewards.json', 'r')
+    BU.block_rewards = json.loads(f.read())
+    f.close()
+except:
+    raise BaseException("Block reward file not found")
 con = MongoClient('localhost')
 db = con.yadacoin
 col = db.blocks
@@ -31,6 +37,7 @@ BU.collection = col
 blocks = BU.get_blocks()
 blockchain = Blockchain(blocks)
 blockchain.verify(output)
+
 
 res = col.aggregate([
     {"$unwind": "$transactions" },
