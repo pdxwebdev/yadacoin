@@ -201,6 +201,8 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_transactions(cls, raw=False, skip=None):
+        if not skip:
+            skip = []
         from block import Block
         from transaction import Transaction
         from crypt import Crypt

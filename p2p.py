@@ -63,7 +63,7 @@ def newtransaction(sid, data):
     except BaseException as e:
         print e
 
-def newblock(sid, data):
+def newblock(data):
     from pymongo import MongoClient
     mongo_client = MongoClient('localhost')
     db = mongo_client.yadacoin
@@ -272,6 +272,8 @@ def consensus(peers, config):
 
 def faucet(peers, config):
     from pymongo import MongoClient
+    with open('config.json') as f:
+        config = json.loads(f.read())
     public_key = config.get('public_key')
     my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
     private_key = config.get('private_key')
@@ -337,6 +339,7 @@ def faucet(peers, config):
                     return_change_output
                 ]
             )
+            transaction.transaction.verify()
             TU.save(transaction.transaction)
             used_inputs.extend([n.id for n in needed_inputs])
             new_inputs = [n for n in new_inputs if n.id not in used_inputs]
@@ -356,8 +359,24 @@ def faucet(peers, config):
         time.sleep(10)
 
 def add_friends():
+    from pymongo import MongoClient
+    with open('config.json') as f:
+        config = json.loads(f.read())
+    public_key = config.get('public_key')
+    my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
+    private_key = config.get('private_key')
+    TU.private_key = private_key
+    BU.private_key = private_key
+    mongo_client = MongoClient('localhost')
+    db = mongo_client.yadacoin
+    collection = db.blocks
+    consensus = db.consensus
+    miner_transactions = db.miner_transactions
+    BU.collection = collection
+    TU.collection = collection
     num = 0
     for transaction in BU.get_transactions():
+        print num
         exists = mongo_client.yadacoinsite.friends.find({'id': transaction['id']})
         if not exists.count():
             transaction['humanized'] = humanhash.humanize(transaction['rid'])
@@ -367,6 +386,11 @@ def add_friends():
 @app.route('/getblocks')
 def app_getblocks():
     return json.dumps([x for x in BU.get_blocks()])
+
+@app.route('/newblock', methods=['POST'])
+def app_newblock():
+    newblock(request.json)
+    return 'ok'
 
 @app.route('/getblockheight')
 def app_getblockheight():
@@ -394,7 +418,7 @@ def sio_newtransaction(sid, data):
 
 @sio.on('newblock', namespace='/chat')
 def sio_newblock(sid, data):
-    newblock(sid, data)
+    newblock(data)
 
 if __name__ == '__main__':
     import argparse

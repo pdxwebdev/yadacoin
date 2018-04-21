@@ -26,26 +26,25 @@ class TransactionFactory(object):
         fee=0.1,
         requester_rid='',
         requested_rid='',
-        challenge_code='',
         public_key='',
+        dh_public_key='',
         private_key='',
+        dh_private_key='',
         to='',
         inputs='',
         outputs='',
-        answer='',
         coinbase=False
     ):
         self.bulletin_secret = bulletin_secret
-        self.challenge_code = challenge_code
         self.requester_rid = requester_rid
         self.requested_rid = requested_rid
         self.public_key = public_key
+        self.dh_public_key = dh_public_key
         self.private_key = private_key
         self.value = value
         self.fee = fee
-        self.shared_secret = shared_secret
+        self.dh_private_key = dh_private_key
         self.to = to
-        self.answer = answer
         self.outputs = outputs
         self.inputs = inputs
         self.coinbase = coinbase
@@ -62,12 +61,12 @@ class TransactionFactory(object):
             self.rid = ''
             self.encrypted_relationship = ''
         self.hash = hashlib.sha256(
+            self.dh_public_key +
             self.rid +
             self.encrypted_relationship +
             str(self.fee) +
             self.requester_rid +
             self.requested_rid +
-            self.challenge_code +
             inputs_concat +
             outputs_concat
         ).digest().encode('hex')
@@ -95,7 +94,7 @@ class TransactionFactory(object):
 
     def generate_relationship(self):
         return Relationship(
-            self.shared_secret,
+            self.dh_private_key,
             self.bulletin_secret
         )
 
@@ -105,14 +104,13 @@ class TransactionFactory(object):
             self.transaction_signature,
             self.encrypted_relationship,
             self.public_key,
+            self.dh_public_key,
             str(self.fee),
             self.requester_rid,
             self.requested_rid,
-            self.challenge_code,
             self.hash,
             inputs=self.inputs,
             outputs=self.outputs,
-            answer=self.answer,
             coinbase=self.coinbase
         )
 
@@ -135,12 +133,11 @@ class Transaction(object):
         transaction_signature='',
         relationship='',
         public_key='',
+        dh_public_key='',
         fee='0.1',
         requester_rid='',
         requested_rid='',
-        challenge_code='',
         txn_hash='',
-        answer='',
         post_text='',
         inputs='',
         outputs='',
@@ -150,12 +147,11 @@ class Transaction(object):
         self.transaction_signature = transaction_signature
         self.relationship = relationship
         self.public_key = public_key
+        self.dh_public_key = dh_public_key if dh_public_key else ''
         self.fee = str(fee)
         self.requester_rid = requester_rid if requester_rid else ''
         self.requested_rid = requested_rid if requested_rid else ''
-        self.challenge_code = challenge_code if challenge_code else ''
         self.hash = txn_hash
-        self.answer = answer if answer else ''
         self.post_text = post_text
         self.inputs = inputs
         self.outputs = outputs
@@ -168,11 +164,10 @@ class Transaction(object):
             rid=txn.get('rid', ''),
             relationship=txn.get('relationship', ''),
             public_key=txn.get('public_key'),
+            dh_public_key=txn.get('dh_public_key'),
             fee=txn.get('fee'),
             requester_rid=txn.get('requester_rid', ''),
             requested_rid=txn.get('requested_rid', ''),
-            challenge_code=txn.get('challenge_code', ''),
-            answer=txn.get('answer', ''),
             txn_hash=txn.get('hash', ''),
             post_text=txn.get('post_text', ''),
             inputs=[Input.from_dict(input_txn) for input_txn in txn.get('inputs', '')],
@@ -181,20 +176,7 @@ class Transaction(object):
         )
 
     def verify(self):
-        inputs_concat = self.get_input_hashes()
-        outputs_concat = self.get_output_hashes()
-        verify_hash = hashlib.sha256(
-            self.rid +
-            self.relationship +
-            str(self.fee) +
-            self.requester_rid +
-            self.requested_rid +
-            self.challenge_code +
-            self.answer +
-            self.post_text +
-            inputs_concat +
-            outputs_concat
-        ).digest().encode('hex')
+        verify_hash = self.generate_hash()
 
         address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
         if verify_hash != self.hash:
@@ -221,6 +203,20 @@ class Transaction(object):
         if str(total_input) != str(total):
             raise BaseException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
+    def generate_hash(self):
+        inputs_concat = self.get_input_hashes()
+        outputs_concat = self.get_output_hashes()
+        return hashlib.sha256(
+            self.dh_public_key +
+            self.rid +
+            self.relationship +
+            str(self.fee) +
+            self.requester_rid +
+            self.requested_rid +
+            inputs_concat +
+            outputs_concat
+        ).digest().encode('hex')
+
     def get_input_hashes(self):
         input_hashes = []
         for x in self.inputs:
@@ -229,10 +225,10 @@ class Transaction(object):
                 raise MissingInputTransactionException("This transaction is not in the blockchain.")
             input_hashes.append(str(txn.transaction_signature))
 
-        return ''.join(sorted(input_hashes, key=str.lower))
+        return ''.join(sorted(input_hashes, key=lambda v: v.lower()))
 
     def get_output_hashes(self):
-        outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'])
+        outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
         return ''.join([x['to']+str(float(x['value'])) for x in outputs_sorted])
 
     def to_dict(self):
@@ -241,20 +237,19 @@ class Transaction(object):
             'id': self.transaction_signature,
             'relationship': self.relationship,
             'public_key': self.public_key,
+            'dh_public_key': self.dh_public_key,
             'fee': self.fee,
             'hash': self.hash,
             'post_text': self.post_text,
             'inputs': [x.to_dict() for x in self.inputs],
             'outputs': [x.to_dict() for x in self.outputs]
         }
+        if self.dh_public_key:
+            ret['dh_public_key'] = self.dh_public_key
         if self.requester_rid:
             ret['requester_rid'] = self.requester_rid
         if self.requested_rid:
             ret['requested_rid'] = self.requested_rid
-        if self.challenge_code:
-            ret['challenge_code'] = self.challenge_code
-        if self.answer:
-            ret['answer'] = self.answer
         return ret
 
     def to_json(self):
@@ -297,13 +292,13 @@ class Output(object):
 
 
 class Relationship(object):
-    def __init__(self, shared_secret, bulletin_secret):
-        self.shared_secret = shared_secret
+    def __init__(self, dh_private_key, bulletin_secret):
+        self.dh_private_key = dh_private_key
         self.bulletin_secret = bulletin_secret
 
     def to_dict(self):
         return {
-            'shared_secret': self.shared_secret,
+            'dh_private_key': self.dh_private_key,
             'bulletin_secret': self.bulletin_secret
         }
 

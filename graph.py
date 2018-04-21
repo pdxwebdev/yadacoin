@@ -23,6 +23,7 @@ from pyfcm import FCMNotification
 class Graph(object):
 
     def __init__(self, bulletin_secret, for_me=False, push_service=None, mongo_client=None):
+        mongo_client = MongoClient('localhost')
         self.push_service = push_service
         self.mongo_client = mongo_client
         self.friend_requests = []
@@ -35,7 +36,11 @@ class Graph(object):
         rids = sorted([str(TU.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         self.rid = rid
-        self.human_hash = humanhash.humanize(self.rid)
+        res = mongo_client.yadacoinsite.usernames.find({"rid": self.rid})
+        if res.count():
+            self.human_hash = res[0]['username']
+        else:
+            self.human_hash = humanhash.humanize(self.rid)
 
         if for_me:
             return self.with_private_key()
@@ -140,6 +145,7 @@ class Graph(object):
 
 
     def request_accept_or_request(self, possible_friends, node):
+        mongo_client = MongoClient('localhost')
         possible_friends_indexed = {}
         for x in possible_friends:
             if x.get('rid') not in possible_friends_indexed:
@@ -160,6 +166,9 @@ class Graph(object):
                 friend_requests = possible_friends_indexed[x]
                 for friend_request in friend_requests:
                     if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
+                        res = mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requested_rid')}, {'_id': 0})
+                        if res.count():
+                            friend_request['username'] = res[0]['username']
                         self.sent_friend_requests.append(friend_request)
                         lookup_rids.append(friend_request.get('rid'))
 
@@ -176,6 +185,9 @@ class Graph(object):
                 friend_requests = possible_friends_indexed[x]
                 for friend_request in friend_requests:
                     if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
+                        res = mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+                        if res.count():
+                            friend_request['username'] = res[0]['username']
                         self.friend_requests.append(friend_request)
                         lookup_rids.append(friend_request.get('rid'))
 
