@@ -16,16 +16,11 @@ from transaction import Transaction, Input, Output
 from blockchainutils import BU
 from transactionutils import TU
 from transaction import TransactionFactory, InvalidTransactionSignatureException, MissingInputTransactionException, InvalidTransactionException
-from pymongo import MongoClient
 from blockchain import Blockchain
 from bitcoin.wallet import P2PKHBitcoinAddress
 
 
-mongo_client = MongoClient()
-db = mongo_client.yadacoin
-collection = db.blocks
-BU.collection = collection
-Block.collection = collection
+
 
 try:
     f = open('block_rewards.json', 'r')
@@ -60,6 +55,12 @@ class ChatNamespace(BaseNamespace):
         print 'error'
 
 def node(config, peers):
+    from pymongo import MongoClient
+    mongo_client = MongoClient()
+    db = mongo_client.yadacoin
+    collection = db.blocks
+    BU.collection = collection
+    Block.collection = collection
     public_key = config.get('public_key')
     private_key = config.get('private_key')
     TU.private_key = private_key
@@ -117,70 +118,72 @@ def node(config, peers):
 
     status = Array('c', 'asldkjf')
     p.start()
-    while 1:
 
-        start = time.time()
+    start = time.time()
 
-        dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
-        pending_txns = db.miner_transactions.find()
-        if not dup_test.count():
-            transactions = db.miner_transactions.find()
-            transaction_objs = []
-            for txn in transactions:
-                try:
-                    transaction = Transaction.from_dict(txn)
-                    transaction.verify()
-                    #check double spend
-                    res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex'))))
-                    unspent_ids = [x['id'] for x in res]
-                    failed1 = False
-                    failed2 = False
-                    used_ids_in_this_txn = []
-                    for x in transaction.inputs:
-                        if x.id not in unspent_ids:
-                            failed1 = True
-                        if x.id in used_ids_in_this_txn:
-                            failed2 = True
-                        used_ids_in_this_txn.append(x.id)
-                    if failed1:
-                        db.miner_transactions.remove({'id': transaction.transaction_signature})
-                        print 'transaction removed: input presumably spent already, not in unspent outputs', transaction.transaction_signature
-                    elif failed2:
-                        db.miner_transactions.remove({'id': transaction.transaction_signature})
-                        print 'transaction removed: using an input used by another transaction in this block', transaction.transaction_signature
-                    else:
-                        transaction_objs.append(transaction)
-                except MissingInputTransactionException as e:
-                    print 'missing this input transaction, will try again later'
-                except InvalidTransactionSignatureException as e:
-                    print 'InvalidTransactionSignatureException: transaction removed'
+    dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
+    pending_txns = db.miner_transactions.find()
+    if not dup_test.count():
+        transactions = db.miner_transactions.find()
+        transaction_objs = []
+        for txn in transactions:
+            try:
+                transaction = Transaction.from_dict(txn)
+                transaction.verify()
+                #check double spend
+                res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex'))))
+                unspent_ids = [x['id'] for x in res]
+                failed1 = False
+                failed2 = False
+                used_ids_in_this_txn = []
+                for x in transaction.inputs:
+                    if x.id not in unspent_ids:
+                        failed1 = True
+                    if x.id in used_ids_in_this_txn:
+                        failed2 = True
+                    used_ids_in_this_txn.append(x.id)
+                if failed1:
                     db.miner_transactions.remove({'id': transaction.transaction_signature})
-                except InvalidTransactionException as e:
-                    print 'InvalidTransactionException: transaction removed'
+                    print 'transaction removed: input presumably spent already, not in unspent outputs', transaction.transaction_signature
+                elif failed2:
                     db.miner_transactions.remove({'id': transaction.transaction_signature})
-                except Exception as e:
-                    print e
-                    print 'rejected transaction', txn['id']
-            print 'starting to mine...'
-            block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+                    print 'transaction removed: using an input used by another transaction in this block', transaction.transaction_signature
+                else:
+                    transaction_objs.append(transaction)
+            except MissingInputTransactionException as e:
+                print 'missing this input transaction, will try again later'
+            except InvalidTransactionSignatureException as e:
+                print 'InvalidTransactionSignatureException: transaction removed'
+                db.miner_transactions.remove({'id': transaction.transaction_signature})
+            except InvalidTransactionException as e:
+                print 'InvalidTransactionException: transaction removed'
+                db.miner_transactions.remove({'id': transaction.transaction_signature})
+            except Exception as e:
+                print e
+                print 'rejected transaction', txn['id']
+        print 'starting to mine...'
+        block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
 
-            if block:
-                dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
-                if not dup_test.count():
-                    print 'candidate submitted', block.transactions, block.index
-                    db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
-                    for peer in peers:
-                        try:
-                            socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
-                            chat_namespace = socketIO.define(ChatNamespace, '/chat')
-                            chat_namespace.emit('newblock', block.to_dict())
-                            socketIO.wait(seconds=1)
-                            socketIO.disconnect()
-                        except Exception as e:
-                            pass
-            else:
-                print 'greatest block height changed during mining'
-
+        if block:
+            dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
+            if not dup_test.count():
+                print 'candidate submitted', block.transactions, block.index
+                db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+                for peer in peers:
+                    try:
+                        requests.post(
+                            'http://{peer}:8000/newblock'.format(
+                                peer=peer['ip']
+                            ),
+                            json=block.to_dict(),
+                            timeout=1,
+                            headers={'Connection':'close'}
+                        )
+                        print 'successfully sent block'
+                    except Exception as e:
+                        pass
+        else:
+            print 'greatest block height changed during mining'
         """
         if time.time() - start < 10:
             difficulty = difficulty + '0'
@@ -189,3 +192,4 @@ def node(config, peers):
         else:
             difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
         """
+    p.terminate()
