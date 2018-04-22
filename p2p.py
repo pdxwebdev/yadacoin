@@ -123,7 +123,6 @@ def consensus(peers, config):
                     "fee": "0.1",
                     "hash": "300d98126fbbba7354a6c1d0060398c292b5ec314c636f74c8edc5291e7674a8",
                     "relationship": "",
-                    "post_text": "",
                     "outputs": [
                         {
                             "to": "14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ",

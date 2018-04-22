@@ -138,7 +138,6 @@ class Transaction(object):
         requester_rid='',
         requested_rid='',
         txn_hash='',
-        post_text='',
         inputs='',
         outputs='',
         coinbase=False
@@ -152,7 +151,6 @@ class Transaction(object):
         self.requester_rid = requester_rid if requester_rid else ''
         self.requested_rid = requested_rid if requested_rid else ''
         self.hash = txn_hash
-        self.post_text = post_text
         self.inputs = inputs
         self.outputs = outputs
         self.coinbase = coinbase
@@ -169,7 +167,6 @@ class Transaction(object):
             requester_rid=txn.get('requester_rid', ''),
             requested_rid=txn.get('requested_rid', ''),
             txn_hash=txn.get('hash', ''),
-            post_text=txn.get('post_text', ''),
             inputs=[Input.from_dict(input_txn) for input_txn in txn.get('inputs', '')],
             outputs=[Output.from_dict(output_txn) for output_txn in txn.get('outputs', '')],
             coinbase=txn.get('coinbase', '')
@@ -240,7 +237,6 @@ class Transaction(object):
             'dh_public_key': self.dh_public_key,
             'fee': self.fee,
             'hash': self.hash,
-            'post_text': self.post_text,
             'inputs': [x.to_dict() for x in self.inputs],
             'outputs': [x.to_dict() for x in self.outputs]
         }

@@ -224,6 +224,10 @@ def create_relationship():  # demo site
         value=input_sum-1.1
     )
 
+    dh = pyDH.DiffieHellman(group=17)
+    d1_pubkey = "%x" % d1.gen_public_key()
+    d1_privkey = d1.get_private_key()
+
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
         shared_secret=shared_secret,
@@ -231,7 +235,9 @@ def create_relationship():  # demo site
         requester_rid=requester_rid,
         requested_rid=requested_rid,
         public_key=public_key,
+        dh_public_key=dh_public_key,
         private_key=private_key,
+        dh_private_key=dh_private_key,
         inputs=needed_inputs,
         outputs=[
             Output(to=to, value=1),
@@ -737,7 +743,7 @@ if __name__ == '__main__':
                 'requested_rid': transaction.get('requested_rid'),
                 'skip': True
             })
-    my_posts = BU.get_bulletins(TU.get_bulletin_secret())
+
     for my_post in my_posts:
         mongo_client.yadacoinsite.my_posts.insert(my_post)
     app.run(host=config.get('host'), port=config.get('port'), threaded=True)

@@ -306,27 +306,6 @@ class BU(object):  # Blockchain Utilities
         return transactions
 
     @classmethod
-    def get_bulletins(cls, bulletin_secret):
-        from block import Block
-        from transaction import Transaction
-        from crypt import Crypt
-        bulletins = []
-        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
-            for transaction in block.get('transactions'):
-                if 'post_text' in transaction:
-                    try:
-                        cipher = Crypt(bulletin_secret)
-                        decrypted = cipher.decrypt(transaction['post_text'])
-                        decrypted.decode('utf8')
-                        if not decrypted:
-                            continue
-                        transaction['post_text'] = decrypted
-                        bulletins.append(transaction)
-                    except:
-                        continue
-        return bulletins
-
-    @classmethod
     def get_second_degree_transactions_by_rids(cls, rids):
         if not isinstance(rids, list):
             rids = [rids, ]
