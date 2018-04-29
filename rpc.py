@@ -225,8 +225,8 @@ def create_relationship():  # demo site
     )
 
     dh = pyDH.DiffieHellman(group=17)
-    d1_pubkey = "%x" % d1.gen_public_key()
-    d1_privkey = d1.get_private_key()
+    dh_public_key = "%x" % dh.gen_public_key()
+    dh_private_key = "%x" % dh.get_private_key()
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
@@ -412,10 +412,17 @@ def react():
 
 @app.route('/get-reacts', methods=['POST'])
 def get_reacts():
+    if request.json:
+        data = request.json
+        ids = data.get('txn_ids')
+    else:
+        data = request.form
+        ids = json.loads(data.get('txn_ids'))
+
     mongo_client = MongoClient('localhost')
     res = mongo_client.yadacoinsite.reacts.find({
         'txn_id': {
-            '$in': request.json.get('txn_ids')
+            '$in': ids
         },
     }, {'_id': 0})
     out = {}
@@ -441,10 +448,16 @@ def comment():
 
 @app.route('/get-comments', methods=['POST'])
 def get_comments():
+    if request.json:
+        data = request.json
+        ids = data.get('txn_ids')
+    else:
+        data = request.form
+        ids = json.loads(data.get('txn_ids'))
     mongo_client = MongoClient('localhost')
     res = mongo_client.yadacoinsite.comments.find({
         'txn_id': {
-            '$in': request.json.get('txn_ids')
+            '$in': ids
         },
     }, {'_id': 0})
     out = {}
@@ -744,6 +757,4 @@ if __name__ == '__main__':
                 'skip': True
             })
 
-    for my_post in my_posts:
-        mongo_client.yadacoinsite.my_posts.insert(my_post)
     app.run(host=config.get('host'), port=config.get('port'), threaded=True)

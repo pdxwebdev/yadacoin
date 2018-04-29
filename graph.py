@@ -33,6 +33,7 @@ class Graph(object):
         self.friend_posts = []
         self.logins = []
         self.messages = []
+        self.already_added_messages = []
         rids = sorted([str(TU.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         self.rid = rid
@@ -94,7 +95,7 @@ class Graph(object):
 
         for block in BU.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block['transactions']:
-                if not  transaction.get('relationship'):
+                if not transaction.get('relationship'):
                     continue
                 exists = mongo_client.yadacoinsite.posts.find({
                     'id': transaction.get('id')
@@ -169,6 +170,8 @@ class Graph(object):
                         res = mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requested_rid')}, {'_id': 0})
                         if res.count():
                             friend_request['username'] = res[0]['username']
+                        else:
+                            friend_request['username'] = humanhash.humanize(friend_request.get('requested_rid'))
                         self.sent_friend_requests.append(friend_request)
                         lookup_rids.append(friend_request.get('rid'))
 
@@ -188,13 +191,18 @@ class Graph(object):
                         res = mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
                         if res.count():
                             friend_request['username'] = res[0]['username']
+                        else:
+                            friend_request['username'] = humanhash.humanize(friend_request.get('requester_rid'))
+
+                        res = mongo_client.yadacoinsite.friends.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+                        if res.count():
+                            friend_request['bulletin_secret'] = res[0]['relationship']['bulletin_secret']
                         self.friend_requests.append(friend_request)
                         lookup_rids.append(friend_request.get('rid'))
 
-        already_added = []
-        for transaction in BU.get_transactions_by_rid(lookup_rids, rid=True, raw=True):
-            if transaction.get('hash') not in already_added:
-                already_added.append(transaction.get('hash'))
+        for transaction in BU.get_transactions_by_rid(lookup_rids, rid=True, raw=True, returnheight=True):
+            if transaction.get('id') not in self.already_added_messages and transaction.get('rid'):
+                self.already_added_messages.append(transaction.get('id'))
                 self.messages.append(transaction)
 
         return node

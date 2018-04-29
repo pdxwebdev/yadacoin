@@ -273,7 +273,7 @@ class BU(object):  # Blockchain Utilities
                     return transaction
 
     @classmethod
-    def get_transactions_by_rid(cls, selector, rid=False, raw=False):
+    def get_transactions_by_rid(cls, selector, rid=False, raw=False, returnheight=True):
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
@@ -302,6 +302,7 @@ class BU(object):  # Blockchain Utilities
                             transaction['relationship'] = relationship
                         except:
                             continue
+                    transaction['block_height'] = block['index']
                     transactions.append(transaction)
         return transactions
 
