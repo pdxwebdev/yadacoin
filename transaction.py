@@ -16,6 +16,7 @@ from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from crypt import Crypt
 from transactionutils import TU
 from blockchainutils import BU
+from coincurve import verify_signature
 
 class TransactionFactory(object):
     def __init__(
@@ -178,9 +179,12 @@ class Transaction(object):
         address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
         if verify_hash != self.hash:
             raise InvalidTransactionException("transaction is invalid")
-        result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+
+        result = verify_signature(base64.b64decode(self.transaction_signature), self.hash, self.public_key.decode('hex'))
         if not result:
-            raise InvalidTransactionSignatureException("transaction signature did not verify")
+            result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+            if not result:
+                raise InvalidTransactionSignatureException("transaction signature did not verify")
 
         # verify spend
         total_input = 0
