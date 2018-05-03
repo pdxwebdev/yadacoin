@@ -308,15 +308,131 @@ class BU(object):  # Blockchain Utilities
         return transactions
 
     @classmethod
-    def get_second_degree_transactions_by_rids(cls, rids):
+    def get_second_degree_transactions_by_rids(cls, rids, start_height):
+        start_height = start_height or 0
         if not isinstance(rids, list):
             rids = [rids, ]
         transactions = []
-        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
+        for block in cls.collection.find({'$and': [
+            {"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}},
+            {"index": {"$gt": start_height}}]
+        }):
             for transaction in block.get('transactions'):
                 if transaction.get('requester_rid') in rids or transaction.get('requested_rid') in rids:
                     transactions.append(transaction)
         return transactions
+
+    @classmethod
+    def get_friend_requests(cls, rids):
+        if not isinstance(rids, list):
+            rids = [rids, ]
+        transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "transactions.dh_public_key": {'$ne': ''},
+                    "transactions.requested_rid": {'$in': rids}
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {
+                "$match": {
+                    "txn.dh_public_key": {'$ne': ''},
+                    "txn.requested_rid": {'$in': rids}
+                }
+            }
+        ])
+
+        return [x['txn'] for x in transactions]
+
+    @classmethod
+    def get_sent_friend_requests(cls, rids):
+        if not isinstance(rids, list):
+            rids = [rids, ]
+        transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "transactions.dh_public_key": {'$ne': ''},
+                    "transactions.requester_rid": {'$in': rids}
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {
+                "$match": {
+                    "txn.dh_public_key": {'$ne': ''},
+                    "txn.requester_rid": {'$in': rids}
+                }
+            }
+        ])
+
+        return [x['txn'] for x in transactions]
+
+    @classmethod
+    def get_messages(cls, rids):
+        if not isinstance(rids, list):
+            rids = [rids, ]
+        transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "transactions.dh_public_key": '',
+                    "transactions.rid": {'$in': rids}
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {
+                "$match": {
+                    "txn.dh_public_key": '',
+                    "txn.rid": {'$in': rids}
+                }
+            }
+        ])
+
+        return [x['txn'] for x in transactions]
+
+    @classmethod
+    def get_posts(cls):
+        transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                    "transactions.dh_public_key": '',
+                    "transactions.rid": ''
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            },
+            {
+                "$match": {
+                    "txn.relationship": {"$ne": ""},
+                    "txn.dh_public_key": '',
+                    "txn.rid": ''
+                }
+            }
+        ])
+
+        return [x['txn'] for x in transactions]
 
     @classmethod
     def generate_signature(cls, message):

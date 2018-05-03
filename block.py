@@ -18,6 +18,7 @@ from blockchainutils import BU
 from transactionutils import TU
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+from coincurve.utils import verify_signature
 
 
 class BlockFactory(object):
@@ -202,8 +203,18 @@ class Block(object):
         except:
             raise
 
-        if not VerifyMessage(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')), BitcoinMessage(self.hash, magic=''), self.signature):
-            raise BaseException("block signature is invalid")
+        address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
+        try:
+            result = verify_signature(base64.b64decode(self.signature), self.hash, self.public_key.decode('hex'))
+            if not result:
+                raise
+        except:
+            try:
+                result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.signature)
+                if not result:
+                    raise
+            except:
+                raise BaseException("block signature is invalid")
 
         # verify reward
         coinbase_sum = 0

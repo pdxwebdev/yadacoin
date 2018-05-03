@@ -373,7 +373,6 @@ def add_friends(config):
         if not exists.count():
             transaction['humanized'] = humanhash.humanize(transaction['rid'])
             mongo_client.yadacoinsite.friends.insert(transaction)
-            print json.dumps(transaction, indent=4)
         num += 1
 
 @app.route('/getblocks')
