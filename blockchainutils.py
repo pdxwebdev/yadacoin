@@ -16,6 +16,7 @@ from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from bson.son import SON
+from coincurve import PrivateKey
 
 
 class BU(object):  # Blockchain Utilities
@@ -319,9 +320,9 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def generate_signature(cls, message):
-        key = CBitcoinSecret(cls.private_key)
-        signature = SignMessage(key, BitcoinMessage(message, magic=''))
-        return signature
+        key = PrivateKey.from_hex(cls.private_key)
+        signature = key.sign(message)
+        return base64.b64encode(signature)
 
     @classmethod
     def get_transaction_by_id(cls, id, instance=False):

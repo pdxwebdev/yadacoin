@@ -32,6 +32,7 @@ class BlockFactory(object):
 
         transaction_objs = []
         fee_sum = 0.0
+        unspent_indexed = {}
         for txn in transactions:
             if isinstance(txn, Transaction):
                 transaction_obj = txn
@@ -39,8 +40,14 @@ class BlockFactory(object):
                 transaction_obj = Transaction.from_dict(txn)
             transaction_obj.verify()
             #check double spend
-            res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex'))))
-            unspent_ids = [x['id'] for x in res]
+            address = str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex')))
+            if address in unspent_indexed:
+                unspent_ids = unspent_indexed[address]
+            else:
+                res = BU.get_wallet_unspent_transactions(address)
+                unspent_ids = [x['id'] for x in res]
+                unspent_indexed[address] = unspent_ids
+
             failed = False
             used_ids_in_this_txn = []
             for x in transaction_obj.inputs:
@@ -58,7 +65,7 @@ class BlockFactory(object):
             private_key=self.private_key,
             outputs=[Output(
                 value=block_reward + float(fee_sum),
-                to=str(P2PKHBitcoinAddress.from_pubkey(coinbase.decode('hex')))
+                to=str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
             )],
             coinbase=True
         ).generate_transaction()

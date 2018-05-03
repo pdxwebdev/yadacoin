@@ -180,10 +180,16 @@ class Transaction(object):
         if verify_hash != self.hash:
             raise InvalidTransactionException("transaction is invalid")
 
-        result = verify_signature(base64.b64decode(self.transaction_signature), self.hash, self.public_key.decode('hex'))
-        if not result:
-            result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+        try:
+            result = verify_signature(base64.b64decode(self.transaction_signature), self.hash, self.public_key.decode('hex'))
             if not result:
+                raise
+        except:
+            try:
+                result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+                if not result:
+                    raise
+            except:
                 raise InvalidTransactionSignatureException("transaction signature did not verify")
 
         # verify spend

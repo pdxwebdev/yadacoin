@@ -14,6 +14,7 @@ from pbkdf2 import PBKDF2
 from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from crypt import Crypt
+from coincurve.keys import PrivateKey
 
 
 class TU(object):  # Transaction Utilities
@@ -30,15 +31,15 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_deterministic_signature(cls):
-        key = CBitcoinSecret(cls.private_key)
-        signature = SignMessage(key, BitcoinMessage(cls.private_key, magic=''))
-        return hashlib.sha256(signature.encode('hex')).digest().encode('hex')
+        key = PrivateKey.from_hex(cls.private_key)
+        signature = key.sign(cls.private_key)
+        return hashlib.sha256(base64.b64encode(signature)).digest().encode('hex')
 
     @classmethod
     def generate_signature(cls, message):
-        key = CBitcoinSecret(cls.private_key)
-        signature = SignMessage(key, BitcoinMessage(message, magic=''))
-        return signature
+        key = PrivateKey.from_hex(cls.private_key)
+        signature = key.sign(message)
+        return base64.b64encode(signature)
 
     @classmethod
     def save(cls, items):

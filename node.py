@@ -125,12 +125,19 @@ def node(config, peers):
     if not dup_test.count():
         transactions = db.miner_transactions.find()
         transaction_objs = []
+        unspent_indexed = {}
         for txn in transactions:
             try:
                 transaction = Transaction.from_dict(txn)
                 transaction.verify()
                 #check double spend
-                res = BU.get_wallet_unspent_transactions(str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex'))))
+                address = str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex')))
+                if address in unspent_indexed:
+                    unspent_ids = unspent_indexed[address]
+                else:
+                    res = BU.get_wallet_unspent_transactions(address)
+                    unspent_ids = [x['id'] for x in res]
+                    unspent_indexed[address] = unspent_ids
                 unspent_ids = [x['id'] for x in res]
                 failed1 = False
                 failed2 = False
@@ -161,8 +168,10 @@ def node(config, peers):
                 print e
                 print 'rejected transaction', txn['id']
         print 'starting to mine...'
-        block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
-
+        try:
+            block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+        except Exception as e:
+            raise e
         if block:
             dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
             if not dup_test.count():
@@ -180,7 +189,7 @@ def node(config, peers):
                         )
                         print 'successfully sent block'
                     except Exception as e:
-                        pass
+                        print e
         else:
             print 'greatest block height changed during mining'
         """
