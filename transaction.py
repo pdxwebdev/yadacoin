@@ -71,6 +71,7 @@ class TransactionFactory(object):
             inputs_concat +
             outputs_concat
         ).digest().encode('hex')
+
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
 
@@ -83,8 +84,8 @@ class TransactionFactory(object):
         return ''.join(sorted(input_hashes, key=str.lower))
 
     def get_output_hashes(self):
-        outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'])
-        return ''.join([x['to']+str(float(x['value'])) for x in outputs_sorted])
+        outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
+        return ''.join([x['to'] + "%10.8f" % float(x['value']) for x in outputs_sorted])
 
     def generate_rid(self):
         my_bulletin_secret = TU.get_bulletin_secret()
@@ -175,7 +176,6 @@ class Transaction(object):
 
     def verify(self):
         verify_hash = self.generate_hash()
-
         address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
         if verify_hash != self.hash:
             raise InvalidTransactionException("transaction is invalid")
@@ -236,7 +236,7 @@ class Transaction(object):
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
-        return ''.join([x['to']+str(float(x['value'])) for x in outputs_sorted])
+        return ''.join([x['to'] + "%10.8f" % float(x['value']) for x in outputs_sorted])
 
     def to_dict(self):
         ret = {

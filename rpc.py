@@ -361,14 +361,6 @@ def search():
     phrase = request.args.get('phrase')
     bulletin_secret = request.args.get('bulletin_secret')
     my_bulletin_secret = TU.get_bulletin_secret()
-    if phrase == 'triple-quebec-nevada-lion':
-        return json.dumps({
-            'bulletin_secret': my_bulletin_secret,
-            "challenge_code": "1b02fff6-a842-4eea-b6c4-bae97fdf1742",
-             "callbackurl": "http://71.237.161.227:5000/create-relationship",
-            "shared_secret": "87b0c9ac-2387-48a5-b230-9a2c4148d641",
-            'to': my_address
-        }, indent=4)
 
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
@@ -380,7 +372,7 @@ def search():
                 if output['to'] != my_address:
                     to = output['to']
         else:
-            friend = mongo_client.yadacoinsite.usernames.find({'username': phrase})
+            friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower()})
             if friend.count():
                 friend = friend[0]
                 to = friend['to']
@@ -482,6 +474,7 @@ def get_username():
 @app.route('/change-username', methods=['POST'])
 def change_username():
     mongo_client = MongoClient('localhost')
+    request.json['username'] = request.json['username'].lower()
     mongo_client.yadacoinsite.usernames.update(
         {
             'rid': request.json.get('rid')
