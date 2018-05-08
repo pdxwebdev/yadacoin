@@ -98,12 +98,12 @@ class Graph(object):
 
         for i, friend_request in enumerate(friend_requests):
             # attach bulletin_secets
-            res = mongo_client.yadacoinsite.friends.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+            res = self.mongo_client.yadacoinsite.friends.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
             if res.count():
                 friend_requests[i]['bulletin_secret'] = res[0]['relationship']['bulletin_secret']
 
             # attach usernames
-            res = mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+            res = self.mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
             if res.count():
                 friend_requests[i]['username'] = res[0]['username']
             else:
@@ -112,10 +112,10 @@ class Graph(object):
 
     def get_sent_friend_requests(self):
         sent_friend_requests = BU.get_sent_friend_requests(self.rid)
-
+        print self.rid
         for i, sent_friend_request in enumerate(sent_friend_requests):
             # attach usernames
-            res = mongo_client.yadacoinsite.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
+            res = self.mongo_client.yadacoinsite.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
             if res.count():
                 sent_friend_requests[i]['username'] = res[0]['username']
             else:

@@ -22,7 +22,6 @@ class TransactionFactory(object):
     def __init__(
         self,
         bulletin_secret='',
-        shared_secret='',
         value=1,
         fee=0.1,
         requester_rid='',

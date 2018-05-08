@@ -182,16 +182,18 @@ def register():
 def create_relationship():  # demo site
     if request.method == 'GET':
         bulletin_secret = request.args.get('bulletin_secret', '')
-        shared_secret = request.args.get('shared_secret', '')
-        requester_rid = request.args.get('requester_rid', '')
-        requested_rid = request.args.get('requested_rid', '')
         to = request.args.get('to', '')
     else:
         bulletin_secret = request.json.get('bulletin_secret', '')
-        shared_secret = request.json.get('shared_secret', '')
-        requester_rid = request.json.get('requester_rid', '')
-        requested_rid = request.json.get('requested_rid', '')
         to = request.json.get('to', '')
+
+    if not bulletin_secret:
+        return 'error: "bulletin_secret" missing', 400
+
+    if not to:
+        return 'error: "to" missing', 400
+
+    input_txns = BU.get_wallet_unspent_transactions(my_address)
 
     miner_transactions = db.miner_transactions.find()
     mtxn_ids = []
@@ -199,7 +201,9 @@ def create_relationship():  # demo site
         for mtxninput in mtxn['inputs']:
             mtxn_ids.append(mtxninput['id'])
 
-    input_txns = BU.get_wallet_unspent_transactions(my_address)
+    checked_out_txn_ids = db.checked_out_txn_ids.find()
+    for mtxn in checked_out_txn_ids:
+        mtxn_ids.append(mtxn['id'])
 
     inputs = [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
 
@@ -212,12 +216,12 @@ def create_relationship():  # demo site
             if txn_output.to == my_address:
                 input_sum += txn_output.value
                 needed_inputs.append(x)
+                db.checked_out_txn_ids.insert({'id': x.id})
                 if input_sum >= 1.1:
                     done = True
                     break
         if done == True:
             break
-
 
     return_change_output = Output(
         to=my_address,
@@ -230,10 +234,7 @@ def create_relationship():  # demo site
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
-        shared_secret=shared_secret,
         fee=0.1,
-        requester_rid=requester_rid,
-        requested_rid=requested_rid,
         public_key=public_key,
         dh_public_key=dh_public_key,
         private_key=private_key,
@@ -629,13 +630,15 @@ def get_graph_mobile():
     bulletin_secret = request.args.get('bulletin_secret')
     graph = Graph(bulletin_secret, push_service=push_service)
     graph_dict = graph.to_dict()
-    graph_dict['registered'] = graph.rid in [x.get('rid') for x in graph.friends]
+    graph_dict['registered'] = graph.rid in [x.get('rid') for x in graph.friends if x['public_key'] == public_key] and graph.rid in [x.get('rid') for x in graph.friends if x['public_key'] != public_key]
     graph_dict['pending_registration'] = False
     if not graph_dict['registered']:
         # not regisered, let's check for a pending transaction
         mongo_client = MongoClient('localhost')
-        res = mongo_client.yadacoin.miner_transactions.find({'rid': graph.rid})
-        if res.count():
+        res = mongo_client.yadacoin.miner_transactions.find({'rid': graph.rid, 'public_key': {'$ne': public_key}})
+        res2 = mongo_client.yadacoin.miner_transactions.find({'rid': graph.rid, 'public_key': public_key})
+
+        if res.count() and res2.count():
             graph_dict['pending_registration'] = True
     return json.dumps(graph_dict, indent=4)
 

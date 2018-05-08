@@ -329,7 +329,7 @@ class BU(object):  # Blockchain Utilities
         transactions = BU.collection.aggregate([
             {
                 "$match": {
-                    "transactions.dh_public_key": {'$ne': ''},
+                    "transactions": {"$elemMatch": {"dh_public_key": {'$ne': ''}}},
                     "transactions.requested_rid": {'$in': rids}
                 }
             },
@@ -357,7 +357,7 @@ class BU(object):  # Blockchain Utilities
         transactions = BU.collection.aggregate([
             {
                 "$match": {
-                    "transactions.dh_public_key": {'$ne': ''},
+                    "transactions": {"$elemMatch": {"dh_public_key": {'$ne': ''}}},
                     "transactions.requester_rid": {'$in': rids}
                 }
             },
@@ -385,6 +385,7 @@ class BU(object):  # Blockchain Utilities
         transactions = BU.collection.aggregate([
             {
                 "$match": {
+                    "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
                     "transactions.dh_public_key": '',
                     "transactions.rid": {'$in': rids}
                 }
@@ -398,6 +399,7 @@ class BU(object):  # Blockchain Utilities
             },
             {
                 "$match": {
+                    "txn.relationship": {"$ne": ""},
                     "txn.dh_public_key": '',
                     "txn.rid": {'$in': rids}
                 }

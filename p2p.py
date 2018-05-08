@@ -299,21 +299,31 @@ def faucet(peers, config):
         if last_id_in_blockchain and not mongo_client.yadacoin.blocks.find({'transactions.id': last_id_in_blockchain}).count():
 
             continue
+
         input_txns = BU.get_wallet_unspent_transactions(my_address)
 
-        inputs = [Input.from_dict(input_txn) for input_txn in input_txns]
-        inputs.extend(new_inputs)
+        miner_transactions = db.miner_transactions.find()
+        mtxn_ids = []
+        for mtxn in miner_transactions:
+            for mtxninput in mtxn['inputs']:
+                mtxn_ids.append(mtxninput['id'])
+
+        checked_out_txn_ids = db.checked_out_txn_ids.find()
+        for mtxn in checked_out_txn_ids:
+            mtxn_ids.append(mtxn['id'])
+
+        inputs = [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
+
         needed_inputs = []
         input_sum = 0
         done = False
         for y in inputs:
-            if y.id in used_inputs:
-                continue
             txn = BU.get_transaction_by_id(y.id, instance=True)
             for txn_output in txn.outputs:
                 if txn_output.to == my_address:
                     input_sum += txn_output.value
                     needed_inputs.append(y)
+                    db.checked_out_txn_ids.insert({'id': y.id})
                     if input_sum >= 1.1:
                         done = True
                         break
@@ -337,18 +347,14 @@ def faucet(peers, config):
         )
         transaction.transaction.verify()
         TU.save(transaction.transaction)
-        used_inputs.extend([n.id for n in needed_inputs])
-        new_inputs = [n for n in new_inputs if n.id not in used_inputs]
-        new_inputs.append(Input.from_dict(transaction.transaction.to_dict()))
         x['last_id'] = transaction.transaction.transaction_signature
         mongo_client.yadacoinsite.faucet.update({'_id': x['_id']}, x)
-        print 'saved. sending...'
+        print 'saved. sending...', x['address']
         for peer in peers:
             try:
                 socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
                 chat_namespace = socketIO.define(ChatNamespace, '/chat')
                 chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
-                socketIO.wait(seconds=1)
                 socketIO.disconnect()
             except Exception as e:
                 print e
@@ -368,7 +374,10 @@ def add_friends(config):
     BU.collection = collection
     TU.collection = collection
     num = 0
+    print 'hmm'
     for transaction in BU.get_transactions():
+        if transaction['rid'] == "0969ca3a1d54c06fcd7e7fb9074cf99118b2da357aa69932180214b74e757487":
+            print 'found!'
         exists = mongo_client.yadacoinsite.friends.find({'id': transaction['id']})
         if not exists.count():
             transaction['humanized'] = humanhash.humanize(transaction['rid'])
@@ -445,7 +454,7 @@ if __name__ == '__main__':
             p = Process(target=faucet, args=(peers, config))
             p.start()
             p.join()
-            time.sleep(10)
+            time.sleep(1)
     elif args.mode == 'friends':
         while 1:
             p = Process(target=add_friends, args=(config,))
