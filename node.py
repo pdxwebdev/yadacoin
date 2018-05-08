@@ -138,10 +138,11 @@ def node(config, peers):
                     res = BU.get_wallet_unspent_transactions(address)
                     unspent_ids = [x['id'] for x in res]
                     unspent_indexed[address] = unspent_ids
-                unspent_ids = [x['id'] for x in res]
+
                 failed1 = False
                 failed2 = False
                 used_ids_in_this_txn = []
+
                 for x in transaction.inputs:
                     if x.id not in unspent_ids:
                         failed1 = True
@@ -151,9 +152,11 @@ def node(config, peers):
                 if failed1:
                     db.miner_transactions.remove({'id': transaction.transaction_signature})
                     print 'transaction removed: input presumably spent already, not in unspent outputs', transaction.transaction_signature
+                    db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction.to_dict()})
                 elif failed2:
                     db.miner_transactions.remove({'id': transaction.transaction_signature})
                     print 'transaction removed: using an input used by another transaction in this block', transaction.transaction_signature
+                    db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction.to_dict()})
                 else:
                     transaction_objs.append(transaction)
             except MissingInputTransactionException as e:
@@ -161,9 +164,11 @@ def node(config, peers):
             except InvalidTransactionSignatureException as e:
                 print 'InvalidTransactionSignatureException: transaction removed'
                 db.miner_transactions.remove({'id': transaction.transaction_signature})
+                db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction.to_dict()})
             except InvalidTransactionException as e:
                 print 'InvalidTransactionException: transaction removed'
                 db.miner_transactions.remove({'id': transaction.transaction_signature})
+                db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction.to_dict()})
             except Exception as e:
                 print e
                 print 'rejected transaction', txn['id']
