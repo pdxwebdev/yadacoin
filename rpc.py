@@ -489,18 +489,16 @@ def change_username():
 def fcm_token():
     try:
         token = request.json.get('token')
+        print token
         rid = request.json.get('rid')
-        shared_secret = request.json.get('shared_secret')
         txn = BU.get_transaction_by_rid(rid, rid=True) 
-        if txn['relationship']['shared_secret'] == shared_secret:
-            mongo_client.yadacoinsite.fcmtokens.update({'rid': rid}, {
-                'rid': rid,
-                'token': token
-            }, upsert=True)
-            return '', 200
-        return '', 400
+        mongo_client.yadacoinsite.fcmtokens.update({'rid': rid}, {
+            'rid': rid,
+            'token': token
+        }, upsert=True)
+        return '', 200
     except Exception as e:
-        return '', 4000
+        return '', 400
 
 @app.route('/request-notification', methods=['POST'])
 def request_notification():

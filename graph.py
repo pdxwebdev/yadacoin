@@ -58,6 +58,7 @@ class Graph(object):
             for node in nodes:
                 if node.get('dh_public_key'):
                     test = {'rid': node.get('rid'), 'requester_rid': node.get('requester_id'), 'requested_rid': node.get('requested_id')}
+                    node['username'] = 'YadaCoin Support'
                     self.friends.append(node)
                     if test in already_done:
                         continue
