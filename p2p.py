@@ -12,7 +12,7 @@ import re
 from multiprocessing import Process, Value, Array, Pool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
-from flask import Flask, render_template, request
+from flask import Flask, render_template, request, Response
 from blockchainutils import BU
 from transactionutils import TU
 from blockchain import Blockchain, BlockChainException
@@ -335,6 +335,30 @@ def add_friends(config):
             transaction['humanized'] = humanhash.humanize(transaction['rid'])
             mongo_client.yadacoinsite.friends.insert(transaction)
         num += 1
+
+@app.route('/get-blocks')
+def get_blocks():
+    from pymongo import MongoClient
+    mongo_client = MongoClient('localhost')
+    db = mongo_client.yadacoin
+    blocks = [x for x in db.blocks.find({
+        '$and': [
+            {'index': 
+                {'$gte': int(request.args.get('start_index'))}
+            }, 
+            {'index': 
+                {'$lte': int(request.args.get('end_index'))}
+            }
+        ]
+    }, {'_id': 0}).sort([('index',1)])]
+
+    def generate(blocks):
+        for i, block in enumerate(blocks):
+            print 'sending block index:', block['index']
+            prefix = '[' if i == 0 else ''
+            suffix = ']' if i >= len(blocks) -1  else ','
+            yield prefix + json.dumps(block) + suffix
+    return Response(generate(blocks), mimetype='application/json')
 
 @app.route('/getblocks')
 def app_getblocks():

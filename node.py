@@ -172,6 +172,9 @@ def node(config, peers):
             except Exception as e:
                 print e
                 print 'rejected transaction', txn['id']
+            except BaseException as e:
+                print e
+                print 'rejected transaction', txn['id']
         print 'starting to mine...'
         try:
             block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
