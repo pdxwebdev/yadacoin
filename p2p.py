@@ -155,118 +155,70 @@ def consensus(peers, config):
         next_index = int(latest_block.get('index')) + 1
     else:
         next_index = 0
+    inc = 999
+    gap_test = db.consensus.find({}).limit(1).sort([('index',-1)])[0]
 
-    consensus = db.consensus.find({'index': next_index})
-    if not consensus.count():
-        #is there a gap?
-        gap_test = db.consensus.find({}).limit(1).sort([('index',-1)])[0]
-        if gap_test['index'] > next_index:
-            next_index = gap_test['index']
-            consensus = db.consensus.find({'index': gap_test['index']})
+    if gap_test['index'] > next_index:
+        print 'theres a gap'
+	for peer in peers:
+            for i in range(next_index, gap_test['index'], (inc+1)):
+                print i
+		something_missing = False
+                res = db.consensus.find({'peer': peer['ip'], '$and': [{'index': {'$gte': i,}}, {'index': {'$lte': (i + inc)}}]})
+                truetest = {}
 
+                for x in range(i, (i+inc)):
+                    truetest[x] = False
+                
+                for test in res:
+                    truetest[test['index']] = True
+                
+                allgood = True
+                for idx, item in truetest.iteritems():
+                    if not item:
+                        allgood = False
+
+                if allgood:
+                    continue
+
+                response = requests.get('http://{peer}:8000/get-blocks?start_index={start_index}&end_index={end_index}'.format(peer=peer['ip'], start_index=i, end_index=(i+inc)))
+                blocks = json.loads(response.content)
+                for block in blocks:
+                    try:
+                        db.consensus.insert({'peer': peer['ip'], 'index': block['index'], 'id': block['id'], 'block': block})
+		        print 'consensus block instered for index:', block['index']
+                    except:
+                        pass
+    
     highest_difficulty = 0
     peers_already_used = []
     winning_block = {}
-    for record in consensus:
-        difficulty = len(re.search(r'^[0]+', record['block'].get('hash')).group(0))
-        if difficulty > highest_difficulty:
-            highest_difficulty = difficulty
-            winning_block = record['block']
-
-    if winning_block:
-        if latest_block.get('hash') == winning_block.get('prevHash'):
-            # everything jives with our current history, everyone is happy
-            winning_block_obj = Block.from_dict(winning_block)
-            winning_block_obj.save()
-            print 'winning block inserted at: ', winning_block.get('index')
+    while 1:
+        record = consensus.find({'index': next_index}).limit(1)
+        if record.count():
+            record = record[0]
         else:
-            blockchain_difficulty = 0
-            for block in BU.get_blocks():
-                blockchain_difficulty += len(re.search(r'^[0]+', block.get('hash')).group(0))
-            #need to rebase
-            prev_hash = winning_block.get('prevHash')
-            find_index = next_index
+            print 'no winning block', next_index
+            break
+        difficulty = len(re.search(r'^[0]+', record['block'].get('hash')).group(0))
+        highest_difficulty = difficulty
+        winning_block = record['block']
 
-            test_chain = []
-            while 1:
-                prev_block = db.consensus.find({'index': find_index, 'block.prevHash': prev_hash})
-                if prev_block.count():
-                    prev_block = prev_block[0]['block']
+        if winning_block:
+            if latest_block.get('hash') == winning_block.get('prevHash'):
+                # everything jives with our current history, everyone is happy
+                winning_block_obj = Block.from_dict(winning_block)
+                winning_block_obj.save()
+                print 'winning block inserted at: ', winning_block.get('index')
+                latest_block = BU.get_latest_block()
+                next_index = int(latest_block.get('index')) + 1
+            else:
+                print 'error: winning block does not follow established chain'
+                break
+        else:
+            print 'no winning block', next_index
+            break
 
-                    difficulty += len(re.search(r'^[0]+', prev_block.get('hash')).group(0))
-                    test_chain.append(prev_block)
-                    next_prev_block = db.blocks.find({'index': find_index - 1 , 'block.hash': prev_block.get('prevHash')})
-                    if (difficulty + highest_difficulty) > blockchain_difficulty and next_prev_block.count():
-                        db.blocks.remove({'index': latest_block.get('index'), 'hash': latest_block.get('hash')})
-                        for test_block in test_chain:
-                            block = Block.from_dict(test_block)
-                            block.save()
-                        test_chain = []
-                        break
-                    if find_index == 0:
-                        #this chain went all the way to zero and still wasn't longer
-                        #this should be an edge case and would normally only happen in the case of an attack
-                        test_chain = []
-                        break
-                    if next_prev_block.count():
-                        prev_hash = next_prev_block.get('prevHash')
-                        find_index -= 1
-                    else:
-                        for peer in peers:
-                            try:
-                                res = requests.get(
-                                    'http://{peer}:8000/getblock?index={index}&hash={hash}'.format(
-                                        peer=peer['ip'],
-                                        index=find_index - 1,
-                                        hash=prev_block.get('prevHash')),
-                                    timeout=1,
-                                    headers={'Connection':'close'})
-
-                                resdata = json.loads(res.content)
-                                db.consensus.insert({
-                                    'block': resdata,
-                                    'index': resdata['index'],
-                                    'id': resdata['id']})
-                                prev_hash = resdata.get('prevHash')
-                                find_index -= 1
-                                break
-                            except:
-                                raise
-                                resdata = None
-
-                else:
-
-                    for peer in peers:
-                        try:
-                            res = requests.get(
-                                'http://{peer}:8000/getblock?index={index}&hash={hash}'.format(
-                                    peer=peer['ip'],
-                                    index=find_index -1,
-                                    hash=prev_hash),
-                                timeout=1,
-                                headers={'Connection':'close'})
-                            resdata = json.loads(res.content)
-
-                            break
-                        except:
-                            raise
-                            resdata = None
-
-                    if resdata:
-                        db.consensus.insert({
-                            'block': resdata,
-                            'index': resdata['index'],
-                            'id': resdata['id']})
-                        prev_hash = resdata.get('prevHash')
-                        find_index -= 1
-                        if find_index < 0:
-                            break
-                    else:
-                        print 'block not found on network, fubar'
-                        break
-                        #this is bad
-    else:
-        print 'no winning block', next_index
 
 
 def faucet(peers, config):
@@ -438,6 +390,7 @@ if __name__ == '__main__':
             p = Process(target=consensus, args=(peers, config))
             p.start()
             p.join()
+            time.sleep(1)
     elif args.mode == 'mine':
         while 1:
             p = Process(target=node, args=(config, peers))

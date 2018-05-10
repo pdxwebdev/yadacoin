@@ -65,7 +65,6 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_unspent_transactions(cls, address):
-
         received = BU.collection.aggregate([
             {
                 "$match": {
@@ -79,7 +78,6 @@ class BU(object):  # Blockchain Utilities
                     "txn": "$transactions"
                 }
             },
-            {"$unwind": "$txn.outputs" },
             {
                 "$match": {
                     "txn.outputs.to": address
@@ -93,15 +91,15 @@ class BU(object):  # Blockchain Utilities
                 }
             }
         ])
-        ids = []
         reverse_public_key = ''
+        use_later = []
         for x in received:
-            ids.append(x['txn']['id'])
+            use_later.append(x['txn'])
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
             if xaddress == address:
                 reverse_public_key = x['public_key']
                 break
-
+        
         # no reverse means you never spent anything
         # so all transactions are unspent
         if not reverse_public_key:
@@ -135,7 +133,7 @@ class BU(object):  # Blockchain Utilities
             for x in received:
                 unspent_formatted.append(x['txn'])
             return unspent_formatted
-
+        
         spent = BU.collection.aggregate([
             {
                 "$match": {
@@ -164,40 +162,16 @@ class BU(object):  # Blockchain Utilities
                 }
             }
         ])
-
         ids_spent_by_me = []
         for x in spent:
             ids_spent_by_me.append(x['input_id'])
-
-        unspent = BU.collection.aggregate([
-            {
-                "$match": {
-                    "transactions.outputs.to": address
-                }
-            },
-            {"$unwind": "$transactions" },
-            {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$transactions"
-                }
-            },
-            {
-                "$match": {
-                    "txn.outputs.to": address,
-                    "txn.id": {"$nin": ids_spent_by_me}
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$txn"
-                }
-            }
-        ])
         unspent_formatted = []
-        for x in unspent:
-            unspent_formatted.append(x['txn'])
+        for x in use_later:
+            if x['id'] not in ids_spent_by_me:
+                unspent_formatted.append(x)
+        received_indexed = {x['txn']['id']: x['txn'] for x in received}
+        intersect_result = list(set([x for x in received_indexed.keys()]) - set(ids_spent_by_me))
+        unspent_formatted.extend([x for i, x in received_indexed.iteritems() if i in intersect_result])
         return unspent_formatted
 
     @classmethod
