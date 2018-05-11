@@ -532,7 +532,6 @@ def request_notification():
                 extra_kwargs={'priority': 'high'}
             )
     return '', 200
-    return '', 400
 
 @app.route('/deeplink')
 def deeplink():
@@ -597,11 +596,90 @@ def transaction():
             db.miner_transactions.insert(x.to_dict())
         job = Process(target=txn_broadcast_job, args=(transaction,))
         job.start()
+        for txn in transactions:
+            job = Process(
+                target=do_push,
+                args=(txn.to_dict(), request.args.get('bulletin_secret'))
+            )
+            job.start()
         return json.dumps(request.get_json())
     else:
         rid = request.args.get('rid')
         transaction = BU.get_transactions_by_rid(rid, rid=True, raw=True)
         return json.dumps(transaction)
+
+def do_push(txn, bulletin_secret):
+    my_bulletin_secret = TU.get_bulletin_secret()
+    rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+    if txn['relationship'] and txn['dh_public_key'] and txn['requester_rid'] == rid:
+        #friend request
+        #if rid is the requester_rid, then we send a friend request notification to the requested_rid
+        res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requested_rid']})
+        for token in res:
+            result = push_service.notify_single_device(
+                registration_id=token['token'],
+                message_title='New friend request!',
+                message_body='You have a new friend request to approve!',
+                extra_kwargs={'priority': 'high'}
+            )
+
+    elif txn['relationship'] and txn['dh_public_key'] and txn['requested_rid'] == rid:
+        #friend accept
+        #if rid is the requested_rid, then we send a friend accepted notification to the requester_rid
+        res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requester_rid']})
+        for token in res:
+            result = push_service.notify_single_device(
+                registration_id=token['token'],
+                message_title='Your friend request was approved!',
+                message_body='Say "hi" to your friend!',
+                extra_kwargs={'priority': 'high'}
+            )
+
+    elif txn['relationship'] and not txn['dh_public_key'] and not txn['rid']:
+        #post
+        #we find all mutual friends of rid and send new post notifications to them
+        rids = []
+        rids.extend([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
+        rids.extend([x['requester_rid'] for x in BU.get_friend_requests(rid)])
+        for friend_rid in rids:
+            res = mongo_client.yadacoinsite.fcmtokens.find({"rid": friend_rid})
+            used_tokens = []
+            for token in res:
+                if token['token'] in used_tokens:
+                    continue
+                used_tokens.append(token['token'])
+                result = push_service.notify_single_device(
+                    registration_id=token['token'],
+                    message_title='Your friend has posted something!',
+                    message_body='Go check out what your friend posted!',
+                    extra_kwargs={'priority': 'high'}
+                )
+
+    elif txn['relationship'] and not txn['dh_public_key'] and txn['rid']:
+        #message
+        #we find the relationship of the transaction rid and send a new message notification to the rid
+        #of the relationship that does not match the arg rid
+        txns = BU.get_transactions_by_rid(txn['rid'], rid=True, raw=True)
+        rids = []
+        rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
+        rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
+        for friend_rid in rids:
+            res = mongo_client.yadacoinsite.fcmtokens.find({"rid": friend_rid})
+            used_tokens = []
+            for token in res:
+                if token['token'] in used_tokens:
+                    continue
+                used_tokens.append(token['token'])
+                result = push_service.notify_single_device(
+                    registration_id=token['token'],
+                    message_title='New message!',
+                    message_body='You have a new message from a friend!',
+                    extra_kwargs={'priority': 'high'}
+                )
+
+
 
 def txn_broadcast_job(transaction):
     with open('peers.json') as f:
