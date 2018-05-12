@@ -111,7 +111,6 @@ class BlockFactory(object):
 
     @classmethod
     def mine(cls, transactions, coinbase, difficulty, public_key, private_key, callback=None, current_index=None, status=None):
-        blocks = BU.get_block_objs()
         import itertools, sys
         spinner = itertools.cycle(['-', '/', '|', '\\'])
         block_factory = cls(

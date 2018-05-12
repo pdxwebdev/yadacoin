@@ -55,8 +55,12 @@ class ChatNamespace(BaseNamespace):
         print 'error'
 
 def node(config, peers):
+    latest_block_index = Value('i', 0)
+    p = Process(target=new_block_checker, args=(latest_block_index,))
+    status = Array('c', 'asldkjf')
+    p.start()
     from pymongo import MongoClient
-    mongo_client = MongoClient()
+    mongo_client = MongoClient('localhost')
     db = mongo_client.yadacoin
     collection = db.blocks
     BU.collection = collection
@@ -65,21 +69,15 @@ def node(config, peers):
     private_key = config.get('private_key')
     TU.private_key = private_key
     BU.private_key = private_key
-
     # default run state will be to mine some blocks!
+
 
     # proof of work time!
     coinbase = config.get('coinbase')
-
-    blocks = BU.get_block_objs()  # verifies as the blocks are created so no need to call block.verify() on each block
-
-    if len(blocks):
-        difficulty = '000'
-    else:
-        difficulty = '000'
+    difficulty = '000'
 
 
-    print '//// YADA COIN MINER ////'
+    print '\r\n\r\n\r\n//// YADA COIN MINER ////'
     print "Welcome!! Mining beginning with difficulty of:", difficulty
     block = BU.get_latest_block()
     if not block:
@@ -112,12 +110,7 @@ def node(config, peers):
         genesis_block.save()
         block = BU.get_latest_block()
 
-    latest_block_index = Value('i', int(block['index']))
-    p = Process(target=new_block_checker, args=(latest_block_index,))
-
-    status = Array('c', 'asldkjf')
-    p.start()
-
+    latest_block_index.value = block.get('index')
     start = time.time()
 
     dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
@@ -175,7 +168,7 @@ def node(config, peers):
             except BaseException as e:
                 print e
                 print 'rejected transaction', txn['id']
-        print 'starting to mine...'
+        print '\r\nStarting to mine...'
         try:
             block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
         except Exception as e:
@@ -183,8 +176,12 @@ def node(config, peers):
         if block:
             dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
             if not dup_test.count():
-                print 'candidate submitted', block.transactions, block.index
+                print '\r\nCandidate submitted for index:', block.index
+                print '\r\nTransactions:'
+                for x in block.transactions:
+                    print x.transaction_signature 
                 db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+                print '\r\nSent block to:'
                 for peer in peers:
                     try:
                         requests.post(
@@ -195,7 +192,7 @@ def node(config, peers):
                             timeout=1,
                             headers={'Connection':'close'}
                         )
-                        print 'successfully sent block'
+                        print peer['ip']
                     except Exception as e:
                         print e
         else:

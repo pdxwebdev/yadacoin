@@ -4,6 +4,9 @@ import os
 import argparse
 import qrcode
 import base64
+import time
+import random
+import sys
 
 from io import BytesIO
 from uuid import uuid4
@@ -15,6 +18,7 @@ from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from crypt import Crypt
 from coincurve.keys import PrivateKey
+from coincurve._libsecp256k1 import ffi
 
 
 class TU(object):  # Transaction Utilities
@@ -37,8 +41,10 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_signature(cls, message):
+        x = ffi.new('long *')
+        x[0] = random.SystemRandom().randint(0, sys.maxint)
         key = PrivateKey.from_hex(cls.private_key)
-        signature = key.sign(message)
+        signature = key.sign(message, custom_nonce=(ffi.NULL, x))
         return base64.b64encode(signature)
 
     @classmethod

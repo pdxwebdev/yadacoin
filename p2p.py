@@ -422,6 +422,7 @@ if __name__ == '__main__':
             p = Process(target=node, args=(config, peers))
             p.start()
             p.join()
+            time.sleep(10)
     elif args.mode == 'serve':
         # wrap Flask application with engineio's middleware
         app = socketio.Middleware(sio, app)

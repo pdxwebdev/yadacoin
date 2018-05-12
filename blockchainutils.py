@@ -4,6 +4,7 @@ import os
 import argparse
 import qrcode
 import base64
+import time
 
 from io import BytesIO
 from uuid import uuid4
@@ -17,6 +18,7 @@ from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from bson.son import SON
 from coincurve import PrivateKey
+from pymongo import MongoClient
 
 
 class BU(object):  # Blockchain Utilities
@@ -65,7 +67,22 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_unspent_transactions(cls, address):
-        received = BU.collection.aggregate([
+
+        mongo_client = MongoClient('localhost')
+        unspent_cache = mongo_client.yadacoin.unspent_cache.find({'address': address}).sort([('height', -1)])
+
+        if unspent_cache.count():
+            unspent_cache = unspent_cache[0]
+            block_height = unspent_cache['height']
+        else:
+            block_height = 0
+
+        received_query = [
+            {
+                "$match": {
+                    "index": {"$gt": block_height}
+                }
+            },
             {
                 "$match": {
                     "transactions.outputs.to": address
@@ -75,7 +92,8 @@ class BU(object):  # Blockchain Utilities
             {
                 "$project": {
                     "_id": 0,
-                    "txn": "$transactions"
+                    "txn": "$transactions",
+                    "height": "$index"
                 }
             },
             {
@@ -87,53 +105,50 @@ class BU(object):  # Blockchain Utilities
                 "$project": {
                     "_id": 0,
                     "public_key": "$txn.public_key",
-                    "txn": "$txn"
+                    "txn": "$txn",
+                    "height": "$height"
                 }
+            },
+            {
+                "$sort": {"height": 1}
             }
-        ])
+        ]
+
+        received = BU.collection.aggregate(received_query)
         reverse_public_key = ''
-        use_later = []
         for x in received:
-            use_later.append(x['txn'])
+            print x['height']
+            mongo_client.yadacoin.unspent_cache.update({
+                'address': address,
+                'id': x['txn']['id'],
+                'height': x['height'],
+            },
+            {
+                'address': address,
+                'id': x['txn']['id'],
+                'height': x['height'],
+                'spent': False,
+                'txn': x['txn']
+            },
+            upsert=True)
+
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
             if xaddress == address:
                 reverse_public_key = x['public_key']
-        
-        # no reverse means you never spent anything
-        # so all transactions are unspent
+
+
         if not reverse_public_key:
-            received = BU.collection.aggregate([
-                {
-                    "$match": {
-                        "transactions.outputs.to": address
-                    }
-                },
-                {"$unwind": "$transactions" },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "txn": "$transactions"
-                    }
-                },
-                {
-                    "$match": {
-                        "txn.outputs.to": address
-                    }
-                },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "public_key": "$txn.public_key",
-                        "txn": "$txn"
-                    }
-                }
-            ])
-            unspent_formatted = []
-            for x in received:
-                unspent_formatted.append(x['txn'])
-            return unspent_formatted
+            # no reverse public key means they have never even created a transaction
+            # so no need to check for spend, anything sent to them is unspent
+            for x in mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False}):
+                yield x['txn']
         
         spent = BU.collection.aggregate([
+            {
+                "$match": {
+                    "index": {"$gt": block_height}
+                }
+            },
             {
                 "$match": {
                     "transactions.public_key": reverse_public_key
@@ -146,7 +161,6 @@ class BU(object):  # Blockchain Utilities
                     "txn": "$transactions"
                 }
             },
-            {"$unwind": "$txn.inputs" },
             {
                 "$match": {
                     "txn.public_key": reverse_public_key
@@ -156,17 +170,32 @@ class BU(object):  # Blockchain Utilities
                 "$project": {
                     "_id": 0,
                     "public_key": "$txn.public_key",
-                    "input_id": "$txn.inputs.id",
                     "txn": "$txn"
                 }
             }
         ])
+
         ids_spent_by_me = []
         for x in spent:
-            ids_spent_by_me.append(x['input_id'])
-        unspent_formatted = []
-        unspent_formatted.extend([x for x in use_later if x['id'] not in ids_spent_by_me])
-        return unspent_formatted
+            for i in x['txn']['inputs']:
+                mongo_client.yadacoin.unspent_cache.update({
+                    'address': address,
+                    'id': i['id']
+                },
+                {
+                    '$set': {
+                        'spent': True
+                    }
+                })
+
+        
+
+
+        res = mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False})
+        for x in res:
+            yield x['txn']
+
+        
 
     @classmethod
     def get_transactions(cls, raw=False, skip=None):
