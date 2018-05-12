@@ -321,9 +321,25 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_friend_requests(cls, rids):
+
         if not isinstance(rids, list):
             rids = [rids, ]
+
+        mongo_client = MongoClient('localhost')
+        friend_requests_cache = mongo_client.yadacoin.friend_requests_cache.find({'requested_rid': {'$in': rids}}).sort([('height', -1)])
+
+        if friend_requests_cache.count():
+            friend_requests_cache = friend_requests_cache[0]
+            block_height = friend_requests_cache['height']
+        else:
+            block_height = 0
+
         transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "index": {'$gt': block_height}
+                }
+            },
             {
                 "$match": {
                     "transactions": {"$elemMatch": {"dh_public_key": {'$ne': ''}}},
@@ -334,7 +350,8 @@ class BU(object):  # Blockchain Utilities
             {
                 "$project": {
                     "_id": 0,
-                    "txn": "$transactions"
+                    "txn": "$transactions",
+                    "height": "$index"
                 }
             },
             {
@@ -342,16 +359,51 @@ class BU(object):  # Blockchain Utilities
                     "txn.dh_public_key": {'$ne': ''},
                     "txn.requested_rid": {'$in': rids}
                 }
+            },
+            {
+                "$sort": {"height": 1}
             }
         ])
 
-        return [x['txn'] for x in transactions]
+        for x in transactions:
+            print 'caching friend requests at height:', x['height']
+            mongo_client.yadacoin.friend_requests_cache.update({
+                'requested_rid': x['txn']['requested_rid'],
+                'height': x['height'],
+                'id': x['txn']['id']
+            },
+            {
+                'requested_rid': x['txn']['requested_rid'],
+                'height': x['height'],
+                'id': x['txn']['id'],
+                'txn': x['txn']
+            },
+            upsert=True)
+
+        for x in mongo_client.yadacoin.friend_requests_cache.find({'requested_rid': {'$in': rids}}):
+            yield x['txn']
 
     @classmethod
     def get_sent_friend_requests(cls, rids):
+
         if not isinstance(rids, list):
             rids = [rids, ]
+
+        mongo_client = MongoClient('localhost')
+        sent_friend_requests_cache = mongo_client.yadacoin.sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}).sort([('height', -1)])
+
+        if sent_friend_requests_cache.count():
+            sent_friend_requests_cache = sent_friend_requests_cache[0]
+            block_height = sent_friend_requests_cache['height']
+        else:
+            block_height = 0
+
         transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "index": {'$gt': block_height}
+                }
+            },
             {
                 "$match": {
                     "transactions": {"$elemMatch": {"dh_public_key": {'$ne': ''}}},
@@ -362,7 +414,8 @@ class BU(object):  # Blockchain Utilities
             {
                 "$project": {
                     "_id": 0,
-                    "txn": "$transactions"
+                    "txn": "$transactions",
+                    "height": "$index"
                 }
             },
             {
@@ -370,16 +423,51 @@ class BU(object):  # Blockchain Utilities
                     "txn.dh_public_key": {'$ne': ''},
                     "txn.requester_rid": {'$in': rids}
                 }
+            },
+            {
+                "$sort": {"height": 1}
             }
         ])
 
-        return [x['txn'] for x in transactions]
+        for x in transactions:
+            print 'caching sent friend requests at height:', x['height']
+            mongo_client.yadacoin.sent_friend_requests_cache.update({
+                'requester_rid': x['txn']['requester_rid'],
+                'height': x['height'],
+                'id': x['txn']['id']
+            },
+            {
+                'requester_rid': x['txn']['requester_rid'],
+                'height': x['height'],
+                'id': x['txn']['id'],
+                'txn': x['txn']
+            },
+            upsert=True)
+
+        for x in mongo_client.yadacoin.sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}):
+            yield x['txn']
 
     @classmethod
     def get_messages(cls, rids):
+
         if not isinstance(rids, list):
             rids = [rids, ]
+
+        mongo_client = MongoClient('localhost')
+        messages_cache = mongo_client.yadacoin.messages_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
+
+        if messages_cache.count():
+            messages_cache = messages_cache[0]
+            block_height = messages_cache['height']
+        else:
+            block_height = 0
+
         transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "index": {'$gt': block_height}
+                }
+            },
             {
                 "$match": {
                     "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
@@ -391,7 +479,8 @@ class BU(object):  # Blockchain Utilities
             {
                 "$project": {
                     "_id": 0,
-                    "txn": "$transactions"
+                    "txn": "$transactions",
+                    "height": "$index"
                 }
             },
             {
@@ -400,10 +489,29 @@ class BU(object):  # Blockchain Utilities
                     "txn.dh_public_key": '',
                     "txn.rid": {'$in': rids}
                 }
+            },
+            {
+                "$sort": {"height": 1}
             }
         ])
 
-        return [x['txn'] for x in transactions]
+        for x in transactions:
+            print 'caching messages at height:', x['height']
+            mongo_client.yadacoin.messages_cache.update({
+                'rid': x['txn']['rid'],
+                'height': x['height'],
+                'id': x['txn']['id']
+            },
+            {
+                'rid': x['txn']['rid'],
+                'height': x['height'],
+                'id': x['txn']['id'],
+                'txn': x['txn']
+            },
+            upsert=True)
+
+        for x in mongo_client.yadacoin.messages_cache.find({'rid': {'$in': rids}}):
+            yield x['txn']
 
     @classmethod
     def get_posts(cls):

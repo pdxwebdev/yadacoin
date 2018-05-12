@@ -95,7 +95,7 @@ class Graph(object):
         return list(set(lookup_rids))
 
     def get_friend_requests(self):
-        friend_requests = BU.get_friend_requests(self.rid)
+        friend_requests = [x for x in BU.get_friend_requests(self.rid)]
 
         for i, friend_request in enumerate(friend_requests):
             # attach bulletin_secets
@@ -112,8 +112,7 @@ class Graph(object):
         return friend_requests
 
     def get_sent_friend_requests(self):
-        sent_friend_requests = BU.get_sent_friend_requests(self.rid)
-        print self.rid
+        sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.rid)]
         for i, sent_friend_request in enumerate(sent_friend_requests):
             # attach usernames
             res = self.mongo_client.yadacoinsite.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
@@ -124,7 +123,7 @@ class Graph(object):
         return sent_friend_requests
 
     def get_messages(self):
-        return BU.get_messages(self.get_lookup_rids())
+        return [x for x in BU.get_messages(self.get_lookup_rids())]
 
     def without_private_key(self, node, start_height=None):
         self.friend_requests = self.get_friend_requests()
@@ -137,7 +136,6 @@ class Graph(object):
                 mutual_bulletin_secrets.append(transaction['relationship']['bulletin_secret'])
 
         fcm_hits = [x for x in self.mongo_client.yadacoinsite.fcmtokens.find({'rid':{'$in': self.get_lookup_rids()}})]
-        print BU.get_posts()
         for transaction in BU.get_posts():
             exists = self.mongo_client.yadacoinsite.posts.find({
                 'id': transaction.get('id')

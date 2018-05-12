@@ -476,6 +476,11 @@ def get_username():
 def change_username():
     mongo_client = MongoClient('localhost')
     request.json['username'] = request.json['username'].lower()
+    exists = mongo_client.yadacoinsite.usernames.find({
+        'username': request.json.get('username')
+    })
+    if exists.count():
+        return 'username taken', 400
     mongo_client.yadacoinsite.usernames.update(
         {
             'rid': request.json.get('rid')
@@ -703,6 +708,7 @@ def bulletin():
 
 @app.route('/get-graph-mobile')
 def get_graph_mobile():
+    mongo_client = MongoClient('localhost')
     bulletin_secret = request.args.get('bulletin_secret')
     graph = Graph(bulletin_secret, push_service=push_service)
     graph_dict = graph.to_dict()
@@ -716,6 +722,25 @@ def get_graph_mobile():
 
         if res.count() and res2.count():
             graph_dict['pending_registration'] = True
+
+    if graph_dict['registered']:
+        for x in graph.friends:
+            for y in x['outputs']:
+                if y['to'] != my_address:
+                    mongo_client.yadacoinsite.usernames.update({
+                        'rid': graph.rid,
+                        'username': graph.human_hash,
+                        },
+                        {
+                        'rid': graph.rid,
+                        'username': graph.human_hash,
+                        'to': y['to'],
+                        'relationship': {
+                            'bulletin_secret': bulletin_secret
+                        }
+                    },
+                    upsert=True)
+
     return json.dumps(graph_dict, indent=4)
 
 
@@ -730,7 +755,7 @@ def get_wallet():
     address = request.args.get('address')
     wallet = {
         'balance': BU.get_wallet_balance(address),
-        'unspent_transactions': BU.get_wallet_unspent_transactions(address)
+        'unspent_transactions': [x for x in BU.get_wallet_unspent_transactions(address)]
     }
     return json.dumps(wallet, indent=4)
 
