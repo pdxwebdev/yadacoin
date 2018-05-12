@@ -98,7 +98,6 @@ class BU(object):  # Blockchain Utilities
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
             if xaddress == address:
                 reverse_public_key = x['public_key']
-                break
         
         # no reverse means you never spent anything
         # so all transactions are unspent
@@ -166,12 +165,7 @@ class BU(object):  # Blockchain Utilities
         for x in spent:
             ids_spent_by_me.append(x['input_id'])
         unspent_formatted = []
-        for x in use_later:
-            if x['id'] not in ids_spent_by_me:
-                unspent_formatted.append(x)
-        received_indexed = {x['txn']['id']: x['txn'] for x in received}
-        intersect_result = list(set([x for x in received_indexed.keys()]) - set(ids_spent_by_me))
-        unspent_formatted.extend([x for i, x in received_indexed.iteritems() if i in intersect_result])
+        unspent_formatted.extend([x for x in use_later if x['id'] not in ids_spent_by_me])
         return unspent_formatted
 
     @classmethod

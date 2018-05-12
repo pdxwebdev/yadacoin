@@ -253,16 +253,11 @@ def faucet(peers, config):
             continue
 
         input_txns = BU.get_wallet_unspent_transactions(my_address)
-
         miner_transactions = db.miner_transactions.find()
         mtxn_ids = []
         for mtxn in miner_transactions:
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
-
-        checked_out_txn_ids = db.checked_out_txn_ids.find()
-        for mtxn in checked_out_txn_ids:
-            mtxn_ids.append(mtxn['id'])
 
         inputs = [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
 
@@ -281,23 +276,31 @@ def faucet(peers, config):
                         break
             if done == True:
                 break
-
+        if not done:
+            print 'not enough money'
+            return
         return_change_output = Output(
             to=my_address,
             value=input_sum-1.1
         )
-
-        transaction = TransactionFactory(
-            fee=0.1,
-            public_key=public_key,
-            private_key=private_key,
-            inputs=needed_inputs,
-            outputs=[
-                Output(to=x['address'], value=1),
-                return_change_output
-            ]
-        )
-        transaction.transaction.verify()
+        try:
+            transaction = TransactionFactory(
+                fee=0.1,
+                public_key=public_key,
+                private_key=private_key,
+                inputs=needed_inputs,
+                outputs=[
+                    Output(to=x['address'], value=1),
+                    return_change_output
+                ]
+            )
+        except Exception as e:
+            print x
+        try:
+            transaction.transaction.verify()
+        except:
+            mongo_client.yadacoinsite.failed_faucet_transactions.insert(transaction.transaction.to_dict())
+            print 'faucet transaction failed'
         TU.save(transaction.transaction)
         x['last_id'] = transaction.transaction.transaction_signature
         mongo_client.yadacoinsite.faucet.update({'_id': x['_id']}, x)
@@ -326,13 +329,12 @@ def add_friends(config):
     BU.collection = collection
     TU.collection = collection
     num = 0
-    print 'hmm'
+    print time.time()
     for transaction in BU.get_transactions():
-        if transaction['rid'] == "0969ca3a1d54c06fcd7e7fb9074cf99118b2da357aa69932180214b74e757487":
-            print 'found!'
         exists = mongo_client.yadacoinsite.friends.find({'id': transaction['id']})
         if not exists.count():
             transaction['humanized'] = humanhash.humanize(transaction['rid'])
+            print transaction['humanized']
             mongo_client.yadacoinsite.friends.insert(transaction)
         num += 1
 
