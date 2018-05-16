@@ -23,7 +23,7 @@ from pyfcm import FCMNotification
 
 class Graph(object):
 
-    def __init__(self, bulletin_secret, for_me=False, push_service=None, mongo_client=None):
+    def __init__(self, bulletin_secret, public_key, my_address, for_me=False, push_service=None, mongo_client=None):
         mongo_client = MongoClient('localhost')
         self.push_service = push_service
         self.mongo_client = mongo_client
@@ -34,9 +34,13 @@ class Graph(object):
         self.logins = []
         self.messages = []
         self.already_added_messages = []
+        self.registered = False
+        self.pending_registration = False
+        self.bulletin_secret = str(bulletin_secret)
         rids = sorted([str(TU.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         self.rid = rid
+
         res = mongo_client.yadacoinsite.graph_cache.find({'rid': self.rid})
         if False:
             self.from_dict(res[0]['graph'])
@@ -64,16 +68,35 @@ class Graph(object):
                         continue
                     else:
                         already_done.append(test)
-                    self.without_private_key(node)
-        graph_cache = {}
-        graph_cache['graph'] = self.to_dict()
-        graph_cache['block_height'] = BU.get_latest_block()['index']
-        graph_cache['rid'] = self.rid
-        res = mongo_client.yadacoinsite.graph_cache.find({'rid': self.rid})
-        if res.count():
-            mongo_client.yadacoinsite.graph_cache.update({'_id': res[0]['_id']}, graph_cache)
-        else:
-            mongo_client.yadacoinsite.graph_cache.insert(graph_cache)
+
+        self.registered = self.rid in [x.get('rid') for x in self.friends if x['public_key'] == public_key] and self.rid in [x.get('rid') for x in self.friends if x['public_key'] != public_key]
+
+        if not self.registered:
+            # not regisered, let's check for a pending transaction
+            mongo_client = MongoClient('localhost')
+            res = mongo_client.yadacoin.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': public_key}})
+            res2 = mongo_client.yadacoin.miner_transactions.find({'rid': self.rid, 'public_key': public_key})
+
+            if res.count() and res2.count():
+                self.pending_registration = True
+
+        if self.registered:
+            for x in self.friends:
+                for y in x['outputs']:
+                    if y['to'] != my_address:
+                        mongo_client.yadacoinsite.usernames.update({
+                            'rid': self.rid,
+                            'username': self.human_hash,
+                            },
+                            {
+                            'rid': self.rid,
+                            'username': self.human_hash,
+                            'to': y['to'],
+                            'relationship': {
+                                'bulletin_secret': bulletin_secret
+                            }
+                        },
+                        upsert=True)
 
     def with_private_key(self):
 
@@ -94,6 +117,20 @@ class Graph(object):
         lookup_rids.extend([x['rid'] for x in BU.get_sent_friend_requests(self.rid)])
         return list(set(lookup_rids))
 
+    def get_request_rids_for_rid(self):
+        lookup_rids = {}
+        for x in BU.get_friend_requests(self.rid):
+            if x['rid'] not in lookup_rids:
+                lookup_rids[x['rid']] = []
+            lookup_rids[x['rid']].append(x['requester_rid'])
+
+        for x in BU.get_sent_friend_requests(self.rid):
+            if x['rid'] not in lookup_rids:
+                lookup_rids[x['rid']] = []
+            lookup_rids[x['rid']].append(x['requested_rid'])
+
+        return lookup_rids
+
     def get_friend_requests(self):
         friend_requests = [x for x in BU.get_friend_requests(self.rid)]
 
@@ -109,7 +146,7 @@ class Graph(object):
                 friend_requests[i]['username'] = res[0]['username']
             else:
                 friend_requests[i]['username'] = humanhash.humanize(friend_request.get('requester_rid'))
-        return friend_requests
+        self.friend_requests = friend_requests
 
     def get_sent_friend_requests(self):
         sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.rid)]
@@ -120,134 +157,22 @@ class Graph(object):
                 sent_friend_requests[i]['username'] = res[0]['username']
             else:
                 sent_friend_requests[i]['username'] = humanhash.humanize(sent_friend_request.get('requested_rid'))
-        return sent_friend_requests
+        self.sent_friend_requests = sent_friend_requests
 
     def get_messages(self):
-        return [x for x in BU.get_messages(self.get_lookup_rids())]
+        lookup_rids = self.get_request_rids_for_rid()
+        messages = [x for x in BU.get_messages(self.get_lookup_rids())]
+        for i, message in enumerate(messages):
+            # attach usernames
+            res = self.mongo_client.yadacoinsite.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
+            if res.count():
+                messages[i]['username'] = res[0]['username']
+            else:
+                messages[i]['username'] = humanhash.humanize(message.get('requested_rid'))
+        self.messages = messages
 
-    def without_private_key(self, node, start_height=None):
-        self.friend_requests = self.get_friend_requests()
-        self.sent_friend_requests = self.get_sent_friend_requests()
-        self.messages = self.get_messages()
-
-        mutual_bulletin_secrets = []
-        for transaction in BU.get_transactions_by_rid(self.get_lookup_rids(), rid=True):
-            if 'bulletin_secret' in transaction['relationship']:
-                mutual_bulletin_secrets.append(transaction['relationship']['bulletin_secret'])
-
-        fcm_hits = [x for x in self.mongo_client.yadacoinsite.fcmtokens.find({'rid':{'$in': self.get_lookup_rids()}})]
-        for transaction in BU.get_posts():
-            exists = self.mongo_client.yadacoinsite.posts.find({
-                'id': transaction.get('id')
-            })
-            if exists.count():
-                if not exists[0]['skip']:
-                    if exists[0]['bulletin_secret'] in mutual_bulletin_secrets:
-                        transaction['relationship'] = {'postText': exists[0]['postText']}
-                        self.posts.append(transaction)
-                continue
-            for bs in mutual_bulletin_secrets:
-                try:
-                    crypt = Crypt(hashlib.sha256(bs).hexdigest())
-                    decrypted = crypt.decrypt(transaction['relationship'])
-                    data = json.loads(decrypted)
-                    if 'postText' in data:
-                        self.mongo_client.yadacoinsite.posts.remove({'id': transaction.get('id')})
-                        transaction['relationship'] = data
-                        result = self.push_service.notify_multiple_devices(
-                            registration_ids=[x['token'] for x in fcm_hits],
-                            message_title='New Post From A Friend!',
-                            message_body=data['postText'],
-                            extra_kwargs={'priority': 'high'}
-                        )
-                        self.mongo_client.yadacoinsite.posts.remove({'id': transaction.get('id')})
-                        self.mongo_client.yadacoinsite.posts.insert({
-                            'bulletin_secret': bs,
-                            'postText': data['postText'],
-                            'rid': transaction.get('rid'),
-                            'id': transaction.get('id'),
-                            'requester_rid': transaction.get('requester_rid'),
-                            'requested_rid': transaction.get('requested_rid'),
-                            'skip': False
-                        })
-                        self.posts.append(transaction)
-                except:
-                    exists = self.mongo_client.yadacoinsite.posts.find({'id': transaction.get('id')})
-                    if not exists.count():
-                        self.mongo_client.yadacoinsite.posts.insert({
-                            'rid': transaction.get('rid'),
-                            'id': transaction.get('id'),
-                            'requester_rid': transaction.get('requester_rid'),
-                            'requested_rid': transaction.get('requested_rid'),
-                            'skip': True
-                        })
-
-
-
-    def request_accept_or_request(self, possible_friends, node):
-        mongo_client = MongoClient('localhost')
-        possible_friends_indexed = {}
-        for x in possible_friends:
-            if x.get('rid') not in possible_friends_indexed:
-                possible_friends_indexed[x.get('rid')] = []
-            possible_friends_indexed[x.get('rid')].append(x)
-
-        lookup_rids = []
-        # sent friend requests
-        out_sent_friend_requests = []
-        requester_rids = set([x.get('rid') for x in possible_friends if x.get('requester_rid') == node['rid']])
-        requested_rids = set([x.get('rid') for x in possible_friends if x.get('requester_rid') != node['rid']])
-        for x in requester_rids:
-            found = False
-            for i in requested_rids:
-                if i == x:
-                    found = True
-                    break
-            if not found:
-                friend_requests = possible_friends_indexed[x]
-                for friend_request in friend_requests:
-                    if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
-                        res = mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requested_rid')}, {'_id': 0})
-                        if res.count():
-                            friend_request['username'] = res[0]['username']
-                        else:
-                            friend_request['username'] = humanhash.humanize(friend_request.get('requested_rid'))
-
-
-        # received friend requests
-        out_friend_requests = []
-        requester_rids = set([x.get('rid') for x in possible_friends if x.get('requested_rid') == node['rid']])
-        requested_rids = set([x.get('rid') for x in possible_friends if x.get('requested_rid') != node['rid']])
-        for x in requester_rids:
-            found = False
-            for i in requested_rids:
-                if i == x:
-                    found = True
-                    break
-            if not found:
-                friend_requests = possible_friends_indexed[x]
-                for friend_request in friend_requests:
-                    # only get requests where the person didn't request theself? lol
-                    if friend_request.get('requester_rid') != friend_request.get('requested_rid'):
-                        # attach a username to the transaction
-                        res = mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
-                        if res.count():
-                            friend_request['username'] = res[0]['username']
-                        else:
-                            friend_request['username'] = humanhash.humanize(friend_request.get('requester_rid'))
-                        # attach their bulletin secret so they can accept the request
-                        out_friend_requests.append(friend_request)
-                        lookup_rids.append(friend_request.get('rid'))
-
-        # sent and recieved messages
-        out_messages = []
-        for transaction in BU.get_transactions_by_rid(lookup_rids, rid=True, raw=True, returnheight=True):
-            if transaction.get('id') not in self.already_added_messages and transaction.get('rid'):
-                if not transaction.get('dh_public_key'):
-                    self.already_added_messages.append(transaction.get('id'))
-                    out_messages.append(transaction)
-
-        return out_friend_requests, out_sent_friend_requests, out_messages
+    def get_posts(self):
+        self.posts = [x for x in BU.get_posts(self.rid)]
 
     def from_dict(self, obj):
         self.friends = obj['friends']
@@ -268,7 +193,9 @@ class Graph(object):
             'logins': self.logins,
             'messages': self.messages,
             'rid': self.rid,
-            'human_hash': self.human_hash
+            'human_hash': self.human_hash,
+            'registered': self.registered,
+            'pending_registration': self.pending_registration
         }
 
     def to_json(self):

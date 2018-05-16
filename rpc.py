@@ -365,30 +365,28 @@ def search():
 
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-    try:
-        friend = mongo_client.yadacoinsite.friends.find({'humanized': phrase})
+
+    friend = mongo_client.yadacoinsite.friends.find({'humanized': phrase})
+    if friend.count():
+        friend = friend[0]
+        for output in friend['outputs']:
+            if output['to'] != my_address:
+                to = output['to']
+    else:
+        friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower()})
         if friend.count():
             friend = friend[0]
-            for output in friend['outputs']:
-                if output['to'] != my_address:
-                    to = output['to']
+            to = friend['to']
         else:
-            friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower()})
-            if friend.count():
-                friend = friend[0]
-                to = friend['to']
-            else:
-                raise
-        out = json.dumps({
-            'bulletin_secret': friend['relationship']['bulletin_secret'],
-            'requested_rid': friend['rid'],
-            'requester_rid': rid,
-            'to': to
-        }, indent=4)
-        return out
-    except:
-        raise
-        return '{}', 404
+            return '{}', 404
+    out = json.dumps({
+        'bulletin_secret': friend['relationship']['bulletin_secret'],
+        'requested_rid': friend['rid'],
+        'requester_rid': rid,
+        'to': to
+    }, indent=4)
+    return out
+        
 
 @app.route('/react', methods=['POST'])
 def react():
@@ -425,6 +423,29 @@ def get_reacts():
         out[x['txn_id']] = out[x['txn_id']] + x['emoji']
     return json.dumps(out)
 
+@app.route('/get-reacts-detail', methods=['POST'])
+def get_reacts_detail():
+    if request.json:
+        data = request.json
+        txn_id = data.get('txn_id')
+    else:
+        data = request.form
+        txn_id = json.loads(data.get('txn_id'))
+
+    mongo_client = MongoClient('localhost')
+    res = mongo_client.yadacoinsite.reacts.find({
+        'txn_id': txn_id,
+    }, {'_id': 0})
+    out = []
+    for x in res:
+        res1 = mongo_client.yadacoinsite.usernames.find({'rid': x['rid']})
+        if res1.count():
+            x['username'] = res1[0]['username']
+        else:
+            x['username'] = humanhash.humanize(x['rid'])
+        out.append(x)
+    return json.dumps(out)
+
 @app.route('/comment', methods=['POST'])
 def comment():
     my_bulletin_secret = TU.get_bulletin_secret()
@@ -454,10 +475,16 @@ def get_comments():
         },
     }, {'_id': 0})
     out = {}
+    usernames = {}
     for x in res:
         if x['txn_id'] not in out:
             out[x['txn_id']] = []
-        out[x['txn_id']].append(x['body'])
+        res1 = mongo_client.yadacoinsite.usernames.find({'rid': x['rid']})
+        if res1.count():
+            x['username'] = res1[0]['username']
+        else:
+            x['username'] = humanhash.humanize(x['rid'])
+        out[x['txn_id']].append(x)
     return json.dumps(out)
 
 @app.route('/get-usernames')
@@ -504,39 +531,6 @@ def fcm_token():
         return '', 200
     except Exception as e:
         return '', 400
-
-@app.route('/request-notification', methods=['POST'])
-def request_notification():
-    shared_secret = request.json.get('shared_secret')
-    requested_rid = request.json.get('requested_rid')
-    rid = request.json.get('rid')
-    data = json.loads(request.json.get('data'))
-    if data.get('accept'):
-        res = mongo_client.yadacoinsite.fcmtokens.find({
-            'rid': data['requested_rid']
-        })
-        for token in res:
-            gcm_service.plaintext_request(registration_id=token['token'], data={'the message': 'you have friends!', 'param2': 'param'})
-            result = push_service.notify_single_device(
-                registration_id=token['token'],
-                message_title='Friend Request Accepted!',
-                message_body='Your friend request was approved!',
-                data_message=data,
-                extra_kwargs={'priority': 'high'}
-            )
-    else:
-        res = mongo_client.yadacoinsite.fcmtokens.find({
-            'rid': data['requested_rid']
-        })
-        for token in res:
-            result = push_service.notify_single_device(
-                registration_id=token['token'],
-                message_title='New Friend Request!',
-                message_body='You have a new friend request to approve!',
-                data_message=data,
-                extra_kwargs={'priority': 'high'}
-            )
-    return '', 200
 
 @app.route('/deeplink')
 def deeplink():
@@ -705,49 +699,50 @@ def bulletin():
     bulletins = BU.get_bulletins(bulletin_secret)
     return json.dumps(bulletins)
 
-
-@app.route('/get-graph-mobile')
-def get_graph_mobile():
+def get_base_graph():
     mongo_client = MongoClient('localhost')
     bulletin_secret = request.args.get('bulletin_secret')
-    graph = Graph(bulletin_secret, push_service=push_service)
-    graph_dict = graph.to_dict()
-    graph_dict['registered'] = graph.rid in [x.get('rid') for x in graph.friends if x['public_key'] == public_key] and graph.rid in [x.get('rid') for x in graph.friends if x['public_key'] != public_key]
-    graph_dict['pending_registration'] = False
-    if not graph_dict['registered']:
-        # not regisered, let's check for a pending transaction
-        mongo_client = MongoClient('localhost')
-        res = mongo_client.yadacoin.miner_transactions.find({'rid': graph.rid, 'public_key': {'$ne': public_key}})
-        res2 = mongo_client.yadacoin.miner_transactions.find({'rid': graph.rid, 'public_key': public_key})
+    graph = Graph(bulletin_secret, public_key, my_address, push_service=push_service)
+    return graph
 
-        if res.count() and res2.count():
-            graph_dict['pending_registration'] = True
+@app.route('/get-graph-info')
+def get_graph_info():
+    graph = get_base_graph()
+    return graph.to_json()
 
-    if graph_dict['registered']:
-        for x in graph.friends:
-            for y in x['outputs']:
-                if y['to'] != my_address:
-                    mongo_client.yadacoinsite.usernames.update({
-                        'rid': graph.rid,
-                        'username': graph.human_hash,
-                        },
-                        {
-                        'rid': graph.rid,
-                        'username': graph.human_hash,
-                        'to': y['to'],
-                        'relationship': {
-                            'bulletin_secret': bulletin_secret
-                        }
-                    },
-                    upsert=True)
+@app.route('/get-graph-sent-friend-requests')
+def get_sent_friend_requests():
+    graph = get_base_graph()
+    graph.get_sent_friend_requests()
+    return graph.to_json()
 
-    return json.dumps(graph_dict, indent=4)
+@app.route('/get-graph-friend-requests')
+def get_friend_requests():
+    graph = get_base_graph()
+    graph.get_friend_requests()
+    return graph.to_json()
 
+@app.route('/get-graph-friends')
+def get_get_friends():
+    graph = get_base_graph()
+    #graph.get_friends()
+    return graph.to_json()
+
+@app.route('/get-graph-posts')
+def get_graph_posts():
+    graph = get_base_graph()
+    graph.get_posts()
+    return graph.to_json()
+
+@app.route('/get-graph-messages')
+def get_graph_messages():
+    graph = get_base_graph()
+    graph.get_messages()
+    return graph.to_json()
 
 @app.route('/get-graph')
 def get_graph():
     graph = Graph(TU.get_bulletin_secret(), for_me=True)
-
     return graph.to_json()
 
 @app.route('/wallet')

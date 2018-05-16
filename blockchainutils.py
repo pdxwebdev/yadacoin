@@ -511,11 +511,31 @@ class BU(object):  # Blockchain Utilities
             upsert=True)
 
         for x in mongo_client.yadacoin.messages_cache.find({'rid': {'$in': rids}}):
+            x['txn']['height'] = x['height']
             yield x['txn']
 
     @classmethod
-    def get_posts(cls):
+    def get_posts(cls, rids):
+        from crypt import Crypt
+
+        if not isinstance(rids, list):
+            rids = [rids, ]
+
+        mongo_client = MongoClient('localhost')
+        posts_cache = mongo_client.yadacoin.posts_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
+
+        if posts_cache.count():
+            posts_cache = posts_cache[0]
+            block_height = posts_cache['height']
+        else:
+            block_height = 0
+
         transactions = BU.collection.aggregate([
+            {
+                "$match": {
+                    "index": {'$gt': block_height}
+                }
+            },
             {
                 "$match": {
                     "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
@@ -527,7 +547,8 @@ class BU(object):  # Blockchain Utilities
             {
                 "$project": {
                     "_id": 0,
-                    "txn": "$transactions"
+                    "txn": "$transactions",
+                    "height": "$index"
                 }
             },
             {
@@ -536,10 +557,62 @@ class BU(object):  # Blockchain Utilities
                     "txn.dh_public_key": '',
                     "txn.rid": ''
                 }
+            },
+            {
+                "$sort": {"height": 1}
             }
         ])
 
-        return [x['txn'] for x in transactions]
+
+        for i, x in enumerate(transactions):
+            if i == 0:
+                friend = cls.get_transactions_by_rid(rids, rid=True)
+                bulletin_secret = friend[0]['relationship']['bulletin_secret']
+                mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
+                mutual_bulletin_secrets.append(bulletin_secret)
+                print mutual_bulletin_secrets
+            for bs in mutual_bulletin_secrets:
+                try:
+                    crypt = Crypt(hashlib.sha256(bs).hexdigest())
+                    decrypted = crypt.decrypt(x['txn']['relationship'])
+                    data = json.loads(decrypted)
+                    x['txn']['relationship'] = data
+                    if 'postText' in data:
+                        print 'caching posts at height:', x['height']
+                        for rid in rids:
+                            mongo_client.yadacoin.posts_cache.update({
+                                'rid': rid,
+                                'height': x['height'],
+                                'id': x['txn']['id']
+                            },
+                            {
+                                'rid': rid,
+                                'height': x['height'],
+                                'id': x['txn']['id'],
+                                'txn': x['txn']
+                            },
+                            upsert=True)
+                except:
+                    pass
+
+        for x in mongo_client.yadacoin.posts_cache.find({'rid': {'$in': rids}}):
+            x['txn']['height'] = x['height']
+            yield x['txn']
+
+    @classmethod
+    def get_mutual_rids(cls, rid):
+        rids = []
+        rids.extend([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
+        rids.extend([x['requester_rid'] for x in BU.get_friend_requests(rid)])
+        return rids
+
+    @classmethod
+    def get_mutual_bulletin_secrets(cls, rid):
+        mutual_bulletin_secrets = []
+        for transaction in BU.get_transactions_by_rid(cls.get_mutual_rids(rid), rid=True):
+            if 'bulletin_secret' in transaction['relationship']:
+                mutual_bulletin_secrets.append(transaction['relationship']['bulletin_secret'])
+        return mutual_bulletin_secrets
 
     @classmethod
     def generate_signature(cls, message):
