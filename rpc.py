@@ -7,6 +7,7 @@ import base64
 import humanhash
 import requests
 import pyDH
+import time
 
 from io import BytesIO
 from uuid import uuid4
@@ -205,12 +206,13 @@ def create_relationship():  # demo site
     for mtxn in checked_out_txn_ids:
         mtxn_ids.append(mtxn['id'])
 
-    inputs = [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
-
     needed_inputs = []
     input_sum = 0
     done = False
-    for x in inputs:
+    for x in input_txns:
+        if x['id'] in mtxn_ids:
+            continue
+        x = Input.from_dict(x)
         txn = BU.get_transaction_by_id(x.id, instance=True)
         for txn_output in txn.outputs:
             if txn_output.to == my_address:
