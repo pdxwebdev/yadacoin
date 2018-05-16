@@ -366,19 +366,12 @@ def search():
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    friend = mongo_client.yadacoinsite.friends.find({'humanized': phrase})
+    friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower()})
     if friend.count():
         friend = friend[0]
-        for output in friend['outputs']:
-            if output['to'] != my_address:
-                to = output['to']
+        to = friend['to']
     else:
-        friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower()})
-        if friend.count():
-            friend = friend[0]
-            to = friend['to']
-        else:
-            return '{}', 404
+        return '{}', 404
     out = json.dumps({
         'bulletin_secret': friend['relationship']['bulletin_secret'],
         'requested_rid': friend['rid'],
