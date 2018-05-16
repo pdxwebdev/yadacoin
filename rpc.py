@@ -605,7 +605,7 @@ def do_push(txn, bulletin_secret):
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    if txn['relationship'] and txn['dh_public_key'] and txn['requester_rid'] == rid:
+    if txn.get('relationship') and txn.get('dh_public_key') and txn.get('requester_rid') == rid:
         #friend request
         #if rid is the requester_rid, then we send a friend request notification to the requested_rid
         res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requested_rid']})
@@ -617,7 +617,7 @@ def do_push(txn, bulletin_secret):
                 extra_kwargs={'priority': 'high'}
             )
 
-    elif txn['relationship'] and txn['dh_public_key'] and txn['requested_rid'] == rid:
+    elif txn.get('relationship') and txn.get('dh_public_key') and txn.get('requested_rid') == rid:
         #friend accept
         #if rid is the requested_rid, then we send a friend accepted notification to the requester_rid
         res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requester_rid']})
@@ -629,7 +629,7 @@ def do_push(txn, bulletin_secret):
                 extra_kwargs={'priority': 'high'}
             )
 
-    elif txn['relationship'] and not txn['dh_public_key'] and not txn['rid']:
+    elif txn.get('relationship') and not txn.get('dh_public_key') and not txn.get('rid'):
         #post
         #we find all mutual friends of rid and send new post notifications to them
         rids = []
@@ -649,7 +649,7 @@ def do_push(txn, bulletin_secret):
                     extra_kwargs={'priority': 'high'}
                 )
 
-    elif txn['relationship'] and not txn['dh_public_key'] and txn['rid']:
+    elif txn.get('relationship') and not txn.get('dh_public_key') and txn.get('rid'):
         #message
         #we find the relationship of the transaction rid and send a new message notification to the rid
         #of the relationship that does not match the arg rid
