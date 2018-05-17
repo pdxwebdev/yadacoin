@@ -117,7 +117,6 @@ class BU(object):  # Blockchain Utilities
         received = BU.collection.aggregate(received_query)
         reverse_public_key = ''
         for x in received:
-            print x['height']
             mongo_client.yadacoin.unspent_cache.update({
                 'address': address,
                 'id': x['txn']['id'],
@@ -272,10 +271,12 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_transactions_by_rid(cls, selector, rid=False, raw=False, returnheight=True):
+        #selectors is old code before we got an RID by sorting the bulletin secrets
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
         ds = TU.get_bulletin_secret()
+
         if not rid:
             selectors = [
                 TU.hash(ds+selector),
@@ -286,12 +287,28 @@ class BU(object):  # Blockchain Utilities
                 selectors = [selector, ]
             else:
                 selectors = selector
-
+        mongo_client = MongoClient('localhost')
+        transactions_by_rid_cache = mongo_client.yadacoin.transactions_by_rid_cache.find(
+                {
+                    'raw': True,
+                    'rid': rid,
+                    'returnheight': returnheight,
+                    'selector': {'$in': selectors}
+                }
+        ).sort([('height', -1)])
+        latest_block = BU.get_latest_block()
+        if transactions_by_rid_cache.count():
+            transactions_by_rid_cache = transactions_by_rid_cache[0]
+            block_height = transactions_by_rid_cache['height']
+        else:
+            block_height = 0
         transactions = []
-        blocks = cls.collection.find({"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}})
+        blocks = cls.collection.find({"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}})
         for block in blocks:
             for transaction in block.get('transactions'):
                 if 'relationship' in transaction:
+                    if returnheight:
+                        transaction['block_height'] = block['index']
                     if not raw:
                         try:
                             cipher = Crypt(cls.private_key)
@@ -300,9 +317,33 @@ class BU(object):  # Blockchain Utilities
                             transaction['relationship'] = relationship
                         except:
                             continue
-                    transaction['block_height'] = block['index']
+                    for selector in selectors:
+                        print 'caching transactions_by_rid at height:', block['height']
+                        mongo_client.yadacoin.transactions_by_rid_cache.insert(
+                            {
+                                'raw': raw,
+                                'rid': rid,
+                                'returnheight': returnheight,
+                                'selector': selector,
+                                'txn': transaction,
+                                'height': block['index']
+                            }
+                        )
                     transactions.append(transaction)
-        return transactions
+        if not transactions:
+            for selector in selectors:
+                mongo_client.yadacoin.transactions_by_rid_cache.insert(
+                    {   
+                        'raw': raw,
+                        'rid': rid,
+                        'returnheight': returnheight,
+                        'selector': selector,
+                        'height': latest_block['index']
+                    }   
+                )
+        for x in mongo_client.yadacoin.transactions_by_rid_cache.find({'raw': raw, 'rid': rid, 'returnheight': returnheight, 'selector': {'$in': selectors}}):
+            if 'txn' in x:
+                yield x['txn']
 
     @classmethod
     def get_second_degree_transactions_by_rids(cls, rids, start_height):
@@ -321,19 +362,17 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_friend_requests(cls, rids):
-
         if not isinstance(rids, list):
             rids = [rids, ]
 
         mongo_client = MongoClient('localhost')
         friend_requests_cache = mongo_client.yadacoin.friend_requests_cache.find({'requested_rid': {'$in': rids}}).sort([('height', -1)])
-
+        latest_block = cls.get_latest_block()
         if friend_requests_cache.count():
             friend_requests_cache = friend_requests_cache[0]
             block_height = friend_requests_cache['height']
         else:
             block_height = 0
-
         transactions = BU.collection.aggregate([
             {
                 "$match": {
@@ -364,8 +403,9 @@ class BU(object):  # Blockchain Utilities
                 "$sort": {"height": 1}
             }
         ])
-
+        had_txns = False
         for x in transactions:
+            had_txns = True
             print 'caching friend requests at height:', x['height']
             mongo_client.yadacoin.friend_requests_cache.update({
                 'requested_rid': x['txn']['requested_rid'],
@@ -380,8 +420,13 @@ class BU(object):  # Blockchain Utilities
             },
             upsert=True)
 
+        if not had_txns:
+            for rid in rids:
+                mongo_client.yadacoin.friend_requests_cache.insert({'height': latest_block['index'], 'requested_rid': rid})
+
         for x in mongo_client.yadacoin.friend_requests_cache.find({'requested_rid': {'$in': rids}}):
-            yield x['txn']
+            if 'txn' in x:
+                yield x['txn']
 
     @classmethod
     def get_sent_friend_requests(cls, rids):
@@ -524,12 +569,13 @@ class BU(object):  # Blockchain Utilities
         mongo_client = MongoClient('localhost')
         posts_cache = mongo_client.yadacoin.posts_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
 
+        latest_block = cls.get_latest_block()
+
         if posts_cache.count():
             posts_cache = posts_cache[0]
             block_height = posts_cache['height']
         else:
             block_height = 0
-
         transactions = BU.collection.aggregate([
             {
                 "$match": {
@@ -563,7 +609,7 @@ class BU(object):  # Blockchain Utilities
             }
         ])
 
-
+        had_txns = False
         for i, x in enumerate(transactions):
             if i == 0:
                 friend = cls.get_transactions_by_rid(rids, rid=True)
@@ -572,7 +618,6 @@ class BU(object):  # Blockchain Utilities
                 bulletin_secret = friend[0]['relationship']['bulletin_secret']
                 mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
                 mutual_bulletin_secrets.append(bulletin_secret)
-                print mutual_bulletin_secrets
             for bs in mutual_bulletin_secrets:
                 try:
                     crypt = Crypt(hashlib.sha256(bs).hexdigest())
@@ -580,6 +625,7 @@ class BU(object):  # Blockchain Utilities
                     data = json.loads(decrypted)
                     x['txn']['relationship'] = data
                     if 'postText' in data:
+                        had_txns = True
                         print 'caching posts at height:', x['height']
                         for rid in rids:
                             mongo_client.yadacoin.posts_cache.update({
@@ -596,10 +642,14 @@ class BU(object):  # Blockchain Utilities
                             upsert=True)
                 except:
                     pass
+        if not had_txns:
+            for rid in rids:
+                mongo_client.yadacoin.posts_cache.insert({'rid': rid, 'height': latest_block['index']})
 
         for x in mongo_client.yadacoin.posts_cache.find({'rid': {'$in': rids}}):
-            x['txn']['height'] = x['height']
-            yield x['txn']
+            if 'txn' in x:
+                x['txn']['height'] = x['height']
+                yield x['txn']
 
     @classmethod
     def get_mutual_rids(cls, rid):
