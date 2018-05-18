@@ -318,7 +318,7 @@ class BU(object):  # Blockchain Utilities
                         except:
                             continue
                     for selector in selectors:
-                        print 'caching transactions_by_rid at height:', block['height']
+                        print 'caching transactions_by_rid at height:', block['index']
                         mongo_client.yadacoin.transactions_by_rid_cache.insert(
                             {
                                 'raw': raw,
@@ -612,10 +612,10 @@ class BU(object):  # Blockchain Utilities
         had_txns = False
         for i, x in enumerate(transactions):
             if i == 0:
-                friend = cls.get_transactions_by_rid(rids, rid=True)
-                if not len(friend):
+                friend = next(cls.get_transactions_by_rid(rids, rid=True), None)
+                if not friend:
                     break
-                bulletin_secret = friend[0]['relationship']['bulletin_secret']
+                bulletin_secret = friend['relationship']['bulletin_secret']
                 mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
                 mutual_bulletin_secrets.append(bulletin_secret)
             for bs in mutual_bulletin_secrets:
