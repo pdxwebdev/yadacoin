@@ -115,6 +115,7 @@ class BU(object):  # Blockchain Utilities
         ]
 
         received = BU.collection.aggregate(received_query)
+
         reverse_public_key = ''
         for x in received:
             mongo_client.yadacoin.unspent_cache.update({
@@ -139,9 +140,13 @@ class BU(object):  # Blockchain Utilities
         if not reverse_public_key:
             # no reverse public key means they have never even created a transaction
             # so no need to check for spend, anything sent to them is unspent
-            for x in mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False}):
+            if ids:
+                res = mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
+            else:
+                res = mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False})
+            for x in res:
                 yield x['txn']
-        
+
         spent = BU.collection.aggregate([
             {
                 "$match": {
