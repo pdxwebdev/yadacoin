@@ -160,10 +160,10 @@ def consensus(peers, config):
 
     if gap_test['index'] > next_index:
         print 'theres a gap'
-	for peer in peers:
+        for peer in peers:
             for i in range(next_index, gap_test['index'], (inc+1)):
                 print i
-		something_missing = False
+                something_missing = False
                 res = db.consensus.find({'peer': peer['ip'], '$and': [{'index': {'$gte': i,}}, {'index': {'$lte': (i + inc)}}]})
                 truetest = {}
 

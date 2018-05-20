@@ -259,7 +259,7 @@ class Block(object):
         for txn in self.transactions:
             if txn.inputs:
                 address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
-                unspent = BU.get_wallet_unspent_transactions(address)
+                unspent = BU.get_wallet_unspent_transactions(address, [x['id'] for x in txn.inputs])
                 unspent_ids = [x['id'] for x in unspent]
                 failed = False
                 used_ids_in_this_txn = []

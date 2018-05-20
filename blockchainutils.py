@@ -66,7 +66,7 @@ class BU(object):  # Blockchain Utilities
             return 0
 
     @classmethod
-    def get_wallet_unspent_transactions(cls, address):
+    def get_wallet_unspent_transactions(cls, address, ids=None):
 
         mongo_client = MongoClient('localhost')
         unspent_cache = mongo_client.yadacoin.unspent_cache.find({'address': address}).sort([('height', -1)])
@@ -189,8 +189,10 @@ class BU(object):  # Blockchain Utilities
 
         
 
-
-        res = mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False})
+        if ids:
+            res = mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
+        else:
+            res = mongo_client.yadacoin.unspent_cache.find({'address': address, 'spent': False})
         for x in res:
             yield x['txn']
 
