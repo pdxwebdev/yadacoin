@@ -113,7 +113,8 @@ def node(config, peers):
     latest_block_index.value = block.get('index')
     start = time.time()
 
-    dup_test = db.consensus.find({'peer': 'me', 'index': int(latest_block_index.value) + 1})
+    dup_test = db.consensus.find({'peer': 'me', 'index': BU.get_latest_block().get('index') + 1})
+    print dup_test.count()
     pending_txns = db.miner_transactions.find()
     if not dup_test.count():
         transactions = db.miner_transactions.find()

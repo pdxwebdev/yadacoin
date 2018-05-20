@@ -419,6 +419,7 @@ if __name__ == '__main__':
             time.sleep(1)
     elif args.mode == 'mine':
         while 1:
+            #node(config, peers)
             p = Process(target=node, args=(config, peers))
             p.start()
             p.join()
