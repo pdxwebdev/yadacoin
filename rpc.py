@@ -8,7 +8,9 @@ import humanhash
 import requests
 import pyDH
 import time
+import logging
 
+from logging.handlers import SMTPHandler
 from io import BytesIO
 from uuid import uuid4
 from ecdsa import NIST384p, SigningKey
@@ -36,6 +38,17 @@ class ChatNamespace(BaseNamespace):
 
 app = Flask(__name__)
 CORS(app)
+mail_handler = SMTPHandler(
+    mailhost='127.0.0.1',
+    fromaddr='localhost',
+    toaddrs=['info@yadacoin.io'],
+    subject='Application Error'
+)
+mail_handler.setLevel(logging.ERROR)
+mail_handler.setFormatter(logging.Formatter(
+        '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
+        ))
+app.logger.addHandler(mail_handler)
 
 def make_qr(data):
     qr = qrcode.QRCode(
@@ -53,7 +66,6 @@ def make_qr(data):
     qr_img.save(out, 'PNG')
     out.seek(0)
     return u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
-
 
 def get_logged_in_user():
     user = None
@@ -368,7 +380,7 @@ def search():
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower()})
+    friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower().strip()})
     if friend.count():
         friend = friend[0]
         to = friend['to']
@@ -599,8 +611,8 @@ def transaction():
         return json.dumps(request.get_json())
     else:
         rid = request.args.get('rid')
-        transaction = BU.get_transactions_by_rid(rid, rid=True, raw=True)
-        return json.dumps(transaction)
+        transactions = BU.get_transactions_by_rid(rid, rid=True, raw=True)
+        return json.dumps([x for x in transactions])
 
 def do_push(txn, bulletin_secret):
     my_bulletin_secret = TU.get_bulletin_secret()
@@ -655,7 +667,7 @@ def do_push(txn, bulletin_secret):
         #message
         #we find the relationship of the transaction rid and send a new message notification to the rid
         #of the relationship that does not match the arg rid
-        txns = BU.get_transactions_by_rid(txn['rid'], rid=True, raw=True)
+        txns = [x for x in BU.get_transactions_by_rid(txn['rid'], rid=True, raw=True)]
         rids = []
         rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
         rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
