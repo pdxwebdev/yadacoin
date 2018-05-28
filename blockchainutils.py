@@ -619,12 +619,14 @@ class BU(object):  # Blockchain Utilities
         had_txns = False
         for i, x in enumerate(transactions):
             if i == 0:
-                friend = next(cls.get_transactions_by_rid(rids, rid=True), None)
-                if not friend:
-                    break
-                bulletin_secret = friend['relationship']['bulletin_secret']
                 mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
-                mutual_bulletin_secrets.append(bulletin_secret)
+                friends = cls.get_transactions_by_rid(rids, rid=True)
+                found = False
+                for friend in friends:
+                    found = True
+                    mutual_bulletin_secrets.append(friend['relationship']['bulletin_secret'])
+                if not found:
+                    break
             for bs in mutual_bulletin_secrets:
                 try:
                     crypt = Crypt(hashlib.sha256(bs).hexdigest())
