@@ -221,7 +221,7 @@ def create_relationship():  # demo site
     mongo_client = MongoClient('localhost')
 
     my_bulletin_secret = TU.get_bulletin_secret()
-    rids = sorted([str(my_bulletin_secret), bulletin_secret], key=str.lower)
+    rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
     mongo_client.yadacoinsite.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
     return json.dumps({"success": True})
