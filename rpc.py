@@ -785,7 +785,6 @@ def get_url():
 
 @app.route('/firebase-messaging-sw.js')
 def firebase_service_worker():
-    res = requests.get(request.args.get('url'))
     return app.send_static_file('app/www/ServiceWorker.js')
 
 app.debug = True
