@@ -377,8 +377,8 @@ def react():
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
-            message_title='Somebody commented on your post!',
-            message_body='Go see what they said!',
+            message_title='Somebody reacted to your post!',
+            message_body='Go see how they reacted!',
             extra_kwargs={'priority': 'high'}
         )
     return 'ok'
