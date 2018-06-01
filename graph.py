@@ -174,7 +174,13 @@ class Graph(object):
         self.messages = messages
 
     def get_posts(self):
-        self.posts = [x for x in BU.get_posts(self.rid)]
+        posts = []
+        for x in BU.get_posts(self.rid):
+            res = self.mongo_client.yadacoinsite.usernames.find({'rid': x['rid']}, {'_id': 0})
+            if res.count():
+                x['username'] = res[0]['username']
+            posts.append(x)
+        self.posts = posts
 
     def from_dict(self, obj):
         self.friends = obj['friends']
