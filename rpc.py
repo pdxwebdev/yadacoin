@@ -16,7 +16,7 @@ from ecdsa import NIST384p, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from flask import Flask, request, render_template, session, redirect
+from flask import Flask, request, render_template, session, redirect, send_static_file
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from blockchainutils import BU
 from transactionutils import TU
@@ -781,6 +781,12 @@ def faucet():
 def get_url():
     res = requests.get(request.args.get('url'))
     return res.content
+
+
+@app.route('/firebase-messaging-sw.js')
+def firebase_service_worker():
+    res = requests.get(request.args.get('url'))
+    return app.send_static_file('app/www/ServiceWorker.js')
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
