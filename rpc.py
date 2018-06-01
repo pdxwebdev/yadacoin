@@ -428,6 +428,16 @@ def comment():
         'body': request.json.get('comment'),
         'txn_id': request.json.get('txn_id')
     })
+    txn = mongo_client.yadacoinsite.fcmtokens.find({'id': request.json.get('txn_id')})
+
+    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requester_rid']})
+    for token in res:
+        result = push_service.notify_single_device(
+            registration_id=token['token'],
+            message_title='Your friend request was approved!',
+            message_body='Say "hi" to your friend!',
+            extra_kwargs={'priority': 'high'}
+        )
     return 'ok'
 
 @app.route('/get-comments', methods=['POST'])

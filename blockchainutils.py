@@ -643,13 +643,15 @@ class BU(object):  # Blockchain Utilities
                             mongo_client.yadacoin.posts_cache.update({
                                 'rid': rid,
                                 'height': x['height'],
-                                'id': x['txn']['id']
+                                'id': x['txn']['id'],
+                                'bulletin_secret': bs
                             },
                             {
                                 'rid': rid,
                                 'height': x['height'],
                                 'id': x['txn']['id'],
-                                'txn': x['txn']
+                                'txn': x['txn'],
+                                'bulletin_secret': bs
                             },
                             upsert=True)
                 except:
