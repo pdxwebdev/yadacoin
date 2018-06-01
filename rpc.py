@@ -241,9 +241,9 @@ def create_relationship():  # demo site
         value=input_sum-1.1
     )
 
-    dh = pyDH.DiffieHellman(group=17)
-    dh_public_key = "%x" % dh.gen_public_key()
-    dh_private_key = "%x" % dh.get_private_key()
+    a = os.urandom(32)
+    dh_public_key = scalarmult_base(a).encode('hex')
+    dh_private_key = a.encode('hex')
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
