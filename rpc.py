@@ -369,6 +369,18 @@ def react():
         'emoji': request.json.get('react'),
         'txn_id': request.json.get('txn_id')
     })
+    txn = mongo_client.yadacoin.posts_cache.find({'id': request.json.get('txn_id')})[0]
+
+    rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": rid})
+    for token in res:
+        result = push_service.notify_single_device(
+            registration_id=token['token'],
+            message_title='Somebody commented on your post!',
+            message_body='Go see what they said!',
+            extra_kwargs={'priority': 'high'}
+        )
     return 'ok'
 
 @app.route('/get-reacts', methods=['POST'])
