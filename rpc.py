@@ -6,7 +6,6 @@ import qrcode
 import base64
 import humanhash
 import requests
-import pyDH
 import time
 import logging
 
@@ -29,7 +28,7 @@ from socketIO_client import SocketIO, BaseNamespace
 from pyfcm import FCMNotification
 from multiprocessing import Process, Value, Array, Pool
 from flask_cors import CORS
-from gcm import GCM
+from eccsnacks.curve25519 import scalarmult, scalarmult_base
 
 
 class ChatNamespace(BaseNamespace):
@@ -785,75 +784,73 @@ def get_url():
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'
-if __name__ == '__main__':
-    mongo_client = MongoClient('localhost')
-    db = mongo_client.yadacoin
-    collection = db.blocks
-    consensus = db.consensus
-    miner_transactions = db.miner_transactions
-    BU.collection = collection
-    TU.collection = collection
-    BU.consensus = consensus
-    TU.consensus = consensus
-    BU.miner_transactions = miner_transactions
-    TU.miner_transactions = miner_transactions
+mongo_client = MongoClient('localhost')
+db = mongo_client.yadacoin
+collection = db.blocks
+consensus = db.consensus
+miner_transactions = db.miner_transactions
+BU.collection = collection
+TU.collection = collection
+BU.consensus = consensus
+TU.consensus = consensus
+BU.miner_transactions = miner_transactions
+TU.miner_transactions = miner_transactions
 
-    parser = argparse.ArgumentParser(description='Process some integers.')
-    parser.add_argument('--conf',
-                    help='set your config file')
-    args = parser.parse_args()
+parser = argparse.ArgumentParser(description='Process some integers.')
+parser.add_argument('--conf',
+                help='set your config file')
+args = parser.parse_args()
+conf = args.conf or 'config.json'
 
-    with open(args.conf) as f:
-        config = json.loads(f.read())
+with open(conf) as f:
+    raw = f.read()
+    config = json.loads(raw)
+print 'RUNNING SERVER WITH CONFIG:'
+print raw
+public_key = config.get('public_key')
+my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
 
-    public_key = config.get('public_key')
-    my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
+private_key = config.get('private_key')
+TU.private_key = private_key
+BU.private_key = private_key
+api_key = config.get('fcm_key')
+push_service = FCMNotification(api_key=api_key)
 
-    private_key = config.get('private_key')
-    TU.private_key = private_key
-    BU.private_key = private_key
-    api_key = config.get('fcm_key')
-    push_service = FCMNotification(api_key=api_key)
-    gcm_service = GCM(api_key)
-
-
-    for transaction in BU.get_transactions():
-        exists = mongo_client.yadacoinsite.friends.find({'id': transaction['id']})
-        if not exists.count():
-            transaction['humanized'] = humanhash.humanize(transaction['rid'])
-            mongo_client.yadacoinsite.friends.insert(transaction)
-        bulletin_secret = transaction['relationship']['bulletin_secret']
-        exists = mongo_client.yadacoinsite.posts.find({
-            'id': transaction.get('id')
-        })
-        if exists.count():
-            if not exists[0]['skip']:
-                transaction['relationship'] = {'postText': exists[0]['postText']}
-                self.friend_posts.append(transaction)
-            continue
-        try:
-            data = transaction['relationship']
-            if 'postText' in data:
-                mongo_client.yadacoinsite.posts.remove({'id': transaction.get('id')})
-                transaction['relationship'] = data
-                self.friend_posts.append(transaction)
-                mongo_client.yadacoinsite.posts.insert({
-                    'postText': data['postText'],
-                    'rid': transaction.get('rid'),
-                    'id': transaction.get('id'),
-                    'requester_rid': transaction.get('requester_rid'),
-                    'requested_rid': transaction.get('requested_rid'),
-                    'skip': False
-                })
-        except:
-            raise
+for transaction in BU.get_transactions():
+    exists = mongo_client.yadacoinsite.friends.find({'id': transaction['id']})
+    if not exists.count():
+        transaction['humanized'] = humanhash.humanize(transaction['rid'])
+        mongo_client.yadacoinsite.friends.insert(transaction)
+    bulletin_secret = transaction['relationship']['bulletin_secret']
+    exists = mongo_client.yadacoinsite.posts.find({
+        'id': transaction.get('id')
+    })
+    if exists.count():
+        if not exists[0]['skip']:
+            transaction['relationship'] = {'postText': exists[0]['postText']}
+            self.friend_posts.append(transaction)
+        continue
+    try:
+        data = transaction['relationship']
+        if 'postText' in data:
+            mongo_client.yadacoinsite.posts.remove({'id': transaction.get('id')})
+            transaction['relationship'] = data
+            self.friend_posts.append(transaction)
             mongo_client.yadacoinsite.posts.insert({
                 'postText': data['postText'],
                 'rid': transaction.get('rid'),
                 'id': transaction.get('id'),
                 'requester_rid': transaction.get('requester_rid'),
                 'requested_rid': transaction.get('requested_rid'),
-                'skip': True
+                'skip': False
             })
-
-    app.run(host=config.get('host'), port=config.get('port'), threaded=True)
+    except:
+        raise
+        mongo_client.yadacoinsite.posts.insert({
+            'postText': data['postText'],
+            'rid': transaction.get('rid'),
+            'id': transaction.get('id'),
+            'requester_rid': transaction.get('requester_rid'),
+            'requested_rid': transaction.get('requested_rid'),
+            'skip': True
+        })
