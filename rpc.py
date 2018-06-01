@@ -103,6 +103,10 @@ def get_logged_in_user():
                     }
     return user if user else {'authenticated': False}
 
+@app.route('/app')
+def web_app():
+    return app.send_static_file('app/www/index.html')
+
 @app.route('/reset')
 def reset():
     with open('blockchain.json', 'w') as f:
