@@ -174,9 +174,12 @@ class Graph(object):
         self.messages = messages
 
     def get_posts(self):
+        my_bulletin_secret = TU.get_bulletin_secret()
         posts = []
         for x in BU.get_posts(self.rid):
-            res = self.mongo_client.yadacoinsite.usernames.find({'rid': x['rid']}, {'_id': 0})
+            rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
+            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            res = self.mongo_client.yadacoinsite.usernames.find({'rid': rid}, {'_id': 0})
             if res.count():
                 x['username'] = res[0]['username']
             posts.append(x)

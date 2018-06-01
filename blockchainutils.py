@@ -663,6 +663,7 @@ class BU(object):  # Blockchain Utilities
         for x in mongo_client.yadacoin.posts_cache.find({'rid': {'$in': rids}}):
             if 'txn' in x:
                 x['txn']['height'] = x['height']
+                x['txn']['bulletin_secret'] = x['bulletin_secret']
                 yield x['txn']
 
     @classmethod
