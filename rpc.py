@@ -134,53 +134,6 @@ def team():
         'team.html',
         )
 
-@app.route('/demo')
-def demo():
-    bulletin_secret = TU.get_bulletin_secret()
-    shared_secret = str(uuid4())
-    friends = [x for x in mongo_client.yadacoinsite.friends.find()]
-
-    session.setdefault('challenge_code', str(uuid4()))
-    qr = qrcode.QRCode(
-        version=1,
-        error_correction=qrcode.constants.ERROR_CORRECT_L,
-        box_size=10,
-        border=4,
-    )
-    data = {
-        'challenge_code': session['challenge_code'],
-        'bulletin_secret': TU.get_bulletin_secret(),
-        'shared_secret': shared_secret,
-        'callbackurl': config.get('callbackurl'),
-        'to': my_address
-    }
-    qr.add_data(json.dumps(data))
-    qr.make(fit=True)
-
-    login_out = BytesIO()
-    qr_img = qr.make_image()
-    qr_img = qr_img.convert("RGBA")
-    qr_img.save(login_out, 'PNG')
-    login_out.seek(0)
-    authed_user = get_logged_in_user()
-
-    if authed_user['authenticated']:
-        rid = authed_user['rid']
-    else:
-        rid = ''
-
-    return render_template(
-        'demo.html',
-        user=authed_user,
-        bulletin_secret=bulletin_secret,
-        shared_secret=shared_secret,
-        existing=friends,
-        data=json.dumps(data, indent=4),
-        challenge_code=session['challenge_code'],
-        users=set([x['rid'] for x in friends if x['rid'] != rid]),
-        login_qrcode=u"data:image/png;base64," + base64.b64encode(login_out.getvalue()).decode('ascii'),
-    )
-
 @app.route('/register')
 def register():
     data = {
@@ -264,6 +217,13 @@ def create_relationship():  # demo site
     db.miner_transactions.insert(transaction.transaction.to_dict())
     job = Process(target=txn_broadcast_job, args=(transaction.transaction,))
     job.start()
+
+    mongo_client = MongoClient('localhost')
+
+    my_bulletin_secret = TU.get_bulletin_secret()
+    rids = sorted([str(my_bulletin_secret), bulletin_secret], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    mongo_client.yadacoinsite.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
     return json.dumps({"success": True})
 
 @app.route('/login-status')

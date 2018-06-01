@@ -69,7 +69,9 @@ class Graph(object):
                     else:
                         already_done.append(test)
 
-        self.registered = self.rid in [x.get('rid') for x in self.friends if x['public_key'] == public_key] and self.rid in [x.get('rid') for x in self.friends if x['public_key'] != public_key]
+        registered = mongo_client.yadacoinsite.friends.find({'relationship.bulletin_secret': bulletin_secret})
+        if registered.count():
+            self.registered = True
 
         if not self.registered:
             # not regisered, let's check for a pending transaction

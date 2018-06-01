@@ -314,30 +314,6 @@ def faucet(peers, config):
             except Exception as e:
                 print e
 
-def add_friends(config):
-    from pymongo import MongoClient
-    public_key = config.get('public_key')
-    my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
-    private_key = config.get('private_key')
-    TU.private_key = private_key
-    BU.private_key = private_key
-    mongo_client = MongoClient('localhost')
-    db = mongo_client.yadacoin
-    collection = db.blocks
-    consensus = db.consensus
-    miner_transactions = db.miner_transactions
-    BU.collection = collection
-    TU.collection = collection
-    num = 0
-    print time.time()
-    for transaction in BU.get_transactions():
-        exists = mongo_client.yadacoinsite.friends.find({'id': transaction['id']})
-        if not exists.count():
-            transaction['humanized'] = humanhash.humanize(transaction['rid'])
-            print transaction['humanized']
-            mongo_client.yadacoinsite.friends.insert(transaction)
-        num += 1
-
 @app.route('/get-blocks')
 def get_blocks():
     from pymongo import MongoClient
@@ -433,12 +409,6 @@ if __name__ == '__main__':
     elif args.mode == 'faucet':
         while 1:
             p = Process(target=faucet, args=(peers, config))
-            p.start()
-            p.join()
-            time.sleep(1)
-    elif args.mode == 'friends':
-        while 1:
-            p = Process(target=add_friends, args=(config,))
             p.start()
             p.join()
             time.sleep(1)
