@@ -16,7 +16,7 @@ from ecdsa import NIST384p, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from flask import Flask, request, render_template, session, redirect, send_static_file
+from flask import Flask, request, render_template, session, redirect
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from blockchainutils import BU
 from transactionutils import TU
