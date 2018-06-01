@@ -428,14 +428,16 @@ def comment():
         'body': request.json.get('comment'),
         'txn_id': request.json.get('txn_id')
     })
-    txn = mongo_client.yadacoinsite.fcmtokens.find({'id': request.json.get('txn_id')})
+    txn = mongo_client.yadacoin.posts_cache.find({'id': request.json.get('txn_id')})[0]
 
-    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requester_rid']})
+    rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": rid})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
-            message_title='Your friend request was approved!',
-            message_body='Say "hi" to your friend!',
+            message_title='Somebody commented on your post!',
+            message_body='Go see what they said!',
             extra_kwargs={'priority': 'high'}
         )
     return 'ok'
