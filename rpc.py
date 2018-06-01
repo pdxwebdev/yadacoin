@@ -481,7 +481,7 @@ def get_comments():
         'txn_id': {
             '$in': ids
         },
-    }, {'_id': 0})
+    })
     out = {}
     usernames = {}
     for x in res:
@@ -492,6 +492,7 @@ def get_comments():
             x['username'] = res1[0]['username']
         else:
             x['username'] = humanhash.humanize(x['rid'])
+        x['_id'] = str(x['_id'])
         out[x['txn_id']].append(x)
     return json.dumps(out)
 
