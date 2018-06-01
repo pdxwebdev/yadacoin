@@ -452,6 +452,20 @@ def comment():
             message_body='Go see what they said!',
             extra_kwargs={'priority': 'high'}
         )
+
+    comments = mongo_client.yadacoinsite.comments.find({
+        'rid': {'$ne': rid},
+        'txn_id': request.json.get('txn_id')
+    })
+    for comment in comments:
+        res = mongo_client.yadacoinsite.fcmtokens.find({"rid": comment['rid']})
+        for token in res:
+            result = push_service.notify_single_device(
+                registration_id=token['token'],
+                message_title='Somebody commented on a post you commented on!',
+                message_body='Go see what they said!',
+                extra_kwargs={'priority': 'high'}
+            )
     return 'ok'
 
 @app.route('/get-comments', methods=['POST'])
