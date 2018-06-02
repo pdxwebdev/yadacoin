@@ -29,6 +29,7 @@ from pyfcm import FCMNotification
 from multiprocessing import Process, Value, Array, Pool
 from flask_cors import CORS
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
+from bson.objectid import ObjectId
 
 
 class ChatNamespace(BaseNamespace):
@@ -417,6 +418,76 @@ def get_reacts_detail():
     mongo_client = MongoClient('localhost')
     res = mongo_client.yadacoinsite.reacts.find({
         'txn_id': txn_id,
+    }, {'_id': 0})
+    out = []
+    for x in res:
+        res1 = mongo_client.yadacoinsite.usernames.find({'rid': x['rid']})
+        if res1.count():
+            x['username'] = res1[0]['username']
+        else:
+            x['username'] = humanhash.humanize(x['rid'])
+        out.append(x)
+    return json.dumps(out)
+
+@app.route('/comment-react', methods=['POST'])
+def comment_react():
+    my_bulletin_secret = TU.get_bulletin_secret()
+    rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    mongo_client = MongoClient('localhost')
+    mongo_client.yadacoinsite.comment_reacts.insert({
+        'rid': rid,
+        'emoji': request.json.get('react'),
+        'comment_id': request.json.get('_id')
+    })
+
+    comment = mongo_client.yadacoinsite.comments.find({'_id': ObjectId(str(request.json.get('_id')))})[0]
+
+    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": comment['rid']})
+    for token in res:
+        result = push_service.notify_single_device(
+            registration_id=token['token'],
+            message_title='Somebody reacted to your comment!',
+            message_body='Go see how they reacted!',
+            extra_kwargs={'priority': 'high'}
+        )
+    return 'ok'
+
+@app.route('/get-comment-reacts', methods=['POST'])
+def get_comment_reacts():
+    if request.json:
+        data = request.json
+        ids = data.get('ids')
+    else:
+        data = request.form
+        ids = json.loads(data.get('ids'))
+    ids = [str(x) for x in ids]
+    print ids
+    mongo_client = MongoClient('localhost')
+    res = mongo_client.yadacoinsite.comment_reacts.find({
+        'comment_id': {
+            '$in': ids
+        },
+    })
+    out = {}
+    for x in res:
+        if str(x['comment_id']) not in out:
+            out[str(x['comment_id'])] = ''
+        out[str(x['comment_id'])] = out[str(x['comment_id'])] + x['emoji']
+    return json.dumps(out)
+
+@app.route('/get-comment-reacts-detail', methods=['POST'])
+def get_comment_reacts_detail():
+    if request.json:
+        data = request.json
+        comment_id = data.get('_id')
+    else:
+        data = request.form
+        comment_id = json.loads(data.get('_id'))
+
+    mongo_client = MongoClient('localhost')
+    res = mongo_client.yadacoinsite.comment_reacts.find({
+        'comment_id': comment_id,
     }, {'_id': 0})
     out = []
     for x in res:
