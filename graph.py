@@ -163,7 +163,7 @@ class Graph(object):
 
     def get_messages(self):
         lookup_rids = self.get_request_rids_for_rid()
-        lookup_rids.extend([self.rid])
+        lookup_rids[self.rid] = [self.rid]
         messages = [x for x in BU.get_messages(self.get_lookup_rids())]
         for i, message in enumerate(messages):
             # attach usernames

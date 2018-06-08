@@ -757,7 +757,7 @@ def do_push(txn, bulletin_secret):
                     message_body='You have a new message from a friend!',
                     extra_kwargs={'priority': 'high'}
                 )
-
+                print result
 
 
 def txn_broadcast_job(transaction):
