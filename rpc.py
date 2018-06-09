@@ -752,7 +752,7 @@ def do_push(txn, bulletin_secret):
                     continue
                 used_tokens.append(token['token'])
 
-                res1 = mongo_client.yadacoinsite.usernames.find({'rid': friend_rid})
+                res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
                 if res1.count():
                     username = res1[0]['username']
                 else:
