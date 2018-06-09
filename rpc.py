@@ -364,6 +364,13 @@ def react():
     my_bulletin_secret = TU.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+    res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
+    if res1.count():
+        username = res1[0]['username']
+    else:
+        username = humanhash.humanize(rid)
+
     mongo_client = MongoClient('localhost')
     mongo_client.yadacoinsite.reacts.insert({
         'rid': rid,
@@ -378,7 +385,7 @@ def react():
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
-            message_title='Somebody reacted to your post!',
+            message_title='%s reacted to your post!' % username,
             message_body='Go see how they reacted!',
             extra_kwargs={'priority': 'high'}
         )
@@ -434,6 +441,13 @@ def comment_react():
     my_bulletin_secret = TU.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+    res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
+    if res1.count():
+        username = res1[0]['username']
+    else:
+        username = humanhash.humanize(rid)
+
     mongo_client = MongoClient('localhost')
     mongo_client.yadacoinsite.comment_reacts.insert({
         'rid': rid,
@@ -447,7 +461,7 @@ def comment_react():
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
-            message_title='Somebody reacted to your comment!',
+            message_title='%s reacted to your comment!' % username,
             message_body='Go see how they reacted!',
             extra_kwargs={'priority': 'high'}
         )
@@ -504,6 +518,13 @@ def comment():
     my_bulletin_secret = TU.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+    res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
+    if res1.count():
+        username = res1[0]['username']
+    else:
+        username = humanhash.humanize(rid)
+
     mongo_client = MongoClient('localhost')
     mongo_client = MongoClient('localhost')
     mongo_client.yadacoinsite.comments.insert({
@@ -519,7 +540,7 @@ def comment():
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
-            message_title='Somebody commented on your post!',
+            message_title='%s commented on your post!' % username,
             message_body='Go see what they said!',
             extra_kwargs={'priority': 'high'}
         )
@@ -533,7 +554,7 @@ def comment():
         for token in res:
             result = push_service.notify_single_device(
                 registration_id=token['token'],
-                message_title='Somebody commented on a post you commented on!',
+                message_title='%s commented on a post you commented on!' % username,
                 message_body='Go see what they said!',
                 extra_kwargs={'priority': 'high'}
             )
