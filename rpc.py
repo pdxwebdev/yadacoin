@@ -365,13 +365,13 @@ def react():
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
+    mongo_client = MongoClient('localhost')
     res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    mongo_client = MongoClient('localhost')
     mongo_client.yadacoinsite.reacts.insert({
         'rid': rid,
         'emoji': request.json.get('react'),
@@ -442,13 +442,13 @@ def comment_react():
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
+    mongo_client = MongoClient('localhost')
     res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    mongo_client = MongoClient('localhost')
     mongo_client.yadacoinsite.comment_reacts.insert({
         'rid': rid,
         'emoji': request.json.get('react'),
@@ -519,14 +519,13 @@ def comment():
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
+    mongo_client = MongoClient('localhost')
     res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    mongo_client = MongoClient('localhost')
-    mongo_client = MongoClient('localhost')
     mongo_client.yadacoinsite.comments.insert({
         'rid': rid,
         'body': request.json.get('comment'),
@@ -713,6 +712,7 @@ def do_push(txn, bulletin_secret):
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
+    mongo_client = MongoClient('localhost')
     res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
