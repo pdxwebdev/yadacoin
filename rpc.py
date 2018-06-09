@@ -751,10 +751,16 @@ def do_push(txn, bulletin_secret):
                 if token['token'] in used_tokens:
                     continue
                 used_tokens.append(token['token'])
+
+                res1 = mongo_client.yadacoinsite.usernames.find({'rid': friend_rid})
+                if res1.count():
+                    username = res1[0]['username']
+                else:
+                    username = humanhash.humanize(friend_rid)
                 result = push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='New message!',
-                    message_body='You have a new message from a friend!',
+                    message_body='You have a new message from %s!' % username,
                     extra_kwargs={'priority': 'high'}
                 )
                 print result
