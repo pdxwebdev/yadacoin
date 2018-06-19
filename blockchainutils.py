@@ -634,6 +634,10 @@ class BU(object):  # Blockchain Utilities
                 try:
                     crypt = Crypt(hashlib.sha256(bs).hexdigest())
                     decrypted = crypt.decrypt(x['txn']['relationship'])
+                    try:
+                        decrypted = base64.b64decode(decrypted)
+                    except:
+                        continue
                     data = json.loads(decrypted)
                     x['txn']['relationship'] = data
                     if 'postText' in data:

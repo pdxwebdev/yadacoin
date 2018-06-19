@@ -564,15 +564,18 @@ def get_comments():
     if request.json:
         data = request.json
         ids = data.get('txn_ids')
+        bulletin_secret = data.get('bulletin_secret')
     else:
         data = request.form
         ids = json.loads(data.get('txn_ids'))
+        bulletin_secret = data.get('bulletin_secret')
     mongo_client = MongoClient('localhost')
     res = mongo_client.yadacoinsite.comments.find({
         'txn_id': {
             '$in': ids
         },
     })
+    blocked = [x['username'] for x in mongo_client.yadacoinsite.blocked_users.find({'bulletin_secret': bulletin_secret})]
     out = {}
     usernames = {}
     for x in res:
@@ -584,7 +587,8 @@ def get_comments():
         else:
             x['username'] = humanhash.humanize(x['rid'])
         x['_id'] = str(x['_id'])
-        out[x['txn_id']].append(x)
+        if x['username'] not in blocked:
+            out[x['txn_id']].append(x)
     return json.dumps(out)
 
 @app.route('/get-usernames')
@@ -849,6 +853,12 @@ def get_graph_messages():
     graph.get_messages()
     return graph.to_json()
 
+@app.route('/get-graph-new-messages')
+def get_graph_new_messages():
+    graph = get_base_graph()
+    graph.get_new_messages()
+    return graph.to_json()
+
 @app.route('/get-graph')
 def get_graph():
     graph = Graph(TU.get_bulletin_secret(), for_me=True)
@@ -889,6 +899,18 @@ def get_url():
 @app.route('/firebase-messaging-sw.js')
 def firebase_service_worker():
     return app.send_static_file('app/www/ServiceWorker.js')
+
+@app.route('/block-user', methods=['POST'])
+def block_user():
+    mongo_client = MongoClient('localhost')
+    mongo_client.yadacoinsite.blocked_users.update({'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, {'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, upsert=True)
+    return 'ok'
+
+@app.route('/flag', methods=['POST'])
+def flag():
+    mongo_client = MongoClient('localhost')
+    mongo_client.yadacoinsite.flagged_content.update(request.json, request.json, upsert=True)
+    return 'ok'
 
 app.debug = True
 app.secret_key = '23ljk2l3k4j'

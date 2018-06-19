@@ -33,6 +33,7 @@ class Graph(object):
         self.posts = []
         self.logins = []
         self.messages = []
+        self.new_messages = []
         self.already_added_messages = []
         self.registered = False
         self.pending_registration = False
@@ -165,25 +166,43 @@ class Graph(object):
         lookup_rids = self.get_request_rids_for_rid()
         lookup_rids[self.rid] = [self.rid]
         messages = [x for x in BU.get_messages(self.get_lookup_rids())]
+        out_messages = []
         for i, message in enumerate(messages):
             # attach usernames
             res = self.mongo_client.yadacoinsite.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
             if res.count():
                 messages[i]['username'] = res[0]['username']
             else:
-                messages[i]['username'] = humanhash.humanize(message.get('requested_rid'))
-        self.messages = messages
+                messages[i]['username'] = humanhash.humanize(message.get('rid'))
+            exclude = self.mongo_client.yadacoinsite.exclude_messages.find({'id': message.get('id')})
+            if exclude.count() > 0:
+                continue
+            out_messages.append(message)
+        self.messages = out_messages
+
+    def get_new_messages(self):
+        self.get_messages()
+        self.messages = sorted(self.messages, key=lambda x: x['height'], reverse=True)
+        used_rids = []
+        for message in self.messages:
+            if message['rid'] not in used_rids:
+                self.new_messages.append(message)
+                used_rids.append(message['rid'])
+        self.messages = []
 
     def get_posts(self):
         my_bulletin_secret = TU.get_bulletin_secret()
         posts = []
+        blocked = [x['username'] for x in self.mongo_client.yadacoinsite.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
+        flagged = [x['id'] for x in self.mongo_client.yadacoinsite.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
         for x in BU.get_posts(self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
             rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
             res = self.mongo_client.yadacoinsite.usernames.find({'rid': rid}, {'_id': 0})
             if res.count():
                 x['username'] = res[0]['username']
-            posts.append(x)
+            if x['username'] not in blocked and x['id'] not in flagged:
+                posts.append(x)
         self.posts = posts
 
     def from_dict(self, obj):
@@ -207,7 +226,8 @@ class Graph(object):
             'rid': self.rid,
             'human_hash': self.human_hash,
             'registered': self.registered,
-            'pending_registration': self.pending_registration
+            'pending_registration': self.pending_registration,
+            'new_messages': self.new_messages
         }
 
     def to_json(self):
