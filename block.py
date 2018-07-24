@@ -61,7 +61,7 @@ class BlockFactory(object):
                 transaction_objs.append(transaction_obj)
                 fee_sum += float(transaction_obj.fee)
         block_reward = BU.get_block_reward()
-        coinbase_txn = TransactionFactory(
+        coinbase_txn_fctry = TransactionFactory(
             public_key=self.public_key,
             private_key=self.private_key,
             outputs=[Output(
@@ -69,7 +69,8 @@ class BlockFactory(object):
                 to=str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
             )],
             coinbase=True
-        ).generate_transaction()
+        )
+        coinbase_txn = coinbase_txn_fctry.generate_transaction()
         transaction_objs.append(coinbase_txn)
 
         self.transactions = transaction_objs
@@ -86,6 +87,7 @@ class BlockFactory(object):
     @classmethod
     def generate_hash(cls, block, nonce):
         return hashlib.sha256(
+            block.public_key +
             str(block.index) +
             block.prev_hash +
             str(nonce) +
@@ -237,6 +239,15 @@ class Block(object):
         if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
             raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
+    def generate_hash(self):
+        return hashlib.sha256(
+            self.public_key +
+            str(self.index) +
+            self.prev_hash +
+            str(self.nonce) +
+            self.merkle_root
+        ).hexdigest()
+
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
 
@@ -293,4 +304,4 @@ class Block(object):
         }
 
     def to_json(self):
-        return json.dumps(self.to_dict())
+        return json.dumps(self.to_dict(), indent=4)

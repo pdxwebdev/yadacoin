@@ -19,9 +19,6 @@ from transaction import TransactionFactory, InvalidTransactionSignatureException
 from blockchain import Blockchain
 from bitcoin.wallet import P2PKHBitcoinAddress
 
-
-
-
 try:
     f = open('block_rewards.json', 'r')
     BU.block_rewards = json.loads(f.read())
@@ -56,12 +53,13 @@ class ChatNamespace(BaseNamespace):
 
 def node(config, peers):
     latest_block_index = Value('i', 0)
+    my_peer = config.get('peer')
     p = Process(target=new_block_checker, args=(latest_block_index,))
     status = Array('c', 'asldkjf')
     p.start()
     from pymongo import MongoClient
     mongo_client = MongoClient('localhost')
-    db = mongo_client.yadacoin
+    db = mongo_client[config.get('database')]
     collection = db.blocks
     BU.collection = collection
     Block.collection = collection
@@ -74,7 +72,7 @@ def node(config, peers):
 
     # proof of work time!
     coinbase = config.get('coinbase')
-    difficulty = '000'
+    difficulty = '0000'
 
 
     print '\r\n\r\n\r\n//// YADA COIN MINER ////'
@@ -82,39 +80,46 @@ def node(config, peers):
     block = BU.get_latest_block()
     if not block:
         genesis_block = Block.from_dict({
-            "nonce" : 8153,
-            "index" : 0,
-            "hash" : "000dcccd6beb576cadebf0bab1f53c0b75f0d85d6b4ebfae24d7640a703c1856",
-            "transactions" : [ 
+            "nonce": 8153, 
+            "index": 0, 
+            "hash": "96bc737dbfdb5a27a119fc0fd7e233e83b680af3e82da96c73b49d988368322f", 
+            "transactions": [
                 {
-                    "public_key" : "037349fe3a9fc5d13dae523baaa83a05856018d2b0df769a8047c4692c53eb5cc1",
-                    "inputs" : [],
-                    "fee" : "0.1",
-                    "hash" : "300d98126fbbba7354a6c1d0060398c292b5ec314c636f74c8edc5291e7674a8",
-                    "relationship" : "",
-                    "outputs" : [ 
+                    "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+                    "fee": 0.0, 
+                    "hash": "71429326f00ba74c6665988bf2c0b5ed9de1d57513666633efd88f0696b3d90f", 
+                    "dh_public_key": "", 
+                    "relationship": "", 
+                    "inputs": [], 
+                    "outputs": [
                         {
-                            "to" : "14opV2ZB6uuzzYPQZhWFewo9oF7RM6pJeQ",
-                            "value" : 50.0000000000000000
+                            "to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 
+                            "value": 50.0
                         }
-                    ],
-                    "rid" : "",
-                    "id" : "HwigxNWHeG0n6bVQXog3t62VlLJ/ilhkP1m19y/z18d3QqVrDxeVo1bZQd3jG1C2+GZ7LGbFsz2ekRJyv6KPF2A="
+                    ], 
+                    "rid": "", 
+                    "id": "MEUCIQDs4oeAH42DhwJ1SIN6v8ywkmF+l8Tdeuhr4BzbRvFpfQIgCRjufiYRdG4WntCUaLdbZiC4ynyf3C4RCRCDJGkRyrQ="
                 }
-            ],
-            "public_key" : "037349fe3a9fc5d13dae523baaa83a05856018d2b0df769a8047c4692c53eb5cc1",
-            "prevHash" : "",
-            "id" : "INFWIvJ18Ez1TH6841bUv8T+BBNUhYXIb/3X6LyhmLE2dTXqbSG/7cTeR1MCNMCMRFSOBwnZhHQymUKhsqcOSQ0=",
-            "merkleRoot" : "0d069b93dcbb5cb8a2ad61db32bbcef16719c4380a65d79c1aa27982a12f21d4"
+            ], 
+            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+            "prevHash": "", 
+            "id": "MEQCID5baV/LExDA3uG5EhfGgNyDJaUSyi1+h7Q2GTiOw8ofAiAJ7EV5aih1OjnZz2XFjFI9fzRPRVGoZWoBKMW/9jRRkA==", 
+            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
         })
         genesis_block.save()
+        db.consensus.insert({
+            'block': genesis_block.to_dict(),
+            'peer': 'me',
+            'id': genesis_block.signature,
+            'index': 0
+            })
         block = BU.get_latest_block()
 
     latest_block_index.value = block.get('index')
     start = time.time()
 
     dup_test = db.consensus.find({'peer': 'me', 'index': BU.get_latest_block().get('index') + 1})
-    print dup_test.count()
+
     pending_txns = db.miner_transactions.find()
     if not dup_test.count():
         transactions = db.miner_transactions.find()
@@ -185,25 +190,27 @@ def node(config, peers):
                 print '\r\nSent block to:'
                 for peer in peers:
                     try:
+                        block_dict = block.to_dict()
+                        block_dict['peer'] = my_peer
                         requests.post(
-                            'http://{peer}:8000/newblock'.format(
-                                peer=peer['ip']
+                            'http://{peer}/newblock'.format(
+                                peer=peer['host'] + ":" + peer['port']
                             ),
-                            json=block.to_dict(),
+                            json=block_dict,
                             timeout=1,
                             headers={'Connection':'close'}
                         )
-                        print peer['ip']
+                        print peer['host'] + ":" + peer['port']
                     except Exception as e:
                         print e
         else:
             print 'greatest block height changed during mining'
-        """
-        if time.time() - start < 10:
+
+        if time.time() - start < 60:
             difficulty = difficulty + '0'
-        elif time.time() - start > 20:
+        elif time.time() - start > 90:
             difficulty = difficulty[:-1]
         else:
             difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
-        """
+
     p.terminate()

@@ -23,7 +23,7 @@ class TransactionFactory(object):
         self,
         bulletin_secret='',
         value=1,
-        fee=0.1,
+        fee=0.0,
         requester_rid='',
         requested_rid='',
         public_key='',
@@ -42,7 +42,7 @@ class TransactionFactory(object):
         self.dh_public_key = dh_public_key
         self.private_key = private_key
         self.value = value
-        self.fee = fee
+        self.fee = float(fee)
         self.dh_private_key = dh_private_key
         self.to = to
         self.outputs = outputs
@@ -64,7 +64,7 @@ class TransactionFactory(object):
             self.dh_public_key +
             self.rid +
             self.encrypted_relationship +
-            str(self.fee) +
+            "{0:.8f}".format(self.fee) +
             self.requester_rid +
             self.requested_rid +
             inputs_concat +
@@ -84,7 +84,7 @@ class TransactionFactory(object):
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
-        return ''.join([x['to'] + "%10.8f" % float(x['value']) for x in outputs_sorted])
+        return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
 
     def generate_rid(self):
         my_bulletin_secret = TU.get_bulletin_secret()
@@ -106,7 +106,7 @@ class TransactionFactory(object):
             self.encrypted_relationship,
             self.public_key,
             self.dh_public_key,
-            str(self.fee),
+            float(self.fee),
             self.requester_rid,
             self.requested_rid,
             self.hash,
@@ -135,7 +135,7 @@ class Transaction(object):
         relationship='',
         public_key='',
         dh_public_key='',
-        fee='0.1',
+        fee=0.0,
         requester_rid='',
         requested_rid='',
         txn_hash='',
@@ -148,7 +148,7 @@ class Transaction(object):
         self.relationship = relationship
         self.public_key = public_key
         self.dh_public_key = dh_public_key if dh_public_key else ''
-        self.fee = str(fee)
+        self.fee = float(fee)
         self.requester_rid = requester_rid if requester_rid else ''
         self.requested_rid = requested_rid if requested_rid else ''
         self.hash = txn_hash
@@ -164,7 +164,7 @@ class Transaction(object):
             relationship=txn.get('relationship', ''),
             public_key=txn.get('public_key'),
             dh_public_key=txn.get('dh_public_key'),
-            fee=txn.get('fee'),
+            fee=float(txn.get('fee')),
             requester_rid=txn.get('requester_rid', ''),
             requested_rid=txn.get('requested_rid', ''),
             txn_hash=txn.get('hash', ''),
@@ -176,6 +176,7 @@ class Transaction(object):
     def verify(self):
         verify_hash = self.generate_hash()
         address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
+
         if verify_hash != self.hash:
             raise InvalidTransactionException("transaction is invalid")
 
@@ -212,16 +213,17 @@ class Transaction(object):
     def generate_hash(self):
         inputs_concat = self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
-        return hashlib.sha256(
+        hashout = hashlib.sha256(
             self.dh_public_key +
             self.rid +
             self.relationship +
-            str(self.fee) +
+            "{0:.8f}".format(self.fee) +
             self.requester_rid +
             self.requested_rid +
             inputs_concat +
             outputs_concat
         ).digest().encode('hex')
+        return hashout
 
     def get_input_hashes(self):
         input_hashes = []
@@ -235,7 +237,7 @@ class Transaction(object):
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
-        return ''.join([x['to'] + "%10.8f" % float(x['value']) for x in outputs_sorted])
+        return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
 
     def to_dict(self):
         ret = {
@@ -244,7 +246,7 @@ class Transaction(object):
             'relationship': self.relationship,
             'public_key': self.public_key,
             'dh_public_key': self.dh_public_key,
-            'fee': self.fee,
+            'fee': float(self.fee),
             'hash': self.hash,
             'inputs': [x.to_dict() for x in self.inputs],
             'outputs': [x.to_dict() for x in self.outputs]

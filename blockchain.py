@@ -1,3 +1,4 @@
+import re
 from block import Block
 
 class BlockChainException(BaseException):
@@ -43,3 +44,18 @@ class Blockchain(object):
                 if block.prev_hash != last_block.hash:
                     return last_block.index
             last_block = block
+
+    def get_difficulty(self):
+        difficulty = 0
+        for block in self.blocks:
+            zeros = re.search(r'^[0]+', block.hash)
+            if zeros:
+                difficulty += len(zeros.group(0))
+        return difficulty
+
+    def get_highest_block_height(self):
+        height = 0
+        for block in self.blocks:
+            if block.index > height:
+                height = block.index
+        return height
