@@ -331,6 +331,11 @@ if __name__ == '__main__':
                             else:
                                 res = requests.get(peer + '/get-block?hash=' + block.prev_hash)
                                 block = Block.from_dict(json.loads(res.content))
+                                db.consensus.insert({
+                                    'block': block.to_dict(),
+                                    'index': block.to_dict().get('index'),
+                                    'id': block.to_dict().get('id'),
+                                    'peer': peer})
                             blocks[block.index] = block
                         except:
                             # if they don't have it, throw out the chain
