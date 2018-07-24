@@ -278,7 +278,7 @@ if __name__ == '__main__':
         app = Flask(__name__)
 
         @sio.on('newblock', namespace='/chat')
-        def newblock(request):
+        def newblock(sid, request):
             data = request.json
             #print("new block ", data)
             try:
@@ -423,7 +423,7 @@ if __name__ == '__main__':
 
         @app.route('/newblock', methods=['POST'])
         def app_newblock():
-            newblock(request.json)
+            newblock('', request.json)
             return 'ok'
 
         @app.route('/getblockheight')
