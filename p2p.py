@@ -119,8 +119,9 @@ def consensus(peers, config):
                 val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
                 if val > heighest:
                     winning_block = record['block']
+                    peer = record['peer']
         else:
-            print 'no records found for index:', next_index
+            print "no records cound at index:", next_index
             break
 
         if winning_block:
@@ -132,8 +133,8 @@ def consensus(peers, config):
                 latest_block = BU.get_latest_block()
                 next_index = int(latest_block.get('index')) + 1
             else:
-                print 'error: winning block does not follow established chain'
-                break
+                winning_block = Block.from_dict(winning_block)
+                print retrace(winning_block, db, peer)
         else:
             print 'no winning block for index:', next_index
             break
@@ -234,6 +235,64 @@ def faucet(peers, config):
             except Exception as e:
                 print e
 
+def retrace(block, db, peer):
+    blocks = {}
+    blocks[block.index] = block
+    db.consensus.insert({
+        'block': block.to_dict(),
+        'index': block.to_dict().get('index'),
+        'id': block.to_dict().get('id'),
+        'peer': peer})
+    while 1:
+        try:
+            # 2. if we don't, query the peer for the prevHash
+            res = db.consensus.find({'block.hash': block.prev_hash})
+            if res.count():
+                block = Block.from_dict(res[0]['block'])
+            else:
+                res = requests.get(peer + '/get-block?hash=' + block.prev_hash)
+                block = Block.from_dict(json.loads(res.content))
+                db.consensus.insert({
+                    'block': block.to_dict(),
+                    'index': block.to_dict().get('index'),
+                    'id': block.to_dict().get('id'),
+                    'peer': peer})
+            blocks[block.index] = block
+        except:
+            # if they don't have it, throw out the chain
+            return "peer has broken chain or response was invalid"
+
+        # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
+        prev_blocks_check = db.blocks.find({'hash': block.prev_hash})
+        
+        if prev_blocks_check.count():
+            # if we have it in our blockchain, then we've hit the fork point
+            # now we have to loop through the current block array and build a blockchain
+            # then we compare the block height and difficulty of the two chains
+            # replace our current chain if necessary by removing them from the database
+            # then looping though our new chain, inserting the new blocks
+            existing_blockchain = Blockchain([x for x in db.blocks.find({})])
+            blockchain = Blockchain([x for i, x in blocks.iteritems()])
+            # If the block height is equal, we throw out the inbound chain, it muse be greater
+            # If the block height is lower, we throw it out
+            # if the block height is heigher, we compare the difficulty of the entire chain
+            if blockchain.get_difficulty() > existing_blockchain.get_difficulty() and \
+                blockchain.get_highest_block_height() > existing_blockchain.get_highest_block_height():
+                    for idx, block in blocks.items():
+                        db.blocks.remove({'index': block.index})
+                        db.blocks.insert(block.to_dict())
+                    return "fully synced"
+            
+        # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
+        # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
+        #there is no else, we just loop again
+        # if we get to index 1 and prev hash doesn't match the genesis, throw out the chain and black list the peer
+        # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
+        # blockchain against the proposed chain. 
+        if block.index == 0:
+            return "zero index reached"
+    return "doesn't follow any known chain" # throwing out the block for now
+
 if __name__ == '__main__':
     import argparse
     parser = argparse.ArgumentParser()
@@ -250,10 +309,13 @@ if __name__ == '__main__':
 
     if args.mode == 'consensus':
         while 1:
+            consensus(peers, config)
+            """
             p = Process(target=consensus, args=(peers, config))
             p.start()
             p.join()
-            time.sleep(1)
+            """
+            time.sleep(10)
     elif args.mode == 'mine':
         while 1:
             node(config, peers)
@@ -299,7 +361,6 @@ if __name__ == '__main__':
                 # before inserting, we need to check it's chain
                 # search consensus for prevHash of incoming block.
                 prev_blocks_check = db.blocks.find({'hash': incoming_block.prev_hash})
-                blocks = {}
                 if prev_blocks_check.count():
                     # 1. if we have it, then insert it.
                     db.consensus.insert({
@@ -315,61 +376,8 @@ if __name__ == '__main__':
                     # the consensus has the previous block to the incoming block but it's not in the block chain
                     # we need to do the chain compare routine here and decide if we're going with the blockchain
                     # belongs to the incoming block, or stay with our existing one
-                    block = incoming_block
-                    blocks[block.index] = block
-                    db.consensus.insert({
-                        'block': block.to_dict(),
-                        'index': block.to_dict().get('index'),
-                        'id': block.to_dict().get('id'),
-                        'peer': peer})
-                    while 1:
-                        try:
-                            # 2. if we don't, query the peer for the prevHash
-                            res = db.consensus.find({'block.hash': block.prev_hash})
-                            if res.count():
-                                block = Block.from_dict(res[0]['block'])
-                            else:
-                                res = requests.get(peer + '/get-block?hash=' + block.prev_hash)
-                                block = Block.from_dict(json.loads(res.content))
-                                db.consensus.insert({
-                                    'block': block.to_dict(),
-                                    'index': block.to_dict().get('index'),
-                                    'id': block.to_dict().get('id'),
-                                    'peer': peer})
-                            blocks[block.index] = block
-                        except:
-                            # if they don't have it, throw out the chain
-                            return "peer has broken chain or response was invalid"
-
-                        # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
-                        prev_blocks_check = db.blocks.find({'hash': block.prev_hash})
-                        
-                        if prev_blocks_check.count():
-                            # if we have it in our blockchain, then we've hit the fork point
-                            # now we have to loop through the current block array and build a blockchain
-                            # then we compare the block height and difficulty of the two chains
-                            # replace our current chain if necessary by removing them from the database
-                            # then looping though our new chain, inserting the new blocks
-                            existing_blockchain = Blockchain([x for x in db.blocks.find({})])
-                            blockchain = Blockchain([x for i, x in blocks.iteritems()])
-                            # If the block height is equal, we throw out the inbound chain, it muse be greater
-                            # If the block height is lower, we throw it out
-                            # if the block height is heigher, we compare the difficulty of the entire chain
-                            if blockchain.get_difficulty() > existing_blockchain.get_difficulty() and \
-                                blockchain.get_highest_block_height() > existing_blockchain.get_highest_block_height():
-                                    for idx, block in blocks.items():
-                                        db.blocks.remove({'index': block.index})
-                                        db.blocks.insert(block.to_dict())
-                            break
-                        # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
-                        # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
-                        #there is no else, we just loop again
-                        # if we get to index 1 and prev hash doesn't match the genesis, throw out the chain and black list the peer
-                        # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
-                        # blockchain against the proposed chain. 
-                        if block.index == 0:
-                            break
-                    return "doesn't follow any known chain" # throwing out the block for now
+                    
+                    retrace(incoming_block, blocks, db, peer)
             except Exception as e:
                 print e
             except BaseException as e:
