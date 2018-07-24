@@ -197,7 +197,7 @@ def node(config, peers):
                                 peer=peer['host'] + ":" + peer['port']
                             ),
                             json=block_dict,
-                            timeout=1,
+                            timeout=3,
                             headers={'Connection':'close'}
                         )
                         print peer['host'] + ":" + peer['port']
