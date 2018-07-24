@@ -634,14 +634,9 @@ class BU(object):  # Blockchain Utilities
             for bs in mutual_bulletin_secrets:
                 try:
                     crypt = Crypt(hashlib.sha256(bs).hexdigest())
-<<<<<<< Updated upstream
                     decrypted = crypt.decrypt(x['txn']['relationship'])
                     try:
                         decrypted = base64.b64decode(decrypted)
-=======
-                    try:
-                        decrypted = crypt.decrypt(x['txn']['relationship'])
->>>>>>> Stashed changes
                     except:
                         continue
                     data = json.loads(decrypted)

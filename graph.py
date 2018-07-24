@@ -173,17 +173,12 @@ class Graph(object):
             if res.count():
                 messages[i]['username'] = res[0]['username']
             else:
-<<<<<<< Updated upstream
                 messages[i]['username'] = humanhash.humanize(message.get('rid'))
-=======
-                messages[i]['username'] = humanhash.humanize(message.get('requested_rid'))
->>>>>>> Stashed changes
             exclude = self.mongo_client.yadacoinsite.exclude_messages.find({'id': message.get('id')})
             if exclude.count() > 0:
                 continue
             out_messages.append(message)
         self.messages = out_messages
-<<<<<<< Updated upstream
 
     def get_new_messages(self):
         self.get_messages()
@@ -194,8 +189,6 @@ class Graph(object):
                 self.new_messages.append(message)
                 used_rids.append(message['rid'])
         self.messages = []
-=======
->>>>>>> Stashed changes
 
     def get_posts(self):
         my_bulletin_secret = TU.get_bulletin_secret()
