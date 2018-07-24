@@ -278,7 +278,7 @@ if __name__ == '__main__':
         app = Flask(__name__)
 
         @sio.on('newblock', namespace='/chat')
-        def newblock(self, sid, request):
+        def newblock(sid, request):
             data = request.json
             #print("new block ", data)
             try:
@@ -372,7 +372,7 @@ if __name__ == '__main__':
                 print e
 
         @sio.on('newtransaction', namespace='/chat')
-        def newtransaction(self, sid, data):
+        def newtransaction(sid, data):
             #print("new transaction ", data)
             try:
                 incoming_txn = Transaction.from_dict(data)
