@@ -278,7 +278,7 @@ if __name__ == '__main__':
         app = Flask(__name__)
 
         @sio.on('newblock', namespace='/chat')
-        def newblock(sid, request):
+        def newblock(request):
             data = request.json
             #print("new block ", data)
             try:
