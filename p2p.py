@@ -377,7 +377,7 @@ if __name__ == '__main__':
                     # we need to do the chain compare routine here and decide if we're going with the blockchain
                     # belongs to the incoming block, or stay with our existing one
                     
-                    retrace(incoming_block, blocks, db, peer)
+                    retrace(incoming_block, db, peer)
             except Exception as e:
                 print e
             except BaseException as e:
