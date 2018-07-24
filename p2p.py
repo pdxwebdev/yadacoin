@@ -429,21 +429,10 @@ if __name__ == '__main__':
         def app_getblockheight():
             return json.dumps({'block_height': BU.get_latest_block().get('index')})
 
-        @app.route('/getblock')
+        @app.route('/get-block', methods=['GET'])
         def app_getblock():
-            from pymongo import MongoClient
-            mongo_client = MongoClient('localhost')
-            db = mongo_client.yadacoin
-            idx = int(request.args.get('index'))
-            block_hash = request.args.get('hash')
-            q = {'index': idx}
-            if block_hash:
-                q['hash'] = block_hash
-            res = db.blocks.find(q, {'_id': 0})
-            if res.count():
-                return json.dumps(res[0])
-            else:
-                return '{}'
+            res = db.consensus.find({'block.hash': request.args.get('hash')}, {'_id': 0})
+            return json.dumps(res[0]['block'])
 
         app = socketio.Middleware(sio, app)
         # deploy as an eventlet WSGI server
