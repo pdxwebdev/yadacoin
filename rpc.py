@@ -377,16 +377,18 @@ def react():
         'emoji': request.json.get('react'),
         'txn_id': request.json.get('txn_id')
     })
+
     txn = mongo_client.yadacoin.posts_cache.find({'id': request.json.get('txn_id')})[0]
 
     rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": rid})
+
+    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requested_rid']})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
-            message_title='%s reacted to your post!' % username,
-            message_body='Go see how they reacted!',
+            message_title='New message!',
+            message_body='You have a new message from a friend!',
             extra_kwargs={'priority': 'high'}
         )
     return 'ok'
