@@ -206,38 +206,39 @@ def consensus(peers, config):
         next_index = 0
 
     winning_block = {}
-    while 1:
-        latests = db.consensus.find({}).sort('index', pymongo.DESCENDING)
-        if latests.count():
-            print latests[0]['index']
-            records = db.consensus.find({'index': latests[0]['index']})
-            if records.count():
-                heighest = 0
-                for record in records:
-                    val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
-                    if val > heighest:
-                        winning_block = record['block']
-                        peer = record['peer']
-        else:
-            print "no records cound at index:", next_index
-            break
+    latests = db.consensus.find({}).sort('index', pymongo.DESCENDING)
+    latest_blocks = db.blocks.find({}).sort('index', pymongo.DESCENDING)
+    if latests.count():
+        if latest_blocks[0]['index'] == latests[0]['index']:
+            return
+        records = db.consensus.find({'index': latests[0]['index']})
+        if records.count():
+            heighest = 0
+            for record in records:
+                val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
+                if val > heighest:
+                    winning_block = record['block']
+                    peer = record['peer']
+    else:
+        print "no records cound at index:", next_index
+        return
 
-        if winning_block:
-            print latest_block.get('hash'), latest_block.get('index')
-            print winning_block.get('prevHash'), winning_block.get('index')
-            if latest_block.get('hash') == winning_block.get('prevHash'):
-                # everything jives with our current history, everyone is happy
-                db.blocks.insert(winning_block)
-                print 'winning block inserted at: ', winning_block.get('index')
-                latest_block = BU.get_latest_block()
-                next_index = int(latest_block.get('index')) + 1
-            else:
-                winning_block = Block.from_dict(winning_block)
-                print retrace(winning_block, db, peer)
-                return
+    if winning_block:
+        print latest_block.get('hash'), latest_block.get('index')
+        print winning_block.get('prevHash'), winning_block.get('index')
+        print winning_block.get('hash'), winning_block.get('index')
+        if latest_block.get('hash') == winning_block.get('prevHash'):
+            # everything jives with our current history, everyone is happy
+            db.blocks.insert(winning_block)
+            print 'winning block inserted at: ', winning_block.get('index')
+            latest_block = BU.get_latest_block()
         else:
-            print 'no winning block for index:', next_index
-            break
+            winning_block = Block.from_dict(winning_block)
+            print retrace(winning_block, db, peer)
+            return
+    else:
+        print 'no winning block for index:', next_index
+        return
 
 def retrace(block, db, peer):
     print "retracing..."
