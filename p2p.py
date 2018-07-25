@@ -46,104 +46,6 @@ def new_block_checker(current_index):
             pass
         time.sleep(1)
 
-def consensus(peers, config):
-    from pymongo import MongoClient
-    mongo_client = MongoClient('localhost')
-    db = mongo_client[config.get('database')]
-    collection = db.blocks
-    consensus = db.consensus
-    BU.collection = collection
-    Block.collection = collection
-    BU.consensus = consensus
-    Block.consensus = consensus
-    synced = False
-    block_heights = {}
-    latest_block = BU.get_latest_block()
-    if not latest_block:
-        genesis_block = Block.from_dict({
-            "nonce": 8153, 
-            "index": 0, 
-            "hash": "96bc737dbfdb5a27a119fc0fd7e233e83b680af3e82da96c73b49d988368322f", 
-            "transactions": [
-                {
-                    "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
-                    "fee": 0.0, 
-                    "hash": "71429326f00ba74c6665988bf2c0b5ed9de1d57513666633efd88f0696b3d90f", 
-                    "dh_public_key": "", 
-                    "relationship": "", 
-                    "inputs": [], 
-                    "outputs": [
-                        {
-                            "to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 
-                            "value": 50.0
-                        }
-                    ], 
-                    "rid": "", 
-                    "id": "MEUCIQDs4oeAH42DhwJ1SIN6v8ywkmF+l8Tdeuhr4BzbRvFpfQIgCRjufiYRdG4WntCUaLdbZiC4ynyf3C4RCRCDJGkRyrQ="
-                }
-            ], 
-            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
-            "prevHash": "", 
-            "id": "MEQCID5baV/LExDA3uG5EhfGgNyDJaUSyi1+h7Q2GTiOw8ofAiAJ7EV5aih1OjnZz2XFjFI9fzRPRVGoZWoBKMW/9jRRkA==", 
-            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
-        })
-        genesis_block.save()
-        db.consensus.insert({
-            'block': genesis_block.to_dict(),
-            'peer': 'me',
-            'id': genesis_block.signature,
-            'index': 0
-            })
-        latest_block = genesis_block.to_dict()
-        db.consensus.insert({
-            'block': genesis_block.to_dict(),
-            'index': genesis_block.to_dict().get('index'),
-            'id': genesis_block.to_dict().get('id')})
-
-    data = db.miner_transactions.find({}, {'_id': False})
-    for txn in data:
-        res = db.blocks.find({"transactions.id": txn['id']})
-        if res.count():
-            db.miner_transactions.remove({'id': txn['id']})
-
-    if latest_block:
-        next_index = int(latest_block.get('index')) + 1
-    else:
-        next_index = 0
-
-    winning_block = {}
-    while 1:
-        latests = db.consensus.find({}).sort('index', pymongo.DESCENDING)
-        if latests.count():
-            print latests[0]['index']
-            records = db.consensus.find({'index': latests[0]['index']})
-            if records.count():
-                heighest = 0
-                for record in records:
-                    val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
-                    if val > heighest:
-                        winning_block = record['block']
-                        peer = record['peer']
-        else:
-            print "no records cound at index:", next_index
-            break
-
-        if winning_block:
-            if latest_block.get('hash') == winning_block.get('prevHash'):
-                # everything jives with our current history, everyone is happy
-                db.blocks.insert(winning_block)
-                print 'winning block inserted at: ', winning_block.get('index')
-                latest_block = BU.get_latest_block()
-                next_index = int(latest_block.get('index')) + 1
-            else:
-                winning_block = Block.from_dict(winning_block)
-                print retrace(winning_block, db, peer)
-        else:
-            print 'no winning block for index:', next_index
-            break
-
-
-
 def faucet(peers, config):
     from pymongo import MongoClient
     public_key = config.get('public_key')
@@ -238,6 +140,105 @@ def faucet(peers, config):
             except Exception as e:
                 print e
 
+def consensus(peers, config):
+    from pymongo import MongoClient
+    mongo_client = MongoClient('localhost')
+    db = mongo_client[config.get('database')]
+    collection = db.blocks
+    consensus = db.consensus
+    BU.collection = collection
+    Block.collection = collection
+    BU.consensus = consensus
+    Block.consensus = consensus
+    synced = False
+    block_heights = {}
+    latest_block = BU.get_latest_block()
+    if not latest_block:
+        genesis_block = Block.from_dict({
+            "nonce": 8153, 
+            "index": 0, 
+            "hash": "96bc737dbfdb5a27a119fc0fd7e233e83b680af3e82da96c73b49d988368322f", 
+            "transactions": [
+                {
+                    "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+                    "fee": 0.0, 
+                    "hash": "71429326f00ba74c6665988bf2c0b5ed9de1d57513666633efd88f0696b3d90f", 
+                    "dh_public_key": "", 
+                    "relationship": "", 
+                    "inputs": [], 
+                    "outputs": [
+                        {
+                            "to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 
+                            "value": 50.0
+                        }
+                    ], 
+                    "rid": "", 
+                    "id": "MEUCIQDs4oeAH42DhwJ1SIN6v8ywkmF+l8Tdeuhr4BzbRvFpfQIgCRjufiYRdG4WntCUaLdbZiC4ynyf3C4RCRCDJGkRyrQ="
+                }
+            ], 
+            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+            "prevHash": "", 
+            "id": "MEQCID5baV/LExDA3uG5EhfGgNyDJaUSyi1+h7Q2GTiOw8ofAiAJ7EV5aih1OjnZz2XFjFI9fzRPRVGoZWoBKMW/9jRRkA==", 
+            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
+        })
+        genesis_block.save()
+        db.consensus.insert({
+            'block': genesis_block.to_dict(),
+            'peer': 'me',
+            'id': genesis_block.signature,
+            'index': 0
+            })
+        latest_block = genesis_block.to_dict()
+        db.consensus.insert({
+            'block': genesis_block.to_dict(),
+            'index': genesis_block.to_dict().get('index'),
+            'id': genesis_block.to_dict().get('id')})
+
+    data = db.miner_transactions.find({}, {'_id': False})
+    for txn in data:
+        res = db.blocks.find({"transactions.id": txn['id']})
+        if res.count():
+            db.miner_transactions.remove({'id': txn['id']})
+
+    if latest_block:
+        next_index = int(latest_block.get('index')) + 1
+    else:
+        next_index = 0
+
+    winning_block = {}
+    while 1:
+        latests = db.consensus.find({}).sort('index', pymongo.DESCENDING)
+        if latests.count():
+            print latests[0]['index']
+            records = db.consensus.find({'index': latests[0]['index']})
+            if records.count():
+                heighest = 0
+                for record in records:
+                    val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
+                    if val > heighest:
+                        winning_block = record['block']
+                        peer = record['peer']
+        else:
+            print "no records cound at index:", next_index
+            break
+
+        if winning_block:
+            print latest_block.get('hash'), latest_block.get('index')
+            print winning_block.get('prevHash'), winning_block.get('index')
+            if latest_block.get('hash') == winning_block.get('prevHash'):
+                # everything jives with our current history, everyone is happy
+                db.blocks.insert(winning_block)
+                print 'winning block inserted at: ', winning_block.get('index')
+                latest_block = BU.get_latest_block()
+                next_index = int(latest_block.get('index')) + 1
+            else:
+                winning_block = Block.from_dict(winning_block)
+                print retrace(winning_block, db, peer)
+                return
+        else:
+            print 'no winning block for index:', next_index
+            break
+
 def retrace(block, db, peer):
     print "retracing..."
     blocks = {}
@@ -270,6 +271,10 @@ def retrace(block, db, peer):
         prev_blocks_check = db.blocks.find({'hash': block.prev_hash})
         
         if prev_blocks_check.count():
+            print prev_blocks_check[0]['hash'], prev_blocks_check[0]['index']
+            missing_blocks = db.blocks.find({'index': {'$lte': prev_blocks_check[0]['index']}})
+            for missing_block in missing_blocks:
+                blocks[missing_block['index']] = Block.from_dict(missing_block)
             # if we have it in our blockchain, then we've hit the fork point
             # now we have to loop through the current block array and build a blockchain
             # then we compare the block height and difficulty of the two chains
@@ -285,9 +290,9 @@ def retrace(block, db, peer):
                     for idx, block in blocks.items():
                         db.blocks.remove({'index': block.index})
                         db.blocks.insert(block.to_dict())
-                    return "fully synced"
+                    return "Replaced chain with incoming"
             else:
-                return "This chain lost", blockchain.get_difficulty(), existing_blockchain.get_difficulty()
+                return "Incoming chain lost", blockchain.get_difficulty(), existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), existing_blockchain.get_highest_block_height()
         # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
         # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
         #there is no else, we just loop again
@@ -315,12 +320,12 @@ if __name__ == '__main__':
     if args.mode == 'consensus':
         while 1:
             consensus(peers, config)
-            time.sleep(1)
             """
             p = Process(target=consensus, args=(peers, config))
             p.start()
             p.join()
             """
+            time.sleep(1)
     elif args.mode == 'mine':
         while 1:
             node(config, peers)
