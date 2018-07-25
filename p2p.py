@@ -9,6 +9,7 @@ import requests
 import base64
 import humanhash
 import re
+import pymongo
 from multiprocessing import Process, Value, Array, Pool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
@@ -112,14 +113,17 @@ def consensus(peers, config):
 
     winning_block = {}
     while 1:
-        records = db.consensus.find({'index': next_index})
-        if records.count():
-            heighest = 0
-            for record in records:
-                val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
-                if val > heighest:
-                    winning_block = record['block']
-                    peer = record['peer']
+        latests = db.consensus.find({}).sort('index', pymongo.DESCENDING)
+        if latests.count():
+            print latests[0]['index']
+            records = db.consensus.find({'index': latests[0]['index']})
+            if records.count():
+                heighest = 0
+                for record in records:
+                    val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
+                    if val > heighest:
+                        winning_block = record['block']
+                        peer = record['peer']
         else:
             print "no records cound at index:", next_index
             break
@@ -127,8 +131,7 @@ def consensus(peers, config):
         if winning_block:
             if latest_block.get('hash') == winning_block.get('prevHash'):
                 # everything jives with our current history, everyone is happy
-                winning_block_obj = Block.from_dict(winning_block)
-                winning_block_obj.save()
+                db.blocks.insert(winning_block)
                 print 'winning block inserted at: ', winning_block.get('index')
                 latest_block = BU.get_latest_block()
                 next_index = int(latest_block.get('index')) + 1
@@ -236,6 +239,7 @@ def faucet(peers, config):
                 print e
 
 def retrace(block, db, peer):
+    print "retracing..."
     blocks = {}
     blocks[block.index] = block
     db.consensus.insert({
@@ -282,7 +286,8 @@ def retrace(block, db, peer):
                         db.blocks.remove({'index': block.index})
                         db.blocks.insert(block.to_dict())
                     return "fully synced"
-            
+            else:
+                return "This chain lost", blockchain.get_difficulty(), existing_blockchain.get_difficulty()
         # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
         # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
         #there is no else, we just loop again
@@ -310,12 +315,12 @@ if __name__ == '__main__':
     if args.mode == 'consensus':
         while 1:
             consensus(peers, config)
+            time.sleep(1)
             """
             p = Process(target=consensus, args=(peers, config))
             p.start()
             p.join()
             """
-            time.sleep(10)
     elif args.mode == 'mine':
         while 1:
             node(config, peers)
@@ -358,17 +363,22 @@ if __name__ == '__main__':
                 dup_check = db.consensus.find({'id': incoming_block.signature, 'peer': peer})
                 if dup_check.count():
                     return "dup"
+                db.consensus.insert({
+                    'block': incoming_block.to_dict(),
+                    'index': incoming_block.to_dict().get('index'),
+                    'id': incoming_block.to_dict().get('id'),
+                    'peer': peer})
                 # before inserting, we need to check it's chain
                 # search consensus for prevHash of incoming block.
-                prev_blocks_check = db.blocks.find({'hash': incoming_block.prev_hash})
-                if prev_blocks_check.count():
+                #prev_blocks_check = db.blocks.find({'hash': incoming_block.prev_hash})
+                #if prev_blocks_check.count():
                     # 1. if we have it, then insert it.
-                    db.consensus.insert({
-                        'block': incoming_block.to_dict(),
-                        'index': incoming_block.to_dict().get('index'),
-                        'id': incoming_block.to_dict().get('id'),
-                        'peer': peer})
-                else:
+                #    db.consensus.insert({
+                #        'block': incoming_block.to_dict(),
+                #        'index': incoming_block.to_dict().get('index'),
+                #        'id': incoming_block.to_dict().get('id'),
+                #        'peer': peer})
+                #else:
                     # 2 scenarios
                     # 1. the 3 is late to the game
                     # 2. 1 and 2 do not find prev_hash from 3 and 
@@ -377,7 +387,8 @@ if __name__ == '__main__':
                     # we need to do the chain compare routine here and decide if we're going with the blockchain
                     # belongs to the incoming block, or stay with our existing one
                     
-                    retrace(incoming_block, db, peer)
+                    #retrace(incoming_block, db, peer)
+                   # return
             except Exception as e:
                 print e
             except BaseException as e:

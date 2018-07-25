@@ -15,7 +15,7 @@ def output(percent):
     if float(percent) >= 100:
         print "\n\n\nDone!"
 
-with open('config.json') as f:
+with open('tests/test_config.json') as f:
     config = json.loads(f.read())
 
 public_key = config.get('public_key')
@@ -31,7 +31,7 @@ try:
 except:
     raise BaseException("Block reward file not found")
 con = MongoClient('localhost')
-db = con.yadacoin
+db = con[config.get('database')]
 col = db.blocks
 BU.collection = col
 blocks = BU.get_blocks()
