@@ -133,7 +133,7 @@ def faucet(peers, config):
         print 'saved. sending...', x['address']
         for peer in peers:
             try:
-                socketIO = SocketIO(peer['ip'][:-5], peer['ip'][-4:], wait_for_connection=False)
+                socketIO = SocketIO(peer['host'], peer['port'], wait_for_connection=False)
                 chat_namespace = socketIO.define(ChatNamespace, '/chat')
                 chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
                 socketIO.disconnect()
