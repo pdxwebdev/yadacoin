@@ -317,7 +317,7 @@ class BU(object):  # Blockchain Utilities
         blocks = cls.collection.find({"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}})
         for block in blocks:
             for transaction in block.get('transactions'):
-                if 'relationship' in transaction:
+                if 'relationship' in transaction and transaction['relationship']:
                     if returnheight:
                         transaction['block_height'] = block['index']
                     if not raw:
@@ -667,19 +667,21 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_mutual_rids(cls, rid):
         # find the requested and requester rids where rid is present in those fields
-        rids = []
-        rids.extend([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
-        rids.extend([x['requester_rid'] for x in BU.get_friend_requests(rid)])
+        rids = set()
+        rids.update([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
+        rids.update([x['requester_rid'] for x in BU.get_friend_requests(rid)])
+        rids = list(rids)
         return rids
 
     @classmethod
     def get_mutual_bulletin_secrets(cls, rid):
         # Get the mutual relationships, then get the bulleting secrets for those relationships
-        mutual_bulletin_secrets = []
-        for transaction in BU.get_transactions_by_rid(cls.get_mutual_rids(rid), rid=True):
+        mutual_bulletin_secrets = set()
+        rids = cls.get_mutual_rids(rid)
+        for transaction in BU.get_transactions_by_rid(rids, rid=True):
             if 'bulletin_secret' in transaction['relationship']:
-                mutual_bulletin_secrets.append(transaction['relationship']['bulletin_secret'])
-        return mutual_bulletin_secrets
+                mutual_bulletin_secrets.add(transaction['relationship']['bulletin_secret'])
+        return list(mutual_bulletin_secrets)
 
     @classmethod
     def generate_signature(cls, message):

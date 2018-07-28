@@ -37,7 +37,9 @@ class Crypt(object):  # Relationship Utilities
     def decrypt(self, enc):
         enc = enc.decode("hex")
         iv = enc[:16]
-        enc = base64.b64decode(enc[16:])
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        s = cipher.decrypt(enc)
+        try:
+            s = base64.b64decode(enc[16:])
+        except:
+            s = cipher.decrypt(enc[16:])
         return s[0:-ord(s[-1])]
