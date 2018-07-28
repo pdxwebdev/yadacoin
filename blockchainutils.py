@@ -622,38 +622,41 @@ class BU(object):  # Blockchain Utilities
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
         mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
-        had_txns = False
-        for i, x in enumerate(transactions):
-            for bs in mutual_bulletin_secrets:
-                try:
-                    crypt = Crypt(hashlib.sha256(bs).hexdigest())
-                    decrypted = crypt.decrypt(x['txn']['relationship'])
+        friends = cls.get_transactions_by_rid(rids, rid=True)
+        if friends:
+            mutual_bulletin_secrets.extend(friends)
+            had_txns = False
+            for i, x in enumerate(transactions):
+                for bs in mutual_bulletin_secrets:
                     try:
-                        decrypted = base64.b64decode(decrypted)
+                        crypt = Crypt(hashlib.sha256(bs).hexdigest())
+                        decrypted = crypt.decrypt(x['txn']['relationship'])
+                        try:
+                            decrypted = base64.b64decode(decrypted)
+                        except:
+                            continue
+                        data = json.loads(decrypted)
+                        x['txn']['relationship'] = data
+                        if 'postText' in decrypted:
+                            had_txns = True
+                            print 'caching posts at height:', x['height']
+                            for rid in rids:
+                                mongo_client[cls.database].posts_cache.update({
+                                    'rid': rid,
+                                    'height': x['height'],
+                                    'id': x['txn']['id'],
+                                    'bulletin_secret': bs
+                                },
+                                {
+                                    'rid': rid,
+                                    'height': x['height'],
+                                    'id': x['txn']['id'],
+                                    'txn': x['txn'],
+                                    'bulletin_secret': bs
+                                },
+                                upsert=True)
                     except:
-                        continue
-                    data = json.loads(decrypted)
-                    x['txn']['relationship'] = data
-                    if 'postText' in decrypted:
-                        had_txns = True
-                        print 'caching posts at height:', x['height']
-                        for rid in rids:
-                            mongo_client[cls.database].posts_cache.update({
-                                'rid': rid,
-                                'height': x['height'],
-                                'id': x['txn']['id'],
-                                'bulletin_secret': bs
-                            },
-                            {
-                                'rid': rid,
-                                'height': x['height'],
-                                'id': x['txn']['id'],
-                                'txn': x['txn'],
-                                'bulletin_secret': bs
-                            },
-                            upsert=True)
-                except:
-                    pass
+                        pass
         if not had_txns:
             for rid in rids:
                 mongo_client[cls.database].posts_cache.insert({'rid': rid, 'height': latest_block['index']})
