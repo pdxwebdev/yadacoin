@@ -62,12 +62,12 @@ class Graph(object):
             already_done = []
             for node in nodes:
                 if node.get('dh_public_key'):
-                    test = {'rid': node.get('rid'), 'requester_rid': node.get('requester_id'), 'requested_rid': node.get('requested_id')}
+                    test = {'rid': node.get('rid'), 'requester_rid': node.get('requester_id'), 'requested_rid': node.get('requested_id'), 'id': node.get('id')}
                     node['username'] = 'YadaCoin Support'
-                    self.friends.append(node)
                     if test in already_done:
                         continue
                     else:
+                        self.friends.append(node)
                         already_done.append(test)
 
         registered = mongo_client.yadacoinsite.friends.find({'relationship.bulletin_secret': bulletin_secret})

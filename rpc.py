@@ -800,7 +800,7 @@ def txn_broadcast_job(transaction):
         peers = json.loads(f.read())
     for peer in peers:
         try:
-            socketIO = SocketIO(peer['ip'], 8000, wait_for_connection=False)
+            socketIO = SocketIO(peer['host'], peer['port'], wait_for_connection=False)
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
             chat_namespace.emit('newtransaction', transaction.to_dict())
             socketIO.wait(seconds=1)
@@ -921,6 +921,7 @@ db = mongo_client.yadacoin
 collection = db.blocks
 consensus = db.consensus
 miner_transactions = db.miner_transactions
+BU.database = 'yadacoin'
 BU.collection = collection
 TU.collection = collection
 BU.consensus = consensus

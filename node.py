@@ -61,6 +61,7 @@ def node(config, peers):
     mongo_client = MongoClient('localhost')
     db = mongo_client[config.get('database')]
     collection = db.blocks
+    BU.database = config.get('database')
     BU.collection = collection
     Block.collection = collection
     public_key = config.get('public_key')
