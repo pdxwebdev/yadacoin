@@ -301,7 +301,7 @@ class BU(object):  # Blockchain Utilities
         mongo_client = MongoClient('localhost')
         transactions_by_rid_cache = mongo_client[cls.database].transactions_by_rid_cache.find(
                 {
-                    'raw': True,
+                    'raw': raw,
                     'rid': rid,
                     'returnheight': returnheight,
                     'selector': {'$in': selectors}
@@ -619,18 +619,11 @@ class BU(object):  # Blockchain Utilities
                 "$sort": {"height": 1}
             }
         ])
-
+        # transactions are all posts not yet cached by this rid
+        # so we want to grab all bulletin secrets for this rid
+        mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
         had_txns = False
         for i, x in enumerate(transactions):
-            if i == 0:
-                mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
-                friends = cls.get_transactions_by_rid(rids, rid=True)
-                found = False
-                for friend in friends:
-                    found = True
-                    mutual_bulletin_secrets.append(friend['relationship']['bulletin_secret'])
-                if not found:
-                    break
             for bs in mutual_bulletin_secrets:
                 try:
                     crypt = Crypt(hashlib.sha256(bs).hexdigest())
@@ -673,6 +666,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_mutual_rids(cls, rid):
+        # find the requested and requester rids where rid is present in those fields
         rids = []
         rids.extend([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
         rids.extend([x['requester_rid'] for x in BU.get_friend_requests(rid)])
@@ -680,6 +674,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_mutual_bulletin_secrets(cls, rid):
+        # Get the mutual relationships, then get the bulleting secrets for those relationships
         mutual_bulletin_secrets = []
         for transaction in BU.get_transactions_by_rid(cls.get_mutual_rids(rid), rid=True):
             if 'bulletin_secret' in transaction['relationship']:
