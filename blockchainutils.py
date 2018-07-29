@@ -622,7 +622,7 @@ class BU(object):  # Blockchain Utilities
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
         mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
-        friends = list(set([friend['relationship']['bulletin_secret'] for friend in cls.get_transactions_by_rid(rids, rid=True)]
+        friends = list(set([friend['relationship']['bulletin_secret'] for friend in cls.get_transactions_by_rid(rids, rid=True)]))
         had_txns = False
         if friends:
             mutual_bulletin_secrets.extend(friends)
