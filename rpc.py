@@ -383,12 +383,12 @@ def react():
     rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requested_rid']})
+    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": rid})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
-            message_title='New message!',
-            message_body='You have a new message from a friend!',
+            message_title='%s reacted to your post!' % username,
+            message_body='Go see how they reacted!',
             extra_kwargs={'priority': 'high'}
         )
     return 'ok'
