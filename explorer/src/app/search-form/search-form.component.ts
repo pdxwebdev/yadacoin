@@ -24,7 +24,7 @@ export class SearchFormComponent implements OnInit {
 
   onSubmit() { 
   	this.submitted = true;
-  	this.http.get('http://localhost:5000/explorer-search?term=' + encodeURIComponent(this.model.term))
+  	this.http.get('/explorer-search?term=' + encodeURIComponent(this.model.term))
   	.subscribe((res: any) => {
   		this.result = res.json().result
   		this.resultType = res.json().resultType

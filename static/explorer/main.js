@@ -197,7 +197,7 @@ var SearchFormComponent = /** @class */ (function () {
     SearchFormComponent.prototype.onSubmit = function () {
         var _this = this;
         this.submitted = true;
-        this.http.get('http://localhost:5000/explorer-search?term=' + encodeURIComponent(this.model.term))
+        this.http.get('/explorer-search?term=' + encodeURIComponent(this.model.term))
             .subscribe(function (res) {
             _this.result = res.json().result;
             _this.resultType = res.json().resultType;
