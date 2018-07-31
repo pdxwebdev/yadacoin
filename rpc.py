@@ -8,6 +8,7 @@ import humanhash
 import requests
 import time
 import logging
+import re
 
 from logging.handlers import SMTPHandler
 from io import BytesIO
@@ -103,6 +104,87 @@ def get_logged_in_user():
                         'bulletin_secret': test['relationship']['bulletin_secret']
                     }
     return user if user else {'authenticated': False}
+
+@app.route('/explorer')
+def explorer():
+    return app.send_static_file('app/www/explorer.html')
+
+@app.route('/explorer-search')
+def explorer_search():
+    if not request.args.get('term'):
+        return '{}'
+
+    try:
+        term = int(request.args.get('term'))
+        res = mongo_client.yadacoin.blocks.find({'index': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'block_height',
+                'result': [x for x in res]
+            }, indent=4)
+    except:
+        pass
+    try:
+        term = request.args.get('term')
+        re.search(r'[A-Fa-f0-9]{64}', term).group(0)
+        res = mongo_client.yadacoin.blocks.find({'hash': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'block_hash',
+                'result': [x for x in res]
+            }, indent=4)
+    except:
+        pass
+
+    try:
+        term = request.args.get('term')
+        base64.b64decode(term)
+        res = mongo_client.yadacoin.blocks.find({'id': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'block_id',
+                'result': [x for x in res]
+            }, indent=4)
+    except:
+        pass
+
+    try:
+        term = request.args.get('term')
+        re.search(r'[A-Fa-f0-9]{64}', term).group(0)
+        res = mongo_client.yadacoin.blocks.find({'transactions.hash': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'txn_hash',
+                'result': [x for x in res]
+            }, indent=4)
+    except:
+        pass
+
+    try:
+        term = request.args.get('term')
+        base64.b64decode(term)
+        res = mongo_client.yadacoin.blocks.find({'transactions.id': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'txn_id',
+                'result': [x for x in res]
+            }, indent=4)
+    except:
+        pass
+
+    try:
+        term = request.args.get('term')
+        re.search(r'[A-Fa-f0-9]+', term).group(0)
+        res = mongo_client.yadacoin.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
+        if res.count():
+            return json.dumps({
+                'resultType': 'txn_hash',
+                'result': [x for x in res]
+            }, indent=4)
+    except:
+        pass
+
+    return '{}'
 
 @app.route('/app')
 def web_app():
