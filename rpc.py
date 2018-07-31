@@ -107,7 +107,7 @@ def get_logged_in_user():
 
 @app.route('/explorer')
 def explorer():
-    return app.send_static_file('/explorer/index.html')
+    return app.send_static_file('explorer/index.html')
 
 @app.route('/explorer-search')
 def explorer_search():
