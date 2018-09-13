@@ -12,11 +12,16 @@ config = {
     "difficulty": "000",
     "private_key": pk.to_hex(),
     "public_key": pk.public_key.format().encode('hex'),
-    "port": 8000,
-    "host": "0.0.0.0",
+    "serve_host": "localhost",
+    "serve_port": 8000,
+    "web_server_host": "0.0.0.0",
+    "web_server_port": 5000,
+    "peer": "http://localhost:8000",
     "callbackurl": "http://0.0.0.0:5000/create-relationship",
     "fcm_key": "",
     "database": "yadacoin",
-    "site_database": "yadacoinsite"
+    "site_database": "yadacoinsite",
+    "mongodb_host": "localhost",
+    "mixpanel": ""
 }
 print json.dumps(config, indent=4)

@@ -17,12 +17,17 @@ from crypt import Crypt
 from transactionutils import TU
 from blockchainutils import BU
 from coincurve import verify_signature
+from eccsnacks.curve25519 import scalarmult, scalarmult_base
+from pymongo import MongoClient
+from config import Config
+from peers import Peers
+from mongo import Mongo
 
 class TransactionFactory(object):
     def __init__(
         self,
         bulletin_secret='',
-        value=1,
+        value=0,
         fee=0.0,
         requester_rid='',
         requested_rid='',
@@ -33,7 +38,9 @@ class TransactionFactory(object):
         to='',
         inputs='',
         outputs='',
-        coinbase=False
+        coinbase=False,
+        chattext=None,
+        signin=None
     ):
         self.bulletin_secret = bulletin_secret
         self.requester_rid = requester_rid
@@ -45,18 +52,32 @@ class TransactionFactory(object):
         self.fee = float(fee)
         self.dh_private_key = dh_private_key
         self.to = to
-        self.outputs = outputs
+        self.outputs = outputs or []
         self.inputs = inputs
         self.coinbase = coinbase
+        self.chattext = chattext
+        self.signin = signin
+        self.do_money()
         inputs_concat = self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
         if bulletin_secret:
             self.rid = self.generate_rid()
-            self.relationship = self.generate_relationship()
-            if not private_key:
-                raise BaseException('missing private key')
-            self.cipher = Crypt(private_key)
-            self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
+            if self.chattext:
+                self.relationship = json.dumps({
+                    "chatText": self.chattext
+                })
+            elif self.signin:
+                shared_secret = TU.get_shared_secret_by_rid(self.rid)
+                print shared_secret.encode('hex')
+                self.relationship = SignIn(self.signin)
+                self.cipher = Crypt(shared_secret.encode('hex'), shared=True)
+                self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
+            else:
+                self.relationship = self.generate_relationship()
+                if not private_key:
+                    raise BaseException('missing private key')
+                self.cipher = Crypt(private_key)
+                self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
         else:
             self.rid = ''
             self.encrypted_relationship = ''
@@ -74,6 +95,46 @@ class TransactionFactory(object):
         self.transaction_signature = self.generate_transaction_signature()
         self.transaction = self.generate_transaction()
 
+    def do_money(self):
+        Mongo.init()
+        my_address = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
+        input_txns = BU.get_wallet_unspent_transactions(my_address)
+        miner_transactions = Mongo.db.miner_transactions.find()
+        mtxn_ids = []
+        for mtxn in miner_transactions:
+            for mtxninput in mtxn['inputs']:
+                mtxn_ids.append(mtxninput['id'])
+
+        inputs = [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
+
+        input_sum = 0
+        if self.coinbase:
+            self.inputs = []
+        else:
+            needed_inputs = []
+            done = False
+            for y in inputs:
+                txn = BU.get_transaction_by_id(y.id, instance=True)
+                for txn_output in txn.outputs:
+                    if txn_output.to == my_address:
+                        input_sum += txn_output.value
+                        needed_inputs.append(y)
+                        if input_sum >= (sum([x.value for x in self.outputs])+self.fee):
+                            done = True
+                            break
+                if done == True:
+                    break
+
+            if not done:
+                raise Exception('not enough money')
+            self.inputs = needed_inputs
+
+            return_change_output = Output(
+                to=my_address,
+                value=input_sum-(sum([x.value for x in self.outputs])+self.fee)
+            )
+            self.outputs.append(return_change_output)
+
     def get_input_hashes(self):
         input_hashes = []
         for x in self.inputs:
@@ -87,10 +148,11 @@ class TransactionFactory(object):
         return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
 
     def generate_rid(self):
-        my_bulletin_secret = TU.get_bulletin_secret()
+        my_bulletin_secret = Config.bulletin_secret
         if my_bulletin_secret == self.bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         rids = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
+        print rids
         return hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
     def generate_relationship(self):
@@ -307,6 +369,18 @@ class Relationship(object):
         return {
             'dh_private_key': self.dh_private_key,
             'bulletin_secret': self.bulletin_secret
+        }
+
+    def to_json(self):
+        return json.dumps(self.to_dict())
+
+class SignIn(object):
+    def __init__(self, signin):
+        self.signin = signin
+
+    def to_dict(self):
+        return {
+            "signIn": self.signin
         }
 
     def to_json(self):

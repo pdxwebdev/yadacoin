@@ -18,7 +18,8 @@ from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from bson.son import SON
 from coincurve import PrivateKey
-from pymongo import MongoClient
+from mongo import Mongo
+from config import Config
 
 
 class BU(object):  # Blockchain Utilities
@@ -26,12 +27,12 @@ class BU(object):  # Blockchain Utilities
     database = None
     @classmethod
     def get_blocks(cls):
-        blocks = cls.collection.find({}, {'_id': 0}).sort([('index',1)])
+        blocks = Mongo.db.blocks.find({}, {'_id': 0}).sort([('index',1)])
         return blocks
 
     @classmethod
     def get_latest_block(cls):
-        res = cls.collection.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
+        res = Mongo.db.blocks.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
         if res.count():
             return res[0]
         else:
@@ -39,7 +40,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_block_by_index(cls, index):
-        res = cls.collection.find({'index': index}, {'_id': 0})
+        res = Mongo.db.blocks.find({'index': index}, {'_id': 0})
         if res.count():
             return res[0]
 
@@ -67,15 +68,14 @@ class BU(object):  # Blockchain Utilities
             return 0
 
     @classmethod
-    def get_wallet_unspent_transactions(cls, address, ids=None):
-        res = cls.wallet_unspent_worker(address, ids)
+    def get_wallet_unspent_transactions(cls, address, ids=None, needed_value=None):
+        res = cls.wallet_unspent_worker(address, ids, needed_value)
         for x in res:
             yield x['txn']
 
     @classmethod
-    def wallet_unspent_worker(cls, address, ids=None):
-        mongo_client = MongoClient('localhost')
-        unspent_cache = mongo_client[cls.database].unspent_cache.find({'address': address}).sort([('height', -1)])
+    def wallet_unspent_worker(cls, address, ids=None, needed_value=None):
+        unspent_cache = Mongo.db.unspent_cache.find({'address': address}).sort([('height', -1)])
 
         if unspent_cache.count():
             unspent_cache = unspent_cache[0]
@@ -120,11 +120,11 @@ class BU(object):  # Blockchain Utilities
             }
         ]
 
-        received = BU.collection.aggregate(received_query)
+        received = Mongo.db.blocks.aggregate(received_query, allowDiskUse=True)
 
         reverse_public_key = ''
         for x in received:
-            mongo_client[cls.database].unspent_cache.update({
+            Mongo.db.unspent_cache.update({
                 'address': address,
                 'id': x['txn']['id'],
                 'height': x['height'],
@@ -147,12 +147,12 @@ class BU(object):  # Blockchain Utilities
             # no reverse public key means they have never even created a transaction
             # so no need to check for spend, anything sent to them is unspent
             if ids:
-                res = mongo_client[cls.database].unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
+                res = Mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
             else:
-                res = mongo_client[cls.database].unspent_cache.find({'address': address, 'spent': False})
+                res = Mongo.db.unspent_cache.find({'address': address, 'spent': False})
             return res
 
-        spent = BU.collection.aggregate([
+        spent = Mongo.db.blocks.aggregate([
             {
                 "$match": {
                     "index": {"$gt": block_height}
@@ -187,7 +187,7 @@ class BU(object):  # Blockchain Utilities
         ids_spent_by_me = []
         for x in spent:
             for i in x['txn']['inputs']:
-                mongo_client[cls.database].unspent_cache.update({
+                Mongo.db.unspent_cache.update({
                     'address': address,
                     'id': i['id']
                 },
@@ -200,9 +200,9 @@ class BU(object):  # Blockchain Utilities
         
 
         if ids:
-            res = mongo_client[cls.database].unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
+            res = Mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
         else:
-            res = mongo_client[cls.database].unspent_cache.find({'address': address, 'spent': False})
+            res = Mongo.db.unspent_cache.find({'address': address, 'spent': False})
         return res
 
         
@@ -215,7 +215,7 @@ class BU(object):  # Blockchain Utilities
         from transaction import Transaction
         from crypt import Crypt
         transactions = []
-        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
+        for block in Mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 try:
                     if transaction.get('id') in skip:
@@ -225,7 +225,7 @@ class BU(object):  # Blockchain Utilities
                     if not transaction['relationship']:
                         continue
                     if not raw:
-                        cipher = Crypt(cls.private_key)
+                        cipher = Crypt(Config.private_key)
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted)
                         transaction['relationship'] = relationship
@@ -240,10 +240,10 @@ class BU(object):  # Blockchain Utilities
         from transaction import Transaction
         from crypt import Crypt
         relationships = []
-        for block in BU.get_blocks():
+        for block in cls.get_blocks():
             for transaction in block.get('transactions'):
                 try:
-                    cipher = Crypt(cls.private_key)
+                    cipher = Crypt(Config.private_key)
                     decrypted = cipher.decrypt(transaction['relationship'])
                     relationship = json.loads(decrypted)
                     relationships.append(relationship)
@@ -256,7 +256,7 @@ class BU(object):  # Blockchain Utilities
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
-        ds = TU.get_bulletin_secret()
+        ds = Config.bulletin_secret
         if not rid:
             selectors = [
                 TU.hash(ds+selector),
@@ -266,13 +266,13 @@ class BU(object):  # Blockchain Utilities
             if not isinstance(selector, list):
                 selectors = [selector, ]
 
-        for block in cls.collection.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
+        for block in Mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
             for transaction in block.get('transactions'):
                 if transaction.get('rid') in selectors:
                     if 'relationship' in transaction:
                         if not raw:
                             try:
-                                cipher = Crypt(cls.private_key)
+                                cipher = Crypt(Config.private_key)
                                 decrypted = cipher.decrypt(transaction['relationship'])
                                 relationship = json.loads(decrypted)
                                 transaction['relationship'] = relationship
@@ -286,7 +286,7 @@ class BU(object):  # Blockchain Utilities
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
-        ds = TU.get_bulletin_secret()
+        ds = Config.bulletin_secret
 
         if not rid:
             selectors = [
@@ -298,8 +298,8 @@ class BU(object):  # Blockchain Utilities
                 selectors = [selector, ]
             else:
                 selectors = selector
-        mongo_client = MongoClient('localhost')
-        transactions_by_rid_cache = mongo_client[cls.database].transactions_by_rid_cache.find(
+
+        transactions_by_rid_cache = Mongo.db.transactions_by_rid_cache.find(
                 {
                     'raw': raw,
                     'rid': rid,
@@ -307,14 +307,14 @@ class BU(object):  # Blockchain Utilities
                     'selector': {'$in': selectors}
                 }
         ).sort([('height', -1)])
-        latest_block = BU.get_latest_block()
+        latest_block = cls.get_latest_block()
         if transactions_by_rid_cache.count():
             transactions_by_rid_cache = transactions_by_rid_cache[0]
             block_height = transactions_by_rid_cache['height']
         else:
             block_height = 0
         transactions = []
-        blocks = cls.collection.find({"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}})
+        blocks = Mongo.db.blocks.find({"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}})
         for block in blocks:
             for transaction in block.get('transactions'):
                 if 'relationship' in transaction and transaction['relationship']:
@@ -322,7 +322,7 @@ class BU(object):  # Blockchain Utilities
                         transaction['block_height'] = block['index']
                     if not raw:
                         try:
-                            cipher = Crypt(cls.private_key)
+                            cipher = Crypt(Config.private_key)
                             decrypted = cipher.decrypt(transaction['relationship'])
                             relationship = json.loads(decrypted)
                             transaction['relationship'] = relationship
@@ -330,7 +330,7 @@ class BU(object):  # Blockchain Utilities
                             continue
                     for selector in selectors:
                         print 'caching transactions_by_rid at height:', block['index']
-                        mongo_client[cls.database].transactions_by_rid_cache.insert(
+                        Mongo.db.transactions_by_rid_cache.insert(
                             {
                                 'raw': raw,
                                 'rid': rid,
@@ -343,7 +343,7 @@ class BU(object):  # Blockchain Utilities
                     transactions.append(transaction)
         if not transactions:
             for selector in selectors:
-                mongo_client[cls.database].transactions_by_rid_cache.insert(
+                Mongo.db.transactions_by_rid_cache.insert(
                     {   
                         'raw': raw,
                         'rid': rid,
@@ -352,7 +352,7 @@ class BU(object):  # Blockchain Utilities
                         'height': latest_block['index']
                     }   
                 )
-        for x in mongo_client[cls.database].transactions_by_rid_cache.find({'raw': raw, 'rid': rid, 'returnheight': returnheight, 'selector': {'$in': selectors}}):
+        for x in Mongo.db.transactions_by_rid_cache.find({'raw': raw, 'rid': rid, 'returnheight': returnheight, 'selector': {'$in': selectors}}):
             if 'txn' in x:
                 yield x['txn']
 
@@ -362,7 +362,7 @@ class BU(object):  # Blockchain Utilities
         if not isinstance(rids, list):
             rids = [rids, ]
         transactions = []
-        for block in cls.collection.find({'$and': [
+        for block in Mongo.db.blocks.find({'$and': [
             {"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}},
             {"index": {"$gt": start_height}}]
         }):
@@ -376,15 +376,14 @@ class BU(object):  # Blockchain Utilities
         if not isinstance(rids, list):
             rids = [rids, ]
 
-        mongo_client = MongoClient('localhost')
-        friend_requests_cache = mongo_client[cls.database].friend_requests_cache.find({'requested_rid': {'$in': rids}}).sort([('height', -1)])
+        friend_requests_cache = Mongo.db.friend_requests_cache.find({'requested_rid': {'$in': rids}}).sort([('height', -1)])
         latest_block = cls.get_latest_block()
         if friend_requests_cache.count():
             friend_requests_cache = friend_requests_cache[0]
             block_height = friend_requests_cache['height']
         else:
             block_height = 0
-        transactions = BU.collection.aggregate([
+        transactions = Mongo.db.blocks.aggregate([
             {
                 "$match": {
                     "index": {'$gt': block_height}
@@ -418,7 +417,7 @@ class BU(object):  # Blockchain Utilities
         for x in transactions:
             had_txns = True
             print 'caching friend requests at height:', x['height']
-            mongo_client[cls.database].friend_requests_cache.update({
+            Mongo.db.friend_requests_cache.update({
                 'requested_rid': x['txn']['requested_rid'],
                 'height': x['height'],
                 'id': x['txn']['id']
@@ -433,9 +432,9 @@ class BU(object):  # Blockchain Utilities
 
         if not had_txns:
             for rid in rids:
-                mongo_client[cls.database].friend_requests_cache.insert({'height': latest_block['index'], 'requested_rid': rid})
+                Mongo.db.friend_requests_cache.insert({'height': latest_block['index'], 'requested_rid': rid})
 
-        for x in mongo_client[cls.database].friend_requests_cache.find({'requested_rid': {'$in': rids}}):
+        for x in Mongo.db.friend_requests_cache.find({'requested_rid': {'$in': rids}}):
             if 'txn' in x:
                 yield x['txn']
 
@@ -445,8 +444,7 @@ class BU(object):  # Blockchain Utilities
         if not isinstance(rids, list):
             rids = [rids, ]
 
-        mongo_client = MongoClient('localhost')
-        sent_friend_requests_cache = mongo_client[cls.database].sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}).sort([('height', -1)])
+        sent_friend_requests_cache = Mongo.db.sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}).sort([('height', -1)])
 
         if sent_friend_requests_cache.count():
             sent_friend_requests_cache = sent_friend_requests_cache[0]
@@ -454,7 +452,7 @@ class BU(object):  # Blockchain Utilities
         else:
             block_height = 0
 
-        transactions = BU.collection.aggregate([
+        transactions = Mongo.db.blocks.aggregate([
             {
                 "$match": {
                     "index": {'$gt': block_height}
@@ -487,7 +485,7 @@ class BU(object):  # Blockchain Utilities
 
         for x in transactions:
             print 'caching sent friend requests at height:', x['height']
-            mongo_client[cls.database].sent_friend_requests_cache.update({
+            Mongo.db.sent_friend_requests_cache.update({
                 'requester_rid': x['txn']['requester_rid'],
                 'height': x['height'],
                 'id': x['txn']['id']
@@ -500,7 +498,7 @@ class BU(object):  # Blockchain Utilities
             },
             upsert=True)
 
-        for x in mongo_client[cls.database].sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}):
+        for x in Mongo.db.sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}):
             yield x['txn']
 
     @classmethod
@@ -509,8 +507,7 @@ class BU(object):  # Blockchain Utilities
         if not isinstance(rids, list):
             rids = [rids, ]
 
-        mongo_client = MongoClient('localhost')
-        messages_cache = mongo_client[cls.database].messages_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
+        messages_cache = Mongo.db.messages_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
 
         if messages_cache.count():
             messages_cache = messages_cache[0]
@@ -518,7 +515,7 @@ class BU(object):  # Blockchain Utilities
         else:
             block_height = 0
 
-        transactions = BU.collection.aggregate([
+        transactions = Mongo.db.blocks.aggregate([
             {
                 "$match": {
                     "index": {'$gt': block_height}
@@ -553,7 +550,7 @@ class BU(object):  # Blockchain Utilities
 
         for x in transactions:
             print 'caching messages at height:', x['height']
-            mongo_client[cls.database].messages_cache.update({
+            Mongo.db.messages_cache.update({
                 'rid': x['txn']['rid'],
                 'height': x['height'],
                 'id': x['txn']['id']
@@ -566,7 +563,7 @@ class BU(object):  # Blockchain Utilities
             },
             upsert=True)
 
-        for x in mongo_client[cls.database].messages_cache.find({'rid': {'$in': rids}}):
+        for x in Mongo.db.messages_cache.find({'rid': {'$in': rids}}):
             x['txn']['height'] = x['height']
             yield x['txn']
 
@@ -577,8 +574,7 @@ class BU(object):  # Blockchain Utilities
         if not isinstance(rids, list):
             rids = [rids, ]
 
-        mongo_client = MongoClient('localhost')
-        posts_cache = mongo_client[cls.database].posts_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
+        posts_cache = Mongo.db.posts_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
 
         latest_block = cls.get_latest_block()
 
@@ -587,7 +583,7 @@ class BU(object):  # Blockchain Utilities
             block_height = posts_cache['height']
         else:
             block_height = 0
-        transactions = BU.collection.aggregate([
+        transactions = Mongo.db.blocks.aggregate([
             {
                 "$match": {
                     "index": {'$gt': block_height}
@@ -641,7 +637,7 @@ class BU(object):  # Blockchain Utilities
                             had_txns = True
                             print 'caching posts at height:', x['height']
                             for rid in rids:
-                                mongo_client[cls.database].posts_cache.update({
+                                Mongo.db.posts_cache.update({
                                     'rid': rid,
                                     'height': x['height'],
                                     'id': x['txn']['id'],
@@ -659,9 +655,9 @@ class BU(object):  # Blockchain Utilities
                         pass
         if not had_txns:
             for rid in rids:
-                mongo_client[cls.database].posts_cache.insert({'rid': rid, 'height': latest_block['index']})
+                Mongo.db.posts_cache.insert({'rid': rid, 'height': latest_block['index']})
 
-        for x in mongo_client[cls.database].posts_cache.find({'rid': {'$in': rids}}):
+        for x in Mongo.db.posts_cache.find({'rid': {'$in': rids}}):
             if 'txn' in x:
                 x['txn']['height'] = x['height']
                 x['txn']['bulletin_secret'] = x['bulletin_secret']
@@ -671,8 +667,8 @@ class BU(object):  # Blockchain Utilities
     def get_mutual_rids(cls, rid):
         # find the requested and requester rids where rid is present in those fields
         rids = set()
-        rids.update([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
-        rids.update([x['requester_rid'] for x in BU.get_friend_requests(rid)])
+        rids.update([x['requested_rid'] for x in cls.get_sent_friend_requests(rid)])
+        rids.update([x['requester_rid'] for x in cls.get_friend_requests(rid)])
         rids = list(rids)
         return rids
 
@@ -681,21 +677,21 @@ class BU(object):  # Blockchain Utilities
         # Get the mutual relationships, then get the bulleting secrets for those relationships
         mutual_bulletin_secrets = set()
         rids = cls.get_mutual_rids(rid)
-        for transaction in BU.get_transactions_by_rid(rids, rid=True):
+        for transaction in cls.get_transactions_by_rid(rids, rid=True):
             if 'bulletin_secret' in transaction['relationship']:
                 mutual_bulletin_secrets.add(transaction['relationship']['bulletin_secret'])
         return list(mutual_bulletin_secrets)
 
     @classmethod
     def generate_signature(cls, message):
-        key = PrivateKey.from_hex(cls.private_key)
+        key = PrivateKey.from_hex(Config.private_key)
         signature = key.sign(message)
         return base64.b64encode(signature)
 
     @classmethod
     def get_transaction_by_id(cls, id, instance=False):
         from transaction import Transaction, Input, Crypt
-        for block in cls.collection.find({"transactions.id": id}):
+        for block in Mongo.db.blocks.find({"transactions.id": id}):
             for txn in block['transactions']:
                 if txn['id'] == id:
                     if instance:
@@ -716,7 +712,7 @@ class BU(object):  # Blockchain Utilities
             except:
                 raise BaseException("Block reward file not found")
 
-        latest_block = BU.get_latest_block()
+        latest_block = cls.get_latest_block()
         if latest_block:
             block_count = (latest_block['index'] + 1)
         else:
@@ -739,7 +735,7 @@ class BU(object):  # Blockchain Utilities
     def check_double_spend(cls, transaction_obj):
         double_spends = []
         for txn_input in transaction_obj.inputs:
-            res = BU.collection.aggregate([
+            res = Mongo.db.blocks.aggregate([
                 {"$unwind": "$transactions" },
                 {
                     "$project": {
@@ -765,3 +761,24 @@ class BU(object):  # Blockchain Utilities
             ])
             double_spends.extend([x for x in res])
         return double_spends
+
+    @classmethod
+    def verify_message(cls, rid, message):
+        from crypt import Crypt
+        shared_secret = TU.get_shared_secret_by_rid(rid)
+        cipher = Crypt(shared_secret.encode('hex'), shared=True)
+        txns = cls.get_transactions_by_rid(rid, rid=True, raw=True)
+        received = False
+        sent = False
+        for txn in txns:
+            try:
+                decrypted = cipher.shared_decrypt(txn['relationship'])
+                signin = json.loads(decrypted)
+                if 'signIn' in signin and message == signin['signIn']:
+                    if Config.public_key != txn['public_key']:
+                        received = True
+                    else:
+                        sent = True
+            except:
+                pass
+        return sent, received

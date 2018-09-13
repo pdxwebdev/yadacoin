@@ -11,16 +11,14 @@ from multiprocessing import Process, Value, Array, Pool
 from ecdsa import SigningKey, SECP256k1
 from socketIO_client import SocketIO, BaseNamespace
 from requests.exceptions import ConnectionError
-from block import Block, BlockFactory
-from transaction import Transaction, Input, Output
-from blockchainutils import BU
-from transactionutils import TU
-from transaction import TransactionFactory, InvalidTransactionSignatureException, MissingInputTransactionException, InvalidTransactionException
-from blockchain import Blockchain
+from yadacoin import Block, BlockFactory, Transaction, Input, Output, \
+                     BU, TU, TransactionFactory, InvalidTransactionSignatureException, \
+                     MissingInputTransactionException, InvalidTransactionException, \
+                     Blockchain, Config, Peers, Mongo
 from bitcoin.wallet import P2PKHBitcoinAddress
 
 try:
-    f = open('block_rewards.json', 'r')
+    f = open('config/block_rewards.json', 'r')
     BU.block_rewards = json.loads(f.read())
     f.close()
 except:
@@ -51,33 +49,17 @@ class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
         print 'error'
 
-def node(config, peers):
+def node():
     latest_block_index = Value('i', 0)
-    my_peer = config.get('peer')
+    my_peer = Config.peer
     p = Process(target=new_block_checker, args=(latest_block_index,))
     status = Array('c', 'asldkjf')
     p.start()
-    from pymongo import MongoClient
-    mongo_client = MongoClient('localhost')
-    db = mongo_client[config.get('database')]
-    collection = db.blocks
-    BU.database = config.get('database')
-    BU.collection = collection
-    Block.collection = collection
-    public_key = config.get('public_key')
-    private_key = config.get('private_key')
-    TU.private_key = private_key
-    BU.private_key = private_key
+    Mongo.init()
     # default run state will be to mine some blocks!
 
-
-    # proof of work time!
-    coinbase = config.get('coinbase')
-    difficulty = '0000'
-
-
     print '\r\n\r\n\r\n//// YADA COIN MINER ////'
-    print "Welcome!! Mining beginning with difficulty of:", difficulty
+    print "Welcome!! Mining beginning with difficulty of:", Config.difficulty
     block = BU.get_latest_block()
     if not block:
         genesis_block = Block.from_dict({
@@ -108,7 +90,7 @@ def node(config, peers):
             "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
         })
         genesis_block.save()
-        db.consensus.insert({
+        Mongo.db.consensus.insert({
             'block': genesis_block.to_dict(),
             'peer': 'me',
             'id': genesis_block.signature,
@@ -119,11 +101,11 @@ def node(config, peers):
     latest_block_index.value = block.get('index')
     start = time.time()
 
-    dup_test = db.consensus.find({'peer': 'me', 'index': BU.get_latest_block().get('index') + 1})
+    dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': BU.get_latest_block().get('index') + 1})
 
-    pending_txns = db.miner_transactions.find()
+    pending_txns = Mongo.db.miner_transactions.find()
     if not dup_test.count():
-        transactions = db.miner_transactions.find()
+        transactions = Mongo.db.miner_transactions.find()
         transaction_objs = []
         unspent_indexed = {}
         for txn in transactions:
@@ -135,10 +117,10 @@ def node(config, peers):
                 if address in unspent_indexed:
                     unspent_ids = unspent_indexed[address]
                 else:
-                    res = BU.get_wallet_unspent_transactions(address)
+                    needed_value = sum([float(x.value) for x in transaction.outputs]) + float(transaction.fee)
+                    res = BU.get_wallet_unspent_transactions(address, needed_value=needed_value)
                     unspent_ids = [x['id'] for x in res]
                     unspent_indexed[address] = unspent_ids
-
                 failed1 = False
                 failed2 = False
                 used_ids_in_this_txn = []
@@ -150,25 +132,25 @@ def node(config, peers):
                         failed2 = True
                     used_ids_in_this_txn.append(x.id)
                 if failed1:
-                    db.miner_transactions.remove({'id': transaction.transaction_signature})
+                    Mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
                     print 'transaction removed: input presumably spent already, not in unspent outputs', transaction.transaction_signature
-                    db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction.to_dict()})
+                    Mongo.db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction.to_dict()})
                 elif failed2:
-                    db.miner_transactions.remove({'id': transaction.transaction_signature})
+                    Mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
                     print 'transaction removed: using an input used by another transaction in this block', transaction.transaction_signature
-                    db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction.to_dict()})
+                    Mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction.to_dict()})
                 else:
                     transaction_objs.append(transaction)
             except MissingInputTransactionException as e:
                 print 'missing this input transaction, will try again later'
             except InvalidTransactionSignatureException as e:
                 print 'InvalidTransactionSignatureException: transaction removed'
-                db.miner_transactions.remove({'id': transaction.transaction_signature})
-                db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction.to_dict()})
+                Mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
+                Mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction.to_dict()})
             except InvalidTransactionException as e:
                 print 'InvalidTransactionException: transaction removed'
-                db.miner_transactions.remove({'id': transaction.transaction_signature})
-                db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction.to_dict()})
+                Mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
+                Mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction.to_dict()})
             except Exception as e:
                 print e
                 print 'rejected transaction', txn['id']
@@ -177,41 +159,41 @@ def node(config, peers):
                 print 'rejected transaction', txn['id']
         print '\r\nStarting to mine...'
         try:
-            block = BlockFactory.mine(transaction_objs, coinbase, difficulty, public_key, private_key, output, latest_block_index, status)
+            block = BlockFactory.mine(transaction_objs, Config.coinbase, Config.difficulty, Config.public_key, Config.private_key, output, latest_block_index, status)
         except Exception as e:
             raise e
         if block:
-            dup_test = db.consensus.find({'peer': 'me', 'index': block.index})
+            dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': block.index})
             if not dup_test.count():
                 print '\r\nCandidate submitted for index:', block.index
                 print '\r\nTransactions:'
                 for x in block.transactions:
                     print x.transaction_signature 
-                db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+                Mongo.db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
                 print '\r\nSent block to:'
-                for peer in peers:
+                for peer in Peers.peers:
                     try:
                         block_dict = block.to_dict()
                         block_dict['peer'] = my_peer
                         requests.post(
                             'http://{peer}/newblock'.format(
-                                peer=peer['host'] + ":" + peer['port']
+                                peer=peer.host + ":" + str(peer.port)
                             ),
                             json=block_dict,
                             timeout=3,
                             headers={'Connection':'close'}
                         )
-                        print peer['host'] + ":" + peer['port']
+                        print peer.host + ":" + str(peer.port)
                     except Exception as e:
                         print e
         else:
             print 'greatest block height changed during mining'
 
         if time.time() - start < 60:
-            difficulty = difficulty + '0'
+            Config.difficulty = Config.difficulty + '0'
         elif time.time() - start > 90:
-            difficulty = difficulty[:-1]
+            Config.difficulty = Config.difficulty[:-1]
         else:
-            difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
+            Config.difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
 
     p.terminate()

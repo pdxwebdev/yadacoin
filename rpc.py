@@ -19,11 +19,9 @@ from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
 from flask import Flask, request, render_template, session, redirect
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from blockchainutils import BU
-from transactionutils import TU
-from transaction import *
-from block import Block
-from graph import Graph
+from yadacoin import BU, TU, Transaction, TransactionFactory, Output, Input, \
+                     Config, Peers, Graph, Block, Mongo, InvalidTransactionException, \
+                     InvalidTransactionSignatureException, MissingInputTransactionException
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from pyfcm import FCMNotification
@@ -38,18 +36,9 @@ class ChatNamespace(BaseNamespace):
         print 'error'
 
 app = Flask(__name__)
+app.debug = True
+app.secret_key = '23ljk2l3k4j'
 CORS(app)
-mail_handler = SMTPHandler(
-    mailhost='127.0.0.1',
-    fromaddr='localhost',
-    toaddrs=['info@yadacoin.io'],
-    subject='Application Error'
-)
-mail_handler.setLevel(logging.ERROR)
-mail_handler.setFormatter(logging.Formatter(
-        '[%(asctime)s] %(levelname)s in %(module)s: %(message)s'
-        ))
-app.logger.addHandler(mail_handler)
 
 def make_qr(data):
     qr = qrcode.QRCode(
@@ -71,7 +60,7 @@ def make_qr(data):
 def get_logged_in_user():
     user = None
     tests = []
-    res = mongo_client.yadacoin.blocks.aggregate([
+    res = Mongo.db.blocks.aggregate([
         {
             "$match": {
                 "transactions.challenge_code": session['challenge_code']
@@ -95,7 +84,7 @@ def get_logged_in_user():
                 answer = cipher.decrypt(transaction['answer'])
                 if answer == transaction['challenge_code']:
                     for txn_output in transaction['outputs']:
-                        if txn_output['to'] != my_address:
+                        if txn_output['to'] != Config.address:
                             to = txn_output['to']
                     user = {
                         'balance': BU.get_wallet_balance(to),
@@ -116,7 +105,7 @@ def explorer_search():
 
     try:
         term = int(request.args.get('term'))
-        res = mongo_client.yadacoin.blocks.find({'index': term}, {'_id': 0})
+        res = Mongo.db.blocks.find({'index': term}, {'_id': 0})
         if res.count():
             return json.dumps({
                 'resultType': 'block_height',
@@ -127,7 +116,7 @@ def explorer_search():
     try:
         term = request.args.get('term')
         re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-        res = mongo_client.yadacoin.blocks.find({'hash': term}, {'_id': 0})
+        res = Mongo.db.blocks.find({'hash': term}, {'_id': 0})
         if res.count():
             return json.dumps({
                 'resultType': 'block_hash',
@@ -139,7 +128,7 @@ def explorer_search():
     try:
         term = request.args.get('term')
         base64.b64decode(term)
-        res = mongo_client.yadacoin.blocks.find({'id': term}, {'_id': 0})
+        res = Mongo.db.blocks.find({'id': term}, {'_id': 0})
         if res.count():
             return json.dumps({
                 'resultType': 'block_id',
@@ -151,7 +140,7 @@ def explorer_search():
     try:
         term = request.args.get('term')
         re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-        res = mongo_client.yadacoin.blocks.find({'transactions.hash': term}, {'_id': 0})
+        res = Mongo.db.blocks.find({'transactions.hash': term}, {'_id': 0})
         if res.count():
             return json.dumps({
                 'resultType': 'txn_hash',
@@ -163,7 +152,7 @@ def explorer_search():
     try:
         term = request.args.get('term')
         base64.b64decode(term)
-        res = mongo_client.yadacoin.blocks.find({'transactions.id': term}, {'_id': 0})
+        res = Mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
         if res.count():
             return json.dumps({
                 'resultType': 'txn_id',
@@ -175,7 +164,7 @@ def explorer_search():
     try:
         term = request.args.get('term')
         re.search(r'[A-Fa-f0-9]+', term).group(0)
-        res = mongo_client.yadacoin.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
+        res = Mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
         if res.count():
             return json.dumps({
                 'resultType': 'txn_hash',
@@ -224,9 +213,9 @@ def team():
 @app.route('/register')
 def register():
     data = {
-        'bulletin_secret': TU.get_bulletin_secret(),
-        'callbackurl': config.get('callbackurl'),
-        'to': my_address
+        'bulletin_secret': Config.bulletin_secret,
+        'callbackurl': Config.callbackurl,
+        'to': Config.address
     }
     return json.dumps(data, indent=4)
 
@@ -245,41 +234,18 @@ def create_relationship():  # demo site
     if not to:
         return 'error: "to" missing', 400
 
-    input_txns = BU.get_wallet_unspent_transactions(my_address)
+    input_txns = BU.get_wallet_unspent_transactions(Config.address)
 
-    miner_transactions = db.miner_transactions.find()
+    miner_transactions = Mongo.db.miner_transactions.find()
     mtxn_ids = []
     for mtxn in miner_transactions:
         for mtxninput in mtxn['inputs']:
             mtxn_ids.append(mtxninput['id'])
 
-    checked_out_txn_ids = db.checked_out_txn_ids.find()
+    checked_out_txn_ids = Mongo.db.checked_out_txn_ids.find()
     for mtxn in checked_out_txn_ids:
         mtxn_ids.append(mtxn['id'])
 
-    needed_inputs = []
-    input_sum = 0
-    done = False
-    for x in input_txns:
-        if x['id'] in mtxn_ids:
-            continue
-        x = Input.from_dict(x)
-        txn = BU.get_transaction_by_id(x.id, instance=True)
-        for txn_output in txn.outputs:
-            if txn_output.to == my_address:
-                input_sum += txn_output.value
-                needed_inputs.append(x)
-                db.checked_out_txn_ids.insert({'id': x.id})
-                if input_sum >= 1.1:
-                    done = True
-                    break
-        if done == True:
-            break
-
-    return_change_output = Output(
-        to=my_address,
-        value=input_sum-1.1
-    )
 
     a = os.urandom(32)
     dh_public_key = scalarmult_base(a).encode('hex')
@@ -287,30 +253,27 @@ def create_relationship():  # demo site
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
-        fee=0.1,
-        public_key=public_key,
+        fee=0.01,
+        public_key=Config.public_key,
         dh_public_key=dh_public_key,
-        private_key=private_key,
+        private_key=Config.private_key,
         dh_private_key=dh_private_key,
-        inputs=needed_inputs,
         outputs=[
-            Output(to=to, value=1),
-            return_change_output
+            Output(to=to, value=1)
         ]
     )
 
     TU.save(transaction.transaction)
 
-    db.miner_transactions.insert(transaction.transaction.to_dict())
+    Mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
     job = Process(target=txn_broadcast_job, args=(transaction.transaction,))
     job.start()
 
-    mongo_client = MongoClient('localhost')
 
-    my_bulletin_secret = TU.get_bulletin_secret()
+    my_bulletin_secret = Config.bulletin_secret
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-    mongo_client.yadacoinsite.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
+    Mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
     return json.dumps({"success": True})
 
 @app.route('/login-status')
@@ -323,7 +286,7 @@ def show_user():
     authed_user = get_logged_in_user()
     user = BU.get_transaction_by_rid(request.args['rid'], rid=True)
     for output in user['outputs']:
-        if output['to'] != my_address:
+        if output['to'] != Config.address:
             to = output['to']
     dict_data = {
         'bulletin_secret': user['relationship']['bulletin_secret'],
@@ -394,14 +357,14 @@ def show_users():
 
 @app.route('/get-rid')
 def get_rid():
-    my_bulletin_secret = TU.get_bulletin_secret()
+    my_bulletin_secret = Config.bulletin_secret
     rids = sorted([str(my_bulletin_secret), str(request.args.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
     return json.dumps({'rid': rid})
 
 @app.route('/get-block')
 def get_block():
-    blocks = collection.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
+    blocks = Mongo.db.blocks.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
     return json.dumps(blocks[0] if blocks.count() else {}, indent=4), 404
 
 
@@ -418,15 +381,14 @@ def post_block():
 
 @app.route('/search')
 def search():
-    mongo_client = MongoClient('localhost')
     phrase = request.args.get('phrase')
     bulletin_secret = request.args.get('bulletin_secret')
-    my_bulletin_secret = TU.get_bulletin_secret()
+    my_bulletin_secret = Config.bulletin_secret
 
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    friend = mongo_client.yadacoinsite.usernames.find({'username': phrase.lower().strip()})
+    friend = Mongo.site_db.usernames.find({'username': phrase.lower().strip()})
     if friend.count():
         friend = friend[0]
         to = friend['to']
@@ -443,29 +405,28 @@ def search():
 
 @app.route('/react', methods=['POST'])
 def react():
-    my_bulletin_secret = TU.get_bulletin_secret()
+    my_bulletin_secret = Config.bulletin_secret
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    mongo_client = MongoClient('localhost')
-    res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
+    res1 = Mongo.site_db.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    mongo_client.yadacoinsite.reacts.insert({
+    Mongo.site_db.reacts.insert({
         'rid': rid,
         'emoji': request.json.get('react'),
         'txn_id': request.json.get('txn_id')
     })
 
-    txn = mongo_client.yadacoin.posts_cache.find({'id': request.json.get('txn_id')})[0]
+    txn = Mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
 
     rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": rid})
+    res = Mongo.site_db.fcmtokens.find({"rid": rid})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
@@ -484,8 +445,7 @@ def get_reacts():
         data = request.form
         ids = json.loads(data.get('txn_ids'))
 
-    mongo_client = MongoClient('localhost')
-    res = mongo_client.yadacoinsite.reacts.find({
+    res = Mongo.site_db.reacts.find({
         'txn_id': {
             '$in': ids
         },
@@ -506,13 +466,12 @@ def get_reacts_detail():
         data = request.form
         txn_id = json.loads(data.get('txn_id'))
 
-    mongo_client = MongoClient('localhost')
-    res = mongo_client.yadacoinsite.reacts.find({
+    res = Mongo.site_db.reacts.find({
         'txn_id': txn_id,
     }, {'_id': 0})
     out = []
     for x in res:
-        res1 = mongo_client.yadacoinsite.usernames.find({'rid': x['rid']})
+        res1 = Mongo.site_db.usernames.find({'rid': x['rid']})
         if res1.count():
             x['username'] = res1[0]['username']
         else:
@@ -522,26 +481,25 @@ def get_reacts_detail():
 
 @app.route('/comment-react', methods=['POST'])
 def comment_react():
-    my_bulletin_secret = TU.get_bulletin_secret()
+    my_bulletin_secret = Config.bulletin_secret
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    mongo_client = MongoClient('localhost')
-    res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
+    res1 = Mongo.site_db.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    mongo_client.yadacoinsite.comment_reacts.insert({
+    Mongo.site_db.comment_reacts.insert({
         'rid': rid,
         'emoji': request.json.get('react'),
         'comment_id': request.json.get('_id')
     })
 
-    comment = mongo_client.yadacoinsite.comments.find({'_id': ObjectId(str(request.json.get('_id')))})[0]
+    comment = Mongo.site_db.comments.find({'_id': ObjectId(str(request.json.get('_id')))})[0]
 
-    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": comment['rid']})
+    res = Mongo.site_db.fcmtokens.find({"rid": comment['rid']})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
@@ -560,9 +518,7 @@ def get_comment_reacts():
         data = request.form
         ids = json.loads(data.get('ids'))
     ids = [str(x) for x in ids]
-    print ids
-    mongo_client = MongoClient('localhost')
-    res = mongo_client.yadacoinsite.comment_reacts.find({
+    res = Mongo.site_db.comment_reacts.find({
         'comment_id': {
             '$in': ids
         },
@@ -583,13 +539,12 @@ def get_comment_reacts_detail():
         data = request.form
         comment_id = json.loads(data.get('_id'))
 
-    mongo_client = MongoClient('localhost')
-    res = mongo_client.yadacoinsite.comment_reacts.find({
+    res = Mongo.site_db.comment_reacts.find({
         'comment_id': comment_id,
     }, {'_id': 0})
     out = []
     for x in res:
-        res1 = mongo_client.yadacoinsite.usernames.find({'rid': x['rid']})
+        res1 = Mongo.site_db.usernames.find({'rid': x['rid']})
         if res1.count():
             x['username'] = res1[0]['username']
         else:
@@ -599,27 +554,26 @@ def get_comment_reacts_detail():
 
 @app.route('/comment', methods=['POST'])
 def comment():
-    my_bulletin_secret = TU.get_bulletin_secret()
+    my_bulletin_secret = Config.bulletin_secret
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    mongo_client = MongoClient('localhost')
-    res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
+    res1 = Mongo.site_db.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    mongo_client.yadacoinsite.comments.insert({
+    Mongo.site_db.comments.insert({
         'rid': rid,
         'body': request.json.get('comment'),
         'txn_id': request.json.get('txn_id')
     })
-    txn = mongo_client.yadacoin.posts_cache.find({'id': request.json.get('txn_id')})[0]
+    txn = Mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
 
     rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-    res = mongo_client.yadacoinsite.fcmtokens.find({"rid": rid})
+    res = Mongo.site_db.fcmtokens.find({"rid": rid})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
@@ -628,12 +582,12 @@ def comment():
             extra_kwargs={'priority': 'high'}
         )
 
-    comments = mongo_client.yadacoinsite.comments.find({
+    comments = Mongo.site_db.comments.find({
         'rid': {'$ne': rid},
         'txn_id': request.json.get('txn_id')
     })
     for comment in comments:
-        res = mongo_client.yadacoinsite.fcmtokens.find({"rid": comment['rid']})
+        res = Mongo.site_db.fcmtokens.find({"rid": comment['rid']})
         for token in res:
             result = push_service.notify_single_device(
                 registration_id=token['token'],
@@ -653,19 +607,19 @@ def get_comments():
         data = request.form
         ids = json.loads(data.get('txn_ids'))
         bulletin_secret = data.get('bulletin_secret')
-    mongo_client = MongoClient('localhost')
-    res = mongo_client.yadacoinsite.comments.find({
+
+    res = Mongo.site_db.comments.find({
         'txn_id': {
             '$in': ids
         },
     })
-    blocked = [x['username'] for x in mongo_client.yadacoinsite.blocked_users.find({'bulletin_secret': bulletin_secret})]
+    blocked = [x['username'] for x in Mongo.site_db.blocked_users.find({'bulletin_secret': bulletin_secret})]
     out = {}
     usernames = {}
     for x in res:
         if x['txn_id'] not in out:
             out[x['txn_id']] = []
-        res1 = mongo_client.yadacoinsite.usernames.find({'rid': x['rid']})
+        res1 = Mongo.site_db.usernames.find({'rid': x['rid']})
         if res1.count():
             x['username'] = res1[0]['username']
         else:
@@ -677,8 +631,7 @@ def get_comments():
 
 @app.route('/get-usernames')
 def get_username():
-    mongo_client = MongoClient('localhost')
-    res = mongo_client.yadacoinsite.usernames.find({'rid': {'$in': request.args.get('rids')}}, {'_id': 0})
+    res = Mongo.site_db.usernames.find({'rid': {'$in': request.args.get('rids')}}, {'_id': 0})
     if res.count():
         out = {}
         for x in res:
@@ -689,14 +642,13 @@ def get_username():
 
 @app.route('/change-username', methods=['POST'])
 def change_username():
-    mongo_client = MongoClient('localhost')
     request.json['username'] = request.json['username'].lower()
-    exists = mongo_client.yadacoinsite.usernames.find({
+    exists = Mongo.site_db.usernames.find({
         'username': request.json.get('username')
     })
     if exists.count():
         return 'username taken', 400
-    mongo_client.yadacoinsite.usernames.update(
+    Mongo.site_db.usernames.update(
         {
             'rid': request.json.get('rid')
         },
@@ -712,7 +664,7 @@ def fcm_token():
         print token
         rid = request.json.get('rid')
         txn = BU.get_transaction_by_rid(rid, rid=True) 
-        mongo_client.yadacoinsite.fcmtokens.update({'rid': rid}, {
+        Mongo.site_db.fcmtokens.update({'rid': rid}, {
             'rid': rid,
             'token': token
         }, upsert=True)
@@ -738,16 +690,13 @@ def get_chain():
 
 @app.route('/get-peers')
 def get_peers():
-    with open('peers.json') as f:
-        peers = f.read()
-    return json.dumps({'peers': peers})
+
+    return json.dumps({'peers': Peers.peers})
 
 
 @app.route('/transaction', methods=['GET', 'POST'])
 def transaction():
-    mongo_client = MongoClient('localhost')
     if request.method == 'POST':
-        from transaction import InvalidTransactionException, InvalidTransactionSignatureException, MissingInputTransactionException
         items = request.json
         if not isinstance(items, list):
             items = [items, ]
@@ -759,7 +708,7 @@ def transaction():
             try:
                 transaction.verify()
             except InvalidTransactionException:
-                mongo_client.yadacoin.failed_transactions.insert({
+                Mongo.db.failed_transactions.insert({
                     'exception': 'InvalidTransactionException',
                     'txn': txn
                 })
@@ -767,7 +716,7 @@ def transaction():
                 return 'InvalidTransactionException', 400
             except InvalidTransactionSignatureException:
                 print 'InvalidTransactionSignatureException'
-                mongo_client.yadacoin.failed_transactions.insert({
+                Mongo.db.failed_transactions.insert({
                     'exception': 'InvalidTransactionSignatureException',
                     'txn': txn
                 })
@@ -780,7 +729,7 @@ def transaction():
             transactions.append(transaction)
 
         for x in transactions:
-            db.miner_transactions.insert(x.to_dict())
+            Mongo.db.miner_transactions.insert(x.to_dict())
         job = Process(target=txn_broadcast_job, args=(transaction,))
         job.start()
         for txn in transactions:
@@ -796,12 +745,11 @@ def transaction():
         return json.dumps([x for x in transactions])
 
 def do_push(txn, bulletin_secret):
-    my_bulletin_secret = TU.get_bulletin_secret()
+    my_bulletin_secret = Config.bulletin_secret
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    mongo_client = MongoClient('localhost')
-    res1 = mongo_client.yadacoinsite.usernames.find({'rid': rid})
+    res1 = Mongo.site_db.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
@@ -810,7 +758,7 @@ def do_push(txn, bulletin_secret):
     if txn.get('relationship') and txn.get('dh_public_key') and txn.get('requester_rid') == rid:
         #friend request
         #if rid is the requester_rid, then we send a friend request notification to the requested_rid
-        res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requested_rid']})
+        res = Mongo.site_db.fcmtokens.find({"rid": txn['requested_rid']})
         for token in res:
             result = push_service.notify_single_device(
                 registration_id=token['token'],
@@ -822,7 +770,7 @@ def do_push(txn, bulletin_secret):
     elif txn.get('relationship') and txn.get('dh_public_key') and txn.get('requested_rid') == rid:
         #friend accept
         #if rid is the requested_rid, then we send a friend accepted notification to the requester_rid
-        res = mongo_client.yadacoinsite.fcmtokens.find({"rid": txn['requester_rid']})
+        res = Mongo.site_db.fcmtokens.find({"rid": txn['requester_rid']})
         for token in res:
             result = push_service.notify_single_device(
                 registration_id=token['token'],
@@ -838,7 +786,7 @@ def do_push(txn, bulletin_secret):
         rids.extend([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
         rids.extend([x['requester_rid'] for x in BU.get_friend_requests(rid)])
         for friend_rid in rids:
-            res = mongo_client.yadacoinsite.fcmtokens.find({"rid": friend_rid})
+            res = Mongo.site_db.fcmtokens.find({"rid": friend_rid})
             used_tokens = []
             for token in res:
                 if token['token'] in used_tokens:
@@ -861,7 +809,7 @@ def do_push(txn, bulletin_secret):
         rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
         rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
         for friend_rid in rids:
-            res = mongo_client.yadacoinsite.fcmtokens.find({"rid": friend_rid})
+            res = Mongo.site_db.fcmtokens.find({"rid": friend_rid})
             used_tokens = []
             for token in res:
                 if token['token'] in used_tokens:
@@ -878,11 +826,9 @@ def do_push(txn, bulletin_secret):
 
 
 def txn_broadcast_job(transaction):
-    with open('peers.json') as f:
-        peers = json.loads(f.read())
-    for peer in peers:
+    for peer in Peers.peers:
         try:
-            socketIO = SocketIO(peer['host'], peer['port'], wait_for_connection=False)
+            socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
             chat_namespace.emit('newtransaction', transaction.to_dict())
             socketIO.wait(seconds=1)
@@ -897,9 +843,8 @@ def bulletin():
     return json.dumps(bulletins)
 
 def get_base_graph():
-    mongo_client = MongoClient('localhost')
     bulletin_secret = request.args.get('bulletin_secret')
-    graph = Graph(bulletin_secret, public_key, my_address, push_service=push_service)
+    graph = Graph(bulletin_secret, Config.public_key, Config.address, Config.to_dict(), push_service=push_service)
     return graph
 
 @app.route('/get-graph-info')
@@ -945,7 +890,7 @@ def get_graph_new_messages():
 
 @app.route('/get-graph')
 def get_graph():
-    graph = Graph(TU.get_bulletin_secret(), for_me=True)
+    graph = Graph(Config.bulletin_secret, for_me=True)
     return graph.to_json()
 
 @app.route('/wallet')
@@ -961,11 +906,11 @@ def get_wallet():
 def faucet():
     address = request.args.get('address')
     if len(address) < 36:
-        exists = mongo_client.yadacoinsite.faucet.find({
+        exists = Mongo.site_db.faucet.find({
             'address': address
         })
         if not exists.count():
-            mongo_client.yadacoinsite.faucet.insert({
+            Mongo.site_db.faucet.insert({
                 'address': address,
                 'active': True
             })
@@ -986,47 +931,27 @@ def firebase_service_worker():
 
 @app.route('/block-user', methods=['POST'])
 def block_user():
-    mongo_client = MongoClient('localhost')
-    mongo_client.yadacoinsite.blocked_users.update({'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, {'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, upsert=True)
+    Mongo.site_db.blocked_users.update({'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, {'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, upsert=True)
     return 'ok'
 
 @app.route('/flag', methods=['POST'])
 def flag():
-    mongo_client = MongoClient('localhost')
-    mongo_client.yadacoinsite.flagged_content.update(request.json, request.json, upsert=True)
+    Mongo.site_db.flagged_content.update(request.json, request.json, upsert=True)
     return 'ok'
 
-app.debug = True
-app.secret_key = '23ljk2l3k4j'
-mongo_client = MongoClient('localhost')
-db = mongo_client.yadacoin
-collection = db.blocks
-consensus = db.consensus
-miner_transactions = db.miner_transactions
-BU.database = 'yadacoin'
-BU.collection = collection
-TU.collection = collection
-BU.consensus = consensus
-TU.consensus = consensus
-BU.miner_transactions = miner_transactions
-TU.miner_transactions = miner_transactions
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
                 help='set your config file')
 args = parser.parse_args()
-conf = args.conf or 'config.json'
-
+conf = args.conf or 'config/config.json'
 with open(conf) as f:
-    raw = f.read()
-    config = json.loads(raw)
-print 'RUNNING SERVER WITH CONFIG:'
-print raw
-public_key = config.get('public_key')
-my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
+    Config.from_dict(json.loads(f.read()))
 
-private_key = config.get('private_key')
-TU.private_key = private_key
-BU.private_key = private_key
-api_key = config.get('fcm_key')
-push_service = FCMNotification(api_key=api_key)
+peers = args.conf or 'config/peers.json'
+with open(peers) as f:
+    Peers.from_dict(json.loads(f.read()))
+
+Mongo.init()
+push_service = FCMNotification(api_key=Config.fcm_key)
+

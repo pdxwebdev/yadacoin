@@ -17,16 +17,16 @@ from blockchainutils import BU
 from transactionutils import TU
 from transaction import *
 from crypt import Crypt
-from pymongo import MongoClient
+from config import Config
+from mongo import Mongo
 from pyfcm import FCMNotification
 
 
 class Graph(object):
 
-    def __init__(self, bulletin_secret, public_key, my_address, for_me=False, push_service=None, mongo_client=None):
-        mongo_client = MongoClient('localhost')
+    def __init__(self, bulletin_secret, public_key, my_address, config, for_me=False, push_service=None):
+        Mongo.init()
         self.push_service = push_service
-        self.mongo_client = mongo_client
         self.friend_requests = []
         self.sent_friend_requests = []
         self.friends = []
@@ -38,16 +38,18 @@ class Graph(object):
         self.registered = False
         self.pending_registration = False
         self.bulletin_secret = str(bulletin_secret)
-        rids = sorted([str(TU.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
+        print 'tu private', type(Config.private_key)
+        print 'tu get_bulletin_secret', Config.bulletin_secret
+        rids = sorted([str(Config.bulletin_secret), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         self.rid = rid
 
-        res = mongo_client.yadacoinsite.graph_cache.find({'rid': self.rid})
+        res = Mongo.db.graph_cache.find({'rid': self.rid})
         if False:
             self.from_dict(res[0]['graph'])
             start_height = res[0]['block_height']
         else:
-            res = mongo_client.yadacoinsite.usernames.find({"rid": self.rid})
+            res = Mongo.db.usernames.find({"rid": self.rid})
             if res.count():
                 self.human_hash = res[0]['username']
             else:
@@ -63,22 +65,21 @@ class Graph(object):
             for node in nodes:
                 if node.get('dh_public_key'):
                     test = {'rid': node.get('rid'), 'requester_rid': node.get('requester_id'), 'requested_rid': node.get('requested_id'), 'id': node.get('id')}
-                    node['username'] = 'YadaCoin Support'
+                    node['username'] = 'CienaAuth'
                     if test in already_done:
                         continue
                     else:
                         self.friends.append(node)
                         already_done.append(test)
 
-        registered = mongo_client.yadacoinsite.friends.find({'relationship.bulletin_secret': bulletin_secret})
+        registered = Mongo.site_db.friends.find({'relationship.bulletin_secret': bulletin_secret})
         if registered.count():
             self.registered = True
 
         if not self.registered:
             # not regisered, let's check for a pending transaction
-            mongo_client = MongoClient('localhost')
-            res = mongo_client.yadacoin.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': public_key}})
-            res2 = mongo_client.yadacoin.miner_transactions.find({'rid': self.rid, 'public_key': public_key})
+            res = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': public_key}})
+            res2 = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': public_key})
 
             if res.count() and res2.count():
                 self.pending_registration = True
@@ -87,7 +88,7 @@ class Graph(object):
             for x in self.friends:
                 for y in x['outputs']:
                     if y['to'] != my_address:
-                        mongo_client.yadacoinsite.usernames.update({
+                        Mongo.db.usernames.update({
                             'rid': self.rid,
                             'username': self.human_hash,
                             },
@@ -103,12 +104,11 @@ class Graph(object):
 
     def with_private_key(self):
 
-        mongo_client = MongoClient('localhost')
-        self.friends = [x for x in self.mongo_client.yadacoinsite.friends.find()]
-        self.friend_posts = [x for x in self.mongo_client.yadacoinsite.posts.find()]
+        self.friends = [x for x in Mongo.db.friends.find()]
+        self.friend_posts = [x for x in Mongo.db.posts.find()]
         rids = []
         possible_friends = BU.get_second_degree_transactions_by_rids(rids)
-        self.my_posts = [x for x in self.mongo_client.yadacoinsite.my_posts.find()]
+        self.my_posts = [x for x in Mongo.db.my_posts.find()]
         nodes = []
         for friend in self.friends:
             nodes.append(self.request_accept_or_request(possible_friends, friend))
@@ -139,12 +139,12 @@ class Graph(object):
 
         for i, friend_request in enumerate(friend_requests):
             # attach bulletin_secets
-            res = self.mongo_client.yadacoinsite.friends.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+            res = Mongo.db.friends.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
             if res.count():
                 friend_requests[i]['bulletin_secret'] = res[0]['relationship']['bulletin_secret']
 
             # attach usernames
-            res = self.mongo_client.yadacoinsite.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+            res = Mongo.db.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
             if res.count():
                 friend_requests[i]['username'] = res[0]['username']
             else:
@@ -155,7 +155,7 @@ class Graph(object):
         sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.rid)]
         for i, sent_friend_request in enumerate(sent_friend_requests):
             # attach usernames
-            res = self.mongo_client.yadacoinsite.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
+            res = Mongo.db.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
             if res.count():
                 sent_friend_requests[i]['username'] = res[0]['username']
             else:
@@ -169,12 +169,12 @@ class Graph(object):
         out_messages = []
         for i, message in enumerate(messages):
             # attach usernames
-            res = self.mongo_client.yadacoinsite.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
+            res = Mongo.db.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
             if res.count():
                 messages[i]['username'] = res[0]['username']
             else:
                 messages[i]['username'] = humanhash.humanize(message.get('rid'))
-            exclude = self.mongo_client.yadacoinsite.exclude_messages.find({'id': message.get('id')})
+            exclude = Mongo.db.exclude_messages.find({'id': message.get('id')})
             if exclude.count() > 0:
                 continue
             out_messages.append(message)
@@ -191,14 +191,14 @@ class Graph(object):
         self.messages = []
 
     def get_posts(self):
-        my_bulletin_secret = TU.get_bulletin_secret()
+        my_bulletin_secret = Config.bulletin_secret
         posts = []
-        blocked = [x['username'] for x in self.mongo_client.yadacoinsite.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
-        flagged = [x['id'] for x in self.mongo_client.yadacoinsite.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
+        blocked = [x['username'] for x in Mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
+        flagged = [x['id'] for x in Mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
         for x in BU.get_posts(self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
             rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-            res = self.mongo_client.yadacoinsite.usernames.find({'rid': rid}, {'_id': 0})
+            res = Mongo.db.usernames.find({'rid': rid}, {'_id': 0})
             if res.count():
                 x['username'] = res[0]['username']
             if x['username'] not in blocked and x['id'] not in flagged:
