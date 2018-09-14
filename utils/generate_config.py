@@ -7,9 +7,6 @@ num = os.urandom(32).encode('hex')
 pk = PrivateKey.from_hex(num)
 
 config = {
-    "coinbase": pk.public_key.format().encode('hex'),
-    "block_reward": 1,
-    "difficulty": "000",
     "private_key": pk.to_hex(),
     "public_key": pk.public_key.format().encode('hex'),
     "serve_host": "localhost",

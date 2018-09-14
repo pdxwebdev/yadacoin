@@ -23,8 +23,6 @@ class Config(object):
         cls.serve_port = config['serve_port']
         cls.peer = config['peer']
         cls.callbackurl = config['callbackurl']
-        cls.difficulty = config['difficulty']
-        cls.coinbase = config['coinbase']
         cls.fcm_key = config['fcm_key']
 
     @classmethod
@@ -42,8 +40,6 @@ class Config(object):
             'serve_host': cls.serve_host,
             'serve_port': cls.serve_port,
             'peer': cls.peer,
-            'difficulty': cls.difficulty,
-            'coinbase': cls.coinbase,
             'fcm_key': cls.fcm_key
         }
 

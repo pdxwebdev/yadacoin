@@ -19,26 +19,32 @@ from transactionutils import TU
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
+from config import Config
 
 
 class BlockFactory(object):
-    def __init__(self, transactions, coinbase, public_key, private_key):
-        BU.private_key = private_key
-        TU.private_key = private_key
+    def __init__(self, transactions, public_key, private_key, version, index=None):
+        self.version = version
+        self.time = str(int(time.time()))
         blocks = BU.get_blocks()
-        self.index = BU.get_latest_block().get('index', -1) + 1
-        self.prev_hash = blocks[blocks.count()-1]['hash'] if blocks.count() > 0 else ''
+        self.index = index if index > -1 else BU.get_latest_block().get('index', -1) + 1
+        self.prev_hash = '' if index > -1 else elseblocks[blocks.count()-1]['hash'] if blocks.count() > 0 else ''
         self.public_key = public_key
         self.private_key = private_key
 
         transaction_objs = []
         fee_sum = 0.0
         unspent_indexed = {}
+        used_sigs = []
         for txn in transactions:
             if isinstance(txn, Transaction):
                 transaction_obj = txn
             else:
                 transaction_obj = Transaction.from_dict(txn)
+            if transaction_obj.transaction_signature in used_sigs:
+                print 'duplicate transaction found and removed'
+                continue
+            used_sigs.append(transaction_obj.transaction_signature)
             transaction_obj.verify()
             #check double spend
             address = str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex')))
@@ -77,6 +83,8 @@ class BlockFactory(object):
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
         self.block = Block(
+            version=self.version,
+            block_time=self.time,
             block_index=self.index,
             prev_hash=self.prev_hash,
             transactions=self.transactions,
@@ -87,6 +95,8 @@ class BlockFactory(object):
     @classmethod
     def generate_hash(cls, block, nonce):
         return hashlib.sha256(
+            str(block.version) +
+            str(block.time) +
             block.public_key +
             str(block.index) +
             block.prev_hash +
@@ -112,16 +122,23 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def mine(cls, transactions, coinbase, difficulty, public_key, private_key, callback=None, current_index=None, status=None):
+    def mine(cls, transactions, difficulty, public_key, private_key, max_duration, callback=None, current_index=None, status=None):
         import itertools, sys
+        if hasattr(current_index, 'value'):
+            height = current_index.value
+        else:
+            height = current_index
         spinner = itertools.cycle(['-', '/', '|', '\\'])
         block_factory = cls(
             transactions=transactions,
-            coinbase=coinbase,
             public_key=public_key,
-            private_key=private_key)
-        initial_current_index = current_index.value
+            private_key=private_key,
+            index=height,
+            version=Config.block_version)
+        if current_index:
+            initial_current_index = current_index.value
         nonce = 0
+        start = time.time()
         while 1:
             if callback:
                 callback(current_index.value)
@@ -134,17 +151,22 @@ class BlockFactory(object):
                 block.hash = hash_test
                 block.nonce = nonce
                 block.signature = BU.generate_signature(hash_test)
-                status.value = 'mined'
+                if status:
+                    status.value = 'mined'
                 return block
-            if current_index.value > initial_current_index:
+            if current_index and current_index.value > initial_current_index:
                 status.value = 'exited'
                 break
             nonce += 1
+            if time.time() - start > max_duration:
+                break
 
 
 class Block(object):
     def __init__(
         self,
+        version='',
+        block_time='',
         block_index='',
         prev_hash='',
         nonce='',
@@ -154,6 +176,8 @@ class Block(object):
         public_key='',
         signature=''
     ):
+        self.version = version
+        self.time = block_time
         self.index = block_index
         self.prev_hash = prev_hash
         self.nonce = nonce
@@ -177,6 +201,8 @@ class Block(object):
             transactions.append(Transaction.from_dict(txn))
 
         return cls(
+            version=block.get('version'),
+            block_time=block.get('time'),
             block_index=block.get('index'),
             public_key=block.get('public_key'),
             prev_hash=block.get('prevHash'),
@@ -241,6 +267,8 @@ class Block(object):
 
     def generate_hash(self):
         return hashlib.sha256(
+            str(self.version) +
+            str(self.time) +
             self.public_key +
             str(self.index) +
             self.prev_hash +
@@ -293,6 +321,8 @@ class Block(object):
 
     def to_dict(self):
         return {
+            'version': self.version,
+            'time': self.time,
             'index': self.index,
             'public_key': self.public_key,
             'prevHash': self.prev_hash,

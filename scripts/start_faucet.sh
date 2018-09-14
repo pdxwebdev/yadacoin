@@ -1,0 +1,1 @@
+python p2p.py faucet config/config.json config/peers.json

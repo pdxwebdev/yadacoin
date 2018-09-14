@@ -52,6 +52,10 @@ class ChatNamespace(BaseNamespace):
 def node():
     latest_block_index = Value('i', 0)
     my_peer = Config.peer
+    Config.difficulty = '0'
+    Config.max_duration = 300000
+    Config.grace = 10
+    Config.block_version = 1
     p = Process(target=new_block_checker, args=(latest_block_index,))
     status = Array('c', 'asldkjf')
     p.start()
@@ -63,9 +67,11 @@ def node():
     block = BU.get_latest_block()
     if not block:
         genesis_block = Block.from_dict({
-            "nonce": 8153, 
+            "nonce": 377932127, 
             "index": 0, 
-            "hash": "96bc737dbfdb5a27a119fc0fd7e233e83b680af3e82da96c73b49d988368322f", 
+            "version": "1", 
+            "hash": "00000000faa3ce27aabd73e157343bb591027f46ecf6b1d99c5b5040ca2d17c1", 
+            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
             "transactions": [
                 {
                     "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
@@ -81,12 +87,12 @@ def node():
                         }
                     ], 
                     "rid": "", 
-                    "id": "MEUCIQDs4oeAH42DhwJ1SIN6v8ywkmF+l8Tdeuhr4BzbRvFpfQIgCRjufiYRdG4WntCUaLdbZiC4ynyf3C4RCRCDJGkRyrQ="
+                    "id": "MEQCIFMKD8OB1CPyY6O9sk5cbxXi0bcDZwljMs6KjhXEraOsAiBan2w1BV9X/haquYwuFt3V2gEnOsW5kXS5IBcC82BQyw=="
                 }
             ], 
-            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+            "time": "1536913414", 
             "prevHash": "", 
-            "id": "MEQCID5baV/LExDA3uG5EhfGgNyDJaUSyi1+h7Q2GTiOw8ofAiAJ7EV5aih1OjnZz2XFjFI9fzRPRVGoZWoBKMW/9jRRkA==", 
+            "id": "MEUCIQDQwa1FU/8dK61T6b3j8kgZKjiiJuVU1pMqoPwl5U2AogIgfSRtWzHBTtCwzfHw+TT+AXi49Mj46NOo0ID8Pcuhxf4=", 
             "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
         })
         genesis_block.save()
@@ -159,7 +165,7 @@ def node():
                 print 'rejected transaction', txn['id']
         print '\r\nStarting to mine...'
         try:
-            block = BlockFactory.mine(transaction_objs, Config.coinbase, Config.difficulty, Config.public_key, Config.private_key, output, latest_block_index, status)
+            block = BlockFactory.mine(transaction_objs, Config.difficulty, Config.public_key, Config.private_key, Config.max_duration, output, latest_block_index, status)
         except Exception as e:
             raise e
         if block:
@@ -189,9 +195,10 @@ def node():
         else:
             print 'greatest block height changed during mining'
 
-        if time.time() - start < 60:
+        end = time.time()
+        if (end - start) + Config.grace < Config.max_duration:
             Config.difficulty = Config.difficulty + '0'
-        elif time.time() - start > 90:
+        elif (end - start) - Config.grace > Config.max_duration:
             Config.difficulty = Config.difficulty[:-1]
         else:
             Config.difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)

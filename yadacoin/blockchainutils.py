@@ -701,16 +701,42 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_block_reward(cls, block=None):
-        if getattr(cls, 'block_rewards', None):
-            block_rewards = cls.block_rewards
-        else:
-            print 'OPENING FILE: Recommend setting block_rewards class attribute'
-            try:
-                f = open('block_rewards.json', 'r')
-                block_rewards = json.loads(f.read())
-                f.close()
-            except:
-                raise BaseException("Block reward file not found")
+        block_rewards = [
+            {"block": "0", "reward": "50"},
+            {"block": "210000", "reward": "25"},
+            {"block": "420000", "reward": "12.5"},
+            {"block": "630000", "reward": "6.25"},
+            {"block": "840000", "reward": "3.125"},
+            {"block": "1050000", "reward": "1.5625"},
+            {"block": "1260000", "reward": "0.78125"},
+            {"block": "1470000", "reward": "0.390625"},
+            {"block": "1680000", "reward": "0.1953125"},
+            {"block": "1890000", "reward": "0.09765625"},
+            {"block": "2100000", "reward": "0.04882812"},
+            {"block": "2310000", "reward": "0.02441406"},
+            {"block": "2520000", "reward": "0.01220703"},
+            {"block": "2730000", "reward": "0.00610351"},
+            {"block": "2940000", "reward": "0.00305175"},
+            {"block": "3150000", "reward": "0.00152587"},
+            {"block": "3360000", "reward": "0.00076293"},
+            {"block": "3570000", "reward": "0.00038146"},
+            {"block": "3780000", "reward": "0.00019073"},
+            {"block": "3990000", "reward": "0.00009536"},
+            {"block": "4200000", "reward": "0.00004768"},
+            {"block": "4410000", "reward": "0.00002384"},
+            {"block": "4620000", "reward": "0.00001192"},
+            {"block": "4830000", "reward": "0.00000596"},
+            {"block": "5040000", "reward": "0.00000298"},
+            {"block": "5250000", "reward": "0.00000149"},
+            {"block": "5460000", "reward": "0.00000074"},
+            {"block": "5670000", "reward": "0.00000037"},
+            {"block": "5880000", "reward": "0.00000018"},
+            {"block": "6090000", "reward": "0.00000009"},
+            {"block": "6300000", "reward": "0.00000004"},
+            {"block": "6510000", "reward": "0.00000002"},
+            {"block": "6720000", "reward": "0.00000001"},
+            {"block": "6930000", "reward": "0"}
+        ]
 
         latest_block = cls.get_latest_block()
         if latest_block:
