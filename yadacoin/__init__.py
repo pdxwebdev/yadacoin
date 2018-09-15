@@ -8,5 +8,6 @@ from mongo import Mongo
 from peers import Peers
 from transaction import TransactionFactory, Transaction, \
                         Input, Output, MissingInputTransactionException, \
-                        InvalidTransactionSignatureException, InvalidTransactionException
+                        InvalidTransactionSignatureException, InvalidTransactionException, \
+                        NotEnoughMoneyException
 from transactionutils import TU

@@ -189,6 +189,9 @@ class InvalidTransactionSignatureException(BaseException):
 class MissingInputTransactionException(BaseException):
     pass
 
+class NotEnoughMoneyException(BaseException):
+    pass
+
 class Transaction(object):
     def __init__(
         self,

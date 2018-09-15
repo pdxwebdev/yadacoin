@@ -16,7 +16,8 @@ from flask import Flask, render_template, request, Response
 from yadacoin import TransactionFactory, Transaction, \
                     MissingInputTransactionException, \
                     Input, Output, Block, Config, Peers, \
-                    Blockchain, BlockChainException, TU, BU, Mongo, BlockFactory
+                    Blockchain, BlockChainException, TU, BU, \
+                    Mongo, BlockFactory, NotEnoughMoneyException
 from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
@@ -68,6 +69,9 @@ def faucet():
                     Output(to=x['address'], value=5)
                 ]
             )
+        except NotEnoughMoneyException as e:
+            print "not enough money yet"
+            return
         except Exception as e:
             print x
         try:
