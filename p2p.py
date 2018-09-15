@@ -65,7 +65,7 @@ def faucet():
                 public_key=Config.public_key,
                 private_key=Config.private_key,
                 outputs=[
-                    Output(to=x['address'], value=1)
+                    Output(to=x['address'], value=5)
                 ]
             )
         except Exception as e:

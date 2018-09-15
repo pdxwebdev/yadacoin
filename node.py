@@ -52,7 +52,7 @@ class ChatNamespace(BaseNamespace):
 def node():
     latest_block_index = Value('i', 0)
     my_peer = Config.peer
-    Config.difficulty = '0'
+    Config.difficulty = '0000000000'
     Config.max_duration = 300000
     Config.grace = 10
     Config.block_version = 1
@@ -61,9 +61,6 @@ def node():
     p.start()
     Mongo.init()
     # default run state will be to mine some blocks!
-
-    print '\r\n\r\n\r\n//// YADA COIN MINER ////'
-    print "Welcome!! Mining beginning with difficulty of:", Config.difficulty
     block = BU.get_latest_block()
     if not block:
         genesis_block = Block.from_dict({
@@ -104,6 +101,10 @@ def node():
             })
         block = BU.get_latest_block()
 
+    Config.difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
+
+    print '\r\n\r\n\r\n//// YADA COIN MINER ////'
+    print "Welcome!! Mining beginning with difficulty of:", Config.difficulty
     latest_block_index.value = block.get('index')
     start = time.time()
 

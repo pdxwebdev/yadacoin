@@ -20,6 +20,7 @@ from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from config import Config
+from mongo import Mongo
 
 
 class BlockFactory(object):
@@ -256,12 +257,6 @@ class Block(object):
                 fee_sum += float(txn.fee)
         reward = BU.get_block_reward(self)
 
-        try:
-            with open('block_rewards.json', 'r') as f:
-                block_rewards = json.loads(f.read())
-        except:
-            raise BaseException("Block reward file not found")
-
         if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
             raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
@@ -310,14 +305,14 @@ class Block(object):
                     used_ids_in_this_txn.append(x.id)
                 if failed:
                     raise BaseException('double spend', [x.id for x in txn.inputs])
-        res = self.collection.find({"index": (int(self.index) - 1)})
+        res = Mongo.db.blocks.find({"index": (int(self.index) - 1)})
         if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:
-            self.collection.insert(self.to_dict())
+            Mongo.db.blocks.insert(self.to_dict())
         else:
             print "CRITICAL: block rejected..."
 
     def delete(self):
-        self.collection.remove({"index": self.index})
+        Mongo.db.blocks.remove({"index": self.index})
 
     def to_dict(self):
         return {
