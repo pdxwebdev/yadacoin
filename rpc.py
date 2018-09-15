@@ -948,6 +948,7 @@ def peers():
             host = request.json['host']
             port = int(request.json['host'])
             Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True}, upsert=True)
+            return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
     else:
