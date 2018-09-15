@@ -946,7 +946,7 @@ def peers():
             return 'failed to add peer, invalid host', 400
     else:
         res = Mongo.db.peers.find({'active': True}, {'_id': 0})
-        return json.dumps({'peers': [x for x in res]})
+        return json.dumps({'peers': [x for x in res]}, indent=4)
 
 
 parser = argparse.ArgumentParser(description='Process some integers.')
