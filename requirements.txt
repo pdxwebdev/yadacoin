@@ -3,7 +3,6 @@ asn1crypto==0.24.0
 backports.functools-lru-cache==1.5
 backports.shutil-get-terminal-size==1.0.0
 base58==1.0.0
-bitarray==0.8.2
 certifi==2017.7.27.1
 cffi==1.11.5
 chardet==3.0.4

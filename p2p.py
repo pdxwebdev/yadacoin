@@ -89,6 +89,16 @@ def faucet():
                 print e
 
 def consensus():
+    res = requests.post(
+        'https://yadacoin.io/peers',
+        {
+            'host': Config.peer_host,
+            'port': Config.peer_port
+        },
+        headers={
+            "Content-Type": "application/json"
+        }
+    )
     Mongo.init()
     synced = False
     block_heights = {}
@@ -223,7 +233,6 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', nargs=None, help='serve, mine, or faucet')
     parser.add_argument('config', default="config.json", nargs=None, help='config file')
-    parser.add_argument('peers', default="peers.json", nargs=None, help='peers')
     args = parser.parse_args()
 
     with open(args.config) as f:

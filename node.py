@@ -51,7 +51,7 @@ class ChatNamespace(BaseNamespace):
 
 def node():
     latest_block_index = Value('i', 0)
-    my_peer = Config.peer
+    my_peer = Config.peer_host + ":" + str(Config.peer_port)
     Config.difficulty = '0000000000'
     Config.max_duration = 300000
     Config.grace = 10

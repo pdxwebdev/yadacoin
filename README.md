@@ -1,6 +1,8 @@
 # yadacoin
 ## Setup
   In your terminal
+
+  `pip install -r requirements.txt`
   
   `python generate_config.py`
   

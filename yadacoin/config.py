@@ -19,9 +19,14 @@ class Config(object):
         cls.site_database = config['site_database']
         cls.web_server_host = config['web_server_host']
         cls.web_server_port = config['web_server_port']
+        if config['peer_host'] == '0.0.0.0' or config['peer_host'] == 'localhost':
+            raise Exception("cannot use localhost or 0.0.0.0, must specify public ipv4 address")
+        if config['peer_host'] == '[my public ip]':
+            raise Exception("please configure your peer_post to your public ipv4 address")
+        cls.peer_host = config['peer_host']
+        cls.peer_port = config['peer_port']
         cls.serve_host = config['serve_host']
         cls.serve_port = config['serve_port']
-        cls.peer = config['peer']
         cls.callbackurl = config['callbackurl']
         cls.fcm_key = config['fcm_key']
 
@@ -37,9 +42,10 @@ class Config(object):
             'site_database': cls.site_database,
             'web_server_host': cls.web_server_host,
             'web_server_port': cls.web_server_port,
+            'peer_host': cls.peer_host,
+            'peer_port': cls.peer_port,
             'serve_host': cls.serve_host,
             'serve_port': cls.serve_port,
-            'peer': cls.peer,
             'fcm_key': cls.fcm_key
         }
 

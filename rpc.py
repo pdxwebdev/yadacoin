@@ -939,7 +939,7 @@ def peers():
         try:
             socket.inet_aton(request.json['host'])
             host = request.json['host']
-            port = int(request.json['host'])
+            port = int(request.json['port'])
             Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True}, upsert=True)
             return 'ok'
         except:
