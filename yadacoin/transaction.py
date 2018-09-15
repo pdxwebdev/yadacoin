@@ -126,7 +126,7 @@ class TransactionFactory(object):
                     break
 
             if not done:
-                raise Exception('not enough money')
+                raise NotEnoughMoneyException('not enough money')
             self.inputs = needed_inputs
 
             return_change_output = Output(
