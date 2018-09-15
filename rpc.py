@@ -9,6 +9,7 @@ import requests
 import time
 import logging
 import re
+import socket
 
 from logging.handlers import SMTPHandler
 from io import BytesIO
@@ -939,6 +940,20 @@ def flag():
     Mongo.site_db.flagged_content.update(request.json, request.json, upsert=True)
     return 'ok'
 
+@app.route('/peers', methods=['GET', 'POST'])
+def peers():
+    if request.method == 'POST':
+        try:
+            socket.inet_aton(request.json['host'])
+            host = request.json['host']
+            port = int(request.json['host'])
+            Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True}, upsert=True)
+        except:
+            return 'failed to add peer, invalid host', 400
+    else:
+        res = Mongo.db.peers.find({'active': True}, {'_id': 0})
+        return json.dumps({'peers': [x for x in res]})
+
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
@@ -948,10 +963,7 @@ conf = args.conf or 'config/config.json'
 with open(conf) as f:
     Config.from_dict(json.loads(f.read()))
 
-peers = args.conf or 'config/peers.json'
-with open(peers) as f:
-    Peers.from_dict(json.loads(f.read()))
-
+Peers.init()
 Mongo.init()
 push_service = FCMNotification(api_key=Config.fcm_key)
 

@@ -229,8 +229,7 @@ if __name__ == '__main__':
     with open(args.config) as f:
         Config.from_dict(json.loads(f.read()))
 
-    with open(args.peers) as f:
-        Peers.from_dict(json.loads(f.read()))
+    Peers.init()
 
     if args.mode == 'consensus':
         while 1:

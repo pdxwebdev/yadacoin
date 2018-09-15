@@ -15,6 +15,8 @@
 	}
 ]`
 
+IMPORTANT: You must run all three of the below processes for mining to work.
+
 ## Run the miner
 `python p2p.py miner config.json peers.json`
 
