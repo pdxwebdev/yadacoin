@@ -16,7 +16,7 @@ from flask import Flask, render_template, request, Response
 from yadacoin import TransactionFactory, Transaction, \
                     MissingInputTransactionException, \
                     Input, Output, Block, Config, Peers, \
-                    Blockchain, BlockChainException, TU, BU, Mongo
+                    Blockchain, BlockChainException, TU, BU, Mongo, BlockFactory
 from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
@@ -94,33 +94,7 @@ def consensus():
     block_heights = {}
     latest_block = BU.get_latest_block()
     if not latest_block:
-        genesis_block = Block.from_dict({
-            "nonce": 8153, 
-            "index": 0, 
-            "hash": "96bc737dbfdb5a27a119fc0fd7e233e83b680af3e82da96c73b49d988368322f", 
-            "transactions": [
-                {
-                    "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
-                    "fee": 0.0, 
-                    "hash": "71429326f00ba74c6665988bf2c0b5ed9de1d57513666633efd88f0696b3d90f", 
-                    "dh_public_key": "", 
-                    "relationship": "", 
-                    "inputs": [], 
-                    "outputs": [
-                        {
-                            "to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 
-                            "value": 50.0
-                        }
-                    ], 
-                    "rid": "", 
-                    "id": "MEUCIQDs4oeAH42DhwJ1SIN6v8ywkmF+l8Tdeuhr4BzbRvFpfQIgCRjufiYRdG4WntCUaLdbZiC4ynyf3C4RCRCDJGkRyrQ="
-                }
-            ], 
-            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
-            "prevHash": "", 
-            "id": "MEQCID5baV/LExDA3uG5EhfGgNyDJaUSyi1+h7Q2GTiOw8ofAiAJ7EV5aih1OjnZz2XFjFI9fzRPRVGoZWoBKMW/9jRRkA==", 
-            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
-        })
+        genesis_block = BlockFactory.get_genesis_block()
         genesis_block.save()
         Mongo.db.consensus.insert({
             'block': genesis_block.to_dict(),
@@ -260,9 +234,12 @@ if __name__ == '__main__':
 
     if args.mode == 'consensus':
         while 1:
-            p = Process(target=consensus)
+            consensus()
+            """
+            p = Process(target=)
             p.start()
             p.join()
+            """
             time.sleep(1)
     elif args.mode == 'mine':
         while 1:

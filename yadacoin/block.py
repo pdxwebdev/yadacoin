@@ -162,6 +162,37 @@ class BlockFactory(object):
             if time.time() - start > max_duration:
                 break
 
+    @classmethod
+    def get_genesis_block(cls):
+        return Block.from_dict({
+            "nonce": 377932127, 
+            "index": 0, 
+            "version": "1", 
+            "hash": "00000000faa3ce27aabd73e157343bb591027f46ecf6b1d99c5b5040ca2d17c1", 
+            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+            "transactions": [
+                {
+                    "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+                    "fee": 0.0, 
+                    "hash": "71429326f00ba74c6665988bf2c0b5ed9de1d57513666633efd88f0696b3d90f", 
+                    "dh_public_key": "", 
+                    "relationship": "", 
+                    "inputs": [], 
+                    "outputs": [
+                        {
+                            "to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 
+                            "value": 50.0
+                        }
+                    ], 
+                    "rid": "", 
+                    "id": "MEQCIFMKD8OB1CPyY6O9sk5cbxXi0bcDZwljMs6KjhXEraOsAiBan2w1BV9X/haquYwuFt3V2gEnOsW5kXS5IBcC82BQyw=="
+                }
+            ], 
+            "time": "1536913414", 
+            "prevHash": "", 
+            "id": "MEUCIQDQwa1FU/8dK61T6b3j8kgZKjiiJuVU1pMqoPwl5U2AogIgfSRtWzHBTtCwzfHw+TT+AXi49Mj46NOo0ID8Pcuhxf4=", 
+            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
+        })
 
 class Block(object):
     def __init__(
