@@ -688,13 +688,6 @@ def get_chain():
     # some type of generator
     return json.dumps()
 
-
-@app.route('/get-peers')
-def get_peers():
-
-    return json.dumps({'peers': Peers.peers})
-
-
 @app.route('/transaction', methods=['GET', 'POST'])
 def transaction():
     if request.method == 'POST':
@@ -964,7 +957,7 @@ conf = args.conf or 'config/config.json'
 with open(conf) as f:
     Config.from_dict(json.loads(f.read()))
 
-Peers.init()
+Peers.init_local()
 Mongo.init()
 push_service = FCMNotification(api_key=Config.fcm_key)
 

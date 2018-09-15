@@ -1,7 +1,15 @@
 import json
 import requests
 
+from mongo import Mongo
+
 class Peers(object):
+    @classmethod
+    def init_local(cls):
+        Mongo.init()
+        res = Mongo.db.peers.find({'active': True}, {'_id': 0})
+        return json.dumps({'peers': [x for x in res]})
+
     @classmethod
     def init(cls):
         res = requests.get('https://yadacoin.io/peers')
