@@ -141,31 +141,33 @@ def consensus():
             return
         records = Mongo.db.consensus.find({'index': latests[0]['index']})
         if records.count():
-            heighest = 0
+            lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
             for record in records:
-                val = len(re.search(r'^[0]+', record['block']['hash']).group(0))
-                if val > heighest:
+                val = int(record['block']['hash'], 16)
+                if val < lowest:
+                    lowest = val
                     winning_block = record['block']
                     peer = record['peer']
-    else:
-        print "no records cound at index:", next_index
-        return
-
-    if winning_block:
-        print latest_block.get('hash'), latest_block.get('index')
-        print winning_block.get('prevHash'), winning_block.get('index')
-        print winning_block.get('hash'), winning_block.get('index')
-        if latest_block.get('hash') == winning_block.get('prevHash'):
-            # everything jives with our current history, everyone is happy
-            Mongo.db.blocks.insert(winning_block)
-            print 'winning block inserted at: ', winning_block.get('index')
-            latest_block = BU.get_latest_block()
+            if winning_block:
+                print latest_block.get('hash'), latest_block.get('index')
+                print winning_block.get('prevHash'), winning_block.get('index')
+                print winning_block.get('hash'), winning_block.get('index')
+                if latest_block.get('hash') == winning_block.get('prevHash'):
+                    # everything jives with our current history, everyone is happy
+                    Mongo.db.blocks.update(winning_block, winning_block, upsert=True)
+                    print 'winning block inserted at: ', winning_block.get('index')
+                    latest_block = BU.get_latest_block()
+                else:
+                    winning_block = Block.from_dict(winning_block)
+                    result = retrace(winning_block, peer)
+                    if result == "peer has broken chain or response was invalid":
+                        Mongo.db.consensus.remove({'peer': peer}, multi=True)
+                    return
         else:
-            winning_block = Block.from_dict(winning_block)
-            print retrace(winning_block, peer)
+            print 'no winning block for index:', next_index
             return
     else:
-        print 'no winning block for index:', next_index
+        print "no records found at index:", next_index
         return
 
 def retrace(block, peer):
@@ -242,10 +244,9 @@ if __name__ == '__main__':
     with open(args.config) as f:
         Config.from_dict(json.loads(f.read()))
 
-    Peers.init()
-
     if args.mode == 'consensus':
         while 1:
+            Peers.init()
             consensus()
             """
             p = Process(target=)
@@ -255,6 +256,7 @@ if __name__ == '__main__':
             time.sleep(1)
     elif args.mode == 'mine':
         while 1:
+            Peers.init()
             node()
             """
             p = Process(target=node)
@@ -264,6 +266,7 @@ if __name__ == '__main__':
             time.sleep(1)
     elif args.mode == 'faucet':
         while 1:
+            Peers.init()
             faucet()
             """
             p = Process(target=faucet)
@@ -272,6 +275,7 @@ if __name__ == '__main__':
             """
             time.sleep(1)
     elif args.mode == 'serve':
+        Peers.init()
         # wrap Flask application with engineio's middleware
         Mongo.init()
         sio = socketio.Server()
