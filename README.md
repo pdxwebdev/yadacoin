@@ -1,6 +1,9 @@
 # yadacoin
 ## Setup
   In your terminal
+  Requires MongoDB:
+  Ubuntu:
+  `sudo apt-get install mongodb`
 
   `pip install -r requirements.txt`
   
