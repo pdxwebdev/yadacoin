@@ -16,7 +16,7 @@
 IMPORTANT: You must run all three of the below processes for mining to work.
 
 ## Run the miner
-`python p2p.py miner config.json`
+`python p2p.py mine config.json`
 
 ## run the consensus script
 `python p2p.py consensus config.json`
