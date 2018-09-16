@@ -232,35 +232,35 @@ class BlockFactory(object):
     @classmethod
     def get_genesis_block(cls):
         return Block.from_dict({
-            "nonce": 36, 
-            "hash": "0d855b040c8be2fff634c256ac98113a9481dad9d46713b1e0ba41063e288116", 
-            "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
-            "id": "MEQCIHX1hWm8FLM8fW0sL40TDWiWs9TvRLPD1QnxHSd5WoHKAiATzNUf8ZPGTcpJxsq9GY4kGIyVrT1W5ts6P/uobEPC/A==", 
-            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546", 
-            "index": 0, 
-            "target": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 
-            "special_min": False, 
-            "version": "1", 
-            "transactions": [
+            "nonce" : 0,
+            "hash" : "0dd0ec9ab91e9defe535841a4c70225e3f97b7447e5358250c2dc898b8bd3139",
+            "public_key" : "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570",
+            "id" : "MEUCIQDDicnjg9DTSnGOMLN3rq2VQC1O9ABDiXygW7QDB6SNzwIga5ri7m9FNlc8dggJ9sDg0QXUugrHwpkVKbmr3kYdGpc=",
+            "merkleRoot" : "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546",
+            "index" : 0,
+            "target" : "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "special_min" : False,
+            "version" : "1",
+            "transactions" : [ 
                 {
-                    "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
-                    "fee": 0.0, 
-                    "hash": "71429326f00ba74c6665988bf2c0b5ed9de1d57513666633efd88f0696b3d90f", 
-                    "dh_public_key": "", 
-                    "relationship": "", 
-                    "inputs": [], 
-                    "outputs": [
+                    "public_key" : "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570",
+                    "fee" : 0.0000000000000000,
+                    "hash" : "71429326f00ba74c6665988bf2c0b5ed9de1d57513666633efd88f0696b3d90f",
+                    "dh_public_key" : "",
+                    "relationship" : "",
+                    "inputs" : [],
+                    "outputs" : [ 
                         {
-                            "to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 
-                            "value": 50.0
+                            "to" : "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
+                            "value" : 50.0000000000000000
                         }
-                    ], 
-                    "rid": "", 
-                    "id": "MEUCIQDlgKHWIpg8AbeXxy6TRjfGf5GSxZqxZlZIureISuow3AIgOsAuVGwGd29DPOVxczjGOwHMLsFYWX7LYAh5yt4IC7I="
+                    ],
+                    "rid" : "",
+                    "id" : "MEUCIQDZbaCDMmJJ+QJHldj1EWu0yG7enlwRAXoO1/B617KaxgIgBLB4L2ICWpDZf5Eo2bcXgUmKd91ayrOG/6jhaIZAPb0="
                 }
-            ], 
-            "time": "1537129291", 
-            "prevHash": ""
+            ],
+            "time" : "1537127756",
+            "prevHash" : ""
         })
 
 class Block(object):
