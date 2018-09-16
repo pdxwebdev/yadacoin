@@ -184,7 +184,7 @@ def retrace(block, peer):
             if res.count():
                 block = Block.from_dict(res[0]['block'])
             else:
-                res = requests.get(peer + '/get-block?hash=' + block.prev_hash)
+                res = requests.get('http://' + peer + '/get-block?hash=' + block.prev_hash)
                 block = Block.from_dict(json.loads(res.content))
                 Mongo.db.consensus.insert({
                     'block': block.to_dict(),
