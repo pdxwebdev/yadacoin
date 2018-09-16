@@ -12,8 +12,15 @@ class Peers(object):
 
     @classmethod
     def init(cls):
+        cls.peers = []
         res = requests.get('https://yadacoin.io/peers')
-        cls.peers = json.loads(res.content)['peers']
+        for peer in json.loads(res.content)['peers']:
+            cls.peers.append(
+                Peer(
+                    peer['host'],
+                    peer['port']
+                )
+            )
 
     @classmethod
     def from_dict(cls, config):

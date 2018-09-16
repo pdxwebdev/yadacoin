@@ -261,7 +261,7 @@ if __name__ == '__main__':
             p.start()
             p.join()
             """
-            time.sleep(10)
+            time.sleep(1)
     elif args.mode == 'faucet':
         while 1:
             faucet()

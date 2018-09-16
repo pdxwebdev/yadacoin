@@ -28,8 +28,8 @@ def verify_block(block):
     pass
 
 spinner = itertools.cycle(['-', '/', '|', '\\'])
-def output(current_index):
-    string = spinner.next() + ' block height: ' + str(current_index+1)
+def output(current_index, iteration, test_int, target):
+    string = spinner.next() + ' nonce: ' + str(iteration) + ' target: ' + hex(target) + ' hash: ' + str(test_int)
     sys.stdout.write(string)  # write the next character
     sys.stdout.flush()                # flush stdout buffer (actual character display)
     sys.stdout.write(''.join(['\b' for i in range(len(string))])) # erase the last written char
@@ -52,9 +52,7 @@ class ChatNamespace(BaseNamespace):
 def node():
     latest_block_index = Value('i', 0)
     my_peer = Config.peer_host + ":" + str(Config.peer_port)
-    Config.difficulty = '0000000000'
     Config.max_duration = 300000
-    Config.grace = 10
     Config.block_version = 1
     p = Process(target=new_block_checker, args=(latest_block_index,))
     status = Array('c', 'asldkjf')
@@ -62,7 +60,9 @@ def node():
     Mongo.init()
     # default run state will be to mine some blocks!
     block = BU.get_latest_block()
-    if not block:
+    if block:
+        latest_block_index.value = block.get('index') + 1
+    else:
         genesis_block = BlockFactory.get_genesis_block()
         genesis_block.save()
         Mongo.db.consensus.insert({
@@ -72,17 +72,13 @@ def node():
             'index': 0
             })
         block = BU.get_latest_block()
-
-    Config.difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
+        latest_block_index.value = block.get('index')
 
     print '\r\n\r\n\r\n//// YADA COIN MINER ////'
-    print "Welcome!! Mining beginning with difficulty of:", Config.difficulty
-    latest_block_index.value = block.get('index')
     start = time.time()
 
-    dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': BU.get_latest_block().get('index') + 1})
+    dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': latest_block_index.value})
 
-    pending_txns = Mongo.db.miner_transactions.find()
     if not dup_test.count():
         transactions = Mongo.db.miner_transactions.find()
         transaction_objs = []
@@ -136,11 +132,11 @@ def node():
             except BaseException as e:
                 print e
                 print 'rejected transaction', txn['id']
-        print '\r\nStarting to mine...'
+        print '\r\nStarting to mine block height:', latest_block_index.value 
         try:
-            block = BlockFactory.mine(transaction_objs, Config.difficulty, Config.public_key, Config.private_key, Config.max_duration, output, latest_block_index, status)
+            block = BlockFactory.mine(transaction_objs, Config.public_key, Config.private_key, Config.max_duration, output, latest_block_index, status)
         except Exception as e:
-            raise e
+            raise
         if block:
             dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': block.index})
             if not dup_test.count():
@@ -169,11 +165,5 @@ def node():
             print 'greatest block height changed during mining'
 
         end = time.time()
-        if (end - start) + Config.grace < Config.max_duration:
-            Config.difficulty = Config.difficulty + '0'
-        elif (end - start) - Config.grace > Config.max_duration:
-            Config.difficulty = Config.difficulty[:-1]
-        else:
-            Config.difficulty = re.search(r'^[0]+', BU.get_latest_block().get('hash')).group(0)
 
     p.terminate()

@@ -24,12 +24,18 @@ from mongo import Mongo
 
 
 class BlockFactory(object):
-    def __init__(self, transactions, public_key, private_key, version, index=None):
+    def __init__(self, transactions, public_key, private_key, version, index=None, force_time=None):
         self.version = version
-        self.time = str(int(time.time()))
+        if force_time:
+            self.time = str(int(force_time))
+        else:
+            self.time = str(int(time.time()))
         blocks = BU.get_blocks()
-        self.index = index if index > -1 else BU.get_latest_block().get('index', -1) + 1
-        self.prev_hash = '' if index > -1 else elseblocks[blocks.count()-1]['hash'] if blocks.count() > 0 else ''
+        self.index = index
+        if self.index == 0:
+            self.prev_hash = '' 
+        else:
+            self.prev_hash = blocks[blocks.count()-1]['hash']
         self.public_key = public_key
         self.private_key = private_key
 
@@ -95,15 +101,16 @@ class BlockFactory(object):
 
     @classmethod
     def generate_hash(cls, block, nonce):
-        return hashlib.sha256(
-            str(block.version) +
-            str(block.time) +
-            block.public_key +
-            str(block.index) +
-            block.prev_hash +
-            str(nonce) +
+        header = str(block.version) + \
+            str(block.time) + \
+            block.public_key + \
+            str(block.index) + \
+            block.prev_hash + \
+            str(nonce) + \
+            str(block.special_min) + \
+            str(block.target) + \
             block.merkle_root
-        ).hexdigest()
+        return hashlib.sha256(hashlib.sha256(header).digest()).digest()[::-1].encode('hex')
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -123,29 +130,89 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def mine(cls, transactions, difficulty, public_key, private_key, max_duration, callback=None, current_index=None, status=None):
+    def mine(cls, transactions, public_key, private_key, max_duration, callback=None, current_index=None, status=None, start_nonce=None, force_time=None):
         import itertools, sys
         if hasattr(current_index, 'value'):
             height = current_index.value
         else:
-            height = current_index
+            height = current_index or 0
+
+        max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        if height > 0:
+            latest_block = Block.from_dict(BU.get_latest_block())
+            last_time = latest_block.time
+        # change target
+        retarget_period = 2016  # blocks
+        two_weeks = 1209600  # seconds
+        half_week = 302400  # seconds
+        max_block_time = 600  # seconds
+        if height > 0 and height % retarget_period == 0:
+            block_from_2016_ago = Block.from_dict(BU.get_block_by_index(height - retarget_period))
+            two_weeks_ago_time = block_from_2016_ago.time
+            elapsed_time_from_2016_ago = int(last_time) - int(two_weeks_ago_time)
+            # greater than two weeks?
+            if elapsed_time_from_2016_ago > two_weeks:
+                time_for_target = two_weeks
+            elif elapsed_time_from_2016_ago < half_week:
+                time_for_target = half_week
+            else:
+                time_for_target = int(elapsed_time_from_2016_ago)
+
+            block_to_check = latest_block
+            while 1:
+                if block_to_check.special_min:
+                    block_to_check = Block.from_dict(BU.get_block_by_index(block_to_check.index - 1))
+                else:
+                    target = block_to_check.target
+                    break
+            new_target = (time_for_target * target) / two_weeks
+            if new_target > max_target:
+                target = max_target
+            else:
+                target = new_target
+        # target is stupid
+        elif height == 0:
+            target = max_target
+        else:
+            block_to_check = latest_block
+            while 1:
+                if block_to_check.special_min:
+                    block_to_check = Block.from_dict(BU.get_block_by_index(block_to_check.index - 1))
+                else:
+                    target = block_to_check.target
+                    break
+
         spinner = itertools.cycle(['-', '/', '|', '\\'])
         block_factory = cls(
             transactions=transactions,
             public_key=public_key,
             private_key=private_key,
             index=height,
-            version=Config.block_version)
+            version=Config.block_version,
+            force_time=force_time)
         if current_index:
             initial_current_index = current_index.value
-        nonce = 0
+        nonce = start_nonce or 0
         start = time.time()
+        special_min = False
         while 1:
-            if callback:
-                callback(current_index.value)
+            if height > 0:
+                time_elapsed_since_last_block = int(time.time()) - int(last_time)
+
+                # special min case
+                if time_elapsed_since_last_block > max_block_time:
+                    target = max_target
+                    special_min = True
+
+            block_factory.block.special_min = special_min
+            block_factory.block.target = target
             hash_test = cls.generate_hash(block_factory.block, str(nonce))
+
+            text_int = int(hash_test, 16)
+            if callback:
+                callback(current_index.value, nonce, text_int, target)
             # print hash_test
-            if hash_test.startswith(difficulty):
+            if text_int < target:
                 # create the block with the reward
                 # gather friend requests from the network
                 block = block_factory.block
@@ -165,11 +232,15 @@ class BlockFactory(object):
     @classmethod
     def get_genesis_block(cls):
         return Block.from_dict({
-            "nonce": 377932127, 
-            "index": 0, 
-            "version": "1", 
-            "hash": "00000000faa3ce27aabd73e157343bb591027f46ecf6b1d99c5b5040ca2d17c1", 
+            "nonce": 36, 
+            "hash": "0d855b040c8be2fff634c256ac98113a9481dad9d46713b1e0ba41063e288116", 
             "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
+            "id": "MEQCIHX1hWm8FLM8fW0sL40TDWiWs9TvRLPD1QnxHSd5WoHKAiATzNUf8ZPGTcpJxsq9GY4kGIyVrT1W5ts6P/uobEPC/A==", 
+            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546", 
+            "index": 0, 
+            "target": "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff", 
+            "special_min": False, 
+            "version": "1", 
             "transactions": [
                 {
                     "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570", 
@@ -185,13 +256,11 @@ class BlockFactory(object):
                         }
                     ], 
                     "rid": "", 
-                    "id": "MEQCIFMKD8OB1CPyY6O9sk5cbxXi0bcDZwljMs6KjhXEraOsAiBan2w1BV9X/haquYwuFt3V2gEnOsW5kXS5IBcC82BQyw=="
+                    "id": "MEUCIQDlgKHWIpg8AbeXxy6TRjfGf5GSxZqxZlZIureISuow3AIgOsAuVGwGd29DPOVxczjGOwHMLsFYWX7LYAh5yt4IC7I="
                 }
             ], 
-            "time": "1536913414", 
-            "prevHash": "", 
-            "id": "MEUCIQDQwa1FU/8dK61T6b3j8kgZKjiiJuVU1pMqoPwl5U2AogIgfSRtWzHBTtCwzfHw+TT+AXi49Mj46NOo0ID8Pcuhxf4=", 
-            "merkleRoot": "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546"
+            "time": "1537129291", 
+            "prevHash": ""
         })
 
 class Block(object):
@@ -206,7 +275,9 @@ class Block(object):
         block_hash='',
         merkle_root='',
         public_key='',
-        signature=''
+        signature='',
+        special_min='',
+        target=''
     ):
         self.version = version
         self.time = block_time
@@ -220,6 +291,8 @@ class Block(object):
         self.hash = block_hash
         self.public_key = public_key
         self.signature = signature
+        self.special_min = special_min
+        self.target = target
 
     @classmethod
     def from_dict(cls, block):
@@ -242,7 +315,9 @@ class Block(object):
             transactions=transactions,
             block_hash=block.get('hash'),
             merkle_root=block.get('merkleRoot'),
-            signature=block.get('id')
+            signature=block.get('id'),
+            special_min=block.get('special_min'),
+            target=int(block.get('target'), 16)
         )
 
     def verify(self):
@@ -290,17 +365,6 @@ class Block(object):
 
         if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
             raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
-
-    def generate_hash(self):
-        return hashlib.sha256(
-            str(self.version) +
-            str(self.time) +
-            self.public_key +
-            str(self.index) +
-            self.prev_hash +
-            str(self.nonce) +
-            self.merkle_root
-        ).hexdigest()
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -356,6 +420,8 @@ class Block(object):
             'transactions': [x.to_dict() for x in self.transactions],
             'hash': self.hash,
             'merkleRoot': self.merkle_root,
+            'special_min': self.special_min,
+            'target': format(self.target, 'x'),
             'id': self.signature
         }
 
