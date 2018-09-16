@@ -162,13 +162,13 @@ def consensus():
             latest_block = BU.get_latest_block()
         else:
             winning_block = Block.from_dict(winning_block)
-            print retrace(winning_block, db, peer)
+            print retrace(winning_block, peer)
             return
     else:
         print 'no winning block for index:', next_index
         return
 
-def retrace(block, db, peer):
+def retrace(block, peer):
     print "retracing..."
     blocks = {}
     blocks[block.index] = block
