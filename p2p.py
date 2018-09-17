@@ -138,6 +138,7 @@ def consensus():
     latest_blocks = Mongo.db.blocks.find({}).sort('index', pymongo.DESCENDING)
     if latests.count():
         if latest_blocks[0]['index'] == latests[0]['index']:
+            print 'up to date, height:', latests[0]['index']
             return
         records = Mongo.db.consensus.find({'index': latests[0]['index']})
         if records.count():
@@ -163,6 +164,8 @@ def consensus():
                     if result == "peer has broken chain or response was invalid":
                         Mongo.db.consensus.remove({'peer': peer}, multi=True)
                     return
+            else:
+                print 'no winning block for index:', next_index
         else:
             print 'no winning block for index:', next_index
             return
@@ -182,6 +185,8 @@ def retrace(block, peer):
     while 1:
         try:
             # 2. if we don't, query the peer for the prevHash
+            print 'getting hash:', block.prev_hash
+            print 'for height:', block.index - 1
             res = Mongo.db.consensus.find({'block.hash': block.prev_hash})
             if res.count():
                 block = Block.from_dict(res[0]['block'])
@@ -255,6 +260,7 @@ if __name__ == '__main__':
             """
             time.sleep(1)
     elif args.mode == 'mine':
+        print Config.to_json()
         while 1:
             Peers.init()
             node()

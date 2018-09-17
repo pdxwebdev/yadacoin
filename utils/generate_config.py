@@ -9,9 +9,9 @@ pk = PrivateKey.from_hex(num)
 config = {
     "private_key": pk.to_hex(),
     "public_key": pk.public_key.format().encode('hex'),
-    "serve_host": "localhost",
+    "serve_host": "0.0.0.0",
     "serve_port": 8000,
-    "peer_host": "[my public ip]",
+    "peer_host": "my public ip",
     "peer_port": 8000,
     "web_server_host": "0.0.0.0",
     "web_server_port": 5000,
