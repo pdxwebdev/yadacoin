@@ -93,16 +93,20 @@ def faucet():
                 print e
 
 def consensus():
-    res = requests.post(
-        'https://yadacoin.io/peers',
-        json.dumps({
-            'host': Config.peer_host,
-            'port': Config.peer_port
-        }),
-        headers={
-            "Content-Type": "application/json"
-        }
-    )
+    try:
+        res = requests.post(
+            'https://yadacoin.io/peers',
+            json.dumps({
+                'host': Config.peer_host,
+                'port': Config.peer_port
+            }),
+            headers={
+                "Content-Type": "application/json"
+            }
+        )
+    except:
+        print 'ERROR: failed to get peers, exiting...'
+        return
     Mongo.init()
     synced = False
     block_heights = {}

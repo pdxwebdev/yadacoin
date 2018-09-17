@@ -176,6 +176,38 @@ def explorer_search():
 
     return '{}'
 
+@app.route('/stats')
+def hash_rate():
+    max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    blocks = BU.get_blocks()
+    total_nonce = 0
+    periods = []
+    last_time = None
+    for block in blocks:
+        difficulty = max_target / int(block.get('target'), 16)
+        if block.get('index') == 0:
+            start_timestamp = block.get('time')
+        if last_time:
+            if int(block.get('time')) > last_time:
+                periods.append({
+                    'hashrate': (difficulty * 2**32) / (int(block.get('time')) - last_time),
+                    'index': block.get('index'),
+                    'elapsed_time': (int(block.get('time')) - last_time)
+                })
+        last_time = int(block.get('time'))
+        total_nonce += block.get('nonce')
+    sorted(periods, key=lambda x: x['index'])
+    total_time_elapsed = int(block.get('time')) - int(start_timestamp)
+    network_hash_rate =  total_nonce / int(total_time_elapsed)
+    return json.dumps({
+        'stats': {
+            'network_hash_rate': network_hash_rate,
+            'total_time_elapsed': total_time_elapsed,
+            'total_nonce': total_nonce,
+            'periods': periods
+        }
+    }, indent=4)
+
 @app.route('/app')
 def web_app():
     return app.send_static_file('app/www/index.html')
