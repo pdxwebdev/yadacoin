@@ -979,12 +979,12 @@ def peers():
                     Mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
             else:
                 Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True, 'failed': 0}, upsert=True)
+            Peers.init_local()
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
     else:
-        res = Mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
-        return json.dumps({'peers': [x for x in res]}, indent=4)
+        return json.dumps({'peers': Peers.peers}, indent=4)
 
 
 parser = argparse.ArgumentParser(description='Process some integers.')
