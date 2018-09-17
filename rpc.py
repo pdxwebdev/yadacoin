@@ -972,7 +972,13 @@ def peers():
             socket.inet_aton(request.json['host'])
             host = request.json['host']
             port = int(request.json['port'])
-            Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True}, upsert=True)
+            failed = request.json['failed']
+            if failed:
+                res = Mongo.db.peers.find({'host': host, 'port': port})
+                if res.count():
+                    Mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
+            else:
+                Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True, 'failed': 0}, upsert=True)
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400

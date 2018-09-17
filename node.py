@@ -161,6 +161,17 @@ def node():
                         print peer.host + ":" + str(peer.port)
                     except Exception as e:
                         print e
+                        try:
+                            print 'reporting bad peer'
+                            requests.post(
+                                'https://yadacoin.io/peers',
+                                json={'host': peer.host, 'port': str(peer.port), 'failed': True},
+                                timeout=3,
+                                headers={'Connection':'close'}
+                            )
+                        except:
+                            print 'failed to report bad peer'
+                            pass
         else:
             print 'greatest block height changed during mining'
 

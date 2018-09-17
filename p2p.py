@@ -256,6 +256,9 @@ if __name__ == '__main__':
     if args.mode == 'consensus':
         while 1:
             Peers.init()
+            if not Peers.peers:
+                time.sleep(1)
+                continue
             consensus()
             """
             p = Process(target=)
@@ -267,6 +270,9 @@ if __name__ == '__main__':
         print Config.to_json()
         while 1:
             Peers.init()
+            if not Peers.peers:
+                time.sleep(1)
+                continue
             node()
             """
             p = Process(target=node)
@@ -277,6 +283,9 @@ if __name__ == '__main__':
     elif args.mode == 'faucet':
         while 1:
             Peers.init()
+            if not Peers.peers:
+                time.sleep(1)
+                continue
             faucet()
             """
             p = Process(target=faucet)
@@ -286,6 +295,8 @@ if __name__ == '__main__':
             time.sleep(1)
     elif args.mode == 'serve':
         Peers.init()
+        if not Peers.peers:
+            raise Exception("peer service unavailble, restart this process")
         # wrap Flask application with engineio's middleware
         Mongo.init()
         sio = socketio.Server()
