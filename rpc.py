@@ -984,7 +984,7 @@ def peers():
         except:
             return 'failed to add peer, invalid host', 400
     else:
-        return json.dumps({'peers': Peers.peers}, indent=4)
+        return json.dumps(Peers.to_dict(), indent=4)
 
 
 parser = argparse.ArgumentParser(description='Process some integers.')

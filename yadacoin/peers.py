@@ -8,7 +8,19 @@ class Peers(object):
     def init_local(cls):
         Mongo.init()
         res = Mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
-        return json.dumps({'peers': [x for x in res]})
+        peers = [x for x in res]
+        cls.peers = []
+        try:
+            for peer in peers:
+                cls.peers.append(
+                    Peer(
+                        peer['host'],
+                        peer['port']
+                    )
+                )
+        except:
+            pass
+        return json.dumps({'peers': peers})
 
     @classmethod
     def init(cls):
