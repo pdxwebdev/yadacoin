@@ -51,10 +51,16 @@ class Peers(object):
     @classmethod
     def to_dict(cls):
         return {
-           'peers': cls.peers
+           'peers': [x.to_dict() for x in cls.peers]
         }
 
 class Peer(object):
     def __init__(self, host, port):
         self.host = host
         self.port = port
+
+    def to_dict(self):
+        return {
+            'host': self.host,
+            'port': self.port
+        }
