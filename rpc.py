@@ -972,7 +972,7 @@ def peers():
             socket.inet_aton(request.json['host'])
             host = request.json['host']
             port = int(request.json['port'])
-            failed = request.json['failed']
+            failed = request.json.get('failed')
             if failed:
                 res = Mongo.db.peers.find({'host': host, 'port': port})
                 if res.count():
