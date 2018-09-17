@@ -48,6 +48,7 @@ class Peers(object):
                 )
             )
 
+    @classmethod
     def to_dict(cls):
         return {
            'peers': cls.peers
