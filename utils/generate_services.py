@@ -9,7 +9,7 @@ Description=Yada Coin Serve Worker
 [Service]
 Type=simple
 WorkingDirectory={cwd}
-ExecStart={cwd}scripts/start_serve.sh
+ExecStart={cwd}/scripts/start_serve.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -23,7 +23,7 @@ Description=Yada Coin Mine Worker
 [Service]
 Type=simple
 WorkingDirectory={cwd}
-ExecStart={cwd}scripts/start_mine.sh
+ExecStart={cwd}/scripts/start_mine.sh
 
 [Install]
 WantedBy=multi-user.target
@@ -37,7 +37,7 @@ Description=Yada Coin Consensus Worker
 [Service]
 Type=simple
 WorkingDirectory={cwd}
-ExecStart={cwd}scripts/start_consensus.sh
+ExecStart={cwd}/scripts/start_consensus.sh
 
 [Install]
 WantedBy=multi-user.target
