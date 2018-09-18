@@ -1,5 +1,7 @@
 import hashlib
 import json
+import binascii
+import base58
 from bitcoin.wallet import P2PKHBitcoinAddress
 from crypt import Crypt
 
@@ -7,10 +9,12 @@ from crypt import Crypt
 class Config(object):
     @classmethod
     def from_dict(cls, config):
+
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
 
         cls.private_key = config['private_key']
+        cls.wif = cls.to_wif()
         cipher = Crypt(str(cls.private_key))
         cls.bulletin_secret = hashlib.sha256(cipher.encrypt_consistent(str(cls.private_key))).digest().encode('hex')
 
@@ -31,11 +35,22 @@ class Config(object):
         cls.fcm_key = config['fcm_key']
 
     @classmethod
+    def to_wif(cls):
+        private_key_static = cls.private_key
+        extended_key = "80"+private_key_static+"01"
+        first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
+        second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
+        final_key = extended_key+second_sha256[:8]
+        wif = base58.b58encode(binascii.unhexlify(final_key))
+        return wif
+
+    @classmethod
     def to_dict(cls):
         return {
             'public_key': cls.public_key,
             'address': cls.address,
             'private_key': cls.private_key,
+            'wif': cls.wif,
             'bulletin_secret': cls.bulletin_secret,
             'mongodb_host': cls.mongodb_host,
             'database': cls.database,
