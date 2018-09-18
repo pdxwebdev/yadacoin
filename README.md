@@ -14,7 +14,7 @@
 
   `pip install -r requirements.txt`
   
-  `python generate_config.py`
+  `python utils/generate_config.py`
   
   copy that json object and paste it into a file named `config.json`
 
