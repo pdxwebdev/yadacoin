@@ -3,7 +3,7 @@
   Prerequisites:
 
   Requires MongoDB to be installed
-  
+
   Ubuntu install instructions: https://docs.mongodb.com/manual/tutorial/install-mongodb-on-ubuntu/
 
   Debian/Ubuntu packages:
@@ -23,12 +23,12 @@
 IMPORTANT: You must run all three of the below processes for mining to work.
 
 ## Run the miner
-`python p2p.py mine config.json`
+`./scripts/start_mine.sh`
 
 ## run the consensus script
-`python p2p.py consensus config.json`
+`./scripts/start_consensus.sh`
 
 ## run the server
-`python p2p.py serve config.json`
+`./scripts/start_serve.sh`
 
 The consensus and server must be running to run the miner.
