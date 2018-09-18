@@ -8,10 +8,11 @@ class Mongo(object):
         cls.db = cls.client[Config.database]
         cls.site_db = cls.client[Config.site_database]
 
+        __id = IndexModel([("id", ASCENDING)], name="__id", unique=True)
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         try:
-            cls.db.blocks.create_indexes([__hash, __index])
+            cls.db.blocks.create_indexes([__hash, __index, __id])
         except:
             pass
 

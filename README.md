@@ -2,6 +2,11 @@
 ## Setup
   Prerequisites:
   Requires MongoDB to be installed
+  Ubuntu install instructions: https://docs.mongodb.com/manual/tutorial/install-mongodb-on-ubuntu/
+
+  Debian/Ubuntu packages:
+  - libxml2-dev
+  - libxmlsec1-dev
 
   In your terminal
 
