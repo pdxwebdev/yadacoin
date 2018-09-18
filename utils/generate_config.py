@@ -1,14 +1,28 @@
 import json
 import os
+import hashlib
+import binascii
+import base58
+from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 
 num = os.urandom(32).encode('hex')
 
 pk = PrivateKey.from_hex(num)
 
+def to_wif(private_key_static):
+    extended_key = "80"+private_key_static+"01"
+    first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
+    second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
+    final_key = extended_key+second_sha256[:8]
+    wif = base58.b58encode(binascii.unhexlify(final_key))
+    return wif
+
 config = {
     "private_key": pk.to_hex(),
+    "wif": to_wif(pk.to_hex()),
     "public_key": pk.public_key.format().encode('hex'),
+    "address": str(P2PKHBitcoinAddress.from_pubkey(pk.public_key.format())),
     "serve_host": "0.0.0.0",
     "serve_port": 8000,
     "peer_host": "my public ip",
