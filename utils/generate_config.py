@@ -5,6 +5,8 @@ import binascii
 import base58
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
+from urllib2 import urlopen
+my_ip = urlopen('http://ip.42.pl/raw').read()
 
 num = os.urandom(32).encode('hex')
 
@@ -25,7 +27,7 @@ config = {
     "address": str(P2PKHBitcoinAddress.from_pubkey(pk.public_key.format())),
     "serve_host": "0.0.0.0",
     "serve_port": 8000,
-    "peer_host": "my public ip",
+    "peer_host": my_ip,
     "peer_port": 8000,
     "web_server_host": "0.0.0.0",
     "web_server_port": 5000,
