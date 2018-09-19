@@ -253,6 +253,8 @@ if __name__ == '__main__':
     with open(args.config) as f:
         Config.from_dict(json.loads(f.read()))
 
+    Config.peer_host = subprocess.check_output(["dig +short myip.opendns.com @resolver1.opendns.com"], shell=True).strip()
+
     if args.mode == 'consensus':
         while 1:
             Peers.init()
