@@ -3,10 +3,11 @@ import os
 import hashlib
 import binascii
 import base58
+import subprocess
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 from urllib2 import urlopen
-import subprocess
+
 public_ip = subprocess.check_output(["dig +short myip.opendns.com @resolver1.opendns.com"], shell=True).strip()
 
 num = os.urandom(32).encode('hex')

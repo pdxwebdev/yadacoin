@@ -176,8 +176,8 @@ def explorer_search():
 
     return '{}'
 
-@app.route('/stats')
-def hash_rate():
+@app.route('/api-stats')
+def api_stats():
     max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     blocks = BU.get_blocks()
     total_nonce = 0
@@ -986,6 +986,9 @@ def peers():
     else:
         return json.dumps(Peers.to_dict(), indent=4)
 
+@app.route('/stats')
+def stats():
+    return app.send_static_file('stats/index.html')
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',

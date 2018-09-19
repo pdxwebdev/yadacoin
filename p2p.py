@@ -10,6 +10,7 @@ import base64
 import humanhash
 import re
 import pymongo
+import subprocess
 from multiprocessing import Process, Value, Array, Pool
 from socketIO_client import SocketIO, BaseNamespace
 from flask import Flask, render_template, request, Response
@@ -44,6 +45,40 @@ def new_block_checker(current_index):
         except:
             pass
         time.sleep(1)
+
+def send(to, value):
+    Mongo.init()
+    used_inputs = []
+    new_inputs = []
+
+    try:
+        transaction = TransactionFactory(
+            fee=0.01,
+            public_key=Config.public_key,
+            private_key=Config.private_key,
+            outputs=[
+                Output(to=to, value=value)
+            ]
+        )
+    except NotEnoughMoneyException as e:
+        print "not enough money yet"
+        return
+    except Exception as e:
+        print x
+    try:
+        transaction.transaction.verify()
+    except:
+        print 'transaction failed'
+    TU.save(transaction.transaction)
+    print 'saved. sending...', x['address']
+    for peer in Peers.peers:
+        try:
+            socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
+            chat_namespace = socketIO.define(ChatNamespace, '/chat')
+            chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
+            socketIO.disconnect()
+        except Exception as e:
+            print e
 
 def faucet():
     Mongo.init()
@@ -93,20 +128,6 @@ def faucet():
                 print e
 
 def consensus():
-    try:
-        res = requests.post(
-            'https://yadacoin.io/peers',
-            json.dumps({
-                'host': Config.peer_host,
-                'port': Config.peer_port
-            }),
-            headers={
-                "Content-Type": "application/json"
-            }
-        )
-    except:
-        print 'ERROR: failed to get peers, exiting...'
-        return
     Mongo.init()
     synced = False
     block_heights = {}
@@ -248,12 +269,28 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', nargs=None, help='serve, mine, or faucet')
     parser.add_argument('config', default="config.json", nargs=None, help='config file')
+    parser.add_argument('to', default="", nargs="?", help='to')
+    parser.add_argument('value', default=0, nargs="?", help='amount')
     args = parser.parse_args()
 
     with open(args.config) as f:
         Config.from_dict(json.loads(f.read()))
 
     if args.mode == 'consensus':
+        try:
+            res = requests.post(
+                'https://yadacoin.io/peers',
+                json.dumps({
+                    'host': Config.peer_host,
+                    'port': Config.peer_port
+                }),
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+        except:
+            print 'ERROR: failed to get peers, exiting...'
+            exit()
         while 1:
             Peers.init()
             if not Peers.peers:
@@ -266,6 +303,9 @@ if __name__ == '__main__':
             p.join()
             """
             time.sleep(1)
+    elif args.mode == 'send':
+        print args.to, float(args.value)
+        #send(args.to, float(args.value))
     elif args.mode == 'mine':
         print Config.to_json()
         while 1:
