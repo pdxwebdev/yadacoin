@@ -6,20 +6,16 @@ sudo apt update
 sudo apt install -y mongodb-org
 sudo systemctl enable mongod.service
 sudo systemctl start mongod.service
-sudo apt install libxml2-dev libxmlsec1-dev
+sudo apt install -y libxml2-dev libxmlsec1-dev
 cd ~
 git clone https://github.com/pdxwebdev/yadacoin.git
 cd yadacoin
 sudo apt install python-pip
 sudo pip install virtualenv
 virtualenv venv
-source venv/bin/activate
-pip install -r requirements.txt
-python utils/generate_config.py > config/config.json
-cd ~/yadacoin
-source venv/bin/activate
-git pull origin master
-python utils/generate_services.py
+venv/bin/pip install -r requirements.txt
+venv/bin/python utils/generate_config.py > config/config.json
+venv/bin/python utils/generate_services.py
 sudo cp services/* /lib/systemd/system/.
 sudo systemctl daemon-reload
 sudo systemctl enable yadacoin-serve
