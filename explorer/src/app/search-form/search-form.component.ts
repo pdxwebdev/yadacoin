@@ -19,6 +19,7 @@ export class SearchFormComponent implements OnInit {
   model = new Search('');
   result = [];
   resultType = '';
+  balance = 0;
 
   submitted = false;
 
@@ -28,6 +29,7 @@ export class SearchFormComponent implements OnInit {
   	.subscribe((res: any) => {
   		this.result = res.json().result
   		this.resultType = res.json().resultType
+      this.balance = res.json().balance
   	},
   	(err: any) => {
   		alert('something went terribly wrong!')

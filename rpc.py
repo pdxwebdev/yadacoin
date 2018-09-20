@@ -167,8 +167,10 @@ def explorer_search():
         re.search(r'[A-Fa-f0-9]+', term).group(0)
         res = Mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
         if res.count():
+            balance = BU.get_wallet_balance(term)
             return json.dumps({
-                'resultType': 'txn_hash',
+                'balance': balance,
+                'resultType': 'txn_outputs_to',
                 'result': [x for x in res]
             }, indent=4)
     except:
