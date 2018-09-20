@@ -10,7 +10,7 @@ sudo apt install -y libxml2-dev libxmlsec1-dev
 cd ~
 git clone https://github.com/pdxwebdev/yadacoin.git
 cd yadacoin
-sudo apt install python-pip
+sudo apt install -y python-pip
 sudo pip install virtualenv
 virtualenv venv
 venv/bin/pip install -r requirements.txt
