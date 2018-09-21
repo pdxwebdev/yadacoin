@@ -13,9 +13,7 @@ coincurve==7.1.0
 contextlib2==0.5.5
 cryptography==2.3.1
 decorator==4.1.2
-defusedxml==0.5.0
 dis3==0.1.2
-dm.xmlsec.binding==1.3.3
 eccsnacks==1.0.1
 ecdsa==0.13
 enum-compat==0.0.2
@@ -35,7 +33,6 @@ isodate==0.6.0
 itsdangerous==0.24
 jaraco.functools==1.20
 Jinja2==2.9.6
-lxml==4.2.4
 macholib==1.10
 Mako==1.0.7
 MarkupSafe==1.0
@@ -59,11 +56,9 @@ Pygments==2.2.0
 PyInstaller==3.3.1
 pymongo==3.5.1
 pyOpenSSL==18.0.0
-pysaml2==4.6.1
 python-bitcoinlib==0.8.0
 python-dateutil==2.7.3
 python-engineio==2.0.1
-python-saml==2.4.1
 python-socketio==1.8.3
 pytz==2018.5
 qrcode==5.3
@@ -79,5 +74,4 @@ urllib3==1.22
 wcwidth==0.1.7
 websocket-client==0.44.0
 Werkzeug==0.12.2
-xmlsec==1.3.3
 zc.lockfile==1.3.0

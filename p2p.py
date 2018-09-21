@@ -21,6 +21,7 @@ from yadacoin import TransactionFactory, Transaction, \
                     Mongo, BlockFactory, NotEnoughMoneyException
 from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+from endpoints import *
 
 
 
@@ -340,7 +341,6 @@ if __name__ == '__main__':
         # wrap Flask application with engineio's middleware
         Mongo.init()
         sio = socketio.Server()
-        app = Flask(__name__)
 
         @sio.on('newblock', namespace='/chat')
         def newblock(data):

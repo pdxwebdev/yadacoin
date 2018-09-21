@@ -19,14 +19,12 @@ from transaction import *
 from crypt import Crypt
 from config import Config
 from mongo import Mongo
-from pyfcm import FCMNotification
 
 
 class Graph(object):
 
-    def __init__(self, bulletin_secret, public_key, my_address, config, for_me=False, push_service=None):
+    def __init__(self, bulletin_secret, for_me=False):
         Mongo.init()
-        self.push_service = push_service
         self.friend_requests = []
         self.sent_friend_requests = []
         self.friends = []
@@ -78,8 +76,8 @@ class Graph(object):
 
         if not self.registered:
             # not regisered, let's check for a pending transaction
-            res = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': public_key}})
-            res2 = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': public_key})
+            res = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': Config.public_key}})
+            res2 = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': Config.public_key})
 
             if res.count() and res2.count():
                 self.pending_registration = True
