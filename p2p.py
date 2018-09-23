@@ -10,6 +10,7 @@ import re
 import pymongo
 import subprocess
 import os
+from sys import exit
 from multiprocessing import Process, Value, Array, Pool
 from socketIO_client import SocketIO, BaseNamespace
 from flask import Flask, render_template, request, Response
@@ -22,7 +23,6 @@ from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from endpoints import *
 from gevent import pywsgi
-from utils import generate_config
 
 
 class ChatNamespace(BaseNamespace):
@@ -278,6 +278,7 @@ if __name__ == '__main__':
     if args.mode == 'config' and args.config:
         if not os.path.isfile(args.config):
             with open(args.config, 'w+') as f:
+                from utils import generate_config
                 f.write(generate_config.generate())
         else:
             print '\'%s\' already exists! You must rename, move, or delete the existing file.' % args.config
