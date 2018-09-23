@@ -1,6 +1,4 @@
 import socketio
-import eventlet
-import eventlet.wsgi
 import json
 import time
 import signal
@@ -11,6 +9,7 @@ import humanhash
 import re
 import pymongo
 import subprocess
+import os
 from multiprocessing import Process, Value, Array, Pool
 from socketIO_client import SocketIO, BaseNamespace
 from flask import Flask, render_template, request, Response
@@ -22,7 +21,8 @@ from yadacoin import TransactionFactory, Transaction, \
 from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from endpoints import *
-
+from gevent import pywsgi
+from utils import generate_config
 
 
 class ChatNamespace(BaseNamespace):
@@ -267,15 +267,28 @@ def retrace(block, peer):
 
 if __name__ == '__main__':
     import argparse
+    import os.path
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', nargs=None, help='serve, mine, or faucet')
-    parser.add_argument('config', default="config.json", nargs=None, help='config file')
+    parser.add_argument('config', default="", nargs="?", help='config file')
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
     args = parser.parse_args()
 
-    with open(args.config) as f:
-        Config.from_dict(json.loads(f.read()))
+    if args.mode == 'config' and args.config:
+        if not os.path.isfile(args.config):
+            with open(args.config, 'w+') as f:
+                f.write(generate_config.generate())
+        else:
+            print '\'%s\' already exists! You must rename, move, or delete the existing file.' % args.config
+        exit()
+
+    if os.path.isfile(args.config):
+        with open(args.config) as f:
+            Config.from_dict(json.loads(f.read()))
+    else:
+        print 'no config file found at \'%s\'' % args.config
+        exit()
 
     if args.mode == 'consensus':
         try:
@@ -340,7 +353,7 @@ if __name__ == '__main__':
             raise Exception("peer service unavailble, restart this process")
         # wrap Flask application with engineio's middleware
         Mongo.init()
-        sio = socketio.Server()
+        sio = socketio.Server(async_mode='gevent')
 
         @sio.on('newblock', namespace='/chat')
         def newblock(data):
@@ -461,4 +474,4 @@ if __name__ == '__main__':
 
         app = socketio.Middleware(sio, app)
         # deploy as an eventlet WSGI server
-        eventlet.wsgi.server(eventlet.listen((Config.serve_host, Config.serve_port)), app)
+        pywsgi.WSGIServer((Config.serve_host, Config.serve_port), app).serve_forever()

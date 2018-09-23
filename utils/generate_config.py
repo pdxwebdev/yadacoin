@@ -23,23 +23,26 @@ def to_wif(private_key_static):
     wif = base58.b58encode(binascii.unhexlify(final_key))
     return wif
 
-config = {
-    "private_key": pk.to_hex(),
-    "wif": to_wif(pk.to_hex()),
-    "public_key": pk.public_key.format().encode('hex'),
-    "address": str(P2PKHBitcoinAddress.from_pubkey(pk.public_key.format())),
-    "serve_host": "0.0.0.0",
-    "serve_port": 8000,
-    "peer_host": public_ip,
-    "peer_port": 8000,
-    "web_server_host": "0.0.0.0",
-    "web_server_port": 5000,
-    "peer": "http://localhost:8000",
-    "callbackurl": "http://0.0.0.0:5000/create-relationship",
-    "fcm_key": "",
-    "database": "yadacoin",
-    "site_database": "yadacoinsite",
-    "mongodb_host": "localhost",
-    "mixpanel": ""
-}
-print json.dumps(config, indent=4)
+def generate():
+    config = {
+        "private_key": pk.to_hex(),
+        "wif": to_wif(pk.to_hex()),
+        "public_key": pk.public_key.format().encode('hex'),
+        "address": str(P2PKHBitcoinAddress.from_pubkey(pk.public_key.format())),
+        "serve_host": "0.0.0.0",
+        "serve_port": 8000,
+        "peer_host": public_ip,
+        "peer_port": 8000,
+        "web_server_host": "0.0.0.0",
+        "web_server_port": 5000,
+        "peer": "http://localhost:8000",
+        "callbackurl": "http://0.0.0.0:5000/create-relationship",
+        "fcm_key": "",
+        "database": "yadacoin",
+        "site_database": "yadacoinsite",
+        "mongodb_host": "localhost",
+        "mixpanel": ""
+    }
+    return json.dumps(config, indent=4)
+
+print generate()
