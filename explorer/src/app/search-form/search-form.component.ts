@@ -14,8 +14,9 @@ export class SearchFormComponent implements OnInit {
   ) { 
     this.http.get('/get-latest-block')
     .subscribe((res: any) => {
-      this.current_height = res.json().index + 1
+      this.current_height = Number(res.json().index + 1).toLocaleString()
       this.result = [res.json()]
+      this.circulating = Number(res.json().index * 50).toLocaleString()
     },
     (err: any) => {
       alert('something went terribly wrong!')
@@ -31,7 +32,8 @@ export class SearchFormComponent implements OnInit {
   balance = 0;
   searching = false;
   submitted = false;
-  current_height = 0;
+  current_height = '';
+  circulating = '';
 
   onSubmit() { 
     this.searching = true;
