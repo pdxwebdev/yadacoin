@@ -14,7 +14,7 @@ export class SearchFormComponent implements OnInit {
   ) { 
     this.http.get('/get-latest-block')
     .subscribe((res: any) => {
-      this.last_index = res.json().index
+      this.current_height = res.json().index + 1
       this.result = [res.json()]
     },
     (err: any) => {
@@ -31,7 +31,7 @@ export class SearchFormComponent implements OnInit {
   balance = 0;
   searching = false;
   submitted = false;
-  last_index = 0;
+  current_height = 0;
 
   onSubmit() { 
     this.searching = true;

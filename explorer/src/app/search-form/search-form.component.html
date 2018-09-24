@@ -1,4 +1,4 @@
-<h2>Current block height: {{last_index}}
+<h2>Current block height: {{current_height}}
 <form (ngSubmit)="onSubmit()" #searchForm="ngForm">
     <input class="form-control" [(ngModel)]="model.term" name="term" placeholder="Wallet address, Txn Id, Block height...">
     <button class="btn btn-success">Search</button>
