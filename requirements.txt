@@ -22,6 +22,7 @@ eventlet==0.21.0
 Flask==0.12.2
 Flask-Cors==3.0.4
 future==0.16.0
+gevent==1.1rc3
 greenio==0.6.0
 greenlet==0.4.12
 humanhash==0.0.1
