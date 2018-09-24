@@ -199,8 +199,8 @@ class Graph(object):
             res = Mongo.db.usernames.find({'rid': rid}, {'_id': 0})
             if res.count():
                 x['username'] = res[0]['username']
-            if x['username'] not in blocked and x['id'] not in flagged:
-                posts.append(x)
+                if x['username'] not in blocked and x['id'] not in flagged:
+                    posts.append(x)
         self.posts = posts
 
     def from_dict(self, obj):
