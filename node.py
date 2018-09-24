@@ -17,12 +17,6 @@ from yadacoin import Block, BlockFactory, Transaction, Input, Output, \
                      Blockchain, Config, Peers, Mongo
 from bitcoin.wallet import P2PKHBitcoinAddress
 
-try:
-    f = open('config/block_rewards.json', 'r')
-    BU.block_rewards = json.loads(f.read())
-    f.close()
-except:
-    raise BaseException("Block reward file not found")
 
 def verify_block(block):
     pass

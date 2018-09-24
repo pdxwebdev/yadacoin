@@ -270,7 +270,7 @@ if __name__ == '__main__':
     import os.path
     parser = argparse.ArgumentParser()
     parser.add_argument('mode', nargs=None, help='serve, mine, or faucet')
-    parser.add_argument('config', default="", nargs="?", help='config file')
+    parser.add_argument('config', default="config.json", nargs="?", help='config file')
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
     args = parser.parse_args()
