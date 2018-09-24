@@ -1,7 +1,10 @@
+<h2>Current block height: {{last_index}}
 <form (ngSubmit)="onSubmit()" #searchForm="ngForm">
     <input class="form-control" [(ngModel)]="model.term" name="term" placeholder="Wallet address, Txn Id, Block height...">
     <button class="btn btn-success">Search</button>
 </form>
+<div *ngIf="searching"><strong>Searching...</strong></div>
+<div *ngIf="(!searching && submitted) && result.length === 0"><strong>No results</strong></div>
 <h2 *ngIf="resultType === 'txn_outputs_to'">Balance: {{balance}}</h2>
 <ul>
     <li *ngFor="let block of result">

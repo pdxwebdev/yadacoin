@@ -614,8 +614,8 @@ def deeplink():
 
 @app.route('/get-latest-block')
 def get_latest_block():
-    blocks = BU.get_latest_block()
-    return json.dumps(blocks[0], indent=4)
+    block = BU.get_latest_block()
+    return json.dumps(block, indent=4)
 
 @app.route('/get-chain')
 def get_chain():
