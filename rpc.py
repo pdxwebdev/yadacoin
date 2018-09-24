@@ -30,16 +30,12 @@ from multiprocessing import Process, Value, Array, Pool
 from flask_cors import CORS
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from bson.objectid import ObjectId
+from endpoints import *
 
 
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
         print 'error'
-
-app = Flask(__name__)
-app.debug = True
-app.secret_key = '23ljk2l3k4j'
-CORS(app)
 
 def make_qr(data):
     qr = qrcode.QRCode(

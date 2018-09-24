@@ -16,6 +16,7 @@ from node import node
 
 app = Flask(__name__)
 app.debug = True
+app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
 CORS(app)
 
 
