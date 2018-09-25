@@ -85,7 +85,7 @@ class Graph(object):
         if self.registered:
             for x in self.friends:
                 for y in x['outputs']:
-                    if y['to'] != my_address:
+                    if y['to'] != Config.address:
                         Mongo.db.usernames.update({
                             'rid': self.rid,
                             'username': self.human_hash,

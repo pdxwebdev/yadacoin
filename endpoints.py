@@ -2,6 +2,7 @@ import json
 import hashlib
 import humanhash
 import socket
+import os
 from multiprocessing import Process, Value, Array, Pool
 from flask import Flask, render_template, request, Response
 from socketIO_client import SocketIO, BaseNamespace
@@ -13,6 +14,7 @@ from yadacoin import TransactionFactory, Transaction, \
                     Graph, Mongo, InvalidTransactionException, \
                     InvalidTransactionSignatureException
 from node import node
+from eccsnacks.curve25519 import scalarmult, scalarmult_base
 
 app = Flask(__name__)
 app.debug = True
