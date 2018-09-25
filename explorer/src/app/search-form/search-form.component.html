@@ -10,10 +10,10 @@
 <h2 *ngIf="resultType === 'txn_outputs_to'">Balance: {{balance}}</h2>
 <ul>
     <li *ngFor="let block of result">
-        <h3>Block {{block.index}}</h3>
+        <a href="/explorer?term={{block.index}}"><h3>Block {{block.index}}</h3></a>
         <p><strong>public_key: </strong>{{block.public_key}}</p>
-        <p><strong>signature: </strong>{{block.id}}</p>
-        <p><strong>hash: </strong>{{block.hash}}</p>
+        <p><a href="/explorer?term={{block.id}}"><strong>signature: </strong>{{block.id}}</a></p>
+        <p><a href="/explorer?term={{block.hash}}"><strong>hash: </strong>{{block.hash}}</a></p>
         <h3>Transactions</h3>
         <ul>
             <li *ngFor="let transaction of block.transactions">
@@ -31,7 +31,7 @@
                 <div *ngIf="transaction.outputs.length > 0">
                     <h3>Outputs</h3>
                     <ul *ngFor="let output of transaction.outputs">
-                        <li><strong>Address: </strong>{{output.to}}</li>
+                        <li><a href="/explorer?term={{output.to}}"><strong>Address: </strong>{{output.to}}</a></li>
                         <li><strong>Amount: </strong>{{output.value}}</li>
                         <hr>
                     </ul>

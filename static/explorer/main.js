@@ -152,7 +152,7 @@ module.exports = ""
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-module.exports = "<h2>Current block height: {{current_height}}</h2>\n<h2>Coins in circulation: {{circulating}}</h2>\n<h3>Maximum supply: 21,000,000</h3>\n<form (ngSubmit)=\"onSubmit()\" #searchForm=\"ngForm\">\n    <input class=\"form-control\" [(ngModel)]=\"model.term\" name=\"term\" placeholder=\"Wallet address, Txn Id, Block height...\">\n    <button class=\"btn btn-success\">Search</button>\n</form>\n<div *ngIf=\"searching\"><strong>Searching...</strong></div>\n<div *ngIf=\"(!searching && submitted) && result.length === 0\"><strong>No results</strong></div>\n<h2 *ngIf=\"resultType === 'txn_outputs_to'\">Balance: {{balance}}</h2>\n<ul>\n    <li *ngFor=\"let block of result\">\n        <h3>Block {{block.index}}</h3>\n        <p><strong>public_key: </strong>{{block.public_key}}</p>\n        <p><strong>signature: </strong>{{block.id}}</p>\n        <p><strong>hash: </strong>{{block.hash}}</p>\n        <h3>Transactions</h3>\n        <ul>\n            <li *ngFor=\"let transaction of block.transactions\">\n                <p><strong>public_key: </strong>{{transaction.public_key}}</p>\n                <p><strong>signature: </strong>{{transaction.id}}</p>\n                <p><strong>hash: </strong>{{transaction.hash}}</p>\n                <div *ngIf=\"transaction.inputs.length === 0\"><strong>No inputs</strong></div>\n                <div *ngIf=\"transaction.inputs.length > 0\">\n                    <h3>Inputs</h3>\n                    <ul>\n                        <li *ngFor=\"let input of transaction.inputs\"><strong>Signature: </strong>{{input.id}}</li>\n                    </ul>\n                </div>\n                <div *ngIf=\"transaction.outputs.length === 0\"><strong>No outputs</strong></div>\n                <div *ngIf=\"transaction.outputs.length > 0\">\n                    <h3>Outputs</h3>\n                    <ul *ngFor=\"let output of transaction.outputs\">\n                        <li><strong>Address: </strong>{{output.to}}</li>\n                        <li><strong>Amount: </strong>{{output.value}}</li>\n                        <hr>\n                    </ul>\n                </div>\n            </li>\n        </ul>\n    </li>\n</ul>"
+module.exports = "<h2>Current block height: {{current_height}}</h2>\n<h2>Coins in circulation: {{circulating}}</h2>\n<h3>Maximum supply: 21,000,000</h3>\n<form (ngSubmit)=\"onSubmit()\" #searchForm=\"ngForm\">\n    <input class=\"form-control\" [(ngModel)]=\"model.term\" name=\"term\" placeholder=\"Wallet address, Txn Id, Block height...\">\n    <button class=\"btn btn-success\">Search</button>\n</form>\n<div *ngIf=\"searching\"><strong>Searching...</strong></div>\n<div *ngIf=\"(!searching && submitted) && result.length === 0\"><strong>No results</strong></div>\n<h2 *ngIf=\"resultType === 'txn_outputs_to'\">Balance: {{balance}}</h2>\n<ul>\n    <li *ngFor=\"let block of result\">\n        <a href=\"/explorer?term={{block.index}}\"><h3>Block {{block.index}}</h3></a>\n        <p><strong>public_key: </strong>{{block.public_key}}</p>\n        <p><a href=\"/explorer?term={{block.id}}\"><strong>signature: </strong>{{block.id}}</a></p>\n        <p><a href=\"/explorer?term={{block.hash}}\"><strong>hash: </strong>{{block.hash}}</a></p>\n        <h3>Transactions</h3>\n        <ul>\n            <li *ngFor=\"let transaction of block.transactions\">\n                <p><strong>public_key: </strong>{{transaction.public_key}}</p>\n                <p><strong>signature: </strong>{{transaction.id}}</p>\n                <p><strong>hash: </strong>{{transaction.hash}}</p>\n                <div *ngIf=\"transaction.inputs.length === 0\"><strong>No inputs</strong></div>\n                <div *ngIf=\"transaction.inputs.length > 0\">\n                    <h3>Inputs</h3>\n                    <ul>\n                        <li *ngFor=\"let input of transaction.inputs\"><strong>Signature: </strong>{{input.id}}</li>\n                    </ul>\n                </div>\n                <div *ngIf=\"transaction.outputs.length === 0\"><strong>No outputs</strong></div>\n                <div *ngIf=\"transaction.outputs.length > 0\">\n                    <h3>Outputs</h3>\n                    <ul *ngFor=\"let output of transaction.outputs\">\n                        <li><a href=\"/explorer?term={{output.to}}\"><strong>Address: </strong>{{output.to}}</a></li>\n                        <li><strong>Amount: </strong>{{output.value}}</li>\n                        <hr>\n                    </ul>\n                </div>\n            </li>\n        </ul>\n    </li>\n</ul>"
 
 /***/ }),
 
@@ -201,6 +201,19 @@ var SearchFormComponent = /** @class */ (function () {
         }, function (err) {
             alert('something went terribly wrong!');
         });
+        if (window.location.search) {
+            this.searching = true;
+            this.submitted = true;
+            this.http.get('/explorer-search' + window.location.search)
+                .subscribe(function (res) {
+                _this.result = res.json().result || [];
+                _this.resultType = res.json().resultType;
+                _this.balance = res.json().balance;
+                _this.searching = false;
+            }, function (err) {
+                alert('something went terribly wrong!');
+            });
+        }
     }
     SearchFormComponent.prototype.ngOnInit = function () {
     };

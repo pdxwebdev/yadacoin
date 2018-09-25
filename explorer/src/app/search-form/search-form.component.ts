@@ -21,6 +21,20 @@ export class SearchFormComponent implements OnInit {
     (err: any) => {
       alert('something went terribly wrong!')
     });  
+    if (window.location.search) {
+      this.searching = true;
+      this.submitted = true;
+      this.http.get('/explorer-search' + window.location.search)
+      .subscribe((res: any) => {
+        this.result = res.json().result || []
+        this.resultType = res.json().resultType
+        this.balance = res.json().balance
+        this.searching = false;
+      },
+      (err: any) => {
+        alert('something went terribly wrong!')
+      });
+    }  
   }
 
   ngOnInit() {
