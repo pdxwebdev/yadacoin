@@ -114,6 +114,7 @@ class TransactionFactory(object):
             needed_inputs = []
             done = False
             for y in inputs:
+                print y.id
                 txn = BU.get_transaction_by_id(y.id, instance=True)
                 for txn_output in txn.outputs:
                     if txn_output.to == my_address:
