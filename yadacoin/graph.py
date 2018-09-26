@@ -36,8 +36,6 @@ class Graph(object):
         self.registered = False
         self.pending_registration = False
         self.bulletin_secret = str(bulletin_secret)
-        print 'tu private', type(Config.private_key)
-        print 'tu get_bulletin_secret', Config.bulletin_secret
         rids = sorted([str(Config.bulletin_secret), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         self.rid = rid
@@ -47,7 +45,7 @@ class Graph(object):
             self.from_dict(res[0]['graph'])
             start_height = res[0]['block_height']
         else:
-            res = Mongo.db.usernames.find({"rid": self.rid})
+            res = Mongo.site_db.usernames.find({"rid": self.rid})
             if res.count():
                 self.human_hash = res[0]['username']
             else:
@@ -86,7 +84,7 @@ class Graph(object):
             for x in self.friends:
                 for y in x['outputs']:
                     if y['to'] != Config.address:
-                        Mongo.db.usernames.update({
+                        Mongo.site_db.usernames.update({
                             'rid': self.rid,
                             'username': self.human_hash,
                             },
@@ -142,7 +140,7 @@ class Graph(object):
                 friend_requests[i]['bulletin_secret'] = res[0]['relationship']['bulletin_secret']
 
             # attach usernames
-            res = Mongo.db.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+            res = Mongo.site_db.usernames.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
             if res.count():
                 friend_requests[i]['username'] = res[0]['username']
             else:
@@ -153,7 +151,7 @@ class Graph(object):
         sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.rid)]
         for i, sent_friend_request in enumerate(sent_friend_requests):
             # attach usernames
-            res = Mongo.db.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
+            res = Mongo.site_db.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
             if res.count():
                 sent_friend_requests[i]['username'] = res[0]['username']
             else:
@@ -167,7 +165,7 @@ class Graph(object):
         out_messages = []
         for i, message in enumerate(messages):
             # attach usernames
-            res = Mongo.db.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
+            res = Mongo.site_db.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
             if res.count():
                 messages[i]['username'] = res[0]['username']
             else:
@@ -196,7 +194,7 @@ class Graph(object):
         for x in BU.get_posts(self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
             rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-            res = Mongo.db.usernames.find({'rid': rid}, {'_id': 0})
+            res = Mongo.site_db.usernames.find({'rid': rid}, {'_id': 0})
             if res.count():
                 x['username'] = res[0]['username']
                 if x['username'] not in blocked and x['id'] not in flagged:
