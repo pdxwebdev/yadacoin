@@ -337,6 +337,12 @@ def create_relationship():  # demo site
     if not to:
         return 'error: "to" missing', 400
 
+    rid = TU.generate_rid(bulletin_secret)
+    dup = Mongo.db.blocks.find({'transactions.rid': rid})
+    if dup.count():
+        for txn in dup:
+            if txn['public_key'] == Config.public_key:
+                return json.dumps({"success": True, "status": "Already added"})
     input_txns = BU.get_wallet_unspent_transactions(Config.address)
 
     miner_transactions = Mongo.db.miner_transactions.find()

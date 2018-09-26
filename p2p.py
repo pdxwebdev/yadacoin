@@ -48,6 +48,7 @@ def new_block_checker(current_index):
         time.sleep(1)
 
 def send(to, value):
+    Peers.init()
     Mongo.init()
     used_inputs = []
     new_inputs = []
@@ -71,13 +72,14 @@ def send(to, value):
     except:
         print 'transaction failed'
     TU.save(transaction.transaction)
-    print 'saved. sending...', x['address']
+    print 'Transaction generated successfully. Sending:', value, 'To:', to 
     for peer in Peers.peers:
         try:
             socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
             chat_namespace = socketIO.define(ChatNamespace, '/chat')
             chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
             socketIO.disconnect()
+            print 'Sent to:', peer.host, peer.port
         except Exception as e:
             print e
 
@@ -319,8 +321,7 @@ if __name__ == '__main__':
             """
             time.sleep(1)
     elif args.mode == 'send':
-        print args.to, float(args.value)
-        #send(args.to, float(args.value))
+        send(args.to, float(args.value))
     elif args.mode == 'mine':
         print Config.to_json()
         while 1:
