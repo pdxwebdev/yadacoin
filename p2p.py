@@ -65,8 +65,8 @@ def send(to, value):
     except NotEnoughMoneyException as e:
         print "not enough money yet"
         return
-    except Exception as e:
-        print e
+    except:
+        raise
     try:
         transaction.transaction.verify()
     except:
