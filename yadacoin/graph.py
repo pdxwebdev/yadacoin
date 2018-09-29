@@ -36,7 +36,7 @@ class Graph(object):
         self.registered = False
         self.pending_registration = False
         self.bulletin_secret = str(bulletin_secret)
-        rids = sorted([str(Config.bulletin_secret), str(bulletin_secret)], key=str.lower)
+        rids = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         self.rid = rid
 
@@ -187,7 +187,7 @@ class Graph(object):
         self.messages = []
 
     def get_posts(self):
-        my_bulletin_secret = Config.bulletin_secret
+        my_bulletin_secret = Config.get_bulletin_secret()
         posts = []
         blocked = [x['username'] for x in Mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
         flagged = [x['id'] for x in Mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]

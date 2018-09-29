@@ -9,11 +9,9 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 from urllib2 import urlopen
 
-public_ip = requests.get('https://api.ipify.org').text
 
-num = os.urandom(32).encode('hex')
-
-pk = PrivateKey.from_hex(num)
+def from_wif(wif):
+    return binascii.hexlify(base58.b58decode(wif))[2:-10]
 
 def to_wif(private_key_static):
     extended_key = "80"+private_key_static+"01"
@@ -41,8 +39,15 @@ def generate():
         "database": "yadacoin",
         "site_database": "yadacoinsite",
         "mongodb_host": "localhost",
-        "mixpanel": ""
+        "mixpanel": "",
+        "username": ""
     }
     return json.dumps(config, indent=4)
+
+num = os.urandom(32).encode('hex')
+
+pk = PrivateKey.from_hex(num)
+
+public_ip = requests.get('https://api.ipify.org').text
 
 print generate()

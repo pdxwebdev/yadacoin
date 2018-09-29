@@ -241,15 +241,6 @@ def team():
         'team.html',
         )
 
-@app.route('/register')
-def register():
-    data = {
-        'bulletin_secret': Config.bulletin_secret,
-        'callbackurl': Config.callbackurl,
-        'to': Config.address
-    }
-    return json.dumps(data, indent=4)
-
 @app.route('/login-status')
 def login_status():
     user = get_logged_in_user()
@@ -331,7 +322,7 @@ def show_users():
 
 @app.route('/get-rid')
 def get_rid():
-    my_bulletin_secret = Config.bulletin_secret
+    my_bulletin_secret = Config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.args.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
     return json.dumps({'rid': rid})
@@ -357,7 +348,7 @@ def post_block():
 def search():
     phrase = request.args.get('phrase')
     bulletin_secret = request.args.get('bulletin_secret')
-    my_bulletin_secret = Config.bulletin_secret
+    my_bulletin_secret = Config.get_bulletin_secret()
 
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
@@ -379,7 +370,7 @@ def search():
 
 @app.route('/react', methods=['POST'])
 def react():
-    my_bulletin_secret = Config.bulletin_secret
+    my_bulletin_secret = Config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
@@ -455,7 +446,7 @@ def get_reacts_detail():
 
 @app.route('/comment-react', methods=['POST'])
 def comment_react():
-    my_bulletin_secret = Config.bulletin_secret
+    my_bulletin_secret = Config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
@@ -528,7 +519,7 @@ def get_comment_reacts_detail():
 
 @app.route('/comment', methods=['POST'])
 def comment():
-    my_bulletin_secret = Config.bulletin_secret
+    my_bulletin_secret = Config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 

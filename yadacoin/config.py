@@ -9,14 +9,14 @@ from crypt import Crypt
 class Config(object):
     @classmethod
     def from_dict(cls, config):
-
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
 
         cls.private_key = config['private_key']
+        cls.username = config['username']
         cls.wif = cls.to_wif()
         cipher = Crypt(str(cls.private_key))
-        cls.bulletin_secret = hashlib.sha256(cipher.encrypt_consistent(str(cls.private_key))).digest().encode('hex')
+        cls.bulletin_secret = cls.get_bulletin_secret()
 
         cls.mongodb_host = config['mongodb_host']
         cls.database = config['database']
@@ -33,6 +33,11 @@ class Config(object):
         cls.serve_port = config['serve_port']
         cls.callbackurl = config['callbackurl']
         cls.fcm_key = config['fcm_key']
+
+    @classmethod
+    def get_bulletin_secret(cls):
+        from transactionutils import TU
+        return TU.generate_deterministic_signature(Config.username)
 
     @classmethod
     def to_wif(cls):
@@ -53,6 +58,7 @@ class Config(object):
             'wif': cls.wif,
             'bulletin_secret': cls.bulletin_secret,
             'mongodb_host': cls.mongodb_host,
+            'username': cls.username,
             'database': cls.database,
             'site_database': cls.site_database,
             'web_server_host': cls.web_server_host,

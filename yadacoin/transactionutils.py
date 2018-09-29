@@ -31,10 +31,10 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256(message).digest().encode('hex')
 
     @classmethod
-    def generate_deterministic_signature(cls):
+    def generate_deterministic_signature(cls, message):
         key = PrivateKey.from_hex(Config.private_key)
-        signature = key.sign(Config.private_key)
-        return hashlib.sha256(base64.b64encode(signature)).digest().encode('hex')
+        signature = key.sign(message)
+        return base64.b64encode(signature)
 
     @classmethod
     def generate_signature(cls, message):
@@ -46,9 +46,9 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_rid(cls, bulletin_secret):
-        if Config.bulletin_secret == bulletin_secret:
+        if Config.get_bulletin_secret() == bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
-        rids = sorted([str(Config.bulletin_secret), str(bulletin_secret)], key=str.lower)
+        rids = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
         return hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
     @classmethod
@@ -59,10 +59,14 @@ class TU(object):  # Transaction Utilities
         for txn in txns:
             if txn['public_key'] == Config.public_key and txn['relationship']['dh_private_key']:
                 shared_secrets['dh_private_key'] = txn['relationship']['dh_private_key']
+        if 'dh_private_key' not in shared_secrets:
+            return None
         txns = BU.get_transactions_by_rid(rid, rid=True, raw=True)
         for txn in txns:
             if txn['public_key'] != Config.public_key and txn['dh_public_key']:
                 shared_secrets['dh_public_key'] = txn['dh_public_key']
+        if 'dh_public_key' not in shared_secrets:
+            return None
         return scalarmult(shared_secrets['dh_private_key'].decode('hex'), shared_secrets['dh_public_key'].decode('hex'))
 
     @classmethod

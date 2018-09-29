@@ -71,6 +71,7 @@ class BU(object):  # Blockchain Utilities
     def get_wallet_unspent_transactions(cls, address, ids=None, needed_value=None):
         res = cls.wallet_unspent_worker(address, ids, needed_value)
         for x in res:
+            x['txn']['height'] = x['height']
             yield x['txn']
 
     @classmethod
@@ -256,7 +257,7 @@ class BU(object):  # Blockchain Utilities
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
-        ds = Config.bulletin_secret
+        ds = Config.get_bulletin_secret()
         if not rid:
             selectors = [
                 TU.hash(ds+selector),
@@ -286,7 +287,7 @@ class BU(object):  # Blockchain Utilities
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
-        ds = Config.bulletin_secret
+        ds = Config.get_bulletin_secret()
 
         if not rid:
             selectors = [
@@ -691,13 +692,20 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_transaction_by_id(cls, id, instance=False):
         from transaction import Transaction, Input, Crypt
-        for block in Mongo.db.blocks.find({"transactions.id": id}):
-            for txn in block['transactions']:
-                if txn['id'] == id:
-                    if instance:
-                        return Transaction.from_dict(txn)
-                    else:
-                        return txn
+        res = Mongo.db.blocks.find({"transactions.id": id})
+        if res.count():
+            for block in res:
+                for txn in block['transactions']:
+                    if txn['id'] == id:
+                        if instance:
+                            return Transaction.from_dict(txn)
+                        else:
+                            return txn
+        else:
+            # fix for bug when unspent cache returns an input 
+            # that has been removed from the chain
+            Mongo.db.unspent_cache.remove({})
+            return None
 
     @classmethod
     def get_block_reward(cls, block=None):
@@ -792,10 +800,12 @@ class BU(object):  # Blockchain Utilities
     def verify_message(cls, rid, message):
         from crypt import Crypt
         shared_secret = TU.get_shared_secret_by_rid(rid)
-        cipher = Crypt(shared_secret.encode('hex'), shared=True)
-        txns = cls.get_transactions_by_rid(rid, rid=True, raw=True)
         received = False
         sent = False
+        if not shared_secret:
+            return sent, received
+        cipher = Crypt(shared_secret.encode('hex'), shared=True)
+        txns = cls.get_transactions_by_rid(rid, rid=True, raw=True)
         for txn in txns:
             try:
                 decrypted = cipher.shared_decrypt(txn['relationship'])

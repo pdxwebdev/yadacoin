@@ -27,6 +27,7 @@ class TransactionFactory(object):
     def __init__(
         self,
         bulletin_secret='',
+        username='',
         value=0,
         fee=0.0,
         requester_rid='',
@@ -43,6 +44,7 @@ class TransactionFactory(object):
         signin=None
     ):
         self.bulletin_secret = bulletin_secret
+        self.username = username
         self.requester_rid = requester_rid
         self.requested_rid = requested_rid
         self.public_key = public_key
@@ -68,7 +70,6 @@ class TransactionFactory(object):
                 })
             elif self.signin:
                 shared_secret = TU.get_shared_secret_by_rid(self.rid)
-                print shared_secret.encode('hex')
                 self.relationship = SignIn(self.signin)
                 self.cipher = Crypt(shared_secret.encode('hex'), shared=True)
                 self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
@@ -149,17 +150,19 @@ class TransactionFactory(object):
         return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
 
     def generate_rid(self):
-        my_bulletin_secret = Config.bulletin_secret
+        my_bulletin_secret = Config.get_bulletin_secret()
         if my_bulletin_secret == self.bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
-        rids = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
-        print rids
-        return hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+        bulletin_secrets = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
+        return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
     def generate_relationship(self):
         return Relationship(
-            self.dh_private_key,
-            self.bulletin_secret
+            dh_private_key=self.dh_private_key,
+            their_bulletin_secret=self.bulletin_secret,
+            their_username=self.username,
+            my_bulletin_secret=Config.get_bulletin_secret(),
+            my_username=Config.username
         )
 
     def generate_transaction(self):
@@ -365,14 +368,20 @@ class Output(object):
 
 
 class Relationship(object):
-    def __init__(self, dh_private_key, bulletin_secret):
+    def __init__(self, dh_private_key, their_bulletin_secret, their_username, my_bulletin_secret, my_username):
         self.dh_private_key = dh_private_key
-        self.bulletin_secret = bulletin_secret
+        self.their_bulletin_secret = their_bulletin_secret
+        self.their_username = their_username
+        self.my_bulletin_secret = my_bulletin_secret
+        self.my_username = my_username
 
     def to_dict(self):
         return {
             'dh_private_key': self.dh_private_key,
-            'bulletin_secret': self.bulletin_secret
+            'their_bulletin_secret': self.their_bulletin_secret,
+            'their_username': self.their_username,
+            'my_bulletin_secret': self.my_bulletin_secret,
+            'my_username': self.my_username
         }
 
     def to_json(self):

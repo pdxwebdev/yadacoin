@@ -13,7 +13,6 @@ from yadacoin import TransactionFactory, Transaction, \
                     Blockchain, BlockChainException, BU, TU, \
                     Graph, Mongo, InvalidTransactionException, \
                     InvalidTransactionSignatureException
-from node import node
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 
 app = Flask(__name__)
@@ -82,7 +81,7 @@ def transaction():
         return json.dumps([x for x in transactions])
 
 def do_push(txn, bulletin_secret):
-    my_bulletin_secret = Config.bulletin_secret
+    my_bulletin_secret = Config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
@@ -199,7 +198,6 @@ def get_friend_requests():
 @app.route('/get-graph-friends')
 def get_get_friends():
     graph = get_base_graph()
-    #graph.get_friends()
     return graph.to_json()
 
 @app.route('/get-graph-posts')
@@ -222,7 +220,7 @@ def get_graph_new_messages():
 
 @app.route('/get-graph')
 def get_graph():
-    graph = Graph(Config.bulletin_secret, for_me=True)
+    graph = Graph(Config.get_bulletin_secret(), for_me=True)
     return graph.to_json()
 
 @app.route('/wallet')
@@ -326,13 +324,18 @@ def change_username():
 def create_relationship():  # demo site
     if request.method == 'GET':
         bulletin_secret = request.args.get('bulletin_secret', '')
+        username = request.args.get('username', '')
         to = request.args.get('to', '')
     else:
         bulletin_secret = request.json.get('bulletin_secret', '')
+        username = request.json.get('username', '')
         to = request.json.get('to', '')
 
     if not bulletin_secret:
         return 'error: "bulletin_secret" missing', 400
+
+    if not username:
+        return 'error: "username" missing', 400
 
     if not to:
         return 'error: "to" missing', 400
@@ -342,7 +345,7 @@ def create_relationship():  # demo site
     if dup.count():
         for txn in dup:
             if txn['public_key'] == Config.public_key:
-                return json.dumps({"success": True, "status": "Already added"})
+                return json.dumps({"success": False, "status": "Already added"})
     input_txns = BU.get_wallet_unspent_transactions(Config.address)
 
     miner_transactions = Mongo.db.miner_transactions.find()
@@ -362,6 +365,7 @@ def create_relationship():  # demo site
 
     transaction = TransactionFactory(
         bulletin_secret=bulletin_secret,
+        username=username,
         fee=0.01,
         public_key=Config.public_key,
         dh_public_key=dh_public_key,
@@ -379,8 +383,18 @@ def create_relationship():  # demo site
     job.start()
 
 
-    my_bulletin_secret = Config.bulletin_secret
+    my_bulletin_secret = Config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
     Mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
     return json.dumps({"success": True})
+
+@app.route('/register')
+def register():
+    data = {
+        'bulletin_secret': Config.get_bulletin_secret(),
+        'username': Config.username,
+        'callbackurl': Config.callbackurl,
+        'to': Config.address
+    }
+    return json.dumps(data, indent=4)
