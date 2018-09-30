@@ -148,6 +148,18 @@ def explorer_search():
 
     try:
         term = request.args.get('term')
+        re.search(r'[A-Fa-f0-9]{64}', term).group(0)
+        res = Mongo.db.blocks.find({'transactions.rid': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'txn_rid',
+                'result': [x for x in res]
+            }, indent=4)
+    except:
+        pass
+
+    try:
+        term = request.args.get('term')
         base64.b64decode(term)
         res = Mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
         if res.count():
