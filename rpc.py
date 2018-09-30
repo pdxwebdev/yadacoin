@@ -106,7 +106,27 @@ def explorer_search():
         if res.count():
             return json.dumps({
                 'resultType': 'block_height',
-                'result': [x for x in res]
+                'result': [changetime(x) for x in res]
+            }, indent=4)
+    except:
+        pass
+    try:
+        term = request.args.get('term')
+        res = Mongo.db.blocks.find({'public_key': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'block_height',
+                'result': [changetime(x) for x in res]
+            }, indent=4)
+    except:
+        pass
+    try:
+        term = request.args.get('term')
+        res = Mongo.db.blocks.find({'transactions.public_key': term}, {'_id': 0})
+        if res.count():
+            return json.dumps({
+                'resultType': 'block_height',
+                'result': [changetime(x) for x in res]
             }, indent=4)
     except:
         pass
@@ -117,19 +137,19 @@ def explorer_search():
         if res.count():
             return json.dumps({
                 'resultType': 'block_hash',
-                'result': [x for x in res]
+                'result': [changetime(x) for x in res]
             }, indent=4)
     except:
         pass
 
     try:
-        term = request.args.get('term')
+        term = request.args.get('term').replace(' ', '+')
         base64.b64decode(term)
         res = Mongo.db.blocks.find({'id': term}, {'_id': 0})
         if res.count():
             return json.dumps({
                 'resultType': 'block_id',
-                'result': [x for x in res]
+                'result': [changetime(x) for x in res]
             }, indent=4)
     except:
         pass
@@ -141,7 +161,7 @@ def explorer_search():
         if res.count():
             return json.dumps({
                 'resultType': 'txn_hash',
-                'result': [x for x in res]
+                'result': [changetime(x) for x in res]
             }, indent=4)
     except:
         pass
@@ -153,19 +173,19 @@ def explorer_search():
         if res.count():
             return json.dumps({
                 'resultType': 'txn_rid',
-                'result': [x for x in res]
+                'result': [changetime(x) for x in res]
             }, indent=4)
     except:
         pass
 
     try:
-        term = request.args.get('term')
+        term = request.args.get('term').replace(' ', '+')
         base64.b64decode(term)
         res = Mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
         if res.count():
             return json.dumps({
                 'resultType': 'txn_id',
-                'result': [x for x in res]
+                'result': [changetime(x) for x in res]
             }, indent=4)
     except:
         pass
@@ -179,12 +199,17 @@ def explorer_search():
             return json.dumps({
                 'balance': balance,
                 'resultType': 'txn_outputs_to',
-                'result': [x for x in res]
+                'result': [changetime(x) for x in res]
             }, indent=4)
     except:
         pass
 
     return '{}'
+
+def changetime(block):
+    from datetime import datetime
+    block['time'] = datetime.utcfromtimestamp(int(block['time'])).strftime('%Y-%m-%dT%H:%M:%S UTC')
+    return block
 
 @app.route('/api-stats')
 def api_stats():
