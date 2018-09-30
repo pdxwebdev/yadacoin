@@ -30,7 +30,6 @@ from multiprocessing import Process, Value, Array, Pool
 from flask_cors import CORS
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from bson.objectid import ObjectId
-from endpoints import *
 
 
 class ChatNamespace(BaseNamespace):
@@ -90,6 +89,11 @@ def get_logged_in_user():
                         'bulletin_secret': test['relationship']['bulletin_secret']
                     }
     return user if user else {'authenticated': False}
+
+app = Flask(__name__)
+app.debug = True
+app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
+CORS(app)
 
 @app.route('/explorer')
 def explorer():
@@ -666,6 +670,31 @@ def block_user():
 def flag():
     Mongo.site_db.flagged_content.update(request.json, request.json, upsert=True)
     return 'ok'
+
+@app.route('/peers', methods=['GET', 'POST'])
+def peers():
+    if request.method == 'POST':
+        try:
+            socket.inet_aton(request.json['host'])
+            host = request.json['host']
+            port = int(request.json['port'])
+            failed = request.json.get('failed')
+            if failed:
+                res = Mongo.db.peers.find({'host': host, 'port': port})
+                if res.count():
+                    Mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
+            else:
+                Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True, 'failed': 0}, upsert=True)
+            Peers.init_local()
+            return 'ok'
+        except:
+            return 'failed to add peer, invalid host', 400
+    else:
+        return json.dumps(Peers.to_dict(), indent=4)
+
+@app.route('/stats')
+def stats():
+    return app.send_static_file('stats/index.html')
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',

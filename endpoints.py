@@ -174,8 +174,19 @@ def txn_broadcast_job(transaction):
             pass
 
 def get_base_graph():
-    bulletin_secret = request.args.get('bulletin_secret')
-    graph = Graph(bulletin_secret)
+    bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
+    if bulletin_secret != Config.get_bulletin_secret():
+        found = False
+        for filename in os.listdir('config'):
+            if filename.endswith(".json"):
+                with open(os.path.join('config', filename)) as f:
+                    config = json.loads(f.read())
+                    if 'bulletin_secret' in config and config['bulletin_secret'] == bulletin_secret:
+                        Config.from_dict(config)
+                        found = True
+        if not found:
+            raise Exception("Config file not found for bulletin_secret: %s" % bulletin_secret)
+    graph = Graph(bulletin_secret, wallet_mode=True)
     return graph
 
 @app.route('/get-graph-info')
@@ -251,31 +262,6 @@ def faucet():
 @app.route('/firebase-messaging-sw.js')
 def firebase_service_worker():
     return app.send_static_file('app/www/ServiceWorker.js')
-
-@app.route('/peers', methods=['GET', 'POST'])
-def peers():
-    if request.method == 'POST':
-        try:
-            socket.inet_aton(request.json['host'])
-            host = request.json['host']
-            port = int(request.json['port'])
-            failed = request.json.get('failed')
-            if failed:
-                res = Mongo.db.peers.find({'host': host, 'port': port})
-                if res.count():
-                    Mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
-            else:
-                Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True, 'failed': 0}, upsert=True)
-            Peers.init_local()
-            return 'ok'
-        except:
-            return 'failed to add peer, invalid host', 400
-    else:
-        return json.dumps(Peers.to_dict(), indent=4)
-
-@app.route('/stats')
-def stats():
-    return app.send_static_file('stats/index.html')
 
 @app.route('/fcm-token', methods=['POST'])
 def fcm_token():
