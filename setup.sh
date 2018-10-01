@@ -14,7 +14,7 @@ sudo apt install -y python-pip
 sudo pip install virtualenv
 virtualenv venv
 venv/bin/pip install -r requirements.txt
-venv/bin/python utils/generate_config.py > config/config.json
+venv/bin/python utils/generate_config.py auto > config/config.json
 venv/bin/python utils/generate_services.py
 sudo cp services/* /lib/systemd/system/.
 sudo systemctl daemon-reload

@@ -69,15 +69,15 @@ class TransactionFactory(object):
                     "chatText": self.chattext
                 })
             elif self.signin:
-                shared_secret = TU.get_shared_secret_by_rid(self.rid)
-                self.relationship = SignIn(self.signin)
-                self.cipher = Crypt(shared_secret.encode('hex'), shared=True)
-                self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
+                for shared_secret in TU.get_shared_secrets_by_rid(self.rid):
+                    self.relationship = SignIn(self.signin)
+                    self.cipher = Crypt(shared_secret.encode('hex'), shared=True)
+                    self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
             else:
                 self.relationship = self.generate_relationship()
                 if not private_key:
                     raise BaseException('missing private key')
-                self.cipher = Crypt(private_key)
+                self.cipher = Crypt(Config.wif)
                 self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
         else:
             self.rid = ''

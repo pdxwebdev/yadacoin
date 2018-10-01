@@ -67,7 +67,8 @@ class Config(object):
             'peer_port': cls.peer_port,
             'serve_host': cls.serve_host,
             'serve_port': cls.serve_port,
-            'fcm_key': cls.fcm_key
+            'fcm_key': cls.fcm_key,
+            'callbackurl': cls.callbackurl
         }
 
     @classmethod

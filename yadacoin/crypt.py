@@ -17,10 +17,7 @@ from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 class Crypt(object):  # Relationship Utilities
     def __init__(self, shared_secret, shared=False):
-        if shared:
-            self.key = PBKDF2(hashlib.sha256(shared_secret).hexdigest(), 'salt', 400).read(32)
-        else:
-            self.key = PBKDF2(shared_secret, 'salt', 400).read(32)
+        self.key = PBKDF2(hashlib.sha256(shared_secret).hexdigest(), 'salt', 400).read(32)
 
     def encrypt_consistent(self, s):
         BS = AES.block_size

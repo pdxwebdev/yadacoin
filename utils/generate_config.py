@@ -5,10 +5,28 @@ import binascii
 import base58
 import subprocess
 import requests
+import sys
+import argparse
+import getpass
+import sys
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/..')
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 from urllib2 import urlopen
+from yadacoin import Config
 
+
+class Wif:
+
+    DEFAULT = 'Prompt if not specified'
+
+    def __init__(self, value):
+        if value == self.DEFAULT:
+            value = getpass.getpass('WIF/Secret key [Enter to auto-generate]: ')
+        self.value = value
+
+    def __str__(self):
+        return self.value
 
 def from_wif(wif):
     return binascii.hexlify(base58.b58decode(wif))[2:-10]
@@ -40,14 +58,55 @@ def generate():
         "site_database": "yadacoinsite",
         "mongodb_host": "localhost",
         "mixpanel": "",
-        "username": ""
+        "username": Config.username
     }
-    return json.dumps(config, indent=4)
+    Config.from_dict(config)
+    return json.dumps(Config.to_dict(), indent=4)
+parser = argparse.ArgumentParser(
+    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-num = os.urandom(32).encode('hex')
+subparsers = parser.add_subparsers()
+new_parser = subparsers.add_parser('new')
+new_parser.set_defaults(which='new')
+new_parser.add_argument('username', help='Specify username')
+new_parser.add_argument('-p', '--password', type=Wif, help='Specify wif/Secret key [Enter to auto-generate]',
+    default=Wif.DEFAULT)
 
-pk = PrivateKey.from_hex(num)
+update_parser = subparsers.add_parser('update')
+update_parser.set_defaults(which='update')
+update_parser.add_argument('config', help='config file')
+update_parser.add_argument('username', help='Specify username')
+
+auto_parser = subparsers.add_parser('auto')
+auto_parser.set_defaults(which='auto')
+
+args = parser.parse_args()
 
 public_ip = requests.get('https://api.ipify.org').text
+if args.which == 'new': 
+    if args.password.value:
+        num = from_wif(args.password.value)
+    else:
+        num = os.urandom(32).encode('hex')
+    Config.username = args.username
+    pk = PrivateKey.from_hex(num)
+    print generate()
+elif args.which == 'update':
+    with open(args.config) as f:
+        identity = json.loads(f.read())
+        pk = PrivateKey.from_hex(identity['private_key'])
+        if 'username' in identity:
+            username = identity['username']
+        else:
+            username = args.username
+        Config.username = username
+        print generate()
+elif args.which == 'auto':
+    num = os.urandom(32).encode('hex')
+    pk = PrivateKey.from_hex(num)
+    Config.username = ''
+    print generate()
 
-print generate()
+
+
+

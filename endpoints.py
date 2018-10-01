@@ -14,6 +14,7 @@ from yadacoin import TransactionFactory, Transaction, \
                     Graph, Mongo, InvalidTransactionException, \
                     InvalidTransactionSignatureException
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
+from pyfcm import FCMNotification
 
 app = Flask(__name__)
 app.debug = True
@@ -384,3 +385,11 @@ def register():
         'to': Config.address
     }
     return json.dumps(data, indent=4)
+
+conf = 'config/config.json'
+with open(conf) as f:
+    Config.from_dict(json.loads(f.read()))
+
+Peers.init_local()
+Mongo.init()
+push_service = FCMNotification(api_key=Config.fcm_key)

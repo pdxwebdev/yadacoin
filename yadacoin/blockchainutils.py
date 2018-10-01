@@ -226,10 +226,11 @@ class BU(object):  # Blockchain Utilities
                     if not transaction['relationship']:
                         continue
                     if not raw:
-                        cipher = Crypt(Config.private_key)
+                        cipher = Crypt(Config.wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted)
                         transaction['relationship'] = relationship
+                    transaction['height'] = block['index']
                     transactions.append(transaction)
                 except:
                     continue
@@ -244,7 +245,7 @@ class BU(object):  # Blockchain Utilities
         for block in cls.get_blocks():
             for transaction in block.get('transactions'):
                 try:
-                    cipher = Crypt(Config.private_key)
+                    cipher = Crypt(Config.wif)
                     decrypted = cipher.decrypt(transaction['relationship'])
                     relationship = json.loads(decrypted)
                     relationships.append(relationship)
@@ -273,7 +274,7 @@ class BU(object):  # Blockchain Utilities
                     if 'relationship' in transaction:
                         if not raw:
                             try:
-                                cipher = Crypt(Config.private_key)
+                                cipher = Crypt(Config.wif)
                                 decrypted = cipher.decrypt(transaction['relationship'])
                                 relationship = json.loads(decrypted)
                                 transaction['relationship'] = relationship
@@ -282,7 +283,7 @@ class BU(object):  # Blockchain Utilities
                     return transaction
 
     @classmethod
-    def get_transactions_by_rid(cls, selector, rid=False, raw=False, returnheight=True):
+    def get_transactions_by_rid(cls, selector, rid=False, raw=False, returnheight=True, bulletin_secret=None):
         #selectors is old code before we got an RID by sorting the bulletin secrets
         from block import Block
         from transaction import Transaction
@@ -304,6 +305,7 @@ class BU(object):  # Blockchain Utilities
                 {
                     'raw': raw,
                     'rid': rid,
+                    'bulletin_secret': bulletin_secret,
                     'returnheight': returnheight,
                     'selector': {'$in': selectors}
                 }
@@ -320,10 +322,10 @@ class BU(object):  # Blockchain Utilities
             for transaction in block.get('transactions'):
                 if 'relationship' in transaction and transaction['relationship']:
                     if returnheight:
-                        transaction['block_height'] = block['index']
+                        transaction['height'] = block['index']
                     if not raw:
                         try:
-                            cipher = Crypt(Config.private_key)
+                            cipher = Crypt(Config.wif)
                             decrypted = cipher.decrypt(transaction['relationship'])
                             relationship = json.loads(decrypted)
                             transaction['relationship'] = relationship
@@ -335,6 +337,7 @@ class BU(object):  # Blockchain Utilities
                             {
                                 'raw': raw,
                                 'rid': rid,
+                                'bulletin_secret': bulletin_secret,
                                 'returnheight': returnheight,
                                 'selector': selector,
                                 'txn': transaction,
@@ -348,6 +351,7 @@ class BU(object):  # Blockchain Utilities
                     {   
                         'raw': raw,
                         'rid': rid,
+                        'bulletin_secret': bulletin_secret,
                         'returnheight': returnheight,
                         'selector': selector,
                         'height': latest_block['index']
@@ -799,22 +803,21 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def verify_message(cls, rid, message):
         from crypt import Crypt
-        shared_secret = TU.get_shared_secret_by_rid(rid)
-        received = False
         sent = False
-        if not shared_secret:
-            return sent, received
-        cipher = Crypt(shared_secret.encode('hex'), shared=True)
+        received = False
         txns = cls.get_transactions_by_rid(rid, rid=True, raw=True)
+        shared_secrets = TU.get_shared_secrets_by_rid(rid)
         for txn in txns:
-            try:
-                decrypted = cipher.shared_decrypt(txn['relationship'])
-                signin = json.loads(decrypted)
-                if 'signIn' in signin and message == signin['signIn']:
-                    if Config.public_key != txn['public_key']:
-                        received = True
-                    else:
-                        sent = True
-            except:
-                pass
+            for shared_secret in list(set(shared_secrets)):
+                try:
+                    cipher = Crypt(shared_secret.encode('hex'), shared=True)
+                    decrypted = cipher.shared_decrypt(txn['relationship'])
+                    signin = json.loads(decrypted)
+                    if u'signIn' in signin and message == signin['signIn']:
+                        if Config.public_key != txn['public_key']:
+                            received = True
+                        else:
+                            sent = True
+                except:
+                    pass
         return sent, received

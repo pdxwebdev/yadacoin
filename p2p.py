@@ -271,7 +271,7 @@ if __name__ == '__main__':
     import argparse
     import os.path
     parser = argparse.ArgumentParser()
-    parser.add_argument('mode', nargs=None, help='serve, mine, or faucet')
+    parser.add_argument('mode', nargs=None, help='serve, mine, or consensus')
     parser.add_argument('config', default="config.json", nargs="?", help='config file')
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
@@ -350,6 +350,7 @@ if __name__ == '__main__':
             """
             time.sleep(1)
     elif args.mode == 'serve':
+        print Config.to_json()
         Peers.init()
         if not Peers.peers:
             raise Exception("peer service unavailble, restart this process")

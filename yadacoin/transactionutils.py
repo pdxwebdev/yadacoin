@@ -48,26 +48,27 @@ class TU(object):  # Transaction Utilities
     def generate_rid(cls, bulletin_secret):
         if Config.get_bulletin_secret() == bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
-        rids = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
-        return hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+        bulletin_secrets = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
+        return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
     @classmethod
-    def get_shared_secret_by_rid(cls, rid):
+    def get_shared_secrets_by_rid(cls, rid):
         from blockchainutils import BU
-        shared_secrets = {}
+        shared_secrets = []
+        dh_public_keys = []
+        dh_private_keys = []
         txns = BU.get_transactions_by_rid(rid, rid=True)
         for txn in txns:
-            if txn['public_key'] == Config.public_key and txn['relationship']['dh_private_key']:
-                shared_secrets['dh_private_key'] = txn['relationship']['dh_private_key']
-        if 'dh_private_key' not in shared_secrets:
-            return None
+            if str(txn['public_key']) == str(Config.public_key) and txn['relationship']['dh_private_key']:
+                dh_private_keys.append(txn['relationship']['dh_private_key'])
         txns = BU.get_transactions_by_rid(rid, rid=True, raw=True)
         for txn in txns:
-            if txn['public_key'] != Config.public_key and txn['dh_public_key']:
-                shared_secrets['dh_public_key'] = txn['dh_public_key']
-        if 'dh_public_key' not in shared_secrets:
-            return None
-        return scalarmult(shared_secrets['dh_private_key'].decode('hex'), shared_secrets['dh_public_key'].decode('hex'))
+            if str(txn['public_key']) != str(Config.public_key) and txn['dh_public_key']:
+                dh_public_keys.append(txn['dh_public_key'])
+        for dh_public_key in dh_public_keys:
+            for dh_private_key in dh_private_keys:
+                shared_secrets.append(scalarmult(dh_private_key.decode('hex'), dh_public_key.decode('hex')))
+        return shared_secrets
 
     @classmethod
     def save(cls, items):
