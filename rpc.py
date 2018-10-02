@@ -765,7 +765,7 @@ def stats():
     return app.send_static_file('stats/index.html')
 
 from endpoints import RegisterView
-@app.add_url_rule('/register', view_func=RegisterView.as_view('register'))
+app.add_url_rule('/register', view_func=RegisterView.as_view('register'))
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
