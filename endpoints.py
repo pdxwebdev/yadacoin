@@ -376,15 +376,17 @@ def create_relationship():  # demo site
     Mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
     return json.dumps({"success": True})
 
-@app.route('/register')
-def register():
-    data = {
-        'bulletin_secret': Config.get_bulletin_secret(),
-        'username': Config.username,
-        'callbackurl': Config.callbackurl,
-        'to': Config.address
-    }
-    return json.dumps(data, indent=4)
+from flask.views import View
+class RegisterView(View):
+    def dispatch_request(self):
+        data = {
+            'bulletin_secret': Config.get_bulletin_secret(),
+            'username': Config.username,
+            'callbackurl': Config.callbackurl,
+            'to': Config.address
+        }
+        return json.dumps(data, indent=4)
+
 
 conf = 'config/config.json'
 with open(conf) as f:
