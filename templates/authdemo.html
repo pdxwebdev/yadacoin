@@ -1,0 +1,82 @@
+<html>
+<head>
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.min.js" integrity="sha384-ChfqqxuZUCnJSK3+MXmPNIyE6ZbWh2IMqE241rYiqJxyMiZ6OW/JmZQ5stwEULTy" crossorigin="anonymous"></script>
+</head>
+<body class="container">
+    <div class="row">
+        <div class="col-m-12 card">
+            <div class="card-header">YadaCoin Auth</div>
+            <div class="card-body">
+                <div class="card-title">
+                    <form method="GET" action=".">
+                        <div class="form-group">
+                           <input type="text" name="bulletin_secret" placeholder="bulletin secret" value="{{bulletin_secret}}" class="form-control">
+                        </div>
+                        <div class="form-group">
+                           <input type="submit" value="Check status" class="btn btn-primary">
+                        </div>
+                    </form>
+                </div>
+                <div class="card-text">
+                    <table class="table">
+                        <tbody>
+                            <tr>
+                                <th scope="row">Sign in code:</th>
+                                <td><span style="color:blue">{{session_id}}</span></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Registration link:</th>
+                                <td><span style="color:blue">http://0.0.0.0:8003/register or whichever server:port you're running rpc.py from</span></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Registered:</th>
+                                <td><span style="color:{% if registered == 'True' %}green{% else %}red{% endif %}">{{registered}}</span></td>
+                                <td></td>
+                            </tr>
+                            {% if registered == 'True' %}
+                            <tr>
+                                <th scope="row">Relationship identifier (RID):</th>
+                                <td><a href="https://yadacoin.io/explorer?term={{rid}}" target="_blank">{{rid}}</span></td>
+                                <td></td>
+                            </tr>
+                            {% endif %}
+                            <tr>
+                                <th scope="row">Sigin in request sent:</th>
+                                <td><span style="color:{% if sent == 'True' %}green{% else %}red{% endif %}">{{sent}}</span></td>
+                                <td>
+                                    <form method="POST">
+                                        <div class="form-group">
+                                           <input type="hidden" name="bulletin_secret" placeholder="bulletin secret" value="{{bulletin_secret}}" class="form-control">
+                                        </div>
+                                        <div class="form-group">
+                                           <input type="submit" value="Sign in" {% if not bulletin_secret or sent == 'True' or registered == 'False' %}disabled=disabled{% endif %} class="btn btn-sm btn-primary">
+                                        </div>
+                                    </form>
+                                </td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Sigin in request approved:</th>
+                                <td><span style="color:{% if received == 'True' %}green{% else %}red{% endif %}">{{received}}</span></td>
+                                <td></td>
+                            </tr>
+                            <tr>
+                                <th scope="row">Signed in:</th>
+                                <td><span style="color:{% if loggedin == 'True' %}green{% else %}red{% endif %}">{{loggedin}}</span></td>
+                                <td></td>
+                            </tr>
+                        </tbody>
+                        <h3> </h3>
+                        <h3> </h3>
+                        <h3> </h3>
+                        <h3> </h3>
+                        <h3> </h3>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
