@@ -392,4 +392,3 @@ with open(conf) as f:
 
 Peers.init_local()
 Mongo.init()
-push_service = FCMNotification(api_key=Config.fcm_key)
