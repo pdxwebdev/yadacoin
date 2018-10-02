@@ -34,13 +34,13 @@ class Graph(object):
         self.messages = []
         self.new_messages = []
         self.already_added_messages = []
+        self.bulletin_secret = str(bulletin_secret)
 
         if self.wallet_mode:
             return self.with_private_key()
         else:
             self.registered = False
             self.pending_registration = False
-            self.bulletin_secret = str(bulletin_secret)
             bulletin_secrets = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
             rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
             self.rid = rid
@@ -99,7 +99,7 @@ class Graph(object):
         self.rid_usernames = dict((x['rid'], x['relationship']['their_username']) for x in all_relationships)
 
         rids = [x['rid'] for x in all_relationships]
-        self.rid_transactions = BU.get_transactions_by_rid(rids, rid=True, raw=True, returnheight=True)
+        self.rid_transactions = BU.get_transactions_by_rid(rids, bulletin_secret=self.bulletin_secret, rid=True, raw=True, returnheight=True)
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
@@ -156,7 +156,11 @@ class Graph(object):
         if self.wallet_mode:
             self.messages = [x for x in self.rid_transactions if x['rid'] and x['relationship']]
             if not_mine:
-                self.messages = [x for x in self.messages if x['public_key'] != Config.public_key]
+                messages = []
+                for x in self.messages:
+                    if x['public_key'] != Config.public_key:
+                        messages.append(x)
+                self.messages = messages
             for i, x in enumerate(self.messages):
                 self.messages[i]['username'] = self.rid_usernames[self.messages[i]['rid']]
             return
@@ -181,13 +185,12 @@ class Graph(object):
 
     def get_new_messages(self):
         self.get_messages(not_mine=True)
-        self.messages = sorted(self.messages, key=lambda x: x['height'], reverse=True)
+        self.messages = sorted(self.messages, key=lambda x: int(x['height']), reverse=True)
         used_rids = []
         for message in self.messages:
             if message['rid'] not in used_rids:
                 self.new_messages.append(message)
                 used_rids.append(message['rid'])
-        self.messages = []
 
     def get_posts(self):
         if self.wallet_mode:
