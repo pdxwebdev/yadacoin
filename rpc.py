@@ -10,7 +10,7 @@ import time
 import logging
 import re
 import socket
-
+import uuid
 from logging.handlers import SMTPHandler
 from io import BytesIO
 from uuid import uuid4
@@ -102,7 +102,7 @@ def demo():
     if request.method == 'POST':
         bulletin_secret = request.form.get('bulletin_secret', '')
         if not bulletin_secret:
-            return redirect('/?error')
+            return redirect('/demo?error')
         # generate a transaction which contains a signin message containing the current sessions identifier
         txn = TransactionFactory(
             bulletin_secret=bulletin_secret,
@@ -124,7 +124,7 @@ def demo():
                 txn.to_json(),
                 headers={"Content-Type": "application/json"}
             )
-        return redirect('/?bulletin_secret=%s' % urllib.quote_plus(bulletin_secret))
+        return redirect('/demo?bulletin_secret=%s' % urllib.quote_plus(bulletin_secret))
     elif request.method == 'GET':
         bulletin_secret = request.args.get('bulletin_secret', '')
         rid = TU.generate_rid(bulletin_secret)
@@ -143,7 +143,7 @@ def demo():
         sent, received = BU.verify_message(rid, session['id'])
         session['loggedin'] = received
         return render_template(
-            'index.html',
+            'authdemo.html',
             session_id=str(session.get('id')),
             registered=str(registered),
             sent=str(sent),
@@ -153,7 +153,15 @@ def demo():
             rid=str(rid)
         )
     else:
-        return redirect('/')
+        return redirect('/demo')
+
+@app.route('/config.xml')
+def configxml():
+    return app.send_static_file('config.xml')
+
+@app.route('/screen')
+def screen():
+    return app.send_static_file('app/www/assets/img/logo.png')
 
 @app.route('/explorer')
 def explorer():
