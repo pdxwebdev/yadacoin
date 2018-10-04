@@ -160,7 +160,7 @@ class TransactionView(View):
 
 class TxnBroadcaster(object):
     @classmethod
-    def txn_broadcast_job(transaction):
+    def txn_broadcast_job(cls, transaction):
         Peers.init()
         for peer in Peers.peers:
             try:
