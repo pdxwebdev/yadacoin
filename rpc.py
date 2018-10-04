@@ -215,13 +215,13 @@ def create_relationship():  # demo site
     TU.save(transaction.transaction)
 
     Mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
-    job = Process(target=txn_broadcast_job, args=(transaction.transaction,))
+    job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
     job.start()
 
 
     my_bulletin_secret = Config.get_bulletin_secret()
-    rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    bulletin_secrets = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+    rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
     Mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
     return json.dumps({"success": True})
 
