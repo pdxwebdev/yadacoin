@@ -30,6 +30,7 @@ from multiprocessing import Process, Value, Array, Pool
 from flask_cors import CORS
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from bson.objectid import ObjectId
+import endpoints
 
 
 class ChatNamespace(BaseNamespace):
@@ -154,6 +155,25 @@ def demo():
         )
     else:
         return redirect('/demo')
+
+@app.route('/firebase-messaging-sw.js')
+def firebase_service_worker():
+    return app.send_static_file('app/www/ServiceWorker.js')
+
+@app.route('/fcm-token', methods=['POST'])
+def fcm_token():
+    try:
+        token = request.json.get('token')
+        print token
+        rid = request.json.get('rid')
+        txn = BU.get_transaction_by_rid(rid, rid=True) 
+        Mongo.site_db.fcmtokens.update({'rid': rid}, {
+            'rid': rid,
+            'token': token
+        }, upsert=True)
+        return '', 200
+    except Exception as e:
+        return '', 400
 
 @app.route('/config.xml')
 def configxml():
@@ -764,8 +784,24 @@ def peers():
 def stats():
     return app.send_static_file('stats/index.html')
 
-from endpoints import RegisterView
-app.add_url_rule('/register', view_func=RegisterView.as_view('register'))
+def get_base_graph(self):
+    bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
+    graph = Graph(bulletin_secret)
+    return graph
+
+endpoints.BaseGraphView.get_base_graph = get_base_graph
+
+app.add_url_rule('/register', view_func=endpoints.RegisterView.as_view('register'))
+app.add_url_rule('/transaction', view_func=endpoints.TransactionView.as_view('transaction'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-info', view_func=endpoints.GraphView.as_view('graph'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-sent-friend-requests', view_func=endpoints.GraphSentFriendRequestsView.as_view('graphsentfriendrequests'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-friend-requests', view_func=endpoints.GraphFriendRequestsView.as_view('graphfriendrequests'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-friends', view_func=endpoints.GraphFriendsView.as_view('graphfriends'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-posts', view_func=endpoints.GraphPostsView.as_view('graphposts'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-messages', view_func=endpoints.GraphMessagesView.as_view('graphmessages'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
+app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
+app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',

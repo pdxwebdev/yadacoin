@@ -196,8 +196,6 @@ class Graph(object):
         if self.wallet_mode:
             self.posts = []
             return
-        else:
-            self.posts = posts
 
         my_bulletin_secret = Config.get_bulletin_secret()
         posts = []

@@ -10,10 +10,12 @@ import re
 import pymongo
 import subprocess
 import os
+import endpoints
 from sys import exit
 from multiprocessing import Process, Value, Array, Pool
 from socketIO_client import SocketIO, BaseNamespace
 from flask import Flask, render_template, request, Response
+from flask_cors import CORS
 from yadacoin import TransactionFactory, Transaction, \
                     MissingInputTransactionException, \
                     Input, Output, Block, Config, Peers, \
@@ -21,7 +23,6 @@ from yadacoin import TransactionFactory, Transaction, \
                     Mongo, BlockFactory, NotEnoughMoneyException
 from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from endpoints import *
 from gevent import pywsgi
 
 
@@ -356,6 +357,11 @@ if __name__ == '__main__':
             raise Exception("peer service unavailble, restart this process")
         # wrap Flask application with engineio's middleware
         Mongo.init()
+
+        app = Flask(__name__)
+        app.debug = True
+        app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
+        CORS(app)
         sio = socketio.Server(async_mode='gevent')
 
         @sio.on('newblock', namespace='/chat')
@@ -474,6 +480,23 @@ if __name__ == '__main__':
         def app_getblock():
             res = Mongo.db.consensus.find({'block.hash': request.args.get('hash')}, {'_id': 0})
             return json.dumps(res[0]['block'])
+
+        def get_base_graph():
+            bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
+            graph = Graph(bulletin_secret, wallet_mode=True)
+            return graph
+        endpoints.BaseGraphView.get_base_graph = get_base_graph
+
+        app.add_url_rule('/transaction', view_func=endpoints.TransactionView.as_view('transaction'), methods=['GET', 'POST'])
+        app.add_url_rule('/get-graph-info', view_func=endpoints.GraphView.as_view('graph'), methods=['GET', 'POST'])
+        app.add_url_rule('/get-graph-sent-friend-requests', view_func=endpoints.GraphSentFriendRequestsView.as_view('graphsentfriendrequests'), methods=['GET', 'POST'])
+        app.add_url_rule('/get-graph-friend-requests', view_func=endpoints.GraphFriendRequestsView.as_view('graphfriendrequests'), methods=['GET', 'POST'])
+        app.add_url_rule('/get-graph-friends', view_func=endpoints.GraphFriendsView.as_view('graphfriends'), methods=['GET', 'POST'])
+        app.add_url_rule('/get-graph-posts', view_func=endpoints.GraphPostsView.as_view('graphposts'), methods=['GET', 'POST'])
+        app.add_url_rule('/get-graph-messages', view_func=endpoints.GraphMessagesView.as_view('graphmessages'), methods=['GET', 'POST'])
+        app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
+        app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
+        app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
 
         app = socketio.Middleware(sio, app)
         # deploy as an eventlet WSGI server
