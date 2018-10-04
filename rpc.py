@@ -215,7 +215,7 @@ def create_relationship():  # demo site
     TU.save(transaction.transaction)
 
     Mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
-    job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
+    job = Process(target=endpoints.TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
     job.start()
 
 
