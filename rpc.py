@@ -156,6 +156,76 @@ def demo():
     else:
         return redirect('/demo')
 
+@app.route('/create-relationship', methods=['GET', 'POST'])
+def create_relationship():  # demo site
+    if request.method == 'GET':
+        bulletin_secret = request.args.get('bulletin_secret', '')
+        username = request.args.get('username', '')
+        to = request.args.get('to', '')
+    else:
+        bulletin_secret = request.json.get('bulletin_secret', '')
+        username = request.json.get('username', '')
+        to = request.json.get('to', '')
+
+    if not bulletin_secret:
+        return 'error: "bulletin_secret" missing', 400
+
+    if not username:
+        return 'error: "username" missing', 400
+
+    if not to:
+        return 'error: "to" missing', 400
+
+    rid = TU.generate_rid(bulletin_secret)
+    dup = Mongo.db.blocks.find({'transactions.rid': rid})
+    if dup.count():
+        for txn in dup:
+            if txn['public_key'] == Config.public_key:
+                return json.dumps({"success": False, "status": "Already added"})
+    input_txns = BU.get_wallet_unspent_transactions(Config.address)
+
+    miner_transactions = Mongo.db.miner_transactions.find()
+    mtxn_ids = []
+    for mtxn in miner_transactions:
+        for mtxninput in mtxn['inputs']:
+            mtxn_ids.append(mtxninput['id'])
+
+    checked_out_txn_ids = Mongo.db.checked_out_txn_ids.find()
+    for mtxn in checked_out_txn_ids:
+        mtxn_ids.append(mtxn['id'])
+
+
+    a = os.urandom(32)
+    dh_public_key = scalarmult_base(a).encode('hex')
+    dh_private_key = a.encode('hex')
+
+    transaction = TransactionFactory(
+        bulletin_secret=bulletin_secret,
+        username=username,
+        fee=0.01,
+        public_key=Config.public_key,
+        dh_public_key=dh_public_key,
+        private_key=Config.private_key,
+        dh_private_key=dh_private_key,
+        outputs=[
+            Output(to=to, value=1)
+        ]
+    )
+
+    TU.save(transaction.transaction)
+
+    Mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
+    job = Process(target=txn_broadcast_job, args=(transaction.transaction,))
+    job.start()
+
+
+    my_bulletin_secret = Config.get_bulletin_secret()
+    rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    Mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
+    return json.dumps({"success": True})
+
+
 @app.route('/firebase-messaging-sw.js')
 def firebase_service_worker():
     return app.send_static_file('app/www/ServiceWorker.js')
