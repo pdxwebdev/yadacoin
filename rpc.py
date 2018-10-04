@@ -11,6 +11,7 @@ import logging
 import re
 import socket
 import uuid
+import urllib
 from logging.handlers import SMTPHandler
 from io import BytesIO
 from uuid import uuid4
