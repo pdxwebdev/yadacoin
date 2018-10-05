@@ -62,6 +62,7 @@ def generate():
     }
     Config.from_dict(config)
     return json.dumps(Config.to_dict(), indent=4)
+
 parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
