@@ -624,7 +624,7 @@ class BU(object):  # Blockchain Utilities
         # so we want to grab all bulletin secrets for this rid
         mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(rids)
         friends = []
-        for friend in cls.get_transactions_by_rid(rids, rid=True)
+        for friend in cls.get_transactions_by_rid(rids, rid=True):
             if 'bulletin_secret' in friend['relationship']:
                 friends.append(friend['relationship']['bulletin_secret'])
         friends = list(set(friends))
