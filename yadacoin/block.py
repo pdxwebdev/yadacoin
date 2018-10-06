@@ -35,7 +35,7 @@ class BlockFactory(object):
         if self.index == 0:
             self.prev_hash = '' 
         else:
-            self.prev_hash = blocks[blocks.count()-1]['hash']
+            self.prev_hash = BU.get_latest_block()['prevHash']
         self.public_key = public_key
         self.private_key = private_key
 
