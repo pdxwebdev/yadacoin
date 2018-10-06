@@ -1,6 +1,6 @@
 <html>
 <head>
-  <TITLE>Blockchain social media - YadaCoin</TITLE>
+  <TITLE>How-to guides / tutorials - YadaCoin</TITLE>
   <META NAME="Description" CONTENT="Revolutionary social media blockchain. Open source. Facebook alternative. Cryptocurrency.">
   <META NAME="Keywords" CONTENT="blockchain social media graph crypto cryptocurrency facebook alternative">
   <META NAME="distribution" CONTENT="Global">
@@ -87,76 +87,98 @@ mixpanel.init("4e29328ef697408a91a5aad0552705af");
 if(window.location.href.indexOf("yadacoin.io") > 0)
 mixpanel.track("index page");</script><!-- end Mixpanel -->
 </head>
-<body>
-    {% include 'navigation.html' %}
-
-    <main role="main">
-
-      
-      <div style="text-align:center;">
-        <img src="/static/yadacoinlogo.png">
-      </div>
-      <div style="text-align:center;">
-        <a href="https://twitter.com/yadablockchain" class="fab fa-twitter" target="_blank"></a>
-        <a href="https://www.reddit.com/r/yadacoin" class="fab fa-reddit" target="_blank"></a>
-        <a href="https://discord.gg/JEDJaFS" class="fab fa-discord" target="_blank"></a>
-        <a href="https://www.instagram.com/mrmattvogel/" class="fab fa-instagram" target="_blank"></a>
-      </div>
-      <div style="text-align:center;margin-bottom:20px;">
-        <a href="https://www.youtube.com/watch?v=EsxKzQtwDR0" target="_blank">
-          <img src="/static/watch_video_icon.png" width="400">
-        </a>
-      </div>
-      <div style="text-align:center;margin-bottom:20px;">
-        <a href="https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewSoftware?id=1397131708&mt=8" target="_blank">
-          <img src="/static/itunes.png" width="200">
-        </a>
-        <a href="https://play.google.com/store/apps/details?id=io.yadacoin.mobile" target="_blank">
-          <img src="/static/google-play.png" width="200">
-        </a>
-      </div>
-
-
-        <hr class="featurette-divider">
-      <!-- Marketing messaging and featurettes
-      ================================================== -->
-      <!-- Wrap the rest of the page in another container to center all the content. -->
-
-      <div class="container marketing">
-
-        <!-- Three columns of text below the carousel -->
-        <div class="row">
-          <div class="col-lg-4">
-            <img class="rounded-circle" src="/static/2phones.png" alt="Generic placeholder image" width="140" height="140">
-            <h2>Single sign on</h2>
-            <p>Using a protocol similar to SAML, we can easily convert any existing application into an one that utilizes the user-base from the YadaCoin blockchain.</p>
-            <p><a class="btn btn-secondary" href="/static/yadacoin-whitepaper.pdf" role="button">Read our white paper »</a></p>
-          </div><!-- /.col-lg-4 -->
-          <div class="col-lg-4">
-            <img class="rounded-circle" src="/static/suspended.png" alt="Generic placeholder image" width="140" height="140">
-            <h2>User centric content</h2>
-            <p>YadaCoin allows a user to post content once and let it be shared throughout any site that implements the YadaCoin protocol. This means content creators will monetize their content more effectively with YadaCoin.</p>
-            <p><a class="btn btn-secondary" href="https://trello.com/b/OBucq4ik/yadacoin-roadmap" role="button" target="_blank">Check out our roadmap »</a></p>
-          </div><!-- /.col-lg-4 -->
-          <div class="col-lg-4">
-            <img class="rounded-circle" src="/static/2phones3.png" alt="Generic placeholder image" width="140" height="140">
-            <h2>Secure data exchange</h2>
-            <p>When it comes to private messages between humans or data between applications, YadaCoin is the right choice for secure communication.</p>
-            <p><a class="btn btn-secondary" href="/app" role="button">Use the desktop app »</a></p>
-          </div><!-- /.col-lg-4 -->
-        </div><!-- /.row -->
-
-
-        <!-- /END THE FEATURETTES -->
-
-      </div><!-- /.container -->
-
-
-      <!-- FOOTER -->
-      <footer class="container">
-        <p class="float-right"><a href="#">Back to top</a></p>
-        <p>© 2017 Yadacoin · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
-      </footer>
-    </main>
-  </body>
+<body class="container">
+  {% include 'navigation.html' %}
+  <h1>Guides and Tutuorials</h1>
+  <div class="row">
+    <h2>Before you start</h2>
+  </div>
+  <div class="row">
+    <p>You must install mongodb</p>
+  </div>
+  <div class="row">
+    <p><a href="https://www.mongodb.com/download-center?initial=true#community" target="_blank">Windows</a></p>
+  </div>
+  <div class="row">
+    <p>Ubuntu - MongoDB is included when executing the command shown below.</p>
+  </div>
+  <div class="row">
+    <h2>After you're setup</h2>
+  </div>
+  <div class="row">
+    <p>Verify your public IP address and port are listed in the peer list at <a href="https://yadacoin.io/peers" target="_blank">YadaCoin's peer list</a></p>
+    <p>Note: If the serve process stops running, the network will kick you from the peer list after too many failed attempts at sending you blocks.</a></p>
+  </div>
+  <div class="row">
+    <h2>Having trouble?</h2>
+  </div>
+  <div class="row">
+    <p>Come ask questions on <a href="https://discord.gg/JEDJaFS" target="_blank">our discord server</a>.</p>
+  </div>
+  <div class="row">
+    <h2>Mining</h2>
+  </div>
+  <hr/>
+  <div class="row">
+    <h3>Windows</h3>
+  </div>
+  <div class="row">
+    <iframe width="560" height="315" src="https://www.youtube.com/embed/JeHQcafwGNw" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+  </div>
+  <div class="row">
+    <p>Open three terminal windows and in the first terminal window, execute this command: </p>
+  </div>
+  <div class="row">
+    <pre class="card">YadaCoinConfig.exe auto > config.json</pre>
+  </div>
+  <div class="row">
+    <p>Then in that same terminal, execute this command.</p>
+  </div>
+  <div class="row">
+    <pre class="card">YadaCoinConfig.exe serve config.json</pre>
+  </div>
+  <div class="row">
+    <p>Then in the second terminal, execute this command.</p>
+  </div>
+  <div class="row">
+    <pre class="card">YadaCoinConfig.exe consensus config.json</pre>
+  </div>
+  <div class="row">
+    <p>Wait approximately 10 minutes for a new block to be found by the network then you'll start syncing.</p>
+  </div>
+  <div class="row">
+    <p>Once the countdown reaches zero, you'll be ready to start mining.</p>
+  </div>
+  <div class="row">
+    <p>In the third terminal window, execute this command:</p>
+  </div>
+  <div class="row">
+    <pre class="card">YadaCoinConfig.exe mine config.json</pre>
+  </div>
+  <hr/>
+  <div class="row">
+    <h3>Ubuntu</h3>
+  </div>
+  <div class="row">
+    <iframe width="560" height="315" src="https://www.youtube.com/embed/vaJPSJhLjOY" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+  </div>
+  <div class="row">
+    <p>Open a terminal window and execute this command: </p>
+  </div>
+  <div class="row">
+    <pre class="card">wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/setup.sh | bash</pre>
+  </div>
+  <div class="row">
+    <p>This will start the serve, consensus, and mining processes. You can check their status with the following commands:</p>
+  </div>
+  <div class="row">
+    <pre class="card">sudo service yadacoin-serve status</pre>
+  </div>
+  <div class="row">
+    <pre class="card">sudo service yadacoin-consensus status</pre>
+  </div>
+  <div class="row">
+    <pre class="card">sudo service yadacoin-mine status</pre>
+  </div>
+</body>
 </html>

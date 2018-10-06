@@ -435,6 +435,12 @@ def index():
         'index.html',
         )
 
+@app.route('/guide')
+def guide():
+    return render_template(
+        'guide.html',
+        )
+
 @app.route('/team')
 def team():
     return render_template(
