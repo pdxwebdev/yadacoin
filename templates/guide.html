@@ -103,11 +103,14 @@ mixpanel.track("guide page");</script><!-- end Mixpanel -->
     <p>Ubuntu - MongoDB is included when executing the command shown below.</p>
   </div>
   <div class="row">
+    <p>You must also forward port 8000 (or whichever port specified by "serve_port" in your config file)</p>
+  </div>
+  <div class="row">
     <h2>After you're setup</h2>
   </div>
   <div class="row">
     <p>Verify your public IP address and port are listed in the peer list at <a href="https://yadacoin.io/peers" target="_blank">YadaCoin's peer list</a></p>
-    <p>Note: If the serve process stops running, the network will kick you from the peer list after too many failed attempts at sending you blocks.</a></p>
+    <p>Note: Your serve process must be publicly accessible. If the serve process stops running or you're behind a firewall, the network will kick you from the peer list after too many failed attempts at sending you blocks.</a></p>
   </div>
   <div class="row">
     <h2>Having trouble?</h2>
