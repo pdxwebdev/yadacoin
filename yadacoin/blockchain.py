@@ -21,9 +21,21 @@ class Blockchain(object):
     def verify(self, progress=None):
         last_block = None
         for block in self.blocks:
-            block.verify()
+            try:
+                block.verify()
+            except:
+                if last_block:
+                    return {'verified': False, 'last_good_block': last_block}
+                else:
+                    return {'verified': False}
             for txn in block.transactions:
-                txn.verify()
+                try:
+                    txn.verify()
+                except:
+                    if last_block:
+                        return {'verified': False, 'last_good_block': last_block}
+                    else:
+                        return {'verified': False}
             if last_block:
                 target = BlockFactory.get_target(block.index, last_block.time, last_block, self)
                 if int(block.hash, 16) > target and not block.special_min:
