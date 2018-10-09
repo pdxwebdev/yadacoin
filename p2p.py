@@ -225,7 +225,7 @@ class Consensus():
             'block.index': (block.index - 1)
         })
         if new_block:
-            new_block = Block.from_dict(new_block)
+            new_block = Block.from_dict(new_block['block'])
             if new_block.version == BU.get_version_for_height(new_block.index):
                 return new_block
             else:
