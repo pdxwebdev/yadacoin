@@ -135,8 +135,8 @@ def node(nonces=None):
     except Exception as e:
         raise
     if block:
-        dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': block.index})
-        if not dup_test.count():
+        dup_test = Mongo.db.consensus.find_one({'peer': 'me', 'index': block.index, 'block.version': BU.get_version_for_height(block.index)})
+        if not dup_test:
             print '\r\nCandidate submitted for index:', block.index
             print '\r\nTransactions:'
             for x in block.transactions:

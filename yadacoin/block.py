@@ -204,10 +204,11 @@ class BlockFactory(object):
                 yield num
                 num += 1
         nonces = nonces or default_nonces
-        start = time.time()
+
         special_min = False
 
         max_block_time = 600  # seconds
+        
         for nonce in nonces:
             if height > 0:
                 time_elapsed_since_last_block = int(time.time()) - int(last_time)
@@ -222,10 +223,11 @@ class BlockFactory(object):
             hash_test = cls.generate_hash(block_factory.block, str(nonce))
 
             text_int = int(hash_test, 16)
+            
             #if callback:
             #    callback(current_index.value, nonce, text_int, target)
             # print hash_test
-            if text_int < target:
+            if text_int < target or special_min:
                 # create the block with the reward
                 # gather friend requests from the network
                 block = block_factory.block
@@ -354,7 +356,7 @@ class Block(object):
         try:
             result = verify_signature(base64.b64decode(self.signature), self.hash, self.public_key.decode('hex'))
             if not result:
-                raise
+                raise Exception("block signature is invalid")
         except:
             try:
                 result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.signature)
