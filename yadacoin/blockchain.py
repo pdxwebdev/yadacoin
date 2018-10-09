@@ -1,5 +1,5 @@
 import re
-from block import Block
+from block import Block, BlockFactory
 
 class BlockChainException(BaseException):
     pass
@@ -14,23 +14,31 @@ class Blockchain(object):
                 else:
                     block_obj = Block.from_dict(block)
                     new_block_array.append(block_obj)
-            self.blocks = new_block_array
+            self.blocks = sorted(new_block_array, key=lambda x: x.index)
         else:
             self.blocks = []
 
-    def verify(self, progress):
+    def verify(self, progress=None):
         last_block = None
         for block in self.blocks:
             block.verify()
             for txn in block.transactions:
                 txn.verify()
             if last_block:
+                target = BlockFactory.get_target(block.index, last_block.time, last_block, self)
+                if int(block.hash, 16) > target and not block.special_min:
+                    print "invalid block chain: block target is not below the previous target and not special minimum"
+                    return {'verified': False, 'last_good_block': last_block}
                 if block.prev_hash != last_block.hash:
-                    raise BlockChainException("invalid block chain: hashes are not consecutive:", last_block.index, block.index)
+                    print "invalid block chain: hashes are not consecutive:", last_block.hash, block.prev_hash, last_block.index, block.index
+                    return {'verified': False, 'last_good_block': last_block}
                 if block.index - last_block.index != 1:
-                    raise BlockChainException("invalid block chain: indexes are not consecutive:", last_block.index, block.index)
+                    print "invalid block chain: indexes are not consecutive:", last_block.index, block.index
+                    return {'verified': False, 'last_good_block': last_block}
             last_block = block
-            progress(str(int(float(block.index + 1) / float(len(self.blocks)) * 100)))
+            if progress:
+                progress("%s%s" % (str(int(float(block.index + 1) / float(len(self.blocks)) * 100)), '%'))
+        return {'verified': True}
 
     def find_error_block(self):
         last_block = None
@@ -48,9 +56,8 @@ class Blockchain(object):
     def get_difficulty(self):
         difficulty = 0
         for block in self.blocks:
-            zeros = re.search(r'^[0]+', block.hash)
-            if zeros:
-                difficulty += len(zeros.group(0))
+            target = int(block.hash, 16)
+            difficulty += target
         return difficulty
 
     def get_highest_block_height(self):

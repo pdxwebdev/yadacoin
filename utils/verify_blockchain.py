@@ -1,10 +1,7 @@
 import sys
 import json
 from pymongo import MongoClient
-from blockchain import Blockchain
-from blockchainutils import BU
-from transactionutils import TU
-from transaction import Transaction
+from yadacoin import Transaction, TU, BU, Blockchain, Config, Mongo
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from bson.son import SON
 
@@ -15,31 +12,17 @@ def output(percent):
     if float(percent) >= 100:
         print "\n\n\nDone!"
 
-with open('tests/test_config.json') as f:
+with open('config/config.json') as f:
     config = json.loads(f.read())
+    Config.from_dict(config)
 
-public_key = config.get('public_key')
-my_address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
-private_key = config.get('private_key')
-TU.private_key = private_key
-BU.private_key = private_key
-
-try:
-    f = open('block_rewards.json', 'r')
-    BU.block_rewards = json.loads(f.read())
-    f.close()
-except:
-    raise BaseException("Block reward file not found")
-con = MongoClient('localhost')
-db = con[config.get('database')]
-col = db.blocks
-BU.collection = col
+Mongo.init()
 blocks = BU.get_blocks()
 blockchain = Blockchain(blocks)
 blockchain.verify(output)
 
 
-res = col.aggregate([
+res = Mongo.db.blocks.aggregate([
     {"$unwind": "$transactions" },
     {
         "$project": {

@@ -20,7 +20,7 @@ from yadacoin import TransactionFactory, Transaction, \
                     MissingInputTransactionException, \
                     Input, Output, Block, Config, Peers, \
                     Blockchain, BlockChainException, TU, BU, \
-                    Mongo, BlockFactory, NotEnoughMoneyException
+                    Mongo, BlockFactory, NotEnoughMoneyException, Peer
 from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from gevent import pywsgi
@@ -36,7 +36,7 @@ def output(string):
     sys.stdout.write(''.join(['\b' for i in range(len(string))])) # erase the last written char
 
 def signal_handler(signal, frame):
-        print('Closing...')
+        print('Closing... Or use ctrl + \\')
         sys.exit(0)
 signal.signal(signal.SIGINT, signal_handler)
 
@@ -131,142 +131,263 @@ def faucet():
             except Exception as e:
                 print e
 
-def consensus():
-    Mongo.init()
-    synced = False
-    block_heights = {}
-    latest_block = BU.get_latest_block()
-    if not latest_block:
+class AboveTargetException(Exception):
+    pass
+
+class ForkException(Exception):
+    pass
+
+class Consensus():
+    lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    def __init__(self):
+        Mongo.init()
+        latest_block = BU.get_latest_block()
+        if latest_block:
+            self.latest_block = Block.from_dict(latest_block)
+        else:
+            self.insert_genesis()
+        self.verify_existing_blockchain()
+
+    def log(self, message):
+        print message
+
+    def insert_genesis(self):
+        #insert genesis if it doesn't exist
         genesis_block = BlockFactory.get_genesis_block()
         genesis_block.save()
-        Mongo.db.consensus.insert({
+        Mongo.db.consensus.update({
             'block': genesis_block.to_dict(),
             'peer': 'me',
             'id': genesis_block.signature,
             'index': 0
-            })
-        latest_block = genesis_block.to_dict()
-        Mongo.db.consensus.insert({
+        },
+        {
             'block': genesis_block.to_dict(),
-            'index': genesis_block.to_dict().get('index'),
-            'id': genesis_block.to_dict().get('id')})
+            'peer': 'me',
+            'id': genesis_block.signature,
+            'index': 0
+        },
+        upsert=True)
+        self.latest_block = genesis_block
 
-    data = Mongo.db.miner_transactions.find({}, {'_id': False})
-    for txn in data:
-        res = Mongo.db.blocks.find({"transactions.id": txn['id']})
-        if res.count():
-            Mongo.db.miner_transactions.remove({'id': txn['id']})
+    def verify_existing_blockchain(self):
+        self.log('verifying existing blockchain')
+        self.existing_blockchain = Blockchain([x for x in Mongo.db.blocks.find({})])
+        result = self.existing_blockchain.verify(output)
+        if not result['verified']:
+            Mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
 
-    if latest_block:
-        next_index = int(latest_block.get('index')) + 1
-    else:
-        next_index = 0
-
-    winning_block = {}
-    latests = Mongo.db.consensus.find({}).sort('index', pymongo.DESCENDING)
-    latest_blocks = Mongo.db.blocks.find({}).sort('index', pymongo.DESCENDING)
-    if latests.count():
-        if latest_blocks[0]['index'] == latests[0]['index']:
-            print 'up to date, height:', latests[0]['index']
-            return
-        records = Mongo.db.consensus.find({'index': latests[0]['index']})
-        if records.count():
-            lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-            for record in records:
-                val = int(record['block']['hash'], 16)
-                if val < lowest:
-                    lowest = val
-                    winning_block = record['block']
-                    peer = record['peer']
-            if winning_block:
-                print latest_block.get('hash'), latest_block.get('index')
-                print winning_block.get('prevHash'), winning_block.get('index')
-                print winning_block.get('hash'), winning_block.get('index')
-                if latest_block.get('hash') == winning_block.get('prevHash'):
-                    # everything jives with our current history, everyone is happy
-                    Mongo.db.blocks.update(winning_block, winning_block, upsert=True)
-                    print 'winning block inserted at: ', winning_block.get('index')
-                    latest_block = BU.get_latest_block()
-                else:
-                    winning_block = Block.from_dict(winning_block)
-                    result = retrace(winning_block, peer)
-                    if result == "peer has broken chain or response was invalid":
-                        Mongo.db.consensus.remove({'peer': peer}, multi=True)
-                    return
-            else:
-                print 'no winning block for index:', next_index
-        else:
-            print 'no winning block for index:', next_index
-            return
-    else:
-        print "no records found at index:", next_index
-        return
-
-def retrace(block, peer):
-    print "retracing..."
-    blocks = {}
-    blocks[block.index] = block
-    Mongo.db.consensus.insert({
-        'block': block.to_dict(),
-        'index': block.to_dict().get('index'),
-        'id': block.to_dict().get('id'),
-        'peer': peer})
-    while 1:
-        try:
-            # 2. if we don't, query the peer for the prevHash
-            print 'getting hash:', block.prev_hash
-            print 'for height:', block.index - 1
-            res = Mongo.db.consensus.find({'block.hash': block.prev_hash})
+    def remove_pending_transactions_now_in_chain(self):
+        #remove transactions from miner_transactions collection in the blockchain
+        data = Mongo.db.miner_transactions.find({}, {'_id': 0})
+        for txn in data:
+            res = Mongo.db.blocks.find({"transactions.id": txn['id']})
             if res.count():
-                block = Block.from_dict(res[0]['block'])
-            else:
-                res = requests.get('http://' + peer + '/get-block?hash=' + block.prev_hash)
-                block = Block.from_dict(json.loads(res.content))
-                Mongo.db.consensus.insert({
-                    'block': block.to_dict(),
-                    'index': block.to_dict().get('index'),
-                    'id': block.to_dict().get('id'),
-                    'peer': peer})
-            blocks[block.index] = block
-        except:
-            # if they don't have it, throw out the chain
-            return "peer has broken chain or response was invalid"
+                Mongo.db.miner_transactions.remove({'id': txn['id']})
 
-        # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
-        prev_blocks_check = Mongo.db.blocks.find({'hash': block.prev_hash})
-        
-        if prev_blocks_check.count():
-            print prev_blocks_check[0]['hash'], prev_blocks_check[0]['index']
-            missing_blocks = Mongo.db.blocks.find({'index': {'$lte': prev_blocks_check[0]['index']}})
-            for missing_block in missing_blocks:
-                blocks[missing_block['index']] = Block.from_dict(missing_block)
-            # if we have it in our blockchain, then we've hit the fork point
-            # now we have to loop through the current block array and build a blockchain
-            # then we compare the block height and difficulty of the two chains
-            # replace our current chain if necessary by removing them from the database
-            # then looping though our new chain, inserting the new blocks
-            existing_blockchain = Blockchain([x for x in Mongo.db.blocks.find({})])
-            blockchain = Blockchain([x for i, x in blocks.iteritems()])
-            # If the block height is equal, we throw out the inbound chain, it muse be greater
-            # If the block height is lower, we throw it out
-            # if the block height is heigher, we compare the difficulty of the entire chain
-            if blockchain.get_difficulty() > existing_blockchain.get_difficulty() and \
-                blockchain.get_highest_block_height() > existing_blockchain.get_highest_block_height():
-                    for idx, block in blocks.items():
-                        Mongo.db.blocks.remove({'index': block.index})
-                        Mongo.db.blocks.insert(block.to_dict())
-                    return "Replaced chain with incoming"
+    def get_latest_consensus_blocks(self):
+        return Mongo.db.consensus.find({'peer': {'$ne': 'me'}}, {'_id': 0}).sort('index', pymongo.DESCENDING)
+
+    def get_latest_consensus_block(self):
+        latests = self.get_latest_consensus_blocks()
+        for latest in latests:
+            if int(latest['block']['version']) == BU.get_version_for_height(latest['block']['index']):
+                return Block.from_dict(latest['block'])
+
+    def get_consensus_blocks_by_index(self, index):
+        return Mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}}, {'_id': 0})
+
+    def get_consensus_block_by_index(self, index):
+        return self.get_consensus_blocks_by_index(index).limit(1)[0]
+
+    def rank_consenesus_blocks(self):
+        # rank is based on target, total chain difficulty, and chain validity
+        records = self.get_consensus_blocks_by_index(self.latest_block.index + 1)
+        lowest = self.lowest
+
+        ranks = []
+        for record in records:
+            peer = Peer.from_string(record['peer'])
+            block = Block.from_dict(record['block'])
+            target = int(record['block']['hash'], 16)
+            if target < lowest:
+                ranks.append({
+                    'target': target,
+                    'block': block,
+                    'peer': peer
+                })
+        return sorted(ranks, key=lambda x: x['target'])
+
+    def get_previous_consensus_block_from_local(self, block, peer):
+        #table cleanup
+        new_block = Mongo.db.consensus.find_one({
+            'block.hash': block.prev_hash,
+            'block.index': (block.index - 1)
+        })
+        if new_block:
+            new_block = Block.from_dict(new_block)
+            if new_block.version == BU.get_version_for_height(new_block.index):
+                return new_block
             else:
-                return "Incoming chain lost", blockchain.get_difficulty(), existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), existing_blockchain.get_highest_block_height()
-        # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
-        # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
-        #there is no else, we just loop again
-        # if we get to index 1 and prev hash doesn't match the genesis, throw out the chain and black list the peer
-        # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
-        # blockchain against the proposed chain. 
+                return None
+        return None
+
+    def get_previous_consensus_block_from_remote(self, block, peer):
+        try:
+            res = requests.get('http://' + peer.to_string() + '/get-block?hash=' + block.prev_hash, timeout=3)
+            new_block = Block.from_dict(json.loads(res.content))
+            if new_block.version == BU.get_version_for_height(new_block.index):
+                return new_block
+            else:
+                return None
+        except:
+            return None
+
+    def insert_consensus_block(self, block, peer):
+        Mongo.db.consensus.update({
+            'block': block.to_dict(),
+            'index': block.to_dict().get('index'),
+            'id': block.to_dict().get('id'),
+            'peer': peer.to_string()
+        },
+        {
+            'block': block.to_dict(),
+            'index': block.to_dict().get('index'),
+            'id': block.to_dict().get('id'),
+            'peer': peer.to_string()
+        }, upsert=True)
+
+    def sync(self):
+        #top down syncing
+
+        self.remove_pending_transactions_now_in_chain()
+
+        latest_consensus = self.get_latest_consensus_block()
+        if latest_consensus:
+            print latest_consensus.index, "latest consensus_block"
+
+            # check for difference between blockchain and consensus table heights
+            if self.latest_block.index == latest_consensus.index:
+                self.log('up to date, height: ' + str(latest_consensus.index))
+                return
+
+            records = Mongo.db.consensus.find({'index': latest_consensus.index})
+            for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
+                block = Block.from_dict(record['block'])
+                peer = Peer.from_string(record['peer'])
+                print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
+                try:
+                    self.integrate_block_with_existing_chain(block, peer, self.existing_blockchain)
+                except AboveTargetException as e:
+                    pass
+                except ForkException as e:
+                    self.retrace(block, peer)
+                except IndexError as e:
+                    self.retrace(block, peer)
+        else:
+            self.log('no consensus data... none.')
+            return
+
+    def integrate_block_with_existing_chain(self, block, peer, blockchain):
         if block.index == 0:
-            return "zero index reached"
-    return "doesn't follow any known chain" # throwing out the block for now
+            return True
+        height = block.index
+        last_block = blockchain.blocks[block.index - 1]
+        if not last_block:
+            raise ForkException()
+        last_time = last_block.time
+        target = BlockFactory.get_target(height, last_time, last_block, blockchain)
+        if int(block.hash, 16) < target or block.special_min:
+            if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
+                Mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
+                print "New block inserted"
+                return True
+            else:
+                raise ForkException()
+        else:
+            raise AboveTargetException()
+        return False
+
+    def retrace(self, block, peer):
+        self.log("retracing...")
+        blocks = []
+        blocks.append(block)
+        while 1:
+            self.log(block.hash)
+            self.log(block.index)
+            # get the previous block from either the consensus collection in mongo
+            # or attempt to get the block from the remote peer
+            previous_consensus_block = self.get_previous_consensus_block_from_local(block, peer)
+            if previous_consensus_block:
+                    block = previous_consensus_block
+                    blocks.append(block)
+            else:
+                previous_consensus_block = self.get_previous_consensus_block_from_remote(block, peer)
+                if previous_consensus_block and previous_consensus_block.index + 1 == block.index:
+                    block = previous_consensus_block
+                    blocks.append(block)
+                    self.insert_consensus_block(block, peer)
+                else:
+                    # identify missing and prune
+                    # if the pruned chain is still longer, we'll take it
+                    if previous_consensus_block:
+                        for bad_consensus_block in blocks:
+                            Mongo.db.consensus.remove({'block.hash': bad_consensus_block.hash}, multi=True)
+                            Mongo.db.consensus.remove({'block.prevHash': bad_consensus_block.hash}, multi=True)
+                        block = previous_consensus_block
+                        blocks = [block]
+                    else:
+                        for bad_consensus_block in blocks:
+                            Mongo.db.consensus.remove({'block.hash': bad_consensus_block.hash}, multi=True)
+                            Mongo.db.consensus.remove({'block.prevHash': bad_consensus_block.hash}, multi=True)
+                        return
+
+            print 'attempting sync at', block.prev_hash
+            # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
+            prev_blocks_check = Mongo.db.blocks.find_one({'hash': block.prev_hash, 'index': block.index - 1})
+
+            if prev_blocks_check:
+                prev_blocks_check = Block.from_dict(prev_blocks_check)
+                print prev_blocks_check.hash, prev_blocks_check.index
+                missing_blocks = Mongo.db.blocks.find({'index': {'$lte': prev_blocks_check.index}})
+                for missing_block in missing_blocks:
+                    blocks.append(Block.from_dict(missing_block))
+                # if we have it in our blockchain, then we've hit the fork point
+                # now we have to loop through the current block array and build a blockchain
+                # then we compare the block height and difficulty of the two chains
+                # replace our current chain if necessary by removing them from the database
+                # then looping though our new chain, inserting the new blocks
+                self.existing_blockchain = Blockchain([x for x in Mongo.db.blocks.find({})])
+                blockchain = Blockchain([x for x in blocks])
+
+                # If the block height is equal, we throw out the inbound chain, it muse be greater
+                # If the block height is lower, we throw it out
+                # if the block height is heigher, we compare the difficulty of the entire chain
+                
+                if blockchain.get_highest_block_height() > self.existing_blockchain.get_highest_block_height() \
+                    and (self.lowest - (blockchain.get_difficulty() / blockchain.get_highest_block_height())) < \
+                    (self.lowest - (self.existing_blockchain.get_difficulty() / self.existing_blockchain.get_highest_block_height())):
+                    for block in sorted(blockchain.blocks, key=lambda x: x.index):
+                        try:
+                            if block.index == 0:
+                                continue
+                            self.integrate_block_with_existing_chain(block, peer, blockchain)
+                        except ForkException as e:
+                            return
+                        except AboveTargetException as e:
+                            return
+                    return "Replaced chain with incoming"
+                else:
+                    return "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
+            # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
+            # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
+            #there is no else, we just loop again
+            # if we get to index 1 and prev hash doesn't match the genesis, throw out the chain and black list the peer
+            # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
+            # blockchain against the proposed chain. 
+            if block.index == 0:
+                return "zero index reached"
+        return "doesn't follow any known chain" # throwing out the block for now
 
 if __name__ == '__main__':
     import argparse
@@ -309,12 +430,10 @@ if __name__ == '__main__':
         except:
             print 'ERROR: failed to get peers, exiting...'
             exit()
+        Peers.init()
+        consensus = Consensus()
         while 1:
-            Peers.init()
-            if not Peers.peers:
-                time.sleep(1)
-                continue
-            consensus()
+            consensus.sync()
             """
             p = Process(target=)
             p.start()
@@ -324,13 +443,34 @@ if __name__ == '__main__':
     elif args.mode == 'send':
         send(args.to, float(args.value))
     elif args.mode == 'mine':
+        import multiprocessing
         print Config.to_json()
         while 1:
             Peers.init()
             if not Peers.peers:
                 time.sleep(1)
                 continue
-            node()
+            def nonce_generator():
+                Mongo.init()
+                latest_block_index = BU.get_latest_block()['index']
+                start_nonce = 0
+                while 1:
+                    y = 10000000 / multiprocessing.cpu_count()
+                    ranges = []
+                    for x in range(start_nonce, start_nonce + 10000000, 10000000 / multiprocessing.cpu_count()):
+                        ranges.append(range(x, x+y))
+                    yield ranges
+                    next_latest_block_index = BU.get_latest_block()['index']
+                    if latest_block_index < next_latest_block_index:
+                        latest_block_index = next_latest_block_index
+                        start_nonce = 0
+                    else:
+                        start_nonce += 100000000
+            for data in nonce_generator():
+                p = Pool()
+                result = p.imap_unordered(node, data)
+                p.close()
+                p.join()
             """
             p = Process(target=node)
             p.start()
@@ -368,8 +508,12 @@ if __name__ == '__main__':
         def newblock(data):
             #print("new block ", data)
             try:
+                peer = request.json.get('peer')
                 incoming_block = Block.from_dict(data)
                 if incoming_block.index == 0:
+                    return
+                if incoming_block.version != 2:
+                    print 'rejected old version %s from %s' % (incoming_block.version, peer)
                     return
             except Exception as e:
                 print "block is bad"
@@ -379,15 +523,22 @@ if __name__ == '__main__':
                 print e
 
             try:
-                peer = request.json.get('peer')
                 dup_check = Mongo.db.consensus.find({'id': incoming_block.signature, 'peer': peer})
                 if dup_check.count():
                     return "dup"
-                Mongo.db.consensus.insert({
+                Mongo.db.consensus.update({
                     'block': incoming_block.to_dict(),
                     'index': incoming_block.to_dict().get('index'),
                     'id': incoming_block.to_dict().get('id'),
-                    'peer': peer})
+                    'peer': peer
+                },
+                {
+                    'block': incoming_block.to_dict(),
+                    'index': incoming_block.to_dict().get('index'),
+                    'id': incoming_block.to_dict().get('id'),
+                    'peer': peer
+                }
+                , upsert=True)
                 # before inserting, we need to check it's chain
                 # search consensus for prevHash of incoming block.
                 #prev_blocks_check = Mongo.db.blocks.find({'hash': incoming_block.prev_hash})
@@ -431,7 +582,7 @@ if __name__ == '__main__':
                 if dup_check.count():
                     print 'found duplicate'
                     return
-                Mongo.db.miner_transactions.insert(incoming_txn.to_dict())
+                Mongo.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(), upsert=True)
             except Exception as e:
                 print e
             except BaseException as e:

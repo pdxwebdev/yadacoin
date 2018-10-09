@@ -5,7 +5,7 @@ from config import Config
 from crypt import Crypt
 from graph import Graph
 from mongo import Mongo
-from peers import Peers
+from peers import Peers, Peer
 from transaction import TransactionFactory, Transaction, \
                         Input, Output, MissingInputTransactionException, \
                         InvalidTransactionSignatureException, InvalidTransactionException, \

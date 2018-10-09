@@ -27,14 +27,17 @@ class BU(object):  # Blockchain Utilities
     database = None
     @classmethod
     def get_blocks(cls):
-        blocks = Mongo.db.blocks.find({}, {'_id': 0}).sort([('index',1)])
-        return blocks
+        return Mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
+
+    @classmethod
+    def get_latest_blocks(cls):
+        return Mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
     @classmethod
     def get_latest_block(cls):
-        res = Mongo.db.blocks.find({}, {'_id': 0}).limit(1).sort([('index',-1)])
-        if res.count():
-            return res[0]
+        blocks = cls.get_latest_blocks()
+        if blocks.count():
+            return blocks[0]
         else:
             return {}
 
@@ -714,6 +717,13 @@ class BU(object):  # Blockchain Utilities
             # that has been removed from the chain
             Mongo.db.unspent_cache.remove({})
             return None
+    
+    @classmethod
+    def get_version_for_height(cls, height):
+        if int(height) <= 14484:
+            return 1
+        else:
+            return 2
 
     @classmethod
     def get_block_reward(cls, block=None):

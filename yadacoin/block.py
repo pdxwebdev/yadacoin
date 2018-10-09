@@ -25,7 +25,7 @@ from mongo import Mongo
 
 class BlockFactory(object):
     def __init__(self, transactions, public_key, private_key, version, index=None, force_time=None):
-        self.version = version
+        self.version = BU.get_version_for_height(index)
         if force_time:
             self.time = str(int(force_time))
         else:
@@ -130,22 +130,12 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def mine(cls, transactions, public_key, private_key, max_duration, callback=None, current_index=None, status=None, start_nonce=None, force_time=None):
-        import itertools, sys
-        if hasattr(current_index, 'value'):
-            height = current_index.value
-        else:
-            height = current_index or 0
-
-        max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-        if height > 0:
-            latest_block = Block.from_dict(BU.get_latest_block())
-            last_time = latest_block.time
+    def get_target(cls, height, last_time, last_block, blockchain):
         # change target
+        max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
         retarget_period = 2016  # blocks
         two_weeks = 1209600  # seconds
         half_week = 302400  # seconds
-        max_block_time = 600  # seconds
         if height > 0 and height % retarget_period == 0:
             block_from_2016_ago = Block.from_dict(BU.get_block_by_index(height - retarget_period))
             two_weeks_ago_time = block_from_2016_ago.time
@@ -158,10 +148,10 @@ class BlockFactory(object):
             else:
                 time_for_target = int(elapsed_time_from_2016_ago)
 
-            block_to_check = latest_block
+            block_to_check = last_block
             while 1:
                 if block_to_check.special_min:
-                    block_to_check = Block.from_dict(BU.get_block_by_index(block_to_check.index - 1))
+                    block_to_check = blockchain.blocks[block_to_check.index - 1]
                 else:
                     target = block_to_check.target
                     break
@@ -174,28 +164,51 @@ class BlockFactory(object):
         elif height == 0:
             target = max_target
         else:
-            block_to_check = latest_block
+            block_to_check = last_block
             while 1:
                 if block_to_check.special_min:
-                    block_to_check = Block.from_dict(BU.get_block_by_index(block_to_check.index - 1))
+                    block_to_check = blockchain.blocks[block_to_check.index - 1]
                 else:
                     target = block_to_check.target
                     break
+        return target
 
-        spinner = itertools.cycle(['-', '/', '|', '\\'])
+    @classmethod
+    def mine(cls, transactions, public_key, private_key, max_duration, callback=None, current_index=None, status=None, nonces=None, force_time=None):
+        from blockchain import Blockchain
+
+        if hasattr(current_index, 'value'):
+            height = current_index.value
+        else:
+            height = current_index or 0
+
+        if height > 0:
+            latest_block = Block.from_dict(BU.get_latest_block())
+            last_time = latest_block.time
+        
+        max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        target = cls.get_target(height, last_time, latest_block, Blockchain([x for x in BU.get_blocks()]))
+
         block_factory = cls(
             transactions=transactions,
             public_key=public_key,
             private_key=private_key,
             index=height,
-            version=Config.block_version,
+            version=BU.get_version_for_height(height),
             force_time=force_time)
         if current_index:
             initial_current_index = current_index.value
-        nonce = start_nonce or 0
+        def default_nonces():
+            num = 0
+            while 1:
+                yield num
+                num += 1
+        nonces = nonces or default_nonces
         start = time.time()
         special_min = False
-        while 1:
+
+        max_block_time = 600  # seconds
+        for nonce in nonces:
             if height > 0:
                 time_elapsed_since_last_block = int(time.time()) - int(last_time)
 
@@ -209,8 +222,8 @@ class BlockFactory(object):
             hash_test = cls.generate_hash(block_factory.block, str(nonce))
 
             text_int = int(hash_test, 16)
-            if callback:
-                callback(current_index.value, nonce, text_int, target)
+            #if callback:
+            #    callback(current_index.value, nonce, text_int, target)
             # print hash_test
             if text_int < target:
                 # create the block with the reward
@@ -222,11 +235,9 @@ class BlockFactory(object):
                 if status:
                     status.value = 'mined'
                 return block
+
             if current_index and current_index.value > initial_current_index:
                 status.value = 'exited'
-                break
-            nonce += 1
-            if time.time() - start > max_duration:
                 break
 
     @classmethod
@@ -322,6 +333,8 @@ class Block(object):
 
     def verify(self):
         getcontext().prec = 8
+        if int(self.version) != int(BU.get_version_for_height(self.index)):
+            raise BaseException("Wrong version for block height", self.version, BU.get_version_for_height(self.index))
         try:
             txns = self.get_transaction_hashes()
             self.set_merkle_root(txns)
