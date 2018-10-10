@@ -203,7 +203,7 @@ class BlockFactory(object):
             while 1:
                 yield num
                 num += 1
-        nonces = nonces or default_nonces
+        nonces = xrange(nonces[0], nonces[1]) or default_nonces
 
         special_min = False
 

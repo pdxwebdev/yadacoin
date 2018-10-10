@@ -68,8 +68,6 @@ def node(nonces=None):
         block = BU.get_latest_block()
         latest_block_index.value = block.get('index')
 
-    print '\r\n\r\n\r\n//// YADA COIN MINER v2 ////'
-
     dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': latest_block_index.value, 'block.version': BU.get_version_for_height(latest_block_index.value + 1)}).sort([('index', -1)])
     if dup_test.count():
         print 'returning', latest_block_index.value + 1, BU.get_version_for_height(latest_block_index.value + 1)
@@ -112,7 +110,8 @@ def node(nonces=None):
             else:
                 transaction_objs.append(transaction)
         except MissingInputTransactionException as e:
-            print 'missing this input transaction, will try again later'
+            #print 'missing this input transaction, will try again later'
+            pass
         except InvalidTransactionSignatureException as e:
             print 'InvalidTransactionSignatureException: transaction removed'
             Mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
@@ -122,13 +121,13 @@ def node(nonces=None):
             Mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
             Mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction.to_dict()})
         except Exception as e:
-            print e
-            print 'rejected transaction', txn['id']
+            #print e
+            #print 'rejected transaction', txn['id']
+            pass
         except BaseException as e:
-            print e
-            print 'rejected transaction', txn['id']
-
-    print '\r\nStarting to mine block height:', latest_block_index.value, nonces[0], nonces[-1]
+            #print e
+            #print 'rejected transaction', txn['id']
+            pass
     try:
         block = BlockFactory.mine(transaction_objs, Config.public_key, Config.private_key, Config.max_duration, output, latest_block_index, status, nonces)
     except Exception as e:
@@ -167,10 +166,4 @@ def node(nonces=None):
                         )
                     except:
                         print 'failed to report bad peer'
-                        pass
-    else:
-        print 'no block found'
-
-    end = time.time()
-
-    p.terminate()
+                        pass    

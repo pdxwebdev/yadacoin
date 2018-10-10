@@ -450,38 +450,47 @@ if __name__ == '__main__':
     elif args.mode == 'mine':
         import multiprocessing
         print Config.to_json()
+        def nonce_generator():
+            Mongo.init()
+            latest_block_index = BU.get_latest_block()['index']
+            while 1:
+                next_latest_block_index = BU.get_latest_block()['index']
+                if latest_block_index < next_latest_block_index:
+                    print '\r\nMining block height:', next_latest_block_index
+                    latest_block_index = next_latest_block_index
+                    start_nonce = 0
+                else:
+                    try:
+                        start_nonce += 1000000
+                    except:
+                        print '\r\nMining block height:', latest_block_index
+                        start_nonce = 0
+                yield [start_nonce, start_nonce + 1000000]
+        
+        print '\r\n\r\n\r\n//// YADA COIN MINER v2.1.4 ////'
+        gen = nonce_generator()
+        running_processes = []
         while 1:
             Peers.init()
             if not Peers.peers:
                 time.sleep(1)
                 continue
-            def nonce_generator():
-                Mongo.init()
-                latest_block_index = BU.get_latest_block()['index']
-                start_nonce = 0
-                while 1:
-                    y = 10000000 / multiprocessing.cpu_count()
-                    ranges = []
-                    for x in range(start_nonce, start_nonce + 10000000, 10000000 / multiprocessing.cpu_count()):
-                        ranges.append(range(x, x+y))
-                    yield ranges
-                    next_latest_block_index = BU.get_latest_block()['index']
-                    if latest_block_index < next_latest_block_index:
-                        latest_block_index = next_latest_block_index
-                        start_nonce = 0
-                    else:
-                        start_nonce += 100000000
-            for data in nonce_generator():
-                p = Pool()
-                result = p.imap_unordered(node, data)
-                p.close()
-                p.join()
-            """
-            p = Process(target=node)
-            p.start()
-            p.join()
-            """
+            if len(running_processes) >= multiprocessing.cpu_count():
+                for i, proc in enumerate(running_processes):
+                    if not proc.is_alive():
+                        proc.terminate()
+                        data = next(gen)
+                        p = Process(target=node, args=(data,))
+                        p.start()
+                        running_processes[i] = p
+            else:
+                data = next(gen)
+                p = Process(target=node, args=(data,))
+                p.start()
+                running_processes.append(p)
             time.sleep(1)
+
+
     elif args.mode == 'faucet':
         while 1:
             Peers.init()
