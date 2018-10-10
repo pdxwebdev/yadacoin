@@ -70,12 +70,11 @@ def node(nonces=None):
 
     print '\r\n\r\n\r\n//// YADA COIN MINER v2 ////'
 
-    dup_tests = Mongo.db.consensus.find({'peer': 'me', 'index': latest_block_index.value}).sort([('index', -1)])
-    for dup_test in dup_tests:
-        if int(dup_test['block']['version']) == int(BU.get_version_for_height(dup_test['index'])):
-            return
+    dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': latest_block_index.value, 'block.version': BU.get_version_for_height(latest_block_index.value + 1)}).sort([('index', -1)])
+    if dup_test.count():
+        print 'returning', latest_block_index.value + 1, BU.get_version_for_height(latest_block_index.value + 1)
+        return
 
-    print '\r\n\r\n\r\n//// YADA COIN MINER v2 434345z////'
     transactions = Mongo.db.miner_transactions.find()
     transaction_objs = []
     unspent_indexed = {}
