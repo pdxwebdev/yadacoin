@@ -186,7 +186,9 @@ class Consensus():
                 Mongo.db.miner_transactions.remove({'id': txn['id']})
 
     def get_latest_consensus_blocks(self):
-        return Mongo.db.consensus.find({'peer': {'$ne': 'me'}}, {'_id': 0}).sort('index', pymongo.DESCENDING)
+        for x in Mongo.db.consensus.find({}, {'_id': 0}).sort('index', pymongo.DESCENDING):
+            if BU.get_version_for_height(x['block']['index']) == x['block']['version']:
+                yield x
 
     def get_latest_consensus_block(self):
         latests = self.get_latest_consensus_blocks()
@@ -195,7 +197,7 @@ class Consensus():
                 return Block.from_dict(latest['block'])
 
     def get_consensus_blocks_by_index(self, index):
-        return Mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}}, {'_id': 0})
+        return Mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}, 'version': BU.get_version_for_height(index)}, {'_id': 0})
 
     def get_consensus_block_by_index(self, index):
         return self.get_consensus_blocks_by_index(index).limit(1)[0]
@@ -222,7 +224,8 @@ class Consensus():
         #table cleanup
         new_block = Mongo.db.consensus.find_one({
             'block.hash': block.prev_hash,
-            'block.index': (block.index - 1)
+            'block.index': (block.index - 1),
+            'version': BU.get_version_for_height((block.index - 1))
         })
         if new_block:
             new_block = Block.from_dict(new_block['block'])
@@ -271,7 +274,7 @@ class Consensus():
                 self.log('up to date, height: ' + str(latest_consensus.index))
                 return
 
-            records = Mongo.db.consensus.find({'index': latest_consensus.index})
+            records = Mongo.db.consensus.find({'index': latest_consensus.index, 'block.version': BU.get_version_for_height(latest_consensus.index)})
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 block = Block.from_dict(record['block'])
                 peer = Peer.from_string(record['peer'])
@@ -300,6 +303,7 @@ class Consensus():
         if int(block.hash, 16) < target or block.special_min:
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                 Mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
+                blockchain.blocks.append(block)
                 print "New block inserted"
                 return True
             else:
@@ -523,7 +527,7 @@ if __name__ == '__main__':
                 print e
 
             try:
-                dup_check = Mongo.db.consensus.find({'id': incoming_block.signature, 'peer': peer})
+                dup_check = Mongo.db.consensus.find({'id': incoming_block.signature, 'peer': peer, 'version': BU.get_version_for_height(incoming_block.index)})
                 if dup_check.count():
                     return "dup"
                 Mongo.db.consensus.update({
@@ -629,8 +633,10 @@ if __name__ == '__main__':
 
         @app.route('/get-block', methods=['GET'])
         def app_getblock():
-            res = Mongo.db.consensus.find({'block.hash': request.args.get('hash')}, {'_id': 0})
-            return json.dumps(res[0]['block'])
+            res = Mongo.db.consensus.find({'block.hash': request.args.get('hash'), }, {'_id': 0})
+            for x in res:
+                if x['block']['version'] == BU.get_version_for_height(x['block']['index']):
+                    return json.dumps(res[0]['block'])
 
         def get_base_graph():
             bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
