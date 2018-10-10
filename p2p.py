@@ -237,7 +237,10 @@ class Consensus():
 
     def get_previous_consensus_block_from_remote(self, block, peer):
         try:
-            res = requests.get('http://' + peer.to_string() + '/get-block?hash=' + block.prev_hash, timeout=3)
+            url = 'http://' + peer.to_string() + '/get-block?hash=' + block.prev_hash
+            print 'getting block', url
+            res = requests.get(url, timeout=3)
+            print 'response code: ', res.status_code
             new_block = Block.from_dict(json.loads(res.content))
             if int(new_block.version) == BU.get_version_for_height(new_block.index):
                 return new_block
@@ -263,6 +266,7 @@ class Consensus():
     def sync(self):
         #top down syncing
 
+        self.latest_block = Block.from_dict(BU.get_latest_block())
         self.remove_pending_transactions_now_in_chain()
 
         latest_consensus = self.get_latest_consensus_block()
