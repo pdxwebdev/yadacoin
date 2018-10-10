@@ -197,7 +197,7 @@ class Consensus():
                 return Block.from_dict(latest['block'])
 
     def get_consensus_blocks_by_index(self, index):
-        return Mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}, 'version': BU.get_version_for_height(index)}, {'_id': 0})
+        return Mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}, 'block.version': BU.get_version_for_height(index)}, {'_id': 0})
 
     def get_consensus_block_by_index(self, index):
         return self.get_consensus_blocks_by_index(index).limit(1)[0]
@@ -225,7 +225,7 @@ class Consensus():
         new_block = Mongo.db.consensus.find_one({
             'block.hash': block.prev_hash,
             'block.index': (block.index - 1),
-            'version': BU.get_version_for_height((block.index - 1))
+            'block.version': BU.get_version_for_height((block.index - 1))
         })
         if new_block:
             new_block = Block.from_dict(new_block['block'])
@@ -527,7 +527,7 @@ if __name__ == '__main__':
                 print e
 
             try:
-                dup_check = Mongo.db.consensus.find({'id': incoming_block.signature, 'peer': peer, 'version': BU.get_version_for_height(incoming_block.index)})
+                dup_check = Mongo.db.consensus.find({'id': incoming_block.signature, 'peer': peer, 'block.version': BU.get_version_for_height(incoming_block.index)})
                 if dup_check.count():
                     return "dup"
                 Mongo.db.consensus.update({
