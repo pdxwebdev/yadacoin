@@ -43,7 +43,9 @@ class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
         print 'error'
 
-def node(nonces=None):
+def node(nonces=None, config=None):
+    Config.from_dict(json.loads(config))
+    Peers.init()
     latest_block_index = Value('i', 0)
     my_peer = Config.peer_host + ":" + str(Config.peer_port)
     Config.max_duration = 300000
@@ -70,7 +72,7 @@ def node(nonces=None):
 
     dup_test = Mongo.db.consensus.find({'peer': 'me', 'index': latest_block_index.value, 'block.version': BU.get_version_for_height(latest_block_index.value + 1)}).sort([('index', -1)])
     if dup_test.count():
-        print 'returning', latest_block_index.value + 1, BU.get_version_for_height(latest_block_index.value + 1)
+        #print 'returning', latest_block_index.value + 1, BU.get_version_for_height(latest_block_index.value + 1)
         return
 
     transactions = Mongo.db.miner_transactions.find()

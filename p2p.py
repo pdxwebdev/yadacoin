@@ -11,6 +11,7 @@ import pymongo
 import subprocess
 import os
 import endpoints
+import multiprocessing
 from sys import exit
 from multiprocessing import Process, Value, Array, Pool
 from socketIO_client import SocketIO, BaseNamespace
@@ -395,6 +396,7 @@ class Consensus():
         return
 
 if __name__ == '__main__':
+    multiprocessing.freeze_support()
     import argparse
     import os.path
     parser = argparse.ArgumentParser()
@@ -448,7 +450,6 @@ if __name__ == '__main__':
     elif args.mode == 'send':
         send(args.to, float(args.value))
     elif args.mode == 'mine':
-        import multiprocessing
         print Config.to_json()
         def nonce_generator():
             Mongo.init()
@@ -467,7 +468,7 @@ if __name__ == '__main__':
                         start_nonce = 0
                 yield [start_nonce, start_nonce + 1000000]
         
-        print '\r\n\r\n\r\n//// YADA COIN MINER v2.1.4 ////'
+        print '\r\n\r\n\r\n//// YADA COIN MINER v2.1.5 ////'
         gen = nonce_generator()
         running_processes = []
         while 1:
@@ -480,12 +481,12 @@ if __name__ == '__main__':
                     if not proc.is_alive():
                         proc.terminate()
                         data = next(gen)
-                        p = Process(target=node, args=(data,))
+                        p = Process(target=node, args=(data, Config.to_json()))
                         p.start()
                         running_processes[i] = p
             else:
                 data = next(gen)
-                p = Process(target=node, args=(data,))
+                p = Process(target=node, args=(data, Config.to_json()))
                 p.start()
                 running_processes.append(p)
             time.sleep(1)
