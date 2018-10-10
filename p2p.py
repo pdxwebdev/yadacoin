@@ -516,7 +516,7 @@ if __name__ == '__main__':
                 incoming_block = Block.from_dict(data)
                 if incoming_block.index == 0:
                     return
-                if incoming_block.version != 2:
+                if int(incoming_block.version) != 2:
                     print 'rejected old version %s from %s' % (incoming_block.version, peer)
                     return
             except Exception as e:
