@@ -186,8 +186,8 @@ class Consensus():
                 Mongo.db.miner_transactions.remove({'id': txn['id']})
 
     def get_latest_consensus_blocks(self):
-        for x in Mongo.db.consensus.find({}, {'_id': 0}).sort('index', pymongo.DESCENDING):
-            if BU.get_version_for_height(x['block']['index']) == x['block']['version']:
+        for x in Mongo.db.consensus.find({}, {'_id': 0}).sort([('index', -1)]):
+            if BU.get_version_for_height(x['block']['index']) == int(x['block']['version']):
                 yield x
 
     def get_latest_consensus_block(self):
@@ -229,7 +229,7 @@ class Consensus():
         })
         if new_block:
             new_block = Block.from_dict(new_block['block'])
-            if new_block.version == BU.get_version_for_height(new_block.index):
+            if int(new_block.version) == BU.get_version_for_height(new_block.index):
                 return new_block
             else:
                 return None
@@ -239,7 +239,7 @@ class Consensus():
         try:
             res = requests.get('http://' + peer.to_string() + '/get-block?hash=' + block.prev_hash, timeout=3)
             new_block = Block.from_dict(json.loads(res.content))
-            if new_block.version == BU.get_version_for_height(new_block.index):
+            if int(new_block.version) == BU.get_version_for_height(new_block.index):
                 return new_block
             else:
                 return None
@@ -303,7 +303,6 @@ class Consensus():
         if int(block.hash, 16) < target or block.special_min:
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                 Mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
-                blockchain.blocks.append(block)
                 print "New block inserted"
                 return True
             else:
@@ -335,15 +334,9 @@ class Consensus():
                     # identify missing and prune
                     # if the pruned chain is still longer, we'll take it
                     if previous_consensus_block:
-                        for bad_consensus_block in blocks:
-                            Mongo.db.consensus.remove({'block.hash': bad_consensus_block.hash}, multi=True)
-                            Mongo.db.consensus.remove({'block.prevHash': bad_consensus_block.hash}, multi=True)
                         block = previous_consensus_block
                         blocks = [block]
                     else:
-                        for bad_consensus_block in blocks:
-                            Mongo.db.consensus.remove({'block.hash': bad_consensus_block.hash}, multi=True)
-                            Mongo.db.consensus.remove({'block.prevHash': bad_consensus_block.hash}, multi=True)
                         return
 
             print 'attempting sync at', block.prev_hash
@@ -380,9 +373,11 @@ class Consensus():
                             return
                         except AboveTargetException as e:
                             return
-                    return "Replaced chain with incoming"
+                    print "Replaced chain with incoming"
+                    return
                 else:
-                    return "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
+                    print "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
+                    return
             # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
             # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
             #there is no else, we just loop again
@@ -390,8 +385,10 @@ class Consensus():
             # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
             # blockchain against the proposed chain. 
             if block.index == 0:
-                return "zero index reached"
-        return "doesn't follow any known chain" # throwing out the block for now
+                print "zero index reached"
+                return
+        print "doesn't follow any known chain" # throwing out the block for now
+        return
 
 if __name__ == '__main__':
     import argparse
@@ -635,7 +632,7 @@ if __name__ == '__main__':
         def app_getblock():
             res = Mongo.db.consensus.find({'block.hash': request.args.get('hash'), }, {'_id': 0})
             for x in res:
-                if x['block']['version'] == BU.get_version_for_height(x['block']['index']):
+                if int(x['block']['version']) == BU.get_version_for_height(x['block']['index']):
                     return json.dumps(res[0]['block'])
 
         def get_base_graph():
