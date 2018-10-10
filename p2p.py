@@ -513,7 +513,7 @@ if __name__ == '__main__':
                 incoming_block = Block.from_dict(data)
                 if incoming_block.index == 0:
                     return
-                if int(incoming_block.version) != 2:
+                if int(incoming_block.version) != BU.get_version_for_height(incoming_block.index):
                     print 'rejected old version %s from %s' % (incoming_block.version, peer)
                     return
             except Exception as e:
@@ -630,10 +630,7 @@ if __name__ == '__main__':
 
         @app.route('/get-block', methods=['GET'])
         def app_getblock():
-            res = Mongo.db.consensus.find({'block.hash': request.args.get('hash'), }, {'_id': 0})
-            for x in res:
-                if int(x['block']['version']) == BU.get_version_for_height(x['block']['index']):
-                    return json.dumps(res[0]['block'])
+            return json.dumps(Mongo.db.blocks.find_one({'hash': request.args.get('hash')}, {'_id': 0}))
 
         def get_base_graph():
             bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
