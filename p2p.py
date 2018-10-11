@@ -365,10 +365,16 @@ class Consensus():
                 # If the block height is equal, we throw out the inbound chain, it muse be greater
                 # If the block height is lower, we throw it out
                 # if the block height is heigher, we compare the difficulty of the entire chain
-                
+
+                inbound_difficulty_average = (self.lowest - (blockchain.get_difficulty() / blockchain.get_highest_block_height()))
+
+                if self.existing_blockchain.get_highest_block_height() == 0:
+                    existing_difficulty_average = inbound_difficulty_average + 1
+                else:
+                    existing_difficulty_average = (self.lowest - (self.existing_blockchain.get_difficulty() / self.existing_blockchain.get_highest_block_height()))
+
                 if blockchain.get_highest_block_height() > self.existing_blockchain.get_highest_block_height() \
-                    and (self.lowest - (blockchain.get_difficulty() / blockchain.get_highest_block_height())) < \
-                    (self.lowest - (self.existing_blockchain.get_difficulty() / self.existing_blockchain.get_highest_block_height())):
+                    and inbound_difficulty_average < existing_difficulty_average:
                     for block in sorted(blockchain.blocks, key=lambda x: x.index):
                         try:
                             if block.index == 0:
