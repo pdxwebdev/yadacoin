@@ -68,7 +68,7 @@ class Blockchain(object):
     def get_difficulty(self):
         difficulty = 0
         for block in self.blocks:
-            target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - int(block.hash, 16)
+            target = int(block.hash, 16)
             difficulty += target
         return difficulty
 
