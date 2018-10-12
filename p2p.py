@@ -410,6 +410,7 @@ if __name__ == '__main__':
     parser.add_argument('config', default="config.json", nargs="?", help='config file')
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
+    parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
     args = parser.parse_args()
 
     if args.mode == 'config' and args.config:
@@ -475,6 +476,7 @@ if __name__ == '__main__':
                 yield [start_nonce, start_nonce + 1000000]
         
         print '\r\n\r\n\r\n//// YADA COIN MINER v2.1.5 ////'
+        print "Core count:", args.cores
         gen = nonce_generator()
         running_processes = []
         while 1:
@@ -482,7 +484,7 @@ if __name__ == '__main__':
             if not Peers.peers:
                 time.sleep(1)
                 continue
-            if len(running_processes) >= multiprocessing.cpu_count():
+            if len(running_processes) >= int(args.cores):
                 for i, proc in enumerate(running_processes):
                     if not proc.is_alive():
                         proc.terminate()
