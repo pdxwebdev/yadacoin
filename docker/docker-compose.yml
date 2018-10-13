@@ -8,7 +8,7 @@ services:
         environment:
           - PYTHONUNBUFFERED=0
         volumes:
-          - ./yadacoin/serve:/yadacoin/serve
+          - ./serve:/yadacoin/serve
         depends_on:
           - mongodb
     consensus:
@@ -16,7 +16,7 @@ services:
         environment:
           - PYTHONUNBUFFERED=0
         volumes:
-          - ./yadacoin/consensus:/yadacoin/consensus
+          - ./consensus:/
         depends_on:
           - mongodb
     mine:
