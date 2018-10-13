@@ -39,7 +39,7 @@ def to_wif(private_key_static):
     wif = base58.b58encode(binascii.unhexlify(final_key))
     return wif
 
-def generate():
+def generate(mongodb_host=None):
     config = {
         "private_key": pk.to_hex(),
         "wif": to_wif(pk.to_hex()),
@@ -56,7 +56,7 @@ def generate():
         "fcm_key": "",
         "database": "yadacoin",
         "site_database": "yadacoinsite",
-        "mongodb_host": "localhost",
+        "mongodb_host": mongodb_host or "localhost",
         "mixpanel": "",
         "username": Config.username
     }
@@ -82,6 +82,7 @@ auto_parser = subparsers.add_parser('auto')
 auto_parser.set_defaults(which='auto')
 auto_parser.add_argument('-f', '--force', help='Forcefully create file, possibly overwriting existing, use with caution!')
 auto_parser.add_argument('-c', '--create', help='Create a new config file if one does not already exist')
+auto_parser.add_argument('-m', '--mongo-host', help='Specify a mongodb host')
 
 args = parser.parse_args()
 
@@ -109,15 +110,19 @@ elif args.which == 'auto':
     pk = PrivateKey.from_hex(num)
     Config.username = ''
     filename = 'config.json'
+    kwargs = {}
+    if args.mongo_host:
+        kwargs['mongodb_host'] = args.mongo_host
+    out = generate(**kwargs)
     if args.force:
         with open(args.force, 'w') as f:
-            f.write(generate())
+            f.write(out)
     elif args.create:
         if not os.path.isfile(args.create):
             with open(args.create, 'w') as f:
-                f.write(generate())
+                f.write(out)
     else:
-        print generate()
+        print out
 
 
 
