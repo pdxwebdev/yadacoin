@@ -80,6 +80,8 @@ update_parser.add_argument('username', help='Specify username')
 
 auto_parser = subparsers.add_parser('auto')
 auto_parser.set_defaults(which='auto')
+auto_parser.add_argument('-f', '--force', help='Forcefully create file, possibly overwriting existing, use with caution!')
+auto_parser.add_argument('-c', '--create', help='Create a new config file if one does not already exist')
 
 args = parser.parse_args()
 
@@ -106,7 +108,16 @@ elif args.which == 'auto':
     num = os.urandom(32).encode('hex')
     pk = PrivateKey.from_hex(num)
     Config.username = ''
-    print generate()
+    filename = 'config.json'
+    if args.force:
+        with open(args.force, 'w') as f:
+            f.write(generate())
+    elif args.create:
+        if not os.path.isfile(args.create):
+            with open(args.create, 'w') as f:
+                f.write(generate())
+    else:
+        print generate()
 
 
 

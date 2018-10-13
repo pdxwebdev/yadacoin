@@ -15,7 +15,6 @@ class Config(object):
         cls.private_key = config['private_key']
         cls.username = config['username']
         cls.wif = cls.to_wif()
-        cipher = Crypt(str(cls.private_key))
         cls.bulletin_secret = cls.get_bulletin_secret()
 
         cls.mongodb_host = config['mongodb_host']

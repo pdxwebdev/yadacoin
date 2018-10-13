@@ -475,7 +475,7 @@ if __name__ == '__main__':
                         start_nonce = 0
                 yield [start_nonce, start_nonce + 1000000]
         
-        print '\r\n\r\n\r\n//// YADA COIN MINER v2.1.5 ////'
+        print '\r\n\r\n\r\n//// YADA COIN MINER v2.2.1 ////'
         print "Core count:", args.cores
         gen = nonce_generator()
         running_processes = []
