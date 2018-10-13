@@ -1,5 +1,6 @@
 FROM python:2
-ADD . /
-WORKDIR /
+ADD https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/mine/entrypoint.sh /yadacoin/mine/entrypoint.sh
+WORKDIR /yadacoin/mine/
 RUN pip install -r https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/requirements.txt
-ENTRYPOINT [ "https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/mine/entrypoint.sh" ]
+ENTRYPOINT [ "yadacoin/mine/entrypoint.sh" ]
+EXPOSE 8000
