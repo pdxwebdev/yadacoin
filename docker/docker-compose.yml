@@ -16,7 +16,7 @@ services:
         environment:
           - PYTHONUNBUFFERED=0
         volumes:
-          - ./consensus:/
+          - ./consensus:/consensus
         depends_on:
           - mongodb
     mine:
