@@ -12,7 +12,7 @@ services:
         depends_on:
           - mongodb
     consensus:
-        build: ./consensus
+        build: https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/consensus/Dockerfile
         environment:
           - PYTHONUNBUFFERED=0
         volumes:
