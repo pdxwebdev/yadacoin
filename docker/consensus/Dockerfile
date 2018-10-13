@@ -1,5 +1,6 @@
 FROM python:2
-#ADD https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/consensus/entrypoint.sh entrypoint.sh
-#RUN pip install -r https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/requirements.txt
-ENTRYPOINT [ "https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/consensus/entrypoint.sh" ]
+WORKDIR /usr/src/app
+ADD https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/consensus/entrypoint.sh entrypoint.sh
+#RUN pip install --no-cache-dir -r https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/requirements.txt
+ENTRYPOINT [ "entrypoint.sh" ]
 EXPOSE 8000
