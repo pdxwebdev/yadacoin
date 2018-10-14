@@ -91,19 +91,42 @@ mixpanel.track("guide page");</script><!-- end Mixpanel -->
   {% include 'navigation.html' %}
   <h1>Guides and Tutuorials</h1>
   <div class="row">
-    <h2>Before you start</h2>
+    <h2>Docker (recommended)</h2>
   </div>
   <div class="row">
-    <p>You must install mongodb</p>
+    <h3>Ubuntu 16.04 / 18.04</h3>
   </div>
   <div class="row">
-    <p><a href="https://www.mongodb.com/download-center?initial=true#community" target="_blank">Windows</a></p>
+    <pre>
+      apt-get update
+      apt-get install docker docker-compose
+      cd ~
+      mkdir YADA
+      cd YADA
+      wget https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/docker-compose.yml
+      docker-compose build
+      docker-compose up
+    </pre>
   </div>
   <div class="row">
-    <p>Ubuntu - MongoDB is included when executing the command shown below.</p>
+    <h2>Windows 10 64-bit</h2>
   </div>
   <div class="row">
-    <p>You must also forward port 8000 (or whichever port specified by "serve_port" in your config file)</p>
+      <p></p>
+  </div>
+  <div class="row">
+      <p>Download and install docker: https://download.docker.com/win/stable/Docker%20for%20Windows%20Installer.exe</p>
+  </div>
+  <div class="row">
+      <p>Download https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/docker-compose.yml</p>
+  </div>
+  <div class="row">
+    <pre>
+      start -> run -> "cmd" [enter]
+      cd /your/download/folder
+      docker-compose build
+      docker-compose up
+    </pre>
   </div>
   <div class="row">
     <h2>After you're setup</h2>
@@ -125,6 +148,9 @@ mixpanel.track("guide page");</script><!-- end Mixpanel -->
   <div class="row">
     <h3>Windows</h3>
   </div>
+  <div class="row">
+    <p>install mongodb: https://www.mongodb.com/download-center?initial=true#community" target="_blank">Windows</a></p>
+  </div>
   <div>
     <p>Download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">latest Windows binary</a> and follow this video</p>
   </div>
@@ -141,13 +167,13 @@ mixpanel.track("guide page");</script><!-- end Mixpanel -->
     <p>Then in that same terminal, execute this command.</p>
   </div>
   <div class="row">
-    <pre class="card">YadaCoinConfig.exe serve config.json</pre>
+    <pre class="card">YadaCoin.exe serve config.json</pre>
   </div>
   <div class="row">
     <p>Then in the second terminal, execute this command.</p>
   </div>
   <div class="row">
-    <pre class="card">YadaCoinConfig.exe consensus config.json</pre>
+    <pre class="card">YadaCoin.exe consensus config.json</pre>
   </div>
   <div class="row">
     <p>Wait approximately 10 minutes for a new block to be found by the network then you'll start syncing.</p>
@@ -159,7 +185,7 @@ mixpanel.track("guide page");</script><!-- end Mixpanel -->
     <p>In the third terminal window, execute this command:</p>
   </div>
   <div class="row">
-    <pre class="card">YadaCoinConfig.exe mine config.json</pre>
+    <pre class="card">YadaCoin.exe mine config.json</pre>
   </div>
   <hr/>
   <div class="row">
