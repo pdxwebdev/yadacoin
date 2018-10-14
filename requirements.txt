@@ -37,6 +37,7 @@ Jinja2==2.9.6
 macholib==1.10
 Mako==1.0.7
 MarkupSafe==1.0
+miniupnpc==2.0.2
 mixpanel==4.3.2
 more-itertools==4.3.0
 olefile==0.44

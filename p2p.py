@@ -1,4 +1,5 @@
 import socketio
+import socket
 import json
 import time
 import signal
@@ -25,6 +26,7 @@ from yadacoin import TransactionFactory, Transaction, \
 from node import node
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from gevent import pywsgi
+from miniupnpc import UPnP
 
 
 class ChatNamespace(BaseNamespace):
@@ -430,20 +432,6 @@ if __name__ == '__main__':
         exit()
 
     if args.mode == 'consensus':
-        try:
-            res = requests.post(
-                'https://yadacoin.io/peers',
-                json.dumps({
-                    'host': Config.peer_host,
-                    'port': Config.peer_port
-                }),
-                headers={
-                    "Content-Type": "application/json"
-                }
-            )
-        except:
-            print 'ERROR: failed to get peers, exiting...'
-            exit()
         Peers.init()
         consensus = Consensus()
         while 1:
@@ -673,4 +661,43 @@ if __name__ == '__main__':
 
         app = socketio.Middleware(sio, app)
         # deploy as an eventlet WSGI server
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind((Config.serve_host, 0))
+            server_port = sock.getsockname()[1]
+            sock.close()
+            eport = server_port
+            u = UPnP(None, None, 200, 0)
+            u.discover()
+            u.selectigd()
+            r = u.getspecificportmapping(eport, 'TCP')
+            while r != None and eport < 65536:
+                eport = eport + 1
+                r = u.getspecificportmapping(eport, 'TCP')
+            b = u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
+            Config.serve_host = '0.0.0.0'
+            Config.serve_port = server_port
+            Config.peer_host = u.externalipaddress()
+            Config.peer_port = server_port
+            print "http://{}:{}/".format(u.externalipaddress(), server_port)
+        except:
+            Config.serve_host = Config.serve_host
+            Config.serve_port = Config.serve_port
+            Config.peer_host = Config.peer_host
+            Config.peer_port = Config.peer_port
+        
+        try:
+            res = requests.post(
+                'https://yadacoin.io/peers',
+                json.dumps({
+                    'host': Config.peer_host,
+                    'port': Config.peer_port
+                }),
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+        except:
+            print 'ERROR: failed to get peers, exiting...'
+            exit()
         pywsgi.WSGIServer((Config.serve_host, Config.serve_port), app).serve_forever()
