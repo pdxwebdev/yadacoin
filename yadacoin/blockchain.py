@@ -69,7 +69,7 @@ class Blockchain(object):
         difficulty = 0
         for block in self.blocks:
             target = int(block.hash, 16)
-            difficulty += target
+            difficulty += 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target
         return difficulty
 
     def get_highest_block_height(self):

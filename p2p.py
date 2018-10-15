@@ -340,7 +340,7 @@ class Consensus():
                 try:
                     previous_consensus_block = self.get_previous_consensus_block_from_remote(block, peer)
                 except BadPeerException as e:
-                    Mongo.db.consensus.remove({'peer': peer.to_string(), 'index': {'$gte': block.index}})
+                    Mongo.db.consensus.remove({'peer': peer.to_string(), 'index': {'$gte': block.index}}, multi=True)
                 except:
                     pass
                 if previous_consensus_block and previous_consensus_block.index + 1 == block.index:
@@ -378,15 +378,12 @@ class Consensus():
                 # If the block height is lower, we throw it out
                 # if the block height is heigher, we compare the difficulty of the entire chain
 
-                inbound_difficulty_average = (blockchain.get_difficulty() / blockchain.get_highest_block_height())
+                inbound_difficulty = blockchain.get_difficulty()
 
-                if self.existing_blockchain.get_highest_block_height() == 0:
-                    existing_difficulty_average = inbound_difficulty_average + 1
-                else:
-                    existing_difficulty_average = (self.existing_blockchain.get_difficulty() / self.existing_blockchain.get_highest_block_height())
+                existing_difficulty = self.existing_blockchain.get_difficulty()
 
                 if blockchain.get_highest_block_height() > self.existing_blockchain.get_highest_block_height() \
-                    and inbound_difficulty_average < existing_difficulty_average:
+                    and inbound_difficulty > existing_difficulty:
                     for block in sorted(blockchain.blocks, key=lambda x: x.index):
                         try:
                             if block.index == 0:
