@@ -133,6 +133,8 @@ def faucet():
                 socketIO.disconnect()
             except Exception as e:
                 print e
+class BadPeerException(Exception):
+    pass
 
 class AboveTargetException(Exception):
     pass
@@ -243,6 +245,9 @@ class Consensus():
             url = 'http://' + peer.to_string() + '/get-block?hash=' + block.prev_hash
             print 'getting block', url
             res = requests.get(url, timeout=3)
+        except:
+            raise BadPeerException()
+        try:
             print 'response code: ', res.status_code
             new_block = Block.from_dict(json.loads(res.content))
             if int(new_block.version) == BU.get_version_for_height(new_block.index):
@@ -332,7 +337,12 @@ class Consensus():
                     block = previous_consensus_block
                     blocks.append(block)
             else:
-                previous_consensus_block = self.get_previous_consensus_block_from_remote(block, peer)
+                try:
+                    previous_consensus_block = self.get_previous_consensus_block_from_remote(block, peer)
+                except BadPeerException as e:
+                    Mongo.db.consensus.remove({'peer': peer.to_string(), 'index': {'$gte': block.index}})
+                except:
+                    pass
                 if previous_consensus_block and previous_consensus_block.index + 1 == block.index:
                     block = previous_consensus_block
                     blocks.append(block)
