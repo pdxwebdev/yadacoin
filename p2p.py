@@ -315,8 +315,10 @@ class Consensus():
         target = BlockFactory.get_target(height, last_time, last_block, blockchain)
         if int(block.hash, 16) < target or block.special_min:
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
-                Mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
-                print "New block inserted"
+                dup = Mongo.db.blocks.find_one({'index': block.index, 'hash': block.hash})
+                if not dup:
+                    Mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
+                    print "New block inserted for height: ", block.index
                 return True
             else:
                 raise ForkException()

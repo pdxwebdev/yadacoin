@@ -35,11 +35,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_latest_block(cls):
-        blocks = cls.get_latest_blocks()
-        if blocks.count():
-            return blocks[0]
-        else:
-            return {}
+        return Mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
 
     @classmethod
     def get_block_by_index(cls, index):
