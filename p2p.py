@@ -151,6 +151,7 @@ class Consensus():
             self.latest_block = Block.from_dict(latest_block)
         else:
             self.insert_genesis()
+        self.existing_blockchain = Blockchain([x for x in Mongo.db.blocks.find({})])
         self.verify_existing_blockchain()
 
     def log(self, message):
@@ -177,7 +178,6 @@ class Consensus():
 
     def verify_existing_blockchain(self):
         self.log('verifying existing blockchain')
-        self.existing_blockchain = Blockchain([x for x in Mongo.db.blocks.find({})])
         result = self.existing_blockchain.verify(output)
         if not result['verified']:
             Mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
@@ -277,8 +277,9 @@ class Consensus():
         self.latest_block = Block.from_dict(BU.get_latest_block())
         self.remove_pending_transactions_now_in_chain()
 
-        latest_consensus = self.get_latest_consensus_block()
+        latest_consensus = Mongo.db.consensus.find_one({'index': self.latest_block.index + 1})
         if latest_consensus:
+            latest_consensus = Block.from_dict(latest_consensus['block'])
             print latest_consensus.index, "latest consensus_block"
 
             # check for difference between blockchain and consensus table heights
@@ -286,13 +287,13 @@ class Consensus():
                 self.log('up to date, height: ' + str(latest_consensus.index))
                 return
 
-            records = Mongo.db.consensus.find({'index': latest_consensus.index, 'block.version': BU.get_version_for_height(latest_consensus.index)})
+            records = Mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1)})
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 block = Block.from_dict(record['block'])
                 peer = Peer.from_string(record['peer'])
                 print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
                 try:
-                    self.integrate_block_with_existing_chain(block, peer, self.existing_blockchain)
+                    self.integrate_block_with_existing_chain(block, self.existing_blockchain)
                 except AboveTargetException as e:
                     pass
                 except ForkException as e:
@@ -303,7 +304,7 @@ class Consensus():
             self.log('no consensus data... none.')
             return
 
-    def integrate_block_with_existing_chain(self, block, peer, blockchain):
+    def integrate_block_with_existing_chain(self, block, blockchain):
         if block.index == 0:
             return True
         height = block.index
@@ -388,7 +389,7 @@ class Consensus():
                         try:
                             if block.index == 0:
                                 continue
-                            self.integrate_block_with_existing_chain(block, peer, blockchain)
+                            self.integrate_block_with_existing_chain(block, blockchain)
                         except ForkException as e:
                             return
                         except AboveTargetException as e:

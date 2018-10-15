@@ -133,9 +133,12 @@ class Peer(object):
 
     @classmethod
     def from_string(cls, peerstr):
+        from yadacoin import Config
         if ":" in peerstr:
             peer = peerstr.split(':')
             return cls(peer[0], peer[1])
+        elif peerstr == 'me':
+            return cls(Config.peer_host, Config.peer_port)
 
     def is_broken(self):
         broken_test = [x for x in Mongo.db.broken_peers.find({"peer": self.to_string()})]
