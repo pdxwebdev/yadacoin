@@ -296,7 +296,7 @@ class Consensus():
                 except IndexError as e:
                     self.retrace(block, peer)
         else:
-            self.log('up to date, height: ' + str(self.latest_block))
+            self.log('up to date, height: ' + str(self.latest_block.index))
             return
 
     def integrate_block_with_existing_chain(self, block, blockchain):
