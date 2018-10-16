@@ -282,11 +282,6 @@ class Consensus():
             latest_consensus = Block.from_dict(latest_consensus['block'])
             print latest_consensus.index, "latest consensus_block"
 
-            # check for difference between blockchain and consensus table heights
-            if self.latest_block.index == latest_consensus.index:
-                self.log('up to date, height: ' + str(latest_consensus.index))
-                return
-
             records = Mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1)})
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 block = Block.from_dict(record['block'])
@@ -300,8 +295,8 @@ class Consensus():
                     self.retrace(block, peer)
                 except IndexError as e:
                     self.retrace(block, peer)
-        else:
-            self.log('no consensus data... none.')
+        elif self.latest_block.index == latest_consensus.index:
+            self.log('up to date, height: ' + str(latest_consensus.index))
             return
 
     def integrate_block_with_existing_chain(self, block, blockchain):
