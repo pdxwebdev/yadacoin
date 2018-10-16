@@ -25,7 +25,8 @@ class Mongo(object):
 
         __id = IndexModel([("id", ASCENDING)], name="__id")
         __index = IndexModel([("index", ASCENDING)], name="__index")
+        __block_hash = IndexModel([("block.hash", ASCENDING)], name="__block_hash")
         try:
-            cls.db.consensus.create_indexes([__id, __index])
+            cls.db.consensus.create_indexes([__id, __index, __block_hash])
         except:
             pass

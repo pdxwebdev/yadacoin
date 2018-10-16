@@ -405,7 +405,7 @@ class Consensus():
                 else:
                     print "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
                     for block in blocks:
-                        Mongo.db.consensus.remove({'hash': block.hash}, multi=True)
+                        Mongo.db.consensus.remove({'block.hash': block.hash}, multi=True)
                     return
             # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
             # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
