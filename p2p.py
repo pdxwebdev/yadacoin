@@ -370,15 +370,16 @@ class Consensus():
                 prev_blocks_check = Block.from_dict(prev_blocks_check)
                 print prev_blocks_check.hash, prev_blocks_check.index
                 missing_blocks = Mongo.db.blocks.find({'index': {'$lte': prev_blocks_check.index}})
+                complete_incoming_chain = blocks[:]
                 for missing_block in missing_blocks:
-                    blocks.append(Block.from_dict(missing_block))
+                    complete_incoming_chain.append(Block.from_dict(missing_block))
                 # if we have it in our blockchain, then we've hit the fork point
                 # now we have to loop through the current block array and build a blockchain
                 # then we compare the block height and difficulty of the two chains
                 # replace our current chain if necessary by removing them from the database
                 # then looping though our new chain, inserting the new blocks
                 self.existing_blockchain = Blockchain([x for x in Mongo.db.blocks.find({})])
-                blockchain = Blockchain([x for x in blocks])
+                blockchain = Blockchain([x for x in complete_incoming_chain])
 
                 # If the block height is equal, we throw out the inbound chain, it muse be greater
                 # If the block height is lower, we throw it out
@@ -403,6 +404,8 @@ class Consensus():
                     return
                 else:
                     print "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
+                    for block in blocks:
+                        Mongo.db.consensus.remove({'hash': block.hash}, multi=True)
                     return
             # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
             # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
