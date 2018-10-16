@@ -47,7 +47,8 @@ def node(nonces=None, config=None):
     Config.from_dict(json.loads(config))
     Peers.init()
     latest_block_index = Value('i', 0)
-    my_peer = Config.peer_host + ":" + str(Config.peer_port)
+    with open('mypeer') as f:
+        my_peer = f.read()
     Config.max_duration = 300000
     Config.block_version = 1
     #p = Process(target=new_block_checker, args=(latest_block_index,))

@@ -132,7 +132,7 @@ class BlockFactory(object):
     @classmethod
     def get_target(cls, height, last_time, last_block, blockchain):
         # change target
-        max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
         retarget_period = 2016  # blocks
         two_weeks = 1209600  # seconds
         half_week = 302400  # seconds
@@ -186,7 +186,7 @@ class BlockFactory(object):
             latest_block = Block.from_dict(BU.get_latest_block())
             last_time = latest_block.time
         
-        max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
         target = cls.get_target(height, last_time, latest_block, Blockchain([x for x in BU.get_blocks()]))
 
         block_factory = cls(

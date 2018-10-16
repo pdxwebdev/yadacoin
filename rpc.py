@@ -376,7 +376,7 @@ def changetime(block):
 
 @app.route('/api-stats')
 def api_stats():
-    max_target = 0x0fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     blocks = BU.get_blocks()
     total_nonce = 0
     periods = []

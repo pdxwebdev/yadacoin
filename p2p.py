@@ -701,7 +701,8 @@ if __name__ == '__main__':
             Config.serve_port = Config.serve_port
             Config.peer_host = Config.peer_host
             Config.peer_port = Config.peer_port
-        
+        with open('mypeer', 'w') as f:
+            f.write(Config.peer_host + ":" + str(Config.peer_port))
         try:
             res = requests.post(
                 'https://yadacoin.io/peers',
