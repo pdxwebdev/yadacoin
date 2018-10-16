@@ -127,18 +127,18 @@ class Peers(object):
         }
 
 class Peer(object):
-    def __init__(self, host, port):
+    def __init__(self, host, port, is_me=False):
         self.host = host
         self.port = port
+        self.is_me = is_me
 
     @classmethod
     def from_string(cls, peerstr):
-        from yadacoin import Config
         if ":" in peerstr:
             peer = peerstr.split(':')
             return cls(peer[0], peer[1])
         elif peerstr == 'me':
-            return cls(Config.peer_host, Config.peer_port)
+            return cls(None, None, is_me=True)
 
     def is_broken(self):
         broken_test = [x for x in Mongo.db.broken_peers.find({"peer": self.to_string()})]
@@ -153,8 +153,12 @@ class Peer(object):
     def to_dict(self):
         return {
             'host': self.host,
-            'port': self.port
+            'port': self.port,
+            'is_me': self.is_me
         }
 
     def to_string(self):
-        return "%s:%s" % (self.host, self.port)
+        if self.is_me:
+            return 'me'
+        else:
+            return "%s:%s" % (self.host, self.port)

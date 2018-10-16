@@ -340,6 +340,9 @@ class Consensus():
                     block = previous_consensus_block
                     blocks.append(block)
             else:
+                if peer.is_me:
+                    Mongo.db.consensus.remove({'peer': peer.to_string(), 'index': {'$gte': block.index}}, multi=True)
+                    return
                 try:
                     previous_consensus_block = self.get_previous_consensus_block_from_remote(block, peer)
                 except BadPeerException as e:
