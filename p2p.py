@@ -424,6 +424,7 @@ if __name__ == '__main__':
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
     parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
+    parser.add_argument('-n', '--no-nat', default=multiprocessing.cpu_count(), help='Specify to use the config values for serve instead of auto port forwarding')
     args = parser.parse_args()
 
     if args.mode == 'config' and args.config:
@@ -527,6 +528,11 @@ if __name__ == '__main__':
         CORS(app)
         sio = socketio.Server(async_mode='gevent')
 
+        def process_block_async(incoming_block, peer):
+            consensus = Consensus()
+            consensus.insert_consensus_block(incoming_block, peer)
+            consensus.import_block({'block': incoming_block.to_dict(), 'peer': peer.to_string()})
+
         @sio.on('newblock', namespace='/chat')
         def newblock(data):
             #print("new block ", data)
@@ -538,9 +544,8 @@ if __name__ == '__main__':
                 if int(incoming_block.version) != BU.get_version_for_height(incoming_block.index):
                     print 'rejected old version %s from %s' % (incoming_block.version, peer)
                     return
-                consensus = Consensus()
-                consensus.insert_consensus_block(incoming_block, peer)
-                consensus.import_block({'block': incoming_block.to_dict(), 'peer': peer.to_string()})
+                p = Process(target=process_block_async, args=(incoming_block, peer))
+                p.start()
                 
             except Exception as e:
                 print "block is bad"
