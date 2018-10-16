@@ -464,14 +464,14 @@ if __name__ == '__main__':
             while 1:
                 next_latest_block_index = BU.get_latest_block()['index']
                 if latest_block_index < next_latest_block_index:
-                    print '\r\nMining block height:', next_latest_block_index
+                    print '\r\nMining block height:', next_latest_block_index + 1
                     latest_block_index = next_latest_block_index
                     start_nonce = 0
                 else:
                     try:
                         start_nonce += 1000000
                     except:
-                        print '\r\nMining block height:', latest_block_index
+                        print '\r\nMining block height:', latest_block_index + 1
                         start_nonce = 0
                 yield [start_nonce, start_nonce + 1000000]
         
@@ -548,6 +548,19 @@ if __name__ == '__main__':
             except BaseException as e:
                 print "block is bad"
                 print e
+            try:
+                requests.post(
+                    'https://yadacoin.io/peers',
+                    json.dumps({
+                        'host': Config.peer_host,
+                        'port': Config.peer_port
+                    }),
+                    headers={
+                        "Content-Type": "application/json"
+                    }
+                )
+            except:
+                print 'ERROR: failed to get peers, exiting...'
 
         @sio.on('newtransaction', namespace='/chat')
         def newtransaction(sid, data):
