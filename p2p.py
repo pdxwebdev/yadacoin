@@ -268,7 +268,7 @@ class Consensus():
             'peer': peer.to_string()
         }, upsert=True)
 
-    def sync(self):
+    def sync_bottom_up(self):
         #bottom up syncing
 
         self.latest_block = Block.from_dict(BU.get_latest_block())
@@ -280,6 +280,27 @@ class Consensus():
             print latest_consensus.index, "latest consensus_block"
 
             records = Mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1)})
+            for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
+                self.import_block(record)
+        else:
+            self.log('up to date, height: ' + str(self.latest_block.index))
+            return
+
+    def sync_top_down(self):
+        #top down syncing
+
+        self.latest_block = Block.from_dict(BU.get_latest_block())
+        self.remove_pending_transactions_now_in_chain()
+
+        latest_consensus = Mongo.db.consensus.find_one({}, sort=[('index', -1)])
+        if latest_consensus:
+            latest_consensus = Block.from_dict(latest_consensus['block'])
+            if self.latest_block.index == latest_consensus.index:
+                self.log('up to date, height: ' + str(self.latest_block.index))
+                return
+            print latest_consensus.index, "latest consensus_block"
+
+            records = Mongo.db.consensus.find({'index': latest_consensus.index, 'block.version': BU.get_version_for_height(latest_consensus.index)})
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 self.import_block(record)
         else:
@@ -424,7 +445,6 @@ if __name__ == '__main__':
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
     parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
-    parser.add_argument('-n', '--no-nat', default=multiprocessing.cpu_count(), help='Specify to use the config values for serve instead of auto port forwarding')
     args = parser.parse_args()
 
     if args.mode == 'config' and args.config:
@@ -448,7 +468,8 @@ if __name__ == '__main__':
         consensus = Consensus()
         consensus.verify_existing_blockchain()
         while 1:
-            consensus.sync()
+            consensus.sync_top_down()
+            consensus.sync_bottom_up()
             """
             p = Process(target=)
             p.start()
@@ -528,24 +549,28 @@ if __name__ == '__main__':
         CORS(app)
         sio = socketio.Server(async_mode='gevent')
 
-        def process_block_async(incoming_block, peer):
-            consensus = Consensus()
-            consensus.insert_consensus_block(incoming_block, peer)
-            consensus.import_block({'block': incoming_block.to_dict(), 'peer': peer.to_string()})
-
         @sio.on('newblock', namespace='/chat')
         def newblock(data):
             #print("new block ", data)
             try:
                 peer = Peer.from_string(request.json.get('peer'))
-                incoming_block = Block.from_dict(data)
-                if incoming_block.index == 0:
+                block = Block.from_dict(data)
+                if block.index == 0:
                     return
-                if int(incoming_block.version) != BU.get_version_for_height(incoming_block.index):
-                    print 'rejected old version %s from %s' % (incoming_block.version, peer)
+                if int(block.version) != BU.get_version_for_height(block.index):
+                    print 'rejected old version %s from %s' % (block.version, peer)
                     return
-                p = Process(target=process_block_async, args=(incoming_block, peer))
-                p.start()
+                Mongo.db.consensus.update({
+                    'index': block.to_dict().get('index'),
+                    'id': block.to_dict().get('id'),
+                    'peer': peer.to_string()
+                },
+                {
+                    'block': block.to_dict(),
+                    'index': block.to_dict().get('index'),
+                    'id': block.to_dict().get('id'),
+                    'peer': peer.to_string()
+                }, upsert=True)
                 
             except Exception as e:
                 print "block is bad"
