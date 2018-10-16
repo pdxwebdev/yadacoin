@@ -152,7 +152,6 @@ class Consensus():
         else:
             self.insert_genesis()
         self.existing_blockchain = Blockchain([x for x in Mongo.db.blocks.find({})])
-        self.verify_existing_blockchain()
 
     def log(self, message):
         print message
@@ -259,8 +258,6 @@ class Consensus():
 
     def insert_consensus_block(self, block, peer):
         Mongo.db.consensus.update({
-            'block': block.to_dict(),
-            'index': block.to_dict().get('index'),
             'id': block.to_dict().get('id'),
             'peer': peer.to_string()
         },
@@ -272,7 +269,7 @@ class Consensus():
         }, upsert=True)
 
     def sync(self):
-        #top down syncing
+        #bottom up syncing
 
         self.latest_block = Block.from_dict(BU.get_latest_block())
         self.remove_pending_transactions_now_in_chain()
@@ -284,20 +281,23 @@ class Consensus():
 
             records = Mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1)})
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
-                block = Block.from_dict(record['block'])
-                peer = Peer.from_string(record['peer'])
-                print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
-                try:
-                    self.integrate_block_with_existing_chain(block, self.existing_blockchain)
-                except AboveTargetException as e:
-                    pass
-                except ForkException as e:
-                    self.retrace(block, peer)
-                except IndexError as e:
-                    self.retrace(block, peer)
+                self.import_block(record)
         else:
             self.log('up to date, height: ' + str(self.latest_block.index))
             return
+
+    def import_block(self, block_data):
+        block = Block.from_dict(block_data['block'])
+        peer = Peer.from_string(block_data['peer'])
+        print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
+        try:
+            self.integrate_block_with_existing_chain(block, self.existing_blockchain)
+        except AboveTargetException as e:
+            pass
+        except ForkException as e:
+            self.retrace(block, peer)
+        except IndexError as e:
+            self.retrace(block, peer)
 
     def integrate_block_with_existing_chain(self, block, blockchain):
         if block.index == 0:
@@ -445,6 +445,7 @@ if __name__ == '__main__':
     if args.mode == 'consensus':
         Peers.init()
         consensus = Consensus()
+        consensus.verify_existing_blockchain()
         while 1:
             consensus.sync()
             """
@@ -530,61 +531,22 @@ if __name__ == '__main__':
         def newblock(data):
             #print("new block ", data)
             try:
-                peer = request.json.get('peer')
+                peer = Peer.from_string(request.json.get('peer'))
                 incoming_block = Block.from_dict(data)
                 if incoming_block.index == 0:
                     return
                 if int(incoming_block.version) != BU.get_version_for_height(incoming_block.index):
                     print 'rejected old version %s from %s' % (incoming_block.version, peer)
                     return
+                consensus = Consensus()
+                consensus.insert_consensus_block(incoming_block, peer)
+                consensus.import_block({'block': incoming_block.to_dict(), 'peer': peer.to_string()})
+                
             except Exception as e:
                 print "block is bad"
                 print e
             except BaseException as e:
                 print "block is bad"
-                print e
-
-            try:
-                dup_check = Mongo.db.consensus.find({'id': incoming_block.signature, 'peer': peer, 'block.version': BU.get_version_for_height(incoming_block.index)})
-                if dup_check.count():
-                    return "dup"
-                Mongo.db.consensus.update({
-                    'block': incoming_block.to_dict(),
-                    'index': incoming_block.to_dict().get('index'),
-                    'id': incoming_block.to_dict().get('id'),
-                    'peer': peer
-                },
-                {
-                    'block': incoming_block.to_dict(),
-                    'index': incoming_block.to_dict().get('index'),
-                    'id': incoming_block.to_dict().get('id'),
-                    'peer': peer
-                }
-                , upsert=True)
-                # before inserting, we need to check it's chain
-                # search consensus for prevHash of incoming block.
-                #prev_blocks_check = Mongo.db.blocks.find({'hash': incoming_block.prev_hash})
-                #if prev_blocks_check.count():
-                    # 1. if we have it, then insert it.
-                #    Mongo.db.consensus.insert({
-                #        'block': incoming_block.to_dict(),
-                #        'index': incoming_block.to_dict().get('index'),
-                #        'id': incoming_block.to_dict().get('id'),
-                #        'peer': peer})
-                #else:
-                    # 2 scenarios
-                    # 1. the 3 is late to the game
-                    # 2. 1 and 2 do not find prev_hash from 3 and 
-                    # we have a fork
-                    # the consensus has the previous block to the incoming block but it's not in the block chain
-                    # we need to do the chain compare routine here and decide if we're going with the blockchain
-                    # belongs to the incoming block, or stay with our existing one
-                    
-                    #retrace(incoming_block, db, peer)
-                   # return
-            except Exception as e:
-                print e
-            except BaseException as e:
                 print e
 
         @sio.on('newtransaction', namespace='/chat')
