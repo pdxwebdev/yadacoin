@@ -47,8 +47,10 @@ def node(nonces=None, config=None):
     Config.from_dict(json.loads(config))
     Peers.init()
     latest_block_index = Value('i', 0)
-    with open('mypeer') as f:
-        my_peer = f.read()
+    my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
+    if not my_peer:
+        print 'no peer information'
+        return
     Config.max_duration = 300000
     Config.block_version = 1
     #p = Process(target=new_block_checker, args=(latest_block_index,))

@@ -695,14 +695,17 @@ if __name__ == '__main__':
             Config.serve_port = server_port
             Config.peer_host = u.externalipaddress()
             Config.peer_port = server_port
-            print "http://{}:{}/".format(u.externalipaddress(), server_port)
         except:
             Config.serve_host = Config.serve_host
             Config.serve_port = Config.serve_port
             Config.peer_host = Config.peer_host
             Config.peer_port = Config.peer_port
-        with open('mypeer', 'w') as f:
-            f.write(Config.peer_host + ":" + str(Config.peer_port))
+            print 'UPnP failed: you must forward and/or whitelist port', Config.peer_port
+
+        peer = Config.peer_host + ":" + str(Config.peer_port)
+        print peer
+        
+        Mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
         try:
             res = requests.post(
                 'https://yadacoin.io/peers',
