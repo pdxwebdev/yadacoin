@@ -122,8 +122,10 @@ class Peers(object):
 
     @classmethod
     def to_dict(cls):
+        peers = [x.to_dict() for x in cls.peers]
         return {
-           'peers': [x.to_dict() for x in cls.peers]
+            'num_peers': len(peers),
+            'peers': peers
         }
 
 class Peer(object):
