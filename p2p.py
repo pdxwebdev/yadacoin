@@ -23,7 +23,7 @@ from yadacoin import TransactionFactory, Transaction, \
                     Input, Output, Block, Config, Peers, \
                     Blockchain, BlockChainException, TU, BU, \
                     Mongo, BlockFactory, NotEnoughMoneyException, Peer
-from node import node
+from node import MiningPool
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from gevent import pywsgi
 from miniupnpc import UPnP
@@ -445,6 +445,7 @@ if __name__ == '__main__':
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
     parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
+    parser.add_argument('-p', '--pool', default='', help='Specify pool to use')
     args = parser.parse_args()
 
     if args.mode == 'config' and args.config:
@@ -480,27 +481,13 @@ if __name__ == '__main__':
         send(args.to, float(args.value))
     elif args.mode == 'mine':
         print Config.to_json()
-        def nonce_generator():
-            Mongo.init()
-            latest_block_index = BU.get_latest_block()['index']
-            while 1:
-                next_latest_block_index = BU.get_latest_block()['index']
-                if latest_block_index < next_latest_block_index:
-                    print '\r\nMining block height:', next_latest_block_index + 1
-                    latest_block_index = next_latest_block_index
-                    start_nonce = 0
-                else:
-                    try:
-                        start_nonce += 1000000
-                    except:
-                        print '\r\nMining block height:', latest_block_index + 1
-                        start_nonce = 0
-                yield [start_nonce, start_nonce + 1000000]
-        
-        print '\r\n\r\n\r\n//// YADA COIN MINER v2.2.1 ////'
+        print '\r\n\r\n\r\n//// YADA COIN MINER ////'
         print "Core count:", args.cores
-        gen = nonce_generator()
+        def get_mine_data():
+            print "http://{pool}/pool".format(pool=args.pool)
+            return json.loads(requests.get("http://{pool}/pool".format(pool=args.pool)).content)
         running_processes = []
+        Mongo.init()
         while 1:
             Peers.init()
             if not Peers.peers:
@@ -510,13 +497,13 @@ if __name__ == '__main__':
                 for i, proc in enumerate(running_processes):
                     if not proc.is_alive():
                         proc.terminate()
-                        data = next(gen)
-                        p = Process(target=node, args=(data, Config.to_json()))
+                        data = get_mine_data()
+                        p = Process(target=MiningPool.pool_mine, args=(args.pool, data['header'], data['target'], data['nonces'], data['special_min']))
                         p.start()
                         running_processes[i] = p
             else:
-                data = next(gen)
-                p = Process(target=node, args=(data, Config.to_json()))
+                data = get_mine_data()
+                p = Process(target=MiningPool.pool_mine, args=(args.pool, data['header'], data['target'], data['nonces'], data['special_min']))
                 p.start()
                 running_processes.append(p)
             time.sleep(1)
@@ -537,11 +524,6 @@ if __name__ == '__main__':
             time.sleep(1)
     elif args.mode == 'serve':
         print Config.to_json()
-        Peers.init()
-        if not Peers.peers:
-            raise Exception("peer service unavailble, restart this process")
-        # wrap Flask application with engineio's middleware
-        Mongo.init()
 
         app = Flask(__name__)
         app.debug = True
@@ -674,6 +656,8 @@ if __name__ == '__main__':
         app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
         app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
         app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
+        app.add_url_rule('/pool', view_func=endpoints.MiningPoolView.as_view('pool'))
+        app.add_url_rule('/pool-submit', view_func=endpoints.MiningPoolSubmitView.as_view('poolsubmit'), methods=['GET', 'POST'])
 
         app = socketio.Middleware(sio, app)
         # deploy as an eventlet WSGI server
@@ -705,6 +689,7 @@ if __name__ == '__main__':
         peer = Config.peer_host + ":" + str(Config.peer_port)
         print peer
         
+        Mongo.init()
         Mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
         try:
             res = requests.post(
@@ -720,4 +705,8 @@ if __name__ == '__main__':
         except:
             print 'ERROR: failed to get peers, exiting...'
             exit()
+
+        Peers.init()
+        if not Peers.peers:
+            raise Exception("peer service unavailble, restart this process")
         pywsgi.WSGIServer((Config.serve_host, Config.serve_port), app).serve_forever()

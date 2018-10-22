@@ -24,6 +24,7 @@ from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin import BU, TU, Transaction, TransactionFactory, Output, Input, \
                      Config, Peers, Graph, Block, Mongo, InvalidTransactionException, \
                      InvalidTransactionSignatureException, MissingInputTransactionException
+from node import MiningPool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from pyfcm import FCMNotification
@@ -96,6 +97,14 @@ app = Flask(__name__)
 app.debug = True
 app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
 CORS(app)
+
+nonce_gen = MiningPool.nonce_generator()
+@app.route('/pool', methods=['GET', 'POST'])
+def pool():
+    if request.method == 'GET':
+        return json.dumps(next(nonce_gen))
+    elif request.mothod == 'GET':
+        return render_template('pool.html')
 
 @app.route('/demo', methods=['GET', 'POST'])
 def demo():
@@ -890,5 +899,5 @@ with open(conf) as f:
 
 Peers.init_local()
 Mongo.init()
-push_service = FCMNotification(api_key=Config.fcm_key)
+#push_service = FCMNotification(api_key=Config.fcm_key)
 

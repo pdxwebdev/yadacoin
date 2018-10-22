@@ -9,13 +9,14 @@ from socketIO_client import SocketIO, BaseNamespace
 from flask_cors import CORS
 from yadacoin import TransactionFactory, Transaction, \
                     MissingInputTransactionException, \
-                    Input, Output, Block, Config, Peers, \
+                    Input, Output, Block, BlockFactory, Config, Peers, \
                     Blockchain, BlockChainException, BU, TU, \
                     Graph, Mongo, InvalidTransactionException, \
                     InvalidTransactionSignatureException
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from pyfcm import FCMNotification
 from flask.views import View
+from node import MiningPool
 
 
 class ChatNamespace(BaseNamespace):
@@ -251,3 +252,51 @@ class RegisterView(View):
             'to': Config.address
         }
         return json.dumps(data, indent=4)
+
+class MiningPoolView(View):
+    def dispatch_request(self):
+        if not hasattr(MiningPoolView, 'header'):
+            MiningPool.pool_init(Config.to_dict())
+            MiningPoolView.header = MiningPool.block_factory.header
+            MiningPoolView.special_min = MiningPool.block_factory.block.special_min
+            MiningPoolView.target = MiningPool.block_factory.block.target
+        if not hasattr(MiningPoolView, 'gen'):
+            MiningPoolView.gen = MiningPool.nonce_generator()
+        return json.dumps({
+            'nonces': next(MiningPoolView.gen),
+            'target': MiningPoolView.target,
+            'special_min': MiningPoolView.special_min,
+            'header': MiningPoolView.header
+        })
+
+class MiningPoolSubmitView(View):
+    def dispatch_request(self):
+        try:
+            block = MiningPool.block_factory.block
+            block.target = MiningPool.block_factory.block.target
+            block.version = MiningPool.block_factory.block.version
+            block.special_min = MiningPoolView.special_min
+            block.hash = request.json.get('hash')
+            block.nonce = request.json.get('nonce')
+            block.signature = BU.generate_signature(block.hash)
+            block.verify()
+
+            # submit share
+            Mongo.db.shares.update({
+                'address': request.json.get('address'),
+                'index': block.index,
+                'hash': block.hash
+            },
+            {
+                'address': request.json.get('address'),
+                'index': block.index,
+                'hash': block.hash,
+                'block': block.to_dict()
+            }, upsert=True)
+
+            if int(block.target) > int(block.hash, 16):
+                # broadcast winning block
+                MiningPool.broadcast_block(block)
+            return 'ok'
+        except:
+            return 'error'

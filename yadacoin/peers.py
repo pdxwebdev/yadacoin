@@ -8,6 +8,7 @@ class Peers(object):
     def init_local(cls):
         Mongo.init()
         res = Mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
+        cls.my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         peers = [x for x in res]
         cls.peers = []
         try:
@@ -26,6 +27,7 @@ class Peers(object):
     def init(cls):
         cls.peers = []
         try:
+            cls.my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
             res = requests.get('https://yadacoin.io/peers')
             for peer in json.loads(res.content)['peers']:
                 cls.peers.append(

@@ -98,18 +98,22 @@ class BlockFactory(object):
             merkle_root=self.merkle_root,
             public_key=self.public_key
         )
-
+    
     @classmethod
-    def generate_hash(cls, block, nonce):
-        header = str(block.version) + \
+    def generate_header(cls, block):
+        return str(block.version) + \
             str(block.time) + \
             block.public_key + \
             str(block.index) + \
             block.prev_hash + \
-            str(nonce) + \
+            '{nonce}' + \
             str(block.special_min) + \
             str(block.target) + \
             block.merkle_root
+
+    @classmethod
+    def generate_hash_from_header(cls, header, nonce):
+        header = header.format(nonce=nonce)
         return hashlib.sha256(hashlib.sha256(header).digest()).digest()[::-1].encode('hex')
 
     def get_transaction_hashes(self):
@@ -174,73 +178,20 @@ class BlockFactory(object):
         return target
 
     @classmethod
-    def mine(cls, transactions, public_key, private_key, max_duration, callback=None, current_index=None, status=None, nonces=None, force_time=None):
-        from blockchain import Blockchain
+    def mine(cls, header, target, nonces, special_min=False):
 
-        if hasattr(current_index, 'value'):
-            height = current_index.value
-        else:
-            height = current_index or 0
-
-        if height > 0:
-            latest_block = Block.from_dict(BU.get_latest_block())
-            last_time = latest_block.time
-        
-        max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-        target = cls.get_target(height, last_time, latest_block, Blockchain([x for x in BU.get_blocks()]))
-
-        block_factory = cls(
-            transactions=transactions,
-            public_key=public_key,
-            private_key=private_key,
-            index=height,
-            version=BU.get_version_for_height(height),
-            force_time=force_time)
-        if current_index:
-            initial_current_index = current_index.value
-        def default_nonces():
-            num = 0
-            while 1:
-                yield num
-                num += 1
-        nonces = xrange(nonces[0], nonces[1]) or default_nonces
-
-        special_min = False
-
-        max_block_time = 600  # seconds
-        
+        nonces = xrange(nonces[0], nonces[1])
+        lowest = (0, '', 0)
         for nonce in nonces:
-            if height > 0:
-                time_elapsed_since_last_block = int(time.time()) - int(last_time)
-
-                # special min case
-                if time_elapsed_since_last_block > max_block_time:
-                    target = max_target
-                    special_min = True
-
-            block_factory.block.special_min = special_min
-            block_factory.block.target = target
-            hash_test = cls.generate_hash(block_factory.block, str(nonce))
+            hash_test = cls.generate_hash_from_header(header, str(nonce))
 
             text_int = int(hash_test, 16)
-            
-            #if callback:
-            #    callback(current_index.value, nonce, text_int, target)
-            # print hash_test
             if text_int < target or special_min:
-                # create the block with the reward
-                # gather friend requests from the network
-                block = block_factory.block
-                block.hash = hash_test
-                block.nonce = nonce
-                block.signature = BU.generate_signature(hash_test)
-                if status:
-                    status.value = 'mined'
-                return block
+                return nonce, hash_test
 
-            if current_index and current_index.value > initial_current_index:
-                status.value = 'exited'
-                break
+            if text_int < lowest[0]:
+                lowest = (text_int, hash_test, nonce)
+        return lowest[1], lowest[2]
 
     @classmethod
     def get_genesis_block(cls):
@@ -346,7 +297,8 @@ class Block(object):
             raise
 
         try:
-            hashtest = BlockFactory.generate_hash(self, str(self.nonce))
+            header = BlockFactory.generate_header(self)
+            hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
             if self.hash != hashtest:
                 raise BaseException('Invalid block')
         except:
