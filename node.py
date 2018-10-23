@@ -69,7 +69,7 @@ class MiningPool(object):
         try:
             if height > 0:
                 last_time = block.time
-            
+            special_min = False
             max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
             if height > 0:
                 time_elapsed_since_last_block = int(time.time()) - int(last_time)
