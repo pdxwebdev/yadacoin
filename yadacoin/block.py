@@ -179,9 +179,8 @@ class BlockFactory(object):
 
     @classmethod
     def mine(cls, header, target, nonces, special_min=False):
-
         nonces = xrange(nonces[0], nonces[1])
-        lowest = (0, '', 0)
+        lowest = (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff, 0, '')
         for nonce in nonces:
             hash_test = cls.generate_hash_from_header(header, str(nonce))
 
@@ -190,7 +189,7 @@ class BlockFactory(object):
                 return nonce, hash_test
 
             if text_int < lowest[0]:
-                lowest = (text_int, hash_test, nonce)
+                lowest = (text_int, nonce, hash_test)
         return lowest[1], lowest[2]
 
     @classmethod
