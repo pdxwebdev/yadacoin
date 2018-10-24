@@ -484,12 +484,11 @@ if __name__ == '__main__':
         print '\r\n\r\n\r\n//// YADA COIN MINER ////'
         print "Core count:", args.cores
         def get_mine_data():
-            print "http://{pool}/pool".format(pool=args.pool)
             return json.loads(requests.get("http://{pool}/pool".format(pool=args.pool)).content)
         running_processes = []
         Mongo.init()
         while 1:
-            Peers.init()
+            Peers.init(my_peer=False)
             if not Peers.peers:
                 time.sleep(1)
                 continue

@@ -24,10 +24,11 @@ class Peers(object):
         return json.dumps({'peers': peers})
 
     @classmethod
-    def init(cls):
+    def init(cls, my_peer=True):
         cls.peers = []
         try:
-            cls.my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
+            if my_peer:
+                cls.my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
             res = requests.get('https://yadacoin.io/peers')
             for peer in json.loads(res.content)['peers']:
                 cls.peers.append(
