@@ -168,13 +168,13 @@ class MiningPool(object):
         return transaction_objs
     
     @classmethod
-    def pool_mine(cls, pool_peer, header, target, nonces, special_min):
+    def pool_mine(cls, pool_peer, address, header, target, nonces, special_min):
         nonce, lhash = BlockFactory.mine(header, target, nonces, special_min)
         if nonce and lhash:
             requests.post("http://{pool}/pool-submit".format(pool=pool_peer), json={
                 'nonce': nonce,
                 'hash': lhash,
-                'address': Config.address
+                'address': address
             }, headers={'Connection':'close'})
     
     @classmethod

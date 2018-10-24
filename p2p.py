@@ -497,12 +497,12 @@ if __name__ == '__main__':
                     if not proc.is_alive():
                         proc.terminate()
                         data = get_mine_data()
-                        p = Process(target=MiningPool.pool_mine, args=(args.pool, data['header'], data['target'], data['nonces'], data['special_min']))
+                        p = Process(target=MiningPool.pool_mine, args=(args.pool, Config.address, data['header'], data['target'], data['nonces'], data['special_min']))
                         p.start()
                         running_processes[i] = p
             else:
                 data = get_mine_data()
-                p = Process(target=MiningPool.pool_mine, args=(args.pool, data['header'], data['target'], data['nonces'], data['special_min']))
+                p = Process(target=MiningPool.pool_mine, args=(args.pool, Config.address, data['header'], data['target'], data['nonces'], data['special_min']))
                 p.start()
                 running_processes.append(p)
             time.sleep(1)
