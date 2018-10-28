@@ -106,7 +106,7 @@ class TransactionFactory(object):
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
 
-        inputs = [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
+        inputs = self.inputs or [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
 
         input_sum = 0
         if self.coinbase:

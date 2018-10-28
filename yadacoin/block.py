@@ -284,6 +284,12 @@ class Block(object):
             special_min=block.get('special_min'),
             target=int(block.get('target'), 16)
         )
+    
+    def get_coinbase(self):
+        for txn in self.transactions:
+            if str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship:
+                return txn
+
 
     def verify(self):
         getcontext().prec = 8

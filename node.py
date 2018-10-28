@@ -52,7 +52,7 @@ class MiningPool(object):
         block = BU.get_latest_block()
         if block:
             block = Block.from_dict(block)
-            height = block.index + 1
+            cls.height = block.index + 1
         else:
             genesis_block = BlockFactory.get_genesis_block()
             genesis_block.save()
@@ -63,31 +63,30 @@ class MiningPool(object):
                 'index': 0
                 })
             block = Block.from_dict(BU.get_latest_block())
-            height = block.index
+            cls.height = block.index
 
-        transactions = MiningPool.get_pending_transactions()
         try:
-            if height > 0:
+            if cls.height > 0:
                 last_time = block.time
             special_min = False
             max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-            if height > 0:
+            if cls.height > 0:
                 time_elapsed_since_last_block = int(time.time()) - int(last_time)
 
                 # special min case
                 if time_elapsed_since_last_block > max_block_time:
                     target = max_target
                     special_min = True
-            target = BlockFactory.get_target(height, last_time, block, Blockchain([x for x in BU.get_blocks()]))
+            cls.target = BlockFactory.get_target(cls.height, last_time, block, Blockchain([x for x in BU.get_blocks()]))
 
             cls.block_factory = BlockFactory(
-                transactions=transactions,
+                transactions=MiningPool.get_pending_transactions(),
                 public_key=Config.public_key,
                 private_key=Config.private_key,
-                index=height,
-                version=BU.get_version_for_height(height))
+                index=cls.height,
+                version=BU.get_version_for_height(cls.height))
             cls.block_factory.block.special_min = special_min
-            cls.block_factory.block.target = target
+            cls.block_factory.block.target = cls.target
             cls.block_factory.header = BlockFactory.generate_header(cls.block_factory.block)
         except Exception as e:
             raise
@@ -101,11 +100,13 @@ class MiningPool(object):
             if latest_block_index < next_latest_block_index:
                 latest_block_index = next_latest_block_index
                 start_nonce = 0
+                cls.pool_init(Config.to_dict())
             else:
                 try:
                     start_nonce += 1000000
                 except:
                     start_nonce = 0
+            MiningPool.index = latest_block_index
             yield [start_nonce, start_nonce + 1000000]
 
     @classmethod

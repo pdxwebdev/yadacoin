@@ -260,6 +260,10 @@ class MiningPoolView(View):
             MiningPoolView.header = MiningPool.block_factory.header
             MiningPoolView.special_min = MiningPool.block_factory.block.special_min
             MiningPoolView.target = MiningPool.block_factory.block.target
+        else:
+            MiningPoolView.header = MiningPool.block_factory.header
+            MiningPoolView.special_min = MiningPool.block_factory.block.special_min
+            MiningPoolView.target = MiningPool.block_factory.block.target
         if not hasattr(MiningPoolView, 'gen'):
             MiningPoolView.gen = MiningPool.nonce_generator()
         return json.dumps({
@@ -279,7 +283,11 @@ class MiningPoolSubmitView(View):
             block.hash = request.json.get('hash')
             block.nonce = request.json.get('nonce')
             block.signature = BU.generate_signature(block.hash)
-            block.verify()
+            try:
+                block.verify()
+            except:
+                print 'block failed verification'
+                return ''
 
             # submit share
             Mongo.db.shares.update({
@@ -297,6 +305,10 @@ class MiningPoolSubmitView(View):
             if int(block.target) > int(block.hash, 16):
                 # broadcast winning block
                 MiningPool.broadcast_block(block)
+                print 'block ok'
+            else:
+                print 'share ok'
             return 'ok'
         except:
+            raise
             return 'error'
