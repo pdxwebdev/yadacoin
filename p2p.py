@@ -178,16 +178,28 @@ class PoolPayer(object):
             won_block = Block.from_dict(won_block)
             if (won_block.index + 6) <= latest_block.index:
                 self.do_payout_for_block(won_block)
+    
+    def already_used(self, txn):
+        return Mongo.db.blocks.find_one({'transactions.inputs.id': txn.transaction_signature})
 
     def do_payout_for_block(self, block):
         # check if we already paid out
-        existing = Mongo.db.share_payout.find_one({'index': block.index})
-        if existing:
-            return
 
-        already_used = Mongo.db.blocks.find_one({'transactions.inputs.id': block.get_coinbase().transaction_signature})
+        already_used = self.already_used(block.get_coinbase())
         if already_used:
             return
+
+        existing = Mongo.db.share_payout.find_one({'index': block.index})
+        if existing:
+            pending = Mongo.db.miner_transactions.find_one({'inputs.id': block.get_coinbase().transaction_signature})
+            if pending:
+                return
+            else:
+                # rebroadcast
+                transaction = Transaction.from_dict(existing['txn'])
+                TU.save(transaction)
+                self.broadcast_transaction(transaction)
+                return
 
         try:
             shares = self.get_share_list_for_height(block.index)
@@ -195,6 +207,8 @@ class PoolPayer(object):
             return
 
         total_reward = block.get_coinbase()
+        if total_reward.outputs[0].to != Config.address:
+            return
         pool_take = 0.01
         total_pool_take = total_reward.outputs[0].value * pool_take
         total_payout = total_reward.outputs[0].value - total_pool_take
@@ -225,18 +239,21 @@ class PoolPayer(object):
         try:
             transaction.transaction.verify()
         except:
-            Mongo.db.failed_faucet_transactions.insert(transaction.transaction.to_dict())
+            raise
             print 'faucet transaction failed'
 
         TU.save(transaction.transaction)
         Mongo.db.share_payout.insert({'index': block.index, 'txn': transaction.transaction.to_dict()})
+
+        self.broadcast_transaction(transaction.transaction)
         
+    def broadcast_transaction(self, transaction):
         for peer in Peers.peers:
             try:
                 print peer.to_string()
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
                 chat_namespace = socketIO.define(ChatNamespace, '/chat')
-                chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
+                chat_namespace.emit('newtransaction', transaction.to_dict())
                 socketIO.disconnect()
             except Exception as e:
                 print e

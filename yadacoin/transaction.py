@@ -131,11 +131,19 @@ class TransactionFactory(object):
                 raise NotEnoughMoneyException('not enough money')
             self.inputs = needed_inputs
 
-            return_change_output = Output(
-                to=my_address,
-                value=input_sum-(sum([x.value for x in self.outputs])+self.fee)
-            )
-            self.outputs.append(return_change_output)
+            remainder = input_sum-(sum([x.value for x in self.outputs])+self.fee)
+
+            found = False
+            for x in self.outputs:
+                if my_address == x.to:
+                    found = True
+                    x.value += remainder
+            if not found:
+                return_change_output = Output(
+                    to=my_address,
+                    value=remainder
+                )
+                self.outputs.append(return_change_output)
 
     def get_input_hashes(self):
         input_hashes = []
