@@ -732,6 +732,10 @@ if __name__ == '__main__':
             except BaseException as e:
                 print e
 
+        @sio.on('getblock', namespace='/chat')
+        def sio_getblock(sid, data):
+            return json.dumps(Mongo.db.blocks.find_one({'hash': data['hash']}, {'_id': 0}))
+
         @app.route('/get-blocks')
         def get_blocks():
             blocks = [x for x in Mongo.db.blocks.find({
