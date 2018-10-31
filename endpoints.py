@@ -302,7 +302,7 @@ class MiningPoolSubmitView(View):
                 'block': block.to_dict()
             }, upsert=True)
 
-            if int(block.target) > int(block.hash, 16):
+            if int(block.target) > int(block.hash, 16) or block.special_min:
                 # broadcast winning block
                 MiningPool.broadcast_block(block)
                 print 'block ok'
