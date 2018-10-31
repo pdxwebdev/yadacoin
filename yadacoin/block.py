@@ -191,7 +191,7 @@ class BlockFactory(object):
 
             if text_int < lowest[0]:
                 lowest = (text_int, nonce, hash_test)
-            nonce += nonce
+            nonce += 1
         return lowest[1], lowest[2]
 
     @classmethod
