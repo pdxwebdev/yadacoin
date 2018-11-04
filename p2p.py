@@ -354,7 +354,8 @@ class Consensus():
         new_block = Mongo.db.consensus.find_one({
             'block.hash': block.prev_hash,
             'block.index': (block.index - 1),
-            'block.version': BU.get_version_for_height((block.index - 1))
+            'block.version': BU.get_version_for_height((block.index - 1)),
+            'ignore': {'$ne': True}
         })
         if new_block:
             new_block = Block.from_dict(new_block['block'])
@@ -410,9 +411,10 @@ class Consensus():
             latest_consensus = Block.from_dict(latest_consensus['block'])
             print latest_consensus.index, "latest consensus_block"
 
-            record = Mongo.db.consensus.find_one({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1)})
-            if record:
+            records = Mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1), 'ignore': {'$ne': True}})
+            for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 self.import_block(record)
+                break
         else:
             self.log('up to date, height: ' + str(self.latest_block.index))
             return
@@ -431,9 +433,10 @@ class Consensus():
                 return
             print latest_consensus.index, "latest consensus_block"
 
-            record = Mongo.db.consensus.find_one({'index': latest_consensus.index, 'block.version': BU.get_version_for_height(latest_consensus.index)})
-            if record:
+            records = Mongo.db.consensus.find({'index': latest_consensus.index, 'block.version': BU.get_version_for_height(latest_consensus.index), 'ignore': {'$ne': True}})
+            for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 self.import_block(record)
+                break
         else:
             self.log('up to date, height: ' + str(self.latest_block.index))
             return
@@ -488,12 +491,12 @@ class Consensus():
                     blocks.append(block)
             else:
                 if peer.is_me:
-                    Mongo.db.consensus.remove({'peer': peer.to_string(), 'index': {'$gte': block.index}}, multi=True)
+                    Mongo.db.consensus.update({'peer': peer.to_string(), 'index': {'$gte': block.index}}, {'$set': {'ignore': True}}, multi=True)
                     return
                 try:
                     previous_consensus_block = self.get_previous_consensus_block_from_remote(block, peer)
                 except BadPeerException as e:
-                    Mongo.db.consensus.remove({'peer': peer.to_string(), 'index': {'$gte': block.index}}, multi=True)
+                    Mongo.db.consensus.update({'peer': peer.to_string(), 'index': {'$gte': block.index}}, {'$set': {'ignore': True}}, multi=True)
                 except:
                     pass
                 if previous_consensus_block and previous_consensus_block.index + 1 == block.index:
@@ -552,7 +555,7 @@ class Consensus():
                 else:
                     print "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
                     for block in blocks:
-                        Mongo.db.consensus.remove({'block.hash': block.hash}, multi=True)
+                        Mongo.db.consensus.update({'block.hash': block.hash}, {'$set': {'ignore': True}}, multi=True)
                     return
             # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
             # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
