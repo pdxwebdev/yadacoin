@@ -23,7 +23,7 @@ from yadacoin import TransactionFactory, Transaction, \
                     Input, Output, Block, Config, Peers, \
                     Blockchain, BlockChainException, TU, BU, \
                     Mongo, BlockFactory, NotEnoughMoneyException, Peer
-from node import MiningPool
+from yadacoin import MiningPool
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from gevent import pywsgi
 from miniupnpc import UPnP

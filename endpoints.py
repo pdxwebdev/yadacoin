@@ -12,11 +12,10 @@ from yadacoin import TransactionFactory, Transaction, \
                     Input, Output, Block, BlockFactory, Config, Peers, \
                     Blockchain, BlockChainException, BU, TU, \
                     Graph, Mongo, InvalidTransactionException, \
-                    InvalidTransactionSignatureException
+                    InvalidTransactionSignatureException, MiningPool
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from pyfcm import FCMNotification
 from flask.views import View
-from node import MiningPool
 
 
 class ChatNamespace(BaseNamespace):

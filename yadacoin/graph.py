@@ -2,7 +2,6 @@ import json
 import hashlib
 import os
 import argparse
-import qrcode
 import base64
 import humanhash
 import time

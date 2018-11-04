@@ -11,3 +11,4 @@ from transaction import TransactionFactory, Transaction, \
                         InvalidTransactionSignatureException, InvalidTransactionException, \
                         NotEnoughMoneyException
 from transactionutils import TU
+from miningpool import MiningPool

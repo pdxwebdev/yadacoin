@@ -1,8 +1,6 @@
 import json
 import hashlib
 import os
-import argparse
-import qrcode
 import base64
 
 from io import BytesIO

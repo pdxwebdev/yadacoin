@@ -1,12 +1,39 @@
 import hashlib
+import os
 import json
 import binascii
 import base58
 from bitcoin.wallet import P2PKHBitcoinAddress
-from crypt import Crypt
+from coincurve import PrivateKey, PublicKey
 
 
 class Config(object):
+    @classmethod
+    def generate(cls, mongodb_host=None):
+        num = os.urandom(32).encode('hex')
+        pk = PrivateKey.from_hex(num)
+        cls.private_key = pk.to_hex()
+        cls.from_dict({
+            "private_key": cls.private_key,
+            "wif": cls.to_wif(),
+            "public_key": pk.public_key.format().encode('hex'),
+            "address": str(P2PKHBitcoinAddress.from_pubkey(pk.public_key.format())),
+            "serve_host": "0.0.0.0",
+            "serve_port": 8000,
+            "peer_host": "",
+            "peer_port": 8000,
+            "web_server_host": "0.0.0.0",
+            "web_server_port": 5000,
+            "peer": "http://localhost:8000",
+            "callbackurl": "http://0.0.0.0:5000/create-relationship",
+            "fcm_key": "",
+            "database": "yadacoin",
+            "site_database": "yadacoinsite",
+            "mongodb_host": "localhost",
+            "mixpanel": "",
+            "username": ""
+        })
+
     @classmethod
     def from_dict(cls, config):
         cls.public_key = config['public_key']
