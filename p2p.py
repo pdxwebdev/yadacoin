@@ -410,8 +410,8 @@ class Consensus():
             latest_consensus = Block.from_dict(latest_consensus['block'])
             print latest_consensus.index, "latest consensus_block"
 
-            records = Mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1)})
-            for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
+            record = Mongo.db.consensus.find_one({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1)})
+            if record:
                 self.import_block(record)
         else:
             self.log('up to date, height: ' + str(self.latest_block.index))
@@ -431,8 +431,8 @@ class Consensus():
                 return
             print latest_consensus.index, "latest consensus_block"
 
-            records = Mongo.db.consensus.find({'index': latest_consensus.index, 'block.version': BU.get_version_for_height(latest_consensus.index)})
-            for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
+            record = Mongo.db.consensus.find_one({'index': latest_consensus.index, 'block.version': BU.get_version_for_height(latest_consensus.index)})
+            if record:
                 self.import_block(record)
         else:
             self.log('up to date, height: ' + str(self.latest_block.index))
