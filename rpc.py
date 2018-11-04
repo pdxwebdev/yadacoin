@@ -23,7 +23,7 @@ from flask import Flask, request, render_template, session, redirect
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin import BU, TU, Transaction, TransactionFactory, Output, Input, \
                      Config, Peers, Graph, Block, Mongo, InvalidTransactionException, \
-                     InvalidTransactionSignatureException, MissingInputTransactionException
+                     InvalidTransactionSignatureException, MissingInputTransactionException, MiningPool
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from pyfcm import FCMNotification
