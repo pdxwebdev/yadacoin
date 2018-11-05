@@ -800,6 +800,7 @@ if __name__ == '__main__':
         app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
         app.add_url_rule('/pool', view_func=endpoints.MiningPoolView.as_view('pool'))
         app.add_url_rule('/pool-submit', view_func=endpoints.MiningPoolSubmitView.as_view('poolsubmit'), methods=['GET', 'POST'])
+        app.add_url_rule('/pool-explorer', view_func=endpoints.MiningPoolExplorerView.as_view('pool-explorer'))
 
         app = socketio.Middleware(sio, app)
         # deploy as an eventlet WSGI server

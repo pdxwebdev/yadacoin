@@ -311,3 +311,13 @@ class MiningPoolSubmitView(View):
         except:
             raise
             return 'error'
+
+class MiningPoolExplorerView(View):
+    def dispatch_request(self):
+        query = {}
+        if request.args.get('address'):
+            query['address'] = request.args.get('address')
+        if request.args.get('index'):
+            query['index'] = request.args.get('index')
+        res = Mongo.db.shares.find_one(query, {'_id': 0}, sort=[('index', -1)])
+        return 'latest block height share: %s' % res.get('index', 'No history')

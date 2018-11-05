@@ -30,3 +30,11 @@ class Mongo(object):
             cls.db.consensus.create_indexes([__id, __index, __block_hash])
         except:
             pass
+
+        __address = IndexModel([("address", ASCENDING)], name="__address")
+        __index = IndexModel([("index", ASCENDING)], name="__index")
+        __hash = IndexModel([("hash", ASCENDING)], name="__hash")
+        try:
+            cls.db.shares.create_indexes([__address, __index, __hash])
+        except:
+            pass
