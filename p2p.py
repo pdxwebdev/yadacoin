@@ -52,8 +52,8 @@ def new_block_checker(current_index):
         time.sleep(1)
 
 def send(to, value):
-    Peers.init()
     Mongo.init()
+    Peers.init()
     used_inputs = []
     new_inputs = []
 
