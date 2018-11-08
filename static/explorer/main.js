@@ -201,7 +201,7 @@ var SearchFormComponent = /** @class */ (function () {
             _this.circulating = Number(res.json().index * 50).toLocaleString();
             var blocks_found = res.json().index;
             var difficulty = parseInt('00000000FFFF0000000000000000000000000000000000000000000000000000', 16) / parseInt(res.json().target, 16);
-            _this.hashrate = Number(blocks_found / 144 * difficulty * Math.pow(2, 32) / 600).toLocaleString() + '/Hs;';
+            _this.hashrate = Number(blocks_found / 144 * difficulty * Math.pow(2, 32) / 600).toLocaleString() + '/Hs';
         }, function (err) {
             alert('something went terribly wrong!');
         });
