@@ -1,6 +1,7 @@
 <h2>Current block height: {{current_height}}</h2>
 <h2>Coins in circulation: {{circulating}}</h2>
 <h3>Maximum supply: 21,000,000</h3>
+<h3>Network Hashrate: {{hashrate}}</h3>
 <form (ngSubmit)="onSubmit()" #searchForm="ngForm">
     <input class="form-control" [(ngModel)]="model.term" name="term" placeholder="Wallet address, Txn Id, Block height...">
     <button class="btn btn-success">Search</button>
