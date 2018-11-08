@@ -17,6 +17,9 @@ export class SearchFormComponent implements OnInit {
       this.current_height = Number(res.json().index + 1).toLocaleString()
       this.result = [res.json()]
       this.circulating = Number(res.json().index * 50).toLocaleString()
+      var blocks_found = res.json().index;
+      var difficulty = parseInt('00000000FFFF0000000000000000000000000000000000000000000000000000', 16) / parseInt(res.json().target, 16)
+      this.hashrate = Number(blocks_found / 144 * difficulty * 2**32 / 600).toLocaleString() + '/Hs;'
     },
     (err: any) => {
       alert('something went terribly wrong!')
@@ -48,6 +51,7 @@ export class SearchFormComponent implements OnInit {
   submitted = false;
   current_height = '';
   circulating = '';
+  hashrate = '';
 
   onSubmit() { 
     this.searching = true;
