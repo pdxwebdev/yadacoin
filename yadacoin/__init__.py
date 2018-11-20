@@ -12,3 +12,7 @@ from transaction import TransactionFactory, Transaction, \
                         NotEnoughMoneyException
 from transactionutils import TU
 from miningpool import MiningPool
+from consensus import Consensus
+from miningpoolpayout import PoolPayer
+from send import Send
+from faucet import Faucet

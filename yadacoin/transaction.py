@@ -90,8 +90,10 @@ class TransactionFactory(object):
             inputs_concat +
             outputs_concat
         ).digest().encode('hex')
-
-        self.transaction_signature = self.generate_transaction_signature()
+        if self.private_key:
+            self.transaction_signature = self.generate_transaction_signature()
+        else:
+            self.transaction_signature = ''
         self.transaction = self.generate_transaction()
 
     def do_money(self):
@@ -258,7 +260,7 @@ class Transaction(object):
         try:
             result = verify_signature(base64.b64decode(self.transaction_signature), self.hash, self.public_key.decode('hex'))
             if not result:
-                raise
+                raise Exception()
         except:
             try:
                 result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)

@@ -3,6 +3,9 @@ import hashlib
 import humanhash
 import socket
 import os
+import requests
+import socketio
+import hmac
 from multiprocessing import Process, Value, Array, Pool
 from flask import Flask, render_template, request, Response
 from socketIO_client import SocketIO, BaseNamespace
@@ -12,11 +15,15 @@ from yadacoin import TransactionFactory, Transaction, \
                     Input, Output, Block, BlockFactory, Config, Peers, \
                     Blockchain, BlockChainException, BU, TU, \
                     Graph, Mongo, InvalidTransactionException, \
-                    InvalidTransactionSignatureException, MiningPool
+                    InvalidTransactionSignatureException, MiningPool, Peer, Config
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from pyfcm import FCMNotification
 from flask.views import View
+from mnemonic import Mnemonic
+from bip32utils import BIP32Key
 
+
+push_service = {}
 
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
@@ -324,3 +331,277 @@ class MiningPoolExplorerView(View):
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s' % (Config.address, Config.address, res.get('index'))
         else:
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history' % (Config.address, Config.address)
+
+class GetBlocksView(View):
+    def dispatch_request(self):
+        blocks = [x for x in Mongo.db.blocks.find({
+            '$and': [
+                {'index': 
+                    {'$gte': int(request.args.get('start_index'))}
+                }, 
+                {'index': 
+                    {'$lte': int(request.args.get('end_index'))}
+                }
+            ]
+        }, {'_id': 0}).sort([('index',1)])]
+
+        def generate(blocks):
+            for i, block in enumerate(blocks):
+                print 'sending block index:', block['index']
+                prefix = '[' if i == 0 else ''
+                suffix = ']' if i >= len(blocks) -1  else ','
+                yield prefix + json.dumps(block) + suffix
+        return Response(generate(blocks), mimetype='application/json')\
+
+class NewBlockView(View):
+    def dispatch_request(self):
+        bcss = BlockchainSocketServer()
+        bcss.on_newblock(request.json)
+        return 'ok'
+
+class NewTransactionView(View):
+    def dispatch_request(self):
+        bcss = BlockchainSocketServer()
+        bcss.on_newtransaction(None, request.json)
+        return 'ok'
+
+class GetBlockHeightView(View):
+    def dispatch_request(self):
+        return json.dumps({'block_height': BU.get_latest_block().get('index')})
+
+class GetBlockByHashView(View):
+    def dispatch_request(self):
+        return json.dumps(Mongo.db.blocks.find_one({'hash': request.args.get('hash')}, {'_id': 0}))
+
+class CreateRawTransactionView(View):
+    def dispatch_request(self):
+        """
+        JSON RPC Create Raw Transaction
+
+        Method:
+        POST
+        
+        Body:
+        {
+            "address": P2PKH string
+            "txn_id": base64 string
+            "to": P2PKH string
+            "value": float 8 precision
+        }
+
+        Success:
+        {
+            "public_key": hex string,
+            "inputs": [
+                {
+                    "id": base64 string
+                }
+            ],
+            "outputs": [
+                {
+                    "to": P2PKH string
+                    "value": float 8 precision
+                }
+            ],
+            "hash": hex string
+        }
+
+        Errors:
+        {
+            "status": string,
+            "msg": string
+        }
+        """
+        unspent = BU.get_wallet_unspent_transactions(request.json.get('address'))
+        for x in unspent:
+            if request.json.get('txn_id') == x['id']:
+                txn = TransactionFactory(
+                    inputs=[
+                        Input(request.json.get('txn_id'))
+                    ],
+                    outputs=[
+                        Output(request.json.get('to'), request.json.get('value'))
+                    ]
+                )
+            return txn.transaction.to_json()
+        else:
+            if Mongo.db.blocks.find_one({'id': request.json.get('txn_id')}, {'_id': 0}):
+                return json.dumps({'status': 'error', 'msg': 'transaction id not in blockchain'})
+            else:
+                return json.dumps({'status': 'error', 'msg': 'output already spent'})
+        return json.dumps(Mongo.db.blocks.find_one({'hash': request.args.get('hash')}, {'_id': 0}))
+
+class SignRawTransactionView(View):
+    def dispatch_request(self):
+        """
+        JSON RPC Create Raw Transaction
+
+        Method:
+        POST
+        
+        Body:
+        {
+            "hash": hex string
+            "private_key": hex string
+        }
+
+        Success:
+        {
+            "id": base64 string,
+            "hash": hex string
+        }
+
+        Errors:
+        {
+            "status": string,
+            "msg": string
+        }
+        """
+        try:
+            transaction_signature = TU.generate_signature(request.json.get('hash'))
+            return json.dumps({
+                'id': transaction_signature,
+                'hash': request.json.get('hash')
+            })
+        except:
+            return json.dumps({
+                'status': 'error',
+                'msg': 'error while generating signature'
+            })
+
+class SendRawTransactionView(View):
+    def dispatch_request(self):
+        """
+        JSON RPC Create Raw Transaction
+
+        Method:
+        POST
+        
+        Body:
+        {
+            "public_key": hex string,
+            "inputs": [
+                {
+                    "id": base64 string
+                }
+            ],
+            "outputs": [
+                {
+                    "to": P2PKH string
+                    "value": float 8 precision
+                }
+            ],
+            "hash": hex string,
+            "id": base64 string
+        }
+
+        Success:
+        {
+            "status": string
+        }
+
+        Errors:
+        {
+            "status": string,
+            "msg": string
+        }
+        """
+        try:
+            txn = Transaction.from_dict(request.json('txn'))
+        except:
+            return json.dumps({
+                'status': 'error',
+                'msg': 'transaction is invalid'
+            }), 400
+            
+        try:
+            txn.verify()
+        except Exception as e:
+            return json.dumps({
+                'status': 'error',
+                'msg': e.message
+            }), 400
+        
+        TxnBroadcaster.txn_broadcast_job(txn)
+
+        return json.dumps({
+            'status': 'success'
+        }), 400
+
+class GenerateWalletView(View):
+    def dispatch_request(self):
+        wallet = Config.generate()
+        return wallet.inst_to_json()
+
+class GenerateChildWalletView(View):
+    def dispatch_request(self):
+        wallet = Config.generate(
+            xprv=request.json.get('xprv'),
+            child=request.json.get('child')
+        )
+        return wallet.inst_to_json()
+
+class BlockchainSocketServer(socketio.Namespace):
+    def on_newblock(self, data):
+        #print("new block ", data)
+        try:
+            peer = Peer.from_string(request.json.get('peer'))
+            block = Block.from_dict(data)
+            if block.index == 0:
+                return
+            if int(block.version) != BU.get_version_for_height(block.index):
+                print 'rejected old version %s from %s' % (block.version, peer)
+                return
+            Mongo.db.consensus.update({
+                'index': block.to_dict().get('index'),
+                'id': block.to_dict().get('id'),
+                'peer': peer.to_string()
+            },
+            {
+                'block': block.to_dict(),
+                'index': block.to_dict().get('index'),
+                'id': block.to_dict().get('id'),
+                'peer': peer.to_string()
+            }, upsert=True)
+            
+        except Exception as e:
+            print "block is bad"
+            print e
+        except BaseException as e:
+            print "block is bad"
+            print e
+        try:
+            requests.post(
+                'https://yadacoin.io/peers',
+                json.dumps({
+                    'host': Config.peer_host,
+                    'port': Config.peer_port
+                }),
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+        except:
+            print 'ERROR: failed to get peers, exiting...'
+
+    def on_newtransaction(self, sid, data):
+        #print("new transaction ", data)
+        try:
+            incoming_txn = Transaction.from_dict(data)
+        except Exception as e:
+            print "transaction is bad"
+            print e
+        except BaseException as e:
+            print "transaction is bad"
+            print e
+
+        try:
+            dup_check = Mongo.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
+            if dup_check.count():
+                print 'found duplicate'
+                return
+            Mongo.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(), upsert=True)
+        except Exception as e:
+            print e
+        except BaseException as e:
+            print e

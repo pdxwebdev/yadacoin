@@ -29,8 +29,10 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256(message).digest().encode('hex')
 
     @classmethod
-    def generate_deterministic_signature(cls, message):
-        key = PrivateKey.from_hex(Config.private_key)
+    def generate_deterministic_signature(cls, message, private_key=None):
+        if not private_key:
+            private_key = Config.private_key
+        key = PrivateKey.from_hex(private_key)
         signature = key.sign(message)
         return base64.b64encode(signature)
 
