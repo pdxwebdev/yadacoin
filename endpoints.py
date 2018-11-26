@@ -6,6 +6,8 @@ import os
 import requests
 import socketio
 import hmac
+import re
+import base64
 from multiprocessing import Process, Value, Array, Pool
 from flask import Flask, render_template, request, Response
 from socketIO_client import SocketIO, BaseNamespace
@@ -503,3 +505,124 @@ class BlockchainSocketServer(socketio.Namespace):
             print e
         except BaseException as e:
             print e
+
+class ExplorerSearchView(View):
+    def dispatch_request(self):
+        if not request.args.get('term'):
+            return '{}'
+
+        try:
+            term = int(request.args.get('term'))
+            res = Mongo.db.blocks.find({'index': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'block_height',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+        try:
+            term = request.args.get('term')
+            res = Mongo.db.blocks.find({'public_key': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'block_height',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+        try:
+            term = request.args.get('term')
+            res = Mongo.db.blocks.find({'transactions.public_key': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'block_height',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+        try:
+            term = request.args.get('term')
+            re.search(r'[A-Fa-f0-9]{64}', term).group(0)
+            res = Mongo.db.blocks.find({'hash': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'block_hash',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+
+        try:
+            term = request.args.get('term').replace(' ', '+')
+            base64.b64decode(term)
+            res = Mongo.db.blocks.find({'id': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'block_id',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+
+        try:
+            term = request.args.get('term')
+            re.search(r'[A-Fa-f0-9]{64}', term).group(0)
+            res = Mongo.db.blocks.find({'transactions.hash': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'txn_hash',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+
+        try:
+            term = request.args.get('term')
+            re.search(r'[A-Fa-f0-9]{64}', term).group(0)
+            res = Mongo.db.blocks.find({'transactions.rid': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'txn_rid',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+
+        try:
+            term = request.args.get('term').replace(' ', '+')
+            base64.b64decode(term)
+            res = Mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
+            if res.count():
+                return json.dumps({
+                    'resultType': 'txn_id',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+
+        try:
+            term = request.args.get('term')
+            re.search(r'[A-Fa-f0-9]+', term).group(0)
+            res = Mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
+            if res.count():
+                balance = BU.get_wallet_balance(term)
+                return json.dumps({
+                    'balance': balance,
+                    'resultType': 'txn_outputs_to',
+                    'result': [self.changetime(x) for x in res]
+                }, indent=4)
+        except:
+            pass
+
+        return '{}'
+
+    def changetime(self, block):
+        from datetime import datetime
+        block['time'] = datetime.utcfromtimestamp(int(block['time'])).strftime('%Y-%m-%dT%H:%M:%S UTC')
+        return block
+
+class GetLatestBlockView(View):
+    def dispatch_request(self):
+        block = BU.get_latest_block()
+        return json.dumps(block, indent=4)

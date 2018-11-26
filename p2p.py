@@ -145,6 +145,8 @@ if __name__ == '__main__':
         app.add_url_rule('/sign-raw-transaction', view_func=endpoints.SignRawTransactionView.as_view('sign-raw-transaction'), methods=['POST'])
         app.add_url_rule('/generate-wallet', view_func=endpoints.GenerateWalletView.as_view('generate-wallet'))
         app.add_url_rule('/generate-child-wallet', view_func=endpoints.GenerateChildWalletView.as_view('generate-child-wallet'), methods=['POST'])
+        app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))
+        app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
 
         sio = socketio.Server(async_mode='gevent')
         sio.register_namespace(endpoints.BlockchainSocketServer('/chat'))

@@ -263,122 +263,6 @@ def screen():
 def explorer():
     return app.send_static_file('explorer/index.html')
 
-@app.route('/explorer-search')
-def explorer_search():
-    if not request.args.get('term'):
-        return '{}'
-
-    try:
-        term = int(request.args.get('term'))
-        res = Mongo.db.blocks.find({'index': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'block_height',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-    try:
-        term = request.args.get('term')
-        res = Mongo.db.blocks.find({'public_key': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'block_height',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-    try:
-        term = request.args.get('term')
-        res = Mongo.db.blocks.find({'transactions.public_key': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'block_height',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-    try:
-        term = request.args.get('term')
-        re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-        res = Mongo.db.blocks.find({'hash': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'block_hash',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-
-    try:
-        term = request.args.get('term').replace(' ', '+')
-        base64.b64decode(term)
-        res = Mongo.db.blocks.find({'id': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'block_id',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-
-    try:
-        term = request.args.get('term')
-        re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-        res = Mongo.db.blocks.find({'transactions.hash': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'txn_hash',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-
-    try:
-        term = request.args.get('term')
-        re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-        res = Mongo.db.blocks.find({'transactions.rid': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'txn_rid',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-
-    try:
-        term = request.args.get('term').replace(' ', '+')
-        base64.b64decode(term)
-        res = Mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
-        if res.count():
-            return json.dumps({
-                'resultType': 'txn_id',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-
-    try:
-        term = request.args.get('term')
-        re.search(r'[A-Fa-f0-9]+', term).group(0)
-        res = Mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
-        if res.count():
-            balance = BU.get_wallet_balance(term)
-            return json.dumps({
-                'balance': balance,
-                'resultType': 'txn_outputs_to',
-                'result': [changetime(x) for x in res]
-            }, indent=4)
-    except:
-        pass
-
-    return '{}'
-
-def changetime(block):
-    from datetime import datetime
-    block['time'] = datetime.utcfromtimestamp(int(block['time'])).strftime('%Y-%m-%dT%H:%M:%S UTC')
-    return block
-
 @app.route('/api-stats')
 def api_stats():
     max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
@@ -810,11 +694,6 @@ def deeplink():
     import urllib
     return redirect('myapp://' + urllib.quote(request.args.get('txn')))
 
-@app.route('/get-latest-block')
-def get_latest_block():
-    block = BU.get_latest_block()
-    return json.dumps(block, indent=4)
-
 @app.route('/get-chain')
 def get_chain():
     # some type of generator
@@ -884,6 +763,8 @@ app.add_url_rule('/get-graph-messages', view_func=endpoints.GraphMessagesView.as
 app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
 app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
 app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
+app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))
+app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
