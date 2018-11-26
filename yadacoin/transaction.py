@@ -80,18 +80,19 @@ class TransactionFactory(object):
         else:
             self.rid = ''
             self.encrypted_relationship = ''
-        self.hash = hashlib.sha256(
-            self.dh_public_key +
-            self.rid +
-            self.encrypted_relationship +
-            "{0:.8f}".format(self.fee) +
-            self.requester_rid +
-            self.requested_rid +
-            inputs_concat +
+        self.header = self.dh_public_key + \
+            self.rid + \
+            self.encrypted_relationship + \
+            "{0:.8f}".format(self.fee) + \
+            self.requester_rid + \
+            self.requested_rid + \
+            inputs_concat + \
             outputs_concat
-        ).digest().encode('hex')
-
-        self.transaction_signature = self.generate_transaction_signature()
+        self.hash = hashlib.sha256(self.header).digest().encode('hex')
+        if self.private_key:
+            self.transaction_signature = self.generate_transaction_signature()
+        else:
+            self.transaction_signature = ''
         self.transaction = self.generate_transaction()
 
     def do_money(self):
@@ -258,7 +259,7 @@ class Transaction(object):
         try:
             result = verify_signature(base64.b64decode(self.transaction_signature), self.hash, self.public_key.decode('hex'))
             if not result:
-                raise
+                raise Exception()
         except:
             try:
                 result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)

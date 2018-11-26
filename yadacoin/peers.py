@@ -155,6 +155,60 @@ class Peer(object):
     def unset_broken(self):
         Mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
 
+    @classmethod
+    def init_my_peer(cls):
+        import socket
+        from config import Config
+        from miniupnpc import UPnP
+        # deploy as an eventlet WSGI server
+        try:
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind((Config.serve_host, 0))
+            server_port = sock.getsockname()[1]
+            sock.close()
+            eport = server_port
+            u = UPnP(None, None, 200, 0)
+            u.discover()
+            u.selectigd()
+            r = u.getspecificportmapping(eport, 'TCP')
+            while r != None and eport < 65536:
+                eport = eport + 1
+                r = u.getspecificportmapping(eport, 'TCP')
+            b = u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
+            Config.serve_host = '0.0.0.0'
+            Config.serve_port = server_port
+            Config.peer_host = u.externalipaddress()
+            Config.peer_port = server_port
+        except:
+            Config.serve_host = Config.serve_host
+            Config.serve_port = Config.serve_port
+            Config.peer_host = Config.peer_host
+            Config.peer_port = Config.peer_port
+            print 'UPnP failed: you must forward and/or whitelist port', Config.peer_port
+
+        cls.save_my_peer()
+    
+    @classmethod
+    def save_my_peer(cls):
+        from config import Config
+        peer = Config.peer_host + ":" + str(Config.peer_port)
+        Mongo.init()
+        Mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
+        try:
+            res = requests.post(
+                'https://yadacoin.io/peers',
+                json.dumps({
+                    'host': Config.peer_host,
+                    'port': Config.peer_port
+                }),
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+        except:
+            print 'ERROR: failed to get peers, exiting...'
+            exit()
+
     def to_dict(self):
         return {
             'host': self.host,

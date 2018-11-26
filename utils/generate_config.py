@@ -39,30 +39,6 @@ def to_wif(private_key_static):
     wif = base58.b58encode(binascii.unhexlify(final_key))
     return wif
 
-def generate(mongodb_host=None):
-    config = {
-        "private_key": pk.to_hex(),
-        "wif": to_wif(pk.to_hex()),
-        "public_key": pk.public_key.format().encode('hex'),
-        "address": str(P2PKHBitcoinAddress.from_pubkey(pk.public_key.format())),
-        "serve_host": "0.0.0.0",
-        "serve_port": 8000,
-        "peer_host": public_ip,
-        "peer_port": 8000,
-        "web_server_host": "0.0.0.0",
-        "web_server_port": 5000,
-        "peer": "http://localhost:8000",
-        "callbackurl": "http://0.0.0.0:5000/create-relationship",
-        "fcm_key": "",
-        "database": "yadacoin",
-        "site_database": "yadacoinsite",
-        "mongodb_host": mongodb_host or "localhost",
-        "mixpanel": "",
-        "username": Config.username
-    }
-    Config.from_dict(config)
-    return json.dumps(Config.to_dict(), indent=4)
-
 parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -94,7 +70,7 @@ if args.which == 'new':
         num = os.urandom(32).encode('hex')
     Config.username = args.username
     pk = PrivateKey.from_hex(num)
-    print generate()
+    print Config.generate(pk.to_hex())
 elif args.which == 'update':
     with open(args.config) as f:
         identity = json.loads(f.read())
@@ -104,16 +80,12 @@ elif args.which == 'update':
         else:
             username = args.username
         Config.username = username
-        print generate()
+        print Config.generate(pk.to_hex())
 elif args.which == 'auto':
-    num = os.urandom(32).encode('hex')
-    pk = PrivateKey.from_hex(num)
     Config.username = ''
     filename = 'config.json'
     kwargs = {}
-    if args.mongo_host:
-        kwargs['mongodb_host'] = args.mongo_host
-    out = generate(**kwargs)
+    out = Config.generate().inst_to_json()
     if args.force:
         with open(args.force, 'w') as f:
             f.write(out)

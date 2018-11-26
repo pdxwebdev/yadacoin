@@ -3,6 +3,9 @@ import hashlib
 import humanhash
 import socket
 import os
+import requests
+import socketio
+import hmac
 from multiprocessing import Process, Value, Array, Pool
 from flask import Flask, render_template, request, Response
 from socketIO_client import SocketIO, BaseNamespace
@@ -12,10 +15,12 @@ from yadacoin import TransactionFactory, Transaction, \
                     Input, Output, Block, BlockFactory, Config, Peers, \
                     Blockchain, BlockChainException, BU, TU, \
                     Graph, Mongo, InvalidTransactionException, \
-                    InvalidTransactionSignatureException, MiningPool
+                    InvalidTransactionSignatureException, MiningPool, Peer, Config, NotEnoughMoneyException
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from pyfcm import FCMNotification
 from flask.views import View
+from mnemonic import Mnemonic
+from bip32utils import BIP32Key
 
 
 class ChatNamespace(BaseNamespace):
@@ -23,6 +28,7 @@ class ChatNamespace(BaseNamespace):
         print 'error'
 
 class TransactionView(View):
+    push_service = None
     def dispatch_request(self):
         if request.method == 'POST':
             items = request.json
@@ -93,7 +99,7 @@ class TransactionView(View):
             #if rid is the requester_rid, then we send a friend request notification to the requested_rid
             res = Mongo.site_db.fcmtokens.find({"rid": txn['requested_rid']})
             for token in res:
-                result = push_service.notify_single_device(
+                result = self.push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='%s sent you a friend request!' % username,
                     message_body="See the request and approve!",
@@ -105,7 +111,7 @@ class TransactionView(View):
             #if rid is the requested_rid, then we send a friend accepted notification to the requester_rid
             res = Mongo.site_db.fcmtokens.find({"rid": txn['requester_rid']})
             for token in res:
-                result = push_service.notify_single_device(
+                result = self.push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='%s approved your friend request!' % username,
                     message_body='Say "hi" to your friend!',
@@ -126,7 +132,7 @@ class TransactionView(View):
                         continue
                     used_tokens.append(token['token'])
 
-                    result = push_service.notify_single_device(
+                    result = self.push_service.notify_single_device(
                         registration_id=token['token'],
                         message_title='%s has posted something!' % username,
                         message_body='Check out what your friend posted!',
@@ -149,7 +155,7 @@ class TransactionView(View):
                         continue
                     used_tokens.append(token['token'])
 
-                    result = push_service.notify_single_device(
+                    result = self.push_service.notify_single_device(
                         registration_id=token['token'],
                         message_title='New message from %s!' % username,
                         message_body='Go see what your friend said!',
@@ -324,3 +330,176 @@ class MiningPoolExplorerView(View):
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s' % (Config.address, Config.address, res.get('index'))
         else:
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history' % (Config.address, Config.address)
+
+class GetBlocksView(View):
+    def dispatch_request(self):
+        blocks = [x for x in Mongo.db.blocks.find({
+            '$and': [
+                {'index': 
+                    {'$gte': int(request.args.get('start_index'))}
+                }, 
+                {'index': 
+                    {'$lte': int(request.args.get('end_index'))}
+                }
+            ]
+        }, {'_id': 0}).sort([('index',1)])]
+
+        def generate(blocks):
+            for i, block in enumerate(blocks):
+                print 'sending block index:', block['index']
+                prefix = '[' if i == 0 else ''
+                suffix = ']' if i >= len(blocks) -1  else ','
+                yield prefix + json.dumps(block) + suffix
+        return Response(generate(blocks), mimetype='application/json')\
+
+class NewBlockView(View):
+    def dispatch_request(self):
+        bcss = BlockchainSocketServer()
+        bcss.on_newblock(request.json)
+        return 'ok'
+
+class NewTransactionView(View):
+    def dispatch_request(self):
+        bcss = BlockchainSocketServer()
+        bcss.on_newtransaction(None, request.json)
+        return 'ok'
+
+class GetBlockHeightView(View):
+    def dispatch_request(self):
+        return json.dumps({'block_height': BU.get_latest_block().get('index')})
+
+class GetBlockByHashView(View):
+    def dispatch_request(self):
+        return json.dumps(Mongo.db.blocks.find_one({'hash': request.args.get('hash')}, {'_id': 0}))
+
+class CreateRawTransactionView(View):
+    def dispatch_request(self):
+        unspent = BU.get_wallet_unspent_transactions(request.json.get('address'))
+        unspent_inputs = dict([(x['id'], x) for x in unspent])
+        input_sum = 0
+        for x in request.json.get('inputs'):
+            found = False
+            if x['id'] in unspent_inputs:
+                for tx in unspent_inputs[x['id']].get('outputs'):
+                    input_sum += float(tx['value'])
+                found = True
+                break
+            if not found:
+                if Mongo.db.blocks.find_one({'transactions.id': x['id']}, {'_id': 0}):
+                    return json.dumps({'status': 'error', 'msg': 'output already spent'}), 400
+                else:
+                    return json.dumps({'status': 'error', 'msg': 'transaction id not in blockchain'}), 400
+        output_sum = 0
+        for x in request.json.get('outputs'):
+            output_sum += float(x['value'])
+
+        if (output_sum + float(request.json.get('fee'))) > input_sum:
+            return json.dumps({'status': 'error', 'msg': 'not enough inputs to pay for transaction outputs + fee'})
+        try:
+            txn = TransactionFactory(
+                public_key=request.json.get('public_key'),
+                fee=float(request.json.get('fee')),
+                inputs=[Input(x['id']) for x in request.json.get('inputs')],
+                outputs=[Output(x['to'], x['value']) for x in request.json.get('outputs')]
+            )
+        except NotEnoughMoneyException as e:
+            return json.dumps({'status': 'error', 'msg': 'not enough coins from referenced inputs to pay for transaction outputs + fee'}), 400
+        return '{"header": "%s", "hash": "%s"}' % (txn.header, txn.hash)
+
+class SignRawTransactionView(View):
+    def dispatch_request(self):
+        try:
+            transaction_signature = TU.generate_signature_with_private_key(request.json.get('private_key'), request.json.get('hash'))
+            return json.dumps({
+                'id': transaction_signature,
+                'hash': request.json.get('hash')
+            })
+        except:
+            return json.dumps({
+                'status': 'error',
+                'msg': 'error while generating signature'
+            })
+
+class GenerateWalletView(View):
+    def dispatch_request(self):
+        wallet = Config.generate()
+        return wallet.inst_to_json()
+
+class GenerateChildWalletView(View):
+    def dispatch_request(self):
+        try:
+            wallet = Config.generate(
+                xprv=request.json.get('xprv'),
+                child=request.json.get('child')
+            )
+            return wallet.inst_to_json()
+        except:
+            return json.dumps({
+                "status": "error",
+                "msg": "error creating child wallet"
+            }), 400
+
+class BlockchainSocketServer(socketio.Namespace):
+    def on_newblock(self, data):
+        #print("new block ", data)
+        try:
+            peer = Peer.from_string(request.json.get('peer'))
+            block = Block.from_dict(data)
+            if block.index == 0:
+                return
+            if int(block.version) != BU.get_version_for_height(block.index):
+                print 'rejected old version %s from %s' % (block.version, peer)
+                return
+            Mongo.db.consensus.update({
+                'index': block.to_dict().get('index'),
+                'id': block.to_dict().get('id'),
+                'peer': peer.to_string()
+            },
+            {
+                'block': block.to_dict(),
+                'index': block.to_dict().get('index'),
+                'id': block.to_dict().get('id'),
+                'peer': peer.to_string()
+            }, upsert=True)
+            
+        except Exception as e:
+            print "block is bad"
+            print e
+        except BaseException as e:
+            print "block is bad"
+            print e
+        try:
+            requests.post(
+                'https://yadacoin.io/peers',
+                json.dumps({
+                    'host': Config.peer_host,
+                    'port': Config.peer_port
+                }),
+                headers={
+                    "Content-Type": "application/json"
+                }
+            )
+        except:
+            print 'ERROR: failed to get peers, exiting...'
+
+    def on_newtransaction(self, sid, data):
+        #print("new transaction ", data)
+        try:
+            incoming_txn = Transaction.from_dict(data)
+        except Exception as e:
+            print "transaction is bad"
+            print e
+        except BaseException as e:
+            print "transaction is bad"
+            print e
+
+        try:
+            dup_check = Mongo.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
+            if dup_check.count():
+                print 'found duplicate'
+                return
+            Mongo.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(), upsert=True)
+        except Exception as e:
+            print e
+        except BaseException as e:
+            print e
