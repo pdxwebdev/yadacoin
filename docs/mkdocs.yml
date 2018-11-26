@@ -1,3 +1,4 @@
 site_name: YadaCoin Docs
+use_directory_urls: false
 theme:
   name: 'material'
