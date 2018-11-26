@@ -1,5 +1,8 @@
 # API Overview
 
+## Explorer
+The explorer API provides detailed blockchain information for a variety of search terms.
+
 ## Graph
 The graph API provides the following social graph information:
 
