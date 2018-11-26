@@ -1,17 +1,15 @@
 # Getting Started
 
-For wallet api endpoints, goto [Wallet API](/Wallet-API).
+Welcome to the YadaCoin developer documentation.
 
-## Commands
+## Sections
 
-* `mkdocs new [dir-name]` - Create a new project.
-* `mkdocs serve` - Start the live-reloading docs server.
-* `mkdocs build` - Build the documentation site.
-* `mkdocs help` - Print this help message.
+* `API` - Create a new project.
+    * `graph` - Endpoints necessary for creating a YadaCoin enabled applcation.
+    * `node` - These endpoints are used by miners and nodes with a fully synchronized copy of the blockchain.
+    * `pool` - Pool endpoints enable pool related functions for client and server.
+    * `wallet` - Wallet endpoints provide features for individual user wallets.
 
-## Project layout
+## Pull requests welcome!
 
-    mkdocs.yml    # The configuration file.
-    docs/
-        index.md  # The documentation homepage.
-        ...       # Other markdown pages, images and other files.
+If you see incorrect or missing information, typos, etc. please either fork this repo, correct the issue and submit a pull request or goto https://discord.gg/JEDJaFS and send a message to @yadacoin#8322. Thanks!
