@@ -35,8 +35,8 @@ class Graph(object):
         self.already_added_messages = []
         self.bulletin_secret = str(bulletin_secret)
 
-        if self.wallet_mode:
-            return self.with_private_key()
+        if False: # disabling for now
+            self.with_private_key()
         else:
             self.registered = False
             self.pending_registration = False

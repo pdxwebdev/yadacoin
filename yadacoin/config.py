@@ -11,15 +11,15 @@ from bip32utils import BIP32Key
 
 class Config(object):
     def __init__(self, config):
+        self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
-        self.username = config.get('username')
+        self.username = config.get('username', '')
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
 
         self.private_key = config['private_key']
         self.wif = self.to_wif(self.private_key)
-        if not self.username is None:
-            self.bulletin_secret = self.get_bulletin_secret(self.private_key)
+        self.bulletin_secret = self.inst_get_bulletin_secret()
 
         self.mongodb_host = config['mongodb_host']
         self.database = config['database']
@@ -70,7 +70,8 @@ class Config(object):
             raise Exception('No key')
 
         return cls({
-            "xprv": extended_key,
+            "seed": seed or '',
+            "xprv": extended_key or '',
             "private_key": private_key,
             "wif": cls.to_wif(private_key),
             "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().encode('hex'),
@@ -93,15 +94,15 @@ class Config(object):
 
     @classmethod
     def from_dict(cls, config):
+        cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
-        cls.username = config.get('username')
+        cls.username = config.get('username', '')
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
 
         cls.private_key = config['private_key']
         cls.wif = cls.to_wif(cls.private_key)
-        if not cls.username is None:
-            cls.bulletin_secret = cls.get_bulletin_secret()
+        cls.bulletin_secret = cls.get_bulletin_secret()
 
         cls.mongodb_host = config['mongodb_host']
         cls.database = config['database']
@@ -118,6 +119,11 @@ class Config(object):
         cls.serve_port = config['serve_port']
         cls.callbackurl = config['callbackurl']
         cls.fcm_key = config['fcm_key']
+
+    @classmethod
+    def inst_get_bulletin_secret(self):
+        from transactionutils import TU
+        return TU.generate_deterministic_signature(self.username, self.private_key)
 
     @classmethod
     def get_bulletin_secret(cls, private_key=None):
@@ -137,6 +143,7 @@ class Config(object):
     @classmethod
     def to_dict(cls):
         return {
+            'seed': cls.seed,
             'xprv': cls.xprv,
             'public_key': cls.public_key,
             'address': cls.address,
@@ -159,6 +166,7 @@ class Config(object):
 
     def inst_to_dict(self):
         return {
+            'seed': self.seed,
             'xprv': self.xprv,
             'public_key': self.public_key,
             'address': self.address,

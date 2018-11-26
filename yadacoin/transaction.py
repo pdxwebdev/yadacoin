@@ -80,16 +80,15 @@ class TransactionFactory(object):
         else:
             self.rid = ''
             self.encrypted_relationship = ''
-        self.hash = hashlib.sha256(
-            self.dh_public_key +
-            self.rid +
-            self.encrypted_relationship +
-            "{0:.8f}".format(self.fee) +
-            self.requester_rid +
-            self.requested_rid +
-            inputs_concat +
+        self.header = self.dh_public_key + \
+            self.rid + \
+            self.encrypted_relationship + \
+            "{0:.8f}".format(self.fee) + \
+            self.requester_rid + \
+            self.requested_rid + \
+            inputs_concat + \
             outputs_concat
-        ).digest().encode('hex')
+        self.hash = hashlib.sha256(self.header).digest().encode('hex')
         if self.private_key:
             self.transaction_signature = self.generate_transaction_signature()
         else:

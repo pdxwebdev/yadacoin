@@ -15,7 +15,7 @@ from yadacoin import TransactionFactory, Transaction, \
                     Input, Output, Block, BlockFactory, Config, Peers, \
                     Blockchain, BlockChainException, BU, TU, \
                     Graph, Mongo, InvalidTransactionException, \
-                    InvalidTransactionSignatureException, MiningPool, Peer, Config
+                    InvalidTransactionSignatureException, MiningPool, Peer, Config, NotEnoughMoneyException
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from pyfcm import FCMNotification
 from flask.views import View
@@ -23,13 +23,12 @@ from mnemonic import Mnemonic
 from bip32utils import BIP32Key
 
 
-push_service = {}
-
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
         print 'error'
 
 class TransactionView(View):
+    push_service = None
     def dispatch_request(self):
         if request.method == 'POST':
             items = request.json
@@ -100,7 +99,7 @@ class TransactionView(View):
             #if rid is the requester_rid, then we send a friend request notification to the requested_rid
             res = Mongo.site_db.fcmtokens.find({"rid": txn['requested_rid']})
             for token in res:
-                result = push_service.notify_single_device(
+                result = self.push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='%s sent you a friend request!' % username,
                     message_body="See the request and approve!",
@@ -112,7 +111,7 @@ class TransactionView(View):
             #if rid is the requested_rid, then we send a friend accepted notification to the requester_rid
             res = Mongo.site_db.fcmtokens.find({"rid": txn['requester_rid']})
             for token in res:
-                result = push_service.notify_single_device(
+                result = self.push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='%s approved your friend request!' % username,
                     message_body='Say "hi" to your friend!',
@@ -133,7 +132,7 @@ class TransactionView(View):
                         continue
                     used_tokens.append(token['token'])
 
-                    result = push_service.notify_single_device(
+                    result = self.push_service.notify_single_device(
                         registration_id=token['token'],
                         message_title='%s has posted something!' % username,
                         message_body='Check out what your friend posted!',
@@ -156,7 +155,7 @@ class TransactionView(View):
                         continue
                     used_tokens.append(token['token'])
 
-                    result = push_service.notify_single_device(
+                    result = self.push_service.notify_single_device(
                         registration_id=token['token'],
                         message_title='New message from %s!' % username,
                         message_body='Go see what your friend said!',
@@ -375,90 +374,42 @@ class GetBlockByHashView(View):
 
 class CreateRawTransactionView(View):
     def dispatch_request(self):
-        """
-        JSON RPC Create Raw Transaction
-
-        Method:
-        POST
-        
-        Body:
-        {
-            "address": P2PKH string
-            "txn_id": base64 string
-            "to": P2PKH string
-            "value": float 8 precision
-        }
-
-        Success:
-        {
-            "public_key": hex string,
-            "inputs": [
-                {
-                    "id": base64 string
-                }
-            ],
-            "outputs": [
-                {
-                    "to": P2PKH string
-                    "value": float 8 precision
-                }
-            ],
-            "hash": hex string
-        }
-
-        Errors:
-        {
-            "status": string,
-            "msg": string
-        }
-        """
         unspent = BU.get_wallet_unspent_transactions(request.json.get('address'))
-        for x in unspent:
-            if request.json.get('txn_id') == x['id']:
-                txn = TransactionFactory(
-                    inputs=[
-                        Input(request.json.get('txn_id'))
-                    ],
-                    outputs=[
-                        Output(request.json.get('to'), request.json.get('value'))
-                    ]
-                )
-            return txn.transaction.to_json()
-        else:
-            if Mongo.db.blocks.find_one({'id': request.json.get('txn_id')}, {'_id': 0}):
-                return json.dumps({'status': 'error', 'msg': 'transaction id not in blockchain'})
-            else:
-                return json.dumps({'status': 'error', 'msg': 'output already spent'})
-        return json.dumps(Mongo.db.blocks.find_one({'hash': request.args.get('hash')}, {'_id': 0}))
+        unspent_inputs = dict([(x['id'], x) for x in unspent])
+        input_sum = 0
+        for x in request.json.get('inputs'):
+            found = False
+            if x['id'] in unspent_inputs:
+                for tx in unspent_inputs[x['id']].get('outputs'):
+                    input_sum += float(tx['value'])
+                found = True
+                break
+            if not found:
+                if Mongo.db.blocks.find_one({'transactions.id': x['id']}, {'_id': 0}):
+                    return json.dumps({'status': 'error', 'msg': 'output already spent'}), 400
+                else:
+                    return json.dumps({'status': 'error', 'msg': 'transaction id not in blockchain'}), 400
+        output_sum = 0
+        for x in request.json.get('outputs'):
+            output_sum += float(x['value'])
+
+        if (output_sum + float(request.json.get('fee'))) > input_sum:
+            return json.dumps({'status': 'error', 'msg': 'not enough inputs to pay for transaction outputs + fee'})
+        try:
+            txn = TransactionFactory(
+                public_key=request.json.get('public_key'),
+                fee=float(request.json.get('fee')),
+                inputs=[Input(x['id']) for x in request.json.get('inputs')],
+                outputs=[Output(x['to'], x['value']) for x in request.json.get('outputs')]
+            )
+        except NotEnoughMoneyException as e:
+            return json.dumps({'status': 'error', 'msg': 'not enough coins from referenced inputs to pay for transaction outputs + fee'}), 400
+        return '{"header": "%s", "hash": "%s"}' % (txn.header, txn.hash)
 
 class SignRawTransactionView(View):
     def dispatch_request(self):
-        """
-        JSON RPC Create Raw Transaction
-
-        Method:
-        POST
-        
-        Body:
-        {
-            "hash": hex string
-            "private_key": hex string
-        }
-
-        Success:
-        {
-            "id": base64 string,
-            "hash": hex string
-        }
-
-        Errors:
-        {
-            "status": string,
-            "msg": string
-        }
-        """
         try:
-            transaction_signature = TU.generate_signature(request.json.get('hash'))
+            transaction_signature = TU.generate_signature_with_private_key(request.json.get('private_key'), request.json.get('hash'))
             return json.dumps({
                 'id': transaction_signature,
                 'hash': request.json.get('hash')
@@ -469,65 +420,6 @@ class SignRawTransactionView(View):
                 'msg': 'error while generating signature'
             })
 
-class SendRawTransactionView(View):
-    def dispatch_request(self):
-        """
-        JSON RPC Create Raw Transaction
-
-        Method:
-        POST
-        
-        Body:
-        {
-            "public_key": hex string,
-            "inputs": [
-                {
-                    "id": base64 string
-                }
-            ],
-            "outputs": [
-                {
-                    "to": P2PKH string
-                    "value": float 8 precision
-                }
-            ],
-            "hash": hex string,
-            "id": base64 string
-        }
-
-        Success:
-        {
-            "status": string
-        }
-
-        Errors:
-        {
-            "status": string,
-            "msg": string
-        }
-        """
-        try:
-            txn = Transaction.from_dict(request.json('txn'))
-        except:
-            return json.dumps({
-                'status': 'error',
-                'msg': 'transaction is invalid'
-            }), 400
-            
-        try:
-            txn.verify()
-        except Exception as e:
-            return json.dumps({
-                'status': 'error',
-                'msg': e.message
-            }), 400
-        
-        TxnBroadcaster.txn_broadcast_job(txn)
-
-        return json.dumps({
-            'status': 'success'
-        }), 400
-
 class GenerateWalletView(View):
     def dispatch_request(self):
         wallet = Config.generate()
@@ -535,11 +427,17 @@ class GenerateWalletView(View):
 
 class GenerateChildWalletView(View):
     def dispatch_request(self):
-        wallet = Config.generate(
-            xprv=request.json.get('xprv'),
-            child=request.json.get('child')
-        )
-        return wallet.inst_to_json()
+        try:
+            wallet = Config.generate(
+                xprv=request.json.get('xprv'),
+                child=request.json.get('child')
+            )
+            return wallet.inst_to_json()
+        except:
+            return json.dumps({
+                "status": "error",
+                "msg": "error creating child wallet"
+            }), 400
 
 class BlockchainSocketServer(socketio.Namespace):
     def on_newblock(self, data):

@@ -112,9 +112,9 @@ if __name__ == '__main__':
     elif args.mode == 'serve':
         print Config.to_json()
 
-        def get_base_graph():
+        def get_base_graph(self):
             bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
-            graph = Graph(bulletin_secret, wallet_mode=True)
+            graph = Graph(bulletin_secret)
             return graph
         endpoints.BaseGraphView.get_base_graph = get_base_graph
 
@@ -139,8 +139,10 @@ if __name__ == '__main__':
         app.add_url_rule('/get-block', view_func=endpoints.GetBlockByHashView.as_view('get-block'), methods=['GET'])
         app.add_url_rule('/getblockheight', view_func=endpoints.GetBlockHeightView.as_view('get-block-height'))
         app.add_url_rule('/newtransaction', view_func=endpoints.NewTransactionView.as_view('new-transaction'), methods=['POST'])
+        app.add_url_rule('/newblock', view_func=endpoints.NewBlockView.as_view('new-block'), methods=['POST'])
         app.add_url_rule('/get-blocks', view_func=endpoints.GetBlocksView.as_view('get-blocks-range'))
         app.add_url_rule('/create-raw-transaction', view_func=endpoints.CreateRawTransactionView.as_view('create-raw-transaction'), methods=['POST'])
+        app.add_url_rule('/sign-raw-transaction', view_func=endpoints.SignRawTransactionView.as_view('sign-raw-transaction'), methods=['POST'])
         app.add_url_rule('/generate-wallet', view_func=endpoints.GenerateWalletView.as_view('generate-wallet'))
         app.add_url_rule('/generate-child-wallet', view_func=endpoints.GenerateChildWalletView.as_view('generate-child-wallet'), methods=['POST'])
 
@@ -150,7 +152,7 @@ if __name__ == '__main__':
 
         Peer.init_my_peer()
         peer = Config.peer_host + ":" + str(Config.peer_port)
-        print "http://{}/generatewallet".format(peer)
+        print "http://{}/generate-wallet".format(peer)
 
         Peers.init()
         if not Peers.peers:
