@@ -379,21 +379,29 @@ def changetime(block):
     block['time'] = datetime.utcfromtimestamp(int(block['time'])).strftime('%Y-%m-%dT%H:%M:%S UTC')
     return block
 
-@app.route('/api-stats')
+@app.route('/hashrate')
+def hashrate():
+    return render_template('hashrate.html')
+
+@app.route('/api/hashrate')
 def api_stats():
-    max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     blocks = BU.get_blocks()
     total_nonce = 0
     periods = []
     last_time = None
     for block in blocks:
+        if int(block.get('index')) < 18170:
+            max_target = 0x000000ffffff0000000000000000000000000000000000000000000000000000
+        else:
+            max_target = 0x000000ffffff0000000000000000000000000000000000000000000000000000
+
         difficulty = max_target / int(block.get('target'), 16)
         if block.get('index') == 0:
             start_timestamp = block.get('time')
         if last_time:
             if int(block.get('time')) > last_time:
                 periods.append({
-                    'hashrate': (difficulty * 2**32) / (int(block.get('time')) - last_time),
+                    'hashrate': (((int(block.get('index')) / 144) * difficulty) * 2**32) / 600 / 100,
                     'index': block.get('index'),
                     'elapsed_time': (int(block.get('time')) - last_time)
                 })
