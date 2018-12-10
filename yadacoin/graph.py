@@ -22,9 +22,8 @@ from mongo import Mongo
 
 class Graph(object):
 
-    def __init__(self, bulletin_secret, wallet_mode=False):
+    def __init__(self, bulletin_secret, wallet=None):
         Mongo.init()
-        self.wallet_mode = wallet_mode
         self.friend_requests = []
         self.sent_friend_requests = []
         self.friends = []
@@ -35,11 +34,15 @@ class Graph(object):
         self.already_added_messages = []
         self.bulletin_secret = str(bulletin_secret)
 
-        if False: # disabling for now
-            self.with_private_key()
+        if wallet: # disabling for now
+            all_relationships = [x for x in BU.get_transactions() if x['rid']]
+            self.rid_usernames = dict((x['rid'], x['relationship']['their_username']) for x in all_relationships)
+
+            rids = [x['rid'] for x in all_relationships]
+            self.rid_transactions = BU.get_transactions_by_rid(rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
-            self.registered = False
-            self.pending_registration = False
+            self.friends = False
+            self.friendship_pending = False
             bulletin_secrets = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
             rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
             self.rid = rid
@@ -92,13 +95,6 @@ class Graph(object):
                                 }
                             },
                             upsert=True)
-
-    def with_private_key(self):
-        all_relationships = [x for x in BU.get_transactions() if x['rid']]
-        self.rid_usernames = dict((x['rid'], x['relationship']['their_username']) for x in all_relationships)
-
-        rids = [x['rid'] for x in all_relationships]
-        self.rid_transactions = BU.get_transactions_by_rid(rids, bulletin_secret=self.bulletin_secret, rid=True, raw=True, returnheight=True)
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
