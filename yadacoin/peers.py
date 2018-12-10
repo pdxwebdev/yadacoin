@@ -25,11 +25,15 @@ class Peers(object):
 
     @classmethod
     def init(cls, my_peer=True):
+        if cls.network == 'mainnet':
+            peer_url = 'https://yadacoin.io/peers'
+        elif cls.network == 'testnet':
+            peer_url = 'https://yadacoin.io/peers-testnet'
         cls.peers = []
         try:
             if my_peer:
                 cls.my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
-            res = requests.get('https://yadacoin.io/peers')
+            res = requests.get(peer_url)
             for peer in json.loads(res.content)['peers']:
                 cls.peers.append(
                     Peer(

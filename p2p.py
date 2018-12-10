@@ -578,9 +578,12 @@ if __name__ == '__main__':
     parser.add_argument('config', default="config.json", nargs="?", help='config file')
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
+    parser.add_argument('-n', '--network', default='mainnet', help='Specify number of cores to use')
     parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
     parser.add_argument('-p', '--pool', default='', help='Specify pool to use')
     args = parser.parse_args()
+
+    Peers.network = args.network
 
     if args.mode == 'config' and args.config:
         if not os.path.isfile(args.config):
