@@ -583,7 +583,10 @@ if __name__ == '__main__':
     parser.add_argument('-p', '--pool', default='', help='Specify pool to use')
     args = parser.parse_args()
 
-    Peers.network = args.network
+    if args.network == 'mainnet':
+        Peers.url = 'https://yadacoin.io/peers'
+    elif args.network == 'testnet':
+        Peers.url = 'https://yadacoin.io:8888/peers'
 
     if args.mode == 'config' and args.config:
         if not os.path.isfile(args.config):

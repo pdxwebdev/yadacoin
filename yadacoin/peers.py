@@ -25,10 +25,6 @@ class Peers(object):
 
     @classmethod
     def init(cls, my_peer=True):
-        if cls.network == 'mainnet':
-            cls.url = 'https://yadacoin.io/peers'
-        elif cls.network == 'testnet':
-            cls.url = 'https://yadacoin.io:8888/peers'
         cls.peers = []
         try:
             if my_peer:
