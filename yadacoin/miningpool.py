@@ -181,7 +181,7 @@ class MiningPool(object):
                     try:
                         print 'reporting bad peer'
                         requests.post(
-                            'https://yadacoin.io/peers',
+                            Peers.url,
                             json={'host': peer.host, 'port': str(peer.port), 'failed': True},
                             timeout=3,
                             headers={'Connection':'close'}

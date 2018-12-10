@@ -703,7 +703,7 @@ if __name__ == '__main__':
                 print e
             try:
                 requests.post(
-                    'https://yadacoin.io/peers',
+                    Peers.url,
                     json.dumps({
                         'host': Config.peer_host,
                         'port': Config.peer_port
@@ -839,7 +839,7 @@ if __name__ == '__main__':
         Mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
         try:
             res = requests.post(
-                'https://yadacoin.io/peers',
+                Peers.url,
                 json.dumps({
                     'host': Config.peer_host,
                     'port': Config.peer_port
