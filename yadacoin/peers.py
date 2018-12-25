@@ -5,10 +5,10 @@ from mongo import Mongo
 
 class Peers(object):
     @classmethod
-    def init_local(cls):
-        Mongo.init()
-        res = Mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
-        cls.my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
+    def init_local(cls, config):
+        mongo = Mongo(config)
+        res = mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
+        cls.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         peers = [x for x in res]
         cls.peers = []
         try:
@@ -24,17 +24,19 @@ class Peers(object):
         return json.dumps({'peers': peers})
 
     @classmethod
-    def init(cls, my_peer=True):
+    def init(cls, config, my_peer=True):
+        mongo = Mongo(config)
         cls.peers = []
         try:
             if my_peer:
-                cls.my_peer = Mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
-            res = requests.get('https://yadacoin.io/peers')
+                cls.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
+            res = requests.get('http://yadacoin.io:8888/peers')
             for peer in json.loads(res.content)['peers']:
                 cls.peers.append(
                     Peer(
                         peer['host'],
-                        peer['port']
+                        peer['port'],
+                        peer.get('bulletin_secret')
                     )
                 )
         except:
@@ -82,11 +84,11 @@ class Peers(object):
             if block.index == 0:
                 if block.hash == BlockFactory.get_genesis_block().hash:
                     print 'peer genesis block matches'
-                    dup_check = Mongo.db.consensus.find({'id': block.signature, 'peer': peer.to_string()})
+                    dup_check = mongo.db.consensus.find({'id': block.signature, 'peer': peer.to_string()})
                     if dup_check.count():
                         continue
                     print 'inserting...'
-                    Mongo.db.consensus.insert({
+                    mongo.db.consensus.insert({
                         'block': block.to_dict(),
                         'index': block.to_dict().get('index'),
                         'id': block.to_dict().get('id'),
@@ -94,14 +96,14 @@ class Peers(object):
                 else:
                     print 'peer genesis block does not match'
             else:
-                compare_for_peer = [x for x in Mongo.db.consensus.find({'peer': peer.to_string(), 'index': block.index - 1}).sort('index', pymongo.DESCENDING).limit(0)]
+                compare_for_peer = [x for x in mongo.db.consensus.find({'peer': peer.to_string(), 'index': block.index - 1}).sort('index', pymongo.DESCENDING).limit(0)]
                 if compare_for_peer:
                     if block.index - 1 == compare_for_peer[0]['index'] and block.prev_hash == compare_for_peer[0]['block']['hash']:
-                        dup_check = Mongo.db.consensus.find({'id': block.signature, 'peer': peer.to_string()})
+                        dup_check = mongo.db.consensus.find({'id': block.signature, 'peer': peer.to_string()})
                         if dup_check.count():
                             continue
                         print 'inserting...'
-                        Mongo.db.consensus.insert({
+                        mongo.db.consensus.insert({
                             'block': block.to_dict(),
                             'index': block.to_dict().get('index'),
                             'id': block.to_dict().get('id'),
@@ -119,7 +121,8 @@ class Peers(object):
             cls.peers.append(
                 Peer(
                     peer['host'],
-                    peer['port']
+                    peer['port'],
+                    peer.get('bulletin_secret')
                 )
             )
 
@@ -132,9 +135,10 @@ class Peers(object):
         }
 
 class Peer(object):
-    def __init__(self, host, port, is_me=False):
+    def __init__(self, host, port, bulletin_secret=None, is_me=False):
         self.host = host
         self.port = port
+        self.bulletin_secret = bulletin_secret
         self.is_me = is_me
 
     @classmethod
@@ -146,14 +150,14 @@ class Peer(object):
             return cls(None, None, is_me=True)
 
     def is_broken(self):
-        broken_test = [x for x in Mongo.db.broken_peers.find({"peer": self.to_string()})]
+        broken_test = [x for x in mongo.db.broken_peers.find({"peer": self.to_string()})]
         return broken_test and broken_test[0]['broken']
 
     def set_broken(self):
-        Mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": True}, upsert=True)
+        mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": True}, upsert=True)
 
     def unset_broken(self):
-        Mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
+        mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
 
     @classmethod
     def init_my_peer(cls):
@@ -163,7 +167,7 @@ class Peer(object):
         # deploy as an eventlet WSGI server
         try:
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-            sock.bind((Config.serve_host, 0))
+            sock.bind((config.serve_host, 0))
             server_port = sock.getsockname()[1]
             sock.close()
             eport = server_port
@@ -175,31 +179,32 @@ class Peer(object):
                 eport = eport + 1
                 r = u.getspecificportmapping(eport, 'TCP')
             b = u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
-            Config.serve_host = '0.0.0.0'
-            Config.serve_port = server_port
-            Config.peer_host = u.externalipaddress()
-            Config.peer_port = server_port
+            config.serve_host = '0.0.0.0'
+            config.serve_port = server_port
+            config.peer_host = u.externalipaddress()
+            config.peer_port = server_port
         except:
-            Config.serve_host = Config.serve_host
-            Config.serve_port = Config.serve_port
-            Config.peer_host = Config.peer_host
-            Config.peer_port = Config.peer_port
-            print 'UPnP failed: you must forward and/or whitelist port', Config.peer_port
+            config.serve_host = config.serve_host
+            config.serve_port = config.serve_port
+            config.peer_host = config.peer_host
+            config.peer_port = config.peer_port
+            print 'UPnP failed: you must forward and/or whitelist port', config.peer_port
 
         cls.save_my_peer()
     
     @classmethod
     def save_my_peer(cls):
         from config import Config
-        peer = Config.peer_host + ":" + str(Config.peer_port)
-        Mongo.init()
-        Mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
+        peer = config.peer_host + ":" + str(config.peer_port)
+        mongo = Mongo(config)
+        mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
         try:
             res = requests.post(
-                'https://yadacoin.io/peers',
+                'http://yadacoin.io:8888/peers',
                 json.dumps({
-                    'host': Config.peer_host,
-                    'port': Config.peer_port
+                    'host': config.peer_host,
+                    'port': config.peer_port,
+                    'bulletin_secret': config.get_bulletin_secret()
                 }),
                 headers={
                     "Content-Type": "application/json"
@@ -213,6 +218,7 @@ class Peer(object):
         return {
             'host': self.host,
             'port': self.port,
+            'bulletin_secret': self.bulletin_secret,
             'is_me': self.is_me
         }
 

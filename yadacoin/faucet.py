@@ -13,26 +13,26 @@ class ChatNamespace(BaseNamespace):
 
 class Faucet(object):
     @classmethod
-    def run(cls):
-        Mongo.init()
+    def run(cls, config):
+        mongo = Mongo(config)
         used_inputs = []
         new_inputs = []
-        for x in Mongo.site_db.faucet.find({'active': True}):
+        for x in mongo.site_db.faucet.find({'active': True}):
             balance = BU.get_wallet_balance(x['address'])
             if balance >= 25:
-                Mongo.site_db.faucet.update({'_id': x['_id']}, {'active': False, 'address': x['address']})
+                mongo.site_db.faucet.update({'_id': x['_id']}, {'active': False, 'address': x['address']})
 
                 continue
             last_id_in_blockchain = x.get('last_id')
-            if last_id_in_blockchain and not Mongo.db.blocks.find({'transactions.id': last_id_in_blockchain}).count():
+            if last_id_in_blockchain and not mongo.db.blocks.find({'transactions.id': last_id_in_blockchain}).count():
 
                 continue
 
             try:
                 transaction = TransactionFactory(
                     fee=0.01,
-                    public_key=Config.public_key,
-                    private_key=Config.private_key,
+                    public_key=config.public_key,
+                    private_key=config.private_key,
                     outputs=[
                         Output(to=x['address'], value=5)
                     ]
@@ -45,11 +45,11 @@ class Faucet(object):
             try:
                 transaction.transaction.verify()
             except:
-                Mongo.site_db.failed_faucet_transactions.insert(transaction.transaction.to_dict())
+                mongo.site_db.failed_faucet_transactions.insert(transaction.transaction.to_dict())
                 print 'faucet transaction failed'
             TU.save(transaction.transaction)
             x['last_id'] = transaction.transaction.transaction_signature
-            Mongo.site_db.faucet.update({'_id': x['_id']}, x)
+            mongo.site_db.faucet.update({'_id': x['_id']}, x)
             print 'saved. sending...', x['address']
             for peer in Peers.peers:
                 try:

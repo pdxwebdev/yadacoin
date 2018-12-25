@@ -22,8 +22,9 @@ from mongo import Mongo
 
 class Graph(object):
 
-    def __init__(self, bulletin_secret, wallet=None):
-        Mongo.init()
+    def __init__(self, config, bulletin_secret, wallet=None):
+        self.config = config
+        self.mongo = Mongo(self.config)
         self.friend_requests = []
         self.sent_friend_requests = []
         self.friends = []
@@ -35,26 +36,28 @@ class Graph(object):
         self.bulletin_secret = str(bulletin_secret)
 
         if wallet: # disabling for now
-            all_relationships = [x for x in BU.get_transactions() if x['rid']]
+            self.wallet_mode = True
+            all_relationships = [x for x in BU.get_transactions(self.config, self.config.wif) if x['rid']]
             self.rid_usernames = dict((x['rid'], x['relationship']['their_username']) for x in all_relationships)
 
             rids = [x['rid'] for x in all_relationships]
-            self.rid_transactions = BU.get_transactions_by_rid(rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
+            self.rid_transactions = BU.get_transactions_by_rid(self.config, rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
-            self.friends = False
-            self.friendship_pending = False
-            bulletin_secrets = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
+            self.wallet_mode = False
+            self.registered = False
+            self.pending_registration = False
+            bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
             rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
             self.rid = rid
 
-            res = Mongo.site_db.usernames.find({"rid": self.rid})
+            res = self.mongo.site_db.usernames.find({"rid": self.rid})
             if res.count():
                 self.human_hash = res[0]['username']
             else:
                 self.human_hash = humanhash.humanize(self.rid)
             start_height = 0
             # this will get any transactions between the client and server
-            nodes = BU.get_transactions_by_rid(bulletin_secret, raw=True, returnheight=True)
+            nodes = BU.get_transactions_by_rid(self.config, bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
             already_done = []
             for node in nodes:
                 if node.get('dh_public_key'):
@@ -66,23 +69,16 @@ class Graph(object):
                         self.friends.append(node)
                         already_done.append(test)
 
-            registered = Mongo.site_db.friends.find({'relationship.bulletin_secret': bulletin_secret})
-            if registered.count():
+            self.registered = False
+            we_are_friends = self.mongo.site_db.friends.find_one({'relationship.bulletin_secret': bulletin_secret})
+            if we_are_friends:
                 self.registered = True
-
-            if not self.registered:
-                # not regisered, let's check for a pending transaction
-                res = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': Config.public_key}})
-                res2 = Mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': Config.public_key})
-
-                if res.count() and res2.count():
-                    self.pending_registration = True
 
             if self.registered:
                 for x in self.friends:
                     for y in x['outputs']:
-                        if y['to'] != Config.address:
-                            Mongo.site_db.usernames.update({
+                        if y['to'] != config.address:
+                            self.mongo.site_db.usernames.update({
                                 'rid': self.rid,
                                 'username': self.human_hash,
                                 },
@@ -95,21 +91,28 @@ class Graph(object):
                                 }
                             },
                             upsert=True)
+            else:
+                # not regisered, let's check for a pending transaction
+                res = self.mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': self.config.public_key}})
+                res2 = self.mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': self.config.public_key})
+
+                if res.count() and res2.count():
+                    self.pending_registration = True
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
-        lookup_rids.extend([x['rid'] for x in BU.get_friend_requests(self.rid)])
-        lookup_rids.extend([x['rid'] for x in BU.get_sent_friend_requests(self.rid)])
+        lookup_rids.extend([x['rid'] for x in BU.get_friend_requests(self.config, self.rid)])
+        lookup_rids.extend([x['rid'] for x in BU.get_sent_friend_requests(self.config, self.rid)])
         return list(set(lookup_rids))
 
     def get_request_rids_for_rid(self):
         lookup_rids = {}
-        for x in BU.get_friend_requests(self.rid):
+        for x in BU.get_friend_requests(self.config, self.rid):
             if x['rid'] not in lookup_rids:
                 lookup_rids[x['rid']] = []
             lookup_rids[x['rid']].append(x['requester_rid'])
 
-        for x in BU.get_sent_friend_requests(self.rid):
+        for x in BU.get_sent_friend_requests(self.config, self.rid):
             if x['rid'] not in lookup_rids:
                 lookup_rids[x['rid']] = []
             lookup_rids[x['rid']].append(x['requested_rid'])
@@ -118,14 +121,14 @@ class Graph(object):
 
     def get_friend_requests(self):
         if self.wallet_mode:
-            self.friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != Config.public_key]
+            self.friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
             return
         else:
-            friend_requests = [x for x in BU.get_friend_requests(self.rid)]
+            friend_requests = [x for x in BU.get_friend_requests(self.config, self.rid)] # include fastgraph
 
         for i, friend_request in enumerate(friend_requests):
             # attach bulletin_secets
-            res = Mongo.db.friends.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
+            res = self.mongo.db.friends.find({'rid': friend_request.get('requester_rid')}, {'_id': 0})
             if res.count():
                 friend_requests[i]['bulletin_secret'] = res[0]['relationship']['bulletin_secret']
 
@@ -133,14 +136,14 @@ class Graph(object):
 
     def get_sent_friend_requests(self):
         if self.wallet_mode:
-            self.sent_friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == Config.public_key]
+            self.sent_friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
             return
         else:
-            sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.rid)]
+            sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.config, self.rid)]
 
         for i, sent_friend_request in enumerate(sent_friend_requests):
             # attach usernames
-            res = Mongo.site_db.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
+            res = self.mongo.site_db.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
             if res.count():
                 sent_friend_requests[i]['username'] = res[0]['username']
             else:
@@ -153,7 +156,7 @@ class Graph(object):
             if not_mine:
                 messages = []
                 for x in self.messages:
-                    if x['public_key'] != Config.public_key:
+                    if x['public_key'] != self.config.public_key:
                         messages.append(x)
                 self.messages = messages
             for i, x in enumerate(self.messages):
@@ -162,17 +165,17 @@ class Graph(object):
         else:
             lookup_rids = self.get_request_rids_for_rid()
             lookup_rids[self.rid] = [self.rid]
-            messages = [x for x in BU.get_messages(self.get_lookup_rids())]
+            messages = [x for x in BU.get_messages(self.config, self.get_lookup_rids())]
 
             out_messages = []
             for i, message in enumerate(messages):
                 # attach usernames
-                res = Mongo.site_db.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
+                res = self.mongo.site_db.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
                 if res.count():
                     messages[i]['username'] = res[0]['username']
                 else:
                     messages[i]['username'] = humanhash.humanize(message.get('rid'))
-                exclude = Mongo.db.exclude_messages.find({'id': message.get('id')})
+                exclude = self.mongo.db.exclude_messages.find({'id': message.get('id')})
                 if exclude.count() > 0:
                     continue
                 out_messages.append(message)
@@ -192,14 +195,14 @@ class Graph(object):
             self.posts = []
             return
 
-        my_bulletin_secret = Config.get_bulletin_secret()
+        my_bulletin_secret = self.config.get_bulletin_secret()
         posts = []
-        blocked = [x['username'] for x in Mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
-        flagged = [x['id'] for x in Mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
-        for x in BU.get_posts(self.rid):
+        blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
+        flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
+        for x in BU.get_posts(self.config, self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
             rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-            res = Mongo.site_db.usernames.find({'rid': rid}, {'_id': 0})
+            res = self.mongo.site_db.usernames.find({'rid': rid}, {'_id': 0})
             if res.count():
                 x['username'] = res[0]['username']
                 if x['username'] not in blocked and x['id'] not in flagged:

@@ -9,7 +9,7 @@ from mnemonic import Mnemonic
 from bip32utils import BIP32Key
 
 
-class Config(object):
+class Wallet(object):
     def __init__(self, config):
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
@@ -38,7 +38,7 @@ class Config(object):
         self.fcm_key = config['fcm_key']
 
     @classmethod
-    def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None):
+    def generate(cls, xprv=None, prv=None, seed=None, child=None):
         # generate 12 word mnemonic seed
         if not seed and not xprv and not prv:
             mnemonic = Mnemonic('english')
@@ -89,7 +89,7 @@ class Config(object):
             "site_database": "yadacoinsite",
             "mongodb_host": "localhost",
             "mixpanel": "",
-            "username": username or ''
+            "username": ""
         })
 
     @classmethod
@@ -120,14 +120,15 @@ class Config(object):
         cls.callbackurl = config['callbackurl']
         cls.fcm_key = config['fcm_key']
 
+    @classmethod
     def inst_get_bulletin_secret(self):
         from transactionutils import TU
-        return TU.generate_deterministic_signature(self, self.username, self.private_key)
+        return TU.generate_deterministic_signature(self.username, self.private_key)
 
     @classmethod
-    def get_bulletin_secret(cls, config):
+    def get_bulletin_secret(cls, private_key=None):
         from transactionutils import TU
-        return TU.generate_deterministic_signature(config, config.username, config.private_key)
+        return TU.generate_deterministic_signature(config.username, private_key)
 
     @classmethod
     def to_wif(cls, private_key):

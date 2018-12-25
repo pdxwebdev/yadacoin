@@ -9,15 +9,33 @@ import hmac
 import re
 import base64
 from multiprocessing import Process, Value, Array, Pool
-from flask import Flask, render_template, request, Response
+from flask import Flask, render_template, request, Response, current_app as app
 from socketIO_client import SocketIO, BaseNamespace
 from flask_cors import CORS
-from yadacoin import TransactionFactory, Transaction, \
-                    MissingInputTransactionException, \
-                    Input, Output, Block, BlockFactory, Config, Peers, \
-                    Blockchain, BlockChainException, BU, TU, \
-                    Graph, Mongo, InvalidTransactionException, \
-                    InvalidTransactionSignatureException, MiningPool, Peer, Config, NotEnoughMoneyException
+from yadacoin import (
+    TransactionFactory,
+    Transaction,
+    MissingInputTransactionException,
+    Input,
+    Output,
+    Block,
+    BlockFactory,
+    Config,
+    Peers,
+    Blockchain,
+    BlockChainException,
+    BU,
+    TU,
+    Graph,
+    Mongo,
+    InvalidTransactionException,
+    InvalidTransactionSignatureException,
+    MiningPool,
+    Peer,
+    Config,
+    NotEnoughMoneyException,
+    FastGraph
+)
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from pyfcm import FCMNotification
 from flask.views import View
@@ -32,6 +50,8 @@ class ChatNamespace(BaseNamespace):
 class TransactionView(View):
     push_service = None
     def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
         if request.method == 'POST':
             items = request.json
             if not isinstance(items, list):
@@ -40,11 +60,11 @@ class TransactionView(View):
                 items = [item for item in items]
             transactions = []
             for txn in items:
-                transaction = Transaction.from_dict(txn)
+                transaction = Transaction.from_dict(config, txn)
                 try:
                     transaction.verify()
                 except InvalidTransactionException:
-                    Mongo.db.failed_transactions.insert({
+                    mongo.db.failed_transactions.insert({
                         'exception': 'InvalidTransactionException',
                         'txn': txn
                     })
@@ -52,7 +72,7 @@ class TransactionView(View):
                     return 'InvalidTransactionException', 400
                 except InvalidTransactionSignatureException:
                     print 'InvalidTransactionSignatureException'
-                    Mongo.db.failed_transactions.insert({
+                    mongo.db.failed_transactions.insert({
                         'exception': 'InvalidTransactionSignatureException',
                         'txn': txn
                     })
@@ -66,16 +86,9 @@ class TransactionView(View):
                 transactions.append(transaction)
 
             for x in transactions:
-                Mongo.db.miner_transactions.insert(x.to_dict())
-            job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction,))
-            job.start()
-            if Config.fcm_key:
-                for txn in transactions:
-                    job = Process(
-                        target=self.do_push,
-                        args=(txn.to_dict(), request.args.get('bulletin_secret'))
-                    )
-                    job.start()
+                mongo.db.miner_transactions.insert(x.to_dict())
+            #job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction,))
+            #job.start()
             return json.dumps(request.get_json())
         else:
             rid = request.args.get('rid')
@@ -86,11 +99,11 @@ class TransactionView(View):
             return json.dumps([x for x in transactions])
 
     def do_push(self, txn, bulletin_secret):
-        my_bulletin_secret = Config.get_bulletin_secret()
+        my_bulletin_secret = config.get_bulletin_secret()
         rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-        res1 = Mongo.site_db.usernames.find({'rid': rid})
+        res1 = mongo.site_db.usernames.find({'rid': rid})
         if res1.count():
             username = res1[0]['username']
         else:
@@ -99,7 +112,7 @@ class TransactionView(View):
         if txn.get('relationship') and txn.get('dh_public_key') and txn.get('requester_rid') == rid:
             #friend request
             #if rid is the requester_rid, then we send a friend request notification to the requested_rid
-            res = Mongo.site_db.fcmtokens.find({"rid": txn['requested_rid']})
+            res = mongo.site_db.fcmtokens.find({"rid": txn['requested_rid']})
             for token in res:
                 result = self.push_service.notify_single_device(
                     registration_id=token['token'],
@@ -111,7 +124,7 @@ class TransactionView(View):
         elif txn.get('relationship') and txn.get('dh_public_key') and txn.get('requested_rid') == rid:
             #friend accept
             #if rid is the requested_rid, then we send a friend accepted notification to the requester_rid
-            res = Mongo.site_db.fcmtokens.find({"rid": txn['requester_rid']})
+            res = mongo.site_db.fcmtokens.find({"rid": txn['requester_rid']})
             for token in res:
                 result = self.push_service.notify_single_device(
                     registration_id=token['token'],
@@ -127,7 +140,7 @@ class TransactionView(View):
             rids.extend([x['requested_rid'] for x in BU.get_sent_friend_requests(rid)])
             rids.extend([x['requester_rid'] for x in BU.get_friend_requests(rid)])
             for friend_rid in rids:
-                res = Mongo.site_db.fcmtokens.find({"rid": friend_rid})
+                res = mongo.site_db.fcmtokens.find({"rid": friend_rid})
                 used_tokens = []
                 for token in res:
                     if token['token'] in used_tokens:
@@ -150,7 +163,7 @@ class TransactionView(View):
             rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
             rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
             for friend_rid in rids:
-                res = Mongo.site_db.fcmtokens.find({"rid": friend_rid})
+                res = mongo.site_db.fcmtokens.find({"rid": friend_rid})
                 used_tokens = []
                 for token in res:
                     if token['token'] in used_tokens:
@@ -238,11 +251,11 @@ class FaucetView(View):
     def dispatch_request(self):
         address = request.args.get('address')
         if len(address) < 36:
-            exists = Mongo.site_db.faucet.find({
+            exists = mongo.site_db.faucet.find({
                 'address': address
             })
             if not exists.count():
-                Mongo.site_db.faucet.insert({
+                mongo.site_db.faucet.insert({
                     'address': address,
                     'active': True
                 })
@@ -252,44 +265,119 @@ class FaucetView(View):
 
 class RegisterView(View):
     def dispatch_request(self):
+        config = app.config['yada_config']
         data = {
-            'bulletin_secret': Config.get_bulletin_secret(),
-            'username': Config.username,
-            'callbackurl': Config.callbackurl,
-            'to': Config.address
+            'bulletin_secret': config.bulletin_secret,
+            'username': config.username,
+            'callbackurl': config.callbackurl,
+            'to': config.address
         }
         return json.dumps(data, indent=4)
 
+class CreateRelationshipView(View):
+    def dispatch_request(self):
+        mongo = Mongo(app.config['yada_config'])
+        if request.method == 'GET':
+            bulletin_secret = request.args.get('bulletin_secret', '')
+            username = request.args.get('username', '')
+            to = request.args.get('to', '')
+        else:
+            bulletin_secret = request.json.get('bulletin_secret', '')
+            username = request.json.get('username', '')
+            to = request.json.get('to', '')
+
+        if not bulletin_secret:
+            return 'error: "bulletin_secret" missing', 400
+
+        if not username:
+            return 'error: "username" missing', 400
+
+        if not to:
+            return 'error: "to" missing', 400
+        config = app.config['yada_config']
+        rid = TU.generate_rid(config, bulletin_secret)
+        dup = mongo.db.blocks.find({'transactions.rid': rid})
+        if dup.count():
+            for txn in dup:
+                if txn['public_key'] == config.public_key:
+                    return json.dumps({"success": False, "status": "Already added"})
+
+        miner_transactions = mongo.db.miner_transactions.find()
+        mtxn_ids = []
+        for mtxn in miner_transactions:
+            for mtxninput in mtxn['inputs']:
+                mtxn_ids.append(mtxninput['id'])
+
+        checked_out_txn_ids = mongo.db.checked_out_txn_ids.find()
+        for mtxn in checked_out_txn_ids:
+            mtxn_ids.append(mtxn['id'])
+
+
+        a = os.urandom(32)
+        dh_public_key = scalarmult_base(a).encode('hex')
+        dh_private_key = a.encode('hex')
+
+        transaction = TransactionFactory(
+            config=config,
+            bulletin_secret=bulletin_secret,
+            username=username,
+            fee=0.00,
+            public_key=config.public_key,
+            dh_public_key=dh_public_key,
+            private_key=config.private_key,
+            dh_private_key=dh_private_key,
+            outputs=[
+                Output(to=to, value=0)
+            ]
+        )
+
+        TU.save(config, transaction.transaction)
+
+        mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
+        #job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
+        #job.start()
+
+
+        my_bulletin_secret = config.inst_get_bulletin_secret()
+        bulletin_secrets = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+        rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
+        mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
+        return json.dumps({"success": True})
+
 class MiningPoolView(View):
     def dispatch_request(self):
-        if not hasattr(MiningPoolView, 'header'):
-            MiningPool.pool_init(Config.to_dict())
-            MiningPoolView.header = MiningPool.block_factory.header
-            MiningPoolView.special_min = MiningPool.block_factory.block.special_min
-            MiningPoolView.target = MiningPool.block_factory.block.target
-        else:
-            MiningPoolView.header = MiningPool.block_factory.header
-            MiningPoolView.special_min = MiningPool.block_factory.block.special_min
-            MiningPoolView.target = MiningPool.block_factory.block.target
-        if not hasattr(MiningPoolView, 'gen'):
-            MiningPoolView.gen = MiningPool.nonce_generator()
+        config = app.config['yada_config']
+
+        if 'mining_pool' not in app.config:
+            app.config['mining_pool'] = MiningPool(config)
+        mp = app.config['mining_pool']
+
+        if not hasattr(mp.block_factory, 'header'):
+            mp.refresh()
+
+        if not hasattr(mp, 'gen'):
+            mp.gen = mp.nonce_generator()
+
         return json.dumps({
-            'nonces': next(MiningPoolView.gen),
-            'target': MiningPoolView.target,
-            'special_min': MiningPoolView.special_min,
-            'header': MiningPoolView.header
+            'nonces': next(mp.gen),
+            'target': mp.block_factory.block.target,
+            'special_min': mp.block_factory.block.special_min,
+            'header': mp.block_factory.header
         })
 
 class MiningPoolSubmitView(View):
     def dispatch_request(self):
         try:
-            block = MiningPool.block_factory.block
-            block.target = MiningPool.block_factory.block.target
-            block.version = MiningPool.block_factory.block.version
-            block.special_min = MiningPoolView.special_min
+            mp = app.config['mining_pool']
+            config = app.config['yada_config']
+            mongo = Mongo(config)
+            block = mp.block_factory.block
+            block.target = mp.block_factory.block.target
+            block.version = mp.block_factory.block.version
+            block.special_min = mp.block_factory.block.special_min
             block.hash = request.json.get('hash')
             block.nonce = request.json.get('nonce')
-            block.signature = BU.generate_signature(block.hash)
+            block.signature = BU.generate_signature(block.hash, config.private_key)
             try:
                 block.verify()
             except:
@@ -297,7 +385,7 @@ class MiningPoolSubmitView(View):
                 return ''
 
             # submit share
-            Mongo.db.shares.update({
+            mongo.db.shares.update({
                 'address': request.json.get('address'),
                 'index': block.index,
                 'hash': block.hash
@@ -311,11 +399,11 @@ class MiningPoolSubmitView(View):
 
             if int(block.target) > int(block.hash, 16) or block.special_min:
                 # broadcast winning block
-                MiningPool.broadcast_block(block)
+                mp.broadcast_block(block)
                 print 'block ok'
             else:
                 print 'share ok'
-            return 'ok'
+            return block.to_json()
         except:
             raise
             return 'error'
@@ -327,15 +415,15 @@ class MiningPoolExplorerView(View):
             query['address'] = request.args.get('address')
         if request.args.get('index'):
             query['index'] = int(request.args.get('index'))
-        res = Mongo.db.shares.find_one(query, {'_id': 0}, sort=[('index', -1)])
+        res = mongo.db.shares.find_one(query, {'_id': 0}, sort=[('index', -1)])
         if res:
-            return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s' % (Config.address, Config.address, res.get('index'))
+            return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s' % (config.address, config.address, res.get('index'))
         else:
-            return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history' % (Config.address, Config.address)
+            return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history' % (config.address, config.address)
 
 class GetBlocksView(View):
     def dispatch_request(self):
-        blocks = [x for x in Mongo.db.blocks.find({
+        blocks = [x for x in mongo.db.blocks.find({
             '$and': [
                 {'index': 
                     {'$gte': int(request.args.get('start_index'))}
@@ -368,15 +456,18 @@ class NewTransactionView(View):
 
 class GetBlockHeightView(View):
     def dispatch_request(self):
-        return json.dumps({'block_height': BU.get_latest_block().get('index')})
+        return json.dumps({'block_height': BU.get_latest_block(app.config['yada_config']).get('index')})
 
 class GetBlockByHashView(View):
     def dispatch_request(self):
-        return json.dumps(Mongo.db.blocks.find_one({'hash': request.args.get('hash')}, {'_id': 0}))
+        mongo = Mongo(app.config['yada_config'])
+        return json.dumps(mongo.db.blocks.find_one({'hash': request.args.get('hash')}, {'_id': 0}))
 
 class CreateRawTransactionView(View):
     def dispatch_request(self):
-        unspent = BU.get_wallet_unspent_transactions(request.json.get('address'))
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        unspent = BU.get_wallet_unspent_transactions(config, request.json.get('address'))
         unspent_inputs = dict([(x['id'], x) for x in unspent])
         input_sum = 0
         for x in request.json.get('inputs'):
@@ -387,7 +478,7 @@ class CreateRawTransactionView(View):
                 found = True
                 break
             if not found:
-                if Mongo.db.blocks.find_one({'transactions.id': x['id']}, {'_id': 0}):
+                if mongo.db.blocks.find_one({'transactions.id': x['id']}, {'_id': 0}):
                     return json.dumps({'status': 'error', 'msg': 'output already spent'}), 400
                 else:
                     return json.dumps({'status': 'error', 'msg': 'transaction id not in blockchain'}), 400
@@ -399,6 +490,7 @@ class CreateRawTransactionView(View):
             return json.dumps({'status': 'error', 'msg': 'not enough inputs to pay for transaction outputs + fee'})
         try:
             txn = TransactionFactory(
+                config,
                 public_key=request.json.get('public_key'),
                 fee=float(request.json.get('fee')),
                 inputs=[Input(x['id']) for x in request.json.get('inputs')],
@@ -410,11 +502,13 @@ class CreateRawTransactionView(View):
 
 class SignRawTransactionView(View):
     def dispatch_request(self):
+        config = app.config['yada_config']
         try:
-            transaction_signature = TU.generate_signature_with_private_key(request.json.get('private_key'), request.json.get('hash'))
+            transaction_signature = TU.generate_signature_with_private_key(config.private_key, request.json.get('hash'))
             return json.dumps({
                 'id': transaction_signature,
-                'hash': request.json.get('hash')
+                'hash': request.json.get('hash'),
+                'bulletin_secret': config.bulletin_secret
             })
         except:
             return json.dumps({
@@ -424,13 +518,15 @@ class SignRawTransactionView(View):
 
 class GenerateWalletView(View):
     def dispatch_request(self):
-        wallet = Config.generate()
+        config = app.config['yada_config']
+        wallet = config.generate()
         return wallet.inst_to_json()
 
 class GenerateChildWalletView(View):
     def dispatch_request(self):
+        config = app.config['yada_config']
         try:
-            wallet = Config.generate(
+            wallet = config.generate(
                 xprv=request.json.get('xprv'),
                 child=request.json.get('child')
             )
@@ -444,15 +540,17 @@ class GenerateChildWalletView(View):
 class BlockchainSocketServer(socketio.Namespace):
     def on_newblock(self, data):
         #print("new block ", data)
+        config = app.config['yada_config']
+        mongo = Mongo(config)
         try:
             peer = Peer.from_string(request.json.get('peer'))
-            block = Block.from_dict(data)
+            block = Block.from_dict(config, data)
             if block.index == 0:
                 return
             if int(block.version) != BU.get_version_for_height(block.index):
                 print 'rejected old version %s from %s' % (block.version, peer)
                 return
-            Mongo.db.consensus.update({
+            mongo.db.consensus.update({
                 'index': block.to_dict().get('index'),
                 'id': block.to_dict().get('id'),
                 'peer': peer.to_string()
@@ -474,8 +572,8 @@ class BlockchainSocketServer(socketio.Namespace):
             requests.post(
                 'https://yadacoin.io/peers',
                 json.dumps({
-                    'host': Config.peer_host,
-                    'port': Config.peer_port
+                    'host': config.peer_host,
+                    'port': config.peer_port
                 }),
                 headers={
                     "Content-Type": "application/json"
@@ -486,6 +584,8 @@ class BlockchainSocketServer(socketio.Namespace):
 
     def on_newtransaction(self, sid, data):
         #print("new transaction ", data)
+        config = app.config['yada_config']
+        mongo = Mongo(config)
         try:
             incoming_txn = Transaction.from_dict(data)
         except Exception as e:
@@ -496,11 +596,11 @@ class BlockchainSocketServer(socketio.Namespace):
             print e
 
         try:
-            dup_check = Mongo.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
+            dup_check = mongo.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
             if dup_check.count():
                 print 'found duplicate'
                 return
-            Mongo.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(), upsert=True)
+            mongo.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(), upsert=True)
         except Exception as e:
             print e
         except BaseException as e:
@@ -508,12 +608,14 @@ class BlockchainSocketServer(socketio.Namespace):
 
 class ExplorerSearchView(View):
     def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
         if not request.args.get('term'):
             return '{}'
 
         try:
             term = int(request.args.get('term'))
-            res = Mongo.db.blocks.find({'index': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'index': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'block_height',
@@ -523,7 +625,7 @@ class ExplorerSearchView(View):
             pass
         try:
             term = request.args.get('term')
-            res = Mongo.db.blocks.find({'public_key': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'public_key': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'block_height',
@@ -533,7 +635,7 @@ class ExplorerSearchView(View):
             pass
         try:
             term = request.args.get('term')
-            res = Mongo.db.blocks.find({'transactions.public_key': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'transactions.public_key': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'block_height',
@@ -544,7 +646,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term')
             re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-            res = Mongo.db.blocks.find({'hash': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'hash': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'block_hash',
@@ -556,7 +658,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term').replace(' ', '+')
             base64.b64decode(term)
-            res = Mongo.db.blocks.find({'id': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'id': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'block_id',
@@ -568,7 +670,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term')
             re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-            res = Mongo.db.blocks.find({'transactions.hash': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'transactions.hash': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'txn_hash',
@@ -580,7 +682,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term')
             re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-            res = Mongo.db.blocks.find({'transactions.rid': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'transactions.rid': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'txn_rid',
@@ -592,7 +694,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term').replace(' ', '+')
             base64.b64decode(term)
-            res = Mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
+            res = mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
             if res.count():
                 return json.dumps({
                     'resultType': 'txn_id',
@@ -604,7 +706,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term')
             re.search(r'[A-Fa-f0-9]+', term).group(0)
-            res = Mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
+            res = mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
             if res.count():
                 balance = BU.get_wallet_balance(term)
                 return json.dumps({
@@ -624,5 +726,24 @@ class ExplorerSearchView(View):
 
 class GetLatestBlockView(View):
     def dispatch_request(self):
-        block = BU.get_latest_block()
+        config = app.config['yada_config']
+        block = BU.get_latest_block(config)
         return json.dumps(block, indent=4)
+
+class PostFastGraphView(View):
+    def dispatch_request(self):
+        # after the necessary signatures are gathered, the transaction is sent here.
+        config = app.config['yada_config']
+        fastgraph = request.json
+        fastgraph = FastGraph.from_dict(config, fastgraph)
+        result = fastgraph.verify()
+        if not result:
+            return 'did not verify', 400
+        fastgraph.save()
+        fastgraph.broadcast()
+        return 'ok'
+
+class GetFastGraphView(View):
+    def dispatch_request(self):
+        # after the necessary signatures are gathered, the transaction is sent here.
+        return BU.get_wallet_unspent_fastgraph_transactions(app.config.get('yada_config'), request.args.get('address'))

@@ -14,15 +14,15 @@ def output(percent):
 
 with open('config/config.json') as f:
     config = json.loads(f.read())
-    Config.from_dict(config)
+    config = Config.from_dict(config)
 
-Mongo.init()
+mongo = Mongo(config)
 blocks = BU.get_blocks()
 blockchain = Blockchain(blocks)
 blockchain.verify(output)
 
 
-res = Mongo.db.blocks.aggregate([
+res = mongo.db.blocks.aggregate([
     {"$unwind": "$transactions" },
     {
         "$project": {

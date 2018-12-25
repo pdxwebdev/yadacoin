@@ -5,14 +5,14 @@ class BlockChainException(BaseException):
     pass
 
 class Blockchain(object):
-    def __init__(self, blocks=None):
+    def __init__(self, config, blocks=None):
         if blocks:
             new_block_array = []
             for block in blocks:
                 if isinstance(block, Block):
                     new_block_array.append(block)
                 else:
-                    block_obj = Block.from_dict(block)
+                    block_obj = Block.from_dict(config, block)
                     new_block_array.append(block_obj)
             self.blocks = sorted(new_block_array, key=lambda x: x.index)
         else:

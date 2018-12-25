@@ -16,3 +16,5 @@ from consensus import Consensus
 from miningpoolpayout import PoolPayer
 from send import Send
 from faucet import Faucet
+from fastgraph import FastGraph, FastGraphSignature
+from serve import Serve

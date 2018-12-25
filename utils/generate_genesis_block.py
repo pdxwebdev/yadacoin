@@ -5,18 +5,18 @@ from base64 import b64encode
 from yadacoin import Config, BU, BlockFactory, Mongo
 
 with open('config/config.json') as f:
-    Config.from_dict(json.loads(f.read()))
+    config = Config.from_dict(json.loads(f.read()))
 iteration = 0
-Config.max_duration = 100000000
-Config.grace = 10
-Config.block_version = '1'
-Mongo.init()
+config.max_duration = 100000000
+config.grace = 10
+config.block_version = '1'
+mongo = Mongo(config)
 start = time.time()
 genesis_block = BlockFactory.mine(
     [],
-    Config.public_key,
-    Config.private_key,
-    Config.max_duration
+    config.public_key,
+    config.private_key,
+    config.max_duration
 )
 end = time.time()
         

@@ -68,21 +68,21 @@ if args.which == 'new':
         num = from_wif(args.password.value)
     else:
         num = os.urandom(32).encode('hex')
-    Config.username = args.username
     pk = PrivateKey.from_hex(num)
-    print Config.generate(pk.to_hex())
+    config = Config.generate(pk.to_hex())
+    config.username = args.username
 elif args.which == 'update':
     with open(args.config) as f:
         identity = json.loads(f.read())
         pk = PrivateKey.from_hex(identity['private_key'])
+        config = Config.generate(pk.to_hex())
         if 'username' in identity:
             username = identity['username']
         else:
             username = args.username
-        Config.username = username
-        print Config.generate(pk.to_hex())
+        config.username = username
 elif args.which == 'auto':
-    Config.username = ''
+    config.username = ''
     filename = 'config.json'
     kwargs = {}
     out = Config.generate().inst_to_json()

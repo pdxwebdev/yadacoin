@@ -1,8 +1,8 @@
-from rpc import app
+from rpc import app, config
 from yadacoin import Config
 
 
 print 'RUNNING SERVER WITH CONFIG:'
-print Config.to_json()
+print config.to_json()
 
-app.run(host=Config.web_server_host, port=Config.web_server_port, threaded=True)
+app.run(host=config.web_server_host, port=config.web_server_port, threaded=True)

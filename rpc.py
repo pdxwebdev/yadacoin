@@ -58,7 +58,7 @@ def make_qr(data):
 def get_logged_in_user():
     user = None
     tests = []
-    res = Mongo.db.blocks.aggregate([
+    res = mongo.db.blocks.aggregate([
         {
             "$match": {
                 "transactions.challenge_code": session['challenge_code']
@@ -82,7 +82,7 @@ def get_logged_in_user():
                 answer = cipher.decrypt(transaction['answer'])
                 if answer == transaction['challenge_code']:
                     for txn_output in transaction['outputs']:
-                        if txn_output['to'] != Config.address:
+                        if txn_output['to'] != config.address:
                             to = txn_output['to']
                     user = {
                         'balance': BU.get_wallet_balance(to),
@@ -113,8 +113,8 @@ def demo():
         # generate a transaction which contains a signin message containing the current sessions identifier
         txn = TransactionFactory(
             bulletin_secret=bulletin_secret,
-            public_key=Config.public_key,
-            private_key=Config.private_key,
+            public_key=config.public_key,
+            private_key=config.private_key,
             signin=session.get('id'),
             fee=0.01
         ).transaction
@@ -141,10 +141,10 @@ def demo():
         half1 = False
         half2 = False
         for txn in txns:
-            if txn['public_key'] == Config.public_key:
+            if txn['public_key'] == config.public_key:
                 half1 = True
         for txn in txns2:
-            if txn['public_key'] != Config.public_key:
+            if txn['public_key'] != config.public_key:
                 half2 = True
         registered = half1 and half2
         sent, received = BU.verify_message(rid, session['id'])
@@ -162,76 +162,6 @@ def demo():
     else:
         return redirect('/demo')
 
-@app.route('/create-relationship', methods=['GET', 'POST'])
-def create_relationship():  # demo site
-    if request.method == 'GET':
-        bulletin_secret = request.args.get('bulletin_secret', '')
-        username = request.args.get('username', '')
-        to = request.args.get('to', '')
-    else:
-        bulletin_secret = request.json.get('bulletin_secret', '')
-        username = request.json.get('username', '')
-        to = request.json.get('to', '')
-
-    if not bulletin_secret:
-        return 'error: "bulletin_secret" missing', 400
-
-    if not username:
-        return 'error: "username" missing', 400
-
-    if not to:
-        return 'error: "to" missing', 400
-
-    rid = TU.generate_rid(bulletin_secret)
-    dup = Mongo.db.blocks.find({'transactions.rid': rid})
-    if dup.count():
-        for txn in dup:
-            if txn['public_key'] == Config.public_key:
-                return json.dumps({"success": False, "status": "Already added"})
-    input_txns = BU.get_wallet_unspent_transactions(Config.address)
-
-    miner_transactions = Mongo.db.miner_transactions.find()
-    mtxn_ids = []
-    for mtxn in miner_transactions:
-        for mtxninput in mtxn['inputs']:
-            mtxn_ids.append(mtxninput['id'])
-
-    checked_out_txn_ids = Mongo.db.checked_out_txn_ids.find()
-    for mtxn in checked_out_txn_ids:
-        mtxn_ids.append(mtxn['id'])
-
-
-    a = os.urandom(32)
-    dh_public_key = scalarmult_base(a).encode('hex')
-    dh_private_key = a.encode('hex')
-
-    transaction = TransactionFactory(
-        bulletin_secret=bulletin_secret,
-        username=username,
-        fee=0.01,
-        public_key=Config.public_key,
-        dh_public_key=dh_public_key,
-        private_key=Config.private_key,
-        dh_private_key=dh_private_key,
-        outputs=[
-            Output(to=to, value=1)
-        ]
-    )
-
-    TU.save(transaction.transaction)
-
-    Mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
-    job = Process(target=endpoints.TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
-    job.start()
-
-
-    my_bulletin_secret = Config.get_bulletin_secret()
-    bulletin_secrets = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-    rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
-    Mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
-    return json.dumps({"success": True})
-
-
 @app.route('/firebase-messaging-sw.js')
 def firebase_service_worker():
     return app.send_static_file('app/www/ServiceWorker.js')
@@ -243,7 +173,7 @@ def fcm_token():
         print token
         rid = request.json.get('rid')
         txn = BU.get_transaction_by_rid(rid, rid=True) 
-        Mongo.site_db.fcmtokens.update({'rid': rid}, {
+        mongo.site_db.fcmtokens.update({'rid': rid}, {
             'rid': rid,
             'token': token
         }, upsert=True)
@@ -346,7 +276,7 @@ def show_user():
     authed_user = get_logged_in_user()
     user = BU.get_transaction_by_rid(request.args['rid'], rid=True)
     for output in user['outputs']:
-        if output['to'] != Config.address:
+        if output['to'] != config.address:
             to = output['to']
     dict_data = {
         'bulletin_secret': user['relationship']['bulletin_secret'],
@@ -417,38 +347,26 @@ def show_users():
 
 @app.route('/get-rid')
 def get_rid():
-    my_bulletin_secret = Config.get_bulletin_secret()
+    my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.args.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
     return json.dumps({'rid': rid})
 
 @app.route('/get-block')
 def get_block():
-    blocks = Mongo.db.blocks.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
+    blocks = mongo.db.blocks.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
     return json.dumps(blocks[0] if blocks.count() else {}, indent=4), 404
-
-
-@app.route('/post-block', methods=['POST'])
-def post_block():
-    block = Block.from_dict(request.json)
-    block.verify()
-    my_latest_block = BU.get_latest_block()
-    if my_latest_block[0].get('index') - block.index == 1:
-        block.save()
-        return '{"status": "ok"}'
-    else:
-        return '{"status": "error"}', 400
 
 @app.route('/search')
 def search():
     phrase = request.args.get('phrase')
     bulletin_secret = request.args.get('bulletin_secret')
-    my_bulletin_secret = Config.get_bulletin_secret()
+    my_bulletin_secret = config.get_bulletin_secret()
 
     rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    friend = Mongo.site_db.usernames.find({'username': phrase.lower().strip()})
+    friend = mongo.site_db.usernames.find({'username': phrase.lower().strip()})
     if friend.count():
         friend = friend[0]
         to = friend['to']
@@ -465,28 +383,28 @@ def search():
 
 @app.route('/react', methods=['POST'])
 def react():
-    my_bulletin_secret = Config.get_bulletin_secret()
+    my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    res1 = Mongo.site_db.usernames.find({'rid': rid})
+    res1 = mongo.site_db.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    Mongo.site_db.reacts.insert({
+    mongo.site_db.reacts.insert({
         'rid': rid,
         'emoji': request.json.get('react'),
         'txn_id': request.json.get('txn_id')
     })
 
-    txn = Mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
+    txn = mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
 
     rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    res = Mongo.site_db.fcmtokens.find({"rid": rid})
+    res = mongo.site_db.fcmtokens.find({"rid": rid})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
@@ -505,7 +423,7 @@ def get_reacts():
         data = request.form
         ids = json.loads(data.get('txn_ids'))
 
-    res = Mongo.site_db.reacts.find({
+    res = mongo.site_db.reacts.find({
         'txn_id': {
             '$in': ids
         },
@@ -526,12 +444,12 @@ def get_reacts_detail():
         data = request.form
         txn_id = json.loads(data.get('txn_id'))
 
-    res = Mongo.site_db.reacts.find({
+    res = mongo.site_db.reacts.find({
         'txn_id': txn_id,
     }, {'_id': 0})
     out = []
     for x in res:
-        res1 = Mongo.site_db.usernames.find({'rid': x['rid']})
+        res1 = mongo.site_db.usernames.find({'rid': x['rid']})
         if res1.count():
             x['username'] = res1[0]['username']
         else:
@@ -541,25 +459,25 @@ def get_reacts_detail():
 
 @app.route('/comment-react', methods=['POST'])
 def comment_react():
-    my_bulletin_secret = Config.get_bulletin_secret()
+    my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    res1 = Mongo.site_db.usernames.find({'rid': rid})
+    res1 = mongo.site_db.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    Mongo.site_db.comment_reacts.insert({
+    mongo.site_db.comment_reacts.insert({
         'rid': rid,
         'emoji': request.json.get('react'),
         'comment_id': request.json.get('_id')
     })
 
-    comment = Mongo.site_db.comments.find({'_id': ObjectId(str(request.json.get('_id')))})[0]
+    comment = mongo.site_db.comments.find({'_id': ObjectId(str(request.json.get('_id')))})[0]
 
-    res = Mongo.site_db.fcmtokens.find({"rid": comment['rid']})
+    res = mongo.site_db.fcmtokens.find({"rid": comment['rid']})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
@@ -578,7 +496,7 @@ def get_comment_reacts():
         data = request.form
         ids = json.loads(data.get('ids'))
     ids = [str(x) for x in ids]
-    res = Mongo.site_db.comment_reacts.find({
+    res = mongo.site_db.comment_reacts.find({
         'comment_id': {
             '$in': ids
         },
@@ -599,12 +517,12 @@ def get_comment_reacts_detail():
         data = request.form
         comment_id = json.loads(data.get('_id'))
 
-    res = Mongo.site_db.comment_reacts.find({
+    res = mongo.site_db.comment_reacts.find({
         'comment_id': comment_id,
     }, {'_id': 0})
     out = []
     for x in res:
-        res1 = Mongo.site_db.usernames.find({'rid': x['rid']})
+        res1 = mongo.site_db.usernames.find({'rid': x['rid']})
         if res1.count():
             x['username'] = res1[0]['username']
         else:
@@ -614,26 +532,26 @@ def get_comment_reacts_detail():
 
 @app.route('/comment', methods=['POST'])
 def comment():
-    my_bulletin_secret = Config.get_bulletin_secret()
+    my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-    res1 = Mongo.site_db.usernames.find({'rid': rid})
+    res1 = mongo.site_db.usernames.find({'rid': rid})
     if res1.count():
         username = res1[0]['username']
     else:
         username = humanhash.humanize(rid)
 
-    Mongo.site_db.comments.insert({
+    mongo.site_db.comments.insert({
         'rid': rid,
         'body': request.json.get('comment'),
         'txn_id': request.json.get('txn_id')
     })
-    txn = Mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
+    txn = mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
 
     rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-    res = Mongo.site_db.fcmtokens.find({"rid": rid})
+    res = mongo.site_db.fcmtokens.find({"rid": rid})
     for token in res:
         result = push_service.notify_single_device(
             registration_id=token['token'],
@@ -642,12 +560,12 @@ def comment():
             extra_kwargs={'priority': 'high'}
         )
 
-    comments = Mongo.site_db.comments.find({
+    comments = mongo.site_db.comments.find({
         'rid': {'$ne': rid},
         'txn_id': request.json.get('txn_id')
     })
     for comment in comments:
-        res = Mongo.site_db.fcmtokens.find({"rid": comment['rid']})
+        res = mongo.site_db.fcmtokens.find({"rid": comment['rid']})
         for token in res:
             result = push_service.notify_single_device(
                 registration_id=token['token'],
@@ -668,18 +586,18 @@ def get_comments():
         ids = json.loads(data.get('txn_ids'))
         bulletin_secret = data.get('bulletin_secret')
 
-    res = Mongo.site_db.comments.find({
+    res = mongo.site_db.comments.find({
         'txn_id': {
             '$in': ids
         },
     })
-    blocked = [x['username'] for x in Mongo.site_db.blocked_users.find({'bulletin_secret': bulletin_secret})]
+    blocked = [x['username'] for x in mongo.site_db.blocked_users.find({'bulletin_secret': bulletin_secret})]
     out = {}
     usernames = {}
     for x in res:
         if x['txn_id'] not in out:
             out[x['txn_id']] = []
-        res1 = Mongo.site_db.usernames.find({'rid': x['rid']})
+        res1 = mongo.site_db.usernames.find({'rid': x['rid']})
         if res1.count():
             x['username'] = res1[0]['username']
         else:
@@ -712,12 +630,12 @@ def get_url():
 
 @app.route('/block-user', methods=['POST'])
 def block_user():
-    Mongo.site_db.blocked_users.update({'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, {'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, upsert=True)
+    mongo.site_db.blocked_users.update({'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, {'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, upsert=True)
     return 'ok'
 
 @app.route('/flag', methods=['POST'])
 def flag():
-    Mongo.site_db.flagged_content.update(request.json, request.json, upsert=True)
+    mongo.site_db.flagged_content.update(request.json, request.json, upsert=True)
     return 'ok'
 
 @app.route('/peers', methods=['GET', 'POST'])
@@ -727,13 +645,20 @@ def peers():
             socket.inet_aton(request.json['host'])
             host = request.json['host']
             port = int(request.json['port'])
+            bulletin_secret = request.json.get('bulletin_secret', None)
             failed = request.json.get('failed')
             if failed:
-                res = Mongo.db.peers.find({'host': host, 'port': port})
+                res = mongo.db.peers.find({'host': host, 'port': port})
                 if res.count():
-                    Mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
+                    mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
             else:
-                Mongo.db.peers.update({'host': host, 'port': port}, {'host': host, 'port': port, 'active': True, 'failed': 0}, upsert=True)
+                mongo.db.peers.update({'host': host, 'port': port}, {
+                    'host': host,
+                    'port': port,
+                    'active': True,
+                    'failed': 0,
+                    'bulletin_secret': bulletin_secret
+                }, upsert=True)
             Peers.init_local()
             return 'ok'
         except:
@@ -765,6 +690,7 @@ app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
 app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
 app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))
 app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
+app.add_url_rule('/create-relationship', view_func=endpoints.CreateRelationshipView.as_view('create-relationship'))
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
@@ -772,9 +698,9 @@ parser.add_argument('--conf',
 args = parser.parse_args()
 conf = args.conf or 'config/config.json'
 with open(conf) as f:
-    Config.from_dict(json.loads(f.read()))
+    config.from_dict(json.loads(f.read()))
 
 Peers.init_local()
-Mongo.init()
-#push_service = FCMNotification(api_key=Config.fcm_key)
+mongo = Mongo(config)
+#push_service = FCMNotification(api_key=config.fcm_key)
 

@@ -29,9 +29,9 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256(message).digest().encode('hex')
 
     @classmethod
-    def generate_deterministic_signature(cls, message, private_key=None):
+    def generate_deterministic_signature(cls, config, message, private_key=None):
         if not private_key:
-            private_key = Config.private_key
+            private_key = config.private_key
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message)
         return base64.b64encode(signature)
@@ -45,33 +45,33 @@ class TU(object):  # Transaction Utilities
         return base64.b64encode(signature)
 
     @classmethod
-    def generate_signature(cls, message):
+    def generate_signature(cls, message, private_key):
         x = ffi.new('long *')
         x[0] = random.SystemRandom().randint(0, sys.maxint)
-        key = PrivateKey.from_hex(Config.private_key)
+        key = PrivateKey.from_hex(private_key)
         signature = key.sign(message, custom_nonce=(ffi.NULL, x))
         return base64.b64encode(signature)
 
     @classmethod
-    def generate_rid(cls, bulletin_secret):
-        if Config.get_bulletin_secret() == bulletin_secret:
+    def generate_rid(cls, config, bulletin_secret):
+        if config.inst_get_bulletin_secret() == bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
-        bulletin_secrets = sorted([str(Config.get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
+        bulletin_secrets = sorted([str(config.inst_get_bulletin_secret()), str(bulletin_secret)], key=str.lower)
         return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
     @classmethod
-    def get_shared_secrets_by_rid(cls, rid):
+    def get_shared_secrets_by_rid(cls, config, rid):
         from blockchainutils import BU
         shared_secrets = []
         dh_public_keys = []
         dh_private_keys = []
-        txns = BU.get_transactions_by_rid(rid, rid=True)
+        txns = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True)
         for txn in txns:
-            if str(txn['public_key']) == str(Config.public_key) and txn['relationship']['dh_private_key']:
+            if str(txn['public_key']) == str(config.public_key) and txn['relationship']['dh_private_key']:
                 dh_private_keys.append(txn['relationship']['dh_private_key'])
-        txns = BU.get_transactions_by_rid(rid, rid=True, raw=True)
+        txns = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)
         for txn in txns:
-            if str(txn['public_key']) != str(Config.public_key) and txn['dh_public_key']:
+            if str(txn['public_key']) != str(config.public_key) and txn['dh_public_key']:
                 dh_public_keys.append(txn['dh_public_key'])
         for dh_public_key in dh_public_keys:
             for dh_private_key in dh_private_keys:
@@ -79,12 +79,12 @@ class TU(object):  # Transaction Utilities
         return shared_secrets
 
     @classmethod
-    def save(cls, items):
-        Mongo.init()
+    def save(cls, config, items):
+        mongo = Mongo(config)
         if not isinstance(items, list):
             items = [items.to_dict(), ]
         else:
             items = [item.to_dict() for item in items]
 
         for item in items:
-            Mongo.db.miner_transactions.insert(item)
+            mongo.db.miner_transactions.insert(item)
