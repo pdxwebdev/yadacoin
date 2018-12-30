@@ -67,6 +67,8 @@ class TransactionFactory(object):
                 self.relationship = json.dumps({
                     "chatText": self.chattext
                 })
+                self.cipher = Crypt(self.config.wif)
+                self.encrypted_relationship = self.cipher.encrypt(self.relationship)
             elif self.signin:
                 for shared_secret in TU.get_shared_secrets_by_rid(self.config, self.rid):
                     self.relationship = SignIn(self.signin)
@@ -165,7 +167,7 @@ class TransactionFactory(object):
         return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
 
     def generate_rid(self):
-        my_bulletin_secret = self.config.get_bulletin_secret(self.config)
+        my_bulletin_secret = self.config.get_bulletin_secret()
         if my_bulletin_secret == self.bulletin_secret:
             raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
@@ -176,7 +178,7 @@ class TransactionFactory(object):
             dh_private_key=self.dh_private_key,
             their_bulletin_secret=self.bulletin_secret,
             their_username=self.username,
-            my_bulletin_secret=self.config.get_bulletin_secret(self.config),
+            my_bulletin_secret=self.config.get_bulletin_secret(),
             my_username=self.config.username
         )
 

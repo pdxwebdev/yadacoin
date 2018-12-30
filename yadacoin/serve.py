@@ -13,7 +13,7 @@ class Serve(object):
         self.app.config['yada_config'] = config
         self.app.debug = True
         self.app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
-        CORS(self.app)
+        CORS(self.app, supports_credentials=True)
         endpoints.BaseGraphView.get_base_graph = self.get_base_graph
         self.app.add_url_rule('/transaction', view_func=endpoints.TransactionView.as_view('transaction'), methods=['GET', 'POST'])
         self.app.add_url_rule('/get-graph-info', view_func=endpoints.GraphView.as_view('graph'), methods=['GET', 'POST'])
@@ -42,6 +42,9 @@ class Serve(object):
         self.app.add_url_rule('/register', view_func=endpoints.RegisterView.as_view('register'))
         self.app.add_url_rule('/create-relationship', view_func=endpoints.CreateRelationshipView.as_view('create-relationship'), methods=['POST'])
         self.app.add_url_rule('/post-fastgraph-transaction', view_func=endpoints.PostFastGraphView.as_view('post-fastgraph-transaction'), methods=['POST'])
+        self.app.add_url_rule('/yada_config.json', view_func=endpoints.GetYadaConfigView.as_view('yada-config'))
+        self.app.add_url_rule('/login', view_func=endpoints.GetSiginCodeView.as_view('login'))
+        self.app.add_url_rule('/', view_func=endpoints.HomeView.as_view('home'))
 
         sio = socketio.Server(async_mode='gevent')
         sio.register_namespace(endpoints.BlockchainSocketServer('/chat'))

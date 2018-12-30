@@ -51,18 +51,19 @@ class PoolPayer(object):
 
     def do_payout(self):
         mongo = Mongo(self.config)
-        Peers.init()
+        Peers.init(self.config, self.config.network)
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
-        latest_block = Block.from_dict(BU.get_latest_block())
+        latest_block = Block.from_dict(self.config, BU.get_latest_block())
         won_blocks = mongo.db.blocks.find({'transactions.outputs.to': self.config.address}).sort([('index', 1)])
         for won_block in won_blocks:
-            won_block = Block.from_dict(won_block)
+            won_block = Block.from_dict(self.config, won_block)
             if (won_block.index + 6) <= latest_block.index:
                 self.do_payout_for_block(won_block)
     
     def already_used(self, txn):
+        mongo = Mongo(self.config)
         return mongo.db.blocks.find_one({'transactions.inputs.id': txn.transaction_signature})
 
     def do_payout_for_block(self, block):

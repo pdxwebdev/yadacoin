@@ -82,10 +82,11 @@ elif args.which == 'update':
             username = args.username
         config.username = username
 elif args.which == 'auto':
+    config = Config.generate()
     config.username = ''
     filename = 'config.json'
     kwargs = {}
-    out = Config.generate().inst_to_json()
+    out = Config.generate().to_json()
     if args.force:
         with open(args.force, 'w') as f:
             f.write(out)

@@ -195,7 +195,7 @@ class Graph(object):
             self.posts = []
             return
 
-        my_bulletin_secret = self.config.get_bulletin_secret()
+        my_bulletin_secret = self.config.bulletin_secret
         posts = []
         blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
         flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]

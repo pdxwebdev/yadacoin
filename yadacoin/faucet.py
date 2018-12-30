@@ -18,7 +18,7 @@ class Faucet(object):
         used_inputs = []
         new_inputs = []
         for x in mongo.site_db.faucet.find({'active': True}):
-            balance = BU.get_wallet_balance(x['address'])
+            balance = BU.get_wallet_balance(config, x['address'])
             if balance >= 25:
                 mongo.site_db.faucet.update({'_id': x['_id']}, {'active': False, 'address': x['address']})
 
@@ -30,6 +30,7 @@ class Faucet(object):
 
             try:
                 transaction = TransactionFactory(
+                    config,
                     fee=0.01,
                     public_key=config.public_key,
                     private_key=config.private_key,
@@ -47,7 +48,7 @@ class Faucet(object):
             except:
                 mongo.site_db.failed_faucet_transactions.insert(transaction.transaction.to_dict())
                 print 'faucet transaction failed'
-            TU.save(transaction.transaction)
+            TU.save(config, transaction.transaction)
             x['last_id'] = transaction.transaction.transaction_signature
             mongo.site_db.faucet.update({'_id': x['_id']}, x)
             print 'saved. sending...', x['address']

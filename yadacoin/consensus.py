@@ -95,7 +95,7 @@ class Consensus(object):
 
         ranks = []
         for record in records:
-            peer = Peer.from_string(record['peer'])
+            peer = Peer.from_string(self.config, record['peer'])
             block = Block.from_dict(self.config, record['block'])
             target = int(record['block']['hash'], 16)
             if target < lowest:
@@ -200,7 +200,7 @@ class Consensus(object):
 
     def import_block(self, block_data):
         block = Block.from_dict(self.config, block_data['block'])
-        peer = Peer.from_string(block_data['peer'])
+        peer = Peer.from_string(self.config, block_data['peer'])
         print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
         try:
             self.integrate_block_with_existing_chain(block, self.existing_blockchain)
@@ -285,7 +285,7 @@ class Consensus(object):
                 # then we compare the block height and difficulty of the two chains
                 # replace our current chain if necessary by removing them from the database
                 # then looping though our new chain, inserting the new blocks
-                self.existing_blockchain = Blockchain([x for x in self.mongo.db.blocks.find({})])
+                self.existing_blockchain = Blockchain(self.config, [x for x in self.mongo.db.blocks.find({})])
                 blockchain = Blockchain([x for x in complete_incoming_chain])
 
                 # If the block height is equal, we throw out the inbound chain, it muse be greater
@@ -296,8 +296,8 @@ class Consensus(object):
 
                 existing_difficulty = self.existing_blockchain.get_difficulty()
 
-                if blockchain.get_highest_block_height() > self.existing_blockchain.get_highest_block_height() \
-                    and inbound_difficulty > existing_difficulty:
+                if blockchain.get_highest_block_height() >= self.existing_blockchain.get_highest_block_height() \
+                    and inbound_difficulty >= existing_difficulty:
                     for block in sorted(blockchain.blocks, key=lambda x: x.index):
                         try:
                             if block.index == 0:
@@ -310,9 +310,10 @@ class Consensus(object):
                     print "Replaced chain with incoming"
                     return
                 else:
-                    print "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
-                    for block in blocks:
-                        self.mongo.db.consensus.update({'block.hash': block.hash}, {'$set': {'ignore': True}}, multi=True)
+                    if not peer.is_me:
+                        print "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
+                        for block in blocks:
+                            self.mongo.db.consensus.update({'block.hash': block.hash}, {'$set': {'ignore': True}}, multi=True)
                     return
             # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
             # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain

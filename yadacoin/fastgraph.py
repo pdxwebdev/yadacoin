@@ -60,7 +60,7 @@ class FastGraph(Transaction):
             if isinstance(signature, FastGraphSignature):
                 self.signatures.append(signature)
             else:
-                self.signatures.append(FastGraphSignature(**signature))
+                self.signatures.append(FastGraphSignature(signature))
     
     @classmethod
     def from_dict(cls, config, txn):
@@ -75,7 +75,7 @@ class FastGraph(Transaction):
             rid=txn.get('rid', ''),
             relationship=relationship,
             public_key=txn.get('public_key'),
-            dh_public_key=txn.get('dh_public_key'),
+            dh_public_key=txn.get('dh_public_key', ''),
             fee=float(txn.get('fee')),
             requester_rid=txn.get('requester_rid', ''),
             requested_rid=txn.get('requested_rid', ''),
@@ -114,14 +114,17 @@ class FastGraph(Transaction):
 
         for signature in self.signatures:
             signature.passed = False
-            if signature.bulletin_secret == self.config.bulletin_secret:
-                signed = verify_signature(
-                    base64.b64decode(signature.signature),
-                    self.hash,
-                    self.config.public_key.decode('hex')
-                )
-                if signed:
-                    signature.passed = True
+            # did I sign it?
+            signed = verify_signature(
+                base64.b64decode(signature.signature),
+                self.hash,
+                self.config.public_key.decode('hex')
+            )
+            if signed:
+                signature.passed = True
+
+            """
+            # This is for a later fork to include a wider consensus area for a larger spending group
             else:
                 mutual_friends = [x for x in BU.get_transactions_by_rid(self.config, self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
                 for mutual_friend in mutual_friends:
@@ -143,13 +146,14 @@ class FastGraph(Transaction):
                         )
                         if identity and signed:
                             signature.passed = True
+            """
         for signature in self.signatures:
             if not signature.passed:
                 return False
         return True
 
     def get_signatures(self, peers):
-        Peers.init(self.config)
+        Peers.init(self.config, self.config.network)
         for peer in Peers.peers:
             try:
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
@@ -162,7 +166,7 @@ class FastGraph(Transaction):
                 pass
 
     def broadcast(self):
-        Peers.init(self.config)
+        Peers.init(self.config, self.config.network)
         for peer in Peers.peers:
             try:
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
@@ -192,7 +196,7 @@ class FastGraph(Transaction):
             'hash': self.hash,
             'inputs': [x.to_dict() for x in self.inputs],
             'outputs': [x.to_dict() for x in self.outputs],
-            'signatures': [sig.to_dict() for sig in self.signatures]
+            'signatures': [sig.to_string() for sig in self.signatures]
         }
         if self.dh_public_key:
             ret['dh_public_key'] = self.dh_public_key
@@ -206,13 +210,9 @@ class FastGraph(Transaction):
         return json.dumps(self.to_dict(), indent=4)
 
 class FastGraphSignature(object):
-    def __init__(self, signature, bulletin_secret):
+    def __init__(self, signature):
         self.signature = signature
-        self.bulletin_secret = bulletin_secret
     
-    def to_dict(self):
-        return {
-            'signature': self.signature,
-            'bulletin_secret': self.bulletin_secret
-        }
+    def to_string(self):
+        return self.signature
         

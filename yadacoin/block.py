@@ -56,6 +56,12 @@ class BlockFactory(object):
                     continue
                 used_sigs.append(transaction_obj.transaction_signature)
                 transaction_obj.verify()
+                if transaction_obj.rid:
+                    for input_id in transaction_obj.inputs:
+                        input_block = BU.get_transaction_by_id(self.config, input_id.id, give_block=True)
+                        if input_block['index'] > (BU.get_latest_block(self.config)['index'] - 2016):
+                            continue
+
             except:
                 try:
                     if isinstance(txn, FastGraph):
@@ -83,7 +89,7 @@ class BlockFactory(object):
                 unspent_indexed[address] = unspent_ids
             
             if address in unspent_fastgraph_indexed:
-                unspent_ids = unspent_fastgraph_indexed[address]
+                unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
             else:
                 res = BU.get_wallet_unspent_fastgraph_transactions(self.config, address)
                 unspent_fastgraph_ids = [x['transaction']['id'] for x in res]
@@ -92,9 +98,9 @@ class BlockFactory(object):
             failed = False
             used_ids_in_this_txn = []
             for x in transaction_obj.inputs:
-                if x.id not in unspent_ids:
+                if isinstance(transaction_obj, Transaction) and x.id not in unspent_ids:
                     failed = True
-                if x.id not in unspent_fastgraph_ids:
+                if isinstance(transaction_obj, FastGraph) and x.id not in unspent_fastgraph_ids:
                     failed = True
                 if x.id in used_ids_in_this_txn:
                     failed = True

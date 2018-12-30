@@ -80,11 +80,12 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_unspent_transactions(cls, config, address, ids=None, needed_value=None):
-        res = cls.wallet_unspent_worker(config, address, ids, needed_value)
         spent_fastgraph_ids = []
         for x in cls.get_wallet_unspent_fastgraph_transactions(config, address):
             spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
+            yield x
 
+        res = cls.wallet_unspent_worker(config, address, ids, needed_value)
         for x in res:
             if x['id'] in spent_fastgraph_ids:
                 continue
@@ -921,9 +922,12 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def verify_message(cls, config, rid, message, public_key):
         from crypt import Crypt
+        mongo = Mongo(config)
         sent = False
         received = False
-        txns = cls.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)
+        txns = [x for x in cls.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)]
+        fastgraph_transactions = mongo.db.fastgraph_transactions.find({"txn.rid": rid})
+        txns.extend([x['txn'] for x in fastgraph_transactions])
         shared_secrets = TU.get_shared_secrets_by_rid(config, rid)
         for txn in txns:
             for shared_secret in list(set(shared_secrets)):

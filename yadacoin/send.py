@@ -14,7 +14,7 @@ class Send(object):
     @classmethod
     def run(cls, config, to, value):
         mongo = Mongo(config)
-        Peers.init()
+        Peers.init(config, config.network)
 
         try:
             transaction = TransactionFactory(

@@ -6,6 +6,7 @@ class BlockChainException(BaseException):
 
 class Blockchain(object):
     def __init__(self, config, blocks=None):
+        self.config = config
         if blocks:
             new_block_array = []
             for block in blocks:
@@ -37,7 +38,7 @@ class Blockchain(object):
                     else:
                         return {'verified': False}
             if last_block:
-                target = BlockFactory.get_target(block.index, last_block.time, last_block, self)
+                target = BlockFactory.get_target(self.config, block.index, last_block.time, last_block, self)
                 if int(block.hash, 16) > target and not block.special_min:
                     print "invalid block chain: block target is not below the previous target and not special minimum"
                     return {'verified': False, 'last_good_block': last_block}

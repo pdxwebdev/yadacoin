@@ -43,19 +43,19 @@ if __name__ == '__main__':
     parser.add_argument('config', default="config.json", nargs="?", help='config file')
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
+    parser.add_argument('-n', '--network', default='mainnet', help='Specify maintnet or testnet')
     parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
     parser.add_argument('-p', '--pool', default='', help='Specify pool to use')
     args = parser.parse_args()
 
     if os.path.isfile(args.config):
         with open(args.config) as f:
-            config = Config.from_dict(json.loads(f.read()))
+            config = Config(json.loads(f.read()))
     else:
         print 'no config file found at \'%s\'' % args.config
         exit()
 
     if args.mode == 'consensus':
-        Peers.init()
         consensus = Consensus(config)
         consensus.verify_existing_blockchain()
         while 1:
@@ -64,7 +64,7 @@ if __name__ == '__main__':
             time.sleep(1)
 
     elif args.mode == 'send':
-        Send.run(args.to, float(args.value))
+        Send.run(config, args.to, float(args.value))
 
     elif args.mode == 'mine':
         print config.to_json()
@@ -75,7 +75,7 @@ if __name__ == '__main__':
         running_processes = []
         mongo = Mongo(config)
         while 1:
-            Peers.init(my_peer=False)
+            Peers.init(config, args.network, my_peer=False)
             if not Peers.peers:
                 time.sleep(1)
                 continue
@@ -96,11 +96,11 @@ if __name__ == '__main__':
 
     elif args.mode == 'faucet':
         while 1:
-            Peers.init()
+            Peers.init(config, args.network)
             if not Peers.peers:
                 time.sleep(1)
                 continue
-            Faucet.run()
+            Faucet.run(config)
             time.sleep(1)
 
     elif args.mode == 'pool':
@@ -112,13 +112,13 @@ if __name__ == '__main__':
     elif args.mode == 'serve':
         print config.to_json()
 
-        Peer.init_my_peer()
-        peer = config.peer_host + ":" + str(config.peer_port)
-        print "http://{}/generate-wallet".format(peer)
+        my_peer = Peer.init_my_peer(config)
+        config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()
+        print "http://{}/generate-wallet".format(my_peer.to_string())
 
-        Peers.init()
-        if not Peers.peers:
-            raise Exception("peer service unavailble, restart this process")
-        pywsgi.WSGIServer((config.serve_host, config.serve_port), app).serve_forever()
+        config.network = args.network
+
+        serve = Serve(config)
+        pywsgi.WSGIServer((config.serve_host, config.serve_port), serve.app).serve_forever()
 
         

@@ -19,7 +19,7 @@ class MiningPool(object):
         self.block_factory = None
 
     def refresh(self):
-        Peers.init(self.config)
+        Peers.init(self.config, self.config.network)
         max_block_time = 600
         block = BU.get_latest_block(self.config)
         if block:
@@ -148,7 +148,7 @@ class MiningPool(object):
             }, headers={'Connection':'close'})
     
     def broadcast_block(self, block):
-        Peers.init(self.config)
+        Peers.init(self.config, self.config.network)
         dup_test = self.mongo.db.consensus.find_one({
             'peer': 'me',
             'index': block.index,
@@ -178,8 +178,12 @@ class MiningPool(object):
                     print e
                     try:
                         print 'reporting bad peer'
+                        if self.config.network == 'mainnet':
+                            url = 'https://yadacoin.io/peers'
+                        elif self.config.network == 'testnet':
+                            url = 'http://yadacoin.io:8888/peers'
                         requests.post(
-                            'https://yadacoin.io/peers',
+                            url,
                             json={'host': peer.host, 'port': str(peer.port), 'failed': True},
                             timeout=3,
                             headers={'Connection':'close'}

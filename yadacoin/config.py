@@ -19,7 +19,7 @@ class Config(object):
 
         self.private_key = config['private_key']
         self.wif = self.to_wif(self.private_key)
-        self.bulletin_secret = self.inst_get_bulletin_secret()
+        self.bulletin_secret = self.get_bulletin_secret()
 
         self.mongodb_host = config['mongodb_host']
         self.database = config['database']
@@ -73,7 +73,7 @@ class Config(object):
             "seed": seed or '',
             "xprv": extended_key or '',
             "private_key": private_key,
-            "wif": cls.to_wif(private_key),
+            "wif": cls.generate_wif(private_key),
             "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().encode('hex'),
             "address": str(key.Address()),
             "serve_host": "0.0.0.0",
@@ -94,6 +94,7 @@ class Config(object):
 
     @classmethod
     def from_dict(cls, config):
+        from transactionutils import TU
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
@@ -101,8 +102,8 @@ class Config(object):
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
 
         cls.private_key = config['private_key']
-        cls.wif = cls.to_wif(cls.private_key)
-        cls.bulletin_secret = cls.get_bulletin_secret()
+        cls.wif = cls.generate_wif(cls.private_key)
+        cls.bulletin_secret = TU.generate_deterministic_signature(config, config['username'], config['private_key'])
 
         cls.mongodb_host = config['mongodb_host']
         cls.database = config['database']
@@ -120,17 +121,11 @@ class Config(object):
         cls.callbackurl = config['callbackurl']
         cls.fcm_key = config['fcm_key']
 
-    def inst_get_bulletin_secret(self):
+    def get_bulletin_secret(self):
         from transactionutils import TU
         return TU.generate_deterministic_signature(self, self.username, self.private_key)
 
-    @classmethod
-    def get_bulletin_secret(cls, config):
-        from transactionutils import TU
-        return TU.generate_deterministic_signature(config, config.username, config.private_key)
-
-    @classmethod
-    def to_wif(cls, private_key):
+    def to_wif(self, private_key):
         private_key_static = private_key
         extended_key = "80"+private_key_static+"01"
         first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
@@ -140,30 +135,16 @@ class Config(object):
         return wif
 
     @classmethod
-    def to_dict(cls):
-        return {
-            'seed': cls.seed,
-            'xprv': cls.xprv,
-            'public_key': cls.public_key,
-            'address': cls.address,
-            'private_key': cls.private_key,
-            'wif': cls.wif,
-            'bulletin_secret': cls.bulletin_secret,
-            'mongodb_host': cls.mongodb_host,
-            'username': cls.username,
-            'database': cls.database,
-            'site_database': cls.site_database,
-            'web_server_host': cls.web_server_host,
-            'web_server_port': cls.web_server_port,
-            'peer_host': cls.peer_host,
-            'peer_port': cls.peer_port,
-            'serve_host': cls.serve_host,
-            'serve_port': cls.serve_port,
-            'fcm_key': cls.fcm_key,
-            'callbackurl': cls.callbackurl
-        }
+    def generate_wif(cls, private_key):
+        private_key_static = private_key
+        extended_key = "80"+private_key_static+"01"
+        first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
+        second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
+        final_key = extended_key+second_sha256[:8]
+        wif = base58.b58encode(binascii.unhexlify(final_key))
+        return wif
 
-    def inst_to_dict(self):
+    def to_dict(self):
         return {
             'seed': self.seed,
             'xprv': self.xprv,
@@ -186,9 +167,5 @@ class Config(object):
             'callbackurl': self.callbackurl
         }
 
-    @classmethod
-    def to_json(cls):
-        return json.dumps(cls.to_dict(), indent=4)
-
-    def inst_to_json(self):
-        return json.dumps(self.inst_to_dict(), indent=4)
+    def to_json(self):
+        return json.dumps(self.to_dict(), indent=4)

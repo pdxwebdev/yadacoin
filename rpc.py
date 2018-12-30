@@ -19,11 +19,13 @@ from ecdsa import NIST384p, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from flask import Flask, request, render_template, session, redirect
+from flask import Flask, request, render_template, session, redirect, current_app
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from yadacoin import BU, TU, Transaction, TransactionFactory, Output, Input, \
-                     Config, Peers, Graph, Block, Mongo, InvalidTransactionException, \
-                     InvalidTransactionSignatureException, MissingInputTransactionException, MiningPool
+from yadacoin import (
+    BU, TU, Transaction, TransactionFactory, Output, Input, 
+    Config, Peers, Graph, Block, Mongo, InvalidTransactionException, 
+    InvalidTransactionSignatureException, MissingInputTransactionException, MiningPool, endpoints
+)
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
 from pyfcm import FCMNotification
@@ -31,7 +33,6 @@ from multiprocessing import Process, Value, Array, Pool
 from flask_cors import CORS
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from bson.objectid import ObjectId
-import endpoints
 
 
 class ChatNamespace(BaseNamespace):
@@ -104,6 +105,7 @@ def pool():
 
 @app.route('/demo', methods=['GET', 'POST'])
 def demo():
+    config = current_app.config['yada_config']
     session.setdefault('id', str(uuid.uuid4()))
 
     if request.method == 'POST':
@@ -112,6 +114,7 @@ def demo():
             return redirect('/demo?error')
         # generate a transaction which contains a signin message containing the current sessions identifier
         txn = TransactionFactory(
+            config,
             bulletin_secret=bulletin_secret,
             public_key=config.public_key,
             private_key=config.private_key,
@@ -134,10 +137,10 @@ def demo():
         return redirect('/demo?bulletin_secret=%s' % urllib.quote_plus(bulletin_secret))
     elif request.method == 'GET':
         bulletin_secret = request.args.get('bulletin_secret', '')
-        rid = TU.generate_rid(bulletin_secret)
-        txns = BU.get_transactions_by_rid(rid, rid=True)
+        rid = TU.generate_rid(config, bulletin_secret)
+        txns = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True)
 
-        txns2 = BU.get_transactions_by_rid(rid, rid=True, raw=True)
+        txns2 = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)
         half1 = False
         half2 = False
         for txn in txns:
@@ -147,7 +150,7 @@ def demo():
             if txn['public_key'] != config.public_key:
                 half2 = True
         registered = half1 and half2
-        sent, received = BU.verify_message(rid, session['id'])
+        sent, received = BU.verify_message(config, rid, config.bulletin_secret, session['id'])
         session['loggedin'] = received
         return render_template(
             'authdemo.html',
@@ -169,6 +172,8 @@ def firebase_service_worker():
 @app.route('/fcm-token', methods=['POST'])
 def fcm_token():
     try:
+        config = current_app.config['yada_config']
+        mongo = Mongo(config)
         token = request.json.get('token')
         print token
         rid = request.json.get('rid')
@@ -359,6 +364,8 @@ def get_block():
 
 @app.route('/search')
 def search():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     phrase = request.args.get('phrase')
     bulletin_secret = request.args.get('bulletin_secret')
     my_bulletin_secret = config.get_bulletin_secret()
@@ -383,6 +390,8 @@ def search():
 
 @app.route('/react', methods=['POST'])
 def react():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
@@ -416,6 +425,8 @@ def react():
 
 @app.route('/get-reacts', methods=['POST'])
 def get_reacts():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     if request.json:
         data = request.json
         ids = data.get('txn_ids')
@@ -437,6 +448,8 @@ def get_reacts():
 
 @app.route('/get-reacts-detail', methods=['POST'])
 def get_reacts_detail():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     if request.json:
         data = request.json
         txn_id = data.get('txn_id')
@@ -459,6 +472,8 @@ def get_reacts_detail():
 
 @app.route('/comment-react', methods=['POST'])
 def comment_react():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
@@ -489,6 +504,8 @@ def comment_react():
 
 @app.route('/get-comment-reacts', methods=['POST'])
 def get_comment_reacts():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     if request.json:
         data = request.json
         ids = data.get('ids')
@@ -510,6 +527,8 @@ def get_comment_reacts():
 
 @app.route('/get-comment-reacts-detail', methods=['POST'])
 def get_comment_reacts_detail():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     if request.json:
         data = request.json
         comment_id = data.get('_id')
@@ -532,6 +551,8 @@ def get_comment_reacts_detail():
 
 @app.route('/comment', methods=['POST'])
 def comment():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
     rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
@@ -577,6 +598,8 @@ def comment():
 
 @app.route('/get-comments', methods=['POST'])
 def get_comments():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     if request.json:
         data = request.json
         ids = data.get('txn_ids')
@@ -612,17 +635,6 @@ def deeplink():
     import urllib
     return redirect('myapp://' + urllib.quote(request.args.get('txn')))
 
-@app.route('/get-chain')
-def get_chain():
-    # some type of generator
-    return json.dumps()
-
-@app.route('/bulletins')
-def bulletin():
-    bulletin_secret = request.args.get('bulletin_secret')
-    bulletins = BU.get_bulletins(bulletin_secret)
-    return json.dumps(bulletins)
-
 @app.route('/get-url')
 def get_url():
     res = requests.get(request.args.get('url'))
@@ -630,11 +642,15 @@ def get_url():
 
 @app.route('/block-user', methods=['POST'])
 def block_user():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     mongo.site_db.blocked_users.update({'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, {'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, upsert=True)
     return 'ok'
 
 @app.route('/flag', methods=['POST'])
 def flag():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     mongo.site_db.flagged_content.update(request.json, request.json, upsert=True)
     return 'ok'
 
@@ -659,7 +675,7 @@ def peers():
                     'failed': 0,
                     'bulletin_secret': bulletin_secret
                 }, upsert=True)
-            Peers.init_local()
+            Peers.init_local(config, config.network)
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
@@ -672,7 +688,7 @@ def stats():
 
 def get_base_graph(self):
     bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
-    graph = Graph(bulletin_secret)
+    graph = Graph(current_app.config['yada_config'], bulletin_secret)
     return graph
 
 endpoints.BaseGraphView.get_base_graph = get_base_graph
@@ -691,16 +707,16 @@ app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
 app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))
 app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
 app.add_url_rule('/create-relationship', view_func=endpoints.CreateRelationshipView.as_view('create-relationship'))
+app.add_url_rule('/yada_config.json', view_func=endpoints.GetYadaConfigView.as_view('yada-config'))
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
                 help='set your config file')
 args = parser.parse_args()
-conf = args.conf or 'config/config.json'
+conf = args.conf or 'config/testnet.json'
 with open(conf) as f:
-    config.from_dict(json.loads(f.read()))
+    config = Config(json.loads(f.read()))
 
-Peers.init_local()
-mongo = Mongo(config)
+app.config['yada_config'] = config
 #push_service = FCMNotification(api_key=config.fcm_key)
 

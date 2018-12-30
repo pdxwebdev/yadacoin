@@ -4,17 +4,17 @@ import pymongo
 from mongo import Mongo
 
 class Peers(object):
-    @classmethod
-    def init_local(cls, config):
+    def init_local(self, config):
         mongo = Mongo(config)
         res = mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
-        cls.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
+        self.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         peers = [x for x in res]
-        cls.peers = []
+        self.peers = []
         try:
             for peer in peers:
-                cls.peers.append(
+                self.peers.append(
                     Peer(
+                        config,
                         peer['host'],
                         peer['port']
                     )
@@ -24,16 +24,21 @@ class Peers(object):
         return json.dumps({'peers': peers})
 
     @classmethod
-    def init(cls, config, my_peer=True):
+    def init(cls, config, network='mainnet', my_peer=True):
         mongo = Mongo(config)
+        if network == 'mainnet':
+            url = 'https://yadacoin.io/peers'
+        elif network == 'testnet':
+            url = 'http://yadacoin.io:8888/peers'
         cls.peers = []
         try:
             if my_peer:
                 cls.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
-            res = requests.get('http://yadacoin.io:8888/peers')
+            res = requests.get(url)
             for peer in json.loads(res.content)['peers']:
                 cls.peers.append(
                     Peer(
+                        config,
                         peer['host'],
                         peer['port'],
                         peer.get('bulletin_secret')
@@ -135,34 +140,34 @@ class Peers(object):
         }
 
 class Peer(object):
-    def __init__(self, host, port, bulletin_secret=None, is_me=False):
+    def __init__(self, config, host, port, bulletin_secret=None, is_me=False):
+        self.mongo = Mongo(config)
         self.host = host
         self.port = port
         self.bulletin_secret = bulletin_secret
         self.is_me = is_me
 
     @classmethod
-    def from_string(cls, peerstr):
+    def from_string(cls, config, peerstr):
         if ":" in peerstr:
             peer = peerstr.split(':')
-            return cls(peer[0], peer[1])
+            return cls(config, peer[0], peer[1])
         elif peerstr == 'me':
-            return cls(None, None, is_me=True)
+            return cls(config, None, None, is_me=True)
 
     def is_broken(self):
-        broken_test = [x for x in mongo.db.broken_peers.find({"peer": self.to_string()})]
+        broken_test = [x for x in self.mongo.db.broken_peers.find({"peer": self.to_string()})]
         return broken_test and broken_test[0]['broken']
 
     def set_broken(self):
-        mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": True}, upsert=True)
+        self.mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": True}, upsert=True)
 
     def unset_broken(self):
-        mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
+        self.mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
 
     @classmethod
-    def init_my_peer(cls):
+    def init_my_peer(cls, config):
         import socket
-        from config import Config
         from miniupnpc import UPnP
         # deploy as an eventlet WSGI server
         try:
@@ -190,11 +195,11 @@ class Peer(object):
             config.peer_port = config.peer_port
             print 'UPnP failed: you must forward and/or whitelist port', config.peer_port
 
-        cls.save_my_peer()
+        cls.save_my_peer(config)
+        return cls(config, config.peer_host, config.peer_port)
     
     @classmethod
-    def save_my_peer(cls):
-        from config import Config
+    def save_my_peer(cls, config):
         peer = config.peer_host + ":" + str(config.peer_port)
         mongo = Mongo(config)
         mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
