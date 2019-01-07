@@ -615,8 +615,6 @@ class BlockchainSocketServer(socketio.Namespace):
         mongo = Mongo(config)
         try:
             peer = Peer.from_string(config, request.json.get('peer'))
-            if peer.host != '127.0.0.1' and peer.host != '71.237.161.227':
-                return
             block = Block.from_dict(config, data)
             if block.index == 0:
                 return
