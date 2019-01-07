@@ -23,9 +23,10 @@ class PartialPayoutException(Exception):
 class PoolPayer(object):
     def __init__(self, config):
         self.config = config
+        self.mongo = Mongo(self.config)
 
     def get_share_list_for_height(self, index):
-        raw_shares = [x for x in mongo.db.shares.find({'index': index})]
+        raw_shares = [x for x in self.mongo.db.shares.find({'index': index})]
         test = Blockchain([x['block'] for x in raw_shares])
         total_difficulty = test.get_difficulty()
 
@@ -50,21 +51,19 @@ class PoolPayer(object):
             raise NonMatchingDifficultyException()
 
     def do_payout(self):
-        mongo = Mongo(self.config)
         Peers.init(self.config, self.config.network)
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
-        latest_block = Block.from_dict(self.config, BU.get_latest_block())
-        won_blocks = mongo.db.blocks.find({'transactions.outputs.to': self.config.address}).sort([('index', 1)])
+        latest_block = Block.from_dict(self.config, BU.get_latest_block(self.config))
+        won_blocks = self.mongo.db.blocks.find({'transactions.outputs.to': self.config.address}).sort([('index', 1)])
         for won_block in won_blocks:
             won_block = Block.from_dict(self.config, won_block)
             if (won_block.index + 6) <= latest_block.index:
                 self.do_payout_for_block(won_block)
     
     def already_used(self, txn):
-        mongo = Mongo(self.config)
-        return mongo.db.blocks.find_one({'transactions.inputs.id': txn.transaction_signature})
+        return self.mongo.db.blocks.find_one({'transactions.inputs.id': txn.transaction_signature})
 
     def do_payout_for_block(self, block):
         # check if we already paid out
@@ -73,15 +72,15 @@ class PoolPayer(object):
         if already_used:
             return
 
-        existing = mongo.db.share_payout.find_one({'index': block.index})
+        existing = self.mongo.db.share_payout.find_one({'index': block.index})
         if existing:
-            pending = mongo.db.miner_transactions.find_one({'inputs.id': block.get_coinbase().transaction_signature})
+            pending = self.mongo.db.miner_transactions.find_one({'inputs.id': block.get_coinbase().transaction_signature})
             if pending:
                 return
             else:
                 # rebroadcast
-                transaction = Transaction.from_dict(existing['txn'])
-                TU.save(transaction)
+                transaction = Transaction.from_dict(self.config, existing['txn'])
+                TU.save(self.config, transaction)
                 self.broadcast_transaction(transaction)
                 return
 
@@ -91,7 +90,7 @@ class PoolPayer(object):
             return
 
         total_reward = block.get_coinbase()
-        if total_reward.outputs[0].to != config.address:
+        if total_reward.outputs[0].to != self.config.address:
             return
         pool_take = 0.01
         total_pool_take = total_reward.outputs[0].value * pool_take
@@ -99,7 +98,7 @@ class PoolPayer(object):
 
         outputs = []
         for address, x in shares.iteritems():
-            exists = mongo.db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
+            exists = self.mongo.db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
             if exists:
                 raise PartialPayoutException('this index has been partially paid out.')
             
@@ -108,9 +107,10 @@ class PoolPayer(object):
 
         try:
             transaction = TransactionFactory(
+                self.config,
                 fee=0.0001,
-                public_key=config.public_key,
-                private_key=config.private_key,
+                public_key=self.config.public_key,
+                private_key=self.config.private_key,
                 inputs=[Input(total_reward.transaction_signature)],
                 outputs=outputs
             )
@@ -126,8 +126,8 @@ class PoolPayer(object):
             raise
             print 'faucet transaction failed'
 
-        TU.save(transaction.transaction)
-        mongo.db.share_payout.insert({'index': block.index, 'txn': transaction.transaction.to_dict()})
+        TU.save(self.config, transaction.transaction)
+        self.mongo.db.share_payout.insert({'index': block.index, 'txn': transaction.transaction.to_dict()})
 
         self.broadcast_transaction(transaction.transaction)
         
