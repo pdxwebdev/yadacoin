@@ -51,7 +51,11 @@ class PoolPayer(object):
             raise NonMatchingDifficultyException()
 
     def do_payout(self):
-        Peers.init(self.config, self.config.network)
+        network = getattr(self.config, 'network', None)
+        if network:
+            Peers.init(self.config, network)
+        else:
+            Peers.init(self.config)
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
