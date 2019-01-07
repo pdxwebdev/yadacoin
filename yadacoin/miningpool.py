@@ -7,9 +7,13 @@ from peers import Peers
 from block import Block, BlockFactory
 from blockchain import Blockchain
 from blockchainutils import BU
-from transaction import Transaction, MissingInputTransactionException, \
-    InvalidTransactionException, \
+from transaction import (
+    Transaction,
+    MissingInputTransactionException,
+    InvalidTransactionException,
     InvalidTransactionSignatureException
+)
+from fastgraph import FastGraph
 
 
 class MiningPool(object):
@@ -84,50 +88,93 @@ class MiningPool(object):
         transactions = self.mongo.db.miner_transactions.find()
         transaction_objs = []
         unspent_indexed = {}
+        unspent_fastgraph_indexed = {}
+        used_sigs = []
         for txn in transactions:
             try:
-                transaction = Transaction.from_dict(self.config, txn)
-                transaction.verify()
+                try:
+                    if isinstance(txn, Transaction):
+                        transaction_obj = txn
+                    else:
+                        transaction_obj = Transaction.from_dict(self.config, txn)
+
+                    if transaction_obj.transaction_signature in used_sigs:
+                        print 'duplicate transaction found and removed'
+                        continue
+
+                    transaction_obj.verify()
+
+                    if transaction_obj.rid:
+                        for input_id in transaction_obj.inputs:
+                            input_block = BU.get_transaction_by_id(self.config, input_id.id, give_block=True)
+                            if input_block['index'] > (BU.get_latest_block(self.config)['index'] - 2016):
+                                continue
+                except:
+                    try:
+                        if isinstance(txn, FastGraph):
+                            transaction_obj = txn
+                        else:
+                            transaction_obj = FastGraph(**txn)
+
+                        if transaction_obj.transaction.transaction_signature in used_sigs:
+                            print 'duplicate transaction found and removed'
+                            continue
+                        used_sigs.append(transaction_obj.transaction.transaction_signature)
+                        if not transaction_obj.verify():
+                            raise InvalidTransactionException("invalid transactions")
+                        transaction_obj = transaction_obj.transaction
+                    except:
+                        raise InvalidTransactionException("invalid transactions")
                 #check double spend
-                address = str(P2PKHBitcoinAddress.from_pubkey(transaction.public_key.decode('hex')))
+                address = str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex')))
                 if address in unspent_indexed:
                     unspent_ids = unspent_indexed[address]
                 else:
-                    needed_value = sum([float(x.value) for x in transaction.outputs]) + float(transaction.fee)
+                    needed_value = sum([float(x.value) for x in transaction_obj.outputs]) + float(transaction_obj.fee)
                     res = BU.get_wallet_unspent_transactions(self.config, address, needed_value=needed_value)
                     unspent_ids = [x['id'] for x in res]
                     unspent_indexed[address] = unspent_ids
+            
+                if address in unspent_fastgraph_indexed:
+                    unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
+                else:
+                    res = BU.get_wallet_unspent_fastgraph_transactions(self.config, address)
+                    unspent_fastgraph_ids = [x['id'] for x in res]
+                    unspent_fastgraph_indexed[address] = unspent_fastgraph_ids
+
                 failed1 = False
                 failed2 = False
                 used_ids_in_this_txn = []
 
-                for x in transaction.inputs:
-                    if x.id not in unspent_ids:
+                for x in transaction_obj.inputs:
+                    if isinstance(transaction_obj, Transaction) and x.id not in unspent_ids:
+                        failed1 = True
+                    if isinstance(transaction_obj, FastGraph) and x.id not in unspent_fastgraph_ids:
                         failed1 = True
                     if x.id in used_ids_in_this_txn:
                         failed2 = True
                     used_ids_in_this_txn.append(x.id)
                 if failed1:
-                    self.mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
-                    print 'transaction removed: input presumably spent already, not in unspent outputs', transaction.transaction_signature
-                    self.mongo.db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction.to_dict()})
+                    self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                    print 'transaction removed: input presumably spent already, not in unspent outputs', transaction_obj.transaction_signature
+                    self.mongo.db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction_obj.to_dict()})
                 elif failed2:
-                    self.mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
-                    print 'transaction removed: using an input used by another transaction in this block', transaction.transaction_signature
-                    self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction.to_dict()})
+                    self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                    print 'transaction removed: using an input used by another transaction in this block', transaction_obj.transaction_signature
+                    self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
                 else:
-                    transaction_objs.append(transaction)
+                    transaction_objs.append(transaction_obj)
             except MissingInputTransactionException as e:
                 #print 'missing this input transaction, will try again later'
                 pass
             except InvalidTransactionSignatureException as e:
                 print 'InvalidTransactionSignatureException: transaction removed'
-                self.mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction.to_dict()})
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction_obj.to_dict()})
             except InvalidTransactionException as e:
                 print 'InvalidTransactionException: transaction removed'
-                self.mongo.db.miner_transactions.remove({'id': transaction.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction.to_dict()})
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
             except Exception as e:
                 #print e
                 #print 'rejected transaction', txn['id']
@@ -162,6 +209,8 @@ class MiningPool(object):
             self.mongo.db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
             print '\r\nSent block to:'
             for peer in Peers.peers:
+                if peer.is_me:
+                    continue
                 try:
                     block_dict = block.to_dict()
                     block_dict['peer'] = Peers.my_peer

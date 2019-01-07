@@ -51,7 +51,14 @@ class ChatNamespace(BaseNamespace):
 class HomeView(View):
     def dispatch_request(self):
         config = app.config['yada_config']
-        result = BU.verify_message(config, request.args.get('rid'), session.get('siginin_code'), config.public_key)
+        if not request.args.get('rid'):
+            return '{"error": "rid not in query params"}'
+        result = BU.verify_message(
+            config,
+            request.args.get('rid'),
+            session.get('siginin_code'),
+            config.public_key,
+            request.args.get('id').replace(' ', '+'))
         return json.dumps({
             'authenticated': True if result[1] else False
         })
@@ -800,13 +807,19 @@ class PostFastGraphView(View):
     def dispatch_request(self):
         # after the necessary signatures are gathered, the transaction is sent here.
         config = app.config['yada_config']
+        mongo = Mongo(config)
         fastgraph = request.json
         fastgraph = FastGraph.from_dict(config, fastgraph)
         result = fastgraph.verify()
         if not result:
             return 'did not verify', 400
+        result = mongo.db.fastgraph_transactions.find_one({
+            'txn.hash': fastgraph.hash
+        })
+        if result:
+            return 'duplicate transaction found', 400
         fastgraph.save()
-        #fastgraph.broadcast()
+        fastgraph.broadcast()
         return 'ok'
 
 class GetFastGraphView(View):

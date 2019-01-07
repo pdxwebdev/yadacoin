@@ -61,7 +61,12 @@ class Graph(object):
             already_done = []
             for node in nodes:
                 if node.get('dh_public_key'):
-                    test = {'rid': node.get('rid'), 'requester_rid': node.get('requester_id'), 'requested_rid': node.get('requested_id'), 'id': node.get('id')}
+                    test = {
+                        'rid': node.get('rid'),
+                        'requester_rid': node.get('requester_id'),
+                        'requested_rid': node.get('requested_id'),
+                        'id': node.get('id')
+                    }
                     node['username'] = 'YadaCoin'
                     if test in already_done:
                         continue
@@ -70,8 +75,8 @@ class Graph(object):
                         already_done.append(test)
 
             self.registered = False
-            we_are_friends = self.mongo.site_db.friends.find_one({'relationship.bulletin_secret': bulletin_secret})
-            if we_are_friends:
+            shared_secrets = TU.get_shared_secrets_by_rid(config, rid)
+            if shared_secrets:
                 self.registered = True
 
             if self.registered:

@@ -94,6 +94,9 @@ class FastGraph(Transaction):
 
     def verify(self):
         super(FastGraph, self).verify()
+        result = self.mongo.db.fastgraph_transactions.find_one({
+            'txn.hash': self.hash
+        })
         
         if not self.signatures:
             raise InvalidFastGraphTransactionException('no signatures were provided')

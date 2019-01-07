@@ -920,15 +920,18 @@ class BU(object):  # Blockchain Utilities
         return double_spends
 
     @classmethod
-    def verify_message(cls, config, rid, message, public_key):
+    def verify_message(cls, config, rid, message, public_key, txn_id=None):
         from crypt import Crypt
         mongo = Mongo(config)
         sent = False
         received = False
-        txns = [x for x in cls.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)]
-        fastgraph_transactions = mongo.db.fastgraph_transactions.find({"txn.rid": rid})
-        txns.extend([x['txn'] for x in fastgraph_transactions])
         shared_secrets = TU.get_shared_secrets_by_rid(config, rid)
+        if txn_id:
+            txns = [cls.get_transaction_by_id(config, txn_id)]
+        else:
+            txns = [x for x in cls.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)]
+            fastgraph_transactions = mongo.db.fastgraph_transactions.find({"txn.rid": rid})
+            txns.extend([x['txn'] for x in fastgraph_transactions])
         for txn in txns:
             for shared_secret in list(set(shared_secrets)):
                 try:

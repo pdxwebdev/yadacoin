@@ -54,8 +54,10 @@ class BlockFactory(object):
                 if transaction_obj.transaction_signature in used_sigs:
                     print 'duplicate transaction found and removed'
                     continue
+    
                 used_sigs.append(transaction_obj.transaction_signature)
                 transaction_obj.verify()
+
                 if transaction_obj.rid:
                     for input_id in transaction_obj.inputs:
                         input_block = BU.get_transaction_by_id(self.config, input_id.id, give_block=True)
@@ -92,11 +94,12 @@ class BlockFactory(object):
                 unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
             else:
                 res = BU.get_wallet_unspent_fastgraph_transactions(self.config, address)
-                unspent_fastgraph_ids = [x['transaction']['id'] for x in res]
+                unspent_fastgraph_ids = [x['id'] for x in res]
                 unspent_fastgraph_indexed[address] = unspent_fastgraph_ids
 
             failed = False
             used_ids_in_this_txn = []
+            
             for x in transaction_obj.inputs:
                 if isinstance(transaction_obj, Transaction) and x.id not in unspent_ids:
                     failed = True
