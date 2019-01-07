@@ -656,6 +656,8 @@ def flag():
 
 @app.route('/peers', methods=['GET', 'POST'])
 def peers():
+    config = current_app.config['yada_config']
+    mongo = Mongo(config)
     if request.method == 'POST':
         try:
             socket.inet_aton(request.json['host'])

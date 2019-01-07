@@ -112,11 +112,11 @@ if __name__ == '__main__':
     elif args.mode == 'serve':
         print config.to_json()
 
-        my_peer = Peer.init_my_peer(config)
+        config.network = args.network
+
+        my_peer = Peer.init_my_peer(config, config.network)
         config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()
         print "http://{}/generate-wallet".format(my_peer.to_string())
-
-        config.network = args.network
 
         serve = Serve(config)
         pywsgi.WSGIServer((config.serve_host, config.serve_port), serve.app).serve_forever()
