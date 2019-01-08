@@ -130,7 +130,7 @@ class Consensus(object):
                 print 'getting block', url
                 res = requests.get(url, timeout=1, headers={'Connection':'close'})
             except:
-                if retry == 5:
+                if retry == 50:
                     raise BadPeerException()
                 else:
                     retry += 1
@@ -276,10 +276,8 @@ class Consensus(object):
             if prev_blocks_check:
                 prev_blocks_check = Block.from_dict(self.config, prev_blocks_check)
                 print prev_blocks_check.hash, prev_blocks_check.index
-                missing_blocks = self.mongo.db.blocks.find({'index': {'$lte': prev_blocks_check.index}})
-                complete_incoming_chain = blocks[:]
-                for missing_block in missing_blocks:
-                    complete_incoming_chain.append(Block.from_dict(self.config, missing_block))
+                complete_incoming_chain = blocks[:] + [Block.from_dict(self.config, x) for x in self.mongo.db.blocks.find({'index': {'$lte': prev_blocks_check.index}})]
+
                 # if we have it in our blockchain, then we've hit the fork point
                 # now we have to loop through the current block array and build a blockchain
                 # then we compare the block height and difficulty of the two chains
