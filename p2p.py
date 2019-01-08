@@ -55,8 +55,9 @@ if __name__ == '__main__':
         print 'no config file found at \'%s\'' % args.config
         exit()
 
+    mongo = Mongo(config)
     if args.mode == 'consensus':
-        consensus = Consensus(config)
+        consensus = Consensus(config, mongo)
         consensus.verify_existing_blockchain()
         while 1:
             consensus.sync_top_down()
@@ -104,7 +105,7 @@ if __name__ == '__main__':
             time.sleep(1)
 
     elif args.mode == 'pool':
-        pp = PoolPayer(config)
+        pp = PoolPayer(config, mongo)
         while 1:            
             pp.do_payout()
             time.sleep(1)

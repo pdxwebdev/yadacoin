@@ -174,14 +174,14 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def get_target(cls, config, height, last_time, last_block, blockchain):
+    def get_target(cls, config, mongo, height, last_time, last_block, blockchain):
         # change target
         max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
         retarget_period = 2016  # blocks
         two_weeks = 1209600  # seconds
         half_week = 302400  # seconds
         if height > 0 and height % retarget_period == 0:
-            block_from_2016_ago = Block.from_dict(config, BU.get_block_by_index(config, height - retarget_period))
+            block_from_2016_ago = Block.from_dict(config, mongo, BU.get_block_by_index(config, height - retarget_period))
             two_weeks_ago_time = block_from_2016_ago.time
             elapsed_time_from_2016_ago = int(last_time) - int(two_weeks_ago_time)
             # greater than two weeks?
@@ -235,8 +235,8 @@ class BlockFactory(object):
         return lowest[1], lowest[2]
 
     @classmethod
-    def get_genesis_block(cls, config):
-        return Block.from_dict(config, {
+    def get_genesis_block(cls, config, mongo):
+        return Block.from_dict(config, mongo, {
             "nonce" : 0,
             "hash" : "0dd0ec9ab91e9defe535841a4c70225e3f97b7447e5358250c2dc898b8bd3139",
             "public_key" : "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570",
@@ -272,6 +272,7 @@ class Block(object):
     def __init__(
         self,
         config,
+        mongo,
         version='',
         block_time='',
         block_index='',
@@ -286,6 +287,7 @@ class Block(object):
         target=''
     ):
         self.config = config
+        self.mongo = mongo
         self.version = version
         self.time = block_time
         self.index = block_index
@@ -300,10 +302,9 @@ class Block(object):
         self.signature = signature
         self.special_min = special_min
         self.target = target
-        self.mongo = Mongo(self.config)
 
     @classmethod
-    def from_dict(cls, config, block):
+    def from_dict(cls, config, mongo, block):
         transactions = []
         for txn in block.get('transactions'):
             # TODO: do validify checking for coinbase transactions
@@ -315,6 +316,7 @@ class Block(object):
 
         return cls(
             config=config,
+            mongo=mongo,
             version=block.get('version'),
             block_time=block.get('time'),
             block_index=block.get('index'),

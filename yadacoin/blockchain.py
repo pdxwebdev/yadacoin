@@ -1,23 +1,21 @@
 import re
+import time
 from block import Block, BlockFactory
 
 class BlockChainException(BaseException):
     pass
 
 class Blockchain(object):
-    def __init__(self, config, blocks=None):
+    def __init__(self, config, mongo, blocks=None):
         self.config = config
-        if blocks:
-            new_block_array = []
-            for block in blocks:
-                if isinstance(block, Block):
-                    new_block_array.append(block)
-                else:
-                    block_obj = Block.from_dict(config, block)
-                    new_block_array.append(block_obj)
-            self.blocks = sorted(new_block_array, key=lambda x: x.index)
-        else:
-            self.blocks = []
+        self.mongo = mongo
+        self.blocks = []
+        for block in blocks:
+            if isinstance(block, Block):
+                self.blocks.append(block)
+            else:
+                self.blocks.append(Block.from_dict(config, mongo, block))
+        self.blocks = sorted(self.blocks, key=lambda x: x.index)
 
     def verify(self, progress=None):
         last_block = None
@@ -38,7 +36,7 @@ class Blockchain(object):
                     else:
                         return {'verified': False}
             if last_block:
-                target = BlockFactory.get_target(self.config, block.index, last_block.time, last_block, self)
+                target = BlockFactory.get_target(self.config, self.mongo, block.index, last_block.time, last_block, self)
                 if int(block.hash, 16) > target and not block.special_min:
                     print "invalid block chain: block target is not below the previous target and not special minimum"
                     return {'verified': False, 'last_good_block': last_block}

@@ -19,15 +19,16 @@ class ForkException(Exception):
 
 class Consensus(object):
     lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-    def __init__(self, config):
+    def __init__(self, config, mongo):
         self.config = config
-        self.mongo = Mongo(self.config)
+        self.mongo = mongo
         latest_block = BU.get_latest_block(self.config)
         if latest_block:
-            self.latest_block = Block.from_dict(self.config, latest_block)
+            self.latest_block = Block.from_dict(self.config, self.mongo, latest_block)
         else:
             self.insert_genesis()
-        self.existing_blockchain = Blockchain(self.config, [x for x in self.mongo.db.blocks.find({})])
+        blocks = self.mongo.db.blocks.find({})
+        self.existing_blockchain = Blockchain(self.config, self.mongo, blocks)
 
     def output(self, string):
         sys.stdout.write(string)  # write the next character
@@ -39,8 +40,7 @@ class Consensus(object):
 
     def insert_genesis(self):
         #insert genesis if it doesn't exist
-        mongo = Mongo(self.config)
-        genesis_block = BlockFactory.get_genesis_block(self.config)
+        genesis_block = BlockFactory.get_genesis_block(self.config, self.mongo)
         genesis_block.save()
         self.mongo.db.consensus.update({
             'block': genesis_block.to_dict(),
@@ -80,7 +80,7 @@ class Consensus(object):
         latests = self.get_latest_consensus_blocks()
         for latest in latests:
             if int(latest['block']['version']) == BU.get_version_for_height(latest['block']['index']):
-                return Block.from_dict(self.config, latest['block'])
+                return Block.from_dict(self.config, self.mongo, latest['block'])
 
     def get_consensus_blocks_by_index(self, index):
         return self.mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}, 'block.version': BU.get_version_for_height(index)}, {'_id': 0})
@@ -96,7 +96,7 @@ class Consensus(object):
         ranks = []
         for record in records:
             peer = Peer.from_string(self.config, record['peer'])
-            block = Block.from_dict(self.config, record['block'])
+            block = Block.from_dict(self.config, self.mongo, record['block'])
             target = int(record['block']['hash'], 16)
             if target < lowest:
                 ranks.append({
@@ -115,7 +115,7 @@ class Consensus(object):
             'ignore': {'$ne': True}
         })
         if new_block:
-            new_block = Block.from_dict(self.config, new_block['block'])
+            new_block = Block.from_dict(self.config, self.mongo, new_block['block'])
             if int(new_block.version) == BU.get_version_for_height(new_block.index):
                 return new_block
             else:
@@ -137,7 +137,7 @@ class Consensus(object):
                     continue
             try:
                 print 'response code: ', res.status_code
-                new_block = Block.from_dict(self.config, json.loads(res.content))
+                new_block = Block.from_dict(self.config, self.mongo, json.loads(res.content))
                 if int(new_block.version) == BU.get_version_for_height(new_block.index):
                     return new_block
                 else:
@@ -160,12 +160,12 @@ class Consensus(object):
     def sync_bottom_up(self):
         #bottom up syncing
 
-        self.latest_block = Block.from_dict(self.config, BU.get_latest_block(self.config))
+        self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config))
         self.remove_pending_transactions_now_in_chain()
 
         latest_consensus = self.mongo.db.consensus.find_one({'index': self.latest_block.index + 1})
         if latest_consensus:
-            latest_consensus = Block.from_dict(self.config, latest_consensus['block'])
+            latest_consensus = Block.from_dict(self.config, self.mongo, latest_consensus['block'])
             print latest_consensus.index, "latest consensus_block"
 
             records = self.mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1), 'ignore': {'$ne': True}})
@@ -179,12 +179,12 @@ class Consensus(object):
     def sync_top_down(self):
         #top down syncing
 
-        self.latest_block = Block.from_dict(self.config, BU.get_latest_block(self.config))
+        self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config))
         self.remove_pending_transactions_now_in_chain()
 
         latest_consensus = self.mongo.db.consensus.find_one({}, sort=[('index', -1)])
         if latest_consensus:
-            latest_consensus = Block.from_dict(self.config, latest_consensus['block'])
+            latest_consensus = Block.from_dict(self.config, self.mongo, latest_consensus['block'])
             if self.latest_block.index == latest_consensus.index:
                 self.log('up to date, height: ' + str(self.latest_block.index))
                 return
@@ -199,7 +199,7 @@ class Consensus(object):
             return
 
     def import_block(self, block_data):
-        block = Block.from_dict(self.config, block_data['block'])
+        block = Block.from_dict(self.config, self.mongo, block_data['block'])
         peer = Peer.from_string(self.config, block_data['peer'])
         print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
         try:
@@ -219,7 +219,7 @@ class Consensus(object):
         if not last_block:
             raise ForkException()
         last_time = last_block.time
-        target = BlockFactory.get_target(self.config, height, last_time, last_block, blockchain)
+        target = BlockFactory.get_target(self.config, self.mongo, height, last_time, last_block, blockchain)
         if int(block.hash, 16) < target or block.special_min:
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                 dup = self.mongo.db.blocks.find_one({'index': block.index, 'hash': block.hash})
@@ -274,17 +274,17 @@ class Consensus(object):
             prev_blocks_check = self.mongo.db.blocks.find_one({'hash': block.prev_hash, 'index': block.index - 1})
 
             if prev_blocks_check:
-                prev_blocks_check = Block.from_dict(self.config, prev_blocks_check)
+                prev_blocks_check = Block.from_dict(self.config, self.mongo, prev_blocks_check)
                 print prev_blocks_check.hash, prev_blocks_check.index
-                complete_incoming_chain = blocks[:] + [Block.from_dict(self.config, x) for x in self.mongo.db.blocks.find({'index': {'$lte': prev_blocks_check.index}})]
+                complete_incoming_chain = blocks[:] + [Block.from_dict(self.config, self.mongo, x) for x in self.mongo.db.blocks.find({'index': {'$lte': prev_blocks_check.index}})]
 
                 # if we have it in our blockchain, then we've hit the fork point
                 # now we have to loop through the current block array and build a blockchain
                 # then we compare the block height and difficulty of the two chains
                 # replace our current chain if necessary by removing them from the database
                 # then looping though our new chain, inserting the new blocks
-                self.existing_blockchain = Blockchain(self.config, [x for x in self.mongo.db.blocks.find({})])
-                blockchain = Blockchain([x for x in complete_incoming_chain])
+                self.existing_blockchain = Blockchain(self.config, self.mongo, [x for x in self.mongo.db.blocks.find({})])
+                blockchain = Blockchain(self.config, self.mongo, [x for x in complete_incoming_chain])
 
                 # If the block height is equal, we throw out the inbound chain, it muse be greater
                 # If the block height is lower, we throw it out
@@ -294,8 +294,8 @@ class Consensus(object):
 
                 existing_difficulty = self.existing_blockchain.get_difficulty()
 
-                if blockchain.get_highest_block_height() >= self.existing_blockchain.get_highest_block_height() \
-                    and inbound_difficulty >= existing_difficulty:
+                if (blockchain.get_highest_block_height() >= self.existing_blockchain.get_highest_block_height() 
+                    and inbound_difficulty >= existing_difficulty):
                     for block in sorted(blockchain.blocks, key=lambda x: x.index):
                         try:
                             if block.index == 0:

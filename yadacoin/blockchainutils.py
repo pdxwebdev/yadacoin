@@ -53,7 +53,7 @@ class BU(object):  # Blockchain Utilities
         blocks = cls.get_blocks(config)
         block_objs = []
         for block in blocks:
-            block_objs.append(Block.from_dict(config, block))
+            block_objs.append(Block.from_dict(config, mongo, block))
         return block_objs
 
     @classmethod

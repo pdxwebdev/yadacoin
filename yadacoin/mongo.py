@@ -1,7 +1,6 @@
 from pymongo import MongoClient, IndexModel, ASCENDING, DESCENDING
 
 class Mongo(object):
-    @classmethod
     def __init__(self, config):
         self.config = config
         self.client = MongoClient(self.config.mongodb_host)

@@ -615,7 +615,7 @@ class BlockchainSocketServer(socketio.Namespace):
         mongo = Mongo(config)
         try:
             peer = Peer.from_string(config, request.json.get('peer'))
-            block = Block.from_dict(config, data)
+            block = Block.from_dict(config, mongo, data)
             if block.index == 0:
                 return
             if int(block.version) != BU.get_version_for_height(block.index):

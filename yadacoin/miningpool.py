@@ -27,10 +27,10 @@ class MiningPool(object):
         max_block_time = 600
         block = BU.get_latest_block(self.config)
         if block:
-            block = Block.from_dict(self.config, block)
+            block = Block.from_dict(self.config, self.mongo, block)
             self.height = block.index + 1
         else:
-            genesis_block = BlockFactory.get_genesis_block(self.config)
+            genesis_block = BlockFactory.get_genesis_block(self.config, self.mongo)
             genesis_block.save()
             self.mongo.db.consensus.insert({
                 'block': genesis_block.to_dict(),
@@ -38,7 +38,7 @@ class MiningPool(object):
                 'id': genesis_block.signature,
                 'index': 0
                 })
-            block = Block.from_dict(self.config, BU.get_latest_block(self.config))
+            block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config))
             self.height = block.index
 
         try:
@@ -53,7 +53,7 @@ class MiningPool(object):
                 if time_elapsed_since_last_block > max_block_time:
                     target = max_target
                     special_min = True
-            self.target = BlockFactory.get_target(self.config, self.height, last_time, block, Blockchain(self.config, [x for x in BU.get_blocks(self.config)]))
+            self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, [x for x in BU.get_blocks(self.config)]))
 
             self.block_factory = BlockFactory(
                 config=self.config,
