@@ -43,3 +43,18 @@ ExecStart={cwd}/scripts/start_consensus.sh
 WantedBy=multi-user.target
 """.format(cwd=os.getcwd())
     f.write(out)
+with open(os.getcwd() + '/services/yadacoin-pool.service', 'w+') as f:
+    out = """#!/bin/bash
+[Unit]
+Description=Yada Coin Pool Worker
+
+[Service]
+Type=simple
+WorkingDirectory={cwd}
+ExecStart={cwd}/scripts/start_pool.sh
+
+[Install]
+WantedBy=multi-user.target
+""".format(cwd=os.getcwd())
+    f.write(out)
+

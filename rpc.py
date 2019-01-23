@@ -672,26 +672,29 @@ def peers():
             socket.inet_aton(request.json['host'])
             host = request.json['host']
             port = int(request.json['port'])
-            bulletin_secret = request.json.get('bulletin_secret', None)
             failed = request.json.get('failed')
             if failed:
                 res = mongo.db.peers.find({'host': host, 'port': port})
                 if res.count():
                     mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
             else:
-                mongo.db.peers.update({'host': host, 'port': port}, {
-                    'host': host,
-                    'port': port,
-                    'active': True,
-                    'failed': 0,
-                    'bulletin_secret': bulletin_secret
+                Mongo.db.peers.update({
+                    'host': host, 
+                    'port': port
+                }, {
+                    'host': host, 
+                    'port': port, 
+                    'active': True, 
+                    'failed': 0
                 }, upsert=True)
-            Peers.init_local(config, config.network)
+                current_app.config['yada_peers'] = Peers.init_local(config, config.network)
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
     else:
-        return json.dumps(Peers.to_dict(), indent=4)
+        if 'yada_peers' not in current_app.config:
+            current_app.config['yada_peers'] = Peers.init_local(config, config.network)
+        return current_app.config['yada_peers']
 
 @app.route('/stats')
 def stats():
