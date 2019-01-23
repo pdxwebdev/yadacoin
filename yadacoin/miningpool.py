@@ -53,10 +53,11 @@ class MiningPool(object):
                 if time_elapsed_since_last_block > max_block_time:
                     target = max_target
                     special_min = True
-            self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, [x for x in BU.get_blocks(self.config)]))
+            self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, self.mongo, [x for x in BU.get_blocks(self.config)]))
 
             self.block_factory = BlockFactory(
                 config=self.config,
+                mongo=self.mongo,
                 transactions=self.get_pending_transactions(),
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,

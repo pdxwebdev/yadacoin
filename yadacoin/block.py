@@ -23,8 +23,9 @@ from fastgraph import FastGraph
 
 
 class BlockFactory(object):
-    def __init__(self, config, transactions, public_key, private_key, version, index=None, force_time=None):
+    def __init__(self, config, mongo, transactions, public_key, private_key, version, index=None, force_time=None):
         self.config = config
+        self.mongo = mongo
         self.version = BU.get_version_for_height(index)
         if force_time:
             self.time = str(int(force_time))
@@ -130,6 +131,7 @@ class BlockFactory(object):
         self.set_merkle_root(txn_hashes)
         self.block = Block(
             self.config,
+            self.mongo,
             version=self.version,
             block_time=self.time,
             block_index=self.index,

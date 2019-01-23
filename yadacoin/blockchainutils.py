@@ -261,8 +261,24 @@ class BU(object):  # Blockchain Utilities
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
+
+        get_transactions_cache = mongo.db.get_transactions_cache.find(
+                {
+                    'public_key': config.public_key,
+                    'raw': raw,
+                    'both': both,
+                    'skip': skip
+                }
+        ).sort([('height', -1)])
+        latest_block = cls.get_latest_block(config)
+        if get_transactions_cache.count():
+            get_transactions_cache = get_transactions_cache[0]
+            block_height = get_transactions_cache['height']
+        else:
+            block_height = 0
+
         transactions = []
-        for block in mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
+        for block in mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}}):
             for transaction in block.get('transactions'):
                 try:
                     if transaction.get('id') in skip:
