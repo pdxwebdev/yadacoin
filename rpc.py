@@ -198,6 +198,15 @@ def screen():
 def explorer():
     return app.send_static_file('explorer/index.html')
 
+def changetime(block):
+    from datetime import datetime
+    block['time'] = datetime.utcfromtimestamp(int(block['time'])).strftime('%Y-%m-%dT%H:%M:%S UTC')
+    return block
+
+@app.route('/hashrate')
+def hashrate():
+    return render_template('hashrate.html')
+
 @app.route('/api-stats')
 def api_stats():
     max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
@@ -212,7 +221,7 @@ def api_stats():
         if last_time:
             if int(block.get('time')) > last_time:
                 periods.append({
-                    'hashrate': (difficulty * 2**32) / (int(block.get('time')) - last_time),
+                    'hashrate': (((int(block.get('index')) / 144) * difficulty) * 2**32) / 600 / 100,
                     'index': block.get('index'),
                     'elapsed_time': (int(block.get('time')) - last_time)
                 })

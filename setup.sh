@@ -6,7 +6,7 @@ sudo apt update
 sudo apt install -y mongodb-org
 sudo systemctl enable mongod.service
 sudo systemctl start mongod.service
-sudo apt install -y libxml2-dev libxmlsec1-dev
+sudo apt install -y libxml2-dev libxmlsec1-dev python-dev build-essential
 cd ~
 git clone https://github.com/pdxwebdev/yadacoin.git
 cd yadacoin
