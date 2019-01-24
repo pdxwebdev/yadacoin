@@ -293,13 +293,50 @@ class BU(object):  # Blockchain Utilities
                         relationship = json.loads(decrypted)
                         transaction['relationship'] = relationship
                     transaction['height'] = block['index']
+                    mongo.db.get_transactions_cache.insert(
+                        {
+                            'public_key': config.public_key,
+                            'raw': raw,
+                            'both': both,
+                            'skip': skip,
+                            'height': latest_block['index'],
+                            'txn': transaction
+                        }
+                    )
                     transactions.append(transaction)
                 except:
                     if both:
                         transaction['height'] = block['index']
+                        mongo.db.get_transactions_cache.insert(
+                            {
+                                'public_key': config.public_key,
+                                'raw': raw,
+                                'both': both,
+                                'skip': skip,
+                                'height': latest_block['index'],
+                                'txn': transaction
+                            }
+                        )
                         transactions.append(transaction)
                     continue
-        return transactions
+        if not transactions:
+            mongo.db.get_transactions_cache.insert(
+                {
+                    'public_key': config.public_key,
+                    'raw': raw,
+                    'both': both,
+                    'skip': skip,
+                    'height': latest_block['index']
+                }   
+            )
+        for x in mongo.db.get_transactions_cache.find({
+            'public_key': config.public_key,
+            'raw': raw,
+            'both': both,
+            'skip': skip
+        }):
+            if 'txn' in x:
+                yield x['txn']
 
     @classmethod
     def get_relationships(cls, config, wif):
