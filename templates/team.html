@@ -49,10 +49,13 @@ body {
 0)))}}var d=a;"undefined"!==typeof f?d=a[f]=[]:f="mixpanel";d.people=d.people||[];d.toString=function(b){var a="mixpanel";"mixpanel"!==f&&(a+="."+f);b||(a+=" (stub)");return a};d.people.toString=function(){return d.toString(1)+".people (stub)"};k="disable time_event track track_pageview track_links track_forms register register_once alias unregister identify name_tag set_config reset people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user".split(" ");
 for(h=0;h<k.length;h++)e(d,k[h]);a._i.push([b,c,f])};a.__SV=1.2;b=e.createElement("script");b.type="text/javascript";b.async=!0;b.src="undefined"!==typeof MIXPANEL_CUSTOM_LIB_URL?MIXPANEL_CUSTOM_LIB_URL:"file:"===e.location.protocol&&"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js".match(/^\/\//)?"https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js":"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";c=e.getElementsByTagName("script")[0];c.parentNode.insertBefore(b,c)}})(document,window.mixpanel||[]);
 mixpanel.init("4e29328ef697408a91a5aad0552705af");
+if(window.location.href.indexOf("yadacoin.io") > 0)
 mixpanel.track("team page");</script><!-- end Mixpanel -->
 </head>
 <body>
-    {% include 'navigation.html' %}
+    {% with active='team' %}
+      {% include 'navigation.html'  %}
+    {% endwith %}
     <main role="main">
       <!-- Marketing messaging and featurettes
       ================================================== -->
@@ -65,14 +68,23 @@ mixpanel.track("team page");</script><!-- end Mixpanel -->
           <div class="col-lg-4">
             <img class="rounded-circle" src="/static/matt.jpg" alt="Generic placeholder image" width="140" height="140">
             <h2>Matthew Vogel</h2>
-            <p>Matt is a software engineer and the author of Remotely Rich. His passion for privacy and anonymity has grown immensely since integrating his patent pending social networking and payment system protocol with blockchain technology.</p>
+            <h4>Founder / Developer</h4>
+            <p>Matt is a software engineer and the author of Remotely Rich. His passion for privacy and anonymity has grown immensely since integrating his patent pending social networking and payment system protocol with blockchain technology which he invented in 2009.</p>
             <p><strong>info@yadacoin.io</strong></p>
           </div><!-- /.col-lg-4 -->
           <div class="col-lg-4">
-            <img class="rounded-circle" src="data:image/gif;base64,R0lGODlhAQABAIAAAAUEBAAAACwAAAAAAQABAAACAkQBADs=" alt="Generic placeholder image" width="140" height="140">
-            <h2>Seeking Team Members...</h2>
-            <p>Interested in the yada coin vision? Contact using the email below and let's talk!</p>
-            <p><strong>info@yadacoin.io</strong></p>
+            <img class="rounded-circle" src="/static/selina.jpg" alt="Generic placeholder image" width="140" height="140">
+            <h2>Selina Herrera</h2>
+            <h4>Chief Marketing Officer</h4>
+            <p>Selina Herrera has a decade's worth of experience in the field of applied arts and social media marketing. Selina brings with her a truly one-of-a-kind mind for marketing especially when it comes to social media. Selina has an enormous passion for bringing change to social media.</p>
+            <p><strong>selina@yadacoin.io</strong></p>
+          </div><!-- /.col-lg-4 -->
+          <div class="col-lg-4">
+            <img class="rounded-circle" src="/static/anna.jpg" alt="Generic placeholder image" width="140" height="140">
+            <h2>Anna Buchholz</h2>
+            <h4>Chief Strategy Officer</h4>
+            <p>Anna Buchholz is persuing a master's degree in organizational psychology and has nearly a decade of experience building high performance teams that develop world class software. Anna brings an unmatched level of tenacity and efficacy to an industry she is determined to change.</p>
+            <p><strong>anna@yadacoin.io</strong></p>
           </div><!-- /.col-lg-4 -->
         </div><!-- /.row -->
 

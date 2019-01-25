@@ -824,3 +824,265 @@ class GetFastGraphView(View):
     def dispatch_request(self):
         # after the necessary signatures are gathered, the transaction is sent here.
         return BU.get_wallet_unspent_fastgraph_transactions(app.config.get('yada_config'), request.args.get('address'))
+
+class SearchView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        phrase = request.args.get('phrase')
+        if not phrase:
+            return 'phrase required', 400
+        bulletin_secret = request.args.get('bulletin_secret')
+        if not bulletin_secret:
+            return 'bulletin_secret required', 400
+        my_bulletin_secret = config.get_bulletin_secret()
+
+        rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+        friend = [x for x in BU.search_username(config, phrase)]
+        
+        if friend:
+            to = [x['to'] for x in friend['outputs'] if x['to'] != config.address][0]
+        else:
+            return '{}', 404
+        out = json.dumps({
+            'bulletin_secret': friend['relationship']['their_bulletin_secret'],
+            'requested_rid': friend['rid'],
+            'requester_rid': rid,
+            'to': to
+        }, indent=4)
+        return out
+
+class ReactView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        my_bulletin_secret = config.get_bulletin_secret()
+        their_bulletin_secret = request.json.get('bulletin_secret')
+        rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
+        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+        client = app.test_client()
+        response = client.post('/fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
+        fastgraph = FastGraph(request.json.get('txn'))
+        BU.cache_fastgraph_transaction(config, fastgraph)
+        try:
+            response.get_json()
+        except:
+            return 'error posting react', 400
+
+        rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
+        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+        res = mongo.site_db.fcmtokens.find({"rid": rid})
+        for token in res:
+            result = push_service.notify_single_device(
+                registration_id=token['token'],
+                message_title='%s reacted to your post!' % username,
+                message_body='Go see how they reacted!',
+                extra_kwargs={'priority': 'high'}
+            )
+        return 'ok'
+
+class GetReactsView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        if request.json:
+            data = request.json
+            ids = data.get('txn_ids')
+        else:
+            data = request.form
+            ids = json.loads(data.get('txn_ids'))
+
+        res = BU.get_reacts(config, ids)
+        out = {}
+        for x in res:
+            if x['id'] not in out:
+                out[x['id']] = ''
+            out[x['id']] = out[x['id']] + x['emoji']
+        return json.dumps(out)
+
+class GetReactsDetailView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        if request.json:
+            data = request.json
+            txn_id = data.get('txn_id')
+        else:
+            data = request.form
+            txn_id = json.loads(data.get('txn_id'))
+
+        res = BU.get_reacts(config, [txn_id])
+        out = []
+        for x in res:
+            try:
+                res1 = BU.get_transaction_by_rid(config, x['rid'], wif=config.wif, rid=True)
+                if res1:
+                    x['username'] = res1['relationship']['their_username']
+                out.append(x)
+            except:
+                pass
+        return json.dumps(out)
+
+class CommentReactView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        my_bulletin_secret = config.get_bulletin_secret()
+        rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
+        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+        res1 = mongo.site_db.usernames.find({'rid': rid})
+        if res1.count():
+            username = res1[0]['username']
+        else:
+            username = humanhash.humanize(rid)
+
+        mongo.site_db.comment_reacts.insert({
+            'rid': rid,
+            'emoji': request.json.get('react'),
+            'comment_id': request.json.get('_id')
+        })
+
+        comment = mongo.site_db.comments.find({'id': request.json.get('id')})[0]
+
+        res = mongo.site_db.fcmtokens.find({"rid": comment['rid']})
+        for token in res:
+            result = push_service.notify_single_device(
+                registration_id=token['token'],
+                message_title='%s reacted to your comment!' % username,
+                message_body='Go see how they reacted!',
+                extra_kwargs={'priority': 'high'}
+            )
+        return 'ok'
+
+class GetCommentReactsView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        if request.json:
+            data = request.json
+            ids = data.get('ids')
+        else:
+            data = request.form
+            ids = json.loads(data.get('ids'))
+        ids = [str(x) for x in ids]
+        res = mongo.site_db.comment_reacts.find({
+            'comment_id': {
+                '$in': ids
+            },
+        })
+        out = {}
+        for x in res:
+            if str(x['comment_id']) not in out:
+                out[str(x['comment_id'])] = ''
+            out[str(x['comment_id'])] = out[str(x['comment_id'])] + x['emoji']
+        return json.dumps(out)
+
+class GetCommentReactsDetailView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        if request.json:
+            data = request.json
+            comment_id = data.get('_id')
+        else:
+            data = request.form
+            comment_id = json.loads(data.get('_id'))
+
+        res = mongo.site_db.comment_reacts.find({
+            'comment_id': comment_id,
+        }, {'_id': 0})
+        out = []
+        for x in res:
+            res1 = mongo.site_db.usernames.find({'rid': x['rid']})
+            if res1.count():
+                x['username'] = res1[0]['username']
+            else:
+                x['username'] = humanhash.humanize(x['rid'])
+            out.append(x)
+        return json.dumps(out)
+
+class CommentView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        my_bulletin_secret = config.get_bulletin_secret()
+        rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
+        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+
+        res1 = mongo.site_db.usernames.find({'rid': rid})
+        if res1.count():
+            username = res1[0]['username']
+        else:
+            username = humanhash.humanize(rid)
+
+        mongo.site_db.comments.insert({
+            'rid': rid,
+            'body': request.json.get('comment'),
+            'txn_id': request.json.get('txn_id')
+        })
+        txn = mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
+
+        rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
+        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+        res = mongo.site_db.fcmtokens.find({"rid": rid})
+        for token in res:
+            result = push_service.notify_single_device(
+                registration_id=token['token'],
+                message_title='%s commented on your post!' % username,
+                message_body='Go see what they said!',
+                extra_kwargs={'priority': 'high'}
+            )
+
+        comments = mongo.site_db.comments.find({
+            'rid': {'$ne': rid},
+            'txn_id': request.json.get('txn_id')
+        })
+        for comment in comments:
+            res = mongo.site_db.fcmtokens.find({"rid": comment['rid']})
+            for token in res:
+                result = push_service.notify_single_device(
+                    registration_id=token['token'],
+                    message_title='%s commented on a post you commented on!' % username,
+                    message_body='Go see what they said!',
+                    extra_kwargs={'priority': 'high'}
+                )
+        return 'ok'
+
+class GetCommentsView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = Mongo(config)
+        if request.json:
+            data = request.json
+            ids = data.get('txn_ids')
+            bulletin_secret = data.get('bulletin_secret')
+        else:
+            data = request.form
+            ids = json.loads(data.get('txn_ids'))
+            bulletin_secret = data.get('bulletin_secret')
+
+        res = mongo.site_db.comments.find({
+            'txn_id': {
+                '$in': ids
+            },
+        })
+        blocked = [x['username'] for x in mongo.site_db.blocked_users.find({'bulletin_secret': bulletin_secret})]
+        out = {}
+        usernames = {}
+        for x in res:
+            if x['txn_id'] not in out:
+                out[x['txn_id']] = []
+            res1 = mongo.site_db.usernames.find({'rid': x['rid']})
+            if res1.count():
+                x['username'] = res1[0]['username']
+            else:
+                x['username'] = humanhash.humanize(x['rid'])
+            x['_id'] = str(x['_id'])
+            if x['username'] not in blocked:
+                out[x['txn_id']].append(x)
+        return json.dumps(out)

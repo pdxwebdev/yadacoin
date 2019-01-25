@@ -254,7 +254,7 @@ class BU(object):  # Blockchain Utilities
                     yield x['txn']
 
     @classmethod
-    def get_transactions(cls, config, wif=None, raw=False, both=True, skip=None):
+    def get_transactions(cls, config, wif, query, raw=False, both=True, skip=None):
         mongo = Mongo(config)
         if not skip:
             skip = []
@@ -267,7 +267,7 @@ class BU(object):  # Blockchain Utilities
                     'public_key': config.public_key,
                     'raw': raw,
                     'both': both,
-                    'skip': skip
+                    'skip': skip,
                 }
         ).sort([('height', -1)])
         latest_block = cls.get_latest_block(config)
@@ -293,13 +293,110 @@ class BU(object):  # Blockchain Utilities
                         relationship = json.loads(decrypted)
                         transaction['relationship'] = relationship
                     transaction['height'] = block['index']
+                    mongo.db.get_transactions_cache.insert(
+                        {
+                            'public_key': config.public_key,
+                            'raw': raw,
+                            'both': both,
+                            'skip': skip,
+                            'height': latest_block['index'],
+                            'txn': transaction
+                        }
+                    )
                     transactions.append(transaction)
                 except:
                     if both:
                         transaction['height'] = block['index']
+                        mongo.db.get_transactions_cache.insert(
+                            {
+                                'public_key': config.public_key,
+                                'raw': raw,
+                                'both': both,
+                                'skip': skip,
+                                'height': latest_block['index'],
+                                'txn': transaction
+                            }
+                        )
                         transactions.append(transaction)
                     continue
-        return transactions
+        if not transactions:
+            mongo.db.get_transactions_cache.insert(
+                {
+                    'public_key': config.public_key,
+                    'raw': raw,
+                    'both': both,
+                    'skip': skip,
+                    'height': latest_block['index']
+                }   
+            )
+        used_ids = []
+        for x in cls.get_cached_fastgraph_transaction(config, query):
+            if 'txn' in x:
+                used_ids.append(x['id'])
+                yield x['txn']
+
+        search_query = {
+            'public_key': config.public_key,
+            'raw': raw,
+            'both': both,
+            'skip': skip,
+        }
+        search_query.update(query)
+        for x in mongo.db.get_transactions_cache.find(search_query):
+            if 'txn' in x and x['txn']['id'] not in used_ids:
+                yield x['txn']
+    
+    @classmethod
+    def get_cached_fastgraph_transaction(cls, config, query):
+        mongo = Mongo(config)
+        for x in mongo.db.fastgraph_transaction_cache.find(query):
+            if 'txn' in x:
+                yield x['txn']
+    
+    @classmethod
+    def cache_fastgraph_transaction(cls, config, txn):
+        from crypt import Crypt
+        mongo = Mongo(config)
+
+        shared_secrets = TU.get_shared_secrets_by_rid(config, txn.rid)
+        for shared_secret in list(set(shared_secrets)):
+            try:
+                cipher = Crypt(shared_secret.encode('hex'), shared=True)
+                decrypted = cipher.shared_decrypt(txn['relationship'])
+                relationship = json.loads(decrypted)
+                txn.relationship = relationship
+                mongo.db.fastgraph_transaction_cache.update({
+                    'id': txn.transaction_signature,
+                    'public_key': txn.public_key
+                },
+                {
+                    'id': txn.transaction_signature,
+                    'public_key': txn.public_key, 
+                    'txn': txn.to_dict()
+                },
+                upsert=True)
+            except:
+                pass
+    
+    @classmethod
+    def search_username(cls, config, username):
+        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': username})
+
+    @classmethod
+    def get_reacts(cls, config, signatures):
+        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+
+    @classmethod
+    def get_comments(cls, config, signatures):
+        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.comment': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+
+    @classmethod
+    def get_comment_reacts(cls, config, signatures):
+        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.comment_react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+
+    @classmethod
+    def get_comment_replies(cls, config, signatures):
+        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.comment_reply': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
 
     @classmethod
     def get_relationships(cls, config, wif):
@@ -334,19 +431,17 @@ class BU(object):  # Blockchain Utilities
             if not isinstance(selector, list):
                 selectors = [selector, ]
 
-        for block in mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}}):
+        for block in mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}}):
             for transaction in block.get('transactions'):
-                if transaction.get('rid') in selectors:
-                    if 'relationship' in transaction:
-                        if not raw:
-                            try:
-                                cipher = Crypt(wif)
-                                decrypted = cipher.decrypt(transaction['relationship'])
-                                relationship = json.loads(decrypted)
-                                transaction['relationship'] = relationship
-                            except:
-                                continue
-                    return transaction
+                if not raw:
+                    try:
+                        cipher = Crypt(wif)
+                        decrypted = cipher.decrypt(transaction['relationship'])
+                        relationship = json.loads(decrypted)
+                        transaction['relationship'] = relationship
+                    except:
+                        continue
+                return transaction
 
     @classmethod
     def get_transactions_by_rid(cls, config, selector, bulletin_secret, wif=None, rid=False, raw=False, returnheight=True, lt_block_height=None):

@@ -88,7 +88,9 @@ if(window.location.href.indexOf("yadacoin.io") > 0)
 mixpanel.track("guide page");</script><!-- end Mixpanel -->
 </head>
 <body class="container">
-  {% include 'navigation.html' %}
+    {% with active='guide' %}
+      {% include 'navigation.html'  %}
+    {% endwith %}
   <div class="row">
     <h1>Join a pool:</h1>
   </div>

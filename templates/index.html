@@ -89,7 +89,9 @@ if(window.location.href.indexOf("yadacoin.io") > 0)
 mixpanel.track("index page");</script><!-- end Mixpanel -->
 </head>
 <body>
-    {% include 'navigation.html' %}
+    {% with active='team' %}
+      {% include 'navigation.html'  %}
+    {% endwith %}
 
     <main role="main">
 

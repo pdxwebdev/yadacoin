@@ -75,6 +75,7 @@ if __name__ == '__main__':
             return json.loads(requests.get("http://{pool}/pool".format(pool=args.pool)).content)
         running_processes = []
         mongo = Mongo(config)
+        mp = MiningPool(config)
         while 1:
             Peers.init(config, args.network, my_peer=False)
             if not Peers.peers:
@@ -85,12 +86,12 @@ if __name__ == '__main__':
                     if not proc.is_alive():
                         proc.terminate()
                         data = get_mine_data()
-                        p = Process(target=MiningPool.pool_mine, args=(args.pool, config.address, data['header'], data['target'], data['nonces'], data['special_min']))
+                        p = Process(target=mp.pool_mine, args=(args.pool, config.address, data['header'], data['target'], data['nonces'], data['special_min']))
                         p.start()
                         running_processes[i] = p
             else:
                 data = get_mine_data()
-                p = Process(target=MiningPool.pool_mine, args=(args.pool, config.address, data['header'], data['target'], data['nonces'], data['special_min']))
+                p = Process(target=mp.pool_mine, args=(args.pool, config.address, data['header'], data['target'], data['nonces'], data['special_min']))
                 p.start()
                 running_processes.append(p)
             time.sleep(1)
