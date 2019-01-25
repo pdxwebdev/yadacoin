@@ -817,21 +817,30 @@ class BU(object):  # Blockchain Utilities
                 "$sort": {"height": 1}
             }
         ])
+
+        fastgraph_transactions = mongo.db.fastgraph_transactions.find({
+            "txn.relationship": {"$ne": ""},
+            "txn.dh_public_key": '',
+            "txn.rid": ''
+        })
+
+        transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
         mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(config, rids)
         friends = []
         for friend in cls.get_transactions_by_rid(config, rids, config.bulletin_secret, rid=True):
-            if 'bulletin_secret' in friend['relationship']:
-                friends.append(friend['relationship']['bulletin_secret'])
+            if 'their_bulletin_secret' in friend['relationship']:
+                friends.append(friend['relationship']['their_bulletin_secret'])
         friends = list(set(friends))
         had_txns = False
+        latest_height = BU.get_latest_block(config)['index']
         if friends:
             mutual_bulletin_secrets.extend(friends)
             for i, x in enumerate(transactions):
                 for bs in mutual_bulletin_secrets:
                     try:
-                        crypt = Crypt(hashlib.sha256(bs).hexdigest())
+                        crypt = Crypt(bs)
                         decrypted = crypt.decrypt(x['txn']['relationship'])
                         try:
                             decrypted = base64.b64decode(decrypted)
@@ -841,6 +850,8 @@ class BU(object):  # Blockchain Utilities
                         x['txn']['relationship'] = data
                         if 'postText' in decrypted:
                             had_txns = True
+                            if 'height' not in x:
+                                x['height'] = latest_height
                             print 'caching posts at height:', x['height']
                             for rid in rids:
                                 mongo.db.posts_cache.update({

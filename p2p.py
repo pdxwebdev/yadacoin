@@ -118,7 +118,7 @@ if __name__ == '__main__':
 
         my_peer = Peer.init_my_peer(config, config.network)
         config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()
-        print "http://{}/pool".format(my_peer.to_string())
+        print "http://{}".format(my_peer.to_string())
 
         serve = Serve(config)
         pywsgi.WSGIServer((config.serve_host, config.serve_port), serve.app, spawn=pool.Pool(100)).serve_forever()

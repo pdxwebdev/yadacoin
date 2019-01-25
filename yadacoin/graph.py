@@ -35,6 +35,8 @@ class Graph(object):
         self.already_added_messages = []
         self.bulletin_secret = str(bulletin_secret)
 
+        all_relationships = [x for x in BU.get_transactions(self.config, self.config.wif, query={'txn.relationship.their_username': {'$exists': True}}) if x['rid']]
+        self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in all_relationships])
         if wallet: # disabling for now
             self.wallet_mode = True
             all_relationships = [x for x in BU.get_transactions(self.config, self.config.wif) if x['rid']]
@@ -207,9 +209,8 @@ class Graph(object):
         for x in BU.get_posts(self.config, self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
             rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-            res = self.mongo.site_db.usernames.find({'rid': rid}, {'_id': 0})
-            if res.count():
-                x['username'] = res[0]['username']
+            if rid in self.rid_usernames:
+                x['username'] = self.rid_usernames[rid]
                 if x['username'] not in blocked and x['id'] not in flagged:
                     posts.append(x)
         self.posts = posts

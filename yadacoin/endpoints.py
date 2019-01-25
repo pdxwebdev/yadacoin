@@ -37,6 +37,7 @@ from yadacoin import (
     NotEnoughMoneyException,
     FastGraph
 )
+from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
 from pyfcm import FCMNotification
 from flask.views import View
@@ -569,16 +570,33 @@ class SignRawTransactionView(View):
                 request.json.get('hash'),
                 their_entry_for_relationship['public_key'].decode('hex')
             )
+
+            address = str(P2PKHBitcoinAddress.from_pubkey(their_entry_for_relationship['public_key'].decode('hex')))
+            found = False
+            for x in BU.get_wallet_unspent_transactions(config, address, [request.json.get('input')]):
+                if request.json.get('input') == x['id']:
+                    found = True
+
+            if found:
+                res = mongo.db.signed_transactions.find({'input': request.json.get('input')})
+                if res.count():
+                    return 'already signed this input', 400
+            else:
+                return 'no transactions with this input found', 400
+
             if verified:
                 transaction_signature = TU.generate_signature_with_private_key(config.private_key, request.json.get('hash'))
                 signature = {
-                    'id': transaction_signature,
+                    'signature': transaction_signature,
                     'hash': request.json.get('hash'),
-                    'bulletin_secret': config.bulletin_secret,
-                    'input': request.json.get('id')
+                    'bulletin_secret': request.json.get('bulletin_secret'),
+                    'input': request.json.get('input'),
+                    'id': request.json.get('id')
                 }
                 mongo.db.signed_transactions.insert(signature)
-                return json.dumps(signature['id'])
+                if '_id' in signature:
+                    del signature['_id']
+                return json.dumps(signature)
             else:
                 return 'no', 400
         except Exception as e:
@@ -817,8 +835,8 @@ class PostFastGraphView(View):
         if result:
             return 'duplicate transaction found', 400
         fastgraph.save()
-        fastgraph.broadcast()
-        return 'ok'
+        #fastgraph.broadcast()
+        return fastgraph.to_json()
 
 class GetFastGraphView(View):
     def dispatch_request(self):
@@ -874,7 +892,11 @@ class ReactView(View):
 
         rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-
+        friend = BU.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        if friend:
+            username = [x for x in friend][0]['relationship']['their_username']
+        else:
+            username = ''
         res = mongo.site_db.fcmtokens.find({"rid": rid})
         for token in res:
             result = push_service.notify_single_device(
@@ -932,24 +954,26 @@ class CommentReactView(View):
         config = app.config['yada_config']
         mongo = Mongo(config)
         my_bulletin_secret = config.get_bulletin_secret()
-        rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
+        their_bulletin_secret = request.json.get('bulletin_secret')
+        rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-        res1 = mongo.site_db.usernames.find({'rid': rid})
-        if res1.count():
-            username = res1[0]['username']
+        client = app.test_client()
+        response = client.post('/fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
+        fastgraph = FastGraph(request.json.get('txn'))
+        BU.cache_fastgraph_transaction(config, fastgraph)
+        try:
+            response.get_json()
+        except:
+            return 'error posting react', 400
+
+        friend = BU.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        if friend:
+            username = [x for x in friend][0]['relationship']['their_username']
         else:
-            username = humanhash.humanize(rid)
+            username = ''
 
-        mongo.site_db.comment_reacts.insert({
-            'rid': rid,
-            'emoji': request.json.get('react'),
-            'comment_id': request.json.get('_id')
-        })
-
-        comment = mongo.site_db.comments.find({'id': request.json.get('id')})[0]
-
-        res = mongo.site_db.fcmtokens.find({"rid": comment['rid']})
+        res = mongo.site_db.fcmtokens.find({"rid": fastgraph.rid})
         for token in res:
             result = push_service.notify_single_device(
                 registration_id=token['token'],
@@ -970,22 +994,18 @@ class GetCommentReactsView(View):
             data = request.form
             ids = json.loads(data.get('ids'))
         ids = [str(x) for x in ids]
-        res = mongo.site_db.comment_reacts.find({
-            'comment_id': {
-                '$in': ids
-            },
-        })
+
+        res = BU.get_comment_reacts(config, ids)
         out = {}
         for x in res:
-            if str(x['comment_id']) not in out:
-                out[str(x['comment_id'])] = ''
-            out[str(x['comment_id'])] = out[str(x['comment_id'])] + x['emoji']
+            if x['id'] not in out:
+                out[x['id']] = ''
+            out[x['id']] = out[x['id']] + x['emoji']
         return json.dumps(out)
 
 class GetCommentReactsDetailView(View):
     def dispatch_request(self):
         config = app.config['yada_config']
-        mongo = Mongo(config)
         if request.json:
             data = request.json
             comment_id = data.get('_id')
@@ -993,17 +1013,16 @@ class GetCommentReactsDetailView(View):
             data = request.form
             comment_id = json.loads(data.get('_id'))
 
-        res = mongo.site_db.comment_reacts.find({
-            'comment_id': comment_id,
-        }, {'_id': 0})
+        res = BU.get_comment_reacts(config, [comment_id])
         out = []
         for x in res:
-            res1 = mongo.site_db.usernames.find({'rid': x['rid']})
-            if res1.count():
-                x['username'] = res1[0]['username']
-            else:
-                x['username'] = humanhash.humanize(x['rid'])
-            out.append(x)
+            try:
+                res1 = BU.get_transaction_by_rid(config, x['rid'], wif=config.wif, rid=True)
+                if res1:
+                    x['username'] = res1['relationship']['their_username']
+                out.append(x)
+            except:
+                pass
         return json.dumps(out)
 
 class CommentView(View):
@@ -1011,24 +1030,25 @@ class CommentView(View):
         config = app.config['yada_config']
         mongo = Mongo(config)
         my_bulletin_secret = config.get_bulletin_secret()
-        rids = sorted([str(my_bulletin_secret), str(request.json.get('bulletin_secret'))], key=str.lower)
+        their_bulletin_secret = request.json.get('bulletin_secret')
+        rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-        res1 = mongo.site_db.usernames.find({'rid': rid})
-        if res1.count():
-            username = res1[0]['username']
+        client = app.test_client()
+        response = client.post('/fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
+        fastgraph = FastGraph(request.json.get('txn'))
+        BU.cache_fastgraph_transaction(config, fastgraph)
+        try:
+            response.get_json()
+        except:
+            return 'error posting react', 400
+
+        friend = BU.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        if friend:
+            username = [x for x in friend][0]['relationship']['their_username']
         else:
-            username = humanhash.humanize(rid)
+            username = ''
 
-        mongo.site_db.comments.insert({
-            'rid': rid,
-            'body': request.json.get('comment'),
-            'txn_id': request.json.get('txn_id')
-        })
-        txn = mongo.db.posts_cache.find({'id': request.json.get('txn_id')})[0]
-
-        rids = sorted([str(my_bulletin_secret), str(txn.get('bulletin_secret'))], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
         res = mongo.site_db.fcmtokens.find({"rid": rid})
         for token in res:
             result = push_service.notify_single_device(
@@ -1066,11 +1086,7 @@ class GetCommentsView(View):
             ids = json.loads(data.get('txn_ids'))
             bulletin_secret = data.get('bulletin_secret')
 
-        res = mongo.site_db.comments.find({
-            'txn_id': {
-                '$in': ids
-            },
-        })
+        res = BU.get_comments(config, ids)
         blocked = [x['username'] for x in mongo.site_db.blocked_users.find({'bulletin_secret': bulletin_secret})]
         out = {}
         usernames = {}
