@@ -23,6 +23,7 @@ class Serve(object):
         self.app.add_url_rule('/get-graph-posts', view_func=endpoints.GraphPostsView.as_view('graphposts'), methods=['GET', 'POST'])
         self.app.add_url_rule('/get-graph-messages', view_func=endpoints.GraphMessagesView.as_view('graphmessages'), methods=['GET', 'POST'])
         self.app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
+        self.app.add_url_rule('/get-graph-comments', view_func=endpoints.GraphCommentsView.as_view('get-comments'), methods=['POST'])
         self.app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
         self.app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
         self.app.add_url_rule('/pool', view_func=endpoints.MiningPoolView.as_view('pool'))
@@ -53,7 +54,6 @@ class Serve(object):
         self.app.add_url_rule('/get-comment-reacts', view_func=endpoints.GetCommentReactsView.as_view('get-comment-reacts'), methods=['POST'])
         self.app.add_url_rule('/get-comment-reacts-detail', view_func=endpoints.GetCommentReactsDetailView.as_view('get-comment-reacts-detail'), methods=['POST'])
         self.app.add_url_rule('/comment', view_func=endpoints.CommentView.as_view('comment'), methods=['POST'])
-        self.app.add_url_rule('/get-comments', view_func=endpoints.GetCommentsView.as_view('get-comments'), methods=['POST'])
 
         sio = socketio.Server(async_mode='gevent')
         sio.register_namespace(endpoints.BlockchainSocketServer('/chat'))
@@ -61,6 +61,10 @@ class Serve(object):
 
     def get_base_graph(self):
         bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
-        graph = Graph(self.app.config['yada_config'], bulletin_secret)
+        if request.json:
+            ids = request.json.get('ids')
+        else:
+            ids = []
+        graph = Graph(self.app.config['yada_config'], bulletin_secret, ids)
         return graph
     

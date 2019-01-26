@@ -277,6 +277,11 @@ class GraphNewMessagesView(BaseGraphView):
         graph.get_new_messages()
         return graph.to_json()
 
+class GraphCommentsView(BaseGraphView):
+    def dispatch_request(self):
+        graph = self.get_base_graph()
+        graph.get_comments()
+        return graph.to_json()
 
 class WalletView(View):
     def dispatch_request(self):
@@ -858,7 +863,7 @@ class SearchView(View):
         rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
-        friend = [x for x in BU.search_username(config, phrase)]
+        friend = [x for x in BU.search_username(config, phrase)][0]
         
         if friend:
             to = [x['to'] for x in friend['outputs'] if x['to'] != config.address][0]
@@ -882,9 +887,8 @@ class ReactView(View):
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
         client = app.test_client()
-        response = client.post('/fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
+        response = client.post('/post-fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
         fastgraph = FastGraph(request.json.get('txn'))
-        BU.cache_fastgraph_transaction(config, fastgraph)
         try:
             response.get_json()
         except:
@@ -892,7 +896,13 @@ class ReactView(View):
 
         rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-        friend = BU.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        friend = BU.get_transactions(
+            config,
+            wif=config.wif,
+            both=False,
+            query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
+            queryType="searchUsername"
+        )
         if friend:
             username = [x for x in friend][0]['relationship']['their_username']
         else:
@@ -959,15 +969,20 @@ class CommentReactView(View):
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
         client = app.test_client()
-        response = client.post('/fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
+        response = client.post('/post-fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
         fastgraph = FastGraph(request.json.get('txn'))
-        BU.cache_fastgraph_transaction(config, fastgraph)
         try:
             response.get_json()
         except:
             return 'error posting react', 400
 
-        friend = BU.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        friend = BU.get_transactions(
+            config,
+            wif=config.wif,
+            both=False,
+            query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
+            queryType="searchUsername"
+        )
         if friend:
             username = [x for x in friend][0]['relationship']['their_username']
         else:
@@ -1035,15 +1050,20 @@ class CommentView(View):
         rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
 
         client = app.test_client()
-        response = client.post('/fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
-        fastgraph = FastGraph(request.json.get('txn'))
-        BU.cache_fastgraph_transaction(config, fastgraph)
+        response = client.post('/post-fastgraph-transaction', data=request.json.get('txn'), headers=list(request.headers))
+        fastgraph = FastGraph(config, mongo, **request.json.get('txn'))
         try:
             response.get_json()
         except:
             return 'error posting react', 400
 
-        friend = BU.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        friend = BU.get_transactions(
+            config,
+            wif=config.wif,
+            both=False,
+            query={'txn.relationship.their_username': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
+            queryType="searchUsername"
+        )
         if friend:
             username = [x for x in friend][0]['relationship']['their_username']
         else:
@@ -1072,33 +1092,3 @@ class CommentView(View):
                     extra_kwargs={'priority': 'high'}
                 )
         return 'ok'
-
-class GetCommentsView(View):
-    def dispatch_request(self):
-        config = app.config['yada_config']
-        mongo = Mongo(config)
-        if request.json:
-            data = request.json
-            ids = data.get('txn_ids')
-            bulletin_secret = data.get('bulletin_secret')
-        else:
-            data = request.form
-            ids = json.loads(data.get('txn_ids'))
-            bulletin_secret = data.get('bulletin_secret')
-
-        res = BU.get_comments(config, ids)
-        blocked = [x['username'] for x in mongo.site_db.blocked_users.find({'bulletin_secret': bulletin_secret})]
-        out = {}
-        usernames = {}
-        for x in res:
-            if x['txn_id'] not in out:
-                out[x['txn_id']] = []
-            res1 = mongo.site_db.usernames.find({'rid': x['rid']})
-            if res1.count():
-                x['username'] = res1[0]['username']
-            else:
-                x['username'] = humanhash.humanize(x['rid'])
-            x['_id'] = str(x['_id'])
-            if x['username'] not in blocked:
-                out[x['txn_id']].append(x)
-        return json.dumps(out)

@@ -22,7 +22,7 @@ from mongo import Mongo
 
 class Graph(object):
 
-    def __init__(self, config, bulletin_secret, wallet=None):
+    def __init__(self, config, bulletin_secret, ids, wallet=None):
         self.config = config
         self.mongo = Mongo(self.config)
         self.friend_requests = []
@@ -32,15 +32,17 @@ class Graph(object):
         self.logins = []
         self.messages = []
         self.new_messages = []
+        self.reacts = []
+        self.comments = []
+        self.comment_reacts = []
         self.already_added_messages = []
         self.bulletin_secret = str(bulletin_secret)
+        self.ids = ids
 
-        all_relationships = [x for x in BU.get_transactions(self.config, self.config.wif, query={'txn.relationship.their_username': {'$exists': True}}) if x['rid']]
+        all_relationships = [x for x in BU.get_all_usernames(config)]
         self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in all_relationships])
         if wallet: # disabling for now
             self.wallet_mode = True
-            all_relationships = [x for x in BU.get_transactions(self.config, self.config.wif) if x['rid']]
-            self.rid_usernames = dict((x['rid'], x['relationship']['their_username']) for x in all_relationships)
 
             rids = [x['rid'] for x in all_relationships]
             self.rid_transactions = BU.get_transactions_by_rid(self.config, rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
@@ -215,6 +217,34 @@ class Graph(object):
                     posts.append(x)
         self.posts = posts
 
+    def get_comments(self):
+        if self.wallet_mode:
+            self.comments = []
+            return
+
+        my_bulletin_secret = self.config.bulletin_secret
+        comments = []
+        blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
+        flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
+        out = {}
+        if not self.ids:
+            return json.dumps({})
+        for x in BU.get_comments(self.config, self.rid, self.ids):
+            if x['relationship'].get('id') not in out:
+                out[x['relationship'].get('id')] = []
+
+            rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
+            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            
+            if rid in self.rid_usernames:
+                x['username'] = self.rid_usernames[rid]
+                if x['username'] not in blocked and x['id'] not in flagged:
+                    comments.append(x)
+            x['id'] = str(x['id'])
+            if x['username'] not in blocked:
+                out[x['relationship'].get('id')].append(x)
+        self.comments = out
+
     def from_dict(self, obj):
         self.friends = obj['friends']
         self.sent_friend_requests = obj['sent_friend_requests']
@@ -247,7 +277,10 @@ class Graph(object):
                 'human_hash': self.human_hash,
                 'registered': self.registered,
                 'pending_registration': self.pending_registration,
-                'new_messages': self.new_messages
+                'new_messages': self.new_messages,
+                'reacts': self.reacts,
+                'comments': self.comments,
+                'comment_reacts': self.comment_reacts
             }
 
     def to_json(self):

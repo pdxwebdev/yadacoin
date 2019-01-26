@@ -56,114 +56,14 @@ def make_qr(data):
     out.seek(0)
     return u"data:image/png;base64," + base64.b64encode(out.getvalue()).decode('ascii')
 
-def get_logged_in_user():
-    user = None
-    tests = []
-    res = mongo.db.blocks.aggregate([
-        {
-            "$match": {
-                "transactions.challenge_code": session['challenge_code']
-            }
-        },
-        {
-            '$unwind': "$transactions"
-        },
-        {
-            "$match": {
-                "transactions.challenge_code": session['challenge_code']
-            }
-        }
-    ])
-    for transaction in res:
-        transaction = transaction['transactions']
-        tests = BU.get_transactions_by_rid(transaction['rid'], rid=True)
-        for test in tests:
-            if 'relationship' in test and 'shared_secret' in test['relationship']:
-                cipher = Crypt(hashlib.sha256(test['relationship']['shared_secret']).digest().encode('hex'))
-                answer = cipher.decrypt(transaction['answer'])
-                if answer == transaction['challenge_code']:
-                    for txn_output in transaction['outputs']:
-                        if txn_output['to'] != config.address:
-                            to = txn_output['to']
-                    user = {
-                        'balance': BU.get_wallet_balance(to),
-                        'authenticated': True,
-                        'rid': transaction['rid'],
-                        'bulletin_secret': test['relationship']['bulletin_secret']
-                    }
-    return user if user else {'authenticated': False}
-
 app = Flask(__name__)
 app.debug = True
 app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
 CORS(app)
 
-
 @app.route('/pool', methods=['GET', 'POST'])
 def pool():
     return render_template('pool.html')
-
-@app.route('/demo', methods=['GET', 'POST'])
-def demo():
-    config = current_app.config['yada_config']
-    session.setdefault('id', str(uuid.uuid4()))
-
-    if request.method == 'POST':
-        bulletin_secret = request.form.get('bulletin_secret', '')
-        if not bulletin_secret:
-            return redirect('/demo?error')
-        # generate a transaction which contains a signin message containing the current sessions identifier
-        txn = TransactionFactory(
-            config,
-            bulletin_secret=bulletin_secret,
-            public_key=config.public_key,
-            private_key=config.private_key,
-            signin=session.get('id'),
-            fee=0.01
-        ).transaction
-
-        # send the transaction to our own serve instance, which saves it to miner_transactions
-        # the miner looks in miner_transactions to include in a block when it finds a new block
-        for peer in Peers.peers:
-            print peer.host, peer.port
-            requests.post(
-                "http://{host}:{port}/newtransaction".format(
-                    host=peer.host,
-                    port=peer.port
-                ),
-                txn.to_json(),
-                headers={"Content-Type": "application/json"}
-            )
-        return redirect('/demo?bulletin_secret=%s' % urllib.quote_plus(bulletin_secret))
-    elif request.method == 'GET':
-        bulletin_secret = request.args.get('bulletin_secret', '')
-        rid = TU.generate_rid(config, bulletin_secret)
-        txns = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True)
-
-        txns2 = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)
-        half1 = False
-        half2 = False
-        for txn in txns:
-            if txn['public_key'] == config.public_key:
-                half1 = True
-        for txn in txns2:
-            if txn['public_key'] != config.public_key:
-                half2 = True
-        registered = half1 and half2
-        sent, received = BU.verify_message(config, rid, config.bulletin_secret, session['id'])
-        session['loggedin'] = received
-        return render_template(
-            'authdemo.html',
-            session_id=str(session.get('id')),
-            registered=str(registered),
-            sent=str(sent),
-            received=str(received),
-            loggedin=str(session['loggedin']),
-            bulletin_secret=str(bulletin_secret),
-            rid=str(rid)
-        )
-    else:
-        return redirect('/demo')
 
 @app.route('/firebase-messaging-sw.js')
 def firebase_service_worker():
@@ -279,85 +179,6 @@ def team():
     return render_template(
         'team.html',
         )
-
-@app.route('/login-status')
-def login_status():
-    user = get_logged_in_user()
-    return json.dumps(user)
-
-@app.route('/show-user')
-def show_user():
-    authed_user = get_logged_in_user()
-    user = BU.get_transaction_by_rid(request.args['rid'], rid=True)
-    for output in user['outputs']:
-        if output['to'] != config.address:
-            to = output['to']
-    dict_data = {
-        'bulletin_secret': user['relationship']['bulletin_secret'],
-        'requested_rid': user['rid'],
-        'requester_rid': authed_user['rid'],
-        'to': to
-    }
-    data = json.dumps(dict_data)
-    qr_code = make_qr(data)
-    return render_template(
-        'show-user.html',
-        qrcode=qr_code,
-        data=json.dumps(dict_data, indent=4),
-        bulletin_secret=user['relationship']['bulletin_secret'],
-        to=to
-    )
-
-
-
-@app.route('/show-friend-request')
-def show_friend_request():
-    authed_user = get_logged_in_user()
-
-    transaction = BU.get_transaction_by_rid(request.args.get('rid'), rid=True, raw=True)
-
-    requested_transaction = BU.get_transaction_by_rid(transaction['requester_rid'], rid=True)
-    dict_data = {
-        'bulletin_secret': requested_transaction['relationship']['bulletin_secret'],
-        'requested_rid': transaction['requested_rid'],
-        'requester_rid': transaction['requester_rid']
-    }
-    data = json.dumps(dict_data)
-    qr_code = make_qr(data)
-    return render_template(
-        'accept-friend-request.html',
-        qrcode=qr_code,
-        data=json.dumps(dict_data, indent=4),
-        rid=requested_transaction['rid'],
-        bulletin_secret=requested_transaction['relationship']['bulletin_secret']
-    )
-peer_to_rid = {}
-rid_to_peer = {}
-@app.route('/add-peer')
-def add_peer():
-    #authed_user = get_logged_in_user()
-    peer_to_rid[request.args['peer_id']] = request.args['rid']
-    rid_to_peer[request.args['rid']] = request.args['peer_id']
-    return 'ok'
-
-@app.route('/get-peer')
-def get_peer():
-    #authed_user = get_logged_in_user()
-    #TODO: verify this user is has a friend request from the rid
-    # graph = Graph()
-    if 'rid' in request.args:
-        return json.dumps({'peerId': rid_to_peer[request.args['rid']]})
-
-    if 'peer_id' in request.args:
-        return json.dumps({'rid': peer_to_rid[request.args['peer_id']]})
-
-    return '{}'
-
-@app.route('/show-users')
-def show_users():
-    users = BU.get_transactions()
-    rids = set([x['rid'] for x in users])
-    return render_template('show-users.html', users=rids)
 
 @app.route('/get-rid')
 def get_rid():

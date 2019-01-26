@@ -254,7 +254,7 @@ class BU(object):  # Blockchain Utilities
                     yield x['txn']
 
     @classmethod
-    def get_transactions(cls, config, wif, query, raw=False, both=True, skip=None):
+    def get_transactions(cls, config, wif, query, queryType, raw=False, both=True, skip=None):
         mongo = Mongo(config)
         if not skip:
             skip = []
@@ -268,6 +268,7 @@ class BU(object):  # Blockchain Utilities
                     'raw': raw,
                     'both': both,
                     'skip': skip,
+                    'queryType': queryType
                 }
         ).sort([('height', -1)])
         latest_block = cls.get_latest_block(config)
@@ -293,110 +294,402 @@ class BU(object):  # Blockchain Utilities
                         relationship = json.loads(decrypted)
                         transaction['relationship'] = relationship
                     transaction['height'] = block['index']
-                    mongo.db.get_transactions_cache.insert(
+                    mongo.db.get_transactions_cache.update(
                         {
                             'public_key': config.public_key,
                             'raw': raw,
                             'both': both,
                             'skip': skip,
                             'height': latest_block['index'],
-                            'txn': transaction
+                            'queryType': queryType,
+                            'id': transaction['id']
+                        },
+                        {
+                            'public_key': config.public_key,
+                            'raw': raw,
+                            'both': both,
+                            'skip': skip,
+                            'height': latest_block['index'],
+                            'txn': transaction,
+                            'queryType': queryType,
+                            'id': transaction['id']
                         }
-                    )
-                    transactions.append(transaction)
+                    , upsert=True)
                 except:
                     if both:
                         transaction['height'] = block['index']
-                        mongo.db.get_transactions_cache.insert(
+                        mongo.db.get_transactions_cache.update(
                             {
                                 'public_key': config.public_key,
                                 'raw': raw,
                                 'both': both,
                                 'skip': skip,
                                 'height': latest_block['index'],
-                                'txn': transaction
+                                'queryType': queryType
+                            },
+                            {
+                                'public_key': config.public_key,
+                                'raw': raw,
+                                'both': both,
+                                'skip': skip,
+                                'height': latest_block['index'],
+                                'txn': transaction,
+                                'queryType': queryType
                             }
-                        )
-                        transactions.append(transaction)
+                        , upsert=True)
                     continue
-        if not transactions:
-            mongo.db.get_transactions_cache.insert(
-                {
-                    'public_key': config.public_key,
-                    'raw': raw,
-                    'both': both,
-                    'skip': skip,
-                    'height': latest_block['index']
-                }   
-            )
-        used_ids = []
-        for x in cls.get_cached_fastgraph_transaction(config, query):
-            if 'txn' in x:
-                used_ids.append(x['id'])
-                yield x['txn']
+
+        fastgraph_transactions = cls.get_fastgraph_transactions(config, wif, query, queryType, raw=False, both=True, skip=None)
+
+        for fastgraph_transaction in fastgraph_transactions:
+            yield fastgraph_transaction
+
 
         search_query = {
-            'public_key': config.public_key,
-            'raw': raw,
-            'both': both,
-            'skip': skip,
-        }
+                'public_key': config.public_key,
+                'raw': raw,
+                'both': both,
+                'skip': skip,
+                'queryType': queryType,
+                'txn': {'$exists': True}
+            }
         search_query.update(query)
-        for x in mongo.db.get_transactions_cache.find(search_query):
-            if 'txn' in x and x['txn']['id'] not in used_ids:
-                yield x['txn']
+        transactions = mongo.db.get_transactions_cache.find(search_query).sort([('height', -1)])
+
+        for transaction in transactions:
+            yield transaction['txn']
+        
     
     @classmethod
-    def get_cached_fastgraph_transaction(cls, config, query):
-        mongo = Mongo(config)
-        for x in mongo.db.fastgraph_transaction_cache.find(query):
-            if 'txn' in x:
-                yield x['txn']
-    
-    @classmethod
-    def cache_fastgraph_transaction(cls, config, txn):
+    def get_fastgraph_transactions(cls, config, secret, query, queryType, raw=False, both=True, skip=None):
         from crypt import Crypt
         mongo = Mongo(config)
+        for transaction in mongo.db.fastgraph_transactions.find(query):
+            if 'txn' in transaction:
+                try:
+                    if transaction.get('id') in skip:
+                        continue
+                    if 'relationship' not in transaction:
+                        continue
+                    if not transaction['relationship']:
+                        continue
+                    res = mongo.db.fastgraph_transaction_cache.find_one({
+                        'txn.id': transaction.get('id'),
+                    })
+                    if res:
+                        continue
+                    if not raw:
+                        cipher = Crypt(secret)
+                        decrypted = cipher.decrypt(transaction['relationship'])
+                        relationship = json.loads(decrypted)
+                        transaction['relationship'] = relationship
+                    mongo.db.fastgraph_transaction_cache.update(
+                        {
+                            'txn': transaction,
+                        }
+                    , upsert=True)
+                except:
+                    continue
+        
+        for x in mongo.db.fastgraph_transaction_cache.find({
+            'txn': {'$exists': True}
+        }):
+            yield x['tnx']
 
-        shared_secrets = TU.get_shared_secrets_by_rid(config, txn.rid)
-        for shared_secret in list(set(shared_secrets)):
-            try:
-                cipher = Crypt(shared_secret.encode('hex'), shared=True)
-                decrypted = cipher.shared_decrypt(txn['relationship'])
-                relationship = json.loads(decrypted)
-                txn.relationship = relationship
-                mongo.db.fastgraph_transaction_cache.update({
-                    'id': txn.transaction_signature,
-                    'public_key': txn.public_key
-                },
-                {
-                    'id': txn.transaction_signature,
-                    'public_key': txn.public_key, 
-                    'txn': txn.to_dict()
-                },
-                upsert=True)
-            except:
-                pass
+    @classmethod
+    def get_all_usernames(cls, config):
+        return cls.get_transactions(
+            config,
+            wif=config.wif,
+            both=False,
+            query={'txn.relationship.their_username': {'$exists': True}},
+            queryType='allUsernames'
+        )
     
     @classmethod
     def search_username(cls, config, username):
-        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.their_username': username})
+        return cls.get_transactions(
+            config,
+            wif=config.wif,
+            both=False,
+            query={'txn.relationship.their_username': username},
+            queryType='allUsernames'
+        )
 
     @classmethod
-    def get_reacts(cls, config, signatures):
-        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+    def get_posts(cls, config, rids):
+        mongo = Mongo(config)
+        from crypt import Crypt
+
+        if not isinstance(rids, list):
+            rids = [rids, ]
+
+        posts_cache = mongo.db.posts_cache.find({
+            'rid': {'$in': rids}
+        }).sort([('height', -1)])
+
+        latest_block = cls.get_latest_block(config)
+
+        if posts_cache.count():
+            posts_cache = posts_cache[0]
+            block_height = posts_cache['height']
+        else:
+            block_height = 0
+        transactions = mongo.db.blocks.aggregate([
+            {
+                "$match": {
+                    "index": {'$gt': block_height}
+                }
+            },
+            {
+                "$match": {
+                    "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                    "transactions.dh_public_key": '',
+                    "transactions.rid": ''
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions",
+                    "height": "$index"
+                }
+            },
+            {
+                "$match": {
+                    "txn.relationship": {"$ne": ""},
+                    "txn.dh_public_key": '',
+                    "txn.rid": ''
+                }
+            },
+            {
+                "$sort": {"height": 1}
+            }
+        ])
+
+        fastgraph_transactions = mongo.db.fastgraph_transactions.find({
+            "txn.relationship": {"$ne": ""},
+            "txn.dh_public_key": '',
+            "txn.rid": ''
+        })
+
+        transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
+        # transactions are all posts not yet cached by this rid
+        # so we want to grab all bulletin secrets for this rid
+        mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(config, rids)
+        friends = []
+        for friend in cls.get_transactions_by_rid(config, rids, config.bulletin_secret, rid=True):
+            if 'their_bulletin_secret' in friend['relationship']:
+                friends.append(friend['relationship']['their_bulletin_secret'])
+        friends = list(set(friends))
+        had_txns = False
+        latest_height = BU.get_latest_block(config)['index']
+        if friends:
+            mutual_bulletin_secrets.extend(friends)
+            for i, x in enumerate(transactions):
+                for bs in mutual_bulletin_secrets:
+                    try:
+                        crypt = Crypt(bs)
+                        decrypted = crypt.decrypt(x['txn']['relationship'])
+                        try:
+                            decrypted = base64.b64decode(decrypted)
+                        except:
+                            continue
+                        data = json.loads(decrypted)
+                        x['txn']['relationship'] = data
+                        if 'postText' in decrypted:
+                            had_txns = True
+                            if 'height' not in x:
+                                x['height'] = latest_height
+                            print 'caching posts at height:', x['height']
+                            for rid in rids:
+                                mongo.db.posts_cache.update({
+                                    'rid': rid,
+                                    'height': x['height'],
+                                    'id': x['txn']['id'],
+                                    'bulletin_secret': bs
+                                },
+                                {
+                                    'rid': rid,
+                                    'height': x['height'],
+                                    'id': x['txn']['id'],
+                                    'txn': x['txn'],
+                                    'bulletin_secret': bs
+                                },
+                                upsert=True)
+                    except:
+                        pass
+        if not had_txns:
+            for rid in rids:
+                mongo.db.posts_cache.insert({
+                    'rid': rid, 
+                    'height': latest_block['index']
+                })
+
+        i = 1
+        for x in mongo.db.fastgraph_transaction_cache.find({
+            'txn.dh_public_key': '',
+            'txn.relationship': {'$ne': ''},
+            'txn.rid': ''
+        }):
+            if 'txn' in x:
+                x['txn']['height'] = block_height + i
+                yield x['txn']
+            i += 1
+
+        for x in mongo.db.posts_cache.find({'rid': {'$in': rids}}):
+            if 'txn' in x:
+                x['txn']['height'] = x['height']
+                x['txn']['bulletin_secret'] = x['bulletin_secret']
+                yield x['txn']
 
     @classmethod
-    def get_comments(cls, config, signatures):
-        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.comment': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+    def get_reacts(cls, config, rids):
+        return cls.get_post_data(
+            config,
+            rids,
+            both=False,
+            query={'txn.relationship.react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
+            queryType='getReacts'
+        )
+
+    @classmethod
+    def get_comments(cls, config, rids, ids):
+        mongo = Mongo(config)
+        from crypt import Crypt
+
+        if not isinstance(rids, list):
+            rids = [rids, ]
+
+        comments_cache = mongo.db.comments_cache.find({
+            'rids': {'$in': rids}
+        }).sort([('height', -1)])
+
+        latest_block = cls.get_latest_block(config)
+
+        if comments_cache.count():
+            comments_cache = comments_cache[0]
+            block_height = comments_cache['height']
+        else:
+            block_height = 0
+        transactions = mongo.db.blocks.aggregate([
+            {
+                "$match": {
+                    "index": {'$gt': block_height}
+                }
+            },
+            {
+                "$match": {
+                    "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                    "transactions.dh_public_key": '',
+                    "transactions.rid": ''
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions",
+                    "height": "$index"
+                }
+            },
+            {
+                "$match": {
+                    "txn.relationship": {"$ne": ""},
+                    "txn.dh_public_key": '',
+                    "txn.rid": ''
+                }
+            },
+            {
+                "$sort": {"height": 1}
+            }
+        ])
+
+        fastgraph_transactions = mongo.db.fastgraph_transactions.find({
+            "txn.relationship": {"$ne": ""},
+            "txn.dh_public_key": '',
+            "txn.rid": ''
+        })
+
+        transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
+        # transactions are all posts not yet cached by this rid
+        # so we want to grab all bulletin secrets for this rid
+        mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(config, rids)
+        friends = []
+        for friend in cls.get_transactions_by_rid(config, rids, config.bulletin_secret, rid=True):
+            if 'their_bulletin_secret' in friend['relationship']:
+                friends.append(friend['relationship']['their_bulletin_secret'])
+        friends = list(set(friends))
+        had_txns = False
+        latest_height = BU.get_latest_block(config)['index']
+        if friends:
+            mutual_bulletin_secrets.extend(friends)
+            for i, x in enumerate(transactions):
+                for bs in mutual_bulletin_secrets:
+                    try:
+                        crypt = Crypt(bs)
+                        decrypted = crypt.decrypt(x['txn']['relationship'])
+                        try:
+                            decrypted = base64.b64decode(decrypted)
+                        except:
+                            continue
+                        data = json.loads(decrypted)
+                        x['txn']['relationship'] = data
+                        if 'comment' in decrypted:
+                            had_txns = True
+                            if 'height' not in x:
+                                x['height'] = latest_height
+                            print 'caching posts at height:', x['height']
+                            for rid in rids:
+                                mongo.db.comments_cache.update({
+                                    'rid': rid,
+                                    'height': x['height'],
+                                    'id': x['txn']['id'],
+                                    'bulletin_secret': bs
+                                },
+                                {
+                                    'rid': rid,
+                                    'height': x['height'],
+                                    'id': x['txn']['id'],
+                                    'txn': x['txn'],
+                                    'bulletin_secret': bs
+                                },
+                                upsert=True)
+                    except:
+                        pass
+        if not had_txns:
+            for rid in rids:
+                mongo.db.comments_cache.insert({
+                    'rid': rid, 
+                    'height': latest_block['index']
+                })
+
+        for x in mongo.db.comments_cache.find({'txn.relationship.id': {'$in': ids}}):
+            if 'txn' in x and 'id' in x['txn']['relationship']:
+                x['txn']['height'] = x['height']
+                x['txn']['bulletin_secret'] = x['bulletin_secret']
+                yield x['txn']
 
     @classmethod
     def get_comment_reacts(cls, config, signatures):
-        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.comment_react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        return cls.get_post_data(
+            config,
+            wif=config.wif,
+            both=False,
+            query={'txn.relationship.comment_react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
+            queryType='getCommentReacts'
+        )
 
     @classmethod
     def get_comment_replies(cls, config, signatures):
-        return cls.get_transactions(config, wif=config.wif, both=False, query={'txn.relationship.comment_reply': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}})
+        return cls.get_post_data(
+            config,
+            wif=config.wif,
+            both=False,
+            query={'txn.relationship.comment_reply': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
+            queryType='getCommentReplies'
+        )
 
     @classmethod
     def get_relationships(cls, config, wif):
@@ -767,129 +1060,6 @@ class BU(object):  # Blockchain Utilities
         for x in mongo.db.messages_cache.find({'rid': {'$in': rids}}):
             x['txn']['height'] = x['height']
             yield x['txn']
-
-    @classmethod
-    def get_posts(cls, config, rids):
-        mongo = Mongo(config)
-        from crypt import Crypt
-
-        if not isinstance(rids, list):
-            rids = [rids, ]
-
-        posts_cache = mongo.db.posts_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
-
-        latest_block = cls.get_latest_block(config)
-
-        if posts_cache.count():
-            posts_cache = posts_cache[0]
-            block_height = posts_cache['height']
-        else:
-            block_height = 0
-        transactions = mongo.db.blocks.aggregate([
-            {
-                "$match": {
-                    "index": {'$gt': block_height}
-                }
-            },
-            {
-                "$match": {
-                    "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
-                    "transactions.dh_public_key": '',
-                    "transactions.rid": ''
-                }
-            },
-            {"$unwind": "$transactions"},
-            {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$transactions",
-                    "height": "$index"
-                }
-            },
-            {
-                "$match": {
-                    "txn.relationship": {"$ne": ""},
-                    "txn.dh_public_key": '',
-                    "txn.rid": ''
-                }
-            },
-            {
-                "$sort": {"height": 1}
-            }
-        ])
-
-        fastgraph_transactions = mongo.db.fastgraph_transactions.find({
-            "txn.relationship": {"$ne": ""},
-            "txn.dh_public_key": '',
-            "txn.rid": ''
-        })
-
-        transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
-        # transactions are all posts not yet cached by this rid
-        # so we want to grab all bulletin secrets for this rid
-        mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(config, rids)
-        friends = []
-        for friend in cls.get_transactions_by_rid(config, rids, config.bulletin_secret, rid=True):
-            if 'their_bulletin_secret' in friend['relationship']:
-                friends.append(friend['relationship']['their_bulletin_secret'])
-        friends = list(set(friends))
-        had_txns = False
-        latest_height = BU.get_latest_block(config)['index']
-        if friends:
-            mutual_bulletin_secrets.extend(friends)
-            for i, x in enumerate(transactions):
-                for bs in mutual_bulletin_secrets:
-                    try:
-                        crypt = Crypt(bs)
-                        decrypted = crypt.decrypt(x['txn']['relationship'])
-                        try:
-                            decrypted = base64.b64decode(decrypted)
-                        except:
-                            continue
-                        data = json.loads(decrypted)
-                        x['txn']['relationship'] = data
-                        if 'postText' in decrypted:
-                            had_txns = True
-                            if 'height' not in x:
-                                x['height'] = latest_height
-                            print 'caching posts at height:', x['height']
-                            for rid in rids:
-                                mongo.db.posts_cache.update({
-                                    'rid': rid,
-                                    'height': x['height'],
-                                    'id': x['txn']['id'],
-                                    'bulletin_secret': bs
-                                },
-                                {
-                                    'rid': rid,
-                                    'height': x['height'],
-                                    'id': x['txn']['id'],
-                                    'txn': x['txn'],
-                                    'bulletin_secret': bs
-                                },
-                                upsert=True)
-                    except:
-                        pass
-        if not had_txns:
-            for rid in rids:
-                mongo.db.posts_cache.insert({'rid': rid, 'height': latest_block['index']})
-
-        i = 1
-        for x in mongo.db.fastgraph_transactions.find({
-            'txn.dh_public_key': '',
-            'txn.relationship': {'$ne': ''},
-            'txn.rid': ''
-        }):
-            if 'txn' in x:
-                x['txn']['height'] = block_height + i
-                yield x['txn']
-            i += 1
-
-        for x in mongo.db.posts_cache.find({'rid': {'$in': rids}}):
-            if 'txn' in x:
-                x['txn']['height'] = x['height']
-                x['txn']['bulletin_secret'] = x['bulletin_secret']
-                yield x['txn']
 
     @classmethod
     def get_mutual_rids(cls, config, rid):
