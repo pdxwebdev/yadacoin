@@ -220,6 +220,7 @@ def flag():
 def peers():
     config = current_app.config['yada_config']
     mongo = Mongo(config)
+    peers = Peers(config)
     if request.method == 'POST':
         try:
             socket.inet_aton(request.json['host'])
@@ -240,13 +241,13 @@ def peers():
                     'active': True, 
                     'failed': 0
                 }, upsert=True)
-                current_app.config['yada_peers'] = Peers.init_local(config, config.network)
+                current_app.config['yada_peers'] = peers.init_local()
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
     else:
         if 'yada_peers' not in current_app.config:
-            current_app.config['yada_peers'] = Peers.init_local(config, config.network)
+            current_app.config['yada_peers'] = peers.init_local()
         return current_app.config['yada_peers']
 
 @app.route('/stats')

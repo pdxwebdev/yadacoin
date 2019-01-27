@@ -4,8 +4,11 @@ import pymongo
 from mongo import Mongo
 
 class Peers(object):
-    def init_local(self, config):
-        mongo = Mongo(config)
+    def __init__(self, config):
+        self.config = config
+
+    def init_local(self):
+        mongo = Mongo(self.config)
         res = mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
         self.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         peers = [x for x in res]
@@ -14,7 +17,7 @@ class Peers(object):
             for peer in peers:
                 self.peers.append(
                     Peer(
-                        config,
+                        self.config,
                         peer['host'],
                         peer['port']
                     )
