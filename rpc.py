@@ -110,7 +110,8 @@ def hashrate():
 @app.route('/api-stats')
 def api_stats():
     max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-    blocks = BU.get_blocks()
+    config = current_app.config['yada_config']
+    blocks = BU.get_blocks(config)
     total_nonce = 0
     periods = []
     last_time = None

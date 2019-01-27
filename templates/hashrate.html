@@ -6,7 +6,7 @@
         <script src="https://code.highcharts.com/modules/export-data.js"></script>
         <script type="text/javascript">
             $.getJSON(
-            '/api/hashrate',
+            '/api-stats',
             function (res) {
                 var data = []
                 res.stats.periods.forEach(function(block) {
