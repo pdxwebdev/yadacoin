@@ -280,7 +280,7 @@ parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
                 help='set your config file')
 args = parser.parse_args()
-conf = args.conf or 'config/testnet.json'
+conf = args.conf or 'config/config.json'
 with open(conf) as f:
     config = Config(json.loads(f.read()))
 
