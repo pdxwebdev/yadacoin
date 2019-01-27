@@ -231,7 +231,7 @@ def peers():
                 if res.count():
                     mongo.db.peers.update({'host': host, 'port': port}, {'$inc': {'failed': 1}})
             else:
-                Mongo.db.peers.update({
+                mongo.db.peers.update({
                     'host': host, 
                     'port': port
                 }, {
