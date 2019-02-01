@@ -22,9 +22,9 @@ from mongo import Mongo
 
 class Graph(object):
 
-    def __init__(self, config, bulletin_secret, ids, wallet=None):
+    def __init__(self, config, mongo, bulletin_secret, ids, wallet=None):
         self.config = config
-        self.mongo = Mongo(self.config)
+        self.mongo = mongo
         self.friend_requests = []
         self.sent_friend_requests = []
         self.friends = []
@@ -39,13 +39,13 @@ class Graph(object):
         self.bulletin_secret = str(bulletin_secret)
         self.ids = ids
 
-        all_relationships = [x for x in BU.get_all_usernames(config)]
+        all_relationships = [x for x in BU.get_all_usernames(config, mongo)]
         self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in all_relationships])
         if wallet: # disabling for now
             self.wallet_mode = True
 
             rids = [x['rid'] for x in all_relationships]
-            self.rid_transactions = BU.get_transactions_by_rid(self.config, rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
+            self.rid_transactions = BU.get_transactions_by_rid(self.config, self.mongo, rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
             self.wallet_mode = False
             self.registered = False
@@ -61,7 +61,7 @@ class Graph(object):
                 self.human_hash = humanhash.humanize(self.rid)
             start_height = 0
             # this will get any transactions between the client and server
-            nodes = BU.get_transactions_by_rid(self.config, bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
+            nodes = BU.get_transactions_by_rid(self.config, self.mongo, bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
             already_done = []
             for node in nodes:
                 if node.get('dh_public_key'):
@@ -79,7 +79,7 @@ class Graph(object):
                         already_done.append(test)
 
             self.registered = False
-            shared_secrets = TU.get_shared_secrets_by_rid(config, rid)
+            shared_secrets = TU.get_shared_secrets_by_rid(config, mongo, rid)
             if shared_secrets:
                 self.registered = True
 
@@ -110,18 +110,18 @@ class Graph(object):
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
-        lookup_rids.extend([x['rid'] for x in BU.get_friend_requests(self.config, self.rid)])
-        lookup_rids.extend([x['rid'] for x in BU.get_sent_friend_requests(self.config, self.rid)])
+        lookup_rids.extend([x['rid'] for x in BU.get_friend_requests(self.config, self.mongo, self.rid)])
+        lookup_rids.extend([x['rid'] for x in BU.get_sent_friend_requests(self.config, self.mongo, self.rid)])
         return list(set(lookup_rids))
 
     def get_request_rids_for_rid(self):
         lookup_rids = {}
-        for x in BU.get_friend_requests(self.config, self.rid):
+        for x in BU.get_friend_requests(self.config, self.mongo, self.rid):
             if x['rid'] not in lookup_rids:
                 lookup_rids[x['rid']] = []
             lookup_rids[x['rid']].append(x['requester_rid'])
 
-        for x in BU.get_sent_friend_requests(self.config, self.rid):
+        for x in BU.get_sent_friend_requests(self.config, self.mongo, self.rid):
             if x['rid'] not in lookup_rids:
                 lookup_rids[x['rid']] = []
             lookup_rids[x['rid']].append(x['requested_rid'])
@@ -133,7 +133,7 @@ class Graph(object):
             self.friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
             return
         else:
-            friend_requests = [x for x in BU.get_friend_requests(self.config, self.rid)] # include fastgraph
+            friend_requests = [x for x in BU.get_friend_requests(self.config, self.mongo, self.rid)] # include fastgraph
 
         for i, friend_request in enumerate(friend_requests):
             # attach bulletin_secets
@@ -148,7 +148,7 @@ class Graph(object):
             self.sent_friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
             return
         else:
-            sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.config, self.rid)]
+            sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.config, self.mongo, self.rid)]
 
         for i, sent_friend_request in enumerate(sent_friend_requests):
             # attach usernames
@@ -174,7 +174,7 @@ class Graph(object):
         else:
             lookup_rids = self.get_request_rids_for_rid()
             lookup_rids[self.rid] = [self.rid]
-            messages = [x for x in BU.get_messages(self.config, self.get_lookup_rids())]
+            messages = [x for x in BU.get_messages(self.config, self.mongo, self.get_lookup_rids())]
 
             out_messages = []
             for i, message in enumerate(messages):
@@ -208,7 +208,7 @@ class Graph(object):
         posts = []
         blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
         flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
-        for x in BU.get_posts(self.config, self.rid):
+        for x in BU.get_posts(self.config, self.mongo, self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
             rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
             if rid in self.rid_usernames:
@@ -229,7 +229,7 @@ class Graph(object):
         out = {}
         if not self.ids:
             return json.dumps({})
-        for x in BU.get_comments(self.config, self.rid, self.ids):
+        for x in BU.get_comments(self.config, self.mongo, self.rid, self.ids):
             if x['relationship'].get('id') not in out:
                 out[x['relationship'].get('id')] = []
 
@@ -244,6 +244,34 @@ class Graph(object):
             if x['username'] not in blocked:
                 out[x['relationship'].get('id')].append(x)
         self.comments = out
+
+    def get_reacts(self):
+        if self.wallet_mode:
+            self.reacts = []
+            return
+
+        my_bulletin_secret = self.config.bulletin_secret
+        reacts = []
+        blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
+        flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
+        out = {}
+        if not self.ids:
+            return json.dumps({})
+        for x in BU.get_reacts(self.config, self.mongo, self.rid, self.ids):
+            if x['relationship'].get('id') not in out:
+                out[x['relationship'].get('id')] = []
+
+            rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
+            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            
+            if rid in self.rid_usernames:
+                x['username'] = self.rid_usernames[rid]
+                if x['username'] not in blocked and x['id'] not in flagged:
+                    reacts.append(x)
+            x['id'] = str(x['id'])
+            if x['username'] not in blocked:
+                out[x['relationship'].get('id')].append(x)
+        self.reacts = out
 
     def from_dict(self, obj):
         self.friends = obj['friends']

@@ -12,13 +12,13 @@ class ChatNamespace(BaseNamespace):
 
 class Send(object):
     @classmethod
-    def run(cls, config, to, value):
-        mongo = Mongo(config)
-        Peers.init(config, config.network)
+    def run(cls, config, mongo, to, value):
+        Peers.init(config, mongo, config.network)
 
         try:
             transaction = TransactionFactory(
                 config,
+                mongo,
                 fee=0.01,
                 public_key=config.public_key,
                 private_key=config.private_key,

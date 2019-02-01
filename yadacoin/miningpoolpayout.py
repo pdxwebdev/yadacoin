@@ -53,13 +53,13 @@ class PoolPayer(object):
     def do_payout(self):
         network = getattr(self.config, 'network', None)
         if network:
-            Peers.init(self.config, network)
+            Peers.init(self.config, self.mongo, network)
         else:
-            Peers.init(self.config)
+            Peers.init(self.config, self.mongo)
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
-        latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config))
+        latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
         won_blocks = self.mongo.db.blocks.find({'transactions.outputs.to': self.config.address}).sort([('index', 1)])
         for won_block in won_blocks:
             won_block = Block.from_dict(self.config, self.mongo, won_block)
@@ -83,8 +83,8 @@ class PoolPayer(object):
                 return
             else:
                 # rebroadcast
-                transaction = Transaction.from_dict(self.config, existing['txn'])
-                TU.save(self.config, transaction)
+                transaction = Transaction.from_dict(self.config, self.mongo, existing['txn'])
+                TU.save(self.config, self.mongo, transaction)
                 self.broadcast_transaction(transaction)
                 return
 
@@ -112,6 +112,7 @@ class PoolPayer(object):
         try:
             transaction = TransactionFactory(
                 self.config,
+                self.mongo,
                 fee=0.0001,
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,
@@ -130,7 +131,7 @@ class PoolPayer(object):
             raise
             print 'faucet transaction failed'
 
-        TU.save(self.config, transaction.transaction)
+        TU.save(self.config, self.mongo, transaction.transaction)
         self.mongo.db.share_payout.insert({'index': block.index, 'txn': transaction.transaction.to_dict()})
 
         self.broadcast_transaction(transaction.transaction)

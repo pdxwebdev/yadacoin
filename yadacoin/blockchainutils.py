@@ -24,42 +24,37 @@ class BU(object):  # Blockchain Utilities
     collection = None
     database = None
     @classmethod
-    def get_blocks(cls, config):
-        mongo = Mongo(config)
+    def get_blocks(cls, config, mongo):
         return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
 
     @classmethod
-    def get_latest_blocks(cls, config):
-        mongo = Mongo(config)
+    def get_latest_blocks(cls, config, mongo):
         return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
     @classmethod
-    def get_latest_block(cls, config):
-        mongo = Mongo(config)
+    def get_latest_block(cls, config, mongo):
         return mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
 
     @classmethod
-    def get_block_by_index(cls, config, index):
-        mongo = Mongo(config)
+    def get_block_by_index(cls, config, mongo, index):
         res = mongo.db.blocks.find({'index': index}, {'_id': 0})
         if res.count():
             return res[0]
 
     @classmethod
-    def get_block_objs(cls, config):
-        mongo = Mongo(config)
+    def get_block_objs(cls, config, mongo):
         from block import Block
         from transaction import Transaction, Input, Crypt
-        blocks = cls.get_blocks(config)
+        blocks = cls.get_blocks(config, mongo)
         block_objs = []
         for block in blocks:
             block_objs.append(Block.from_dict(config, mongo, block))
         return block_objs
 
     @classmethod
-    def get_wallet_balance(cls, config, address):
-        unspent_transactions = cls.get_wallet_unspent_transactions(config, address)
-        unspent_fastgraph_transactions = cls.get_wallet_unspent_fastgraph_transactions(config, address)
+    def get_wallet_balance(cls, config, mongo, address):
+        unspent_transactions = cls.get_wallet_unspent_transactions(config, mongo, address)
+        unspent_fastgraph_transactions = cls.get_wallet_unspent_fastgraph_transactions(config, mongo, address)
         balance = 0
         used_ids = []
         for txn in unspent_transactions:
@@ -79,13 +74,13 @@ class BU(object):  # Blockchain Utilities
             return 0
 
     @classmethod
-    def get_wallet_unspent_transactions(cls, config, address, ids=None, needed_value=None):
+    def get_wallet_unspent_transactions(cls, config, mongo, address, ids=None, needed_value=None):
         spent_fastgraph_ids = []
-        for x in cls.get_wallet_unspent_fastgraph_transactions(config, address):
+        for x in cls.get_wallet_unspent_fastgraph_transactions(config, mongo, address):
             spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
             yield x
 
-        res = cls.wallet_unspent_worker(config, address, ids, needed_value)
+        res = cls.wallet_unspent_worker(config, mongo, address, ids, needed_value)
         for x in res:
             if x['id'] in spent_fastgraph_ids:
                 continue
@@ -93,8 +88,7 @@ class BU(object):  # Blockchain Utilities
             yield x['txn']
 
     @classmethod
-    def wallet_unspent_worker(cls, config, address, ids=None, needed_value=None):
-        mongo = Mongo(config)
+    def wallet_unspent_worker(cls, config, mongo, address, ids=None, needed_value=None):
         unspent_cache = mongo.db.unspent_cache.find({'address': address}).sort([('height', -1)])
 
         if unspent_cache.count():
@@ -226,8 +220,7 @@ class BU(object):  # Blockchain Utilities
         return res
     
     @classmethod
-    def get_wallet_unspent_fastgraph_transactions(cls, config, address):
-        mongo = Mongo(config)
+    def get_wallet_unspent_fastgraph_transactions(cls, config, mongo, address):
         result = mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
         for x in result:
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
@@ -240,8 +233,7 @@ class BU(object):  # Blockchain Utilities
                     yield x['txn']
     
     @classmethod
-    def get_wallet_spent_fastgraph_transactions(cls, config, address):
-        mongo = Mongo(config)
+    def get_wallet_spent_fastgraph_transactions(cls, config, mongo, address):
         result = mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
         for x in result:
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
@@ -254,8 +246,7 @@ class BU(object):  # Blockchain Utilities
                     yield x['txn']
 
     @classmethod
-    def get_transactions(cls, config, wif, query, queryType, raw=False, both=True, skip=None):
-        mongo = Mongo(config)
+    def get_transactions(cls, config, mongo, wif, query, queryType, raw=False, both=True, skip=None):
         if not skip:
             skip = []
         from block import Block
@@ -271,7 +262,7 @@ class BU(object):  # Blockchain Utilities
                     'queryType': queryType
                 }
         ).sort([('height', -1)])
-        latest_block = cls.get_latest_block(config)
+        latest_block = cls.get_latest_block(config, mongo)
         if get_transactions_cache.count():
             get_transactions_cache = get_transactions_cache[0]
             block_height = get_transactions_cache['height']
@@ -339,7 +330,17 @@ class BU(object):  # Blockchain Utilities
                         , upsert=True)
                     continue
 
-        fastgraph_transactions = cls.get_fastgraph_transactions(config, wif, query, queryType, raw=False, both=True, skip=None)
+        if not transactions:
+            mongo.db.get_transactions_cache.insert({
+                'public_key': config.public_key,
+                'raw': raw,
+                'both': both,
+                'skip': skip,
+                'queryType': queryType,
+                'height': latest_block['index']
+            })
+
+        fastgraph_transactions = cls.get_fastgraph_transactions(config, mongo, wif, query, queryType, raw=False, both=True, skip=None)
 
         for fastgraph_transaction in fastgraph_transactions:
             yield fastgraph_transaction
@@ -361,9 +362,8 @@ class BU(object):  # Blockchain Utilities
         
     
     @classmethod
-    def get_fastgraph_transactions(cls, config, secret, query, queryType, raw=False, both=True, skip=None):
+    def get_fastgraph_transactions(cls, config, mongo, secret, query, queryType, raw=False, both=True, skip=None):
         from crypt import Crypt
-        mongo = Mongo(config)
         for transaction in mongo.db.fastgraph_transactions.find(query):
             if 'txn' in transaction:
                 try:
@@ -397,9 +397,10 @@ class BU(object):  # Blockchain Utilities
             yield x['tnx']
 
     @classmethod
-    def get_all_usernames(cls, config):
-        return cls.get_transactions(
+    def get_all_usernames(cls, config, mongo):
+        return BU.get_transactions(
             config,
+            mongo,
             wif=config.wif,
             both=False,
             query={'txn.relationship.their_username': {'$exists': True}},
@@ -407,9 +408,10 @@ class BU(object):  # Blockchain Utilities
         )
     
     @classmethod
-    def search_username(cls, config, username):
-        return cls.get_transactions(
+    def search_username(cls, config, mongo, username):
+        return BU.get_transactions(
             config,
+            mongo,
             wif=config.wif,
             both=False,
             query={'txn.relationship.their_username': username},
@@ -417,8 +419,7 @@ class BU(object):  # Blockchain Utilities
         )
 
     @classmethod
-    def get_posts(cls, config, rids):
-        mongo = Mongo(config)
+    def get_posts(cls, config, mongo, rids):
         from crypt import Crypt
 
         if not isinstance(rids, list):
@@ -428,7 +429,7 @@ class BU(object):  # Blockchain Utilities
             'rid': {'$in': rids}
         }).sort([('height', -1)])
 
-        latest_block = cls.get_latest_block(config)
+        latest_block = cls.get_latest_block(config, mongo)
 
         if posts_cache.count():
             posts_cache = posts_cache[0]
@@ -477,14 +478,14 @@ class BU(object):  # Blockchain Utilities
         transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
-        mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(config, rids)
+        mutual_bulletin_secrets = BU.get_mutual_bulletin_secrets(config, mongo, rids)
         friends = []
-        for friend in cls.get_transactions_by_rid(config, rids, config.bulletin_secret, rid=True):
+        for friend in BU.get_transactions_by_rid(config, mongo, rids, config.bulletin_secret, rid=True):
             if 'their_bulletin_secret' in friend['relationship']:
                 friends.append(friend['relationship']['their_bulletin_secret'])
         friends = list(set(friends))
         had_txns = False
-        latest_height = BU.get_latest_block(config)['index']
+
         if friends:
             mutual_bulletin_secrets.extend(friends)
             for i, x in enumerate(transactions):
@@ -500,26 +501,24 @@ class BU(object):  # Blockchain Utilities
                         x['txn']['relationship'] = data
                         if 'postText' in decrypted:
                             had_txns = True
-                            if 'height' not in x:
-                                x['height'] = latest_height
-                            print 'caching posts at height:', x['height']
+                            print 'caching posts at height:', x.get('height', 0)
                             for rid in rids:
                                 mongo.db.posts_cache.update({
                                     'rid': rid,
-                                    'height': x['height'],
+                                    'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'bulletin_secret': bs
                                 },
                                 {
                                     'rid': rid,
-                                    'height': x['height'],
+                                    'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
                                     'bulletin_secret': bs
                                 },
                                 upsert=True)
-                    except:
-                        pass
+                    except Exception as e:
+                        print e
         if not had_txns:
             for rid in rids:
                 mongo.db.posts_cache.insert({
@@ -545,18 +544,121 @@ class BU(object):  # Blockchain Utilities
                 yield x['txn']
 
     @classmethod
-    def get_reacts(cls, config, rids):
-        return cls.get_post_data(
-            config,
-            rids,
-            both=False,
-            query={'txn.relationship.react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
-            queryType='getReacts'
-        )
+    def get_reacts(cls, config, mongo, rids, ids):
+        from crypt import Crypt
+
+        if not isinstance(rids, list):
+            rids = [rids, ]
+
+        reacts_cache = mongo.db.reacts_cache.find({
+            'rids': {'$in': rids}
+        }).sort([('height', -1)])
+
+        latest_block = cls.get_latest_block(config, mongo)
+
+        if reacts_cache.count():
+            reacts_cache = reacts_cache[0]
+            block_height = reacts_cache['height']
+        else:
+            block_height = 0
+        transactions = mongo.db.blocks.aggregate([
+            {
+                "$match": {
+                    "index": {'$gt': block_height}
+                }
+            },
+            {
+                "$match": {
+                    "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                    "transactions.dh_public_key": '',
+                    "transactions.rid": ''
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions",
+                    "height": "$index"
+                }
+            },
+            {
+                "$match": {
+                    "txn.relationship": {"$ne": ""},
+                    "txn.dh_public_key": '',
+                    "txn.rid": ''
+                }
+            },
+            {
+                "$sort": {"height": 1}
+            }
+        ])
+
+        fastgraph_transactions = mongo.db.fastgraph_transactions.find({
+            "txn.relationship": {"$ne": ""},
+            "txn.dh_public_key": '',
+            "txn.rid": ''
+        })
+
+        transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
+        # transactions are all posts not yet cached by this rid
+        # so we want to grab all bulletin secrets for this rid
+        mutual_bulletin_secrets = BU.get_mutual_bulletin_secrets(config, mongo, rids)
+        friends = []
+        for friend in BU.get_transactions_by_rid(config, mongo, rids, config.bulletin_secret, rid=True):
+            if 'their_bulletin_secret' in friend['relationship']:
+                friends.append(friend['relationship']['their_bulletin_secret'])
+        friends = list(set(friends))
+        had_txns = False
+
+        if friends:
+            mutual_bulletin_secrets.extend(friends)
+            for i, x in enumerate(transactions):
+                for bs in mutual_bulletin_secrets:
+                    try:
+                        crypt = Crypt(bs)
+                        decrypted = crypt.decrypt(x['txn']['relationship'])
+                        try:
+                            decrypted = base64.b64decode(decrypted)
+                        except:
+                            continue
+                        data = json.loads(decrypted)
+                        x['txn']['relationship'] = data
+                        if 'react' in decrypted:
+                            had_txns = True
+                            print 'caching posts at height:', x.get('height', 0)
+                            for rid in rids:
+                                mongo.db.reacts_cache.update({
+                                    'rid': rid,
+                                    'height': x.get('height', 0),
+                                    'id': x['txn']['id'],
+                                    'bulletin_secret': bs
+                                },
+                                {
+                                    'rid': rid,
+                                    'height': x.get('height', 0),
+                                    'id': x['txn']['id'],
+                                    'txn': x['txn'],
+                                    'bulletin_secret': bs
+                                },
+                                upsert=True)
+                    except:
+                        pass
+        if not had_txns:
+            for rid in rids:
+                mongo.db.reacts_cache.insert({
+                    'rid': rid, 
+                    'height': latest_block['index']
+                })
+
+        for x in mongo.db.reacts_cache.find({'txn.relationship.id': {'$in': ids}}):
+            if 'txn' in x and 'id' in x['txn']['relationship']:
+                x['txn']['height'] = x['height']
+                x['txn']['bulletin_secret'] = x['bulletin_secret']
+                yield x['txn']
 
     @classmethod
-    def get_comments(cls, config, rids, ids):
-        mongo = Mongo(config)
+    def get_comments(cls, config, mongo, rids, ids):
         from crypt import Crypt
 
         if not isinstance(rids, list):
@@ -566,7 +668,7 @@ class BU(object):  # Blockchain Utilities
             'rids': {'$in': rids}
         }).sort([('height', -1)])
 
-        latest_block = cls.get_latest_block(config)
+        latest_block = cls.get_latest_block(config, mongo)
 
         if comments_cache.count():
             comments_cache = comments_cache[0]
@@ -615,14 +717,14 @@ class BU(object):  # Blockchain Utilities
         transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
-        mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(config, rids)
+        mutual_bulletin_secrets = cls.get_mutual_bulletin_secrets(config, mongo, rids)
         friends = []
-        for friend in cls.get_transactions_by_rid(config, rids, config.bulletin_secret, rid=True):
+        for friend in cls.get_transactions_by_rid(config, mongo, rids, config.bulletin_secret, rid=True):
             if 'their_bulletin_secret' in friend['relationship']:
                 friends.append(friend['relationship']['their_bulletin_secret'])
         friends = list(set(friends))
         had_txns = False
-        latest_height = BU.get_latest_block(config)['index']
+
         if friends:
             mutual_bulletin_secrets.extend(friends)
             for i, x in enumerate(transactions):
@@ -638,19 +740,17 @@ class BU(object):  # Blockchain Utilities
                         x['txn']['relationship'] = data
                         if 'comment' in decrypted:
                             had_txns = True
-                            if 'height' not in x:
-                                x['height'] = latest_height
-                            print 'caching posts at height:', x['height']
+                            print 'caching posts at height:', x.get('height', 0)
                             for rid in rids:
                                 mongo.db.comments_cache.update({
                                     'rid': rid,
-                                    'height': x['height'],
+                                    'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'bulletin_secret': bs
                                 },
                                 {
                                     'rid': rid,
-                                    'height': x['height'],
+                                    'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
                                     'bulletin_secret': bs
@@ -672,32 +772,12 @@ class BU(object):  # Blockchain Utilities
                 yield x['txn']
 
     @classmethod
-    def get_comment_reacts(cls, config, signatures):
-        return cls.get_post_data(
-            config,
-            wif=config.wif,
-            both=False,
-            query={'txn.relationship.comment_react': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
-            queryType='getCommentReacts'
-        )
-
-    @classmethod
-    def get_comment_replies(cls, config, signatures):
-        return cls.get_post_data(
-            config,
-            wif=config.wif,
-            both=False,
-            query={'txn.relationship.comment_reply': {'$exists': True}, 'txn.relationship.id': {'$in': signatures}},
-            queryType='getCommentReplies'
-        )
-
-    @classmethod
-    def get_relationships(cls, config, wif):
+    def get_relationships(cls, config, mongo, wif):
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
         relationships = []
-        for block in cls.get_blocks(config):
+        for block in cls.get_blocks(config, mongo):
             for transaction in block.get('transactions'):
                 try:
                     cipher = Crypt(wif)
@@ -709,8 +789,7 @@ class BU(object):  # Blockchain Utilities
         return relationships
 
     @classmethod
-    def get_transaction_by_rid(cls, config, selector, wif=None, bulletin_secret=None, rid=False, raw=False):
-        mongo = Mongo(config)
+    def get_transaction_by_rid(cls, config, mongo, selector, wif=None, bulletin_secret=None, rid=False, raw=False, theirs=False, my=False, public_key=None):
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
@@ -723,9 +802,15 @@ class BU(object):  # Blockchain Utilities
         else:
             if not isinstance(selector, list):
                 selectors = [selector, ]
+            else:
+                selectors = selector
 
         for block in mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}}):
             for transaction in block.get('transactions'):
+                if theirs and public_key == transaction['public_key']:
+                    continue
+                if my and public_key != transaction['public_key']:
+                    continue
                 if not raw:
                     try:
                         cipher = Crypt(wif)
@@ -737,12 +822,11 @@ class BU(object):  # Blockchain Utilities
                 return transaction
 
     @classmethod
-    def get_transactions_by_rid(cls, config, selector, bulletin_secret, wif=None, rid=False, raw=False, returnheight=True, lt_block_height=None):
+    def get_transactions_by_rid(cls, config, mongo, selector, bulletin_secret, wif=None, rid=False, raw=False, returnheight=True, lt_block_height=None):
         #selectors is old code before we got an RID by sorting the bulletin secrets
         from block import Block
         from transaction import Transaction
         from crypt import Crypt
-        mongo = Mongo(config)
 
         if not rid:
             ds = bulletin_secret
@@ -765,7 +849,7 @@ class BU(object):  # Blockchain Utilities
                     'selector': {'$in': selectors}
                 }
         ).sort([('height', -1)])
-        latest_block = cls.get_latest_block(config)
+        latest_block = cls.get_latest_block(config, mongo)
 
         transactions = []
         if lt_block_height:
@@ -822,8 +906,7 @@ class BU(object):  # Blockchain Utilities
                 yield x['txn']
 
     @classmethod
-    def get_second_degree_transactions_by_rids(cls, config, rids, start_height):
-        mongo = Mongo(config)
+    def get_second_degree_transactions_by_rids(cls, config, mongo, rids, start_height):
         start_height = start_height or 0
         if not isinstance(rids, list):
             rids = [rids, ]
@@ -838,13 +921,12 @@ class BU(object):  # Blockchain Utilities
         return transactions
 
     @classmethod
-    def get_friend_requests(cls, config, rids):
-        mongo = Mongo(config)
+    def get_friend_requests(cls, config, mongo, rids):
         if not isinstance(rids, list):
             rids = [rids, ]
 
         friend_requests_cache = mongo.db.friend_requests_cache.find({'requested_rid': {'$in': rids}}).sort([('height', -1)])
-        latest_block = cls.get_latest_block(config)
+        latest_block = cls.get_latest_block(config, mongo)
         if friend_requests_cache.count():
             friend_requests_cache = friend_requests_cache[0]
             block_height = friend_requests_cache['height']
@@ -913,8 +995,7 @@ class BU(object):  # Blockchain Utilities
                 yield x['txn']
 
     @classmethod
-    def get_sent_friend_requests(cls, config, rids):
-        mongo = Mongo(config)
+    def get_sent_friend_requests(cls, config, mongo, rids):
 
         if not isinstance(rids, list):
             rids = [rids, ]
@@ -984,8 +1065,7 @@ class BU(object):  # Blockchain Utilities
             yield x['txn']
 
     @classmethod
-    def get_messages(cls, config, rids):
-        mongo = Mongo(config)
+    def get_messages(cls, config, mongo, rids):
 
         if not isinstance(rids, list):
             rids = [rids, ]
@@ -1062,20 +1142,20 @@ class BU(object):  # Blockchain Utilities
             yield x['txn']
 
     @classmethod
-    def get_mutual_rids(cls, config, rid):
+    def get_mutual_rids(cls, config, mongo, rid):
         # find the requested and requester rids where rid is present in those fields
         rids = set()
-        rids.update([x['requested_rid'] for x in cls.get_sent_friend_requests(config, rid)])
-        rids.update([x['requester_rid'] for x in cls.get_friend_requests(config, rid)])
+        rids.update([x['requested_rid'] for x in cls.get_sent_friend_requests(config, mongo, rid)])
+        rids.update([x['requester_rid'] for x in cls.get_friend_requests(config, mongo, rid)])
         rids = list(rids)
         return rids
 
     @classmethod
-    def get_mutual_bulletin_secrets(cls, config, rid, at_block_height=None):
+    def get_mutual_bulletin_secrets(cls, config, mongo, rid, at_block_height=None):
         # Get the mutual relationships, then get the bulleting secrets for those relationships
         mutual_bulletin_secrets = set()
-        rids = cls.get_mutual_rids(config, rid)
-        for transaction in cls.get_transactions_by_rid(config, rids, config.bulletin_secret, rid=True):
+        rids = cls.get_mutual_rids(config, mongo, rid)
+        for transaction in cls.get_transactions_by_rid(config, mongo, rids, config.bulletin_secret, rid=True):
             if 'bulletin_secret' in transaction['relationship']:
                 mutual_bulletin_secrets.add(transaction['relationship']['bulletin_secret'])
         return list(mutual_bulletin_secrets)
@@ -1087,8 +1167,7 @@ class BU(object):  # Blockchain Utilities
         return base64.b64encode(signature)
 
     @classmethod
-    def get_transaction_by_id(cls, config, id, instance=False, give_block=False):
-        mongo = Mongo(config)
+    def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=True):
         from transaction import Transaction, Input, Crypt
         from fastgraph import FastGraph
         res = mongo.db.blocks.find({"transactions.id": id})
@@ -1100,12 +1179,14 @@ class BU(object):  # Blockchain Utilities
                 for txn in block['transactions']:
                     if txn['id'] == id:
                         if instance:
-                            return Transaction.from_dict(config, txn)
+                            return Transaction.from_dict(config, mongo, txn)
                         else:
                             return txn
-        elif res2.count():
+        elif res2.count() and include_fastgraph:
+            if give_block:
+                return None
             if instance:
-                return FastGraph.from_dict(config, res2[0]['txn'])
+                return FastGraph.from_dict(config, mongo, res2[0]['txn'])
             else:
                 return res2[0]['txn']
         else:
@@ -1122,7 +1203,7 @@ class BU(object):  # Blockchain Utilities
             return 2
 
     @classmethod
-    def get_block_reward(cls, config, block=None):
+    def get_block_reward(cls, config, mongo, block=None):
         block_rewards = [
             {"block": "0", "reward": "50"},
             {"block": "210000", "reward": "25"},
@@ -1160,7 +1241,7 @@ class BU(object):  # Blockchain Utilities
             {"block": "6930000", "reward": "0"}
         ]
 
-        latest_block = cls.get_latest_block(config)
+        latest_block = cls.get_latest_block(config, mongo)
         if latest_block:
             block_count = (latest_block['index'] + 1)
         else:
@@ -1180,8 +1261,7 @@ class BU(object):  # Blockchain Utilities
         return float(block_reward['reward'])
 
     @classmethod
-    def check_double_spend(cls, config, transaction_obj):
-        mongo = Mongo(config)
+    def check_double_spend(cls, config, mongo, transaction_obj):
         double_spends = []
         for txn_input in transaction_obj.inputs:
             res = mongo.db.blocks.aggregate([
@@ -1212,16 +1292,15 @@ class BU(object):  # Blockchain Utilities
         return double_spends
 
     @classmethod
-    def verify_message(cls, config, rid, message, public_key, txn_id=None):
+    def verify_message(cls, config, mongo, rid, message, public_key, txn_id=None):
         from crypt import Crypt
-        mongo = Mongo(config)
         sent = False
         received = False
-        shared_secrets = TU.get_shared_secrets_by_rid(config, rid)
+        shared_secrets = TU.get_shared_secrets_by_rid(config, mongo, rid)
         if txn_id:
-            txns = [cls.get_transaction_by_id(config, txn_id)]
+            txns = [BU.get_transaction_by_id(config, mongo, txn_id)]
         else:
-            txns = [x for x in cls.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)]
+            txns = [x for x in BU.get_transactions_by_rid(config, mongo, rid, config.bulletin_secret, rid=True, raw=True)]
             fastgraph_transactions = mongo.db.fastgraph_transactions.find({"txn.rid": rid})
             txns.extend([x['txn'] for x in fastgraph_transactions])
         for txn in txns:

@@ -31,12 +31,12 @@ class BlockFactory(object):
             self.time = str(int(force_time))
         else:
             self.time = str(int(time.time()))
-        blocks = BU.get_blocks(self.config)
+        blocks = BU.get_blocks(self.config, self.mongo)
         self.index = index
         if self.index == 0:
             self.prev_hash = '' 
         else:
-            self.prev_hash = BU.get_latest_block(self.config)['hash']
+            self.prev_hash = BU.get_latest_block(self.config, self.mongo)['hash']
         self.public_key = public_key
         self.private_key = private_key
 
@@ -50,7 +50,7 @@ class BlockFactory(object):
                 if isinstance(txn, Transaction):
                     transaction_obj = txn
                 else:
-                    transaction_obj = Transaction.from_dict(self.config, txn)
+                    transaction_obj = Transaction.from_dict(self.config, self.mongo, txn)
 
                 if transaction_obj.transaction_signature in used_sigs:
                     print 'duplicate transaction found and removed'
@@ -59,10 +59,10 @@ class BlockFactory(object):
                 used_sigs.append(transaction_obj.transaction_signature)
                 transaction_obj.verify()
 
-                if transaction_obj.rid:
+                if  not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
                     for input_id in transaction_obj.inputs:
-                        input_block = BU.get_transaction_by_id(self.config, input_id.id, give_block=True)
-                        if input_block['index'] > (BU.get_latest_block(self.config)['index'] - 2016):
+                        input_block = BU.get_transaction_by_id(self.config, self.mongo, input_id.id, give_block=True)
+                        if input_block['index'] > (BU.get_latest_block(self.config, self.mongo)['index'] - 2016):
                             continue
 
             except:
@@ -87,14 +87,14 @@ class BlockFactory(object):
             if address in unspent_indexed:
                 unspent_ids = unspent_indexed[address]
             else:
-                res = BU.get_wallet_unspent_transactions(self.config, address)
+                res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address)
                 unspent_ids = [x['id'] for x in res]
                 unspent_indexed[address] = unspent_ids
             
             if address in unspent_fastgraph_indexed:
                 unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
             else:
-                res = BU.get_wallet_unspent_fastgraph_transactions(self.config, address)
+                res = BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, address)
                 unspent_fastgraph_ids = [x['id'] for x in res]
                 unspent_fastgraph_indexed[address] = unspent_fastgraph_ids
 
@@ -102,9 +102,7 @@ class BlockFactory(object):
             used_ids_in_this_txn = []
             
             for x in transaction_obj.inputs:
-                if isinstance(transaction_obj, Transaction) and x.id not in unspent_ids:
-                    failed = True
-                if isinstance(transaction_obj, FastGraph) and x.id not in unspent_fastgraph_ids:
+                if x.id not in unspent_ids:
                     failed = True
                 if x.id in used_ids_in_this_txn:
                     failed = True
@@ -112,9 +110,10 @@ class BlockFactory(object):
             if not failed:
                 transaction_objs.append(transaction_obj)
                 fee_sum += float(transaction_obj.fee)
-        block_reward = BU.get_block_reward(self.config)
+        block_reward = BU.get_block_reward(self.config, self.mongo)
         coinbase_txn_fctry = TransactionFactory(
             config,
+            mongo,
             public_key=self.public_key,
             private_key=self.private_key,
             outputs=[Output(
@@ -183,7 +182,7 @@ class BlockFactory(object):
         two_weeks = 1209600  # seconds
         half_week = 302400  # seconds
         if height > 0 and height % retarget_period == 0:
-            block_from_2016_ago = Block.from_dict(config, mongo, BU.get_block_by_index(config, height - retarget_period))
+            block_from_2016_ago = Block.from_dict(config, mongo, BU.get_block_by_index(config, mongo, height - retarget_period))
             two_weeks_ago_time = block_from_2016_ago.time
             elapsed_time_from_2016_ago = int(last_time) - int(two_weeks_ago_time)
             # greater than two weeks?
@@ -206,7 +205,7 @@ class BlockFactory(object):
                 target = max_target
             else:
                 target = new_target
-        # target is stupid
+
         elif height == 0:
             target = max_target
         else:
@@ -314,7 +313,10 @@ class Block(object):
                 txn['coinbase'] = True  
             else:
                 txn['coinbase'] = False
-            transactions.append(Transaction.from_dict(config, txn))
+            if 'signatures' in txn:
+                transactions.append(FastGraph.from_dict(config, mongo, txn))
+            else:
+                transactions.append(Transaction.from_dict(config, mongo, txn))
 
         return cls(
             config=config,
@@ -383,7 +385,7 @@ class Block(object):
         for txn in self.transactions:
             if not txn.coinbase:
                 fee_sum += float(txn.fee)
-        reward = BU.get_block_reward(self.config, self)
+        reward = BU.get_block_reward(self.config, self.mongo, self)
 
         if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
             raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
@@ -410,7 +412,7 @@ class Block(object):
         for txn in self.transactions:
             if txn.inputs:
                 address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
-                unspent = BU.get_wallet_unspent_transactions(address, [x.id for x in txn.inputs])
+                unspent = BU.get_wallet_unspent_transactions(self.config, self.mongo,address, [x.id for x in txn.inputs])
                 unspent_ids = [x['id'] for x in unspent]
                 failed = False
                 used_ids_in_this_txn = []
@@ -422,9 +424,9 @@ class Block(object):
                     used_ids_in_this_txn.append(x.id)
                 if failed:
                     raise BaseException('double spend', [x.id for x in txn.inputs])
-        res = Mongo.db.blocks.find({"index": (int(self.index) - 1)})
+        res = self.mongo.db.blocks.find({"index": (int(self.index) - 1)})
         if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:
-            Mongo.db.blocks.insert(self.to_dict())
+            self.mongo.db.blocks.insert(self.to_dict())
         else:
             print "CRITICAL: block rejected..."
 

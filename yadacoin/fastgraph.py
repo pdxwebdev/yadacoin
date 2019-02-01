@@ -23,6 +23,7 @@ class FastGraph(Transaction):
     def __init__(
         self,
         config,
+        mongo,
         rid='',
         transaction_signature='',
         relationship='',
@@ -38,7 +39,7 @@ class FastGraph(Transaction):
         signatures=None
     ):
         self.config = config
-        self.mongo = Mongo(self.config)
+        self.mongo = mongo
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
@@ -63,7 +64,7 @@ class FastGraph(Transaction):
                 self.signatures.append(FastGraphSignature(signature))
     
     @classmethod
-    def from_dict(cls, config, txn):
+    def from_dict(cls, config, mongo, txn):
         try:
             relationship = Relationship(**txn.get('relationship', ''))
         except:
@@ -71,6 +72,7 @@ class FastGraph(Transaction):
 
         return cls(
             config=config,
+            mongo=mongo,
             transaction_signature=txn.get('id'),
             rid=txn.get('rid', ''),
             relationship=relationship,
@@ -92,6 +94,38 @@ class FastGraph(Transaction):
         bulletin_secrets = sorted([str(first_bulletin_secret), str(second_bulletin_secret)], key=str.lower)
         return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
+    def get_origin_relationship(self, rid=None, bulletin_secret=None):
+        for inp in self.inputs:
+            inp = inp.id
+            while 1:
+                txn = BU.get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=False)
+                if txn:
+                    if 'rid' in txn and txn['rid'] and 'dh_public_key' in txn and txn['dh_public_key']:
+                        if rid and txn['rid'] != rid:
+                            continue
+                        rids = [txn['rid']]
+                        if 'requester_rid' in txn and txn['requester_rid']:
+                            rids.append(txn['requester_rid'])
+                        if 'requested_rid' in txn and txn['requested_rid']:
+                            rids.append(txn['requested_rid'])
+                        
+                        # we need their public_key, not mine, so we get both transactions for the relationship
+                        txn_for_rids = BU.get_transaction_by_rid(self.config, self.mongo, rids, bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
+
+                        if txn_for_rids:
+                            return txn_for_rids
+                        else:
+                            return False
+                    else:
+                        inp = txn['inputs'][0]['id']
+                else:
+                    txn = self.mongo.db.fastgraph_transactions.find_one({'id': inp})
+                    if txn and 'inputs' in txn['txn'] and txn['txn']['inputs'] and 'id' in txn['txn']['inputs'][0]:
+                        inp = txn['txn']['inputs'][0]['id']
+                    else:
+                        return False
+
+
     def verify(self):
         super(FastGraph, self).verify()
         result = self.mongo.db.fastgraph_transactions.find_one({
@@ -102,26 +136,23 @@ class FastGraph(Transaction):
             raise InvalidFastGraphTransactionException('no signatures were provided')
 
         xaddress = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
-        unspent = [x['id'] for x in BU.get_wallet_unspent_transactions(self.config, xaddress)]
-        unspent_fastgraph = [x['id'] for x in BU.get_wallet_unspent_fastgraph_transactions(self.config, xaddress)]
+        unspent = [x['id'] for x in BU.get_wallet_unspent_transactions(self.config, self.mongo, xaddress)]
+        unspent_fastgraph = [x['id'] for x in BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, xaddress)]
         inputs = [x.id for x in self.inputs]
         if len(set(inputs) & set(unspent)) != len(inputs) and len(set(inputs) & set(unspent_fastgraph)) != len(inputs):
-            return False
+            raise InvalidFastGraphTransactionException('Input not found in unspent')
 
-        highest_height = 0
-        for inp in inputs:
-            # TODO: go back to the on-chain transaction to determine the relationship state
-            txn = BU.get_transaction_by_id(self.config, inp, give_block=True)
-            if 'index' in txn and txn['index'] > highest_height:
-                highest_height = txn['index']
+        txn_for_rids = self.get_origin_relationship()
+        if not txn_for_rids:
+            raise InvalidFastGraphTransactionException('no origin transactions found')
+        public_key = txn_for_rids['public_key']
 
         for signature in self.signatures:
             signature.passed = False
-            # did I sign it?
             signed = verify_signature(
                 base64.b64decode(signature.signature),
                 self.hash,
-                self.config.public_key.decode('hex')
+                public_key.decode('hex')
             )
             if signed:
                 signature.passed = True
@@ -129,13 +160,13 @@ class FastGraph(Transaction):
             """
             # This is for a later fork to include a wider consensus area for a larger spending group
             else:
-                mutual_friends = [x for x in BU.get_transactions_by_rid(self.config, self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
+                mutual_friends = [x for x in BU.get_transactions_by_rid(self.config, self.mongo, self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
                 for mutual_friend in mutual_friends:
-                    mutual_friend = Transaction.from_dict(self.config, mutual_friend)
+                    mutual_friend = Transaction.from_dict(self.config, self.mongo, mutual_friend)
                     if isinstance(mutual_friend.relationship, Relationship) and signature.bulletin_secret == mutual_friend.relationship.their_bulletin_secret:
                         other_mutual_friend = mutual_friend
                 for mutual_friend in mutual_friends:
-                    mutual_friend = Transaction.from_dict(self.config, mutual_friend)
+                    mutual_friend = Transaction.from_dict(self.config, self.mongo, mutual_friend)
                     if mutual_friend.public_key != self.config.public_key:
                         identity = verify_signature(
                             base64.b64decode(other_mutual_friend.relationship.their_bulletin_secret),
@@ -152,11 +183,10 @@ class FastGraph(Transaction):
             """
         for signature in self.signatures:
             if not signature.passed:
-                return False
-        return True
+                raise InvalidFastGraphTransactionException('not all signatures verified')
 
     def get_signatures(self, peers):
-        Peers.init(self.config, self.config.network)
+        Peers.init(self.config, self.mongo, self.config.network)
         for peer in Peers.peers:
             try:
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
@@ -169,7 +199,7 @@ class FastGraph(Transaction):
                 pass
 
     def broadcast(self):
-        Peers.init(self.config, self.config.network)
+        Peers.init(self.config, self.mongo, self.config.network)
         for peer in Peers.peers:
             try:
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)

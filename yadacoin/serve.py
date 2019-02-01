@@ -6,11 +6,13 @@ from graph import Graph
 from peers import Peers, Peer
 from config import Config
 from gevent import pywsgi
+from mongo import Mongo
 
 class Serve(object):
-    def __init__(self, config):
+    def __init__(self, config, mongo):
         self.app = Flask(__name__)
         self.app.config['yada_config'] = config
+        self.app.config['yada_mongo'] = mongo
         self.app.debug = True
         self.app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
         CORS(self.app, supports_credentials=True)
@@ -24,6 +26,8 @@ class Serve(object):
         self.app.add_url_rule('/get-graph-messages', view_func=endpoints.GraphMessagesView.as_view('graphmessages'), methods=['GET', 'POST'])
         self.app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
         self.app.add_url_rule('/get-graph-comments', view_func=endpoints.GraphCommentsView.as_view('get-comments'), methods=['POST'])
+        self.app.add_url_rule('/get-graph-reacts', view_func=endpoints.GraphReactsView.as_view('get-reacts'), methods=['POST'])
+        self.app.add_url_rule('/get-graph-wallet', view_func=endpoints.RidWalletView.as_view('get-wallet'))
         self.app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
         self.app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
         self.app.add_url_rule('/pool', view_func=endpoints.MiningPoolView.as_view('pool'))
@@ -48,8 +52,6 @@ class Serve(object):
         self.app.add_url_rule('/', view_func=endpoints.HomeView.as_view('home'))
         self.app.add_url_rule('/search', view_func=endpoints.SearchView.as_view('search'))
         self.app.add_url_rule('/react', view_func=endpoints.ReactView.as_view('react'), methods=['POST'])
-        self.app.add_url_rule('/get-reacts', view_func=endpoints.GetReactsView.as_view('get-reacts'), methods=['POST'])
-        self.app.add_url_rule('/get-reacts-detail', view_func=endpoints.GetReactsDetailView.as_view('get-reacts-detail'), methods=['POST'])
         self.app.add_url_rule('/comment-react', view_func=endpoints.CommentReactView.as_view('comment-react'), methods=['POST'])
         self.app.add_url_rule('/get-comment-reacts', view_func=endpoints.GetCommentReactsView.as_view('get-comment-reacts'), methods=['POST'])
         self.app.add_url_rule('/get-comment-reacts-detail', view_func=endpoints.GetCommentReactsDetailView.as_view('get-comment-reacts-detail'), methods=['POST'])
@@ -65,6 +67,6 @@ class Serve(object):
             ids = request.json.get('ids')
         else:
             ids = []
-        graph = Graph(self.app.config['yada_config'], bulletin_secret, ids)
+        graph = Graph(self.app.config['yada_config'], self.app.config['yada_mongo'], bulletin_secret, ids)
         return graph
     

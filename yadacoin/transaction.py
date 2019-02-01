@@ -24,6 +24,7 @@ class TransactionFactory(object):
     def __init__(
         self,
         config,
+        mongo,
         bulletin_secret='',
         username='',
         value=0,
@@ -42,6 +43,7 @@ class TransactionFactory(object):
         signin=None
     ):
         self.config = config
+        self.mongo = mongo
         self.bulletin_secret = bulletin_secret
         self.username = username
         self.requester_rid = requester_rid
@@ -70,7 +72,7 @@ class TransactionFactory(object):
                 self.cipher = Crypt(self.config.wif)
                 self.encrypted_relationship = self.cipher.encrypt(self.relationship)
             elif self.signin:
-                for shared_secret in TU.get_shared_secrets_by_rid(self.config, self.rid):
+                for shared_secret in TU.get_shared_secrets_by_rid(self.config, self.mongo, self.rid):
                     self.relationship = SignIn(self.signin)
                     self.cipher = Crypt(shared_secret.encode('hex'), shared=True)
                     self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
@@ -103,10 +105,9 @@ class TransactionFactory(object):
         self.transaction = self.generate_transaction()
 
     def do_money(self):
-        mongo = Mongo(self.config)
         my_address = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
-        input_txns = BU.get_wallet_unspent_transactions(self.config, my_address)
-        miner_transactions = mongo.db.miner_transactions.find()
+        input_txns = BU.get_wallet_unspent_transactions(self.config, self.mongo, my_address)
+        miner_transactions = self.mongo.db.miner_transactions.find()
         mtxn_ids = []
         for mtxn in miner_transactions:
             for mtxninput in mtxn['inputs']:
@@ -123,7 +124,7 @@ class TransactionFactory(object):
                 done = False
                 for y in inputs:
                     print y.id
-                    txn = BU.get_transaction_by_id(self.config, y.id, instance=True)
+                    txn = BU.get_transaction_by_id(self.config, self.mongo, y.id, instance=True)
                     for txn_output in txn.outputs:
                         if txn_output.to == my_address:
                             input_sum += txn_output.value
@@ -157,7 +158,7 @@ class TransactionFactory(object):
     def get_input_hashes(self):
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, x.id, instance=True)
+            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
             input_hashes.append(str(txn.transaction_signature))
 
         return ''.join(sorted(input_hashes, key=str.lower))
@@ -185,6 +186,7 @@ class TransactionFactory(object):
     def generate_transaction(self):
         return Transaction(
             self.config,
+            self.mongo,
             self.rid,
             self.transaction_signature,
             self.encrypted_relationship,
@@ -218,6 +220,7 @@ class Transaction(object):
     def __init__(
         self,
         config,
+        mongo,
         rid='',
         transaction_signature='',
         relationship='',
@@ -232,6 +235,7 @@ class Transaction(object):
         coinbase=False
     ):
         self.config = config
+        self.mongo = mongo
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
@@ -246,13 +250,14 @@ class Transaction(object):
         self.coinbase = coinbase
 
     @classmethod
-    def from_dict(cls, config, txn):
+    def from_dict(cls, config, mongo, txn):
         try:
             relationship = Relationship(**txn.get('relationship', ''))
         except:
             relationship = txn.get('relationship', '')
         return cls(
             config=config,
+            mongo=mongo,
             transaction_signature=txn.get('id'),
             rid=txn.get('rid', ''),
             relationship=relationship,
@@ -289,7 +294,7 @@ class Transaction(object):
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            txn_input = Transaction.from_dict(self.config, BU.get_transaction_by_id(self.config, txn.id))
+            txn_input = Transaction.from_dict(self.config, self.mongo, BU.get_transaction_by_id(self.config, self.mongo, txn.id))
             for output in txn_input.outputs:
                 if str(output.to) == str(address):
                     total_input += float(output.value)
@@ -322,7 +327,7 @@ class Transaction(object):
     def get_input_hashes(self):
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, x.id, instance=True)
+            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
             if not txn:
                 raise MissingInputTransactionException("This transaction is not in the blockchain.")
             input_hashes.append(str(txn.transaction_signature))

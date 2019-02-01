@@ -17,8 +17,8 @@ with open('config/config.json') as f:
     config = Config.from_dict(config)
 
 mongo = Mongo(config)
-blocks = BU.get_blocks()
-blockchain = Blockchain(blocks)
+blocks = BU.get_blocks(config, mongo)
+blockchain = Blockchain(config, mongo, blocks)
 blockchain.verify(output)
 
 

@@ -73,7 +73,7 @@ def firebase_service_worker():
 def fcm_token():
     try:
         config = current_app.config['yada_config']
-        mongo = Mongo(config)
+        mongo = current_app.config['yada_mongo']
         token = request.json.get('token')
         print token
         rid = request.json.get('rid')
@@ -111,7 +111,7 @@ def hashrate():
 def api_stats():
     max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     config = current_app.config['yada_config']
-    blocks = BU.get_blocks(config)
+    blocks = BU.get_blocks(config, mongo)
     total_nonce = 0
     periods = []
     last_time = None
@@ -206,22 +206,22 @@ def get_url():
 @app.route('/block-user', methods=['POST'])
 def block_user():
     config = current_app.config['yada_config']
-    mongo = Mongo(config)
+    mongo = current_app.config['yada_mongo']
     mongo.site_db.blocked_users.update({'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, {'bulletin_secret': request.json.get('bulletin_secret'), 'username': request.json.get('user')}, upsert=True)
     return 'ok'
 
 @app.route('/flag', methods=['POST'])
 def flag():
     config = current_app.config['yada_config']
-    mongo = Mongo(config)
+    mongo = current_app.config['yada_mongo']
     mongo.site_db.flagged_content.update(request.json, request.json, upsert=True)
     return 'ok'
 
 @app.route('/peers', methods=['GET', 'POST'])
 def peers():
     config = current_app.config['yada_config']
-    mongo = Mongo(config)
-    peers = Peers(config)
+    mongo = current_app.config['yada_mongo']
+    peers = Peers(config, mongo)
     if request.method == 'POST':
         try:
             socket.inet_aton(request.json['host'])
@@ -287,5 +287,6 @@ with open(conf) as f:
     config = Config(json.loads(f.read()))
 
 app.config['yada_config'] = config
+app.config['yada_mongo'] = Mongo(config)
 #push_service = FCMNotification(api_key=config.fcm_key)
 

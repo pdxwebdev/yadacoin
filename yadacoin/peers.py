@@ -4,13 +4,13 @@ import pymongo
 from mongo import Mongo
 
 class Peers(object):
-    def __init__(self, config):
+    def __init__(self, config, mongo):
         self.config = config
+        self.mongo = mongo
 
     def init_local(self):
-        mongo = Mongo(self.config)
-        res = mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
-        self.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
+        res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
+        self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         peers = [x for x in res]
         self.peers = []
         try:
@@ -18,6 +18,7 @@ class Peers(object):
                 self.peers.append(
                     Peer(
                         self.config,
+                        self.mongo,
                         peer['host'],
                         peer['port']
                     )
@@ -27,8 +28,7 @@ class Peers(object):
         return json.dumps({'peers': peers})
 
     @classmethod
-    def init(cls, config, network='mainnet', my_peer=True):
-        mongo = Mongo(config)
+    def init(cls, config, mongo, network='mainnet', my_peer=True):
         if network == 'mainnet':
             url = 'https://yadacoin.io/peers'
         elif network == 'testnet':
@@ -42,6 +42,7 @@ class Peers(object):
                 cls.peers.append(
                     Peer(
                         config,
+                        mongo,
                         peer['host'],
                         peer['port'],
                         peer.get('bulletin_secret')
@@ -51,11 +52,13 @@ class Peers(object):
             pass
 
     @classmethod
-    def from_dict(cls, config):
+    def from_dict(cls, config, mongo):
         cls.peers = []
         for peer in config['peers']:
             cls.peers.append(
                 Peer(
+                    config,
+                    mongo,
                     peer['host'],
                     peer['port'],
                     peer.get('bulletin_secret')
@@ -71,20 +74,20 @@ class Peers(object):
         }
 
 class Peer(object):
-    def __init__(self, config, host, port, bulletin_secret=None, is_me=False):
-        self.mongo = Mongo(config)
+    def __init__(self, config, mongo, host, port, bulletin_secret=None, is_me=False):
+        self.mongo = mongo
         self.host = host
         self.port = port
         self.bulletin_secret = bulletin_secret
         self.is_me = is_me
 
     @classmethod
-    def from_string(cls, config, peerstr):
+    def from_string(cls, config, mongo, peerstr):
         if ":" in peerstr:
             peer = peerstr.split(':')
-            return cls(config, peer[0], peer[1])
+            return cls(config, mongo, peer[0], peer[1])
         elif peerstr == 'me':
-            return cls(config, None, None, is_me=True)
+            return cls(config, mongo, None, None, is_me=True)
 
     def is_broken(self):
         broken_test = [x for x in self.mongo.db.broken_peers.find({"peer": self.to_string()})]
@@ -97,7 +100,7 @@ class Peer(object):
         self.mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
 
     @classmethod
-    def init_my_peer(cls, config, network):
+    def init_my_peer(cls, config, mongo, network):
         import socket
         from miniupnpc import UPnP
         # deploy as an eventlet WSGI server
@@ -126,13 +129,12 @@ class Peer(object):
             config.peer_port = config.peer_port
             print 'UPnP failed: you must forward and/or whitelist port', config.peer_port
 
-        cls.save_my_peer(config, network)
-        return cls(config, config.peer_host, config.peer_port)
+        cls.save_my_peer(config, mongo, network)
+        return cls(config, mongo, config.peer_host, config.peer_port)
     
     @classmethod
-    def save_my_peer(cls, config, network):
+    def save_my_peer(cls, config, mongo, network):
         peer = config.peer_host + ":" + str(config.peer_port)
-        mongo = Mongo(config)
         mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
         if network == 'mainnet':
             url = 'https://yadacoin.io/peers'

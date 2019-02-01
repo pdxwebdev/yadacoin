@@ -22,7 +22,7 @@ class Consensus(object):
     def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo
-        latest_block = BU.get_latest_block(self.config)
+        latest_block = BU.get_latest_block(self.config, self.mongo)
         if latest_block:
             self.latest_block = Block.from_dict(self.config, self.mongo, latest_block)
         else:
@@ -71,6 +71,13 @@ class Consensus(object):
             if res.count():
                 self.mongo.db.miner_transactions.remove({'id': txn['id']})
 
+    def remove_fastgraph_transactions_now_in_chain(self):
+        data = self.mongo.db.fastgraph_transactions.find({}, {'_id': 0})
+        for txn in data:
+            res = self.mongo.db.blocks.find({"transactions.id": txn['id']})
+            if res.count():
+                self.mongo.db.fastgraph_transactions.remove({'id': txn['id']})
+
     def get_latest_consensus_blocks(self):
         for x in self.mongo.db.consensus.find({}, {'_id': 0}).sort([('index', -1)]):
             if BU.get_version_for_height(x['block']['index']) == int(x['block']['version']):
@@ -95,7 +102,7 @@ class Consensus(object):
 
         ranks = []
         for record in records:
-            peer = Peer.from_string(self.config, record['peer'])
+            peer = Peer.from_string(self.config, self.mongo, record['peer'])
             block = Block.from_dict(self.config, self.mongo, record['block'])
             target = int(record['block']['hash'], 16)
             if target < lowest:
@@ -160,8 +167,9 @@ class Consensus(object):
     def sync_bottom_up(self):
         #bottom up syncing
 
-        self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config))
+        self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
         self.remove_pending_transactions_now_in_chain()
+        self.remove_fastgraph_transactions_now_in_chain()
 
         latest_consensus = self.mongo.db.consensus.find_one({'index': self.latest_block.index + 1})
         if latest_consensus:
@@ -179,8 +187,9 @@ class Consensus(object):
     def sync_top_down(self):
         #top down syncing
 
-        self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config))
+        self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
         self.remove_pending_transactions_now_in_chain()
+        self.remove_fastgraph_transactions_now_in_chain()
 
         latest_consensus = self.mongo.db.consensus.find_one({}, sort=[('index', -1)])
         if latest_consensus:
@@ -200,7 +209,7 @@ class Consensus(object):
 
     def import_block(self, block_data):
         block = Block.from_dict(self.config, self.mongo, block_data['block'])
-        peer = Peer.from_string(self.config, block_data['peer'])
+        peer = Peer.from_string(self.config, self.mongo, block_data['peer'])
         print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
         try:
             self.integrate_block_with_existing_chain(block, self.existing_blockchain)

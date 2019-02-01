@@ -17,15 +17,18 @@ from fastgraph import FastGraph
 
 
 class MiningPool(object):
-    def __init__(self, config):
+    def __init__(self, config, mongo):
         self.config = config
-        self.mongo = Mongo(self.config)
+        self.mongo = mongo
         self.block_factory = None
 
     def refresh(self):
-        Peers.init(self.config, self.config.network)
-        max_block_time = 600
-        block = BU.get_latest_block(self.config)
+        Peers.init(self.config, self.mongo, self.config.network)
+        if self.config.network == 'mainnet':
+            max_block_time = 600
+        elif self.config.network == 'testnet':
+            max_block_time = 10
+        block = BU.get_latest_block(self.config, self.mongo)
         if block:
             block = Block.from_dict(self.config, self.mongo, block)
             self.height = block.index + 1
@@ -38,7 +41,7 @@ class MiningPool(object):
                 'id': genesis_block.signature,
                 'index': 0
                 })
-            block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config))
+            block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
             self.height = block.index
 
         try:
@@ -53,7 +56,7 @@ class MiningPool(object):
                 if time_elapsed_since_last_block > max_block_time:
                     target = max_target
                     special_min = True
-            self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, self.mongo, [x for x in BU.get_blocks(self.config)]))
+            self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, self.mongo, [x for x in BU.get_blocks(self.config, self.mongo)]))
 
             self.block_factory = BlockFactory(
                 config=self.config,
@@ -70,9 +73,9 @@ class MiningPool(object):
             raise
     
     def nonce_generator(self):
-        latest_block_index = BU.get_latest_block(self.config)['index']
+        latest_block_index = BU.get_latest_block(self.config, self.mongo)['index']
         while 1:
-            next_latest_block_index = BU.get_latest_block(self.config)['index']
+            next_latest_block_index = BU.get_latest_block(self.config, self.mongo)['index']
             if latest_block_index < next_latest_block_index:
                 latest_block_index = next_latest_block_index
                 start_nonce = 0
@@ -85,61 +88,63 @@ class MiningPool(object):
             self.index = latest_block_index
             yield [start_nonce, start_nonce + 1000000]
 
-    def get_pending_transactions(self):
+    def combine_transaction_lists(self):
+        transactions = self.mongo.db.fastgraph_transactions.find()
+        for transaction in transactions:
+            if 'txn' in transaction:
+                yield transaction['txn']
+
         transactions = self.mongo.db.miner_transactions.find()
+        for transaction in transactions:
+            yield transaction
+        
+
+    def get_pending_transactions(self):
         transaction_objs = []
         unspent_indexed = {}
         unspent_fastgraph_indexed = {}
         used_sigs = []
-        for txn in transactions:
+        for txn in self.combine_transaction_lists():
             try:
-                try:
-                    if isinstance(txn, Transaction):
-                        transaction_obj = txn
-                    else:
-                        transaction_obj = Transaction.from_dict(self.config, txn)
+                if isinstance(txn, FastGraph) and hasattr(txn, 'signatures'):
+                    transaction_obj = txn
+                elif isinstance(txn, Transaction):
+                    transaction_obj = txn
+                elif isinstance(txn, dict) and 'signatures' in txn:
+                    transaction_obj = FastGraph.from_dict(self.config, self.mongo, txn)
+                elif isinstance(txn, dict):
+                    transaction_obj = Transaction.from_dict(self.config, self.mongo, txn)
+                else:
+                    print 'transaction unrecognizable, skipping'
+                    continue
 
-                    if transaction_obj.transaction_signature in used_sigs:
-                        print 'duplicate transaction found and removed'
-                        continue
+                if transaction_obj.transaction_signature in used_sigs:
+                    print 'duplicate transaction found and removed'
+                    continue
+                used_sigs.append(transaction_obj.transaction_signature)
 
-                    transaction_obj.verify()
+                transaction_obj.verify()
 
-                    if transaction_obj.rid:
-                        for input_id in transaction_obj.inputs:
-                            input_block = BU.get_transaction_by_id(self.config, input_id.id, give_block=True)
-                            if input_block['index'] > (BU.get_latest_block(self.config)['index'] - 2016):
-                                continue
-                except:
-                    try:
-                        if isinstance(txn, FastGraph):
-                            transaction_obj = txn
-                        else:
-                            transaction_obj = FastGraph(**txn)
-
-                        if transaction_obj.transaction.transaction_signature in used_sigs:
-                            print 'duplicate transaction found and removed'
+                if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
+                    for input_id in transaction_obj.inputs:
+                        input_block = BU.get_transaction_by_id(self.config, self.mongo, input_id.id, give_block=True)
+                        if input_block['index'] > (BU.get_latest_block(self.config, self.mongo)['index'] - 2016):
                             continue
-                        used_sigs.append(transaction_obj.transaction.transaction_signature)
-                        if not transaction_obj.verify():
-                            raise InvalidTransactionException("invalid transactions")
-                        transaction_obj = transaction_obj.transaction
-                    except:
-                        raise InvalidTransactionException("invalid transactions")
+
                 #check double spend
                 address = str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex')))
                 if address in unspent_indexed:
                     unspent_ids = unspent_indexed[address]
                 else:
                     needed_value = sum([float(x.value) for x in transaction_obj.outputs]) + float(transaction_obj.fee)
-                    res = BU.get_wallet_unspent_transactions(self.config, address, needed_value=needed_value)
+                    res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address, needed_value=needed_value)
                     unspent_ids = [x['id'] for x in res]
                     unspent_indexed[address] = unspent_ids
             
                 if address in unspent_fastgraph_indexed:
                     unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
                 else:
-                    res = BU.get_wallet_unspent_fastgraph_transactions(self.config, address)
+                    res = BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, address)
                     unspent_fastgraph_ids = [x['id'] for x in res]
                     unspent_fastgraph_indexed[address] = unspent_fastgraph_ids
 
@@ -148,9 +153,7 @@ class MiningPool(object):
                 used_ids_in_this_txn = []
 
                 for x in transaction_obj.inputs:
-                    if isinstance(transaction_obj, Transaction) and x.id not in unspent_ids:
-                        failed1 = True
-                    if isinstance(transaction_obj, FastGraph) and x.id not in unspent_fastgraph_ids:
+                    if x.id not in unspent_ids:
                         failed1 = True
                     if x.id in used_ids_in_this_txn:
                         failed2 = True
@@ -177,11 +180,11 @@ class MiningPool(object):
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
                 self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
             except Exception as e:
-                #print e
+                print e
                 #print 'rejected transaction', txn['id']
                 pass
             except BaseException as e:
-                #print e
+                print e
                 #print 'rejected transaction', txn['id']
                 pass
         return transaction_objs
@@ -196,7 +199,7 @@ class MiningPool(object):
             }, headers={'Connection':'close'})
     
     def broadcast_block(self, block):
-        Peers.init(self.config, self.config.network)
+        Peers.init(self.config, self.mongo, self.config.network)
         dup_test = self.mongo.db.consensus.find_one({
             'peer': 'me',
             'index': block.index,

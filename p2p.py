@@ -65,7 +65,7 @@ if __name__ == '__main__':
             time.sleep(1)
 
     elif args.mode == 'send':
-        Send.run(config, args.to, float(args.value))
+        Send.run(config, mongo, args.to, float(args.value))
 
     elif args.mode == 'mine':
         print config.to_json()
@@ -74,10 +74,9 @@ if __name__ == '__main__':
         def get_mine_data():
             return json.loads(requests.get("http://{pool}/pool".format(pool=args.pool)).content)
         running_processes = []
-        mongo = Mongo(config)
-        mp = MiningPool(config)
+        mp = MiningPool(config, mongo)
         while 1:
-            Peers.init(config, args.network, my_peer=False)
+            Peers.init(config, mongo, args.network, my_peer=False)
             if not Peers.peers:
                 time.sleep(1)
                 continue
@@ -98,11 +97,11 @@ if __name__ == '__main__':
 
     elif args.mode == 'faucet':
         while 1:
-            Peers.init(config, args.network)
+            Peers.init(config, mongo, args.network)
             if not Peers.peers:
                 time.sleep(1)
                 continue
-            Faucet.run(config)
+            Faucet.run(config, mongo)
             time.sleep(1)
 
     elif args.mode == 'pool':
@@ -116,11 +115,11 @@ if __name__ == '__main__':
 
         config.network = args.network
 
-        my_peer = Peer.init_my_peer(config, config.network)
+        my_peer = Peer.init_my_peer(config, mongo, config.network)
         config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()
         print "http://{}".format(my_peer.to_string())
 
-        serve = Serve(config)
+        serve = Serve(config, mongo)
         pywsgi.WSGIServer((config.serve_host, config.serve_port), serve.app, spawn=pool.Pool(100)).serve_forever()
 
         

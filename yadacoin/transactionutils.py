@@ -60,16 +60,16 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
     @classmethod
-    def get_shared_secrets_by_rid(cls, config, rid):
+    def get_shared_secrets_by_rid(cls, config, mongo, rid):
         from blockchainutils import BU
         shared_secrets = []
         dh_public_keys = []
         dh_private_keys = []
-        txns = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True)
+        txns = BU.get_transactions_by_rid(config, mongo, rid, config.bulletin_secret, rid=True)
         for txn in txns:
             if str(txn['public_key']) == str(config.public_key) and txn['relationship']['dh_private_key']:
                 dh_private_keys.append(txn['relationship']['dh_private_key'])
-        txns = BU.get_transactions_by_rid(config, rid, config.bulletin_secret, rid=True, raw=True)
+        txns = BU.get_transactions_by_rid(config, mongo, rid, config.bulletin_secret, rid=True, raw=True)
         for txn in txns:
             if str(txn['public_key']) != str(config.public_key) and txn['dh_public_key']:
                 dh_public_keys.append(txn['dh_public_key'])
@@ -79,8 +79,7 @@ class TU(object):  # Transaction Utilities
         return shared_secrets
 
     @classmethod
-    def save(cls, config, items):
-        mongo = Mongo(config)
+    def save(cls, config, mongo, items):
         if not isinstance(items, list):
             items = [items.to_dict(), ]
         else:
