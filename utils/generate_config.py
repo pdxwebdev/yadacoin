@@ -74,13 +74,14 @@ if args.which == 'new':
 elif args.which == 'update':
     with open(args.config) as f:
         identity = json.loads(f.read())
-        pk = PrivateKey.from_hex(identity['private_key'])
-        config = Config.generate(pk.to_hex())
-        if 'username' in identity:
+        config = Config.generate(xprv=identity['xprv'])
+        if 'username' in identity and identity['username']:
             username = identity['username']
         else:
             username = args.username
         config.username = username
+        config.bulletin_secret = config.get_bulletin_secret()
+        print config.to_json()
 elif args.which == 'auto':
     config = Config.generate()
     config.username = ''
