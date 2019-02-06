@@ -110,7 +110,7 @@ class FastGraph(Transaction):
                             rids.append(txn['requested_rid'])
                         
                         # we need their public_key, not mine, so we get both transactions for the relationship
-                        txn_for_rids = BU.get_transaction_by_rid(self.config, self.mongo, rids, bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
+                        txn_for_rids = BU.get_transaction_by_rid(self.config, self.mongo, rids, bulletin_secret=bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
 
                         if txn_for_rids:
                             return txn_for_rids

@@ -608,7 +608,7 @@ class SignRawTransactionView(View):
         try:
             rid = TU.generate_rid(config, request.json.get('bulletin_secret'))
             my_entry_for_relationship = BU.get_transaction_by_rid(config, mongo, rid, config.wif, rid=True, my=True, public_key=config.public_key)
-            their_entry_for_relationship = BU.get_transaction_by_rid(config, mongo, rid, config.bulletin_secret, rid=True, raw=True, theirs=True, public_key=config.public_key)
+            their_entry_for_relationship = BU.get_transaction_by_rid(config, mongo, rid, rid=True, raw=True, theirs=True, public_key=config.public_key)
             verified = verify_signature(
                 base64.b64decode(request.json.get('bulletin_secret')),
                 my_entry_for_relationship['relationship']['their_username'],

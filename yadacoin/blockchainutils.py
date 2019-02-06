@@ -889,7 +889,8 @@ class BU(object):  # Blockchain Utilities
                         transaction['relationship'] = relationship
                     except:
                         continue
-                return transaction
+                if 'rid' in transaction and transaction['rid'] in selectors:
+                    return transaction
 
     @classmethod
     def get_transactions_by_rid(cls, config, mongo, selector, bulletin_secret, wif=None, rid=False, raw=False, returnheight=True, lt_block_height=None):
