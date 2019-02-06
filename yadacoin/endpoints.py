@@ -308,6 +308,8 @@ class RidWalletView(View):
                 origin_fasttrack = fastgraph.get_origin_relationship(rid)
                 if origin_fasttrack:
                     txns_for_fastgraph.append(txn)
+                else:
+                    regular_txns.append(txn)
             else:
                 if 'rid' in txn and txn['rid'] == rid and 'dh_public_key' in txn and txn['dh_public_key']:
                     txns_for_fastgraph.append(txn)

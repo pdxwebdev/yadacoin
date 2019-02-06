@@ -489,6 +489,12 @@ class BU(object):  # Blockchain Utilities
         if friends:
             mutual_bulletin_secrets.extend(friends)
             for i, x in enumerate(transactions):
+                res = mongo.db.posts_cache.find_one({
+                    'rid': {'$in': rids},
+                    'id': x['txn']['id']
+                })
+                if res:
+                    continue
                 for bs in mutual_bulletin_secrets:
                     try:
                         crypt = Crypt(bs)
@@ -496,7 +502,7 @@ class BU(object):  # Blockchain Utilities
                         try:
                             decrypted = base64.b64decode(decrypted)
                         except:
-                            continue
+                            raise
                         data = json.loads(decrypted)
                         x['txn']['relationship'] = data
                         if 'postText' in decrypted:
@@ -514,16 +520,34 @@ class BU(object):  # Blockchain Utilities
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
-                                    'bulletin_secret': bs
+                                    'bulletin_secret': bs,
+                                    'success': True
                                 },
                                 upsert=True)
                     except Exception as e:
+                        for rid in rids:
+                            mongo.db.posts_cache.update({
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'bulletin_secret': bs
+                            },
+                            {
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'txn': x['txn'],
+                                'bulletin_secret': bs,
+                                'success': False
+                            },
+                            upsert=True)
                         print e
         if not had_txns:
             for rid in rids:
                 mongo.db.posts_cache.insert({
                     'rid': rid, 
-                    'height': latest_block['index']
+                    'height': latest_block['index'],
+                    'success': False
                 })
 
         i = 1
@@ -537,7 +561,7 @@ class BU(object):  # Blockchain Utilities
                 yield x['txn']
             i += 1
 
-        for x in mongo.db.posts_cache.find({'rid': {'$in': rids}}):
+        for x in mongo.db.posts_cache.find({'rid': {'$in': rids}, 'success': True}):
             if 'txn' in x:
                 x['txn']['height'] = x['height']
                 x['txn']['bulletin_secret'] = x['bulletin_secret']
@@ -614,6 +638,12 @@ class BU(object):  # Blockchain Utilities
         if friends:
             mutual_bulletin_secrets.extend(friends)
             for i, x in enumerate(transactions):
+                res = mongo.db.reacts_cache.find_one({
+                    'rid': {'$in': rids},
+                    'id': x['txn']['id']
+                })
+                if res:
+                    continue
                 for bs in mutual_bulletin_secrets:
                     try:
                         crypt = Crypt(bs)
@@ -621,12 +651,12 @@ class BU(object):  # Blockchain Utilities
                         try:
                             decrypted = base64.b64decode(decrypted)
                         except:
-                            continue
+                            raise
                         data = json.loads(decrypted)
                         x['txn']['relationship'] = data
                         if 'react' in decrypted:
                             had_txns = True
-                            print 'caching posts at height:', x.get('height', 0)
+                            print 'caching reacts at height:', x.get('height', 0)
                             for rid in rids:
                                 mongo.db.reacts_cache.update({
                                     'rid': rid,
@@ -639,19 +669,36 @@ class BU(object):  # Blockchain Utilities
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
-                                    'bulletin_secret': bs
+                                    'bulletin_secret': bs,
+                                    'success': True
                                 },
                                 upsert=True)
                     except:
-                        pass
+                        for rid in rids:
+                            mongo.db.reacts_cache.update({
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'bulletin_secret': bs
+                            },
+                            {
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'txn': x['txn'],
+                                'bulletin_secret': bs,
+                                'success': False
+                            },
+                            upsert=True)
         if not had_txns:
             for rid in rids:
                 mongo.db.reacts_cache.insert({
-                    'rid': rid, 
-                    'height': latest_block['index']
+                    'rid': rid,
+                    'height': latest_block['index'],
+                    'success': False
                 })
 
-        for x in mongo.db.reacts_cache.find({'txn.relationship.id': {'$in': ids}}):
+        for x in mongo.db.reacts_cache.find({'txn.relationship.id': {'$in': ids}, 'success': True}):
             if 'txn' in x and 'id' in x['txn']['relationship']:
                 x['txn']['height'] = x['height']
                 x['txn']['bulletin_secret'] = x['bulletin_secret']
@@ -728,6 +775,12 @@ class BU(object):  # Blockchain Utilities
         if friends:
             mutual_bulletin_secrets.extend(friends)
             for i, x in enumerate(transactions):
+                res = mongo.db.comments_cache.find_one({
+                    'rid': {'$in': rids},
+                    'id': x['txn']['id']
+                })
+                if res:
+                    continue
                 for bs in mutual_bulletin_secrets:
                     try:
                         crypt = Crypt(bs)
@@ -735,12 +788,12 @@ class BU(object):  # Blockchain Utilities
                         try:
                             decrypted = base64.b64decode(decrypted)
                         except:
-                            continue
+                            raise
                         data = json.loads(decrypted)
                         x['txn']['relationship'] = data
                         if 'comment' in decrypted:
                             had_txns = True
-                            print 'caching posts at height:', x.get('height', 0)
+                            print 'caching comments at height:', x.get('height', 0)
                             for rid in rids:
                                 mongo.db.comments_cache.update({
                                     'rid': rid,
@@ -753,19 +806,36 @@ class BU(object):  # Blockchain Utilities
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
-                                    'bulletin_secret': bs
+                                    'bulletin_secret': bs,
+                                    'success': True
                                 },
                                 upsert=True)
                     except:
-                        pass
+                        for rid in rids:
+                            mongo.db.comments_cache.update({
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'bulletin_secret': bs
+                            },
+                            {
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'txn': x['txn'],
+                                'bulletin_secret': bs,
+                                'success': False
+                            },
+                            upsert=True)
         if not had_txns:
             for rid in rids:
                 mongo.db.comments_cache.insert({
                     'rid': rid, 
-                    'height': latest_block['index']
+                    'height': latest_block['index'],
+                    'success': False
                 })
 
-        for x in mongo.db.comments_cache.find({'txn.relationship.id': {'$in': ids}}):
+        for x in mongo.db.comments_cache.find({'txn.relationship.id': {'$in': ids}, 'success': True}):
             if 'txn' in x and 'id' in x['txn']['relationship']:
                 x['txn']['height'] = x['height']
                 x['txn']['bulletin_secret'] = x['bulletin_secret']
@@ -1296,24 +1366,69 @@ class BU(object):  # Blockchain Utilities
         from crypt import Crypt
         sent = False
         received = False
-        shared_secrets = TU.get_shared_secrets_by_rid(config, mongo, rid)
-        if txn_id:
-            txns = [BU.get_transaction_by_id(config, mongo, txn_id)]
+        res = mongo.db.verify_message_cache.find_one({
+            'rid': rid,
+            'message.signIn': message
+        })
+        if res:
+            received = True
         else:
-            txns = [x for x in BU.get_transactions_by_rid(config, mongo, rid, config.bulletin_secret, rid=True, raw=True)]
-            fastgraph_transactions = mongo.db.fastgraph_transactions.find({"txn.rid": rid})
-            txns.extend([x['txn'] for x in fastgraph_transactions])
-        for txn in txns:
-            for shared_secret in list(set(shared_secrets)):
-                try:
-                    cipher = Crypt(shared_secret.encode('hex'), shared=True)
-                    decrypted = cipher.shared_decrypt(txn['relationship'])
-                    signin = json.loads(decrypted)
-                    if u'signIn' in signin and message == signin['signIn']:
-                        if public_key != txn['public_key']:
+            shared_secrets = TU.get_shared_secrets_by_rid(config, mongo, rid)
+            if txn_id:
+                txns = [BU.get_transaction_by_id(config, mongo, txn_id)]
+            else:
+                txns = [x for x in BU.get_transactions_by_rid(config, mongo, rid, config.bulletin_secret, rid=True, raw=True)]
+                fastgraph_transactions = mongo.db.fastgraph_transactions.find({"txn.rid": rid})
+                txns.extend([x['txn'] for x in fastgraph_transactions])
+            for txn in txns:
+                for shared_secret in list(set(shared_secrets)):
+                    res = mongo.db.verify_message_cache.find_one({
+                        'rid': rid,
+                        'shared_secret': shared_secret.encode('hex'),
+                        'id': txn['id']
+                    })
+                    try:
+                        if res and res['success']:
+                            decrypted = res['message']
+                            signin = json.loads(decrypted)
                             received = True
+                            return sent, received
+                        elif res and not res['success']:
+                            continue
                         else:
-                            sent = True
-                except:
-                    pass
+                            cipher = Crypt(shared_secret.encode('hex'), shared=True)
+                            decrypted = cipher.shared_decrypt(txn['relationship'])
+                            signin = json.loads(decrypted)
+                            mongo.db.verify_message_cache.update({
+                                'rid': rid,
+                                'shared_secret': shared_secret.encode('hex'),
+                                'id': txn['id']
+                            },
+                            {
+                                'rid': rid,
+                                'shared_secret': shared_secret.encode('hex'),
+                                'id': txn['id'],
+                                'message': signin,
+                                'success': True
+                            }
+                            , upsert=True)
+                        if u'signIn' in signin and message == signin['signIn']:
+                            if public_key != txn['public_key']:
+                                received = True
+                            else:
+                                sent = True
+                    except:
+                        mongo.db.verify_message_cache.update({
+                            'rid': rid,
+                            'shared_secret': shared_secret.encode('hex'),
+                            'id': txn['id']
+                        },
+                        {
+                            'rid': rid,
+                            'shared_secret': shared_secret.encode('hex'),
+                            'id': txn['id'],
+                            'message': '',
+                            'success': False
+                        }
+                        , upsert=True)
         return sent, received

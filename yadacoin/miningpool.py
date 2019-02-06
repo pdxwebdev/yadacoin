@@ -128,7 +128,7 @@ class MiningPool(object):
                 if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
                     for input_id in transaction_obj.inputs:
                         input_block = BU.get_transaction_by_id(self.config, self.mongo, input_id.id, give_block=True)
-                        if input_block['index'] > (BU.get_latest_block(self.config, self.mongo)['index'] - 2016):
+                        if input_block and input_block['index'] > (BU.get_latest_block(self.config, self.mongo)['index'] - 2016):
                             continue
 
                 #check double spend
