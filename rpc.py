@@ -242,7 +242,7 @@ def peers():
                     'active': True, 
                     'failed': 0
                 }, upsert=True)
-                current_app.config['yada_peers'] = peers.init_local()
+            current_app.config['yada_peers'] = peers.init_local()
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400

@@ -122,7 +122,8 @@ class Peer(object):
             config.serve_port = server_port
             config.peer_host = u.externalipaddress()
             config.peer_port = server_port
-        except:
+        except Exception as e:
+            print e
             config.serve_host = config.serve_host
             config.serve_port = config.serve_port
             config.peer_host = config.peer_host
