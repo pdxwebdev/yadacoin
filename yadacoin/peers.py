@@ -25,7 +25,7 @@ class Peers(object):
                 )
         except:
             pass
-        return json.dumps({'peers': peers})
+        return self.to_json()
 
     @classmethod
     def init(cls, config, mongo, network='mainnet', my_peer=True):
@@ -65,13 +65,15 @@ class Peers(object):
                 )
             )
 
-    @classmethod
-    def to_dict(cls):
-        peers = [x.to_dict() for x in cls.peers]
+    def to_dict(self):
+        peers = [x.to_dict() for x in self.peers]
         return {
             'num_peers': len(peers),
             'peers': peers
         }
+
+    def to_json(self):
+        return json.dumps(self.to_dict(), indent=4)
 
 class Peer(object):
     def __init__(self, config, mongo, host, port, bulletin_secret=None, is_me=False):
