@@ -242,14 +242,14 @@ def peers():
                     'active': True, 
                     'failed': 0
                 }, upsert=True)
-            current_app.config['yada_peers'] = peers.init_local()
+            Peers.peers = peers.init_local()
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
     else:
-        if 'yada_peers' not in current_app.config:
-            current_app.config['yada_peers'] = peers.init_local()
-        return current_app.config['yada_peers']
+        if not hasattr(Peers, 'peers'):
+            Peers.peers = peers.init_local()
+        return Peers.peers
 
 @app.route('/stats')
 def stats():
