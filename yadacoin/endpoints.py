@@ -127,8 +127,8 @@ class TransactionView(View):
 
             for x in transactions:
                 mongo.db.miner_transactions.insert(x.to_dict())
-            #job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction,))
-            #job.start()
+            job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction,))
+            job.start()
             return json.dumps(request.get_json())
         else:
             rid = request.args.get('rid')
@@ -423,8 +423,8 @@ class CreateRelationshipView(View):
         TU.save(config, mongo, transaction.transaction)
 
         mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
-        #job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
-        #job.start()
+        job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
+        job.start()
 
 
         my_bulletin_secret = config.bulletin_secret
@@ -892,7 +892,7 @@ class PostFastGraphView(View):
         if result:
             return 'duplicate transaction found', 400
         fastgraph.save()
-        #fastgraph.broadcast()
+        fastgraph.broadcast()
         return fastgraph.to_json()
 
 class GetFastGraphView(View):

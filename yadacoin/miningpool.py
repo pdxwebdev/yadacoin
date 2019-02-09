@@ -22,12 +22,15 @@ class MiningPool(object):
         self.mongo = mongo
         self.block_factory = None
 
+        if self.config.network == 'mainnet':
+            self.max_block_time = 600
+        elif self.config.network == 'testnet':
+            self.max_block_time = 10
+
+        self.max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+
     def refresh(self):
         Peers.init(self.config, self.mongo, self.config.network)
-        if self.config.network == 'mainnet':
-            max_block_time = 600
-        elif self.config.network == 'testnet':
-            max_block_time = 10
         block = BU.get_latest_block(self.config, self.mongo)
         if block:
             block = Block.from_dict(self.config, self.mongo, block)
@@ -47,16 +50,12 @@ class MiningPool(object):
         try:
             if self.height > 0:
                 last_time = block.time
-            special_min = False
-            max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-            if self.height > 0:
-                time_elapsed_since_last_block = int(time.time()) - int(last_time)
-
-                # special min case
-                if time_elapsed_since_last_block > max_block_time:
-                    target = max_target
-                    special_min = True
-            self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, self.mongo, [x for x in BU.get_blocks(self.config, self.mongo)]))
+            
+            self.special_min = self.get_special_min(block)
+            if self.special_min:
+                self.target = self.max_target
+            else:
+                self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, self.mongo, [x for x in BU.get_blocks(self.config, self.mongo)]))
 
             self.block_factory = BlockFactory(
                 config=self.config,
@@ -66,11 +65,19 @@ class MiningPool(object):
                 private_key=self.config.private_key,
                 index=self.height,
                 version=BU.get_version_for_height(self.height))
-            self.block_factory.block.special_min = special_min
+            self.block_factory.block.special_min = self.special_min
             self.block_factory.block.target = self.target
             self.block_factory.header = BlockFactory.generate_header(self.block_factory.block)
         except Exception as e:
             raise
+
+    def get_special_min(self, block):
+        if self.height > 0:
+            time_elapsed_since_last_block = int(time.time()) - int()
+
+            # special min case
+            if time_elapsed_since_last_block > self.max_block_time:
+                return True
     
     def nonce_generator(self):
         latest_block_index = BU.get_latest_block(self.config, self.mongo)['index']
