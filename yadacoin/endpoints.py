@@ -480,7 +480,7 @@ class MiningPoolSubmitView(View):
                     'block': block.to_dict(),
                     'request': request.json
                 })
-                return ''
+                return '', 400
 
             # submit share
             mongo.db.shares.update({
@@ -504,7 +504,7 @@ class MiningPoolSubmitView(View):
             return block.to_json()
         except:
             raise
-            return 'error'
+            return 'error', 400
 
 class MiningPoolExplorerView(View):
     def dispatch_request(self):
