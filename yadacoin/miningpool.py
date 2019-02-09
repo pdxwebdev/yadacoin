@@ -73,7 +73,7 @@ class MiningPool(object):
 
     def get_special_min(self, block):
         if self.height > 0:
-            time_elapsed_since_last_block = int(time.time()) - int(block.time)
+            time_elapsed_since_last_block = int(time.time()) - int(BU.get_latest_block(self.config, self.mongo)['time'])
 
             # special min case
             if time_elapsed_since_last_block > self.max_block_time:
