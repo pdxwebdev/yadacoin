@@ -447,11 +447,13 @@ class MiningPoolView(View):
 
         if not hasattr(mp, 'gen'):
             mp.gen = mp.nonce_generator()
-
+        
+        mp.special_min = mp.get_special_min(mp.block_factory.block)
+        mp.block_factory.block.special_min = mp.special_min
         return json.dumps({
             'nonces': next(mp.gen),
             'target': mp.block_factory.block.target,
-            'special_min': mp.block_factory.block.special_min,
+            'special_min': mp.special_min,
             'header': mp.block_factory.header
         })
 
