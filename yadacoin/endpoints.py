@@ -450,11 +450,12 @@ class MiningPoolView(View):
         
         mp.special_min = mp.get_special_min(mp.block_factory.block)
         mp.block_factory.block.special_min = mp.special_min
+        mp.block_factory.block.header = BlockFactory.generate_header(mp.block_factory.block)
         return json.dumps({
             'nonces': next(mp.gen),
             'target': mp.block_factory.block.target,
             'special_min': mp.special_min,
-            'header': mp.block_factory.header
+            'header': mp.block_factory.block.header
         })
 
 class MiningPoolSubmitView(View):
