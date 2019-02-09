@@ -78,6 +78,8 @@ class MiningPool(object):
             # special min case
             if time_elapsed_since_last_block > self.max_block_time:
                 return True
+            else:
+                return False
     
     def nonce_generator(self):
         latest_block_index = BU.get_latest_block(self.config, self.mongo)['index']
