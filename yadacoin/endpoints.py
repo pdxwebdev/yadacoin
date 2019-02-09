@@ -475,7 +475,7 @@ class MiningPoolSubmitView(View):
                 block.verify()
             except:
                 print 'block failed verification'
-                mongo.db.log({
+                mongo.db.log.insert({
                     'error': 'block failed verification',
                     'block': block.to_dict(),
                     'request': request.json
