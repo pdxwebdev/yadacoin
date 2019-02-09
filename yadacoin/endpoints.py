@@ -449,6 +449,11 @@ class MiningPoolView(View):
             mp.gen = mp.nonce_generator()
         
         mp.special_min = mp.get_special_min(mp.block_factory.block)
+        if mp.special_min:
+            mp.block_factory.block.target = mp.block_factory.block.target
+        else:
+            mp.block_factory.block.target = mp.target
+
         mp.block_factory.block.special_min = mp.special_min
         mp.block_factory.block.header = BlockFactory.generate_header(mp.block_factory.block)
         return json.dumps({

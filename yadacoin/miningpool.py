@@ -209,47 +209,41 @@ class MiningPool(object):
     
     def broadcast_block(self, block):
         Peers.init(self.config, self.mongo, self.config.network)
-        dup_test = self.mongo.db.consensus.find_one({
-            'peer': 'me',
-            'index': block.index,
-            'block.version': BU.get_version_for_height(block.index)
-        })
-        if not dup_test:
-            print '\r\nCandidate submitted for index:', block.index
-            print '\r\nTransactions:'
-            for x in block.transactions:
-                print x.transaction_signature 
-            self.mongo.db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
-            print '\r\nSent block to:'
-            for peer in Peers.peers:
-                if peer.is_me:
-                    continue
+        print '\r\nCandidate submitted for index:', block.index
+        print '\r\nTransactions:'
+        for x in block.transactions:
+            print x.transaction_signature 
+        self.mongo.db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
+        print '\r\nSent block to:'
+        for peer in Peers.peers:
+            if peer.is_me:
+                continue
+            try:
+                block_dict = block.to_dict()
+                block_dict['peer'] = Peers.my_peer
+                requests.post(
+                    'http://{peer}/newblock'.format(
+                        peer=peer.host + ":" + str(peer.port)
+                    ),
+                    json=block_dict,
+                    timeout=3,
+                    headers={'Connection':'close'}
+                )
+                print peer.host + ":" + str(peer.port)
+            except Exception as e:
+                print e
                 try:
-                    block_dict = block.to_dict()
-                    block_dict['peer'] = Peers.my_peer
+                    print 'reporting bad peer'
+                    if self.config.network == 'mainnet':
+                        url = 'https://yadacoin.io/peers'
+                    elif self.config.network == 'testnet':
+                        url = 'http://yadacoin.io:8888/peers'
                     requests.post(
-                        'http://{peer}/newblock'.format(
-                            peer=peer.host + ":" + str(peer.port)
-                        ),
-                        json=block_dict,
+                        url,
+                        json={'host': peer.host, 'port': str(peer.port), 'failed': True},
                         timeout=3,
                         headers={'Connection':'close'}
                     )
-                    print peer.host + ":" + str(peer.port)
-                except Exception as e:
-                    print e
-                    try:
-                        print 'reporting bad peer'
-                        if self.config.network == 'mainnet':
-                            url = 'https://yadacoin.io/peers'
-                        elif self.config.network == 'testnet':
-                            url = 'http://yadacoin.io:8888/peers'
-                        requests.post(
-                            url,
-                            json={'host': peer.host, 'port': str(peer.port), 'failed': True},
-                            timeout=3,
-                            headers={'Connection':'close'}
-                        )
-                    except:
-                        print 'failed to report bad peer'
-                        pass
+                except:
+                    print 'failed to report bad peer'
+                    pass
