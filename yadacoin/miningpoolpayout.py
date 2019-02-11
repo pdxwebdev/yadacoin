@@ -116,7 +116,7 @@ class PoolPayer(object):
                 fee=0.0001,
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,
-                inputs=[Input(total_reward.transaction_signature)],
+                inputs=[{'id': total_reward.transaction_signature}],
                 outputs=outputs
             )
         except NotEnoughMoneyException as e:

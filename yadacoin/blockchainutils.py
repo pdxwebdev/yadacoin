@@ -138,6 +138,7 @@ class BU(object):  # Blockchain Utilities
 
         reverse_public_key = ''
         for x in received:
+            # this assumes we ALWAYS put our own address in the outputs even if the value is zero.
             mongo.db.unspent_cache.update({
                 'address': address,
                 'id': x['txn']['id'],
@@ -198,6 +199,7 @@ class BU(object):  # Blockchain Utilities
             }
         ])
 
+        # here we're assuming block/transaction validation ensures the inputs used are valid for this address
         ids_spent_by_me = []
         for x in spent:
             for i in x['txn']['inputs']:
@@ -212,7 +214,6 @@ class BU(object):  # Blockchain Utilities
                 })
 
         
-
         if ids:
             res = mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
         else:

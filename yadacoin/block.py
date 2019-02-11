@@ -116,10 +116,10 @@ class BlockFactory(object):
             mongo,
             public_key=self.public_key,
             private_key=self.private_key,
-            outputs=[Output(
-                value=block_reward + float(fee_sum),
-                to=str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
-            )],
+            outputs=[{
+                'value': block_reward + float(fee_sum),
+                'to': str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
+            }],
             coinbase=True
         )
         coinbase_txn = coinbase_txn_fctry.generate_transaction()
@@ -178,6 +178,7 @@ class BlockFactory(object):
     def get_target(cls, config, mongo, height, last_time, last_block, blockchain):
         # change target
         max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        max_block_time = 600
         retarget_period = 2016  # blocks
         two_weeks = 1209600  # seconds
         half_week = 302400  # seconds
@@ -211,6 +212,11 @@ class BlockFactory(object):
         else:
             block_to_check = last_block
             while 1:
+                time_elapsed_since_last_block = int(time.time()) - int(block_to_check.time)
+                if time_elapsed_since_last_block > max_block_time:
+                    target = max_target
+                    break
+
                 if block_to_check.special_min:
                     block_to_check = blockchain.blocks[block_to_check.index - 1]
                 else:

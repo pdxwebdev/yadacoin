@@ -14,7 +14,7 @@ class Config(object):
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
-        self.network = config.get('network', '')
+        self.network = config.get('network', 'mainnet')
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
 
@@ -100,7 +100,7 @@ class Config(object):
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
-        cls.network = config.get('network', '')
+        cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
 

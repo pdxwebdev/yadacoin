@@ -60,7 +60,6 @@ if __name__ == '__main__':
         consensus = Consensus(config, mongo)
         consensus.verify_existing_blockchain()
         while 1:
-            consensus.sync_top_down()
             consensus.sync_bottom_up()
             time.sleep(1)
 

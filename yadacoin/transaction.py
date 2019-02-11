@@ -55,8 +55,15 @@ class TransactionFactory(object):
         self.fee = float(fee)
         self.dh_private_key = dh_private_key
         self.to = to
-        self.outputs = outputs or []
-        self.inputs = inputs
+        self.outputs = []
+        for x in outputs:
+            self.outputs.append(Output.from_dict(x))
+        self.inputs = []
+        for x in inputs:
+            if 'signature' in x and 'public_key' in x:
+                self.inputs.append(ExternalInput.from_dict(x))
+            else:
+                self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
         self.chattext = chattext
         self.signin = signin
@@ -113,7 +120,16 @@ class TransactionFactory(object):
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
 
-        inputs = self.inputs or [Input.from_dict(input_txn) for input_txn in input_txns if input_txn['id'] not in mtxn_ids]
+        if self.inputs:
+            inputs = self.inputs
+        else:
+            inputs = []
+            for input_txn in input_txns:
+                if input_txn['id'] not in mtxn_ids:
+                    if 'signature' in input_txn and 'public_key' in input_txn:
+                        inputs.append(ExternalInput.from_dict(input_txn))
+                    else:
+                        inputs.append(Input.from_dict(input_txn))
 
         input_sum = 0
         if self.coinbase:
@@ -196,8 +212,8 @@ class TransactionFactory(object):
             self.requester_rid,
             self.requested_rid,
             self.hash,
-            inputs=self.inputs,
-            outputs=self.outputs,
+            inputs=[x.to_dict() for x in self.inputs],
+            outputs=[x.to_dict() for x in self.outputs],
             coinbase=self.coinbase
         )
 
@@ -245,8 +261,15 @@ class Transaction(object):
         self.requester_rid = requester_rid if requester_rid else ''
         self.requested_rid = requested_rid if requested_rid else ''
         self.hash = txn_hash
-        self.inputs = inputs
-        self.outputs = outputs
+        self.outputs = []
+        for x in outputs:
+            self.outputs.append(Output.from_dict(x))
+        self.inputs = []
+        for x in inputs:
+            if 'signature' in x and 'public_key' in x:
+                self.inputs.append(ExternalInput.from_dict(x))
+            else:
+                self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
 
     @classmethod
@@ -267,8 +290,8 @@ class Transaction(object):
             requester_rid=txn.get('requester_rid', ''),
             requested_rid=txn.get('requested_rid', ''),
             txn_hash=txn.get('hash', ''),
-            inputs=[Input.from_dict(input_txn) for input_txn in txn.get('inputs', '')],
-            outputs=[Output.from_dict(output_txn) for output_txn in txn.get('outputs', '')],
+            inputs=txn.get('inputs', []),
+            outputs=txn.get('outputs', []),
             coinbase=txn.get('coinbase', '')
         )
 
@@ -295,9 +318,32 @@ class Transaction(object):
         total_input = 0
         for txn in self.inputs:
             txn_input = Transaction.from_dict(self.config, self.mongo, BU.get_transaction_by_id(self.config, self.mongo, txn.id))
+
             for output in txn_input.outputs:
-                if str(output.to) == str(address):
+                found = False
+                if hasattr(txn, 'public_key') and hasattr(txn, 'signature'):
+                    ext_address = P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex'))
+                    if str(output.to) == str(ext_address):
+                        found = True
+                        try:
+                            result = verify_signature(base64.b64decode(txn.signature), txn.id, txn.public_key.decode('hex'))
+                            if not result:
+                                raise Exception()
+                        except:
+                            try:
+                                result = VerifyMessage(ext_address, BitcoinMessage(txn.id, magic=''), txn.signature)
+                                if not result:
+                                    raise
+                            except:
+                                raise InvalidTransactionSignatureException("external input transaction signature did not verify")
+                elif str(output.to) == str(address):
+                    found = True
                     total_input += float(output.value)
+                else:
+                    raise InvalidTransactionException("using inputs from a transaction where you were not one of the recipients.")
+
+                if not found:
+                    raise InvalidTransactionException("external input signing information did not match any recipients of the input transaction")
 
         if self.coinbase:
             return
@@ -375,6 +421,28 @@ class Input(object):
     def to_dict(self):
         return {
             'id': self.id
+        }
+
+
+class ExternalInput(Input):
+    def __init__(self, txn_id, public_key, signature):
+        self.id = txn_id
+        self.public_key = public_key
+        self.signature = signature
+
+    @classmethod
+    def from_dict(cls, txn):
+        return cls(
+            txn_id=txn.get('id', ''),
+            public_key=txn.get('public_key', ''),
+            signature=txn.get('signature', '')
+        )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'public_key': self.public_key,
+            'signature': self.signature
         }
 
 

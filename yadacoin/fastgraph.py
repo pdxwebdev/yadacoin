@@ -7,7 +7,7 @@ from blockchainutils import BU
 from transactionutils import TU
 from coincurve.utils import verify_signature
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from transaction import Transaction, Relationship, Input, Output
+from transaction import Transaction, Relationship, Input, Output, ExternalInput
 from peers import Peers
 from mongo import Mongo
 
@@ -49,8 +49,15 @@ class FastGraph(Transaction):
         self.requester_rid = requester_rid
         self.requested_rid = requested_rid
         self.hash = txn_hash
-        self.inputs = inputs
-        self.outputs = outputs
+        self.outputs = []
+        for x in outputs:
+            self.outputs.append(Output.from_dict(x))
+        self.inputs = []
+        for x in inputs:
+            if 'signature' in x and 'public_key' in x:
+                self.inputs.append(ExternalInput.from_dict(x))
+            else:
+                self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
 
         if not signatures:
@@ -82,8 +89,8 @@ class FastGraph(Transaction):
             requester_rid=txn.get('requester_rid', ''),
             requested_rid=txn.get('requested_rid', ''),
             txn_hash=txn.get('hash', ''),
-            inputs=[Input.from_dict(input_txn) for input_txn in txn.get('inputs', '')],
-            outputs=[Output.from_dict(output_txn) for output_txn in txn.get('outputs', '')],
+            inputs=txn.get('inputs', []),
+            outputs=txn.get('outputs', []),
             coinbase=txn.get('coinbase', ''),
             signatures=txn.get('signatures', '')
         )

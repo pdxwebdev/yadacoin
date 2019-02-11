@@ -442,15 +442,14 @@ class MiningPoolView(View):
             app.config['mining_pool'] = MiningPool(config, mongo)
         mp = app.config['mining_pool']
 
-        if not hasattr(mp.block_factory, 'header'):
-            mp.refresh()
+        mp.refresh()
 
         if not hasattr(mp, 'gen'):
             mp.gen = mp.nonce_generator()
         
         mp.special_min = mp.get_special_min(mp.block_factory.block)
         if mp.special_min:
-            mp.block_factory.block.target = mp.block_factory.block.target
+            mp.block_factory.block.target = mp.max_target
         else:
             mp.block_factory.block.target = mp.target
 
@@ -547,7 +546,7 @@ class GetBlocksView(View):
                 prefix = '[' if i == 0 else ''
                 suffix = ']' if i >= len(blocks) -1  else ','
                 yield prefix + json.dumps(block) + suffix
-        return Response(generate(blocks), mimetype='application/json')\
+        return Response(generate(blocks), mimetype='application/json')
 
 class NewBlockView(View):
     def dispatch_request(self):
@@ -604,8 +603,8 @@ class CreateRawTransactionView(View):
                 mongo,
                 public_key=request.json.get('public_key'),
                 fee=float(request.json.get('fee')),
-                inputs=[Input(x['id']) for x in request.json.get('inputs')],
-                outputs=[Output(x['to'], x['value']) for x in request.json.get('outputs')]
+                inputs=request.json.get('inputs'),
+                outputs=request.json.get('outputs')
             )
         except NotEnoughMoneyException as e:
             return json.dumps({'status': 'error', 'msg': 'not enough coins from referenced inputs to pay for transaction outputs + fee'}), 400
