@@ -27,7 +27,10 @@ class Consensus(object):
             self.latest_block = Block.from_dict(self.config, self.mongo, latest_block)
         else:
             self.insert_genesis()
-
+        
+        self.cache_existing_blockchain()
+    
+    def cache_existing_blockchain(self):
         self.existing_blockchain = Blockchain(self.config, self.mongo, BU.get_blocks(self.config, self.mongo))
 
     def output(self, string):

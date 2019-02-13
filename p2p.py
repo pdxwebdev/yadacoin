@@ -62,6 +62,7 @@ if __name__ == '__main__':
         while 1:
             wait = consensus.sync_bottom_up()
             if wait:
+                consensus.cache_existing_blockchain()
                 time.sleep(1)
 
     elif args.mode == 'send':
