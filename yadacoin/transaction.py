@@ -319,8 +319,8 @@ class Transaction(object):
         for txn in self.inputs:
             txn_input = Transaction.from_dict(self.config, self.mongo, BU.get_transaction_by_id(self.config, self.mongo, txn.id))
 
+            found = False
             for output in txn_input.outputs:
-                found = False
                 if hasattr(txn, 'public_key') and hasattr(txn, 'signature'):
                     ext_address = P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex'))
                     if str(output.to) == str(ext_address):
@@ -339,11 +339,12 @@ class Transaction(object):
                 elif str(output.to) == str(address):
                     found = True
                     total_input += float(output.value)
+                
+            if not found:
+                if hasattr(txn, 'public_key') and hasattr(txn, 'signature'):
+                    raise InvalidTransactionException("external input signing information did not match any recipients of the input transaction")
                 else:
                     raise InvalidTransactionException("using inputs from a transaction where you were not one of the recipients.")
-
-                if not found:
-                    raise InvalidTransactionException("external input signing information did not match any recipients of the input transaction")
 
         if self.coinbase:
             return

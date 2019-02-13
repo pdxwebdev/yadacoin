@@ -24,8 +24,11 @@ class BU(object):  # Blockchain Utilities
     collection = None
     database = None
     @classmethod
-    def get_blocks(cls, config, mongo):
-        return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
+    def get_blocks(cls, config, mongo, reverse=False):
+        if reverse:
+            return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
+        else:
+            return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
 
     @classmethod
     def get_latest_blocks(cls, config, mongo):

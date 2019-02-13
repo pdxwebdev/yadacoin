@@ -442,19 +442,12 @@ class MiningPoolView(View):
             app.config['mining_pool'] = MiningPool(config, mongo)
         mp = app.config['mining_pool']
 
-        mp.refresh()
+        if not mp.block_factory:
+            mp.refresh()
 
         if not hasattr(mp, 'gen'):
             mp.gen = mp.nonce_generator()
         
-        mp.special_min = mp.get_special_min(mp.block_factory.block)
-        if mp.special_min:
-            mp.block_factory.block.target = mp.max_target
-        else:
-            mp.block_factory.block.target = mp.target
-
-        mp.block_factory.block.special_min = mp.special_min
-        mp.block_factory.block.header = BlockFactory.generate_header(mp.block_factory.block)
         return json.dumps({
             'nonces': next(mp.gen),
             'target': mp.block_factory.block.target,

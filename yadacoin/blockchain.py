@@ -10,12 +10,19 @@ class Blockchain(object):
         self.config = config
         self.mongo = mongo
         self.blocks = []
+        last_index = None
         for block in blocks:
-            if isinstance(block, Block):
-                self.blocks.append(block)
-            else:
-                self.blocks.append(Block.from_dict(config, mongo, block))
-        self.blocks = sorted(self.blocks, key=lambda x: x.index)
+            if not isinstance(block, Block):
+                block = Block.from_dict(self.config, self.mongo, block)
+            
+            if last_index and (block.index - last_index) != 1:
+                raise Exception('Either incomplete blockchain or unordered.')
+
+            self.blocks.append(block)
+            last_index = block.index
+        
+        if self.blocks[0].index != 0:
+            raise Exception('Blocks do not start with zero index. Either incomplete blockchain or unordered.')
 
     def verify(self, progress=None):
         last_block = None
@@ -48,7 +55,7 @@ class Blockchain(object):
                     return {'verified': False, 'last_good_block': last_block}
             last_block = block
             if progress:
-                progress("%s%s" % (str(int(float(block.index + 1) / float(len(self.blocks)) * 100)), '%'))
+                progress("%s%s %s" % (str(int(float(block.index + 1) / float(len(self.blocks)) * 100)), '%', block.index))
         return {'verified': True}
 
     def find_error_block(self):

@@ -211,13 +211,12 @@ class BlockFactory(object):
             target = max_target
         else:
             block_to_check = last_block
+            time_elapsed_since_last_block = int(last_time) - int(block_to_check.time)
+            if time_elapsed_since_last_block > max_block_time:
+                target = max_target
+                return target
             while 1:
-                time_elapsed_since_last_block = int(time.time()) - int(block_to_check.time)
-                if time_elapsed_since_last_block > max_block_time:
-                    target = max_target
-                    break
-
-                if block_to_check.special_min:
+                if block_to_check.special_min or block_to_check.target == max_target:
                     block_to_check = blockchain.blocks[block_to_check.index - 1]
                 else:
                     target = block_to_check.target

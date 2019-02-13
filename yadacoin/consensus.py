@@ -27,8 +27,8 @@ class Consensus(object):
             self.latest_block = Block.from_dict(self.config, self.mongo, latest_block)
         else:
             self.insert_genesis()
-        blocks = self.mongo.db.blocks.find({})
-        self.existing_blockchain = Blockchain(self.config, self.mongo, blocks)
+
+        self.existing_blockchain = Blockchain(self.config, self.mongo, BU.get_blocks(self.config, self.mongo))
 
     def output(self, string):
         sys.stdout.write(string)  # write the next character
@@ -113,6 +113,22 @@ class Consensus(object):
                 })
         return sorted(ranks, key=lambda x: x['target'])
 
+    def get_next_consensus_block_from_local(self, block):
+        #table cleanup
+        new_block = self.mongo.db.consensus.find_one({
+            'block.prevHash': block.hash,
+            'block.index': (block.index + 1),
+            'block.version': BU.get_version_for_height((block.index + 1)),
+            'ignore': {'$ne': True}
+        })
+        if new_block:
+            new_block = Block.from_dict(self.config, self.mongo, new_block['block'])
+            if int(new_block.version) == BU.get_version_for_height(new_block.index):
+                return new_block
+            else:
+                return None
+        return None
+
     def get_previous_consensus_block_from_local(self, block, peer):
         #table cleanup
         new_block = self.mongo.db.consensus.find_one({
@@ -188,8 +204,8 @@ class Consensus(object):
 
             records = self.mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1), 'ignore': {'$ne': True}})
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
-                self.import_block(record)
-                break
+                result = self.import_block(record)
+            
         else:
             Peers.init(self.config, self.mongo, self.config.network)
             found_new = False
@@ -208,15 +224,18 @@ class Consensus(object):
                 except Exception as e:
                     print e
 
-            if not found_new:
+            if found_new:
+                return False
+            else:
                 self.log('up to date, height: ' + str(self.latest_block.index))
+                return True
 
     def import_block(self, block_data):
         block = Block.from_dict(self.config, self.mongo, block_data['block'])
         peer = Peer.from_string(self.config, self.mongo, block_data['peer'])
         print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
         try:
-            result = self.integrate_block_with_existing_chain(block, self.existing_blockchain)
+            result = self.integrate_block_with_existing_chain(block)
             if result is False:
                 self.mongo.db.consensus.update(
                     {
@@ -226,6 +245,7 @@ class Consensus(object):
                     },
                     {'$set': {'ignore': True}}
                 )
+            return result
         except AboveTargetException as e:
             self.mongo.db.consensus.update(
                 {
@@ -240,22 +260,29 @@ class Consensus(object):
         except IndexError as e:
             self.retrace(block, peer)
 
-    def integrate_block_with_existing_chain(self, block, blockchain):
+    def integrate_block_with_existing_chain(self, block):
         if block.index == 0:
             return True
         height = block.index
-        last_block = blockchain.blocks[block.index - 1]
+        last_block = self.existing_blockchain.blocks[block.index - 1]
         if not last_block:
             raise ForkException()
         last_time = last_block.time
-        target = BlockFactory.get_target(self.config, self.mongo, height, last_time, last_block, blockchain)
-        if (int(block.hash, 16) < target):
+        target = BlockFactory.get_target(self.config, self.mongo, height, last_time, last_block, self.existing_blockchain)
+        if (int(block.hash, 16) < target) or block.special_min:
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                 dup = self.mongo.db.blocks.find_one({'index': block.index, 'hash': block.hash})
                 if not dup:
                     self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
+                    try:
+                        self.existing_blockchain.blocks[block.index] = block
+                    except:
+                        self.existing_blockchain.blocks.append(block)
                     print "New block inserted for height: ", block.index
-                return True
+                    return True
+                else:
+                    self.existing_blockchain.blocks[block.index] = block
+                    return True
             else:
                 raise ForkException()
         else:
@@ -303,20 +330,53 @@ class Consensus(object):
 
             print 'attempting sync at', block.prev_hash
             # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
-            prev_blocks_check = self.mongo.db.blocks.find_one({'hash': block.prev_hash, 'index': block.index - 1})
-
-            if prev_blocks_check:
-                prev_blocks_check = Block.from_dict(self.config, self.mongo, prev_blocks_check)
+            if self.existing_blockchain.blocks[block.index - 1].hash == block.prev_hash:
+                prev_blocks_check = self.existing_blockchain.blocks[block.index - 1]
                 print prev_blocks_check.hash, prev_blocks_check.index
-                complete_incoming_chain = blocks[:] + [Block.from_dict(self.config, self.mongo, x) for x in self.mongo.db.blocks.find({'index': {'$lte': prev_blocks_check.index}})]
+                blocks = sorted(blocks[:], key=lambda x: x.index)
+                block_for_next = blocks[-1]
+                while 1:
+                    next_block = self.get_next_consensus_block_from_local(block_for_next)
+                    if next_block:
+                        blocks.append(next_block)
+                        block_for_next = next_block
+                    else:
+                        break
+
+                Peers.init(self.config, self.mongo, self.config.network)
+
+                for peer in Peers.peers:
+                    while 1:
+                        try:
+                            print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
+                            result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
+                                peer=peer.to_string(),
+                                start_index=block_for_next.index + 1,
+                                end_index=block_for_next.index + 100
+                            ), timeout=1)
+                            remote_blocks = [Block.from_dict(self.config, self.mongo, x) for x in json.loads(result.content)]
+                            for remote_block in remote_blocks:
+                                if remote_block.hash == block_for_next.prev_hash + 1:
+                                    blocks.append(remote_block)
+                                    block_for_next = remote_block
+                        except Exception as e:
+                            print e
+                            break
 
                 # if we have it in our blockchain, then we've hit the fork point
                 # now we have to loop through the current block array and build a blockchain
                 # then we compare the block height and difficulty of the two chains
                 # replace our current chain if necessary by removing them from the database
                 # then looping though our new chain, inserting the new blocks
-                self.existing_blockchain = Blockchain(self.config, self.mongo, [x for x in self.mongo.db.blocks.find({})])
-                blockchain = Blockchain(self.config, self.mongo, [x for x in complete_incoming_chain])
+                def subchain_gen(blocks, addon_blocks, block):
+                    for x in self.mongo.db.blocks.find({'index': {'$lt': block.index}}).sort([('index', 1)]):
+                        x = Block.from_dict(self.config, self.mongo, x)
+                        if x.index < block.index:
+                            yield x
+                    for x in addon_blocks:
+                        yield x
+                    
+                blockchain = Blockchain(self.config, self.mongo, subchain_gen(self.existing_blockchain.blocks, blocks, block))
 
                 # If the block height is equal, we throw out the inbound chain, it muse be greater
                 # If the block height is lower, we throw it out
@@ -328,13 +388,27 @@ class Consensus(object):
 
                 if (blockchain.get_highest_block_height() >= self.existing_blockchain.get_highest_block_height() 
                     and inbound_difficulty >= existing_difficulty):
-                    for block in sorted(blockchain.blocks, key=lambda x: x.index):
+                    for block in sorted(blockchain.blocks[self.existing_blockchain.get_highest_block_height()+1:], key=lambda x: x.index):
                         try:
                             if block.index == 0:
                                 continue
-                            self.integrate_block_with_existing_chain(block, blockchain)
+                            self.integrate_block_with_existing_chain(block)
+                            print 'inserted ', block.index
                         except ForkException as e:
-                            return
+                            back_one_block = block
+                            while 1:
+                                back_one_block = self.mongo.db.consensus.find_one({'block.hash': back_one_block.prev_hash})
+                                if back_one_block:
+                                    back_one_block = Block.from_dict(self.config, self.mongo, back_one_block['block'])
+                                    try:
+                                        result = self.integrate_block_with_existing_chain(back_one_block)
+                                        if result:
+                                            self.integrate_block_with_existing_chain(block)
+                                            break
+                                    except ForkException as e:
+                                        pass
+                                else:
+                                    return
                         except AboveTargetException as e:
                             return
                         except IndexError as e:

@@ -55,7 +55,18 @@ class MiningPool(object):
             if self.special_min:
                 self.target = self.max_target
             else:
-                self.target = BlockFactory.get_target(self.config, self.mongo, self.height, last_time, block, Blockchain(self.config, self.mongo, [x for x in BU.get_blocks(self.config, self.mongo)]))
+                self.target = BlockFactory.get_target(
+                    self.config,
+                    self.mongo,
+                    self.height,
+                    last_time,
+                    block,
+                    Blockchain(
+                        self.config,
+                        self.mongo,
+                        BU.get_blocks(self.config, self.mongo)
+                    )
+                )
 
             self.block_factory = BlockFactory(
                 config=self.config,
@@ -67,7 +78,7 @@ class MiningPool(object):
                 version=BU.get_version_for_height(self.height))
             self.block_factory.block.special_min = self.special_min
             self.block_factory.block.target = self.target
-            self.block_factory.header = BlockFactory.generate_header(self.block_factory.block)
+            self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
         except Exception as e:
             raise
 

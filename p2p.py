@@ -60,8 +60,9 @@ if __name__ == '__main__':
         consensus = Consensus(config, mongo)
         consensus.verify_existing_blockchain()
         while 1:
-            consensus.sync_bottom_up()
-            time.sleep(1)
+            wait = consensus.sync_bottom_up()
+            if wait:
+                time.sleep(1)
 
     elif args.mode == 'send':
         Send.run(config, mongo, args.to, float(args.value))
