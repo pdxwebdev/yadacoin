@@ -384,6 +384,8 @@ class Consensus(object):
                                 if remote_block.prev_hash == block_for_next.hash:
                                     blocks.append(remote_block)
                                     block_for_next = remote_block
+                                else:
+                                    break
                         except Exception as e:
                             if self.debug:
                                 print e
