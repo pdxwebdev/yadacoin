@@ -202,7 +202,8 @@ class Consensus(object):
 
         latest_consensus = self.mongo.db.consensus.find_one({
             'index': self.latest_block.index + 1,
-            'block.version': BU.get_version_for_height(self.latest_block.index + 1)
+            'block.version': BU.get_version_for_height(self.latest_block.index + 1),
+            'ignore': {'$ne': True}
         })
         if latest_consensus:
             latest_consensus = Block.from_dict(self.config, self.mongo, latest_consensus['block'])
@@ -211,36 +212,35 @@ class Consensus(object):
 
             records = self.mongo.db.consensus.find({
                 'index': self.latest_block.index + 1,
-                'block.version': BU.get_version_for_height(self.latest_block.index + 1)
+                'block.version': BU.get_version_for_height(self.latest_block.index + 1),
+                'ignore': {'$ne': True}
             })
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 result = self.import_block(record)
-            
-        else:
-            Peers.init(self.config, self.mongo, self.config.network)
-            found_new = False
-            for peer in Peers.peers:
-                try:
-                    if self.debug:
-                        print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
-                    result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                        peer=peer.to_string(),
-                        start_index=self.latest_block.index + 1,
-                        end_index=self.latest_block.index + 1
-                    ), timeout=1)
-                    block = Block.from_dict(self.config, self.mongo, json.loads(result.content)[0])
-                    if block.index == (self.latest_block.index + 1):
-                        self.insert_consensus_block(block, peer)
-                    found_new = True
-                except Exception as e:
-                    if self.debug:
-                        print e
 
-            if found_new:
-                return False
-            else:
-                self.log('up to date, height: ' + str(self.latest_block.index))
-                return True
+            latest_consensus_now = self.mongo.db.consensus.find_one({
+                'index': self.latest_block.index + 1,
+                'block.version': BU.get_version_for_height(self.latest_block.index + 1),
+                'ignore': {'$ne': True}
+            })
+
+            if latest_consensus.index == latest_consensus_now['index']:
+                Peers.init(self.config, self.mongo, self.config.network)
+                for peer in Peers.peers:
+                    try:
+                        if self.debug:
+                            print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
+                        result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
+                            peer=peer.to_string(),
+                            start_index=self.latest_block.index + 1,
+                            end_index=self.latest_block.index + 1
+                        ), timeout=1)
+                        block = Block.from_dict(self.config, self.mongo, json.loads(result.content)[0])
+                        if block.index == (self.latest_block.index + 1):
+                            self.insert_consensus_block(block, peer)
+                    except Exception as e:
+                        if self.debug:
+                            print e
 
     def import_block(self, block_data):
         block = Block.from_dict(self.config, self.mongo, block_data['block'])
