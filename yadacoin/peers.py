@@ -77,6 +77,7 @@ class Peers(object):
 
 class Peer(object):
     def __init__(self, config, mongo, host, port, bulletin_secret=None, is_me=False):
+        self.config = config
         self.mongo = mongo
         self.host = host
         self.port = port
@@ -90,6 +91,23 @@ class Peer(object):
             return cls(config, mongo, peer[0], peer[1])
         elif peerstr == 'me':
             return cls(config, mongo, None, None, is_me=True)
+
+    def report(self):
+        try:
+            print 'reporting bad peer'
+            if self.config.network == 'mainnet':
+                url = 'https://yadacoin.io/peers'
+            elif self.config.network == 'testnet':
+                url = 'http://yadacoin.io:8888/peers'
+            requests.post(
+                url,
+                json={'host': self.host, 'port': str(self.port), 'failed': True},
+                timeout=3,
+                headers={'Connection':'close'}
+            )
+        except:
+            print 'failed to report bad peer'
+            pass
 
     def is_broken(self):
         broken_test = [x for x in self.mongo.db.broken_peers.find({"peer": self.to_string()})]

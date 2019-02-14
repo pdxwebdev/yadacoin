@@ -243,18 +243,4 @@ class MiningPool(object):
                 print peer.host + ":" + str(peer.port)
             except Exception as e:
                 print e
-                try:
-                    print 'reporting bad peer'
-                    if self.config.network == 'mainnet':
-                        url = 'https://yadacoin.io/peers'
-                    elif self.config.network == 'testnet':
-                        url = 'http://yadacoin.io:8888/peers'
-                    requests.post(
-                        url,
-                        json={'host': peer.host, 'port': str(peer.port), 'failed': True},
-                        timeout=3,
-                        headers={'Connection':'close'}
-                    )
-                except:
-                    print 'failed to report bad peer'
-                    pass
+                peer.report()
