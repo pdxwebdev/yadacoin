@@ -154,7 +154,8 @@ class Consensus(object):
         while True:
             try:
                 url = 'http://' + peer.to_string() + '/get-block?hash=' + block.prev_hash
-                print 'getting block', url
+                if self.debug:
+                    print 'getting block', url
                 res = requests.get(url, timeout=1, headers={'Connection':'close'})
             except:
                 if retry == 1:
@@ -163,7 +164,8 @@ class Consensus(object):
                     retry += 1
                     continue
             try:
-                print 'response code: ', res.status_code
+                if self.debug:
+                    print 'response code: ', res.status_code
                 new_block = Block.from_dict(self.config, self.mongo, json.loads(res.content))
                 if int(new_block.version) == BU.get_version_for_height(new_block.index):
                     return new_block
@@ -178,7 +180,8 @@ class Consensus(object):
         })
         if failed_prev_check:
             raise Exception('cannot insert previously failed block')
-        print 'inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string())
+        if self.debug:
+            print 'inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string())
         self.mongo.db.consensus.update({
             'id': block.to_dict().get('id'),
             'peer': peer.to_string()
@@ -199,17 +202,17 @@ class Consensus(object):
 
         latest_consensus = self.mongo.db.consensus.find_one({
             'index': self.latest_block.index + 1,
-            'block.version': BU.get_version_for_height(self.latest_block.index + 1),
-            'ignore': {'$ne': True}
+            'block.version': BU.get_version_for_height(self.latest_block.index + 1)
         })
         if latest_consensus:
             latest_consensus = Block.from_dict(self.config, self.mongo, latest_consensus['block'])
-            print latest_consensus.index, "latest consensus_block"
+            if self.debug:
+                print latest_consensus.index, "latest consensus_block"
 
             records = self.mongo.db.consensus.find({
                 'index': self.latest_block.index + 1,
-                'block.version': BU.get_version_for_height(self.latest_block.index + 1),
-                'ignore': {'$ne': True}})
+                'block.version': BU.get_version_for_height(self.latest_block.index + 1)
+            })
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 result = self.import_block(record)
             
@@ -242,7 +245,8 @@ class Consensus(object):
     def import_block(self, block_data):
         block = Block.from_dict(self.config, self.mongo, block_data['block'])
         peer = Peer.from_string(self.config, self.mongo, block_data['peer'])
-        print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
+        if self.debug:
+            print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
         try:
             result = self.integrate_block_with_existing_chain(block)
             if result is False:
@@ -288,7 +292,8 @@ class Consensus(object):
                         self.existing_blockchain.blocks[block.index] = block
                     except:
                         self.existing_blockchain.blocks.append(block)
-                    print "New block inserted for height: ", block.index
+                    if self.debug:
+                        print "New block inserted for height: ", block.index
                     return True
                 else:
                     self.existing_blockchain.blocks[block.index] = block
@@ -328,7 +333,8 @@ class Consensus(object):
                     try:
                         self.insert_consensus_block(block, peer)
                     except Exception as e:
-                        print e # we should do something here to keep it from looping on this failed block
+                        if self.debug:
+                            print e # we should do something here to keep it from looping on this failed block
                 else:
                     # identify missing and prune
                     # if the pruned chain is still longer, we'll take it
@@ -337,12 +343,13 @@ class Consensus(object):
                         blocks = [block]
                     else:
                         return
-
-            print 'attempting sync at', block.prev_hash
+            if self.debug:
+                print 'attempting sync at', block.prev_hash
             # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
             if self.existing_blockchain.blocks[block.index - 1].hash == block.prev_hash:
                 prev_blocks_check = self.existing_blockchain.blocks[block.index - 1]
-                print prev_blocks_check.hash, prev_blocks_check.index
+                if self.debug:
+                    print prev_blocks_check.hash, prev_blocks_check.index
                 blocks = sorted(blocks[:], key=lambda x: x.index)
                 block_for_next = blocks[-1]
                 while 1:
@@ -358,7 +365,8 @@ class Consensus(object):
                 for peer in Peers.peers:
                     while 1:
                         try:
-                            print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
+                            if self.debug:
+                                print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
                             result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                                 peer=peer.to_string(),
                                 start_index=block_for_next.index + 1,
@@ -370,7 +378,8 @@ class Consensus(object):
                                     blocks.append(remote_block)
                                     block_for_next = remote_block
                         except Exception as e:
-                            print e
+                            if self.debug:
+                                print e
                             break
 
                 # if we have it in our blockchain, then we've hit the fork point
@@ -378,15 +387,15 @@ class Consensus(object):
                 # then we compare the block height and difficulty of the two chains
                 # replace our current chain if necessary by removing them from the database
                 # then looping though our new chain, inserting the new blocks
-                def subchain_gen(blocks, addon_blocks, block):
-                    for x in self.mongo.db.blocks.find({'index': {'$lt': block.index}}).sort([('index', 1)]):
+                def subchain_gen(addon_blocks, gen_block):
+                    for x in self.mongo.db.blocks.find({'index': {'$lt': gen_block.index}}).sort([('index', 1)]):
                         x = Block.from_dict(self.config, self.mongo, x)
-                        if x.index < block.index:
+                        if x.index < gen_block.index:
                             yield x
                     for x in addon_blocks:
                         yield x
                     
-                blockchain = Blockchain(self.config, self.mongo, subchain_gen(self.existing_blockchain.blocks, blocks, block))
+                blockchain = Blockchain(self.config, self.mongo, subchain_gen(blocks, block))
 
                 # If the block height is equal, we throw out the inbound chain, it muse be greater
                 # If the block height is lower, we throw it out
@@ -403,7 +412,8 @@ class Consensus(object):
                             if block.index == 0:
                                 continue
                             self.integrate_block_with_existing_chain(block)
-                            print 'inserted ', block.index
+                            if self.debug:
+                                print 'inserted ', block.index
                         except ForkException as e:
                             back_one_block = block
                             while 1:
@@ -423,11 +433,19 @@ class Consensus(object):
                             return
                         except IndexError as e:
                             return
-                    print "Replaced chain with incoming"
+                    if self.debug:
+                        print "Replaced chain with incoming"
                     return
                 else:
                     if not peer.is_me:
-                        print "Incoming chain lost", blockchain.get_difficulty(), self.existing_blockchain.get_difficulty(), blockchain.get_highest_block_height(), self.existing_blockchain.get_highest_block_height()
+                        if self.debug:
+                            print (
+                                "Incoming chain lost", 
+                                blockchain.get_difficulty(), 
+                                self.existing_blockchain.get_difficulty(), 
+                                blockchain.get_highest_block_height(), 
+                                self.existing_blockchain.get_highest_block_height()
+                            )
                         for block in blocks:
                             self.mongo.db.consensus.update({'block.hash': block.hash}, {'$set': {'ignore': True}}, multi=True)
                     return
@@ -438,7 +456,9 @@ class Consensus(object):
             # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
             # blockchain against the proposed chain. 
             if block.index == 0:
-                print "zero index reached"
+                if self.debug:
+                    print "zero index reached"
                 return
-        print "doesn't follow any known chain" # throwing out the block for now
+        if self.debug:
+            print "doesn't follow any known chain" # throwing out the block for now
         return
