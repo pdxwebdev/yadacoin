@@ -158,7 +158,7 @@ class Consensus(object):
                 print 'getting block', url
                 res = requests.get(url, timeout=1, headers={'Connection':'close'})
             except:
-                if retry == 50:
+                if retry == 1:
                     raise BadPeerException()
                 else:
                     retry += 1
