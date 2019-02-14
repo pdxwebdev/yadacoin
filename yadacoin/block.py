@@ -314,7 +314,7 @@ class Block(object):
         transactions = []
         for txn in block.get('transactions'):
             # TODO: do validify checking for coinbase transactions
-            if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1 and not txn.get('relationship'):
+            if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1 and not txn.get('inputs') and not txn.get('relationship'):
                 txn['coinbase'] = True  
             else:
                 txn['coinbase'] = False

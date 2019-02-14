@@ -29,30 +29,27 @@ class Blockchain(object):
         for block in self.blocks:
             try:
                 block.verify()
-            except:
+            except Exception as e:
                 if last_block:
-                    return {'verified': False, 'last_good_block': last_block}
+                    return {'verified': False, 'last_good_block': last_block, 'message': e}
                 else:
-                    return {'verified': False}
+                    return {'verified': False, 'message': e}
             for txn in block.transactions:
                 try:
                     txn.verify()
-                except:
+                except Exception as e:
                     if last_block:
-                        return {'verified': False, 'last_good_block': last_block}
+                        return {'verified': False, 'last_good_block': last_block, 'message': e}
                     else:
-                        return {'verified': False}
+                        return {'verified': False, 'message': e}
             if last_block:
                 target = BlockFactory.get_target(self.config, self.mongo, block.index, last_block.time, last_block, self)
                 if int(block.hash, 16) > target and not block.special_min:
-                    print "invalid block chain: block target is not below the previous target and not special minimum"
-                    return {'verified': False, 'last_good_block': last_block}
+                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
                 if block.prev_hash != last_block.hash:
-                    print "invalid block chain: hashes are not consecutive:", last_block.hash, block.prev_hash, last_block.index, block.index
-                    return {'verified': False, 'last_good_block': last_block}
+                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: hashes are not consecutive: %s %s %s %s" % (last_block.hash, block.prev_hash, last_block.index, block.index)}
                 if block.index - last_block.index != 1:
-                    print "invalid block chain: indexes are not consecutive:", last_block.index, block.index
-                    return {'verified': False, 'last_good_block': last_block}
+                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: indexes are not consecutive: %s %s" % (last_block.index, block.index)}
             last_block = block
             if progress:
                 progress("%s%s %s" % (str(int(float(block.index + 1) / float(len(self.blocks)) * 100)), '%', block.index))

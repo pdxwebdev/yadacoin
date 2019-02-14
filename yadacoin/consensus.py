@@ -19,7 +19,8 @@ class ForkException(Exception):
 
 class Consensus(object):
     lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-    def __init__(self, config, mongo):
+    def __init__(self, config, mongo, debug=False):
+        self.debug = debug
         self.config = config
         self.mongo = mongo
         latest_block = BU.get_latest_block(self.config, self.mongo)
@@ -65,6 +66,7 @@ class Consensus(object):
         result = self.existing_blockchain.verify(self.output)
         if not result['verified']:
             self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
+            print result['message'], '...truncating'
 
     def remove_pending_transactions_now_in_chain(self):
         #remove transactions from miner_transactions collection in the blockchain
@@ -172,12 +174,12 @@ class Consensus(object):
                 return None
 
     def insert_consensus_block(self, block, peer):
-        print 'inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string())
         failed_prev_check = self.mongo.db.consensus.find_one({
             'id': block.to_dict().get('id')
         })
         if failed_prev_check:
             raise Exception('cannot insert previously failed block')
+        print 'inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string())
         self.mongo.db.consensus.update({
             'id': block.to_dict().get('id'),
             'peer': peer.to_string()
@@ -205,7 +207,10 @@ class Consensus(object):
             latest_consensus = Block.from_dict(self.config, self.mongo, latest_consensus['block'])
             print latest_consensus.index, "latest consensus_block"
 
-            records = self.mongo.db.consensus.find({'index': self.latest_block.index + 1, 'block.version': BU.get_version_for_height(self.latest_block.index + 1), 'ignore': {'$ne': True}})
+            records = self.mongo.db.consensus.find({
+                'index': self.latest_block.index + 1,
+                'block.version': BU.get_version_for_height(self.latest_block.index + 1),
+                'ignore': {'$ne': True}})
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 result = self.import_block(record)
             
@@ -214,7 +219,8 @@ class Consensus(object):
             found_new = False
             for peer in Peers.peers:
                 try:
-                    print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
+                    if self.debug:
+                        print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=peer.to_string(),
                         start_index=self.latest_block.index + 1,
@@ -225,7 +231,8 @@ class Consensus(object):
                         self.insert_consensus_block(block, peer)
                     found_new = True
                 except Exception as e:
-                    print e
+                    if self.debug:
+                        print e
 
             if found_new:
                 return False
@@ -277,6 +284,7 @@ class Consensus(object):
                 dup = self.mongo.db.blocks.find_one({'index': block.index, 'hash': block.hash})
                 if not dup:
                     self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
+                    self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
                     try:
                         self.existing_blockchain.blocks[block.index] = block
                     except:
@@ -391,7 +399,7 @@ class Consensus(object):
 
                 if (blockchain.get_highest_block_height() >= self.existing_blockchain.get_highest_block_height() 
                     and inbound_difficulty >= existing_difficulty):
-                    for block in sorted(blockchain.blocks[self.existing_blockchain.get_highest_block_height()+1:], key=lambda x: x.index):
+                    for block in sorted(blockchain.blocks[blocks[0].index:], key=lambda x: x.index):
                         try:
                             if block.index == 0:
                                 continue
