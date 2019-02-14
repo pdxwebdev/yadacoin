@@ -410,6 +410,8 @@ class Consensus(object):
 
                 inbound_difficulty = blockchain.get_difficulty()
 
+                self.cache_existing_blockchain()
+
                 existing_difficulty = self.existing_blockchain.get_difficulty()
 
                 if (blockchain.get_highest_block_height() >= self.existing_blockchain.get_highest_block_height() 
