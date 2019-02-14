@@ -123,8 +123,7 @@ class Consensus(object):
         new_block = self.mongo.db.consensus.find_one({
             'block.prevHash': block.hash,
             'block.index': (block.index + 1),
-            'block.version': BU.get_version_for_height((block.index + 1)),
-            'ignore': {'$ne': True}
+            'block.version': BU.get_version_for_height((block.index + 1))
         })
         if new_block:
             new_block = Block.from_dict(self.config, self.mongo, new_block['block'])
