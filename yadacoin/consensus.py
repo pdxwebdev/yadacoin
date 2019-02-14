@@ -305,12 +305,14 @@ class Consensus(object):
         return False
 
     def retrace(self, block, peer):
-        self.log("retracing...")
+        if self.debug:
+            self.log("retracing...")
         blocks = []
         blocks.append(block)
         while 1:
-            self.log(block.hash)
-            self.log(block.index)
+            if self.debug:
+                self.log(block.hash)
+                self.log(block.index)
             # get the previous block from either the consensus collection in mongo
             # or attempt to get the block from the remote peer
             previous_consensus_block = self.get_previous_consensus_block_from_local(block, peer)
