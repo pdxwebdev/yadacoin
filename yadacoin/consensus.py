@@ -219,7 +219,7 @@ class Consensus(object):
                 'ignore': {'$ne': True}
             })
 
-            if latest_consensus.index == latest_consensus_now['index']:
+            if latest_consensus_now and latest_consensus.index == latest_consensus_now['index']:
                 self.search_network_for_new()
         else:
             self.search_network_for_new()
