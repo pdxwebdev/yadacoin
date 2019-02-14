@@ -381,7 +381,7 @@ class Consensus(object):
                             ), timeout=1)
                             remote_blocks = [Block.from_dict(self.config, self.mongo, x) for x in json.loads(result.content)]
                             for remote_block in remote_blocks:
-                                if remote_block.hash == block_for_next.prev_hash + 1:
+                                if remote_block.hash == block_for_next.prev_hash:
                                     blocks.append(remote_block)
                                     block_for_next = remote_block
                         except Exception as e:
