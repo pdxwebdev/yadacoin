@@ -373,7 +373,7 @@ class Consensus(object):
                     while 1:
                         try:
                             if self.debug:
-                                print 'requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()) 
+                                print 'requesting %s from %s' % (block_for_next.index + 1, peer.to_string()) 
                             result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                                 peer=peer.to_string(),
                                 start_index=block_for_next.index + 1,
