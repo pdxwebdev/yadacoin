@@ -1,6 +1,7 @@
 import sys
 import json
 import requests
+import datetime
 from mongo import Mongo
 from peers import Peers, Peer
 from blockchainutils import BU
@@ -64,7 +65,9 @@ class Consensus(object):
     def verify_existing_blockchain(self):
         self.log('verifying existing blockchain')
         result = self.existing_blockchain.verify(self.output)
-        if not result['verified']:
+        if result['verified']:
+            print 'Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+        else:
             self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
             print result['message'], '...truncating'
 
@@ -190,8 +193,10 @@ class Consensus(object):
 
     def sync_bottom_up(self):
         #bottom up syncing
-
+        last_latest = self.latest_block
         self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
+        if self.latest_block.index > last_latest.index:
+            print 'Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         self.remove_pending_transactions_now_in_chain()
         self.remove_fastgraph_transactions_now_in_chain()
 
@@ -237,10 +242,15 @@ class Consensus(object):
                         end_index=int(self.latest_block.index) + 1
                     ), timeout=1)
                 except Exception as e:
+                    if self.debug:
+                        print 'reporting bad peer'
                     peer.report()
                     raise e
-
-                block = Block.from_dict(self.config, self.mongo, json.loads(result.content)[0])
+                try:
+                    blocks = json.loads(result.content)
+                except:
+                    pass
+                block = Block.from_dict(self.config, self.mongo, blocks[0])
                 if block.index == (self.latest_block.index + 1):
                     self.insert_consensus_block(block, peer)
             except Exception as e:

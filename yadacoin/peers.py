@@ -94,7 +94,6 @@ class Peer(object):
 
     def report(self):
         try:
-            print 'reporting bad peer'
             if self.config.network == 'mainnet':
                 url = 'https://yadacoin.io/peers'
             elif self.config.network == 'testnet':
