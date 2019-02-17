@@ -26,8 +26,8 @@ class PoolPayer(object):
         self.mongo = mongo
 
     def get_share_list_for_height(self, index):
-        raw_shares = [x for x in self.mongo.db.shares.find({'index': index})]
-        test = Blockchain(self.config, self.mongo, [x['block'] for x in raw_shares])
+        raw_shares = [x for x in self.mongo.db.shares.find({'index': index}).sort([('index', 1)])]
+        test = Blockchain(self.config, self.mongo, [x['block'] for x in raw_shares], partial=True)
         total_difficulty = test.get_difficulty()
 
         shares = {}

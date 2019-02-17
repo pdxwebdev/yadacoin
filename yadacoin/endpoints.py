@@ -513,7 +513,7 @@ class MiningPoolExplorerView(View):
         if request.args.get('index'):
             query['index'] = int(request.args.get('index'))
         res = mongo.db.shares.find_one(query, {'_id': 0}, sort=[('index', -1)])
-        if res:
+        if res and query:
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s' % (config.address, config.address, res.get('index'))
         else:
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history' % (config.address, config.address)
