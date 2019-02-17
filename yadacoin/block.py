@@ -355,7 +355,7 @@ class Block(object):
     
     def get_coinbase(self):
         for txn in self.transactions:
-            if str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship:
+            if str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship and len(txn.inputs) == 0:
                 return txn
 
 

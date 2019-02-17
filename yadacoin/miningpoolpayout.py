@@ -24,11 +24,19 @@ class PoolPayer(object):
     def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo
+    
+    def get_difficulty(self, blocks):
+        difficulty = 0
+        for block in blocks:
+            target = int(block['hash'], 16)
+            difficulty += (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target)
+        return difficulty
 
     def get_share_list_for_height(self, index):
         raw_shares = [x for x in self.mongo.db.shares.find({'index': index}).sort([('index', 1)])]
-        test = Blockchain(self.config, self.mongo, [x['block'] for x in raw_shares], partial=True)
-        total_difficulty = test.get_difficulty()
+        if not raw_shares:
+            raise Exception('no shares')
+        total_difficulty = self.get_difficulty([x['block'] for x in raw_shares])
 
         shares = {}
         for share in raw_shares:
@@ -40,8 +48,7 @@ class PoolPayer(object):
 
         add_up = 0
         for address, item in shares.iteritems():
-            test = Blockchain(self.config, self.mongo, item['blocks'])
-            test_difficulty = test.get_difficulty()
+            test_difficulty = self.get_difficulty(item['blocks'])
             shares[address]['payout_share'] = float(test_difficulty) / float(total_difficulty)
             add_up += test_difficulty
 
@@ -64,6 +71,7 @@ class PoolPayer(object):
         for won_block in won_blocks:
             won_block = Block.from_dict(self.config, self.mongo, won_block)
             if (won_block.index + 6) <= latest_block.index:
+                print won_block.index
                 self.do_payout_for_block(won_block)
     
     def already_used(self, txn):
@@ -90,7 +98,8 @@ class PoolPayer(object):
 
         try:
             shares = self.get_share_list_for_height(block.index)
-        except:
+        except Exception as e:
+            print e
             return
 
         total_reward = block.get_coinbase()
@@ -107,7 +116,7 @@ class PoolPayer(object):
                 raise PartialPayoutException('this index has been partially paid out.')
             
             payout = total_payout * x['payout_share']
-            outputs.append(Output(to=address, value=payout))
+            outputs.append({'to': address, 'value': payout})
 
         try:
             transaction = TransactionFactory(
