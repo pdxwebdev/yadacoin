@@ -6,7 +6,7 @@ class BlockChainException(BaseException):
     pass
 
 class Blockchain(object):
-    def __init__(self, config, mongo, blocks=None):
+    def __init__(self, config, mongo, blocks=None, partial=False):
         self.config = config
         self.mongo = mongo
         self.blocks = []
@@ -20,8 +20,8 @@ class Blockchain(object):
 
             self.blocks.append(block)
             last_index = block.index
-        
-        if self.blocks[0].index != 0:
+        self.partial = partial
+        if self.blocks[0].index != 0 and not self.partial:
             raise Exception('Blocks do not start with zero index. Either incomplete blockchain or unordered.')
 
     def verify(self, progress=None):
@@ -43,7 +43,7 @@ class Blockchain(object):
                     else:
                         return {'verified': False, 'message': e}
             if last_block:
-                target = BlockFactory.get_target(self.config, self.mongo, block.index, last_block.time, last_block, self)
+                target = BlockFactory.get_target(self.config, self.mongo, block.index, last_block, block, self)
                 if int(block.hash, 16) > target and not block.special_min:
                     return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
                 if block.prev_hash != last_block.hash:
@@ -71,8 +71,6 @@ class Blockchain(object):
     def get_difficulty(self):
         difficulty = 0
         for block in self.blocks:
-            if block.index == 18170:
-                pass
             target = int(block.hash, 16)
             difficulty += (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target)
         return difficulty

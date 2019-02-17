@@ -46,7 +46,8 @@ if __name__ == '__main__':
     parser.add_argument('-n', '--network', default='mainnet', help='Specify maintnet or testnet')
     parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
     parser.add_argument('-p', '--pool', default='', help='Specify pool to use')
-    parser.add_argument('-d', '--debug', default=False, help='Specify maintnet or testnet')
+    parser.add_argument('-d', '--debug', default=False, help='Debug messages')
+    parser.add_argument('-r', '--reset', default=False, help='If blockchain is invalid, truncate at error block')
     args = parser.parse_args()
 
     if os.path.isfile(args.config):
@@ -59,7 +60,7 @@ if __name__ == '__main__':
     mongo = Mongo(config)
     if args.mode == 'consensus':
         consensus = Consensus(config, mongo, args.debug)
-        consensus.verify_existing_blockchain()
+        consensus.verify_existing_blockchain(reset=args.reset)
         while 1:
             wait = consensus.sync_bottom_up()
             if wait:

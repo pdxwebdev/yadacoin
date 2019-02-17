@@ -175,7 +175,7 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def get_target(cls, config, mongo, height, last_time, last_block, blockchain):
+    def get_target(cls, config, mongo, height, last_block, block, blockchain):
         # change target
         max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
         max_block_time = 600
@@ -185,7 +185,7 @@ class BlockFactory(object):
         if height > 0 and height % retarget_period == 0:
             block_from_2016_ago = Block.from_dict(config, mongo, BU.get_block_by_index(config, mongo, height - retarget_period))
             two_weeks_ago_time = block_from_2016_ago.time
-            elapsed_time_from_2016_ago = int(last_time) - int(two_weeks_ago_time)
+            elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
             # greater than two weeks?
             if elapsed_time_from_2016_ago > two_weeks:
                 time_for_target = two_weeks
@@ -195,9 +195,15 @@ class BlockFactory(object):
                 time_for_target = int(elapsed_time_from_2016_ago)
 
             block_to_check = last_block
+                
+            if blockchain.partial:
+                start_index = len(blockchain.blocks) - 1
+            else:
+                start_index = last_block.index
             while 1:
-                if block_to_check.special_min:
-                    block_to_check = blockchain.blocks[block_to_check.index - 1]
+                if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
+                    block_to_check = blockchain.blocks[start_index]
+                    start_index -= 1
                 else:
                     target = block_to_check.target
                     break
@@ -210,14 +216,21 @@ class BlockFactory(object):
         elif height == 0:
             target = max_target
         else:
-            block_to_check = last_block
-            time_elapsed_since_last_block = int(last_time) - int(block_to_check.time)
+            block_to_check = block
+            time_elapsed_since_last_block =  int(block_to_check.time) - int(last_block.time)
             if time_elapsed_since_last_block > max_block_time:
                 target = max_target
                 return target
+            block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
+
+            if blockchain.partial:
+                start_index = len(blockchain.blocks) - 1
+            else:
+                start_index = last_block.index
             while 1:
-                if block_to_check.special_min or block_to_check.target == max_target:
-                    block_to_check = blockchain.blocks[block_to_check.index - 1]
+                if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
+                    block_to_check = blockchain.blocks[start_index]
+                    start_index -= 1
                 else:
                     target = block_to_check.target
                     break

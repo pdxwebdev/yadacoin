@@ -50,23 +50,6 @@ class MiningPool(object):
         try:
             if self.height > 0:
                 last_time = block.time
-            
-            self.special_min = self.get_special_min(block)
-            if self.special_min:
-                self.target = self.max_target
-            else:
-                self.target = BlockFactory.get_target(
-                    self.config,
-                    self.mongo,
-                    self.height,
-                    last_time,
-                    block,
-                    Blockchain(
-                        self.config,
-                        self.mongo,
-                        BU.get_blocks(self.config, self.mongo)
-                    )
-                )
 
             self.block_factory = BlockFactory(
                 config=self.config,
@@ -76,6 +59,38 @@ class MiningPool(object):
                 private_key=self.config.private_key,
                 index=self.height,
                 version=BU.get_version_for_height(self.height))
+            
+            self.special_min = self.get_special_min(self.block_factory.block)
+            if self.special_min:
+                self.target = self.max_target
+            else:
+                i = 1
+                while 1:
+                    res = self.mongo.db.blocks.find_one({
+                        'index': self.height - i,
+                        'special_min': False,
+                        'target': {'$ne': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'}
+                    })
+                    if res:
+                        chain = [x for x in self.mongo.db.blocks.find({
+                            'index': {'$gte': res['index']}
+                        })]
+                        break
+                    else:
+                        i += 1
+                self.target = BlockFactory.get_target(
+                    self.config,
+                    self.mongo,
+                    self.height,
+                    block,
+                    self.block_factory.block,
+                    Blockchain(
+                        self.config,
+                        self.mongo,
+                        chain,
+                        partial=True
+                    )
+                )
             self.block_factory.block.special_min = self.special_min
             self.block_factory.block.target = self.target
             self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
@@ -106,6 +121,11 @@ class MiningPool(object):
                 except:
                     start_nonce = 0
             self.index = latest_block_index
+            self.block_factory.block.special_min = self.get_special_min(self.block_factory.block)
+            if self.block_factory.block.special_min:
+                self.block_factory.block.target = self.max_target
+                self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
+                self.block_factory.block.time = str(int(time.time()))
             yield [start_nonce, start_nonce + 1000000]
 
     def combine_transaction_lists(self):

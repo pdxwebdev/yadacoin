@@ -62,13 +62,14 @@ class Consensus(object):
         upsert=True)
         self.latest_block = genesis_block
 
-    def verify_existing_blockchain(self):
+    def verify_existing_blockchain(self, reset=False):
         self.log('verifying existing blockchain')
         result = self.existing_blockchain.verify(self.output)
         if result['verified']:
             print 'Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         else:
-            self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
+            if reset:
+                self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
             print result['message'], '...truncating'
 
     def remove_pending_transactions_now_in_chain(self):
@@ -218,6 +219,10 @@ class Consensus(object):
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 result = self.import_block(record)
 
+            last_latest = self.latest_block
+            self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
+            if self.latest_block.index > last_latest.index:
+                print 'Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
             latest_consensus_now = self.mongo.db.consensus.find_one({
                 'index': self.latest_block.index + 1,
                 'block.version': BU.get_version_for_height(self.latest_block.index + 1),
@@ -248,8 +253,8 @@ class Consensus(object):
                     raise e
                 try:
                     blocks = json.loads(result.content)
-                except:
-                    pass
+                except ValueError:
+                    continue
                 block = Block.from_dict(self.config, self.mongo, blocks[0])
                 if block.index == (self.latest_block.index + 1):
                     self.insert_consensus_block(block, peer)
@@ -289,6 +294,7 @@ class Consensus(object):
             self.retrace(block, peer)
 
     def integrate_block_with_existing_chain(self, block):
+        
         if block.index == 0:
             return True
         height = block.index
@@ -296,23 +302,18 @@ class Consensus(object):
         if not last_block:
             raise ForkException()
         last_time = last_block.time
-        target = BlockFactory.get_target(self.config, self.mongo, height, last_time, last_block, self.existing_blockchain)
+        target = BlockFactory.get_target(self.config, self.mongo, height, last_block, block, self.existing_blockchain)
         if (int(block.hash, 16) < target) or block.special_min:
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
-                dup = self.mongo.db.blocks.find_one({'index': block.index, 'hash': block.hash})
-                if not dup:
-                    self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
-                    self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
-                    try:
-                        self.existing_blockchain.blocks[block.index] = block
-                    except:
-                        self.existing_blockchain.blocks.append(block)
-                    if self.debug:
-                        print "New block inserted for height: ", block.index
-                    return True
-                else:
+                self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
+                self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
+                try:
                     self.existing_blockchain.blocks[block.index] = block
-                    return True
+                except:
+                    self.existing_blockchain.blocks.append(block)
+                if self.debug:
+                    print "New block inserted for height: ", block.index
+                return True
             else:
                 raise ForkException()
         else:
@@ -390,12 +391,16 @@ class Consensus(object):
                                 end_index=block_for_next.index + 100
                             ), timeout=1)
                             remote_blocks = [Block.from_dict(self.config, self.mongo, x) for x in json.loads(result.content)]
+                            break_out = False
                             for remote_block in remote_blocks:
                                 if remote_block.prev_hash == block_for_next.hash:
                                     blocks.append(remote_block)
                                     block_for_next = remote_block
                                 else:
+                                    break_out = True
                                     break
+                            if break_out:
+                                break
                         except Exception as e:
                             if self.debug:
                                 print e

@@ -451,7 +451,7 @@ class MiningPoolView(View):
         return json.dumps({
             'nonces': next(mp.gen),
             'target': mp.block_factory.block.target,
-            'special_min': mp.special_min,
+            'special_min': mp.block_factory.block.special_min,
             'header': mp.block_factory.block.header
         })
 
