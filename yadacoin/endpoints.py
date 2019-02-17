@@ -522,6 +522,7 @@ class GetBlocksView(View):
     def dispatch_request(self):
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
+        Peer.save_my_peer(config, mongo, config.network)
         blocks = [x for x in mongo.db.blocks.find({
             '$and': [
                 {'index': 
@@ -543,6 +544,9 @@ class GetBlocksView(View):
 
 class NewBlockView(View):
     def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = app.config['yada_mongo']
+        Peer.save_my_peer(config, mongo, config.network)
         bcss = BlockchainSocketServer()
         bcss.on_newblock(request.json)
         return 'ok'
