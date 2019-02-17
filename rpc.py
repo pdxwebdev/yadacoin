@@ -257,7 +257,11 @@ def stats():
 
 def get_base_graph(self):
     bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
-    graph = Graph(current_app.config['yada_config'], bulletin_secret)
+    if request.json:
+        ids = request.json.get('ids')
+    else:
+        ids = []
+    graph = Graph(self.app.config['yada_config'], self.app.config['yada_mongo'], bulletin_secret, ids)
     return graph
 
 endpoints.BaseGraphView.get_base_graph = get_base_graph
