@@ -251,8 +251,8 @@ class Consensus(object):
                     continue
                 block = Block.from_dict(self.config, self.mongo, blocks[0])
                 if block.index == (self.latest_block.index + 1):
-                    if block.special_min and (int(block.time) - int(self.latest_block.time)) < 600: # temporary fix until fork requiring 600 seconds for special min
-                        continue
+                    # if block.special_min and (int(block.time) - int(self.latest_block.time)) < 600: # temporary fix until fork requiring 600 seconds for special min
+                    #     continue
                     self.insert_consensus_block(block, peer)
             except Exception as e:
                 if self.debug:
