@@ -30,9 +30,6 @@ class Consensus(object):
         else:
             self.insert_genesis()
         
-        self.cache_existing_blockchain()
-    
-    def cache_existing_blockchain(self):
         self.existing_blockchain = Blockchain(self.config, self.mongo, BU.get_blocks(self.config, self.mongo))
 
     def output(self, string):
@@ -247,9 +244,6 @@ class Consensus(object):
                         end_index=int(self.latest_block.index) + 1
                     ), timeout=1)
                 except Exception as e:
-                    if self.debug:
-                        print 'reporting bad peer'
-                    peer.report()
                     raise e
                 try:
                     blocks = json.loads(result.content)
@@ -257,6 +251,8 @@ class Consensus(object):
                     continue
                 block = Block.from_dict(self.config, self.mongo, blocks[0])
                 if block.index == (self.latest_block.index + 1):
+                    if block.special_min and (int(block.time) - int(self.latest_block.time)) < 600: # temporary fix until fork requiring 600 seconds for special min
+                        continue
                     self.insert_consensus_block(block, peer)
             except Exception as e:
                 if self.debug:
@@ -309,6 +305,7 @@ class Consensus(object):
                 self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
                 try:
                     self.existing_blockchain.blocks[block.index] = block
+                    del self.existing_blockchain.blocks[block.index+1:]
                 except:
                     self.existing_blockchain.blocks.append(block)
                 if self.debug:
@@ -319,6 +316,13 @@ class Consensus(object):
         else:
             raise AboveTargetException()
         return False
+    
+    def get_difficulty(self, blocks):
+        difficulty = 0
+        for block in blocks:
+            target = int(block.hash, 16)
+            difficulty += (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target)
+        return difficulty
 
     def retrace(self, block, peer):
         if self.debug:
@@ -368,7 +372,7 @@ class Consensus(object):
                 prev_blocks_check = self.existing_blockchain.blocks[block.index - 1]
                 if self.debug:
                     print prev_blocks_check.hash, prev_blocks_check.index
-                blocks = sorted(blocks[:], key=lambda x: x.index)
+                blocks = sorted(blocks, key=lambda x: x.index)
                 block_for_next = blocks[-1]
                 while 1:
                     next_block = self.get_next_consensus_block_from_local(block_for_next)
@@ -411,29 +415,24 @@ class Consensus(object):
                 # then we compare the block height and difficulty of the two chains
                 # replace our current chain if necessary by removing them from the database
                 # then looping though our new chain, inserting the new blocks
-                def subchain_gen(addon_blocks, gen_block):
-                    for x in self.mongo.db.blocks.find({'index': {'$lt': gen_block.index}}).sort([('index', 1)]):
-                        x = Block.from_dict(self.config, self.mongo, x)
+                def subchain_gen(existing_blocks, addon_blocks, gen_block):
+                    for x in existing_blocks[:addon_blocks[0].index]:
                         if x.index < gen_block.index:
                             yield x
                     for x in addon_blocks:
                         yield x
-                    
-                blockchain = Blockchain(self.config, self.mongo, subchain_gen(blocks, block))
 
                 # If the block height is equal, we throw out the inbound chain, it muse be greater
                 # If the block height is lower, we throw it out
                 # if the block height is heigher, we compare the difficulty of the entire chain
 
-                inbound_difficulty = blockchain.get_difficulty()
+                existing_difficulty = self.get_difficulty(self.existing_blockchain.blocks)
 
-                self.cache_existing_blockchain()
+                inbound_difficulty = self.get_difficulty(subchain_gen(self.existing_blockchain.blocks, blocks, block))
 
-                existing_difficulty = self.existing_blockchain.get_difficulty()
-
-                if (blockchain.get_highest_block_height() >= self.existing_blockchain.get_highest_block_height() 
+                if (blocks[-1].index >= self.existing_blockchain.blocks[-1].index
                     and inbound_difficulty >= existing_difficulty):
-                    for block in sorted(blockchain.blocks[blocks[0].index:], key=lambda x: x.index):
+                    for block in blocks:
                         try:
                             if block.index == 0:
                                 continue
@@ -467,10 +466,10 @@ class Consensus(object):
                         if self.debug:
                             print (
                                 "Incoming chain lost", 
-                                blockchain.get_difficulty(), 
-                                self.existing_blockchain.get_difficulty(), 
-                                blockchain.get_highest_block_height(), 
-                                self.existing_blockchain.get_highest_block_height()
+                                inbound_difficulty, 
+                                existing_difficulty, 
+                                blocks[-1].index, 
+                                self.existing_blockchain.blocks[-1].index
                             )
                         for block in blocks:
                             self.mongo.db.consensus.update({'block.hash': block.hash}, {'$set': {'ignore': True}}, multi=True)

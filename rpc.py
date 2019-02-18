@@ -261,7 +261,7 @@ def get_base_graph(self):
         ids = request.json.get('ids')
     else:
         ids = []
-    graph = Graph(self.app.config['yada_config'], self.app.config['yada_mongo'], bulletin_secret, ids)
+    graph = Graph(app.config['yada_config'], app.config['yada_mongo'], bulletin_secret, ids)
     return graph
 
 endpoints.BaseGraphView.get_base_graph = get_base_graph

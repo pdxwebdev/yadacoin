@@ -3,7 +3,7 @@ import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from config import Config
 from mongo import Mongo
-from peers import Peers
+from peers import Peers, Peer
 from block import Block, BlockFactory
 from blockchain import Blockchain
 from blockchainutils import BU
@@ -228,7 +228,7 @@ class MiningPool(object):
                 #print 'rejected transaction', txn['id']
                 pass
         return transaction_objs
-    
+
     def pool_mine(self, pool_peer, address, header, target, nonces, special_min):
         nonce, lhash = BlockFactory.mine(header, target, nonces, special_min)
         if nonce and lhash:
@@ -237,9 +237,10 @@ class MiningPool(object):
                 'hash': lhash,
                 'address': address
             }, headers={'Connection':'close'})
-    
+
     def broadcast_block(self, block):
         Peers.init(self.config, self.mongo, self.config.network)
+        Peer.save_my_peer(self.config, self.mongo, self.config.network)
         print '\r\nCandidate submitted for index:', block.index
         print '\r\nTransactions:'
         for x in block.transactions:
