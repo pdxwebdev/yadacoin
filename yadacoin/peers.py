@@ -9,7 +9,7 @@ class Peers(object):
         self.mongo = mongo
 
     def init_local(self):
-        res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 30}}, {'_id': 0})
+        res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
         self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         peers = [x for x in res]
         self.peers = []
