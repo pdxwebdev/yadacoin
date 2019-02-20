@@ -1254,7 +1254,7 @@ class BU(object):  # Blockchain Utilities
                 for txn in block['transactions']:
                     if txn['id'] == id:
                         if instance:
-                            return Transaction.from_dict(config, mongo, txn)
+                            return Transaction.from_dict(config, mongo, block['index'], txn)
                         else:
                             return txn
         elif res2.count() and include_fastgraph:

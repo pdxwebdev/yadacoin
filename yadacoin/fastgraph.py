@@ -24,6 +24,8 @@ class FastGraph(Transaction):
         self,
         config,
         mongo,
+        block_height,
+        time='',
         rid='',
         transaction_signature='',
         relationship='',
@@ -40,6 +42,8 @@ class FastGraph(Transaction):
     ):
         self.config = config
         self.mongo = mongo
+        self.block_height = block_height
+        self.time = time
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
@@ -71,7 +75,7 @@ class FastGraph(Transaction):
                 self.signatures.append(FastGraphSignature(signature))
     
     @classmethod
-    def from_dict(cls, config, mongo, txn):
+    def from_dict(cls, config, mongo, block_height, txn):
         try:
             relationship = Relationship(**txn.get('relationship', ''))
         except:
@@ -80,6 +84,8 @@ class FastGraph(Transaction):
         return cls(
             config=config,
             mongo=mongo,
+            block_height=block_height,
+            time=txn.get('time'),
             transaction_signature=txn.get('id'),
             rid=txn.get('rid', ''),
             relationship=relationship,
@@ -227,6 +233,7 @@ class FastGraph(Transaction):
 
     def to_dict(self):
         ret = {
+            'time': self.time,
             'rid': self.rid,
             'id': self.transaction_signature,
             'relationship': self.relationship,

@@ -11,7 +11,7 @@ import base64
 import uuid
 from multiprocessing import Process, Value, Array, Pool
 from flask import Flask, render_template, request, Response, current_app as app, session
-from socketIO_client import SocketIO, BaseNamespace
+from flask_socketio import Namespace, emit
 from flask_cors import CORS
 from yadacoin import (
     TransactionFactory,
@@ -45,9 +45,6 @@ from mnemonic import Mnemonic
 from bip32utils import BIP32Key
 from coincurve.utils import verify_signature
 
-class ChatNamespace(BaseNamespace):
-    def on_error(self, event, *args):
-        print 'error'
 
 class HomeView(View):
     def dispatch_request(self):
@@ -100,7 +97,7 @@ class TransactionView(View):
                 items = [item for item in items]
             transactions = []
             for txn in items:
-                transaction = Transaction.from_dict(config, mongo, txn)
+                transaction = Transaction.from_dict(config, mongo, BU.get_latest_block(config, mongo)['index'], txn)
                 try:
                     transaction.verify()
                 except InvalidTransactionException:
@@ -408,6 +405,7 @@ class CreateRelationshipView(View):
         transaction = TransactionFactory(
             config=config,
             mongo=mongo,
+            block_height=BU.get_latest_block(config, mongo)['index'],
             bulletin_secret=bulletin_secret,
             username=username,
             fee=0.00,
@@ -594,6 +592,7 @@ class CreateRawTransactionView(View):
             txn = TransactionFactory(
                 config,
                 mongo,
+                block_height=BU.get_latest_block(config, mongo)['index'],
                 public_key=request.json.get('public_key'),
                 fee=float(request.json.get('fee')),
                 inputs=request.json.get('inputs'),
@@ -682,7 +681,7 @@ class GenerateChildWalletView(View):
                 "msg": "error creating child wallet"
             }), 400
 
-class BlockchainSocketServer(socketio.Namespace):
+class BlockchainSocketServer(Namespace):
     def on_newblock(self, data):
         #print("new block ", data)
         config = app.config['yada_config']
@@ -727,12 +726,12 @@ class BlockchainSocketServer(socketio.Namespace):
         except:
             print 'ERROR: failed to get peers, exiting...'
 
-    def on_newtransaction(self, sid, data):
+    def on_newtransaction(self, data):
         #print("new transaction ", data)
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
         try:
-            incoming_txn = Transaction.from_dict(config, mongo, data)
+            incoming_txn = Transaction.from_dict(config, mongo, BU.get_latest_block(config, mongo)['index'], data)
         except Exception as e:
             print "transaction is bad"
             print e
@@ -743,6 +742,7 @@ class BlockchainSocketServer(socketio.Namespace):
             raise Exception("transaction is bad")
 
         try:
+            print incoming_txn.transaction_signature
             dup_check = mongo.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
             if dup_check.count():
                 print 'found duplicate'

@@ -2,7 +2,7 @@ import json
 import hashlib
 import os
 import base64
-
+import time
 from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey, VerifyingKey
@@ -25,6 +25,7 @@ class TransactionFactory(object):
         self,
         config,
         mongo,
+        block_height,
         bulletin_secret='',
         username='',
         value=0,
@@ -44,6 +45,7 @@ class TransactionFactory(object):
     ):
         self.config = config
         self.mongo = mongo
+        self.block_height = block_height
         self.bulletin_secret = bulletin_secret
         self.username = username
         self.requester_rid = requester_rid
@@ -55,6 +57,7 @@ class TransactionFactory(object):
         self.fee = float(fee)
         self.dh_private_key = dh_private_key
         self.to = to
+        self.time = str(int(time.time()))
         self.outputs = []
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
@@ -96,14 +99,31 @@ class TransactionFactory(object):
         else:
             self.rid = ''
             self.encrypted_relationship = ''
-        self.header = self.dh_public_key + \
-            self.rid + \
-            self.encrypted_relationship + \
-            "{0:.8f}".format(self.fee) + \
-            self.requester_rid + \
-            self.requested_rid + \
-            inputs_concat + \
-            outputs_concat
+        
+        if block_height >= 35200:
+            self.header = (
+                self.public_key +
+                self.time +
+                self.dh_public_key +
+                self.rid +
+                self.encrypted_relationship +
+                "{0:.8f}".format(self.fee) +
+                self.requester_rid +
+                self.requested_rid +
+                inputs_concat +
+                outputs_concat
+            )
+        else:
+            self.header = (
+                self.dh_public_key +
+                self.rid +
+                self.encrypted_relationship +
+                "{0:.8f}".format(self.fee) +
+                self.requester_rid +
+                self.requested_rid +
+                inputs_concat +
+                outputs_concat
+            )
         self.hash = hashlib.sha256(self.header).digest().encode('hex')
         if self.private_key:
             self.transaction_signature = TU.generate_signature_with_private_key(private_key, self.hash)
@@ -203,6 +223,8 @@ class TransactionFactory(object):
         return Transaction(
             self.config,
             self.mongo,
+            self.block_height,
+            self.time,
             self.rid,
             self.transaction_signature,
             self.encrypted_relationship,
@@ -237,6 +259,8 @@ class Transaction(object):
         self,
         config,
         mongo,
+        block_height,
+        txn_time='',
         rid='',
         transaction_signature='',
         relationship='',
@@ -252,6 +276,8 @@ class Transaction(object):
     ):
         self.config = config
         self.mongo = mongo
+        self.block_height = block_height
+        self.time = txn_time
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
@@ -273,7 +299,7 @@ class Transaction(object):
         self.coinbase = coinbase
 
     @classmethod
-    def from_dict(cls, config, mongo, txn):
+    def from_dict(cls, config, mongo, block_height, txn):
         try:
             relationship = Relationship(**txn.get('relationship', ''))
         except:
@@ -281,6 +307,8 @@ class Transaction(object):
         return cls(
             config=config,
             mongo=mongo,
+            block_height=block_height,
+            txn_time=txn.get('time', ''),
             transaction_signature=txn.get('id'),
             rid=txn.get('rid', ''),
             relationship=relationship,
@@ -317,7 +345,7 @@ class Transaction(object):
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            txn_input = Transaction.from_dict(self.config, self.mongo, BU.get_transaction_by_id(self.config, self.mongo, txn.id))
+            txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, BU.get_transaction_by_id(self.config, self.mongo, txn.id))
 
             found = False
             for output in txn_input.outputs:
@@ -359,16 +387,30 @@ class Transaction(object):
     def generate_hash(self):
         inputs_concat = self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
-        hashout = hashlib.sha256(
-            self.dh_public_key +
-            self.rid +
-            self.relationship +
-            "{0:.8f}".format(self.fee) +
-            self.requester_rid +
-            self.requested_rid +
-            inputs_concat +
-            outputs_concat
-        ).digest().encode('hex')
+        if self.block_height >= 35200:
+            hashout = hashlib.sha256(
+                self.public_key +
+                self.time +
+                self.dh_public_key +
+                self.rid +
+                self.relationship +
+                "{0:.8f}".format(self.fee) +
+                self.requester_rid +
+                self.requested_rid +
+                inputs_concat +
+                outputs_concat
+            ).digest().encode('hex')
+        else:
+            hashout = hashlib.sha256(
+                self.dh_public_key +
+                self.rid +
+                self.relationship +
+                "{0:.8f}".format(self.fee) +
+                self.requester_rid +
+                self.requested_rid +
+                inputs_concat +
+                outputs_concat
+            ).digest().encode('hex')
         return hashout
 
     def get_input_hashes(self):
@@ -387,6 +429,7 @@ class Transaction(object):
 
     def to_dict(self):
         ret = {
+            'time': self.time,
             'rid': self.rid,
             'id': self.transaction_signature,
             'relationship': self.relationship,

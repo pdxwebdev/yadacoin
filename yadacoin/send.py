@@ -4,6 +4,7 @@ from mongo import Mongo
 from peers import Peers
 from transaction import TransactionFactory, Output, NotEnoughMoneyException
 from transactionutils import TU
+from blockchainutils import BU
 
 
 class ChatNamespace(BaseNamespace):
@@ -19,11 +20,12 @@ class Send(object):
             transaction = TransactionFactory(
                 config,
                 mongo,
+                block_height=BU.get_latest_block(config, mongo)['index'],
                 fee=0.01,
                 public_key=config.public_key,
                 private_key=config.private_key,
                 outputs=[
-                    Output(to=to, value=value)
+                    {'to': to, 'value': value}
                 ]
             )
         except NotEnoughMoneyException as e:
@@ -35,14 +37,14 @@ class Send(object):
             transaction.transaction.verify()
         except:
             print 'transaction failed'
-        TU.save(transaction.transaction)
+        TU.save(config, mongo, transaction.transaction)
         print 'Transaction generated successfully. Sending:', value, 'To:', to 
         for peer in Peers.peers:
             try:
-                socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
-                chat_namespace = socketIO.define(ChatNamespace, '/chat')
-                chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
-                socketIO.disconnect()
-                print 'Sent to:', peer.host, peer.port
+                with SocketIO(peer.host, peer.port, ChatNamespace, wait_for_connection=False) as socketIO:
+                    chat_namespace = socketIO.define(ChatNamespace, '/chat')
+                    chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
+                    socketIO.disconnect()
+                    print 'Sent to:', peer.host, peer.port
             except Exception as e:
                 print e

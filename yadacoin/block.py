@@ -50,7 +50,7 @@ class BlockFactory(object):
                 if isinstance(txn, Transaction):
                     transaction_obj = txn
                 else:
-                    transaction_obj = Transaction.from_dict(self.config, self.mongo, txn)
+                    transaction_obj = Transaction.from_dict(self.config, self.mongo, self.index, txn)
 
                 if transaction_obj.transaction_signature in used_sigs:
                     print 'duplicate transaction found and removed'
@@ -114,6 +114,7 @@ class BlockFactory(object):
         coinbase_txn_fctry = TransactionFactory(
             config,
             mongo,
+            self.index,
             public_key=self.public_key,
             private_key=self.private_key,
             outputs=[{
@@ -334,7 +335,7 @@ class Block(object):
             if 'signatures' in txn:
                 transactions.append(FastGraph.from_dict(config, mongo, txn))
             else:
-                transactions.append(Transaction.from_dict(config, mongo, txn))
+                transactions.append(Transaction.from_dict(config, mongo, block.get('index'), txn))
 
         return cls(
             config=config,

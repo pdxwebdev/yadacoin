@@ -301,7 +301,10 @@ class Consensus(object):
             raise ForkException()
         last_time = last_block.time
         target = BlockFactory.get_target(self.config, self.mongo, height, last_block, block, self.existing_blockchain)
-        if (int(block.hash, 16) < target) or block.special_min:
+        if ((int(block.hash, 16) < target) or 
+            (block.special_min and block.index < 35200) or 
+            (block.index >= 35200 and block.special_min and (int(block.time) - int(last_block.time)) > 600)):
+
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                 self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
                 self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)

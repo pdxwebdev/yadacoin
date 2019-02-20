@@ -229,7 +229,7 @@ def peers():
             host = request.json['host']
             port = int(request.json['port'])
             if request.json.get('failed'):
-                return 'wrong consensus cleint version, please upate', 400
+                return 'wrong consensus cleint version, please update', 400
             failed = request.json.get('failed_v1')
             if failed:
                 res = mongo.db.peers.find({'host': host, 'port': port})

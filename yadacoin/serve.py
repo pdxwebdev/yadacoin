@@ -2,6 +2,7 @@ import endpoints
 import socketio
 from flask import request, Flask
 from flask_cors import CORS
+from flask_socketio import SocketIO
 from graph import Graph
 from peers import Peers, Peer
 from config import Config
@@ -57,9 +58,8 @@ class Serve(object):
         self.app.add_url_rule('/get-comment-reacts-detail', view_func=endpoints.GetCommentReactsDetailView.as_view('get-comment-reacts-detail'), methods=['POST'])
         self.app.add_url_rule('/comment', view_func=endpoints.CommentView.as_view('comment'), methods=['POST'])
 
-        sio = socketio.Server(async_mode='gevent')
-        sio.register_namespace(endpoints.BlockchainSocketServer('/chat'))
-        socketio.Middleware(sio, self.app)
+        self.socketio = SocketIO(self.app)
+        self.socketio.on_namespace(endpoints.BlockchainSocketServer('/chat'))
 
     def get_base_graph(self):
         bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')

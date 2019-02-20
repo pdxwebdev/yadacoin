@@ -122,6 +122,6 @@ if __name__ == '__main__':
         print "http://{}".format(my_peer.to_string())
 
         serve = Serve(config, mongo)
-        pywsgi.WSGIServer((config.serve_host, config.serve_port), serve.app, spawn=pool.Pool(100)).serve_forever()
+        serve.socketio.run(serve.app, config.serve_host, config.serve_port)
 
         
