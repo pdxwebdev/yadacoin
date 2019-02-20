@@ -46,6 +46,8 @@ class Blockchain(object):
                 target = BlockFactory.get_target(self.config, self.mongo, block.index, last_block, block, self)
                 if int(block.hash, 16) > target and not block.special_min:
                     return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
+                if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:
+                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block index is greater than or equal to 35200 and less than 10 minutes has passed since the last block"}
                 if block.prev_hash != last_block.hash:
                     return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: hashes are not consecutive: %s %s %s %s" % (last_block.hash, block.prev_hash, last_block.index, block.index)}
                 if block.index - last_block.index != 1:
