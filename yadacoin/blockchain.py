@@ -1,6 +1,7 @@
 import re
 import time
 from block import Block, BlockFactory
+from transaction import InvalidTransactionException
 
 class BlockChainException(BaseException):
     pass
@@ -37,6 +38,11 @@ class Blockchain(object):
             for txn in block.transactions:
                 try:
                     txn.verify()
+                except InvalidTransactionException as e:
+                    if last_block:
+                        return {'verified': False, 'last_good_block': last_block, 'message': e}
+                    else:
+                        return {'verified': False, 'message': e}
                 except Exception as e:
                     if last_block:
                         return {'verified': False, 'last_good_block': last_block, 'message': e}

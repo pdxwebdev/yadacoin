@@ -8,6 +8,7 @@ from blockchainutils import BU
 from blockchain import Blockchain
 from block import Block, BlockFactory
 from exceptions import Exception
+from transaction import InvalidTransactionException
 
 class BadPeerException(Exception):
     pass
@@ -292,7 +293,13 @@ class Consensus(object):
             self.retrace(block, peer)
 
     def integrate_block_with_existing_chain(self, block):
-        
+        block.verify()
+        for transaction in block.transactions:
+            try:
+                transaction.verify()
+            except InvalidTransactionException as e:
+                print e
+                return False
         if block.index == 0:
             return True
         height = block.index

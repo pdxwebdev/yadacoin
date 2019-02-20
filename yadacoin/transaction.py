@@ -100,30 +100,18 @@ class TransactionFactory(object):
             self.rid = ''
             self.encrypted_relationship = ''
         
-        if block_height >= 35200:
-            self.header = (
-                self.public_key +
-                self.time +
-                self.dh_public_key +
-                self.rid +
-                self.encrypted_relationship +
-                "{0:.8f}".format(self.fee) +
-                self.requester_rid +
-                self.requested_rid +
-                inputs_concat +
-                outputs_concat
-            )
-        else:
-            self.header = (
-                self.dh_public_key +
-                self.rid +
-                self.encrypted_relationship +
-                "{0:.8f}".format(self.fee) +
-                self.requester_rid +
-                self.requested_rid +
-                inputs_concat +
-                outputs_concat
-            )
+        self.header = (
+            self.public_key +
+            self.time +
+            self.dh_public_key +
+            self.rid +
+            self.encrypted_relationship +
+            "{0:.8f}".format(self.fee) +
+            self.requester_rid +
+            self.requested_rid +
+            inputs_concat +
+            outputs_concat
+        )
         self.hash = hashlib.sha256(self.header).digest().encode('hex')
         if self.private_key:
             self.transaction_signature = TU.generate_signature_with_private_key(private_key, self.hash)
@@ -304,6 +292,7 @@ class Transaction(object):
             relationship = Relationship(**txn.get('relationship', ''))
         except:
             relationship = txn.get('relationship', '')
+        
         return cls(
             config=config,
             mongo=mongo,
@@ -387,7 +376,7 @@ class Transaction(object):
     def generate_hash(self):
         inputs_concat = self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
-        if self.block_height >= 35200:
+        if self.time:
             hashout = hashlib.sha256(
                 self.public_key +
                 self.time +
