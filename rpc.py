@@ -227,7 +227,9 @@ def peers():
             socket.inet_aton(request.json['host'])
             host = request.json['host']
             port = int(request.json['port'])
-            failed = request.json.get('failed')
+            if request.json.get('failed'):
+                return 'wrong consensus cleint version, please upate', 400
+            failed = request.json.get('failed_v1')
             if failed:
                 res = mongo.db.peers.find({'host': host, 'port': port})
                 if res.count():

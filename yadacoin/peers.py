@@ -100,7 +100,7 @@ class Peer(object):
                 url = 'http://yadacoin.io:8888/peers'
             requests.post(
                 url,
-                json={'host': self.host, 'port': str(self.port), 'failed': True},
+                json={'host': self.host, 'port': str(self.port), 'failed_v1': True},
                 timeout=3,
                 headers={'Connection':'close'}
             )

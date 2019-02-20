@@ -228,8 +228,10 @@ class Consensus(object):
 
             if latest_consensus_now and latest_consensus.index == latest_consensus_now['index']:
                 self.search_network_for_new()
+                return True
         else:
             self.search_network_for_new()
+            return True
 
     def search_network_for_new(self):
         Peers.init(self.config, self.mongo, self.config.network)
