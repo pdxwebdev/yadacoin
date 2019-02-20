@@ -66,8 +66,7 @@ class Consensus(object):
         if result['verified']:
             print 'Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
         else:
-            if reset:
-                self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
+            self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
             print result['message'], '...truncating'
 
     def remove_pending_transactions_now_in_chain(self):
