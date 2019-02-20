@@ -111,6 +111,7 @@ def hashrate():
 def api_stats():
     max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     config = current_app.config['yada_config']
+    mongo = current_app.config['yada_mongo']
     blocks = BU.get_blocks(config, mongo)
     total_nonce = 0
     periods = []
