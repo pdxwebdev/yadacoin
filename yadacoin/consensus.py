@@ -8,7 +8,12 @@ from blockchainutils import BU
 from blockchain import Blockchain
 from block import Block, BlockFactory
 from exceptions import Exception
-from transaction import InvalidTransactionException
+from transaction import (
+    InvalidTransactionException,
+    InvalidTransactionSignatureException,
+    MissingInputTransactionException,
+    NotEnoughMoneyException
+)
 
 class BadPeerException(Exception):
     pass
@@ -297,6 +302,18 @@ class Consensus(object):
             try:
                 transaction.verify()
             except InvalidTransactionException as e:
+                print e
+                return False
+            except InvalidTransactionSignatureException as e:
+                print e
+                return False
+            except MissingInputTransactionException as e:
+                print e
+                return False
+            except NotEnoughMoneyException as e:
+                print e
+                return False
+            except Exception as e:
                 print e
                 return False
         if block.index == 0:

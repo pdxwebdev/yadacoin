@@ -1,7 +1,12 @@
 import re
 import time
 from block import Block, BlockFactory
-from transaction import InvalidTransactionException
+from transaction import (
+    InvalidTransactionException,
+    InvalidTransactionSignatureException,
+    MissingInputTransactionException,
+    NotEnoughMoneyException
+)
 
 class BlockChainException(BaseException):
     pass
