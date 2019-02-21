@@ -414,7 +414,10 @@ class CreateRelationshipView(View):
             private_key=config.private_key,
             dh_private_key=dh_private_key,
             outputs=[
-                Output(to=to, value=0)
+                {
+                    'to': to,
+                    'value': 0
+                }
             ]
         )
 

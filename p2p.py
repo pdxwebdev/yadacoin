@@ -74,7 +74,11 @@ if __name__ == '__main__':
         print '\r\n\r\n\r\n//// YADA COIN MINER ////'
         print "Core count:", args.cores
         def get_mine_data():
-            return json.loads(requests.get("http://{pool}/pool".format(pool=args.pool)).content)
+            try:
+                return json.loads(requests.get("http://{pool}/pool".format(pool=args.pool)).content)
+            except Exception as e:
+                print(e)
+                return None
         running_processes = []
         mp = MiningPool(config, mongo)
         while 1:
