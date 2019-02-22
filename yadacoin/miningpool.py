@@ -151,7 +151,7 @@ class MiningPool(object):
                 elif isinstance(txn, Transaction):
                     transaction_obj = txn
                 elif isinstance(txn, dict) and 'signatures' in txn:
-                    transaction_obj = FastGraph.from_dict(self.config, self.mongo, txn)
+                    transaction_obj = FastGraph.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo)['index'], txn)
                 elif isinstance(txn, dict):
                     transaction_obj = Transaction.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo)['index'], txn)
                 else:

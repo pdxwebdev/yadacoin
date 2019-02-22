@@ -301,7 +301,7 @@ class RidWalletView(View):
         txns_for_fastgraph = []
         for txn in unspent_transactions:
             if 'signatures' in txn and txn['signatures']:
-                fastgraph = FastGraph.from_dict(config, mongo, txn)
+                fastgraph = FastGraph.from_dict(config, mongo, 0, txn)
                 origin_fasttrack = fastgraph.get_origin_relationship(rid)
                 if origin_fasttrack:
                     txns_for_fastgraph.append(txn)
@@ -881,7 +881,12 @@ class GetLatestBlockView(View):
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
         block = BU.get_latest_block(config, mongo)
-        return json.dumps(block, indent=4)
+        return json.dumps(self.changetime(block), indent=4)
+
+    def changetime(self, block):
+        from datetime import datetime
+        block['time'] = datetime.utcfromtimestamp(int(block['time'])).strftime('%Y-%m-%dT%H:%M:%S UTC')
+        return block
 
 class PostFastGraphView(View):
     def dispatch_request(self):
@@ -889,7 +894,7 @@ class PostFastGraphView(View):
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
         fastgraph = request.json
-        fastgraph = FastGraph.from_dict(config, mongo, fastgraph)
+        fastgraph = FastGraph.from_dict(config, mongo, 0, fastgraph)
         try:
             fastgraph.verify()
         except:

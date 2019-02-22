@@ -1261,7 +1261,7 @@ class BU(object):  # Blockchain Utilities
             if give_block:
                 return None
             if instance:
-                return FastGraph.from_dict(config, mongo, res2[0]['txn'])
+                return FastGraph.from_dict(config, mongo, 0, res2[0]['txn'])
             else:
                 return res2[0]['txn']
         else:

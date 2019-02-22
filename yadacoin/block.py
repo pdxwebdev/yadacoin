@@ -70,7 +70,7 @@ class BlockFactory(object):
                     if isinstance(txn, FastGraph):
                         transaction_obj = txn
                     else:
-                        transaction_obj = FastGraph.from_dict(self.config, self.mongo, txn)
+                        transaction_obj = FastGraph.from_dict(self.config, self.mongo, self.index, txn)
 
                     if transaction_obj.transaction.transaction_signature in used_sigs:
                         print 'duplicate transaction found and removed'
@@ -333,7 +333,7 @@ class Block(object):
             else:
                 txn['coinbase'] = False
             if 'signatures' in txn:
-                transactions.append(FastGraph.from_dict(config, mongo, txn))
+                transactions.append(FastGraph.from_dict(config, mongo, block.get('index'), txn))
             else:
                 transactions.append(Transaction.from_dict(config, mongo, block.get('index'), txn))
 
