@@ -938,7 +938,8 @@ class SearchView(View):
             'bulletin_secret': friend['relationship']['their_bulletin_secret'],
             'requested_rid': friend['rid'],
             'requester_rid': rid,
-            'to': to
+            'to': to,
+            'username': phrase
         }, indent=4)
         return out
 
