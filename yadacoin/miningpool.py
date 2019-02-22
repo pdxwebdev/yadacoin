@@ -232,11 +232,14 @@ class MiningPool(object):
     def pool_mine(self, pool_peer, address, header, target, nonces, special_min):
         nonce, lhash = BlockFactory.mine(header, target, nonces, special_min)
         if nonce and lhash:
-            requests.post("http://{pool}/pool-submit".format(pool=pool_peer), json={
-                'nonce': nonce,
-                'hash': lhash,
-                'address': address
-            }, headers={'Connection':'close'})
+            try:
+                requests.post("http://{pool}/pool-submit".format(pool=pool_peer), json={
+                    'nonce': nonce,
+                    'hash': lhash,
+                    'address': address
+                }, headers={'Connection':'close'})
+            except Exception as e:
+                print e
 
     def broadcast_block(self, block):
         Peers.init(self.config, self.mongo, self.config.network)
