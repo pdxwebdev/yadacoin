@@ -921,7 +921,7 @@ class SearchView(View):
         requester_rid = request.args.get('requester_rid')
         if not phrase and not requester_rid:
             return 'phrase required', 400
-        bulletin_secret = request.args.get('bulletin_secret')
+        bulletin_secret = request.args.get('bulletin_secret').replace(' ', '+')
         if not bulletin_secret:
             return 'bulletin_secret required', 400
         my_bulletin_secret = config.get_bulletin_secret()
