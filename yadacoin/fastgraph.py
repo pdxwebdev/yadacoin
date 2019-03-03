@@ -98,7 +98,7 @@ class FastGraph(Transaction):
             inputs=txn.get('inputs', []),
             outputs=txn.get('outputs', []),
             coinbase=txn.get('coinbase', ''),
-            signatures=txn.get('signatures', '')
+            signatures=txn.get('signatures', [])
         )
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
