@@ -199,11 +199,6 @@ def deeplink():
     import urllib
     return redirect('myapp://' + urllib.quote(request.args.get('txn')))
 
-@app.route('/get-url')
-def get_url():
-    res = requests.get(request.args.get('url'))
-    return res.content
-
 @app.route('/block-user', methods=['POST'])
 def block_user():
     config = current_app.config['yada_config']
