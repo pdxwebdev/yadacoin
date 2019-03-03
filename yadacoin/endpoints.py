@@ -905,7 +905,7 @@ class PostFastGraphView(View):
         if result:
             return 'duplicate transaction found', 400
         fastgraph.save()
-        fastgraph.broadcast()
+        #fastgraph.broadcast()
         return fastgraph.to_json()
 
 class GetFastGraphView(View):
