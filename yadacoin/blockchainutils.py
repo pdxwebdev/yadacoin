@@ -419,7 +419,7 @@ class BU(object):  # Blockchain Utilities
             wif=config.wif,
             both=False,
             query={'txn.relationship.their_username': username},
-            queryType='allUsernames'
+            queryType='searchUsername'
         )
     
     @classmethod
@@ -430,7 +430,7 @@ class BU(object):  # Blockchain Utilities
             wif=config.wif,
             both=False,
             query={'txn.rid': rid},
-            queryType='allUsernames'
+            queryType='searchRid'
         )
 
     @classmethod
