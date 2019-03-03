@@ -918,17 +918,24 @@ class SearchView(View):
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
         phrase = request.args.get('phrase')
-        if not phrase:
+        requester_rid = request.args.get('requester_rid')
+        if not phrase and not requester_rid:
             return 'phrase required', 400
         bulletin_secret = request.args.get('bulletin_secret')
         if not bulletin_secret:
             return 'bulletin_secret required', 400
         my_bulletin_secret = config.get_bulletin_secret()
 
-        rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-
-        friend = [x for x in BU.search_username(config, mongo, phrase)][0]
+        if requester_rid:
+            friend = [x for x in BU.search_rid(config, mongo, requester_rid)][0]
+            requester_rid = friend['rid']
+            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+            requested_rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+        else:
+            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+            requester_rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            friend = [x for x in BU.search_username(config, mongo, phrase)][0]
+            requested_rid = friend['rid']
         
         if friend:
             to = [x['to'] for x in friend['outputs'] if x['to'] != config.address][0]
@@ -936,10 +943,10 @@ class SearchView(View):
             return '{}', 404
         out = json.dumps({
             'bulletin_secret': friend['relationship']['their_bulletin_secret'],
-            'requested_rid': friend['rid'],
-            'requester_rid': rid,
+            'requested_rid': requested_rid,
+            'requester_rid': requester_rid,
             'to': to,
-            'username': phrase
+            'username': friend['relationship']['their_username']
         }, indent=4)
         return out
 

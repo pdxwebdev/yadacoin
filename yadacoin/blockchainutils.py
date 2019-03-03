@@ -421,6 +421,17 @@ class BU(object):  # Blockchain Utilities
             query={'txn.relationship.their_username': username},
             queryType='allUsernames'
         )
+    
+    @classmethod
+    def search_rid(cls, config, mongo, rid):
+        return BU.get_transactions(
+            config,
+            mongo,
+            wif=config.wif,
+            both=False,
+            query={'txn.rid': rid},
+            queryType='allUsernames'
+        )
 
     @classmethod
     def get_posts(cls, config, mongo, rids):
