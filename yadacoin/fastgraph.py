@@ -72,7 +72,7 @@ class FastGraph(Transaction):
             if isinstance(signature, FastGraphSignature):
                 self.signatures.append(signature)
             else:
-                self.signatures.append(FastGraphSignature.from_dict(signature))
+                self.signatures.append(FastGraphSignature(signature))
     
     @classmethod
     def from_dict(cls, config, mongo, block_height, txn):
@@ -259,10 +259,6 @@ class FastGraph(Transaction):
 class FastGraphSignature(object):
     def __init__(self, signature):
         self.signature = signature
-    
-    @classmethod
-    def from_dict(cls, signature):
-        return cls(signature=signature['signature'])
 
     def to_string(self):
         return self.signature
