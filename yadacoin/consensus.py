@@ -248,7 +248,7 @@ class Consensus(object):
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),
                         start_index=int(self.latest_block.index) + 1,
-                        end_index=int(self.latest_block.index) + 1
+                        end_index=int(self.latest_block.index) + 1000
                     ), timeout=1)
                 except Exception as e:
                     raise e
@@ -256,11 +256,11 @@ class Consensus(object):
                     blocks = json.loads(result.content)
                 except ValueError:
                     continue
-                block = Block.from_dict(self.config, self.mongo, blocks[0])
-                if block.index == (self.latest_block.index + 1):
-                    # if block.special_min and (int(block.time) - int(self.latest_block.time)) < 600: # temporary fix until fork requiring 600 seconds for special min
-                    #     continue
-                    self.insert_consensus_block(block, peer)
+                for block in blocks:
+                    block = Block.from_dict(self.config, self.mongo, block)
+                    if block.index == (self.existing_blockchain.blocks[-1].index + 1):
+                        self.insert_consensus_block(block, peer)
+                        self.import_block({'peer': peer.to_string(), 'block': block.to_dict()})
             except Exception as e:
                 if self.debug:
                     print e
