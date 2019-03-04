@@ -82,6 +82,7 @@ class PoolPayer(object):
 
         already_used = self.already_used(block.get_coinbase())
         if already_used:
+            self.mongo.db.shares.remove({'index': block.index})
             return
 
         existing = self.mongo.db.share_payout.find_one({'index': block.index})
