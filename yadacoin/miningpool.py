@@ -26,6 +26,8 @@ class MiningPool(object):
             self.max_block_time = 600
         elif self.config.network == 'testnet':
             self.max_block_time = 10
+        elif self.config.network == 'regnet':
+            self.max_block_time = 0
 
         self.max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 

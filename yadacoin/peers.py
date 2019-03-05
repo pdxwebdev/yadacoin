@@ -29,6 +29,16 @@ class Peers(object):
 
     @classmethod
     def init(cls, config, mongo, network='mainnet', my_peer=True):
+        if network == 'regnet':
+            # Insert ourself to have at least one peer. Not sure this is required, but allows for more tests coverage.
+            cls.peers.append(
+                    Peer(
+                        config, mongo,
+                        config.serve_host, config.serve_port,
+                        peer.get('bulletin_secret')
+                    )
+                )
+            return
         if network == 'mainnet':
             url = 'https://yadacoin.io/peers'
         elif network == 'testnet':
@@ -94,6 +104,8 @@ class Peer(object):
 
     def report(self):
         try:
+            if self.config.network == 'regnet':
+                return
             if self.config.network == 'mainnet':
                 url = 'https://yadacoin.io/peers'
             elif self.config.network == 'testnet':
@@ -154,6 +166,8 @@ class Peer(object):
     
     @classmethod
     def save_my_peer(cls, config, mongo, network):
+        if self.config.network == 'regnet':
+            return
         peer = config.peer_host + ":" + str(config.peer_port)
         mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
         if network == 'mainnet':
