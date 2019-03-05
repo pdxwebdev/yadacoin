@@ -166,7 +166,7 @@ class Peer(object):
     
     @classmethod
     def save_my_peer(cls, config, mongo, network):
-        if self.config.network == 'regnet':
+        if config.network == 'regnet':
             return
         peer = config.peer_host + ":" + str(config.peer_port)
         mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
