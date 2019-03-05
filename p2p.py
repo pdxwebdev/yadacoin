@@ -43,7 +43,7 @@ if __name__ == '__main__':
     parser.add_argument('config', default="config.json", nargs="?", help='config file')
     parser.add_argument('to', default="", nargs="?", help='to')
     parser.add_argument('value', default=0, nargs="?", help='amount')
-    parser.add_argument('-n', '--network', default='mainnet', help='Specify maintnet or testnet')
+    parser.add_argument('-n', '--network', default='mainnet', help='Specify mainnet, testnet or regnet')
     parser.add_argument('-c', '--cores', default=multiprocessing.cpu_count(), help='Specify number of cores to use')
     parser.add_argument('-p', '--pool', default='', help='Specify pool to use')
     parser.add_argument('-d', '--debug', default=False, help='Debug messages')
