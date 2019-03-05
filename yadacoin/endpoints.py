@@ -716,16 +716,17 @@ class BlockchainSocketServer(Namespace):
             print "block is bad"
             raise e
         try:
-            requests.post(
-                'https://yadacoin.io/peers',
-                json.dumps({
-                    'host': config.peer_host,
-                    'port': config.peer_port
-                }),
-                headers={
-                    "Content-Type": "application/json"
-                }
-            )
+            if regnet not in config.network:
+                requests.post(
+                    'https://yadacoin.io/peers',
+                    json.dumps({
+                        'host': config.peer_host,
+                        'port': config.peer_port
+                    }),
+                    headers={
+                        "Content-Type": "application/json"
+                    }
+                )
         except:
             print 'ERROR: failed to get peers, exiting...'
 
