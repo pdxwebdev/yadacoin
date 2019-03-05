@@ -260,7 +260,7 @@ class Consensus(object):
                     block = Block.from_dict(self.config, self.mongo, block)
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
                         self.insert_consensus_block(block, peer)
-                        self.import_block({'peer': peer.to_string(), 'block': block.to_dict()})
+                        self.import_block({'peer': peer.to_string(), 'block': block.to_dict(), 'extra_blocks': blocks})
             except Exception as e:
                 if self.debug:
                     print e
@@ -268,10 +268,14 @@ class Consensus(object):
     def import_block(self, block_data):
         block = Block.from_dict(self.config, self.mongo, block_data['block'])
         peer = Peer.from_string(self.config, self.mongo, block_data['peer'])
+        if 'extra_blocks' in block_data:
+            extra_blocks = [Block.from_dict(self.config, self.mongo, x) for x in block_data['extra_blocks']]
+        else:
+            extra_blocks = None
         if self.debug:
             print self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)
         try:
-            result = self.integrate_block_with_existing_chain(block)
+            result = self.integrate_block_with_existing_chain(block, extra_blocks)
             if result is False:
                 self.mongo.db.consensus.update(
                     {
@@ -296,10 +300,12 @@ class Consensus(object):
         except IndexError as e:
             self.retrace(block, peer)
 
-    def integrate_block_with_existing_chain(self, block):
+    def integrate_block_with_existing_chain(self, block, extra_blocks=None):
         block.verify()
         for transaction in block.transactions:
             try:
+                if extra_blocks:
+                    transaction.extra_blocks = extra_blocks
                 transaction.verify()
             except InvalidTransactionException as e:
                 print e
@@ -320,9 +326,11 @@ class Consensus(object):
             return True
         height = block.index
         last_block = self.existing_blockchain.blocks[block.index - 1]
+        if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
+            raise ForkException()
         if not last_block:
             raise ForkException()
-        last_time = last_block.time
+
         target = BlockFactory.get_target(self.config, self.mongo, height, last_block, block, self.existing_blockchain)
         if ((int(block.hash, 16) < target) or 
             (block.special_min and block.index < 35200) or 

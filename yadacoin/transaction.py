@@ -260,7 +260,8 @@ class Transaction(object):
         txn_hash='',
         inputs='',
         outputs='',
-        coinbase=False
+        coinbase=False,
+        extra_blocks=None
     ):
         self.config = config
         self.mongo = mongo
@@ -276,6 +277,7 @@ class Transaction(object):
         self.requested_rid = requested_rid if requested_rid else ''
         self.hash = txn_hash
         self.outputs = []
+        self.extra_blocks = extra_blocks
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
@@ -406,9 +408,21 @@ class Transaction(object):
         input_hashes = []
         for x in self.inputs:
             txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
-            if not txn:
-                raise MissingInputTransactionException("This transaction is not in the blockchain.")
-            input_hashes.append(str(txn.transaction_signature))
+            if txn:
+                input_hashes.append(str(txn.transaction_signature))
+            else:
+                found = False
+                if self.extra_blocks:
+                    for block in self.extra_blocks:
+                        for xtxn in block.transactions:
+                            if xtxn.transaction_signature == x.id:
+                                input_hashes.append(str(xtxn.transaction_signature))
+                                found = True
+                                break
+                        if found:
+                            break
+                if not found:
+                    raise MissingInputTransactionException("This transaction is not in the blockchain.")
 
         return ''.join(sorted(input_hashes, key=lambda v: v.lower()))
 

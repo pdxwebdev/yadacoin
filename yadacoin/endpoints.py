@@ -862,7 +862,7 @@ class ExplorerSearchView(View):
             if res.count():
                 balance = BU.get_wallet_balance(config, mongo, term)
                 return json.dumps({
-                    'balance': balance,
+                    'balance': "{0:.8f}".format(balance),
                     'resultType': 'txn_outputs_to',
                     'result': [self.changetime(x) for x in res]
                 }, indent=4)
