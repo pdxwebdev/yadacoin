@@ -716,7 +716,7 @@ class BlockchainSocketServer(Namespace):
             print "block is bad"
             raise e
         try:
-            if regnet not in config.network:
+            if 'regnet' not in config.network:
                 requests.post(
                     'https://yadacoin.io/peers',
                     json.dumps({
