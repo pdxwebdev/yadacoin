@@ -191,6 +191,7 @@ def get_rid():
 
 @app.route('/get-block')
 def get_block():
+    mongo = current_app.config['yada_mongo']
     blocks = mongo.db.blocks.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
     return json.dumps(blocks[0] if blocks.count() else {}, indent=4), 404
 

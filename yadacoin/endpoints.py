@@ -859,7 +859,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term')
             re.search(r'[A-Fa-f0-9]+', term).group(0)
-            res = mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
+            res = mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
             if res.count():
                 balance = BU.get_wallet_balance(config, mongo, term)
                 return json.dumps({
