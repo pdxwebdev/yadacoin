@@ -119,7 +119,7 @@ class MiningPool(object):
                 self.refresh()
             else:
                 try:
-                    start_nonce += 10000000
+                    start_nonce += 100000000
                 except:
                     start_nonce = 0
             self.index = latest_block_index
@@ -128,7 +128,7 @@ class MiningPool(object):
                 self.block_factory.block.target = self.max_target
                 self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
                 self.block_factory.block.time = str(int(time.time()))
-            yield [start_nonce, start_nonce + 10000000]
+            yield [start_nonce, start_nonce + 100000000]
 
     def combine_transaction_lists(self):
         transactions = self.mongo.db.fastgraph_transactions.find()
