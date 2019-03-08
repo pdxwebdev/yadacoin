@@ -288,7 +288,7 @@ class Transaction(object):
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
         for x in inputs:
-            if 'signature' in x and 'public_key' in x:
+            if 'signature' in x:
                 self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
