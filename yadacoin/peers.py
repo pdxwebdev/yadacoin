@@ -4,6 +4,7 @@ import pymongo
 from mongo import Mongo
 
 class Peers(object):
+    peers = []
     def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo
@@ -29,7 +30,13 @@ class Peers(object):
 
     @classmethod
     def init(cls, config, mongo, network='mainnet', my_peer=True):
+        cls.peers = []
         if network == 'regnet':
+            peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}})
+            if not peer:
+                return
+            else:
+                peer = peer.get('mypeer')
             # Insert ourself to have at least one peer. Not sure this is required, but allows for more tests coverage.
             cls.peers.append(
                     Peer(
@@ -43,7 +50,7 @@ class Peers(object):
             url = 'https://yadacoin.io/peers'
         elif network == 'testnet':
             url = 'http://yadacoin.io:8888/peers'
-        cls.peers = []
+
         try:
             if my_peer:
                 cls.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
