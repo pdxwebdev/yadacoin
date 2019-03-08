@@ -63,8 +63,8 @@ class TransactionFactory(object):
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
         for x in inputs:
-            if 'signature' in x and 'public_key' in x:
-                self.inputs.append(ExternalInput.from_dict(x))
+            if 'signature' in x:
+                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
@@ -134,8 +134,8 @@ class TransactionFactory(object):
             inputs = []
             for input_txn in input_txns:
                 if input_txn['id'] not in mtxn_ids:
-                    if 'signature' in input_txn and 'public_key' in input_txn:
-                        inputs.append(ExternalInput.from_dict(input_txn))
+                    if 'signature' in input_txn:
+                        inputs.append(ExternalInput.from_dict(self.config, self.mongo, input_txn))
                     else:
                         inputs.append(Input.from_dict(input_txn))
 
@@ -149,8 +149,13 @@ class TransactionFactory(object):
                 for y in inputs:
                     print y.id
                     txn = BU.get_transaction_by_id(self.config, self.mongo, y.id, instance=True)
+                    if isinstance(y, ExternalInput):
+                        y.verify()
+                        address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
+                    else:
+                        address = my_address
                     for txn_output in txn.outputs:
-                        if txn_output.to == my_address:
+                        if txn_output.to == address:
                             input_sum += txn_output.value
                             needed_inputs.append(y)
                             if input_sum >= (sum([x.value for x in self.outputs])+self.fee):
@@ -284,7 +289,7 @@ class Transaction(object):
         self.inputs = []
         for x in inputs:
             if 'signature' in x and 'public_key' in x:
-                self.inputs.append(ExternalInput.from_dict(x))
+                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
@@ -478,23 +483,30 @@ class Input(object):
 
 
 class ExternalInput(Input):
-    def __init__(self, txn_id, public_key, signature):
+    def __init__(self, config, mongo, txn_id, signature):
+        self.config = config
+        self.mongo = mongo
         self.id = txn_id
-        self.public_key = public_key
         self.signature = signature
+    
+    def verify(self):
+        txn = BU.get_transaction_by_id(self.config, self.mongo, self.id, instance=True)
+        result = verify_signature(base64.b64decode(self.signature), self.id, txn.public_key.decode('hex'))
+        if not result:
+            raise Exception('Invalid external input')
 
     @classmethod
-    def from_dict(cls, txn):
+    def from_dict(cls, config, mongo, txn):
         return cls(
+            config=config,
+            mongo=mongo,
             txn_id=txn.get('id', ''),
-            public_key=txn.get('public_key', ''),
             signature=txn.get('signature', '')
         )
 
     def to_dict(self):
         return {
             'id': self.id,
-            'public_key': self.public_key,
             'signature': self.signature
         }
 
