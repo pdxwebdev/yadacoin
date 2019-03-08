@@ -180,9 +180,10 @@ class TransactionFactory(object):
                 self.outputs.append(return_change_output)
 
     def get_input_hashes(self):
+        from fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
+            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             input_hashes.append(str(txn.transaction_signature))
 
         return ''.join(sorted(input_hashes, key=str.lower))
@@ -315,6 +316,7 @@ class Transaction(object):
         )
 
     def verify(self):
+        from fastgraph import FastGraph
         verify_hash = self.generate_hash()
         address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
 
@@ -336,7 +338,10 @@ class Transaction(object):
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, BU.get_transaction_by_id(self.config, self.mongo, txn.id))
+            input_txn = BU.get_transaction_by_id(self.config, self.mongo, txn.id, include_fastgraph=isinstance(self, FastGraph))
+            if not input_txn:
+                raise InvalidTransactionException("Input not found on blockchain.")
+            txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, input_txn)
 
             found = False
             for output in txn_input.outputs:
@@ -405,9 +410,10 @@ class Transaction(object):
         return hashout
 
     def get_input_hashes(self):
+        from fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
+            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             if txn:
                 input_hashes.append(str(txn.transaction_signature))
             else:

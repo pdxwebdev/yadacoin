@@ -1246,7 +1246,7 @@ class BU(object):  # Blockchain Utilities
         return base64.b64encode(signature)
 
     @classmethod
-    def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=True):
+    def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=False):
         from transaction import Transaction, Input, Crypt
         from fastgraph import FastGraph
         res = mongo.db.blocks.find({"transactions.id": id})

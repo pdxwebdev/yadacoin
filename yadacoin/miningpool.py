@@ -50,9 +50,6 @@ class MiningPool(object):
             self.height = block.index
 
         try:
-            if self.height > 0:
-                last_time = block.time
-
             self.block_factory = BlockFactory(
                 config=self.config,
                 mongo=self.mongo,
@@ -62,73 +59,82 @@ class MiningPool(object):
                 index=self.height,
                 version=BU.get_version_for_height(self.height))
             
-            self.special_min = self.get_special_min(self.block_factory.block)
-            if self.special_min:
-                self.target = self.max_target
-            else:
-                i = 1
-                while 1:
-                    res = self.mongo.db.blocks.find_one({
-                        'index': self.height - i,
-                        'special_min': False,
-                        'target': {'$ne': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'}
-                    })
-                    if res:
-                        chain = [x for x in self.mongo.db.blocks.find({
-                            'index': {'$gte': res['index']}
-                        })]
-                        break
-                    else:
-                        i += 1
-                self.target = BlockFactory.get_target(
-                    self.config,
-                    self.mongo,
-                    self.height,
-                    block,
-                    self.block_factory.block,
-                    Blockchain(
-                        self.config,
-                        self.mongo,
-                        chain,
-                        partial=True
-                    )
-                )
-            self.block_factory.block.special_min = self.special_min
-            self.block_factory.block.target = self.target
+            self.set_target(int(self.block_factory.block.time))
+            if not self.block_factory.block.special_min:
+                self.set_target_from_last_non_special_min(block)
             self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
         except Exception as e:
-            raise
+            raise e
 
-    def get_special_min(self, block):
-        if self.height > 0:
-            time_elapsed_since_last_block = int(time.time()) - int(BU.get_latest_block(self.config, self.mongo)['time'])
-
-            # special min case
-            if time_elapsed_since_last_block > self.max_block_time:
-                return True
+    def set_target(self, to_time):
+        latest_block = BU.get_latest_block(self.config, self.mongo)
+        if self.block_factory.block.index >= 38144:
+            if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
+                target_factor = (int(to_time) - int(latest_block['time'])) / self.max_block_time
+                target = self.block_factory.block.target * (target_factor * 4)
+                if target > self.max_target:
+                    self.block_factory.block.target = self.max_target
+                self.block_factory.block.special_min = True
             else:
-                return False
+                self.block_factory.block.special_min = False
+        elif self.block_factory.block.index < 38144:
+            if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
+                self.block_factory.block.target = self.max_target
+                self.block_factory.block.special_min = True
+            else:
+                self.block_factory.block.special_min = False
+    
+    def set_target_from_last_non_special_min(self, latest_block):
+        i = 1
+        while 1:
+            res = self.mongo.db.blocks.find_one({
+                'index': self.height - i,
+                'special_min': False,
+                'target': {'$ne': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'}
+            })
+            if res:
+                chain = [x for x in self.mongo.db.blocks.find({
+                    'index': {'$gte': res['index']}
+                })]
+                break
+            else:
+                i += 1
+        self.block_factory.block.target = BlockFactory.get_target(
+            self.config,
+            self.mongo,
+            self.height,
+            latest_block,
+            self.block_factory.block,
+            Blockchain(
+                self.config,
+                self.mongo,
+                chain,
+                partial=True
+            )
+        )
     
     def nonce_generator(self):
         latest_block_index = BU.get_latest_block(self.config, self.mongo)['index']
         while 1:
-            next_latest_block_index = BU.get_latest_block(self.config, self.mongo)['index']
+            next_latest_block = BU.get_latest_block(self.config, self.mongo)
+            next_latest_block_index = next_latest_block['index']
             if latest_block_index < next_latest_block_index:
                 latest_block_index = next_latest_block_index
                 start_nonce = 0
                 self.refresh()
             else:
                 try:
-                    start_nonce += 100000000
+                    start_nonce += 10000000
                 except:
                     start_nonce = 0
             self.index = latest_block_index
-            self.block_factory.block.special_min = self.get_special_min(self.block_factory.block)
+            to_time = int(time.time())
+            self.set_target(to_time)
             if self.block_factory.block.special_min:
-                self.block_factory.block.target = self.max_target
                 self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
                 self.block_factory.block.time = str(int(time.time()))
-            yield [start_nonce, start_nonce + 100000000]
+            self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
+            yield [start_nonce, start_nonce + 10000000]
 
     def combine_transaction_lists(self):
         transactions = self.mongo.db.fastgraph_transactions.find()

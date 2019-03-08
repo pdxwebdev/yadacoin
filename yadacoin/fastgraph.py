@@ -113,7 +113,7 @@ class FastGraph(Transaction):
         for inp in self.inputs:
             inp = inp.id
             while 1:
-                txn = BU.get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=False)
+                txn = BU.get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=True)
                 if txn:
                     if 'rid' in txn and txn['rid'] and 'dh_public_key' in txn and txn['dh_public_key']:
                         if rid and txn['rid'] != rid:
