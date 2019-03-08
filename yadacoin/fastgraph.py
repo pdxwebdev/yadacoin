@@ -38,7 +38,8 @@ class FastGraph(Transaction):
         inputs='',
         outputs='',
         coinbase=False,
-        signatures=None
+        signatures=None,
+        extra_blocks=None
     ):
         self.config = config
         self.mongo = mongo
@@ -54,6 +55,7 @@ class FastGraph(Transaction):
         self.requested_rid = requested_rid
         self.hash = txn_hash
         self.outputs = []
+        self.extra_blocks = extra_blocks
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
         self.inputs = []

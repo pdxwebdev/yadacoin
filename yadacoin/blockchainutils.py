@@ -78,15 +78,8 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_unspent_transactions(cls, config, mongo, address, ids=None, needed_value=None):
-        spent_fastgraph_ids = []
-        for x in cls.get_wallet_unspent_fastgraph_transactions(config, mongo, address):
-            spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
-            yield x
-
         res = cls.wallet_unspent_worker(config, mongo, address, ids, needed_value)
         for x in res:
-            if x['id'] in spent_fastgraph_ids:
-                continue
             x['txn']['height'] = x['height']
             yield x['txn']
 

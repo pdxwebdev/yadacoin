@@ -297,9 +297,15 @@ class RidWalletView(View):
         bulletin_secret = request.args.get('bulletin_secret').replace(' ', "+")
         rid = TU.generate_rid(config, bulletin_secret)
         unspent_transactions = [x for x in BU.get_wallet_unspent_transactions(config, mongo, address)]
+        spent_fastgraph_ids = []
+        for x in BU.get_wallet_unspent_fastgraph_transactions(config, mongo, address):
+            spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
+
         regular_txns = []
         txns_for_fastgraph = []
         for txn in unspent_transactions:
+            if txn['id'] in spent_fastgraph_ids:
+                continue
             if 'signatures' in txn and txn['signatures']:
                 fastgraph = FastGraph.from_dict(config, mongo, 0, txn)
                 origin_fasttrack = fastgraph.get_origin_relationship(rid)
