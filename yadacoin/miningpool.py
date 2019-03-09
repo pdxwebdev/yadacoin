@@ -68,7 +68,7 @@ class MiningPool(object):
 
     def set_target(self, to_time):
         latest_block = BU.get_latest_block(self.config, self.mongo)
-        if self.block_factory.block.index >= 38144:
+        if self.block_factory.block.index >= 38432:
             if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
                 target_factor = (int(to_time) - int(latest_block['time'])) / self.max_block_time
                 target = self.block_factory.block.target * (target_factor * 4)
@@ -77,7 +77,7 @@ class MiningPool(object):
                 self.block_factory.block.special_min = True
             else:
                 self.block_factory.block.special_min = False
-        elif self.block_factory.block.index < 38144:
+        elif self.block_factory.block.index < 38432:
             if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
                 self.block_factory.block.target = self.max_target
                 self.block_factory.block.special_min = True
