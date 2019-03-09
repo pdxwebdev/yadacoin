@@ -150,7 +150,6 @@ class MiningPool(object):
     def get_pending_transactions(self):
         transaction_objs = []
         unspent_indexed = {}
-        unspent_fastgraph_indexed = {}
         used_sigs = []
         for txn in self.combine_transaction_lists():
             try:
@@ -188,13 +187,6 @@ class MiningPool(object):
                     res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address, needed_value=needed_value)
                     unspent_ids = [x['id'] for x in res]
                     unspent_indexed[address] = unspent_ids
-            
-                if address in unspent_fastgraph_indexed:
-                    unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
-                else:
-                    res = BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, address)
-                    unspent_fastgraph_ids = [x['id'] for x in res]
-                    unspent_fastgraph_indexed[address] = unspent_fastgraph_ids
 
                 failed1 = False
                 failed2 = False
