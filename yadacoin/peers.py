@@ -5,6 +5,7 @@ from mongo import Mongo
 
 class Peers(object):
     peers = []
+    peers_json = ''
     def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo

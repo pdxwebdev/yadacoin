@@ -241,14 +241,14 @@ def peers():
                     'active': True, 
                     'failed': 0
                 }, upsert=True)
-            Peers.peers = peers.init_local()
+            Peers.peers_json = peers.init_local()
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
     else:
         if not hasattr(Peers, 'peers'):
-            Peers.peers = peers.init_local()
-        return Peers.peers
+            Peers.peers_json = peers.init_local()
+        return Peers.peers_json
 
 @app.route('/stats')
 def stats():
