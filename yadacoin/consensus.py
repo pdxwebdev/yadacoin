@@ -333,14 +333,9 @@ class Consensus(object):
 
         target = BlockFactory.get_target(self.config, self.mongo, height, last_block, block, self.existing_blockchain)
         target_block_time = 600
-        if block.index >= 38432 and (int(block.time) - int(last_block.time)) > target_block_time:
-            target_factor = (int(block.time) - int(last_block.time)) / target_block_time
-            target = target * (target_factor * 4)
-            if target > self.lowest:
-                target = self.lowest
         if ((int(block.hash, 16) < target) or 
             (block.special_min and block.index < 35200) or 
-            (block.index >= 35200 and block.index < 38432 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time)):
+            (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time)):
 
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                 self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)

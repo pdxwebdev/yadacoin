@@ -218,10 +218,11 @@ class BlockFactory(object):
             target = max_target
         else:
             block_to_check = block
-            time_elapsed_since_last_block =  int(block_to_check.time) - int(last_block.time)
-            if time_elapsed_since_last_block > max_block_time:
-                target = max_target
-                return target
+            if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time:
+                target_factor = (int(block.time) - int(last_block.time)) / max_block_time
+                target = block.target * (target_factor * 4)
+                if target > max_target:
+                    return max_target
             block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
             if blockchain.partial:
