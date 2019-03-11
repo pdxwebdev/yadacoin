@@ -223,8 +223,7 @@ class BlockFactory(object):
                 target = block.target * (target_factor * 4)
                 if target > max_target:
                     return max_target
-                else:
-                    return target
+                return target
             block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
             if blockchain.partial:
