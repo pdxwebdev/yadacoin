@@ -36,8 +36,6 @@ class Peers(object):
             peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}})
             if not peer:
                 return
-            else:
-                peer = peer.get('mypeer')
             # Insert ourself to have at least one peer. Not sure this is required, but allows for more tests coverage.
             cls.peers.append(
                     Peer(

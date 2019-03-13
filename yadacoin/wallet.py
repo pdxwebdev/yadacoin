@@ -14,28 +14,28 @@ class Wallet(object):
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
-        self.public_key = config['public_key']
+        self.public_key = config.get('public_key')
         self.address = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
 
-        self.private_key = config['private_key']
+        self.private_key = config.get('private_key')
         self.wif = self.to_wif(self.private_key)
         self.bulletin_secret = self.inst_get_bulletin_secret()
 
-        self.mongodb_host = config['mongodb_host']
-        self.database = config['database']
-        self.site_database = config['site_database']
-        self.web_server_host = config['web_server_host']
-        self.web_server_port = config['web_server_port']
-        if config['peer_host'] == '0.0.0.0' or config['peer_host'] == 'localhost':
+        self.mongodb_host = config.get('mongodb_host')
+        self.database = config.get('database')
+        self.site_database = config.get('site_database')
+        self.web_server_host = config.get('web_server_host')
+        self.web_server_port = config.get('web_server_port')
+        if config.get('peer_host') == '0.0.0.0' or config.get('peer_host') == 'localhost':
             raise Exception("cannot use localhost or 0.0.0.0, must specify public ipv4 address")
-        if config['peer_host'] == '[my public ip]':
+        if config.get('peer_host') == '[my public ip]':
             raise Exception("please configure your peer_post to your public ipv4 address")
-        self.peer_host = config['peer_host']
-        self.peer_port = config['peer_port']
-        self.serve_host = config['serve_host']
-        self.serve_port = config['serve_port']
-        self.callbackurl = config['callbackurl']
-        self.fcm_key = config['fcm_key']
+        self.peer_host = config.get('peer_host')
+        self.peer_port = config.get('peer_port')
+        self.serve_host = config.get('serve_host')
+        self.serve_port = config.get('serve_port')
+        self.callbackurl = config.get('callbackurl')
+        self.fcm_key = config.get('fcm_key')
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None):
@@ -97,38 +97,37 @@ class Wallet(object):
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
-        cls.public_key = config['public_key']
+        cls.public_key = config.get('public_key')
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
 
-        cls.private_key = config['private_key']
+        cls.private_key = config.get('private_key')
         cls.wif = cls.to_wif(cls.private_key)
         cls.bulletin_secret = cls.get_bulletin_secret()
 
-        cls.mongodb_host = config['mongodb_host']
-        cls.database = config['database']
-        cls.site_database = config['site_database']
-        cls.web_server_host = config['web_server_host']
-        cls.web_server_port = config['web_server_port']
-        if config['peer_host'] == '0.0.0.0' or config['peer_host'] == 'localhost':
+        cls.mongodb_host = config.get('mongodb_host')
+        cls.database = config.get('database')
+        cls.site_database = config.get('site_database')
+        cls.web_server_host = config.get('web_server_host')
+        cls.web_server_port = config.get('web_server_port')
+        if config.get('peer_host') == '0.0.0.0' or config.get('peer_host') == 'localhost':
             raise Exception("cannot use localhost or 0.0.0.0, must specify public ipv4 address")
-        if config['peer_host'] == '[my public ip]':
+        if config.get('peer_host') == '[my public ip]':
             raise Exception("please configure your peer_post to your public ipv4 address")
-        cls.peer_host = config['peer_host']
-        cls.peer_port = config['peer_port']
-        cls.serve_host = config['serve_host']
-        cls.serve_port = config['serve_port']
-        cls.callbackurl = config['callbackurl']
-        cls.fcm_key = config['fcm_key']
+        cls.peer_host = config.get('peer_host')
+        cls.peer_port = config.get('peer_port')
+        cls.serve_host = config.get('serve_host')
+        cls.serve_port = config.get('serve_port')
+        cls.callbackurl = config.get('callbackurl')
+        cls.fcm_key = config.get('fcm_key')
 
-    @classmethod
     def inst_get_bulletin_secret(self):
         from transactionutils import TU
-        return TU.generate_deterministic_signature(self.username, self.private_key)
+        return TU.generate_deterministic_signature(self, self.username, self.private_key)
 
     @classmethod
-    def get_bulletin_secret(cls, private_key=None):
+    def get_bulletin_secret(cls, private_key=None, username=''):
         from transactionutils import TU
-        return TU.generate_deterministic_signature(config.username, private_key)
+        return TU.generate_deterministic_signature(username, private_key)
 
     @classmethod
     def to_wif(cls, private_key):

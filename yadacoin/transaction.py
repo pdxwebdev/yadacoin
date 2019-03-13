@@ -63,7 +63,7 @@ class TransactionFactory(object):
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
         for x in inputs:
-            if 'signature' in x:
+            if 'signature' in x and 'public_key' in x and 'address' in x:
                 self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
@@ -134,7 +134,7 @@ class TransactionFactory(object):
             inputs = []
             for input_txn in input_txns:
                 if input_txn['id'] not in mtxn_ids:
-                    if 'signature' in input_txn:
+                    if 'signature' in input_txn and 'public_key' in input_txn and 'address' in input_txn:
                         inputs.append(ExternalInput.from_dict(self.config, self.mongo, input_txn))
                     else:
                         inputs.append(Input.from_dict(input_txn))
@@ -288,7 +288,7 @@ class Transaction(object):
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
         for x in inputs:
-            if 'signature' in x:
+            if 'signature' in x and 'public_key' in x and 'address' in x:
                 self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
@@ -350,12 +350,12 @@ class Transaction(object):
 
             found = False
             for output in txn_input.outputs:
-                if hasattr(txn, 'public_key') and hasattr(txn, 'signature'):
-                    ext_address = P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex'))
-                    if str(output.to) == str(ext_address):
-                        found = True
+                if isinstance(txn, ExternalInput):
+                    ext_address = P2PKHBitcoinAddress.from_pubkey(txn_input.public_key.decode('hex'))
+                    int_address = P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex'))
+                    if str(output.to) == str(ext_address) and str(int_address) == str(txn.address):
                         try:
-                            result = verify_signature(base64.b64decode(txn.signature), txn.id, txn.public_key.decode('hex'))
+                            result = verify_signature(base64.b64decode(txn.signature), txn.id, txn_input.public_key.decode('hex'))
                             if not result:
                                 raise Exception()
                         except:
@@ -365,12 +365,15 @@ class Transaction(object):
                                     raise
                             except:
                                 raise InvalidTransactionSignatureException("external input transaction signature did not verify")
+                        
+                        found = True
+                        total_input += float(output.value)
                 elif str(output.to) == str(address):
                     found = True
                     total_input += float(output.value)
                 
             if not found:
-                if hasattr(txn, 'public_key') and hasattr(txn, 'signature'):
+                if isinstance(txn, ExternalInput):
                     raise InvalidTransactionException("external input signing information did not match any recipients of the input transaction")
                 else:
                     raise InvalidTransactionException("using inputs from a transaction where you were not one of the recipients.")
@@ -483,12 +486,14 @@ class Input(object):
 
 
 class ExternalInput(Input):
-    def __init__(self, config, mongo, txn_id, signature):
+    def __init__(self, config, mongo, public_key, address, txn_id, signature):
         self.config = config
         self.mongo = mongo
+        self.public_key = public_key
         self.id = txn_id
         self.signature = signature
-    
+        self.address = address
+
     def verify(self):
         txn = BU.get_transaction_by_id(self.config, self.mongo, self.id, instance=True)
         result = verify_signature(base64.b64decode(self.signature), self.id, txn.public_key.decode('hex'))
@@ -500,12 +505,16 @@ class ExternalInput(Input):
         return cls(
             config=config,
             mongo=mongo,
+            public_key=txn.get('public_key', ''),
+            address=txn.get('address', ''),
             txn_id=txn.get('id', ''),
             signature=txn.get('signature', '')
         )
 
     def to_dict(self):
         return {
+            'public_key': self.public_key,
+            'address': self.address,
             'id': self.id,
             'signature': self.signature
         }

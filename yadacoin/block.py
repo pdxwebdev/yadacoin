@@ -11,7 +11,7 @@ from ecdsa import SECP256k1, SigningKey, VerifyingKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from transaction import TransactionFactory, Transaction, Output, InvalidTransactionException
+from transaction import TransactionFactory, Transaction, Output, InvalidTransactionException, ExternalInput, Input
 from blockchainutils import BU
 from transactionutils import TU
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
@@ -90,20 +90,19 @@ class BlockFactory(object):
                 res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address)
                 unspent_ids = [x['id'] for x in res]
                 unspent_indexed[address] = unspent_ids
-            
-            if address in unspent_fastgraph_indexed:
-                unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
-            else:
-                res = BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, address)
-                unspent_fastgraph_ids = [x['id'] for x in res]
-                unspent_fastgraph_indexed[address] = unspent_fastgraph_ids
 
             failed = False
             used_ids_in_this_txn = []
             
             for x in transaction_obj.inputs:
                 if x.id not in unspent_ids:
-                    failed = True
+                    if isinstance(x, ExternalInput):
+                        txn2 = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
+                        address2 = str(P2PKHBitcoinAddress.from_pubkey(txn2.public_key.decode('hex')))
+                        res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address2)
+                        unspent_ids2 = [y['id'] for y in res]
+                        if x.id not in unspent_ids2:
+                            failed = True
                 if x.id in used_ids_in_this_txn:
                     failed = True
                 used_ids_in_this_txn.append(x.id)
