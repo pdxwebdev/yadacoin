@@ -248,7 +248,7 @@ class Consensus(object):
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),
                         start_index=int(self.latest_block.index) + 1,
-                        end_index=int(self.latest_block.index) + 1000
+                        end_index=int(self.latest_block.index) + 100
                     ), timeout=1)
                 except Exception as e:
                     raise e
