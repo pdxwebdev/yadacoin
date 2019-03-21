@@ -299,6 +299,15 @@ class Consensus(object):
             self.retrace(block, peer)
         except IndexError as e:
             self.retrace(block, peer)
+        except Exception as e:
+            self.mongo.db.consensus.update(
+                {
+                    'peer': peer.to_string(),
+                    'index': block.index,
+                    'id': block.signature
+                },
+                {'$set': {'ignore': True}}
+            )
 
     def integrate_block_with_existing_chain(self, block, extra_blocks=None):
         block.verify()

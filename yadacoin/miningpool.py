@@ -223,7 +223,7 @@ class MiningPool(object):
                 print e
                 #print 'rejected transaction', txn['id']
                 pass
-            except BaseException as e:
+            except Exception as e:
                 print e
                 #print 'rejected transaction', txn['id']
                 pass

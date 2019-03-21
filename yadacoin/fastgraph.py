@@ -105,7 +105,7 @@ class FastGraph(Transaction):
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
         if first_bulletin_secret == second_bulletin_secret:
-            raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
+            raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(first_bulletin_secret), str(second_bulletin_secret)], key=str.lower)
         return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 

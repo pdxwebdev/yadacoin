@@ -93,7 +93,7 @@ class TransactionFactory(object):
                     self.dh_private_key = a.encode('hex')
                 self.relationship = self.generate_relationship()
                 if not private_key:
-                    raise BaseException('missing private key')
+                    raise Exception('missing private key')
                 self.cipher = Crypt(self.config.wif)
                 self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
         else:
@@ -200,7 +200,7 @@ class TransactionFactory(object):
     def generate_rid(self):
         my_bulletin_secret = self.config.get_bulletin_secret()
         if my_bulletin_secret == self.bulletin_secret:
-            raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
+            raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
         return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
@@ -236,16 +236,16 @@ class TransactionFactory(object):
     def generate_transaction_signature(self):
         return TU.generate_signature(self.hash, self.private_key)
 
-class InvalidTransactionException(BaseException):
+class InvalidTransactionException(Exception):
     pass
 
-class InvalidTransactionSignatureException(BaseException):
+class InvalidTransactionSignatureException(Exception):
     pass
 
-class MissingInputTransactionException(BaseException):
+class MissingInputTransactionException(Exception):
     pass
 
-class NotEnoughMoneyException(BaseException):
+class NotEnoughMoneyException(Exception):
     pass
 
 class Transaction(object):
@@ -386,7 +386,7 @@ class Transaction(object):
             total_output += float(txn.value)
         total = float(total_output) + float(self.fee)
         if "{0:.8f}".format(total_input) != "{0:.8f}".format(total):
-            raise BaseException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
+            raise Exception("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     def generate_hash(self):
         inputs_concat = self.get_input_hashes()

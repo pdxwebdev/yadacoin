@@ -8,7 +8,7 @@ from transaction import (
     NotEnoughMoneyException
 )
 
-class BlockChainException(BaseException):
+class BlockChainException(Exception):
     pass
 
 class Blockchain(object):

@@ -364,12 +364,12 @@ class Block(object):
     def verify(self):
         getcontext().prec = 8
         if int(self.version) != int(BU.get_version_for_height(self.index)):
-            raise BaseException("Wrong version for block height", self.version, BU.get_version_for_height(self.index))
+            raise Exception("Wrong version for block height", self.version, BU.get_version_for_height(self.index))
         try:
             txns = self.get_transaction_hashes()
             self.set_merkle_root(txns)
             if self.verify_merkle_root != self.merkle_root:
-                raise BaseException("Invalid block")
+                raise Exception("Invalid block")
         except:
             raise
 
@@ -377,7 +377,7 @@ class Block(object):
             header = BlockFactory.generate_header(self)
             hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
             if self.hash != hashtest:
-                raise BaseException('Invalid block')
+                raise Exception('Invalid block')
         except:
             raise
 
@@ -392,7 +392,7 @@ class Block(object):
                 if not result:
                     raise
             except:
-                raise BaseException("block signature is invalid")
+                raise Exception("block signature is invalid")
 
         # verify reward
         coinbase_sum = 0
@@ -408,7 +408,7 @@ class Block(object):
         reward = BU.get_block_reward(self.config, self.mongo, self)
 
         if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
-            raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
+            raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -443,7 +443,7 @@ class Block(object):
                         failed = True
                     used_ids_in_this_txn.append(x.id)
                 if failed:
-                    raise BaseException('double spend', [x.id for x in txn.inputs])
+                    raise Exception('double spend', [x.id for x in txn.inputs])
         res = self.mongo.db.blocks.find({"index": (int(self.index) - 1)})
         if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:
             self.mongo.db.blocks.insert(self.to_dict())

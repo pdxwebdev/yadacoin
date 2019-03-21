@@ -718,7 +718,7 @@ class BlockchainSocketServer(Namespace):
         except Exception as e:
             print "block is bad"
             raise e
-        except BaseException as e:
+        except Exception as e:
             print "block is bad"
             raise e
         try:
@@ -746,7 +746,7 @@ class BlockchainSocketServer(Namespace):
             print "transaction is bad"
             print e
             raise Exception("transaction is bad")
-        except BaseException as e:
+        except Exception as e:
             print "transaction is bad"
             print e
             raise Exception("transaction is bad")
@@ -761,7 +761,7 @@ class BlockchainSocketServer(Namespace):
         except Exception as e:
             print e
             raise Exception("transaction is bad")
-        except BaseException as e:
+        except Exception as e:
             print e
             raise Exception("transaction is bad")
 
