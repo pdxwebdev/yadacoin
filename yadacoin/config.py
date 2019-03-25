@@ -1,5 +1,4 @@
 import hashlib
-import os
 import json
 import binascii
 import base58
@@ -10,13 +9,14 @@ from bip32utils import BIP32Key
 
 
 class Config(object):
+
     def __init__(self, config):
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
         self.public_key = config['public_key']
-        self.address = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
+        self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
         self.private_key = config['private_key']
         self.wif = self.to_wif(self.private_key)
@@ -40,32 +40,32 @@ class Config(object):
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None):
+        mnemonic = Mnemonic('english')
         # generate 12 word mnemonic seed
         if not seed and not xprv and not prv:
-            mnemonic = Mnemonic('english')
             seed = mnemonic.generate(256)
-        
         private_key = None
         if seed:
             # create bitcoin wallet
             entropy = mnemonic.to_entropy(seed)
             key = BIP32Key.fromEntropy(entropy)
-            private_key = key.PrivateKey().encode('hex')
+            private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
-
+        else:
+            raise Exception('No Seed')
         if prv:
-            private_key = PrivateKey.from_hex(prv.decode('hex')).to_hex()
+            private_key = PrivateKey.from_hex(bytes.fromhex(prv)).to_hex()
             extended_key = ''
 
         if xprv:
             key = BIP32Key.fromExtendedKey(xprv)
-            private_key = key.PrivateKey().encode('hex')
+            private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
         
         if xprv and child:
             for x in child:
                 key = key.ChildKey(int(x))
-                private_key = key.PrivateKey().encode('hex')
+                private_key = key.PrivateKey().hex()
 
         if not private_key:
             raise Exception('No key')
@@ -75,7 +75,7 @@ class Config(object):
             "xprv": extended_key or '',
             "private_key": private_key,
             "wif": cls.generate_wif(private_key),
-            "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().encode('hex'),
+            "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex(),
             "address": str(key.Address()),
             "serve_host": "0.0.0.0",
             "serve_port": 8000,
@@ -96,7 +96,8 @@ class Config(object):
 
     @classmethod
     def from_dict(cls, config):
-        from transactionutils import TU
+        from yadacoin.transactionutils import TU
+
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
@@ -125,7 +126,7 @@ class Config(object):
         cls.fcm_key = config['fcm_key']
 
     def get_bulletin_secret(self):
-        from transactionutils import TU
+        from yadacoin.transactionutils import TU
         return TU.generate_deterministic_signature(self, self.username, self.private_key)
 
     def to_wif(self, private_key):
@@ -134,7 +135,7 @@ class Config(object):
         first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
         second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
         final_key = extended_key+second_sha256[:8]
-        wif = base58.b58encode(binascii.unhexlify(final_key))
+        wif = base58.b58encode(binascii.unhexlify(final_key)).decode('utf-8')
         return wif
 
     @classmethod
@@ -144,7 +145,7 @@ class Config(object):
         first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
         second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
         final_key = extended_key+second_sha256[:8]
-        wif = base58.b58encode(binascii.unhexlify(final_key))
+        wif = base58.b58encode(binascii.unhexlify(final_key)).decode('utf-8')
         return wif
 
     def to_dict(self):

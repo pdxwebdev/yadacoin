@@ -3,17 +3,16 @@ import os
 import hashlib
 import binascii
 import base58
-import subprocess
+# import subprocess
 import requests
-import sys
 import argparse
 import getpass
 import sys
 sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/..')
-from bitcoin.wallet import P2PKHBitcoinAddress
+# from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
-from urllib2 import urlopen
-from yadacoin import Config
+# from urllib2 import urlopen
+from yadacoin.config import Config
 
 
 class Wif:
@@ -28,8 +27,10 @@ class Wif:
     def __str__(self):
         return self.value
 
+
 def from_wif(wif):
     return binascii.hexlify(base58.b58decode(wif))[2:-10]
+
 
 def to_wif(private_key_static):
     extended_key = "80"+private_key_static+"01"
@@ -39,6 +40,7 @@ def to_wif(private_key_static):
     wif = base58.b58encode(binascii.unhexlify(final_key))
     return wif
 
+
 parser = argparse.ArgumentParser(
     formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
@@ -47,7 +49,7 @@ new_parser = subparsers.add_parser('new')
 new_parser.set_defaults(which='new')
 new_parser.add_argument('username', help='Specify username')
 new_parser.add_argument('-p', '--password', type=Wif, help='Specify wif/Secret key [Enter to auto-generate]',
-    default=Wif.DEFAULT)
+                        default=Wif.DEFAULT)
 
 update_parser = subparsers.add_parser('update')
 update_parser.set_defaults(which='update')
@@ -62,12 +64,16 @@ auto_parser.add_argument('-m', '--mongo-host', help='Specify a mongodb host')
 
 args = parser.parse_args()
 
+"""
+TODO: add other apis in case this one is down. Allow to override from optional command line param
+"""
 public_ip = requests.get('https://api.ipify.org').text
+
 if args.which == 'new': 
     if args.password.value:
         num = from_wif(args.password.value)
     else:
-        num = os.urandom(32).encode('hex')
+        num = os.urandom(32).hex()
     pk = PrivateKey.from_hex(num)
     config = Config.generate(pk.to_hex())
     config.username = args.username
@@ -81,7 +87,7 @@ elif args.which == 'update':
             username = args.username
         config.username = username
         config.bulletin_secret = config.get_bulletin_secret()
-        print config.to_json()
+        print(config.to_json())
 elif args.which == 'auto':
     config = Config.generate()
     config.username = ''
@@ -96,7 +102,7 @@ elif args.which == 'auto':
             with open(args.create, 'w') as f:
                 f.write(out)
     else:
-        print out
+        print(out)
 
 
 

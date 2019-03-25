@@ -1,11 +1,9 @@
-import json
 import hashlib
-import os
 import base64
-import time
 import random
 import sys
 
+"""
 from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey
@@ -15,11 +13,10 @@ from pbkdf2 import PBKDF2
 from bitcoin.wallet import CBitcoinSecret
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from crypt import Crypt
+"""
 from coincurve.keys import PrivateKey
 from coincurve._libsecp256k1 import ffi
 from eccsnacks.curve25519 import scalarmult, scalarmult_base
-from config import Config
-from mongo import Mongo
 
 
 class TU(object):  # Transaction Utilities
@@ -33,16 +30,17 @@ class TU(object):  # Transaction Utilities
         if not private_key:
             private_key = config.private_key
         key = PrivateKey.from_hex(private_key)
-        signature = key.sign(message)
-        return base64.b64encode(signature)
+        signature = key.sign(message.encode('utf-8'))
+        return base64.b64encode(signature).decode('utf-8')
 
     @classmethod
     def generate_signature_with_private_key(cls, private_key, message):
         x = ffi.new('long *')
+        # TODO : no maxint in python3
         x[0] = random.SystemRandom().randint(0, sys.maxint)
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message, custom_nonce=(ffi.NULL, x))
-        return base64.b64encode(signature)
+        return base64.b64encode(signature).decode('utf-8')
 
     @classmethod
     def generate_signature(cls, message, private_key):
@@ -50,7 +48,7 @@ class TU(object):  # Transaction Utilities
         x[0] = random.SystemRandom().randint(0, sys.maxint)
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message, custom_nonce=(ffi.NULL, x))
-        return base64.b64encode(signature)
+        return base64.b64encode(signature).decode('utf-8')
 
     @classmethod
     def generate_rid(cls, config, bulletin_secret):
@@ -61,7 +59,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def get_shared_secrets_by_rid(cls, config, mongo, rid):
-        from blockchainutils import BU
+        from yadacoin.blockchainutils import BU
         shared_secrets = []
         dh_public_keys = []
         dh_private_keys = []
