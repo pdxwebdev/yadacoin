@@ -2,7 +2,6 @@ import sys
 import json
 import requests
 import datetime
-# from mongo import Mongo
 from yadacoin.peers import Peers, Peer
 from yadacoin.blockchainutils import BU
 from yadacoin.blockchain import Blockchain

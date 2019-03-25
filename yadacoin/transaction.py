@@ -3,23 +3,11 @@ import hashlib
 import os
 import base64
 import time
-"""
-from io import BytesIO
-from uuid import uuid4
-from ecdsa import SECP256k1, SigningKey, VerifyingKey
-from ecdsa.util import randrange_from_seed__trytryagain
-from Crypto.Cipher import AES
-from pbkdf2 import PBKDF2
-"""
-from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
-from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+
+from bitcoin.signmessage import BitcoinMessage, VerifyMessage
+from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import verify_signature
-from eccsnacks.curve25519 import scalarmult, scalarmult_base
-"""
-from pymongo import MongoClient
-from peers import Peers
-from mongo import Mongo
-"""
+from eccsnacks.curve25519 import scalarmult_base
 
 from yadacoin.crypt import Crypt
 from yadacoin.transactionutils import TU
@@ -168,7 +156,7 @@ class TransactionFactory(object):
                             if input_sum >= (sum([x.value for x in self.outputs])+self.fee):
                                 done = True
                                 break
-                    if done == True:
+                    if done:
                         break
 
                 if not done:

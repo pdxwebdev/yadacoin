@@ -1,15 +1,15 @@
 from socketIO_client import SocketIO, BaseNamespace
-from config import Config
-from mongo import Mongo
-from peers import Peers
-from blockchainutils import BU
-from transactionutils import TU
-from transaction import Transaction, TransactionFactory, Output, NotEnoughMoneyException
+
+from yadacoin.peers import Peers
+from yadacoin.blockchainutils import BU
+from yadacoin.transactionutils import TU
+from yadacoin.transaction import Transaction, TransactionFactory, Output, NotEnoughMoneyException
 
 
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
-        print 'error'
+        print('error')
+
 
 class Faucet(object):
     @classmethod
@@ -40,19 +40,19 @@ class Faucet(object):
                     ]
                 )
             except NotEnoughMoneyException as e:
-                print "not enough money yet"
+                print("not enough money yet")
                 return
             except Exception as e:
-                print x
+                print(e)
             try:
                 transaction.transaction.verify()
             except:
                 mongo.site_db.failed_faucet_transactions.insert(transaction.transaction.to_dict())
-                print 'faucet transaction failed'
+                print('faucet transaction failed')
             TU.save(config, mongo, transaction.transaction)
             x['last_id'] = transaction.transaction.transaction_signature
             mongo.site_db.faucet.update({'_id': x['_id']}, x)
-            print 'saved. sending...', x['address']
+            print('saved. sending...', x['address'])
             for peer in Peers.peers:
                 try:
                     socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
@@ -60,4 +60,4 @@ class Faucet(object):
                     chat_namespace.emit('newtransaction', transaction.transaction.to_dict())
                     socketIO.disconnect()
                 except Exception as e:
-                    print e
+                    print(e)

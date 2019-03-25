@@ -267,4 +267,3 @@ class FastGraphSignature(object):
 
     def to_string(self):
         return self.signature
-        

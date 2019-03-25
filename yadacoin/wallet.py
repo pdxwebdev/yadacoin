@@ -1,5 +1,4 @@
 import hashlib
-import os
 import json
 import binascii
 import base58
@@ -40,8 +39,8 @@ class Wallet(object):
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None):
         # generate 12 word mnemonic seed
+        mnemonic = Mnemonic('english')
         if not seed and not xprv and not prv:
-            mnemonic = Mnemonic('english')
             seed = mnemonic.generate(256)
         
         private_key = None
@@ -121,12 +120,12 @@ class Wallet(object):
         cls.fcm_key = config.get('fcm_key')
 
     def inst_get_bulletin_secret(self):
-        from transactionutils import TU
+        from yadacoin.transactionutils import TU
         return TU.generate_deterministic_signature(self, self.username, self.private_key)
 
     @classmethod
     def get_bulletin_secret(cls, private_key=None, username=''):
-        from transactionutils import TU
+        from yadacoin.transactionutils import TU
         return TU.generate_deterministic_signature(username, private_key)
 
     @classmethod

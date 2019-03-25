@@ -1,17 +1,9 @@
-# import socketio
 from flask import request, Flask
 from flask_cors import CORS
 from flask_socketio import SocketIO
 
 from yadacoin import endpoints
 from yadacoin.graph import Graph
-
-"""
-from peers import Peers, Peer
-from config import Config
-from gevent import pywsgi
-from mongo import Mongo
-"""
 
 
 class Serve(object):
@@ -24,7 +16,6 @@ class Serve(object):
         CORS(self.app, supports_credentials=True)
         endpoints.BaseGraphView.get_base_graph = self.get_base_graph
 
-        """
         self.app.add_url_rule('/transaction', view_func=endpoints.TransactionView.as_view('transaction'), methods=['GET', 'POST'])
         self.app.add_url_rule('/get-graph-info', view_func=endpoints.GraphView.as_view('graph'), methods=['GET', 'POST'])
         self.app.add_url_rule('/get-graph-sent-friend-requests', view_func=endpoints.GraphSentFriendRequestsView.as_view('graphsentfriendrequests'), methods=['GET', 'POST'])
@@ -41,27 +32,27 @@ class Serve(object):
         self.app.add_url_rule('/pool', view_func=endpoints.MiningPoolView.as_view('pool'))
         self.app.add_url_rule('/pool-submit', view_func=endpoints.MiningPoolSubmitView.as_view('poolsubmit'), methods=['GET', 'POST'])
         self.app.add_url_rule('/pool-explorer', view_func=endpoints.MiningPoolExplorerView.as_view('pool-explorer'))
-        """
+
 
         self.app.add_url_rule('/get-block', view_func=endpoints.GetBlockByHashView.as_view('get-block'), methods=['GET'])
         self.app.add_url_rule('/getblockheight', view_func=endpoints.GetBlockHeightView.as_view('get-block-height'))
 
-        """
+
         self.app.add_url_rule('/newtransaction', view_func=endpoints.NewTransactionView.as_view('new-transaction'), methods=['POST'])
-        """
+
         self.app.add_url_rule('/newblock', view_func=endpoints.NewBlockView.as_view('new-block'), methods=['POST'])
         self.app.add_url_rule('/get-blocks', view_func=endpoints.GetBlocksView.as_view('get-blocks-range'))
 
-        """
+
         self.app.add_url_rule('/create-raw-transaction', view_func=endpoints.CreateRawTransactionView.as_view('create-raw-transaction'), methods=['POST'])
         self.app.add_url_rule('/sign-raw-transaction', view_func=endpoints.SignRawTransactionView.as_view('sign-raw-transaction'), methods=['POST'])
         self.app.add_url_rule('/generate-wallet', view_func=endpoints.GenerateWalletView.as_view('generate-wallet'))
         self.app.add_url_rule('/generate-child-wallet', view_func=endpoints.GenerateChildWalletView.as_view('generate-child-wallet'), methods=['POST'])
         self.app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))
-        """
+
         self.app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
 
-        """
+
         self.app.add_url_rule('/register', view_func=endpoints.RegisterView.as_view('register'))
         self.app.add_url_rule('/create-relationship', view_func=endpoints.CreateRelationshipView.as_view('create-relationship'), methods=['POST'])
         self.app.add_url_rule('/post-fastgraph-transaction', view_func=endpoints.PostFastGraphView.as_view('post-fastgraph-transaction'), methods=['POST'])
@@ -74,7 +65,7 @@ class Serve(object):
         self.app.add_url_rule('/get-comment-reacts', view_func=endpoints.GetCommentReactsView.as_view('get-comment-reacts'), methods=['POST'])
         self.app.add_url_rule('/get-comment-reacts-detail', view_func=endpoints.GetCommentReactsDetailView.as_view('get-comment-reacts-detail'), methods=['POST'])
         self.app.add_url_rule('/comment', view_func=endpoints.CommentView.as_view('comment'), methods=['POST'])
-        """
+
 
         self.socketio = SocketIO(self.app)
         self.socketio.on_namespace(endpoints.BlockchainSocketServer('/chat'))

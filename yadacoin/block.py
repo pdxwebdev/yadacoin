@@ -4,13 +4,6 @@ import base64
 import time
 
 from decimal import Decimal, getcontext
-"""from io import BytesIO
-from uuid import uuid4
-from ecdsa import SECP256k1, SigningKey, VerifyingKey
-from ecdsa.util import randrange_from_seed__trytryagain
-from Crypto.Cipher import AES
-from pbkdf2 import PBKDF2
-"""
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature

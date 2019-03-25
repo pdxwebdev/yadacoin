@@ -1,6 +1,5 @@
 from socketIO_client import SocketIO, BaseNamespace
-from config import Config
-from mongo import Mongo
+
 from peers import Peers
 from transaction import TransactionFactory, Output, NotEnoughMoneyException
 from transactionutils import TU

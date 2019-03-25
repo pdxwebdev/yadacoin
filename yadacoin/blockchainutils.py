@@ -1,24 +1,10 @@
 import json
-#import hashlib
-#import os
 import base64
-#import time
 
-"""from io import BytesIO
-from uuid import uuid4
-from ecdsa import SECP256k1, SigningKey
-from ecdsa.util import randrange_from_seed__trytryagain
-from Crypto.Cipher import AES
-from pbkdf2 import PBKDF2
-"""
 from yadacoin.transactionutils import TU
-# from bitcoin.wallet import CBitcoinSecret
-# from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
-from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+from bitcoin.wallet import P2PKHBitcoinAddress
 from bson.son import SON
 from coincurve import PrivateKey
-# from mongo import Mongo
-# from config import Config
 
 
 class BU(object):  # Blockchain Utilities

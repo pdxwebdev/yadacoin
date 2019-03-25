@@ -1,16 +1,8 @@
-import json
 import hashlib
-import os
 import base64
 
-from io import BytesIO
-from uuid import uuid4
-from ecdsa import SECP256k1, SigningKey, VerifyingKey
-from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
-from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 
 class Crypt(object):  # Relationship Utilities
@@ -22,7 +14,7 @@ class Crypt(object):  # Relationship Utilities
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
         iv = bytes.fromhex('3443cd461efa7d334e477600f25c8bb9')
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return (iv + cipher.encrypt(buffer(s))).hex()
+        return (iv + cipher.encrypt(bytes.fromhex(s))).hex()
 
     def encrypt(self, s):
         from Crypto import Random
@@ -30,7 +22,7 @@ class Crypt(object):  # Relationship Utilities
         iv = Random.new().read(BS)
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return (iv + cipher.encrypt(buffer(s))).hex()
+        return (iv + cipher.encrypt(bytes.fromhex(s))).hex()
 
     def shared_encrypt(self, s):
         s = base64.b64encode(s)
@@ -39,7 +31,8 @@ class Crypt(object):  # Relationship Utilities
         iv = Random.new().read(BS)
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return (iv + cipher.encrypt(buffer(s))).hex()
+        # TODO: unsure of buffer => bytes conversion here. TO TEST
+        return (iv + cipher.encrypt(bytes.fromhex(s))).hex()
 
     def decrypt(self, enc):
         enc = enc.decode("hex")

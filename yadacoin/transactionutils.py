@@ -3,20 +3,9 @@ import base64
 import random
 import sys
 
-"""
-from io import BytesIO
-from uuid import uuid4
-from ecdsa import SECP256k1, SigningKey
-from ecdsa.util import randrange_from_seed__trytryagain
-from Crypto.Cipher import AES
-from pbkdf2 import PBKDF2
-from bitcoin.wallet import CBitcoinSecret
-from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
-from crypt import Crypt
-"""
 from coincurve.keys import PrivateKey
 from coincurve._libsecp256k1 import ffi
-from eccsnacks.curve25519 import scalarmult, scalarmult_base
+from eccsnacks.curve25519 import scalarmult
 
 
 class TU(object):  # Transaction Utilities
@@ -26,7 +15,7 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256(message).digest().hex()
 
     @classmethod
-    def generate_deterministic_signature(cls, config, message, private_key=None):
+    def generate_deterministic_signature(cls, config, message:str, private_key=None):
         if not private_key:
             private_key = config.private_key
         key = PrivateKey.from_hex(private_key)
@@ -45,6 +34,7 @@ class TU(object):  # Transaction Utilities
     @classmethod
     def generate_signature(cls, message, private_key):
         x = ffi.new('long *')
+        # TODO : no maxint in python3
         x[0] = random.SystemRandom().randint(0, sys.maxint)
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message, custom_nonce=(ffi.NULL, x))

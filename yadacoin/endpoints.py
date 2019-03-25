@@ -1,19 +1,15 @@
 import json
 import hashlib
 import humanhash
-# import socket
 import os
 import requests
-# from socketio import S
-# import hmac
 import re
 import base64
 import uuid
+from socketIO_client import SocketIO, BaseNamespace
 from multiprocessing import Process, Value, Array, Pool
 from flask import Flask, render_template, request, Response, current_app as app, session
 from flask_socketio import Namespace, emit
-from flask_socketio import SocketIO
-# from flask_cors import CORS
 
 from yadacoin.blockchainutils import BU
 from yadacoin.transaction import Transaction, TransactionFactory, InvalidTransactionException, \
@@ -22,39 +18,13 @@ from yadacoin.transactionutils import TU
 from yadacoin.peers import Peers, Peer
 from yadacoin.fastgraph import FastGraph, ChatNamespace
 from yadacoin.block import Block
+from yadacoin.miningpool import MiningPool
 
-"""
-from yadacoin import (
-    TransactionFactory,
-    Transaction,
-    MissingInputTransactionException,
-    Input,
-    Output,
-    Block,
-    BlockFactory,
-    Config,
-    Peers,
-    Blockchain,
-    BlockChainException,
-    BU,
-    TU,
-    Graph,
-    Mongo,
-    InvalidTransactionException,
-    InvalidTransactionSignatureException,
-    MiningPool,
-    Peer,
-    Config,
-    NotEnoughMoneyException,
-    FastGraph
-)
-"""
-from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from eccsnacks.curve25519 import scalarmult, scalarmult_base
+
+from bitcoin.wallet import P2PKHBitcoinAddress
+from eccsnacks.curve25519 import scalarmult_base
 # from pyfcm import FCMNotification
 from flask.views import View
-from mnemonic import Mnemonic
-from bip32utils import BIP32Key
 from coincurve.utils import verify_signature
 
 
@@ -133,8 +103,8 @@ class TransactionView(View):
                     pass
                 except:
                     raise
-                    print('uknown error')
-                    return 'uknown error', 400
+                    print('unknown error')
+                    return 'unknown error', 400
                 transactions.append(transaction)
 
             for x in transactions:
@@ -234,10 +204,9 @@ class TransactionView(View):
 
 
 class TxnBroadcaster(object):
+
     @classmethod
     def txn_broadcast_job(cls, transaction):
-        raise Exception("you should implement this method")
-        """
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
         Peers.init(config, mongo, config.network)
@@ -250,7 +219,6 @@ class TxnBroadcaster(object):
                 chat_namespace.disconnect()
             except Exception as e:
                 pass
-        """
 
 
 class BaseGraphView(View):
@@ -437,7 +405,6 @@ class CreateRelationshipView(View):
         for mtxn in checked_out_txn_ids:
             mtxn_ids.append(mtxn['id'])
 
-
         a = os.urandom(32)
         dh_public_key = scalarmult_base(a).hex()
         dh_private_key = a.hex()
@@ -477,8 +444,6 @@ class CreateRelationshipView(View):
 
 class MiningPoolView(View):
     def dispatch_request(self):
-        raise Exception("you should implement this method")
-        """
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
 
@@ -498,15 +463,13 @@ class MiningPoolView(View):
             'special_min': mp.block_factory.block.special_min,
             'header': mp.block_factory.block.header
         })
-        """
 
 
 class MiningPoolSubmitView(View):
     def dispatch_request(self):
-        raise Exception("you should implement this method")
+        # raise Exception("you should implement this method")
         try:
             pass
-            """
             mp = app.config['mining_pool']
             config = app.config['yada_config']
             mongo = app.config['yada_mongo']
@@ -519,8 +482,8 @@ class MiningPoolSubmitView(View):
             block.signature = BU.generate_signature(block.hash, config.private_key)
             try:
                 block.verify()
-            except:
-                print 'block failed verification'
+            except Exception as e:
+                print('block failed verification', str(e))
                 mongo.db.log.insert({
                     'error': 'block failed verification',
                     'block': block.to_dict(),
@@ -544,13 +507,13 @@ class MiningPoolSubmitView(View):
             if int(block.target) > int(block.hash, 16) or block.special_min:
                 # broadcast winning block
                 mp.broadcast_block(block)
-                print 'block ok'
+                print('block ok')
             else:
-                print 'share ok'
+                print('share ok')
             return block.to_json()
-            """
-        except:
-            raise
+        except Exception as e:
+            #raise
+            print('block submit error', str(e))
             return 'error', 400
 
 
@@ -605,7 +568,7 @@ class NewTransactionView(View):
     def dispatch_request(self):
         try:
             bcss = BlockchainSocketServer()
-            bcss.on_newtransaction(None, request.json)
+            bcss.on_newtransaction(request.json)
             return 'ok'
         except:
             return 'error', 400
@@ -745,6 +708,7 @@ class GenerateChildWalletView(View):
 
 
 class BlockchainSocketServer(Namespace):
+
     def on_newblock(self, data):
         #print("new block ", data)
         config = app.config['yada_config']
@@ -1039,6 +1003,7 @@ class ReactView(View):
             username = ''
         res = mongo.site_db.fcmtokens.find({"rid": rid})
         for token in res:
+            # TODO: push_service is undefined
             result = push_service.notify_single_device(
                 registration_id=token['token'],
                 message_title='%s reacted to your post!' % username,
@@ -1065,6 +1030,7 @@ class CommentReactView(View):
         except:
             return 'error posting react', 400
 
+        # TODO: signatures is undefined
         friend = BU.get_transactions(
             config,
             mongo,
@@ -1080,6 +1046,7 @@ class CommentReactView(View):
 
         res = mongo.site_db.fcmtokens.find({"rid": fastgraph.rid})
         for token in res:
+            # TODO: push_service is undefined
             result = push_service.notify_single_device(
                 registration_id=token['token'],
                 message_title='%s reacted to your comment!' % username,
@@ -1100,7 +1067,7 @@ class GetCommentReactsView(View):
             data = request.form
             ids = json.loads(data.get('ids'))
         ids = [str(x) for x in ids]
-
+        # TODO: get_comment_reacts is undefined
         res = BU.get_comment_reacts(config, mongo, ids)
         out = {}
         for x in res:
@@ -1121,6 +1088,7 @@ class GetCommentReactsDetailView(View):
             data = request.form
             comment_id = json.loads(data.get('_id'))
 
+        # TODO: get_comment_reacts is undefined
         res = BU.get_comment_reacts(config, mongo, [comment_id])
         out = []
         for x in res:
@@ -1166,6 +1134,7 @@ class CommentView(View):
 
         res = mongo.site_db.fcmtokens.find({"rid": rid})
         for token in res:
+            # TODO: push_service is undefined
             result = push_service.notify_single_device(
                 registration_id=token['token'],
                 message_title='%s commented on your post!' % username,
@@ -1180,6 +1149,7 @@ class CommentView(View):
         for comment in comments:
             res = mongo.site_db.fcmtokens.find({"rid": comment['rid']})
             for token in res:
+                # TODO: push_service is undefined
                 result = push_service.notify_single_device(
                     registration_id=token['token'],
                     message_title='%s commented on a post you commented on!' % username,

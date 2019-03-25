@@ -1,7 +1,5 @@
 import json
 import requests
-# import pymongo
-# from mongo import Mongo
 
 
 class Peers(object):
@@ -191,7 +189,7 @@ class Peer(object):
         elif network == 'testnet':
             url = 'http://yadacoin.io:8888/peers'
         try:
-            res = requests.post(
+            requests.post(
                 url,
                 json.dumps({
                     'host': config.peer_host,

@@ -2,19 +2,8 @@ import json
 import hashlib
 import humanhash
 
-"""from io import BytesIO
-from uuid import uuid4
-from ecdsa import NIST384p, SigningKey
-from ecdsa.util import randrange_from_seed__trytryagain
-from Crypto.Cipher import AES
-from pbkdf2 import PBKDF2
-"""
 from yadacoin.blockchainutils import BU
 from yadacoin.transactionutils import TU
-# from yadacoin.transaction import *
-
-#from yadacoin.crypt import Crypt
-#from yadacoin.config import Config
 
 
 class Graph(object):
