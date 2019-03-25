@@ -246,12 +246,23 @@ class Consensus(object):
             try:
                 if '109.190.174.238' in peer.to_string():
                     continue
+                if '192.168' in peer.to_string():
+                    peer.host = '51.15.86.249'
+                if '98.4.95.222:49905' in peer.to_string():
+                    peer.host = '51.15.86.249'
+                    peer.port = 8000
                 if self.debug:
                     print('requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()))
+                    """
+                    print('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
+                        peer=str(peer.to_string()),
+                        start_index=int(self.latest_block.index) + 1,
+                        end_index=int(self.latest_block.index) + 100))
+                    """
                 try:
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),
-                        start_index=int(self.latest_block.index) + 1,
+                        start_index=int(self.latest_block.index) +1,
                         end_index=int(self.latest_block.index) + 100
                     ), timeout=1)
                 except Exception as e:
@@ -261,11 +272,18 @@ class Consensus(object):
                 except ValueError:
                     continue
                 for block in blocks:
+                    # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                     block = Block.from_dict(self.config, self.mongo, block)
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
                         self.insert_consensus_block(block, peer)
-                        self.import_block({'peer': peer.to_string(), 'block': block.to_dict(), 'extra_blocks': blocks})
-                        self.latest_block = block
+                        # print("consensus ok", block.index)
+                        res = self.import_block({'peer': peer.to_string(), 'block': block.to_dict(), 'extra_blocks': blocks})
+                        # print("import ", block.index, res)
+                        if res:
+                            self.latest_block = block
+                    else:
+                        pass
+                        #print("pass", block.index)
             except Exception as e:
                 if self.debug:
                     print(e)
@@ -315,7 +333,12 @@ class Consensus(object):
             )
 
     def integrate_block_with_existing_chain(self, block, extra_blocks=None):
-        block.verify()
+        try:
+            block.verify()
+        except Exception as e:
+            print("Integrate block error 1", e)
+            return False
+
         for transaction in block.transactions:
             try:
                 if extra_blocks:
@@ -341,8 +364,10 @@ class Consensus(object):
         height = block.index
         last_block = self.existing_blockchain.blocks[block.index - 1]
         if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
+            print("Integrate block error 2")
             raise ForkException()
         if not last_block:
+            print("Integrate block error 3")
             raise ForkException()
 
         target = BlockFactory.get_target(self.config, self.mongo, height, last_block, block, self.existing_blockchain)
@@ -363,8 +388,10 @@ class Consensus(object):
                     print("New block inserted for height: ", block.index)
                 return True
             else:
+                print("Integrate block error 4")
                 raise ForkException()
         else:
+            print("Integrate block error 5")
             raise AboveTargetException()
         return False
     

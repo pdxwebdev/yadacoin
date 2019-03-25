@@ -20,6 +20,12 @@ from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransac
 from yadacoin.blockchainutils import BU
 
 
+def quantize_eight(value):
+    value = Decimal(value)
+    value = value.quantize(Decimal('0.00000000'))
+    return value
+
+
 class BlockFactory(object):
     def __init__(self, config, mongo, transactions, public_key, private_key, version, index=None, force_time=None):
         self.config = config
@@ -407,7 +413,14 @@ class Block(object):
                 fee_sum += float(txn.fee)
         reward = BU.get_block_reward(self.config, self.mongo, self)
 
-        if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
+        #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
+        """
+        KO for block 13949
+        0.02099999 50.021 50.0
+        Integrate block error 1 ('Coinbase output total does not equal block reward + transaction fees', 0.020999999999999998, 0.021000000000000796)
+        """
+        if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
+            print(fee_sum, coinbase_sum, reward)
             raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
     def get_transaction_hashes(self):
