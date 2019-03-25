@@ -265,6 +265,7 @@ class Consensus(object):
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
                         self.insert_consensus_block(block, peer)
                         self.import_block({'peer': peer.to_string(), 'block': block.to_dict(), 'extra_blocks': blocks})
+                        self.latest_block = block
             except Exception as e:
                 if self.debug:
                     print(e)
