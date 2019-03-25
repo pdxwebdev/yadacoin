@@ -1,19 +1,14 @@
 import time
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
-from config import Config
-from mongo import Mongo
-from peers import Peers, Peer
-from block import Block, BlockFactory
-from blockchain import Blockchain
-from blockchainutils import BU
-from transaction import (
-    Transaction,
-    MissingInputTransactionException,
-    InvalidTransactionException,
+
+from yadacoin.peers import Peers, Peer
+from yadacoin.block import Block, BlockFactory
+from yadacoin.blockchain import Blockchain
+from yadacoin.blockchainutils import BU
+from yadacoin.transaction import Transaction, MissingInputTransactionException, InvalidTransactionException, \
     InvalidTransactionSignatureException
-)
-from fastgraph import FastGraph
+from yadacoin.fastgraph import FastGraph
 
 
 class MiningPool(object):
@@ -162,11 +157,11 @@ class MiningPool(object):
                 elif isinstance(txn, dict):
                     transaction_obj = Transaction.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo)['index'], txn)
                 else:
-                    print 'transaction unrecognizable, skipping'
+                    print('transaction unrecognizable, skipping')
                     continue
 
                 if transaction_obj.transaction_signature in used_sigs:
-                    print 'duplicate transaction found and removed'
+                    print('duplicate transaction found and removed')
                     continue
                 used_sigs.append(transaction_obj.transaction_signature)
 
@@ -200,11 +195,11 @@ class MiningPool(object):
                     used_ids_in_this_txn.append(x.id)
                 if failed1:
                     self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                    print 'transaction removed: input presumably spent already, not in unspent outputs', transaction_obj.transaction_signature
+                    print('transaction removed: input presumably spent already, not in unspent outputs', transaction_obj.transaction_signature)
                     self.mongo.db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction_obj.to_dict()})
                 elif failed2:
                     self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                    print 'transaction removed: using an input used by another transaction in this block', transaction_obj.transaction_signature
+                    print('transaction removed: using an input used by another transaction in this block', transaction_obj.transaction_signature)
                     self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
                 else:
                     transaction_objs.append(transaction_obj)
@@ -212,19 +207,15 @@ class MiningPool(object):
                 #print 'missing this input transaction, will try again later'
                 pass
             except InvalidTransactionSignatureException as e:
-                print 'InvalidTransactionSignatureException: transaction removed'
+                print('InvalidTransactionSignatureException: transaction removed')
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
                 self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction_obj.to_dict()})
             except InvalidTransactionException as e:
-                print 'InvalidTransactionException: transaction removed'
+                print('InvalidTransactionException: transaction removed')
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
                 self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
             except Exception as e:
-                print e
-                #print 'rejected transaction', txn['id']
-                pass
-            except Exception as e:
-                print e
+                print(e)
                 #print 'rejected transaction', txn['id']
                 pass
         return transaction_objs
@@ -239,17 +230,17 @@ class MiningPool(object):
                     'address': address
                 }, headers={'Connection':'close'})
             except Exception as e:
-                print e
+                print(e)
 
     def broadcast_block(self, block):
         Peers.init(self.config, self.mongo, self.config.network)
         Peer.save_my_peer(self.config, self.mongo, self.config.network)
-        print '\r\nCandidate submitted for index:', block.index
-        print '\r\nTransactions:'
+        print('\r\nCandidate submitted for index:', block.index)
+        print('\r\nTransactions:')
         for x in block.transactions:
-            print x.transaction_signature 
+            print(x.transaction_signature)
         self.mongo.db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
-        print '\r\nSent block to:'
+        print('\r\nSent block to:')
         for peer in Peers.peers:
             if peer.is_me:
                 continue
@@ -264,7 +255,7 @@ class MiningPool(object):
                     timeout=3,
                     headers={'Connection':'close'}
                 )
-                print peer.host + ":" + str(peer.port)
+                print(peer.host + ":" + str(peer.port))
             except Exception as e:
-                print e
+                print(e)
                 peer.report()

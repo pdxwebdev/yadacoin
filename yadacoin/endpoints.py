@@ -155,7 +155,7 @@ class TransactionView(View):
         mongo = app.config['yada_mongo']
         my_bulletin_secret = config.bulletin_secret
         rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+        rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
 
         res1 = mongo.site_db.usernames.find({'rid': rid})
         if res1.count():
@@ -470,7 +470,7 @@ class CreateRelationshipView(View):
 
         my_bulletin_secret = config.bulletin_secret
         bulletin_secrets = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().hex()
+        rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
         mongo.site_db.friends.insert({'rid': rid, 'relationship': {'bulletin_secret': bulletin_secret}})
         return json.dumps({"success": True})
 
@@ -985,10 +985,10 @@ class SearchView(View):
             friend = [x for x in BU.search_rid(config, mongo, requester_rid)][0]
             requester_rid = friend['rid']
             rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-            requested_rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+            requested_rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
         else:
             rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-            requester_rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+            requester_rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
             friend = [x for x in BU.search_username(config, mongo, phrase)][0]
             requested_rid = friend['rid']
         
@@ -1013,7 +1013,7 @@ class ReactView(View):
         my_bulletin_secret = config.get_bulletin_secret()
         their_bulletin_secret = request.json.get('bulletin_secret')
         rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+        rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
 
         client = app.test_client()
         response = client.post('/post-fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
@@ -1024,7 +1024,7 @@ class ReactView(View):
             return 'error posting react', 400
 
         rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+        rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
         friend = BU.get_transactions(
             config,
             mongo,
@@ -1055,7 +1055,7 @@ class CommentReactView(View):
         my_bulletin_secret = config.get_bulletin_secret()
         their_bulletin_secret = request.json.get('bulletin_secret')
         rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+        rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
 
         client = app.test_client()
         response = client.post('/post-fastgraph-transaction', json=request.json.get('txn'), headers=list(request.headers))
@@ -1141,7 +1141,7 @@ class CommentView(View):
         my_bulletin_secret = config.get_bulletin_secret()
         their_bulletin_secret = request.json.get('bulletin_secret')
         rids = sorted([str(my_bulletin_secret), str(their_bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+        rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
 
         client = app.test_client()
         response = client.post('/post-fastgraph-transaction', data=request.json.get('txn'), headers=list(request.headers))

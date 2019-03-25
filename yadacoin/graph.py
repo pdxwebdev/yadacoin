@@ -48,7 +48,7 @@ class Graph(object):
             self.registered = False
             self.pending_registration = False
             bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
-            rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().hex()
+            rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
             self.rid = rid
 
             res = self.mongo.site_db.usernames.find({"rid": self.rid})
@@ -207,7 +207,7 @@ class Graph(object):
         flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
         for x in BU.get_posts(self.config, self.mongo, self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
-            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+            rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
             if rid in self.rid_usernames:
                 x['username'] = self.rid_usernames[rid]
                 if x['username'] not in blocked and x['id'] not in flagged:
@@ -231,7 +231,7 @@ class Graph(object):
                 out[x['relationship'].get('id')] = []
 
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
-            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+            rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
             
             if rid in self.rid_usernames:
                 x['username'] = self.rid_usernames[rid]
@@ -259,7 +259,7 @@ class Graph(object):
                 out[x['relationship'].get('id')] = []
 
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
-            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
+            rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
             
             if rid in self.rid_usernames:
                 x['username'] = self.rid_usernames[rid]

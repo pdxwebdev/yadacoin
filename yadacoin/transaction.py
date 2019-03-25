@@ -119,7 +119,7 @@ class TransactionFactory(object):
             inputs_concat +
             outputs_concat
         )
-        self.hash = hashlib.sha256(self.header).digest().hex()
+        self.hash = hashlib.sha256(self.header.encode('utf-8')).digest().hex()
         if self.private_key:
             self.transaction_signature = TU.generate_signature_with_private_key(private_key, self.hash)
         else:
@@ -209,7 +209,7 @@ class TransactionFactory(object):
         if my_bulletin_secret == self.bulletin_secret:
             raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
-        return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().hex()
+        return hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
 
     def generate_relationship(self):
         return Relationship(
