@@ -151,7 +151,7 @@ class BU(object):  # Blockchain Utilities
             },
             upsert=True)
 
-            xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
             if xaddress == address:
                 reverse_public_key = x['public_key']
 
@@ -219,7 +219,7 @@ class BU(object):  # Blockchain Utilities
     def get_wallet_unspent_fastgraph_transactions(cls, config, mongo, address):
         result = mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
         for x in result:
-            xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
             if xaddress == address:
                 reverse_public_key = x['public_key']
                 spent_on_fastgraph = mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
@@ -232,7 +232,7 @@ class BU(object):  # Blockchain Utilities
     def get_wallet_spent_fastgraph_transactions(cls, config, mongo, address):
         result = mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
         for x in result:
-            xaddress = str(P2PKHBitcoinAddress.from_pubkey(x['public_key'].decode('hex')))
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
             if xaddress == address:
                 reverse_public_key = x['public_key']
                 spent_on_fastgraph = mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
@@ -1393,7 +1393,7 @@ class BU(object):  # Blockchain Utilities
                 for shared_secret in list(set(shared_secrets)):
                     res = mongo.db.verify_message_cache.find_one({
                         'rid': rid,
-                        'shared_secret': shared_secret.encode('hex'),
+                        'shared_secret': shared_secret.hex(),
                         'id': txn['id']
                     })
                     try:
@@ -1405,17 +1405,17 @@ class BU(object):  # Blockchain Utilities
                         elif res and not res['success']:
                             continue
                         else:
-                            cipher = Crypt(shared_secret.encode('hex'), shared=True)
+                            cipher = Crypt(shared_secret.hex(), shared=True)
                             decrypted = cipher.shared_decrypt(txn['relationship'])
                             signin = json.loads(decrypted)
                             mongo.db.verify_message_cache.update({
                                 'rid': rid,
-                                'shared_secret': shared_secret.encode('hex'),
+                                'shared_secret': shared_secret.hex(),
                                 'id': txn['id']
                             },
                             {
                                 'rid': rid,
-                                'shared_secret': shared_secret.encode('hex'),
+                                'shared_secret': shared_secret.hex(),
                                 'id': txn['id'],
                                 'message': signin,
                                 'success': True
@@ -1429,12 +1429,12 @@ class BU(object):  # Blockchain Utilities
                     except:
                         mongo.db.verify_message_cache.update({
                             'rid': rid,
-                            'shared_secret': shared_secret.encode('hex'),
+                            'shared_secret': shared_secret.hex(),
                             'id': txn['id']
                         },
                         {
                             'rid': rid,
-                            'shared_secret': shared_secret.encode('hex'),
+                            'shared_secret': shared_secret.hex(),
                             'id': txn['id'],
                             'message': '',
                             'success': False

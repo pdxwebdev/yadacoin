@@ -104,7 +104,7 @@ class Config(object):
         cls.username = config.get('username', '')
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
-        cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
+        cls.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cls.public_key)))
 
         cls.private_key = config['private_key']
         cls.wif = cls.generate_wif(cls.private_key)

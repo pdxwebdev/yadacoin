@@ -109,7 +109,7 @@ class FastGraph(Transaction):
         if first_bulletin_secret == second_bulletin_secret:
             raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(first_bulletin_secret), str(second_bulletin_secret)], key=str.lower)
-        return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
+        return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().hex()
 
     def get_origin_relationship(self, rid=None, bulletin_secret=None):
         for inp in self.inputs:
@@ -152,7 +152,7 @@ class FastGraph(Transaction):
         if not self.signatures:
             raise InvalidFastGraphTransactionException('no signatures were provided')
 
-        xaddress = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
+        xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         unspent = [x['id'] for x in BU.get_wallet_unspent_transactions(self.config, self.mongo, xaddress)]
         unspent_fastgraph = [x['id'] for x in BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, xaddress)]
         inputs = [x.id for x in self.inputs]
@@ -187,13 +187,13 @@ class FastGraph(Transaction):
                     if mutual_friend.public_key != self.config.public_key:
                         identity = verify_signature(
                             base64.b64decode(other_mutual_friend.relationship.their_bulletin_secret),
-                            other_mutual_friend.relationship.their_username,
-                            mutual_friend.public_key.decode('hex')
+                            other_mutual_friend.relationship.their_username.encode('utf-8'),
+                            bytes.fromhex(mutual_friend.public_key)
                         )
                         signed = verify_signature(
                             base64.b64decode(signature.signature),
-                            self.hash,
-                            mutual_friend.public_key.decode('hex')
+                            self.hash.encode('utf-8'),
+                            bytes.fromhex(mutual_friend.public_key)
                         )
                         if identity and signed:
                             signature.passed = True

@@ -40,9 +40,9 @@ def subkey(index):
     ex_key = BIP32Key.fromExtendedKey(qtctl_env["QTCTL_KEY"])
     key = ex_key.ChildKey(int(index))
     child_key = BIP32Key.fromExtendedKey(key.ExtendedKey())
-    private_key = child_key.PrivateKey().encode('hex')
-    public_key = child_key.PublicKey().encode('hex')
-    address = str(P2PKHBitcoinAddress.from_pubkey(public_key.decode('hex')))
+    private_key = child_key.PrivateKey().hex()
+    public_key = child_key.PublicKey().hex()
+    address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
     
     return {'public_key': public_key, 'index': index, "private_key": private_key, 'address': address}
 

@@ -20,9 +20,9 @@ class Crypt(object):  # Relationship Utilities
     def encrypt_consistent(self, s):
         BS = AES.block_size
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
-        iv = '3443cd461efa7d334e477600f25c8bb9'.decode('hex')
+        iv = bytes.fromhex('3443cd461efa7d334e477600f25c8bb9')
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return (iv + cipher.encrypt(buffer(s))).encode('hex')
+        return (iv + cipher.encrypt(buffer(s))).hex()
 
     def encrypt(self, s):
         from Crypto import Random
@@ -30,7 +30,7 @@ class Crypt(object):  # Relationship Utilities
         iv = Random.new().read(BS)
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return (iv + cipher.encrypt(buffer(s))).encode('hex')
+        return (iv + cipher.encrypt(buffer(s))).hex()
 
     def shared_encrypt(self, s):
         s = base64.b64encode(s)
@@ -39,7 +39,7 @@ class Crypt(object):  # Relationship Utilities
         iv = Random.new().read(BS)
         s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
-        return (iv + cipher.encrypt(buffer(s))).encode('hex')
+        return (iv + cipher.encrypt(buffer(s))).hex()
 
     def decrypt(self, enc):
         enc = enc.decode("hex")

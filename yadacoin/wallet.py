@@ -15,7 +15,7 @@ class Wallet(object):
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
         self.public_key = config.get('public_key')
-        self.address = str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
+        self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
         self.private_key = config.get('private_key')
         self.wif = self.to_wif(self.private_key)
@@ -49,22 +49,22 @@ class Wallet(object):
             # create bitcoin wallet
             entropy = mnemonic.to_entropy(seed)
             key = BIP32Key.fromEntropy(entropy)
-            private_key = key.PrivateKey().encode('hex')
+            private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
 
         if prv:
-            private_key = PrivateKey.from_hex(prv.decode('hex')).to_hex()
+            private_key = PrivateKey.from_hex(bytes.fromhex(prv)).to_hex()
             extended_key = ''
 
         if xprv:
             key = BIP32Key.fromExtendedKey(xprv)
-            private_key = key.PrivateKey().encode('hex')
+            private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
         
         if xprv and child:
             for x in child:
                 key = key.ChildKey(int(x))
-                private_key = key.PrivateKey().encode('hex')
+                private_key = key.PrivateKey().hex()
 
         if not private_key:
             raise Exception('No key')
@@ -74,7 +74,7 @@ class Wallet(object):
             "xprv": extended_key or '',
             "private_key": private_key,
             "wif": cls.to_wif(private_key),
-            "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().encode('hex'),
+            "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex(),
             "address": str(key.Address()),
             "serve_host": "0.0.0.0",
             "serve_port": 8000,
@@ -98,7 +98,7 @@ class Wallet(object):
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
         cls.public_key = config.get('public_key')
-        cls.address = str(P2PKHBitcoinAddress.from_pubkey(cls.public_key.decode('hex')))
+        cls.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cls.public_key)))
 
         cls.private_key = config.get('private_key')
         cls.wif = cls.to_wif(cls.private_key)

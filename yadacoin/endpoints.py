@@ -686,7 +686,7 @@ class SignRawTransactionView(View):
                 bytes.fromhex(their_entry_for_relationship['public_key'])
             )
 
-            address = str(P2PKHBitcoinAddress.from_pubkey(their_entry_for_relationship['public_key'].decode('hex')))
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(their_entry_for_relationship['public_key'])))
             found = False
             for x in BU.get_wallet_unspent_transactions(config, mongo, address, [request.json.get('input')]):
                 if request.json.get('input') == x['id']:

@@ -23,7 +23,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def hash(cls, message):
-        return hashlib.sha256(message).digest().encode('hex')
+        return hashlib.sha256(message).digest().hex()
 
     @classmethod
     def generate_deterministic_signature(cls, config, message, private_key=None):
@@ -55,7 +55,7 @@ class TU(object):  # Transaction Utilities
         if config.bulletin_secret == bulletin_secret:
             raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
-        return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
+        return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().hex()
 
     @classmethod
     def get_shared_secrets_by_rid(cls, config, mongo, rid):
@@ -73,7 +73,7 @@ class TU(object):  # Transaction Utilities
                 dh_public_keys.append(txn['dh_public_key'])
         for dh_public_key in dh_public_keys:
             for dh_private_key in dh_private_keys:
-                shared_secrets.append(scalarmult(dh_private_key.decode('hex'), dh_public_key.decode('hex')))
+                shared_secrets.append(scalarmult(bytes.fromhex(dh_private_key), bytes.fromhex(dh_public_key)))
         return shared_secrets
 
     @classmethod

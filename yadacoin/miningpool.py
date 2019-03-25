@@ -179,7 +179,7 @@ class MiningPool(object):
                             continue
 
                 #check double spend
-                address = str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex')))
+                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
                 if address in unspent_indexed:
                     unspent_ids = unspent_indexed[address]
                 else:

@@ -186,7 +186,7 @@ def team():
 def get_rid():
     my_bulletin_secret = config.get_bulletin_secret()
     rids = sorted([str(my_bulletin_secret), str(request.args.get('bulletin_secret'))], key=str.lower)
-    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+    rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
     return json.dumps({'rid': rid})
 
 @app.route('/get-block')
