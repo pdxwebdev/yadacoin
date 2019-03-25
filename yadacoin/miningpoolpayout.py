@@ -1,26 +1,27 @@
 from socketIO_client import SocketIO, BaseNamespace
-# from exceptions import Exception
-#from blockchain import Blockchain
-#from mongo import Mongo
-#from config import Config
-from peers import Peers
-from block import Block
-from blockchainutils import BU
-from transaction import Transaction, TransactionFactory, Input, Output, NotEnoughMoneyException
-from transactionutils import TU
+
+from yadacoin.peers import Peers
+from yadacoin.block import Block
+from yadacoin.blockchainutils import BU
+from yadacoin.transaction import Transaction, TransactionFactory, Input, Output, NotEnoughMoneyException
+from yadacoin.transactionutils import TU
 
 
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
-        print 'error'
+        print('error')
+
 
 class NonMatchingDifficultyException(Exception):
     pass
 
+
 class PartialPayoutException(Exception):
     pass
 
+
 class PoolPayer(object):
+
     def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo
@@ -47,7 +48,7 @@ class PoolPayer(object):
             shares[share['address']]['blocks'].append(share['block'])
 
         add_up = 0
-        for address, item in shares.iteritems():
+        for address, item in shares.items():
             test_difficulty = self.get_difficulty(item['blocks'])
             shares[address]['payout_share'] = float(test_difficulty) / float(total_difficulty)
             add_up += test_difficulty
@@ -71,7 +72,7 @@ class PoolPayer(object):
         for won_block in won_blocks:
             won_block = Block.from_dict(self.config, self.mongo, won_block)
             if (won_block.index + 6) <= latest_block.index:
-                print won_block.index
+                print(won_block.index)
                 self.do_payout_for_block(won_block)
     
     def already_used(self, txn):
@@ -100,7 +101,7 @@ class PoolPayer(object):
         try:
             shares = self.get_share_list_for_height(block.index)
         except Exception as e:
-            print e
+            print(e)
             return
 
         total_reward = block.get_coinbase()
@@ -111,7 +112,7 @@ class PoolPayer(object):
         total_payout = total_reward.outputs[0].value - total_pool_take
 
         outputs = []
-        for address, x in shares.iteritems():
+        for address, x in shares.items():
             exists = self.mongo.db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
             if exists:
                 raise PartialPayoutException('this index has been partially paid out.')
@@ -131,16 +132,16 @@ class PoolPayer(object):
                 outputs=outputs
             )
         except NotEnoughMoneyException as e:
-            print "not enough money yet"
+            print("not enough money yet", e)
             return
         except Exception as e:
-            print e
+            print(e)
 
         try:
             transaction.transaction.verify()
         except:
             raise
-            print 'faucet transaction failed'
+            print('faucet transaction failed')
 
         TU.save(self.config, self.mongo, transaction.transaction)
         self.mongo.db.share_payout.insert({'index': block.index, 'txn': transaction.transaction.to_dict()})
@@ -150,10 +151,10 @@ class PoolPayer(object):
     def broadcast_transaction(self, transaction):
         for peer in Peers.peers:
             try:
-                print peer.to_string()
+                print(peer.to_string())
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
                 chat_namespace = socketIO.define(ChatNamespace, '/chat')
                 chat_namespace.emit('newtransaction', transaction.to_dict())
                 socketIO.disconnect()
             except Exception as e:
-                print e
+                print(e)
