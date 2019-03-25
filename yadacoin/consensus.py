@@ -244,13 +244,6 @@ class Consensus(object):
         Peers.init(self.config, self.mongo, self.config.network)
         for peer in Peers.peers:
             try:
-                if '109.190.174.238' in peer.to_string():
-                    continue
-                if '192.168' in peer.to_string():
-                    peer.host = '51.15.86.249'
-                if '98.4.95.222:49905' in peer.to_string():
-                    peer.host = '51.15.86.249'
-                    peer.port = 8000
                 if self.debug:
                     print('requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()))
                     """
