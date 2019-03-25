@@ -299,6 +299,15 @@ class Consensus(object):
             self.retrace(block, peer)
         except IndexError as e:
             self.retrace(block, peer)
+        except Exception as e:
+            self.mongo.db.consensus.update(
+                {
+                    'peer': peer.to_string(),
+                    'index': block.index,
+                    'id': block.signature
+                },
+                {'$set': {'ignore': True}}
+            )
 
     def integrate_block_with_existing_chain(self, block, extra_blocks=None):
         block.verify()
@@ -332,9 +341,10 @@ class Consensus(object):
             raise ForkException()
 
         target = BlockFactory.get_target(self.config, self.mongo, height, last_block, block, self.existing_blockchain)
+        target_block_time = 600
         if ((int(block.hash, 16) < target) or 
             (block.special_min and block.index < 35200) or 
-            (block.index >= 35200 and block.special_min and (int(block.time) - int(last_block.time)) > 600)):
+            (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time)):
 
             if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                 self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)

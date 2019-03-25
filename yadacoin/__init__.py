@@ -2,6 +2,7 @@ from block import BlockFactory, Block
 from blockchain import Blockchain, BlockChainException
 from blockchainutils import BU
 from config import Config
+from wallet import Wallet
 from crypt import Crypt
 from graph import Graph
 from mongo import Mongo

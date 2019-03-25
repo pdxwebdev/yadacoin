@@ -11,7 +11,7 @@ from ecdsa import SECP256k1, SigningKey, VerifyingKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from transaction import TransactionFactory, Transaction, Output, InvalidTransactionException
+from transaction import TransactionFactory, Transaction, Output, InvalidTransactionException, ExternalInput, Input
 from blockchainutils import BU
 from transactionutils import TU
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
@@ -59,7 +59,7 @@ class BlockFactory(object):
                 used_sigs.append(transaction_obj.transaction_signature)
                 transaction_obj.verify()
 
-                if  not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
+                if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
                     for input_id in transaction_obj.inputs:
                         input_block = BU.get_transaction_by_id(self.config, self.mongo, input_id.id, give_block=True)
                         if input_block and input_block['index'] > (BU.get_latest_block(self.config, self.mongo)['index'] - 2016):
@@ -90,20 +90,19 @@ class BlockFactory(object):
                 res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address)
                 unspent_ids = [x['id'] for x in res]
                 unspent_indexed[address] = unspent_ids
-            
-            if address in unspent_fastgraph_indexed:
-                unspent_fastgraph_ids = unspent_fastgraph_indexed[address]
-            else:
-                res = BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, address)
-                unspent_fastgraph_ids = [x['id'] for x in res]
-                unspent_fastgraph_indexed[address] = unspent_fastgraph_ids
 
             failed = False
             used_ids_in_this_txn = []
             
             for x in transaction_obj.inputs:
                 if x.id not in unspent_ids:
-                    failed = True
+                    if isinstance(x, ExternalInput):
+                        txn2 = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
+                        address2 = str(P2PKHBitcoinAddress.from_pubkey(txn2.public_key.decode('hex')))
+                        res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address2)
+                        unspent_ids2 = [y['id'] for y in res]
+                        if x.id not in unspent_ids2:
+                            failed = True
                 if x.id in used_ids_in_this_txn:
                     failed = True
                 used_ids_in_this_txn.append(x.id)
@@ -218,9 +217,11 @@ class BlockFactory(object):
             target = max_target
         else:
             block_to_check = block
-            time_elapsed_since_last_block =  int(block_to_check.time) - int(last_block.time)
-            if time_elapsed_since_last_block > max_block_time:
-                target = max_target
+            if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time:
+                target_factor = (int(block.time) - int(last_block.time)) / max_block_time
+                target = block.target * (target_factor * 4)
+                if target > max_target:
+                    return max_target
                 return target
             block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
@@ -363,12 +364,12 @@ class Block(object):
     def verify(self):
         getcontext().prec = 8
         if int(self.version) != int(BU.get_version_for_height(self.index)):
-            raise BaseException("Wrong version for block height", self.version, BU.get_version_for_height(self.index))
+            raise Exception("Wrong version for block height", self.version, BU.get_version_for_height(self.index))
         try:
             txns = self.get_transaction_hashes()
             self.set_merkle_root(txns)
             if self.verify_merkle_root != self.merkle_root:
-                raise BaseException("Invalid block")
+                raise Exception("Invalid block")
         except:
             raise
 
@@ -376,7 +377,7 @@ class Block(object):
             header = BlockFactory.generate_header(self)
             hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
             if self.hash != hashtest:
-                raise BaseException('Invalid block')
+                raise Exception('Invalid block')
         except:
             raise
 
@@ -391,7 +392,7 @@ class Block(object):
                 if not result:
                     raise
             except:
-                raise BaseException("block signature is invalid")
+                raise Exception("block signature is invalid")
 
         # verify reward
         coinbase_sum = 0
@@ -407,7 +408,7 @@ class Block(object):
         reward = BU.get_block_reward(self.config, self.mongo, self)
 
         if Decimal(str(fee_sum)[:10]) != (Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10])):
-            raise BaseException("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
+            raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -442,7 +443,7 @@ class Block(object):
                         failed = True
                     used_ids_in_this_txn.append(x.id)
                 if failed:
-                    raise BaseException('double spend', [x.id for x in txn.inputs])
+                    raise Exception('double spend', [x.id for x in txn.inputs])
         res = self.mongo.db.blocks.find({"index": (int(self.index) - 1)})
         if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:
             self.mongo.db.blocks.insert(self.to_dict())

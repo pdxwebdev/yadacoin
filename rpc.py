@@ -191,6 +191,7 @@ def get_rid():
 
 @app.route('/get-block')
 def get_block():
+    mongo = current_app.config['yada_mongo']
     blocks = mongo.db.blocks.find({'id': request.args.get('id')}, {'_id': 0}).limit(1).sort([('index',-1)])
     return json.dumps(blocks[0] if blocks.count() else {}, indent=4), 404
 
@@ -240,14 +241,14 @@ def peers():
                     'active': True, 
                     'failed': 0
                 }, upsert=True)
-            Peers.peers = peers.init_local()
+            Peers.peers_json = peers.init_local()
             return 'ok'
         except:
             return 'failed to add peer, invalid host', 400
     else:
         if not hasattr(Peers, 'peers'):
-            Peers.peers = peers.init_local()
-        return Peers.peers
+            Peers.peers_json = peers.init_local()
+        return Peers.peers_json
 
 @app.route('/stats')
 def stats():
@@ -273,6 +274,9 @@ app.add_url_rule('/get-graph-friends', view_func=endpoints.GraphFriendsView.as_v
 app.add_url_rule('/get-graph-posts', view_func=endpoints.GraphPostsView.as_view('graphposts'), methods=['GET', 'POST'])
 app.add_url_rule('/get-graph-messages', view_func=endpoints.GraphMessagesView.as_view('graphmessages'), methods=['GET', 'POST'])
 app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-comments', view_func=endpoints.GraphCommentsView.as_view('get-comments'), methods=['POST'])
+app.add_url_rule('/get-graph-reacts', view_func=endpoints.GraphReactsView.as_view('get-reacts'), methods=['POST'])
+app.add_url_rule('/get-graph-wallet', view_func=endpoints.RidWalletView.as_view('get-wallet'))
 app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
 app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
 app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))

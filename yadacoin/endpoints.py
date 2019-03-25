@@ -297,9 +297,15 @@ class RidWalletView(View):
         bulletin_secret = request.args.get('bulletin_secret').replace(' ', "+")
         rid = TU.generate_rid(config, bulletin_secret)
         unspent_transactions = [x for x in BU.get_wallet_unspent_transactions(config, mongo, address)]
+        spent_fastgraph_ids = []
+        for x in BU.get_wallet_unspent_fastgraph_transactions(config, mongo, address):
+            spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
+
         regular_txns = []
         txns_for_fastgraph = []
         for txn in unspent_transactions:
+            if txn['id'] in spent_fastgraph_ids:
+                continue
             if 'signatures' in txn and txn['signatures']:
                 fastgraph = FastGraph.from_dict(config, mongo, 0, txn)
                 origin_fasttrack = fastgraph.get_origin_relationship(rid)
@@ -712,20 +718,21 @@ class BlockchainSocketServer(Namespace):
         except Exception as e:
             print "block is bad"
             raise e
-        except BaseException as e:
+        except Exception as e:
             print "block is bad"
             raise e
         try:
-            requests.post(
-                'https://yadacoin.io/peers',
-                json.dumps({
-                    'host': config.peer_host,
-                    'port': config.peer_port
-                }),
-                headers={
-                    "Content-Type": "application/json"
-                }
-            )
+            if 'regnet' not in config.network:
+                requests.post(
+                    'https://yadacoin.io/peers',
+                    json.dumps({
+                        'host': config.peer_host,
+                        'port': config.peer_port
+                    }),
+                    headers={
+                        "Content-Type": "application/json"
+                    }
+                )
         except:
             print 'ERROR: failed to get peers, exiting...'
 
@@ -739,7 +746,7 @@ class BlockchainSocketServer(Namespace):
             print "transaction is bad"
             print e
             raise Exception("transaction is bad")
-        except BaseException as e:
+        except Exception as e:
             print "transaction is bad"
             print e
             raise Exception("transaction is bad")
@@ -754,7 +761,7 @@ class BlockchainSocketServer(Namespace):
         except Exception as e:
             print e
             raise Exception("transaction is bad")
-        except BaseException as e:
+        except Exception as e:
             print e
             raise Exception("transaction is bad")
 
@@ -858,7 +865,7 @@ class ExplorerSearchView(View):
         try:
             term = request.args.get('term')
             re.search(r'[A-Fa-f0-9]+', term).group(0)
-            res = mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1)
+            res = mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
             if res.count():
                 balance = BU.get_wallet_balance(config, mongo, term)
                 return json.dumps({

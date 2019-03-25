@@ -78,15 +78,8 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_wallet_unspent_transactions(cls, config, mongo, address, ids=None, needed_value=None):
-        spent_fastgraph_ids = []
-        for x in cls.get_wallet_unspent_fastgraph_transactions(config, mongo, address):
-            spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
-            yield x
-
         res = cls.wallet_unspent_worker(config, mongo, address, ids, needed_value)
         for x in res:
-            if x['id'] in spent_fastgraph_ids:
-                continue
             x['txn']['height'] = x['height']
             yield x['txn']
 
@@ -141,7 +134,8 @@ class BU(object):  # Blockchain Utilities
 
         reverse_public_key = ''
         for x in received:
-            # this assumes we ALWAYS put our own address in the outputs even if the value is zero.
+            # we ALWAYS put our own address in the outputs even if the value is zero.
+            # txn is invalid if it isn't present
             mongo.db.unspent_cache.update({
                 'address': address,
                 'id': x['txn']['id'],
@@ -160,16 +154,6 @@ class BU(object):  # Blockchain Utilities
             if xaddress == address:
                 reverse_public_key = x['public_key']
 
-
-        if not reverse_public_key:
-            # no reverse public key means they have never even created a transaction
-            # so no need to check for spend, anything sent to them is unspent
-            if ids:
-                res = mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
-            else:
-                res = mongo.db.unspent_cache.find({'address': address, 'spent': False})
-            return res
-
         spent = mongo.db.blocks.aggregate([
             {
                 "$match": {
@@ -178,7 +162,11 @@ class BU(object):  # Blockchain Utilities
             },
             {
                 "$match": {
-                    "transactions.public_key": reverse_public_key
+                    "$or": [
+                        {"transactions.public_key": reverse_public_key},
+                        {"transactions.inputs.public_key": reverse_public_key},
+                        {"transactions.inputs.address": address}
+                    ]
                 }
             },
             {"$unwind": "$transactions" },
@@ -190,7 +178,11 @@ class BU(object):  # Blockchain Utilities
             },
             {
                 "$match": {
-                    "txn.public_key": reverse_public_key
+                    "$or": [
+                        {"txn.public_key": reverse_public_key},
+                        {"txn.inputs.public_key": reverse_public_key},
+                        {"txn.inputs.address": address}
+                    ]
                 }
             },
             {
@@ -216,7 +208,6 @@ class BU(object):  # Blockchain Utilities
                     }
                 })
 
-        
         if ids:
             res = mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
         else:
@@ -1253,7 +1244,7 @@ class BU(object):  # Blockchain Utilities
         return base64.b64encode(signature)
 
     @classmethod
-    def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=True):
+    def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=False):
         from transaction import Transaction, Input, Crypt
         from fastgraph import FastGraph
         res = mongo.db.blocks.find({"transactions.id": id})

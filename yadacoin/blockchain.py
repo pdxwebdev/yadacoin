@@ -8,7 +8,7 @@ from transaction import (
     NotEnoughMoneyException
 )
 
-class BlockChainException(BaseException):
+class BlockChainException(Exception):
     pass
 
 class Blockchain(object):
@@ -44,6 +44,11 @@ class Blockchain(object):
                 try:
                     txn.verify()
                 except InvalidTransactionException as e:
+                    if last_block:
+                        return {'verified': False, 'last_good_block': last_block, 'message': e}
+                    else:
+                        return {'verified': False, 'message': e}
+                except MissingInputTransactionException as e:
                     if last_block:
                         return {'verified': False, 'last_good_block': last_block, 'message': e}
                     else:

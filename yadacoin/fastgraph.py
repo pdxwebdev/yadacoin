@@ -38,7 +38,8 @@ class FastGraph(Transaction):
         inputs='',
         outputs='',
         coinbase=False,
-        signatures=None
+        signatures=None,
+        extra_blocks=None
     ):
         self.config = config
         self.mongo = mongo
@@ -54,12 +55,13 @@ class FastGraph(Transaction):
         self.requested_rid = requested_rid
         self.hash = txn_hash
         self.outputs = []
+        self.extra_blocks = extra_blocks
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
         for x in inputs:
-            if 'signature' in x and 'public_key' in x:
-                self.inputs.append(ExternalInput.from_dict(x))
+            if 'signature' in x and 'public_key' in x and 'address' in x:
+                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
@@ -103,7 +105,7 @@ class FastGraph(Transaction):
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
         if first_bulletin_secret == second_bulletin_secret:
-            raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
+            raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(first_bulletin_secret), str(second_bulletin_secret)], key=str.lower)
         return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
@@ -111,7 +113,7 @@ class FastGraph(Transaction):
         for inp in self.inputs:
             inp = inp.id
             while 1:
-                txn = BU.get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=False)
+                txn = BU.get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=True)
                 if txn:
                     if 'rid' in txn and txn['rid'] and 'dh_public_key' in txn and txn['dh_public_key']:
                         if rid and txn['rid'] != rid:

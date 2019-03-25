@@ -63,8 +63,8 @@ class TransactionFactory(object):
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
         for x in inputs:
-            if 'signature' in x and 'public_key' in x:
-                self.inputs.append(ExternalInput.from_dict(x))
+            if 'signature' in x and 'public_key' in x and 'address' in x:
+                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
@@ -93,7 +93,7 @@ class TransactionFactory(object):
                     self.dh_private_key = a.encode('hex')
                 self.relationship = self.generate_relationship()
                 if not private_key:
-                    raise BaseException('missing private key')
+                    raise Exception('missing private key')
                 self.cipher = Crypt(self.config.wif)
                 self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
         else:
@@ -134,8 +134,8 @@ class TransactionFactory(object):
             inputs = []
             for input_txn in input_txns:
                 if input_txn['id'] not in mtxn_ids:
-                    if 'signature' in input_txn and 'public_key' in input_txn:
-                        inputs.append(ExternalInput.from_dict(input_txn))
+                    if 'signature' in input_txn and 'public_key' in input_txn and 'address' in input_txn:
+                        inputs.append(ExternalInput.from_dict(self.config, self.mongo, input_txn))
                     else:
                         inputs.append(Input.from_dict(input_txn))
 
@@ -149,8 +149,13 @@ class TransactionFactory(object):
                 for y in inputs:
                     print y.id
                     txn = BU.get_transaction_by_id(self.config, self.mongo, y.id, instance=True)
+                    if isinstance(y, ExternalInput):
+                        y.verify()
+                        address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
+                    else:
+                        address = my_address
                     for txn_output in txn.outputs:
-                        if txn_output.to == my_address:
+                        if txn_output.to == address:
                             input_sum += txn_output.value
                             needed_inputs.append(y)
                             if input_sum >= (sum([x.value for x in self.outputs])+self.fee):
@@ -180,9 +185,10 @@ class TransactionFactory(object):
                 self.outputs.append(return_change_output)
 
     def get_input_hashes(self):
+        from fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
+            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             input_hashes.append(str(txn.transaction_signature))
 
         return ''.join(sorted(input_hashes, key=str.lower))
@@ -194,7 +200,7 @@ class TransactionFactory(object):
     def generate_rid(self):
         my_bulletin_secret = self.config.get_bulletin_secret()
         if my_bulletin_secret == self.bulletin_secret:
-            raise BaseException('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
+            raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(my_bulletin_secret), str(self.bulletin_secret)], key=str.lower)
         return hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
 
@@ -230,16 +236,16 @@ class TransactionFactory(object):
     def generate_transaction_signature(self):
         return TU.generate_signature(self.hash, self.private_key)
 
-class InvalidTransactionException(BaseException):
+class InvalidTransactionException(Exception):
     pass
 
-class InvalidTransactionSignatureException(BaseException):
+class InvalidTransactionSignatureException(Exception):
     pass
 
-class MissingInputTransactionException(BaseException):
+class MissingInputTransactionException(Exception):
     pass
 
-class NotEnoughMoneyException(BaseException):
+class NotEnoughMoneyException(Exception):
     pass
 
 class Transaction(object):
@@ -282,8 +288,8 @@ class Transaction(object):
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
         for x in inputs:
-            if 'signature' in x and 'public_key' in x:
-                self.inputs.append(ExternalInput.from_dict(x))
+            if 'signature' in x and 'public_key' in x and 'address' in x:
+                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
@@ -315,6 +321,7 @@ class Transaction(object):
         )
 
     def verify(self):
+        from fastgraph import FastGraph
         verify_hash = self.generate_hash()
         address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
 
@@ -336,16 +343,19 @@ class Transaction(object):
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, BU.get_transaction_by_id(self.config, self.mongo, txn.id))
+            input_txn = BU.get_transaction_by_id(self.config, self.mongo, txn.id, include_fastgraph=isinstance(self, FastGraph))
+            if not input_txn:
+                raise InvalidTransactionException("Input not found on blockchain.")
+            txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, input_txn)
 
             found = False
             for output in txn_input.outputs:
-                if hasattr(txn, 'public_key') and hasattr(txn, 'signature'):
-                    ext_address = P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex'))
-                    if str(output.to) == str(ext_address):
-                        found = True
+                if isinstance(txn, ExternalInput):
+                    ext_address = P2PKHBitcoinAddress.from_pubkey(txn_input.public_key.decode('hex'))
+                    int_address = P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex'))
+                    if str(output.to) == str(ext_address) and str(int_address) == str(txn.address):
                         try:
-                            result = verify_signature(base64.b64decode(txn.signature), txn.id, txn.public_key.decode('hex'))
+                            result = verify_signature(base64.b64decode(txn.signature), txn.id, txn_input.public_key.decode('hex'))
                             if not result:
                                 raise Exception()
                         except:
@@ -355,12 +365,15 @@ class Transaction(object):
                                     raise
                             except:
                                 raise InvalidTransactionSignatureException("external input transaction signature did not verify")
+                        
+                        found = True
+                        total_input += float(output.value)
                 elif str(output.to) == str(address):
                     found = True
                     total_input += float(output.value)
                 
             if not found:
-                if hasattr(txn, 'public_key') and hasattr(txn, 'signature'):
+                if isinstance(txn, ExternalInput):
                     raise InvalidTransactionException("external input signing information did not match any recipients of the input transaction")
                 else:
                     raise InvalidTransactionException("using inputs from a transaction where you were not one of the recipients.")
@@ -373,7 +386,7 @@ class Transaction(object):
             total_output += float(txn.value)
         total = float(total_output) + float(self.fee)
         if "{0:.8f}".format(total_input) != "{0:.8f}".format(total):
-            raise BaseException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
+            raise Exception("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     def generate_hash(self):
         inputs_concat = self.get_input_hashes()
@@ -405,9 +418,10 @@ class Transaction(object):
         return hashout
 
     def get_input_hashes(self):
+        from fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
+            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             if txn:
                 input_hashes.append(str(txn.transaction_signature))
             else:
@@ -472,23 +486,36 @@ class Input(object):
 
 
 class ExternalInput(Input):
-    def __init__(self, txn_id, public_key, signature):
-        self.id = txn_id
+    def __init__(self, config, mongo, public_key, address, txn_id, signature):
+        self.config = config
+        self.mongo = mongo
         self.public_key = public_key
+        self.id = txn_id
         self.signature = signature
+        self.address = address
+
+    def verify(self):
+        txn = BU.get_transaction_by_id(self.config, self.mongo, self.id, instance=True)
+        result = verify_signature(base64.b64decode(self.signature), self.id, txn.public_key.decode('hex'))
+        if not result:
+            raise Exception('Invalid external input')
 
     @classmethod
-    def from_dict(cls, txn):
+    def from_dict(cls, config, mongo, txn):
         return cls(
-            txn_id=txn.get('id', ''),
+            config=config,
+            mongo=mongo,
             public_key=txn.get('public_key', ''),
+            address=txn.get('address', ''),
+            txn_id=txn.get('id', ''),
             signature=txn.get('signature', '')
         )
 
     def to_dict(self):
         return {
-            'id': self.id,
             'public_key': self.public_key,
+            'address': self.address,
+            'id': self.id,
             'signature': self.signature
         }
 
