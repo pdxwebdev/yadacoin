@@ -244,13 +244,15 @@ class Consensus(object):
         Peers.init(self.config, self.mongo, self.config.network)
         for peer in Peers.peers:
             try:
+                if '109.190.174.238' in peer.to_string():
+                    continue
                 if self.debug:
                     print('requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()))
                 try:
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),
                         start_index=int(self.latest_block.index) + 1,
-                        end_index=int(self.latest_block.index) + 1000
+                        end_index=int(self.latest_block.index) + 100
                     ), timeout=1)
                 except Exception as e:
                     raise e

@@ -37,6 +37,7 @@ class Config(object):
         self.serve_port = config['serve_port']
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
+        self.post_peer = config.get('post_peer', True)
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None):

@@ -117,6 +117,8 @@ class Peer(object):
         try:
             if self.config.network == 'regnet':
                 return
+            if not self.config.post_peer:
+                return
             if self.config.network == 'mainnet':
                 url = 'https://yadacoin.io/peers'
             elif self.config.network == 'testnet':
@@ -179,6 +181,8 @@ class Peer(object):
     @classmethod
     def save_my_peer(cls, config, mongo, network):
         if config.network == 'regnet':
+            return
+        if not config.post_peer:
             return
         peer = config.peer_host + ":" + str(config.peer_port)
         mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
