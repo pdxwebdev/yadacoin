@@ -1,17 +1,13 @@
-import re
-import time
-from block import Block, BlockFactory
-from transaction import (
-    InvalidTransactionException,
-    InvalidTransactionSignatureException,
-    MissingInputTransactionException,
-    NotEnoughMoneyException
-)
+from yadacoin.block import Block, BlockFactory
+from yadacoin.transaction import InvalidTransactionException, MissingInputTransactionException
+
 
 class BlockChainException(Exception):
     pass
 
+
 class Blockchain(object):
+
     def __init__(self, config, mongo, blocks=None, partial=False):
         self.config = config
         self.mongo = mongo
@@ -36,6 +32,7 @@ class Blockchain(object):
             try:
                 block.verify()
             except Exception as e:
+                print("verify1", e)
                 if last_block:
                     return {'verified': False, 'last_good_block': last_block, 'message': e}
                 else:
@@ -44,16 +41,19 @@ class Blockchain(object):
                 try:
                     txn.verify()
                 except InvalidTransactionException as e:
+                    print("verify2", e)
                     if last_block:
                         return {'verified': False, 'last_good_block': last_block, 'message': e}
                     else:
                         return {'verified': False, 'message': e}
                 except MissingInputTransactionException as e:
+                    print("verify3", e)
                     if last_block:
                         return {'verified': False, 'last_good_block': last_block, 'message': e}
                     else:
                         return {'verified': False, 'message': e}
                 except Exception as e:
+                    print("verify4", e)
                     if last_block:
                         return {'verified': False, 'last_good_block': last_block, 'message': e}
                     else:

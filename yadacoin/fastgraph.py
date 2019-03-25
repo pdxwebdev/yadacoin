@@ -168,8 +168,8 @@ class FastGraph(Transaction):
             signature.passed = False
             signed = verify_signature(
                 base64.b64decode(signature.signature),
-                self.hash,
-                public_key.decode('hex')
+                self.hash.encode('utf-8'),
+                bytes.fromhex(public_key)
             )
             if signed:
                 signature.passed = True

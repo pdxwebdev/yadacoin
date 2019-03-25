@@ -153,7 +153,7 @@ class BlockFactory(object):
     @classmethod
     def generate_hash_from_header(cls, header, nonce):
         header = header.format(nonce=nonce)
-        return hashlib.sha256(hashlib.sha256(header).digest()).digest()[::-1].hex()
+        return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -166,7 +166,7 @@ class BlockFactory(object):
                 txn2 = txn_hashes[i+1]
             except:
                 txn2 = ''
-            hashes.append(hashlib.sha256(txn1+txn2).digest().hex())
+            hashes.append(hashlib.sha256((txn1+txn2).encode('utf-8')).digest().hex())
         if len(hashes) > 1:
             self.set_merkle_root(hashes)
         else:
@@ -383,7 +383,7 @@ class Block(object):
 
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         try:
-            result = verify_signature(base64.b64decode(self.signature), self.hash, bytes.fromhex(self.public_key))
+            result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
             if not result:
                 raise Exception("block signature is invalid")
         except:
@@ -421,7 +421,7 @@ class Block(object):
                 txn2 = txn_hashes[i+1]
             except:
                 txn2 = ''
-            hashes.append(hashlib.sha256(txn1+txn2).digest().hex())
+            hashes.append(hashlib.sha256((txn1+txn2).encode('utf-8')).digest().hex())
         if len(hashes) > 1:
             self.set_merkle_root(hashes)
         else:

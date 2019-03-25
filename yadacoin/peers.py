@@ -147,6 +147,7 @@ class Peer(object):
         from miniupnpc import UPnP
         # deploy as an eventlet WSGI server
         try:
+            raise ValueError('test')
             sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
             sock.bind((config.serve_host, 0))
             server_port = sock.getsockname()[1]
@@ -156,7 +157,7 @@ class Peer(object):
             u.discover()
             u.selectigd()
             r = u.getspecificportmapping(eport, 'TCP')
-            while r != None and eport < 65536:
+            while r is not None and eport < 65536:
                 eport = eport + 1
                 r = u.getspecificportmapping(eport, 'TCP')
             b = u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')

@@ -342,15 +342,19 @@ class Transaction(object):
             raise InvalidTransactionException("transaction is invalid")
 
         try:
-            result = verify_signature(base64.b64decode(self.transaction_signature), self.hash, bytes.fromhex(self.public_key))
+            result = verify_signature(base64.b64decode(self.transaction_signature), self.hash.encode('utf-8'),
+                                      bytes.fromhex(self.public_key))
             if not result:
+                print("t verify1")
                 raise Exception()
         except:
             try:
                 result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
                 if not result:
+                    print("t verify2")
                     raise
             except:
+                print("t verify3")
                 raise InvalidTransactionSignatureException("transaction signature did not verify")
 
         # verify spend
@@ -368,13 +372,15 @@ class Transaction(object):
                     int_address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key))
                     if str(output.to) == str(ext_address) and str(int_address) == str(txn.address):
                         try:
-                            result = verify_signature(base64.b64decode(txn.signature), txn.id, bytes.fromhex(txn_input.public_key))
+                            result = verify_signature(base64.b64decode(txn.signature), txn.id.encode('utf-8'), bytes.fromhex(txn_input.public_key))
                             if not result:
+                                print("t verify4")
                                 raise Exception()
                         except:
                             try:
                                 result = VerifyMessage(ext_address, BitcoinMessage(txn.id, magic=''), txn.signature)
                                 if not result:
+                                    print("t verify5")
                                     raise
                             except:
                                 raise InvalidTransactionSignatureException("external input transaction signature did not verify")
@@ -405,7 +411,7 @@ class Transaction(object):
         inputs_concat = self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
         if self.time:
-            hashout = hashlib.sha256(
+            hashout = hashlib.sha256((
                 self.public_key +
                 self.time +
                 self.dh_public_key +
@@ -415,10 +421,10 @@ class Transaction(object):
                 self.requester_rid +
                 self.requested_rid +
                 inputs_concat +
-                outputs_concat
+                outputs_concat).encode('utf-8')
             ).digest().hex()
         else:
-            hashout = hashlib.sha256(
+            hashout = hashlib.sha256((
                 self.dh_public_key +
                 self.rid +
                 self.relationship +
@@ -426,7 +432,7 @@ class Transaction(object):
                 self.requester_rid +
                 self.requested_rid +
                 inputs_concat +
-                outputs_concat
+                outputs_concat).encode('utf-8')
             ).digest().hex()
         return hashout
 
@@ -511,7 +517,7 @@ class ExternalInput(Input):
 
     def verify(self):
         txn = BU.get_transaction_by_id(self.config, self.mongo, self.id, instance=True)
-        result = verify_signature(base64.b64decode(self.signature), self.id, bytes.fromhex(txn.public_key))
+        result = verify_signature(base64.b64decode(self.signature), self.id.encode('utf-8'), bytes.fromhex(txn.public_key))
         if not result:
             raise Exception('Invalid external input')
 

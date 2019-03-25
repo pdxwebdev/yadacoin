@@ -675,15 +675,15 @@ class SignRawTransactionView(View):
             their_entry_for_relationship = BU.get_transaction_by_rid(config, mongo, rid, rid=True, raw=True, theirs=True, public_key=config.public_key)
             verified = verify_signature(
                 base64.b64decode(request.json.get('bulletin_secret')),
-                my_entry_for_relationship['relationship']['their_username'],
-                their_entry_for_relationship['public_key'].decode('hex')
+                my_entry_for_relationship['relationship']['their_username'].encode('utf-8'),
+                bytes.fromhex(their_entry_for_relationship['public_key'])
             )
             if not verified:
                 return 'no', 400
             verified = verify_signature(
                 base64.b64decode(request.json.get('id')),
-                request.json.get('hash'),
-                their_entry_for_relationship['public_key'].decode('hex')
+                request.json.get('hash').encode('utf-8'),
+                bytes.fromhex(their_entry_for_relationship['public_key'])
             )
 
             address = str(P2PKHBitcoinAddress.from_pubkey(their_entry_for_relationship['public_key'].decode('hex')))
