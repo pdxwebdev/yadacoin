@@ -1,23 +1,20 @@
 import json
 import hashlib
-import os
-import argparse
-import base64
 import humanhash
-import time
 
-from io import BytesIO
+"""from io import BytesIO
 from uuid import uuid4
 from ecdsa import NIST384p, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from blockchainutils import BU
-from transactionutils import TU
-from transaction import *
-from crypt import Crypt
-from config import Config
-from mongo import Mongo
+"""
+from yadacoin.blockchainutils import BU
+from yadacoin.transactionutils import TU
+# from yadacoin.transaction import *
+
+#from yadacoin.crypt import Crypt
+#from yadacoin.config import Config
 
 
 class Graph(object):
@@ -51,7 +48,7 @@ class Graph(object):
             self.registered = False
             self.pending_registration = False
             bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
-            rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().encode('hex')
+            rid = hashlib.sha256(str(bulletin_secrets[0]) + str(bulletin_secrets[1])).digest().hex()
             self.rid = rid
 
             res = self.mongo.site_db.usernames.find({"rid": self.rid})
@@ -210,7 +207,7 @@ class Graph(object):
         flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
         for x in BU.get_posts(self.config, self.mongo, self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
-            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
             if rid in self.rid_usernames:
                 x['username'] = self.rid_usernames[rid]
                 if x['username'] not in blocked and x['id'] not in flagged:
@@ -234,7 +231,7 @@ class Graph(object):
                 out[x['relationship'].get('id')] = []
 
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
-            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
             
             if rid in self.rid_usernames:
                 x['username'] = self.rid_usernames[rid]
@@ -262,7 +259,7 @@ class Graph(object):
                 out[x['relationship'].get('id')] = []
 
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
-            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
+            rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().hex()
             
             if rid in self.rid_usernames:
                 x['username'] = self.rid_usernames[rid]

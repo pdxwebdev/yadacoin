@@ -1,20 +1,24 @@
 import json
 import requests
-import pymongo
-from mongo import Mongo
+# import pymongo
+# from mongo import Mongo
+
 
 class Peers(object):
+
     peers = []
     peers_json = ''
+
     def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo
+        self.my_peer = None
 
     def init_local(self):
         res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
         self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         peers = [x for x in res]
-        self.peers = []
+        self.peers = []  # Beware, this is a class property, not local
         try:
             for peer in peers:
                 self.peers.append(
@@ -91,6 +95,7 @@ class Peers(object):
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
 
+
 class Peer(object):
     def __init__(self, config, mongo, host, port, bulletin_secret=None, is_me=False):
         self.config = config
@@ -123,7 +128,7 @@ class Peer(object):
                 headers={'Connection':'close'}
             )
         except:
-            print 'failed to report bad peer'
+            print('failed to report bad peer')
             pass
 
     def is_broken(self):
@@ -160,12 +165,12 @@ class Peer(object):
             config.peer_host = u.externalipaddress()
             config.peer_port = server_port
         except Exception as e:
-            print e
+            print(e)
             config.serve_host = config.serve_host
             config.serve_port = config.serve_port
             config.peer_host = config.peer_host
             config.peer_port = config.peer_port
-            print 'UPnP failed: you must forward and/or whitelist port', config.peer_port
+            print('UPnP failed: you must forward and/or whitelist port', config.peer_port)
 
         cls.save_my_peer(config, mongo, network)
         return cls(config, mongo, config.peer_host, config.peer_port)
@@ -193,7 +198,7 @@ class Peer(object):
                 }
             )
         except:
-            print 'ERROR: failed to get peers, exiting...'
+            print('ERROR: failed to get peers, exiting...')
             exit()
 
     def to_dict(self):

@@ -1,25 +1,27 @@
-import requests
 import hashlib
 import base64
 import json
+# TODO: socketio, socketio_client, flask.socketio => 3 different libs for the same thing?
 from socketIO_client import SocketIO, BaseNamespace
-from blockchainutils import BU
-from transactionutils import TU
 from coincurve.utils import verify_signature
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from transaction import Transaction, Relationship, Input, Output, ExternalInput
-from peers import Peers
-from mongo import Mongo
+
+from yadacoin.blockchainutils import BU
+from yadacoin.transaction import Transaction, Relationship, Input, Output, ExternalInput
+from yadacoin.peers import Peers
 
 
 class InvalidFastGraphTransactionException(Exception):
     pass
 
+
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
-        print 'error'
+        print('error')
+
 
 class FastGraph(Transaction):
+
     def __init__(
         self,
         config,
@@ -210,7 +212,7 @@ class FastGraph(Transaction):
                 socketIO.wait(seconds=1)
                 chat_namespace.disconnect()
             except Exception as e:
-                print e
+                print("Error fastgraph.get_signatures", e)
                 pass
 
     def broadcast(self):
@@ -223,7 +225,7 @@ class FastGraph(Transaction):
                 socketIO.wait(seconds=1)
                 chat_namespace.disconnect()
             except Exception as e:
-                print e
+                print("Error fastgraph.broadcast", e)
                 pass
     
     def save(self):
@@ -257,6 +259,7 @@ class FastGraph(Transaction):
     
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
+
 
 class FastGraphSignature(object):
     def __init__(self, signature):

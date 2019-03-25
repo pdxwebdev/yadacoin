@@ -1,23 +1,24 @@
 import json
-import hashlib
-import os
+#import hashlib
+#import os
 import base64
-import time
+#import time
 
-from io import BytesIO
+"""from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from transactionutils import TU
-from bitcoin.wallet import CBitcoinSecret
-from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
+"""
+from yadacoin.transactionutils import TU
+# from bitcoin.wallet import CBitcoinSecret
+# from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from bson.son import SON
 from coincurve import PrivateKey
-from mongo import Mongo
-from config import Config
+# from mongo import Mongo
+# from config import Config
 
 
 class BU(object):  # Blockchain Utilities
@@ -46,8 +47,8 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_block_objs(cls, config, mongo):
-        from block import Block
-        from transaction import Transaction, Input, Crypt
+        from yadacoin.block import Block
+        # from yadacoin.transaction import Transaction, Input, Crypt
         blocks = cls.get_blocks(config, mongo)
         block_objs = []
         for block in blocks:
@@ -244,9 +245,9 @@ class BU(object):  # Blockchain Utilities
     def get_transactions(cls, config, mongo, wif, query, queryType, raw=False, both=True, skip=None):
         if not skip:
             skip = []
-        from block import Block
-        from transaction import Transaction
-        from crypt import Crypt
+        #from block import Block
+        #from transaction import Transaction
+        from yadacoin.crypt import Crypt
 
         get_transactions_cache = mongo.db.get_transactions_cache.find(
                 {
@@ -358,7 +359,7 @@ class BU(object):  # Blockchain Utilities
     
     @classmethod
     def get_fastgraph_transactions(cls, config, mongo, secret, query, queryType, raw=False, both=True, skip=None):
-        from crypt import Crypt
+        from yadacoin.crypt import Crypt
         for transaction in mongo.db.fastgraph_transactions.find(query):
             if 'txn' in transaction:
                 try:
@@ -426,7 +427,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_posts(cls, config, mongo, rids):
-        from crypt import Crypt
+        from yadacoin.crypt import Crypt
 
         if not isinstance(rids, list):
             rids = [rids, ]
@@ -513,7 +514,7 @@ class BU(object):  # Blockchain Utilities
                         x['txn']['relationship'] = data
                         if 'postText' in decrypted:
                             had_txns = True
-                            print 'caching posts at height:', x.get('height', 0)
+                            print('caching posts at height:', x.get('height', 0))
                             for rid in rids:
                                 mongo.db.posts_cache.update({
                                     'rid': rid,
@@ -547,7 +548,7 @@ class BU(object):  # Blockchain Utilities
                                 'success': False
                             },
                             upsert=True)
-                        print e
+                        print(e)
         if not had_txns:
             for rid in rids:
                 mongo.db.posts_cache.insert({
@@ -575,7 +576,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_reacts(cls, config, mongo, rids, ids):
-        from crypt import Crypt
+        from yadacoin.crypt import Crypt
 
         if not isinstance(rids, list):
             rids = [rids, ]
@@ -662,7 +663,7 @@ class BU(object):  # Blockchain Utilities
                         x['txn']['relationship'] = data
                         if 'react' in decrypted:
                             had_txns = True
-                            print 'caching reacts at height:', x.get('height', 0)
+                            print('caching reacts at height:', x.get('height', 0))
                             for rid in rids:
                                 mongo.db.reacts_cache.update({
                                     'rid': rid,
@@ -712,7 +713,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_comments(cls, config, mongo, rids, ids):
-        from crypt import Crypt
+        from yadacoin.crypt import Crypt
 
         if not isinstance(rids, list):
             rids = [rids, ]
@@ -799,7 +800,7 @@ class BU(object):  # Blockchain Utilities
                         x['txn']['relationship'] = data
                         if 'comment' in decrypted:
                             had_txns = True
-                            print 'caching comments at height:', x.get('height', 0)
+                            print('caching comments at height:', x.get('height', 0))
                             for rid in rids:
                                 mongo.db.comments_cache.update({
                                     'rid': rid,
@@ -849,9 +850,9 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_relationships(cls, config, mongo, wif):
-        from block import Block
-        from transaction import Transaction
-        from crypt import Crypt
+        #from block import Block
+        #from transaction import Transaction
+        from yadacoin.crypt import Crypt
         relationships = []
         for block in cls.get_blocks(config, mongo):
             for transaction in block.get('transactions'):
@@ -866,9 +867,9 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_transaction_by_rid(cls, config, mongo, selector, wif=None, bulletin_secret=None, rid=False, raw=False, theirs=False, my=False, public_key=None):
-        from block import Block
-        from transaction import Transaction
-        from crypt import Crypt
+        #from block import Block
+        #from transaction import Transaction
+        from yadacoin.crypt import Crypt
         if not rid:
             ds = bulletin_secret
             selectors = [
@@ -901,9 +902,9 @@ class BU(object):  # Blockchain Utilities
     @classmethod
     def get_transactions_by_rid(cls, config, mongo, selector, bulletin_secret, wif=None, rid=False, raw=False, returnheight=True, lt_block_height=None):
         #selectors is old code before we got an RID by sorting the bulletin secrets
-        from block import Block
-        from transaction import Transaction
-        from crypt import Crypt
+        #from block import Block
+        #from transaction import Transaction
+        from yadacoin.crypt import Crypt
 
         if not rid:
             ds = bulletin_secret
@@ -953,7 +954,7 @@ class BU(object):  # Blockchain Utilities
                         except:
                             continue
                     for selector in selectors:
-                        print 'caching transactions_by_rid at height:', block['index']
+                        print('caching transactions_by_rid at height:', block['index'])
                         mongo.db.transactions_by_rid_cache.insert(
                             {
                                 'raw': raw,
@@ -1042,7 +1043,7 @@ class BU(object):  # Blockchain Utilities
         had_txns = False
         for x in transactions:
             had_txns = True
-            print 'caching friend requests at height:', x['height']
+            print('caching friend requests at height:', x['height'])
             mongo.db.friend_requests_cache.update({
                 'requested_rid': x['txn']['requested_rid'],
                 'height': x['height'],
@@ -1117,7 +1118,7 @@ class BU(object):  # Blockchain Utilities
         ])
 
         for x in transactions:
-            print 'caching sent friend requests at height:', x['height']
+            print('caching sent friend requests at height:', x['height'])
             mongo.db.sent_friend_requests_cache.update({
                 'requester_rid': x['txn']['requester_rid'],
                 'height': x['height'],
@@ -1189,7 +1190,7 @@ class BU(object):  # Blockchain Utilities
         ])
 
         for x in transactions:
-            print 'caching messages at height:', x['height']
+            print('caching messages at height:', x['height'])
             mongo.db.messages_cache.update({
                 'rid': x['txn']['rid'],
                 'height': x['height'],
@@ -1245,8 +1246,9 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=False):
-        from transaction import Transaction, Input, Crypt
-        from fastgraph import FastGraph
+        from yadacoin.transaction import Transaction
+        # from yadacoin.crypt import Crypt
+        from yadacoin.fastgraph import FastGraph
         res = mongo.db.blocks.find({"transactions.id": id})
         res2 = mongo.db.fastgraph_transactions.find({"txn.id": id})
         if res.count():
@@ -1370,7 +1372,7 @@ class BU(object):  # Blockchain Utilities
 
     @classmethod
     def verify_message(cls, config, mongo, rid, message, public_key, txn_id=None):
-        from crypt import Crypt
+        from yadacoin.crypt import Crypt
         sent = False
         received = False
         res = mongo.db.verify_message_cache.find_one({

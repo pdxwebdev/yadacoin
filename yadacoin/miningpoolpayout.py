@@ -1,8 +1,8 @@
 from socketIO_client import SocketIO, BaseNamespace
-from exceptions import Exception
-from blockchain import Blockchain
-from mongo import Mongo
-from config import Config
+# from exceptions import Exception
+#from blockchain import Blockchain
+#from mongo import Mongo
+#from config import Config
 from peers import Peers
 from block import Block
 from blockchainutils import BU

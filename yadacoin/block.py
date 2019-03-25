@@ -1,25 +1,23 @@
 import json
 import hashlib
-import os
 import base64
 import time
 
 from decimal import Decimal, getcontext
-from io import BytesIO
+"""from io import BytesIO
 from uuid import uuid4
 from ecdsa import SECP256k1, SigningKey, VerifyingKey
 from ecdsa.util import randrange_from_seed__trytryagain
 from Crypto.Cipher import AES
 from pbkdf2 import PBKDF2
-from transaction import TransactionFactory, Transaction, Output, InvalidTransactionException, ExternalInput, Input
-from blockchainutils import BU
-from transactionutils import TU
-from bitcoin.signmessage import BitcoinMessage, VerifyMessage, SignMessage
-from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+"""
+from bitcoin.signmessage import BitcoinMessage, VerifyMessage
+from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from config import Config
-from mongo import Mongo
-from fastgraph import FastGraph
+
+from yadacoin.fastgraph import FastGraph
+from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, ExternalInput
+from yadacoin.blockchainutils import BU
 
 
 class BlockFactory(object):
@@ -53,7 +51,7 @@ class BlockFactory(object):
                     transaction_obj = Transaction.from_dict(self.config, self.mongo, self.index, txn)
 
                 if transaction_obj.transaction_signature in used_sigs:
-                    print 'duplicate transaction found and removed'
+                    print('duplicate transaction found and removed')
                     continue
     
                 used_sigs.append(transaction_obj.transaction_signature)
@@ -73,7 +71,7 @@ class BlockFactory(object):
                         transaction_obj = FastGraph.from_dict(self.config, self.mongo, self.index, txn)
 
                     if transaction_obj.transaction.transaction_signature in used_sigs:
-                        print 'duplicate transaction found and removed'
+                        print('duplicate transaction found and removed')
                         continue
                     used_sigs.append(transaction_obj.transaction.transaction_signature)
                     if not transaction_obj.verify():
@@ -82,7 +80,7 @@ class BlockFactory(object):
                 except:
                     raise InvalidTransactionException("invalid transactions")
 
-            address = str(P2PKHBitcoinAddress.from_pubkey(transaction_obj.public_key.decode('hex')))
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
             #check double spend
             if address in unspent_indexed:
                 unspent_ids = unspent_indexed[address]
@@ -98,7 +96,7 @@ class BlockFactory(object):
                 if x.id not in unspent_ids:
                     if isinstance(x, ExternalInput):
                         txn2 = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
-                        address2 = str(P2PKHBitcoinAddress.from_pubkey(txn2.public_key.decode('hex')))
+                        address2 = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn2.public_key)))
                         res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address2)
                         unspent_ids2 = [y['id'] for y in res]
                         if x.id not in unspent_ids2:
@@ -118,7 +116,7 @@ class BlockFactory(object):
             private_key=self.private_key,
             outputs=[{
                 'value': block_reward + float(fee_sum),
-                'to': str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex')))
+                'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
             }],
             coinbase=True
         )
@@ -155,7 +153,7 @@ class BlockFactory(object):
     @classmethod
     def generate_hash_from_header(cls, header, nonce):
         header = header.format(nonce=nonce)
-        return hashlib.sha256(hashlib.sha256(header).digest()).digest()[::-1].encode('hex')
+        return hashlib.sha256(hashlib.sha256(header).digest()).digest()[::-1].hex()
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
@@ -168,7 +166,7 @@ class BlockFactory(object):
                 txn2 = txn_hashes[i+1]
             except:
                 txn2 = ''
-            hashes.append(hashlib.sha256(txn1+txn2).digest().encode('hex'))
+            hashes.append(hashlib.sha256(txn1+txn2).digest().hex())
         if len(hashes) > 1:
             self.set_merkle_root(hashes)
         else:
@@ -289,7 +287,9 @@ class BlockFactory(object):
             "prevHash" : ""
         })
 
+
 class Block(object):
+    
     def __init__(
         self,
         config,
@@ -329,7 +329,7 @@ class Block(object):
         transactions = []
         for txn in block.get('transactions'):
             # TODO: do validify checking for coinbase transactions
-            if str(P2PKHBitcoinAddress.from_pubkey(block.get('public_key').decode('hex'))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1 and not txn.get('inputs') and not txn.get('relationship'):
+            if str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.get('public_key')))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1 and not txn.get('inputs') and not txn.get('relationship'):
                 txn['coinbase'] = True  
             else:
                 txn['coinbase'] = False
@@ -357,7 +357,7 @@ class Block(object):
     
     def get_coinbase(self):
         for txn in self.transactions:
-            if str(P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship and len(txn.inputs) == 0:
+            if str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship and len(txn.inputs) == 0:
                 return txn
 
 
@@ -381,9 +381,9 @@ class Block(object):
         except:
             raise
 
-        address = P2PKHBitcoinAddress.from_pubkey(self.public_key.decode('hex'))
+        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         try:
-            result = verify_signature(base64.b64decode(self.signature), self.hash, self.public_key.decode('hex'))
+            result = verify_signature(base64.b64decode(self.signature), self.hash, bytes.fromhex(self.public_key))
             if not result:
                 raise Exception("block signature is invalid")
         except:
@@ -421,7 +421,7 @@ class Block(object):
                 txn2 = txn_hashes[i+1]
             except:
                 txn2 = ''
-            hashes.append(hashlib.sha256(txn1+txn2).digest().encode('hex'))
+            hashes.append(hashlib.sha256(txn1+txn2).digest().hex())
         if len(hashes) > 1:
             self.set_merkle_root(hashes)
         else:
@@ -431,7 +431,7 @@ class Block(object):
         self.verify()
         for txn in self.transactions:
             if txn.inputs:
-                address = str(P2PKHBitcoinAddress.from_pubkey(txn.public_key.decode('hex')))
+                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
                 unspent = BU.get_wallet_unspent_transactions(self.config, self.mongo,address, [x.id for x in txn.inputs])
                 unspent_ids = [x['id'] for x in unspent]
                 failed = False
@@ -448,7 +448,7 @@ class Block(object):
         if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:
             self.mongo.db.blocks.insert(self.to_dict())
         else:
-            print "CRITICAL: block rejected..."
+            print("CRITICAL: block rejected...")
 
     def delete(self):
         self.mongo.db.blocks.remove({"index": self.index})
