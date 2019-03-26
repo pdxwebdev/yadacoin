@@ -304,7 +304,7 @@ class Block(object):
         public_key='',
         signature='',
         special_min='',
-        target=''
+        target=0
     ):
         self.config = config
         self.mongo = mongo
@@ -358,7 +358,6 @@ class Block(object):
         for txn in self.transactions:
             if str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship and len(txn.inputs) == 0:
                 return txn
-
 
     def verify(self):
         getcontext().prec = 8

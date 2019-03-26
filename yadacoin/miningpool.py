@@ -66,6 +66,8 @@ class MiningPool(object):
         if self.block_factory.block.index >= 38600:
             if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
                 target_factor = (int(to_time) - int(latest_block['time'])) / self.max_block_time
+                print("mp", self.block_factory.block.target, target_factor)
+                print(self.block_factory.block.to_dict())
                 target = self.block_factory.block.target * (target_factor * 4)
                 if target > self.max_target:
                     self.block_factory.block.target = self.max_target
