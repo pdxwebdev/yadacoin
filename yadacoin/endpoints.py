@@ -479,7 +479,7 @@ class MiningPoolSubmitView(View):
             block.special_min = mp.block_factory.block.special_min
             block.hash = request.json.get('hash')
             block.nonce = request.json.get('nonce')
-            block.signature = BU.generate_signature(block.hash, config.private_key)
+            block.signature = BU.generate_signature(block.hash.encode('utf-8'), config.private_key)
             try:
                 block.verify()
             except Exception as e:

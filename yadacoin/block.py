@@ -368,7 +368,7 @@ class Block(object):
             txns = self.get_transaction_hashes()
             self.set_merkle_root(txns)
             if self.verify_merkle_root != self.merkle_root:
-                raise Exception("Invalid block")
+                raise Exception("Invalid block merkle")
         except:
             raise
 
@@ -376,7 +376,7 @@ class Block(object):
             header = BlockFactory.generate_header(self)
             hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
             if self.hash != hashtest:
-                raise Exception('Invalid block')
+                raise Exception('Invalid block hash')
         except:
             raise
 
@@ -387,7 +387,7 @@ class Block(object):
                 raise Exception("block signature is invalid")
         except:
             try:
-                result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.signature)
+                result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.signature)
                 if not result:
                     raise
             except:

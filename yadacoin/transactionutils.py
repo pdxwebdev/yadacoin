@@ -25,8 +25,7 @@ class TU(object):  # Transaction Utilities
     @classmethod
     def generate_signature_with_private_key(cls, private_key, message):
         x = ffi.new('long *')
-        # TODO : no maxint in python3
-        x[0] = random.SystemRandom().randint(0, sys.maxint)
+        x[0] = random.SystemRandom().randint(0, sys.maxsize)
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message, custom_nonce=(ffi.NULL, x))
         return base64.b64encode(signature).decode('utf-8')
@@ -34,8 +33,7 @@ class TU(object):  # Transaction Utilities
     @classmethod
     def generate_signature(cls, message, private_key):
         x = ffi.new('long *')
-        # TODO : no maxint in python3
-        x[0] = random.SystemRandom().randint(0, sys.maxint)
+        x[0] = random.SystemRandom().randint(0, sys.maxsize)
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message, custom_nonce=(ffi.NULL, x))
         return base64.b64encode(signature).decode('utf-8')

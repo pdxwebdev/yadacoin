@@ -1228,7 +1228,7 @@ class BU(object):  # Blockchain Utilities
     def generate_signature(cls, message, private_key):
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message)
-        return base64.b64encode(signature)
+        return base64.b64encode(signature).decode("utf-8")
 
     @classmethod
     def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=False):
