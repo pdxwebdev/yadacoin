@@ -24,7 +24,7 @@ define("listen", default="127.0.0.1", help="On which address to listen, locked b
 class NodeApplication(Application):
 
     def __init__(self):
-        static_path = path.join(options.theme, 'static')
+        static_path = path.join(path.dirname(__file__), 'static')
         self.default_handlers = [
             (r"/", HomeHandler),
             (r"/(apple-touch-icon\.png)", StaticFileHandler,
@@ -41,9 +41,10 @@ class NodeApplication(Application):
             debug=options.debug,  # Also activates auto reload
             serve_traceback=options.debug,
             yadacoin_vars = {'node_version': __version__},
+            yadacoin_config={},
         )
         handlers = self.default_handlers.copy()
-        super(Application, self).__init__(handlers, **settings)
+        super().__init__(handlers, **settings)
 
 
 class HomeHandler(BaseHandler):
@@ -52,7 +53,7 @@ class HomeHandler(BaseHandler):
         """
         :return:
         """
-        self.render("home.html", yadacoin=self.yadacoin_vars)
+        self.render("index.html", yadacoin=self.yadacoin_vars)
 
 
 async def main():
