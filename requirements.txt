@@ -29,7 +29,6 @@ Flask-Cors==3.0.4
 Flask-SocketIO==3.3.1
 funcsigs==1.0.2
 future==0.16.0
-futures==3.2.0
 gevent==1.4.0
 greenio==0.6.0
 greenlet==0.4.15
