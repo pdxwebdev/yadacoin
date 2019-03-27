@@ -86,7 +86,7 @@ async def main():
     mongo = Mongo(config)
 
     consensus = Consensus(config, mongo, options.debug)
-    if config.verify:
+    if options.verify:
         logging.getLogger("tornado.application").info("Verifying existing blockchain".format(config.serve_host, config.serve_port))
         consensus.verify_existing_blockchain(reset=options.reset)
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
