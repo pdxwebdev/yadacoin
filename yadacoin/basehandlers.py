@@ -2,7 +2,9 @@
 Base handler ancestor, factorize common functions
 """
 
+import json
 import logging
+
 from tornado.web import RequestHandler
 
 
@@ -13,6 +15,7 @@ class BaseHandler(RequestHandler):
         """Common init for every request"""
         self.app_log = logging.getLogger("tornado.application")
         self.yadacoin_config = self.settings['yadacoin_config']
+        self.mongo = self.settings['mongo']
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]
 
@@ -40,3 +43,10 @@ class BaseHandler(RequestHandler):
     def message(self, title, message, type="info"):
         """Display message template page"""
         self.render("message.html", yadacoin=self.yadacoin_vars, title=title, message=message, type=type)
+
+    def render_as_json(self, data):
+        """Converts to json and streams out"""
+        json_result = json.dumps(data)
+        self.write(json_result)
+        self.set_header('Content-Type', 'application/json')
+        self.finish()
