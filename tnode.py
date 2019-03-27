@@ -15,7 +15,7 @@ from asyncio import sleep as async_sleep
 
 from yadacoin.config import Config
 from yadacoin.basehandlers import BaseHandler
-from yadacoin.corehandlers import GetLatestBlockHandler, GetBlocksHandler, GetBlockHandler
+from yadacoin.corehandlers import CORE_HANDLERS
 from yadacoin.consensus import Consensus
 from yadacoin.mongo import Mongo
 
@@ -29,17 +29,16 @@ define("reset", default=False, help="If blockchain is invalid, truncate at error
 define("config", default='config/config.json', help="Config file location, default is 'config/config.json'", type=str)
 define("verify", default=True, help="Verify chain, default True", type=bool)
 
+
 class NodeApplication(Application):
 
     def __init__(self, config, mongo):
         static_path = path.join(path.dirname(__file__), 'static')
         self.default_handlers = [
             (r"/", HomeHandler),
-            (r'/get-latest-block', GetLatestBlockHandler),
-            (r'/get-blocks', GetBlocksHandler),
-            (r'/get-block', GetBlockHandler),
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path))
         ]
+        self.default_handlers.extend(CORE_HANDLERS)
 
         settings = dict(
             app_title=u"Yadacoin Node",

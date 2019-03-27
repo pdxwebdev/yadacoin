@@ -52,3 +52,7 @@ class GetBlockHandler(BaseHandler):
         """
         hash = self.get_argument("hash", 0)
         self.render_as_json(self.mongo.db.blocks.find_one({'hash': hash}, {'_id': 0}))
+
+
+CORE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler), (r'/get-blocks', GetBlocksHandler),
+                 (r'/get-block', GetBlockHandler)]
