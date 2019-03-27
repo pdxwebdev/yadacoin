@@ -43,3 +43,12 @@ class GetBlocksHandler(BaseHandler):
 
         self.render_as_json(blocks)
 
+
+class GetBlockHandler(BaseHandler):
+
+    async def get(self):
+        """
+        :return:
+        """
+        hash = self.get_argument("hash", 0)
+        self.render_as_json(self.mongo.db.blocks.find_one({'hash': hash}, {'_id': 0}))

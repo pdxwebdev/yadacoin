@@ -110,7 +110,7 @@ class Consensus(object):
     def get_consensus_block_by_index(self, index):
         return self.get_consensus_blocks_by_index(index).limit(1)[0]
 
-    def rank_consenesus_blocks(self):
+    def rank_consensus_blocks(self):
         # rank is based on target, total chain difficulty, and chain validity
         records = self.get_consensus_blocks_by_index(self.latest_block.index + 1)
         lowest = self.lowest

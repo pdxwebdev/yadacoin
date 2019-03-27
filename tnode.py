@@ -14,7 +14,7 @@ from sys import exit
 
 from yadacoin.config import Config
 from yadacoin.basehandlers import BaseHandler
-from yadacoin.corehandlers import GetLatestBlockHandler, GetBlocksHandler
+from yadacoin.corehandlers import GetLatestBlockHandler, GetBlocksHandler, GetBlockHandler
 from yadacoin.mongo import Mongo
 
 
@@ -40,6 +40,7 @@ class NodeApplication(Application):
             (r"/", HomeHandler),
             (r'/get-latest-block', GetLatestBlockHandler),
             (r'/get-blocks', GetBlocksHandler),
+            (r'/get-block', GetBlockHandler),
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path))
         ]
 
