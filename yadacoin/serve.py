@@ -29,11 +29,14 @@ class Serve(object):
         self.app.add_url_rule('/get-graph-wallet', view_func=endpoints.RidWalletView.as_view('get-wallet'))
         self.app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
         self.app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
+        # P
         self.app.add_url_rule('/pool', view_func=endpoints.MiningPoolView.as_view('pool'))
+        # P
         self.app.add_url_rule('/pool-submit', view_func=endpoints.MiningPoolSubmitView.as_view('poolsubmit'), methods=['GET', 'POST'])
+        # P
         self.app.add_url_rule('/pool-explorer', view_func=endpoints.MiningPoolExplorerView.as_view('pool-explorer'))
 
-        # T
+        # C
         self.app.add_url_rule('/get-block', view_func=endpoints.GetBlockByHashView.as_view('get-block'), methods=['GET'])
         self.app.add_url_rule('/getblockheight', view_func=endpoints.GetBlockHeightView.as_view('get-block-height'))
 
@@ -41,7 +44,7 @@ class Serve(object):
         self.app.add_url_rule('/newtransaction', view_func=endpoints.NewTransactionView.as_view('new-transaction'), methods=['POST'])
 
         self.app.add_url_rule('/newblock', view_func=endpoints.NewBlockView.as_view('new-block'), methods=['POST'])
-        # T
+        # C
         self.app.add_url_rule('/get-blocks', view_func=endpoints.GetBlocksView.as_view('get-blocks-range'))
 
 
@@ -50,7 +53,7 @@ class Serve(object):
         self.app.add_url_rule('/generate-wallet', view_func=endpoints.GenerateWalletView.as_view('generate-wallet'))
         self.app.add_url_rule('/generate-child-wallet', view_func=endpoints.GenerateChildWalletView.as_view('generate-child-wallet'), methods=['POST'])
         self.app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))
-        # T
+        # C
         self.app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
 
 
@@ -59,7 +62,7 @@ class Serve(object):
         self.app.add_url_rule('/post-fastgraph-transaction', view_func=endpoints.PostFastGraphView.as_view('post-fastgraph-transaction'), methods=['POST'])
         self.app.add_url_rule('/yada_config.json', view_func=endpoints.GetYadaConfigView.as_view('yada-config'))
         self.app.add_url_rule('/login', view_func=endpoints.GetSiginCodeView.as_view('login'))
-        # T
+        #
         self.app.add_url_rule('/', view_func=endpoints.HomeView.as_view('home'))
         self.app.add_url_rule('/search', view_func=endpoints.SearchView.as_view('search'))
         self.app.add_url_rule('/react', view_func=endpoints.ReactView.as_view('react'), methods=['POST'])

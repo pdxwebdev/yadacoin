@@ -16,11 +16,12 @@ from asyncio import sleep as async_sleep
 from yadacoin.config import Config
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.corehandlers import CORE_HANDLERS
+from yadacoin.poolhandlers import POOL_HANDLERS
 from yadacoin.consensus import Consensus
 from yadacoin.mongo import Mongo
 
 
-__version__ = '0.0.4'
+__version__ = '0.0.5'
 
 define("debug", default=False, help="debug mode", type=bool)
 define("verbose", default=False, help="verbose mode", type=bool)
@@ -39,6 +40,8 @@ class NodeApplication(Application):
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path))
         ]
         self.default_handlers.extend(CORE_HANDLERS)
+        # TODO: use config to enable/disable specific routes
+        self.default_handlers.extend(POOL_HANDLERS)
 
         settings = dict(
             app_title=u"Yadacoin Node",
@@ -51,6 +54,7 @@ class NodeApplication(Application):
             serve_traceback=options.debug,
             yadacoin_vars={'node_version': __version__},
             yadacoin_config=config,
+            mp = None,
             mongo=mongo
         )
         handlers = self.default_handlers.copy()
