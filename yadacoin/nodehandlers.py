@@ -2,7 +2,6 @@
 Handlers required by the core chain operations
 """
 
-import json
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
 from datetime import datetime
@@ -54,5 +53,5 @@ class GetBlockHandler(BaseHandler):
         self.render_as_json(self.mongo.db.blocks.find_one({'hash': hash}, {'_id': 0}))
 
 
-CORE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler), (r'/get-blocks', GetBlocksHandler),
+NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler), (r'/get-blocks', GetBlocksHandler),
                  (r'/get-block', GetBlockHandler)]

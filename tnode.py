@@ -5,8 +5,7 @@ Async Yadacoin node poc
 import json
 import logging
 from os import path
-# import tornado.web
-from tornado.web import Application, RequestHandler, StaticFileHandler
+from tornado.web import Application, StaticFileHandler
 from tornado.options import define, options
 import tornado.ioloop
 import tornado.locks
@@ -14,14 +13,17 @@ from sys import exit
 from asyncio import sleep as async_sleep
 
 from yadacoin.config import Config
-from yadacoin.basehandlers import BaseHandler
-from yadacoin.corehandlers import CORE_HANDLERS
+from yadacoin.explorerhandlers import EXPLORER_HANDLERS
+from yadacoin.graphhandlers import GRAPH_HANDLERS
+from yadacoin.nodehandlers import NODE_HANDLERS
 from yadacoin.poolhandlers import POOL_HANDLERS
+from yadacoin.wallethandlers import WALLET_HANDLERS
+from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.consensus import Consensus
 from yadacoin.mongo import Mongo
 
 
-__version__ = '0.0.5'
+__version__ = '0.0.6'
 
 define("debug", default=False, help="debug mode", type=bool)
 define("verbose", default=False, help="verbose mode", type=bool)
@@ -36,12 +38,15 @@ class NodeApplication(Application):
     def __init__(self, config, mongo):
         static_path = path.join(path.dirname(__file__), 'static')
         self.default_handlers = [
-            (r"/", HomeHandler),
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path))
         ]
-        self.default_handlers.extend(CORE_HANDLERS)
+        self.default_handlers.extend(NODE_HANDLERS)
+        self.default_handlers.extend(GRAPH_HANDLERS)
         # TODO: use config to enable/disable specific routes
+        self.default_handlers.extend(EXPLORER_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
+        self.default_handlers.extend(WALLET_HANDLERS)
+        self.default_handlers.extend(WEB_HANDLERS)
 
         settings = dict(
             app_title=u"Yadacoin Node",
@@ -59,15 +64,6 @@ class NodeApplication(Application):
         )
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
-
-
-class HomeHandler(BaseHandler):
-
-    async def get(self):
-        """
-        :return:
-        """
-        self.render("index.html", yadacoin=self.yadacoin_vars)
 
 
 async def background_consensus(consensus):

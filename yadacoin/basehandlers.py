@@ -51,3 +51,4 @@ class BaseHandler(RequestHandler):
         self.write(json_result)
         self.set_header('Content-Type', 'application/json')
         self.finish()
+        return True
