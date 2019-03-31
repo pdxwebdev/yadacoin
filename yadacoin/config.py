@@ -15,6 +15,7 @@ class Config(object):
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
+        self.use_pnp = config.get('use_pnp', True)
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
@@ -80,6 +81,7 @@ class Config(object):
             "address": str(key.Address()),
             "serve_host": "0.0.0.0",
             "serve_port": 8000,
+            "use_pnp": True,
             "peer_host": "",
             "peer_port": 8000,
             "web_server_host": "0.0.0.0",
@@ -102,6 +104,7 @@ class Config(object):
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
+        cls.use_pnp = config.get('use_pnp', True)
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cls.public_key)))
@@ -169,6 +172,7 @@ class Config(object):
             'peer_port': self.peer_port,
             'serve_host': self.serve_host,
             'serve_port': self.serve_port,
+            'use_pnp': self.use_pnp,
             'fcm_key': self.fcm_key,
             'callbackurl': self.callbackurl
         }

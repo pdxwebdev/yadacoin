@@ -40,7 +40,6 @@ class NodeApplication(Application):
 
     def __init__(self, config, mongo):
         static_path = path.join(path.dirname(__file__), 'static')
-        sio = socketio.AsyncServer(async_mode='tornado')
         self.default_handlers = [
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
             (r"/socket.io/", socketio.get_tornado_handler(SIO))
@@ -65,7 +64,7 @@ class NodeApplication(Application):
             yadacoin_vars={'node_version': __version__},
             yadacoin_config=config,
             mp = None,
-            mongo=mongo
+            mongo=mongo  # TODO: app Peers?
         )
         yadacoin.yadawebsockethandler.WS_CONFIG = config
         yadacoin.yadawebsockethandler.WS_MONGO = mongo
@@ -95,6 +94,8 @@ async def main():
     if options.verify:
         logging.getLogger("tornado.application").info("Verifying existing blockchain".format(config.serve_host, config.serve_port))
         consensus.verify_existing_blockchain(reset=options.reset)
+
+
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
 
     app = NodeApplication(config, mongo)

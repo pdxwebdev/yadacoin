@@ -1,53 +1,64 @@
+"""
+Kept for reference and compatibility, should not be used anymore once fully converted
+"""
+
 import json
 import requests
 
 
 class Peers(object):
-    """A Peer manager Class."""
 
     peers = []
     # peers_json = ''
 
-    def __init__(self, config, mongo, network='mainnet'):
+    def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo
-        self.network = network
         self.my_peer = None
 
     def init_local(self):
-        raise RuntimeError("Peers, init_local is deprecated")
-        return '[]'
-
-        self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
+        self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
+        peers = [x for x in res]
+        self.peers = []  # Beware, this is a class property, not local
         try:
-            self.peers = [Peer(self.config, self.mongo, peer['host'], peer['port']) for peer in res]
+            for peer in peers:
+                self.peers.append(
+                    Peer(
+                        self.config,
+                        self.mongo,
+                        peer['host'],
+                        peer['port']
+                    )
+                )
         except:
             pass
         return self.to_json()
 
-    async def refresh(self):
-        """Refresh the in-memory peer list from db and api"""
-        print("Async Peers refresh")
-        if self.network == 'regnet':
-            peer = await self.mongo.async_db.config.find_one({'mypeer': {"$ne": ""}})
+    @classmethod
+    def init(cls, config, mongo, network='mainnet', my_peer=True):
+        cls.peers = []
+        if network == 'regnet':
+            peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}})
             if not peer:
                 return
             # Insert ourself to have at least one peer. Not sure this is required, but allows for more tests coverage.
-            self.peers=[Peer(self.config, self.mongo,
-                             self.config.serve_host, self.config.serve_port,
-                             peer.get('bulletin_secret'))]
+            cls.peers.append(
+                    Peer(
+                        config, mongo,
+                        config.serve_host, config.serve_port,
+                        peer.get('bulletin_secret')
+                    )
+                )
             return
-        if self.network == 'mainnet':
+        if network == 'mainnet':
             url = 'https://yadacoin.io/peers'
-        elif self.network == 'testnet':
+        elif network == 'testnet':
             url = 'http://yadacoin.io:8888/peers'
 
-        print("TODO")
-
-        """
         try:
-            db_res = await self.mongo.async_db.config.find_one({'mypeer': {"$ne": ""}, 'net':self.network}).get('mypeer')
+            if my_peer:
+                cls.my_peer = mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
             res = requests.get(url)
             for peer in json.loads(res.content)['peers']:
                 cls.peers.append(
@@ -61,7 +72,6 @@ class Peers(object):
                 )
         except:
             pass
-        """
 
     @classmethod
     def from_dict(cls, config, mongo):
@@ -89,8 +99,6 @@ class Peers(object):
 
 
 class Peer(object):
-    """An individual Peer object"""
-
     def __init__(self, config, mongo, host, port, bulletin_secret=None, is_me=False):
         self.config = config
         self.mongo = mongo
@@ -139,35 +147,35 @@ class Peer(object):
 
     @classmethod
     def init_my_peer(cls, config, mongo, network):
-        if config.use_pnp:
-            import socket
-            from miniupnpc import UPnP
-            # deploy as an eventlet WSGI server
-            try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.bind((config.serve_host, 0))
-                server_port = sock.getsockname()[1]
-                sock.close()
-                eport = server_port
-                u = UPnP(None, None, 200, 0)
-                u.discover()
-                u.selectigd()
+        import socket
+        from miniupnpc import UPnP
+        # deploy as an eventlet WSGI server
+        try:
+            raise ValueError('test')
+            sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+            sock.bind((config.serve_host, 0))
+            server_port = sock.getsockname()[1]
+            sock.close()
+            eport = server_port
+            u = UPnP(None, None, 200, 0)
+            u.discover()
+            u.selectigd()
+            r = u.getspecificportmapping(eport, 'TCP')
+            while r is not None and eport < 65536:
+                eport = eport + 1
                 r = u.getspecificportmapping(eport, 'TCP')
-                while r is not None and eport < 65536:
-                    eport = eport + 1
-                    r = u.getspecificportmapping(eport, 'TCP')
-                b = u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
-                config.serve_host = '0.0.0.0'
-                config.serve_port = server_port
-                config.peer_host = u.externalipaddress()
-                config.peer_port = server_port
-            except Exception as e:
-                print(e)
-                config.serve_host = config.serve_host
-                config.serve_port = config.serve_port
-                config.peer_host = config.peer_host
-                config.peer_port = config.peer_port
-                print('UPnP failed: you must forward and/or whitelist port', config.peer_port)
+            b = u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
+            config.serve_host = '0.0.0.0'
+            config.serve_port = server_port
+            config.peer_host = u.externalipaddress()
+            config.peer_port = server_port
+        except Exception as e:
+            print(e)
+            config.serve_host = config.serve_host
+            config.serve_port = config.serve_port
+            config.peer_host = config.peer_host
+            config.peer_port = config.peer_port
+            print('UPnP failed: you must forward and/or whitelist port', config.peer_port)
 
         cls.save_my_peer(config, mongo, network)
         return cls(config, mongo, config.peer_host, config.peer_port)

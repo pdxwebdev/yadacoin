@@ -43,6 +43,8 @@ class Mongo(object):
         except:
             pass
 
+        # TODO: add indexes for peers
+
         # See https://motor.readthedocs.io/en/stable/tutorial-tornado.html
         self.async_client = MotorClient(self.config.mongodb_host)
         self.async_db = self.async_client[self.config.database]
