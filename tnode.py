@@ -11,6 +11,7 @@ import tornado.ioloop
 import tornado.locks
 from sys import exit
 from asyncio import sleep as async_sleep
+import socketio
 
 from yadacoin.config import Config
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
@@ -19,6 +20,7 @@ from yadacoin.nodehandlers import NODE_HANDLERS
 from yadacoin.poolhandlers import POOL_HANDLERS
 from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
+from yadacoin.yadawebsockethandler import SIO
 from yadacoin.consensus import Consensus
 from yadacoin.mongo import Mongo
 
@@ -37,8 +39,12 @@ class NodeApplication(Application):
 
     def __init__(self, config, mongo):
         static_path = path.join(path.dirname(__file__), 'static')
+
+        sio = socketio.AsyncServer(async_mode='tornado')
+
         self.default_handlers = [
-            (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path))
+            (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
+            (r"/socket.io/", socketio.get_tornado_handler(SIO))
         ]
         self.default_handlers.extend(NODE_HANDLERS)
         self.default_handlers.extend(GRAPH_HANDLERS)
