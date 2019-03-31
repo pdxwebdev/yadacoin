@@ -13,6 +13,7 @@ from sys import exit
 from asyncio import sleep as async_sleep
 import socketio
 
+import yadacoin.yadawebsockethandler
 from yadacoin.config import Config
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
 from yadacoin.graphhandlers import GRAPH_HANDLERS
@@ -39,9 +40,7 @@ class NodeApplication(Application):
 
     def __init__(self, config, mongo):
         static_path = path.join(path.dirname(__file__), 'static')
-
         sio = socketio.AsyncServer(async_mode='tornado')
-
         self.default_handlers = [
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
             (r"/socket.io/", socketio.get_tornado_handler(SIO))
@@ -68,6 +67,8 @@ class NodeApplication(Application):
             mp = None,
             mongo=mongo
         )
+        yadacoin.yadawebsockethandler.WS_CONFIG = config
+        yadacoin.yadawebsockethandler.WS_MONGO = mongo
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
 
