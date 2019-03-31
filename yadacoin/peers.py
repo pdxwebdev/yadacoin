@@ -1,5 +1,8 @@
 import json
-import requests
+from time import time
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from asyncio import sleep as async_sleep, gather
+from pymongo import ASCENDING, DESCENDING
 
 
 class Peers(object):
@@ -8,10 +11,10 @@ class Peers(object):
     peers = []
     # peers_json = ''
 
-    def __init__(self, config, mongo, network='mainnet'):
+    def __init__(self, config, mongo):
         self.config = config
         self.mongo = mongo
-        self.network = network
+        self.network = config.network
         self.my_peer = None
 
     def init_local(self):
@@ -27,7 +30,7 @@ class Peers(object):
         return self.to_json()
 
     async def refresh(self):
-        """Refresh the in-memory peer list from db and api"""
+        """Refresh the in-memory peer list from db and api. Only contains Active peers"""
         print("Async Peers refresh")
         if self.network == 'regnet':
             peer = await self.mongo.async_db.config.find_one({'mypeer': {"$ne": ""}})
@@ -43,28 +46,61 @@ class Peers(object):
         elif self.network == 'testnet':
             url = 'http://yadacoin.io:8888/peers'
 
-        print("TODO")
+        res = await self.mongo.async_db.peers.find({'active': True, 'net':self.network}, {'_id': 0}).to_list(length=100)
+        if len(res) <= 0:
+            # Our local db gives no match, get from seed list if we did not just now
+            last_seeded = await self.mongo.async_db.config.find_one({'last_seeded': {"$exists": True}})
+            # print(last_seeded)
+            try:
+                if last_seeded and int(last_seeded['last_seeded']) + 60 * 10 > time():
+                    # 10 min mini between seed requests
+                    print('Too soon, waiting for seed')
+                    return
+            except Exception as e:
+                print("Error: {} last_seeded".format(e))
 
-        """
+            http_client = AsyncHTTPClient()
+            test_after = int(time())  # new peers will be tested asap.
+            try:
+                response = await http_client.fetch(url)
+                seeds = json.loads(response.body.decode('utf-8'))['peers']
+                for peer in seeds:
+                    res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
+                    if res > 0:
+                        # We know him already, so it will be tested.
+                        print('Known')
+                        pass
+                    else:
+                        await self.mongo.async_db.peers.insert_one({
+                            'host': peer['host'], 'port': peer['port'], 'net':self.network,
+                            'active': False, 'failed': 0, 'test_after': test_after})
+                        print('Inserted')
+            except Exception as e:
+                print("Error: {} on url {}".format(e, url))
+            await self.mongo.async_db.config.replace_one({"last_seeded": {"$exists": True}}, {"last_seeded": str(test_after)}, upsert=True)
+            # self.mongo.db.config.update({'last_seeded': {"$ne": ""}}, {'last_seeded': str(test_after)}, upsert=True)
+
+        # todo: probly more efficient not to rebuild the objects every time
+        self.peers = [Peer(self.config, self.mongo, peer['host'], peer['port']) for peer in res]
+
+    async def test_some(self, count=1):
+        """Tests count peers from our base, by priority"""
         try:
-            db_res = await self.mongo.async_db.config.find_one({'mypeer': {"$ne": ""}, 'net':self.network}).get('mypeer')
-            res = requests.get(url)
-            for peer in json.loads(res.content)['peers']:
-                cls.peers.append(
-                    Peer(
-                        config,
-                        mongo,
-                        peer['host'],
-                        peer['port'],
-                        peer.get('bulletin_secret')
-                    )
-                )
-        except:
-            pass
-        """
+            res = self.mongo.async_db.peers.find({'active': False, 'net': self.network, 'test_after': {"$lte": int(time())}}).sort('test_after', ASCENDING).limit(count)
+            to_test = []
+            async for a_peer in res:
+                peer = Peer(self.config, self.mongo, a_peer['host'], a_peer['port'])
+                # print("Testing", peer)
+                to_test.append(peer.test())
+            res = await gather(*to_test)
+            print('res', res)
+        except Exception as e:
+            print("Error: {} on test_some".format(e))
+        # to_list(length=100)
 
     @classmethod
     def from_dict(cls, config, mongo):
+        raise RuntimeError("Peers, from_dict is deprecated")
         cls.peers = []
         for peer in config['peers']:
             cls.peers.append(
@@ -176,10 +212,11 @@ class Peer(object):
     def save_my_peer(cls, config, mongo, network):
         if config.network == 'regnet':
             return
+        peer = config.peer_host + ":" + str(config.peer_port)
+        mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer, 'network': config.network}, upsert=True)
         if not config.post_peer:
             return
-        peer = config.peer_host + ":" + str(config.peer_port)
-        mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer}, upsert=True)
+        """
         if network == 'mainnet':
             url = 'https://yadacoin.io/peers'
         elif network == 'testnet':
@@ -199,6 +236,7 @@ class Peer(object):
         except:
             print('ERROR: failed to get peers, exiting...')
             exit()
+        """
 
     def to_dict(self):
         return {
@@ -213,3 +251,21 @@ class Peer(object):
             return 'me'
         else:
             return "%s:%s" % (self.host, self.port)
+
+    async def test(self):
+        hp =  self.to_string()
+        print('test', hp)
+        http_client = AsyncHTTPClient()
+        request = HTTPRequest("http://{}".format(hp), connect_timeout=10, request_timeout=12)
+        try:
+            response = await http_client.fetch(request)
+            if response.code != 200:
+                raise RuntimeWarning('code {}'.format(response.code))
+            # TODO: store OK
+            await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)}, {'$set': {'active': True, "failed":0}})
+        except Exception as e:
+            print("Error: {} on url {}".format(e, hp))
+            # TODO: store error and next try
+
+            return("KO " + hp)
+        return("OK " + hp)

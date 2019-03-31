@@ -24,6 +24,7 @@ from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import SIO
 from yadacoin.consensus import Consensus
 from yadacoin.mongo import Mongo
+from yadacoin.peers import Peer, Peers
 
 
 __version__ = '0.0.6'
@@ -64,7 +65,7 @@ class NodeApplication(Application):
             yadacoin_vars={'node_version': __version__},
             yadacoin_config=config,
             mp = None,
-            mongo=mongo  # TODO: app Peers?
+            mongo=mongo  # TODO: add peers?
         )
         yadacoin.yadawebsockethandler.WS_CONFIG = config
         yadacoin.yadawebsockethandler.WS_MONGO = mongo
@@ -73,10 +74,28 @@ class NodeApplication(Application):
 
 
 async def background_consensus(consensus):
+    log = logging.getLogger("tornado.application")
     while True:
-        wait = consensus.sync_bottom_up()
-        if wait:
-            await async_sleep(1)
+        try:
+            wait = await consensus.sync_bottom_up()
+            if wait:
+                await async_sleep(1)
+        except Exception as e:
+            log.error("{} in Background_consensus".format(e))
+
+
+async def background_peers_testing(peers: Peers):
+    log = logging.getLogger("tornado.application")
+    while True:
+        try:
+            await async_sleep(10)
+            if len(peers.peers) > 50:
+                # Enough peers, no need to waste resources
+                continue
+            log.info('Should test one peer')
+            await peers.test_some(count=3)
+        except Exception as e:
+            log.error("{} in Background_consensus".format(e))
 
 
 async def main():
@@ -90,13 +109,18 @@ async def main():
 
     mongo = Mongo(config)
 
-    consensus = Consensus(config, mongo, options.debug)
+    peers = Peers(config, mongo)
+    consensus = Consensus(config, mongo, options.debug, peers)
     if options.verify:
         logging.getLogger("tornado.application").info("Verifying existing blockchain".format(config.serve_host, config.serve_port))
         consensus.verify_existing_blockchain(reset=options.reset)
 
-
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
+    tornado.ioloop.IOLoop.instance().add_callback(background_peers_testing, peers)
+
+    my_peer = Peer.init_my_peer(config, mongo, config.network)
+    config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()
+    print("http://{}".format(my_peer.to_string()))
 
     app = NodeApplication(config, mongo)
     logging.getLogger("tornado.application").info("Starting server on {}:{}".format(config.serve_host, config.serve_port))

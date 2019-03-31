@@ -26,10 +26,14 @@ class Consensus(object):
 
     lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
-    def __init__(self, config, mongo, debug=False):
+    def __init__(self, config, mongo, debug=False, peers=None):
         self.debug = debug
         self.config = config
         self.mongo = mongo
+        if peers:
+            self.peers = peers
+        else:
+            self.peers = Peers(self.config, self.mongo)
         latest_block = BU.get_latest_block(self.config, self.mongo)
         if latest_block:
             self.latest_block = Block.from_dict(self.config, self.mongo, latest_block)
@@ -198,7 +202,7 @@ class Consensus(object):
             'peer': peer.to_string()
         }, upsert=True)
 
-    def sync_bottom_up(self):
+    async def sync_bottom_up(self):
         #bottom up syncing
         last_latest = self.latest_block
         self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
@@ -207,7 +211,7 @@ class Consensus(object):
         self.remove_pending_transactions_now_in_chain()
         self.remove_fastgraph_transactions_now_in_chain()
 
-        latest_consensus = self.mongo.db.consensus.find_one({
+        latest_consensus = await self.mongo.async_db.consensus.find_one({
             'index': self.latest_block.index + 1,
             'block.version': BU.get_version_for_height(self.latest_block.index + 1),
             'ignore': {'$ne': True}
@@ -217,7 +221,7 @@ class Consensus(object):
             if self.debug:
                 print(latest_consensus.index, "latest consensus_block")
 
-            records = self.mongo.db.consensus.find({
+            records = await self.mongo.async_db.consensus.find({
                 'index': self.latest_block.index + 1,
                 'block.version': BU.get_version_for_height(self.latest_block.index + 1),
                 'ignore': {'$ne': True}
@@ -229,22 +233,27 @@ class Consensus(object):
             self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
             if self.latest_block.index > last_latest.index:
                 print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            latest_consensus_now = self.mongo.db.consensus.find_one({
+            latest_consensus_now = await self.mongo.async_db.consensus.find_one({
                 'index': self.latest_block.index + 1,
                 'block.version': BU.get_version_for_height(self.latest_block.index + 1),
                 'ignore': {'$ne': True}
             })
 
             if latest_consensus_now and latest_consensus.index == latest_consensus_now['index']:
-                self.search_network_for_new()
+                await self.search_network_for_new()
                 return True
         else:
-            self.search_network_for_new()
+            await self.search_network_for_new()
             return True
 
-    def search_network_for_new(self):
-        Peers.init(self.config, self.mongo, self.config.network)
-        for peer in Peers.peers:
+    async def search_network_for_new(self):
+        # Peers.init(self.config, self.mongo, self.config.network)
+        if len(self.peers.peers) < 2:
+            await self.peers.refresh()
+        if len(self.peers.peers) < 1:
+            print("No peer to connect to yet")
+            return
+        for peer in self.peers.peers:
             try:
                 if self.debug:
                     print('requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()))
