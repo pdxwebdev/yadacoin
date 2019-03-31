@@ -1,4 +1,5 @@
 from pymongo import MongoClient, IndexModel, ASCENDING, DESCENDING
+from motor.motor_tornado import MotorClient
 
 
 class Mongo(object):
@@ -41,3 +42,8 @@ class Mongo(object):
             self.db.shares.create_indexes([__address, __index, __hash])
         except:
             pass
+
+        # See https://motor.readthedocs.io/en/stable/tutorial-tornado.html
+        self.async_client = MotorClient(self.config.mongodb_host)
+        self.async_db = self.async_client[self.config.database]
+        self.async_site_db = self.async_client[self.config.site_database]

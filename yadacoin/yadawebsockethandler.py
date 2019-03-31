@@ -1,5 +1,5 @@
 """
-Webb socket handler for yadacoin
+Web socket handler for yadacoin
 """
 
 # import json
@@ -9,6 +9,10 @@ from yadacoin.transaction import Transaction
 
 
 SIO = socketio.AsyncServer(async_mode='tornado')
+# see https://github.com/miguelgrinberg/python-socketio/blob/master/examples/server/tornado/app.py
+
+# TODO: refactor as a class or use a global CONFIG var from yadacoin.config, would avoid passing config as param everywhere
+# Same goes for mongo
 WS_CONFIG = None
 WS_MONGO = None
 
