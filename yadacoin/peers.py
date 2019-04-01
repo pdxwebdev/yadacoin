@@ -93,7 +93,7 @@ class Peers(object):
                 # print("Testing", peer)
                 to_test.append(peer.test())
             res = await gather(*to_test)
-            print('res', res)
+            # print('res', res)
         except Exception as e:
             print("Error: {} on test_some".format(e))
         # to_list(length=100)
@@ -101,6 +101,7 @@ class Peers(object):
     @classmethod
     def from_dict(cls, config, mongo):
         raise RuntimeError("Peers, from_dict is deprecated")
+        """
         cls.peers = []
         for peer in config['peers']:
             cls.peers.append(
@@ -112,6 +113,7 @@ class Peers(object):
                     peer.get('bulletin_secret')
                 )
             )
+        """
 
     def to_dict(self):
         peers = [x.to_dict() for x in self.peers]
@@ -253,7 +255,7 @@ class Peer(object):
             return "%s:%s" % (self.host, self.port)
 
     async def test(self):
-        hp =  self.to_string()
+        hp = self.to_string()
         print('test', hp)
         http_client = AsyncHTTPClient()
         request = HTTPRequest("http://{}".format(hp), connect_timeout=10, request_timeout=12)
@@ -266,6 +268,5 @@ class Peer(object):
         except Exception as e:
             print("Error: {} on url {}".format(e, hp))
             # TODO: store error and next try
-
-            return("KO " + hp)
-        return("OK " + hp)
+            return False
+        return True

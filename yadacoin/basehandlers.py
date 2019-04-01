@@ -17,6 +17,7 @@ class BaseHandler(RequestHandler):
         self.yadacoin_config = self.settings['yadacoin_config']
         self.mongo = self.settings['mongo']
         self.mp = self.settings['mp']
+        self.peers = self.settings['peers']
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]
 

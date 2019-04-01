@@ -53,5 +53,14 @@ class GetBlockHandler(BaseHandler):
         self.render_as_json(self.mongo.db.blocks.find_one({'hash': hash}, {'_id': 0}))
 
 
+class GetPeersHandler(BaseHandler):
+
+    async def get(self):
+        """
+        :return:
+        """
+        self.render_as_json(self.peers.to_dict())
+
+
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler), (r'/get-blocks', GetBlocksHandler),
-                 (r'/get-block', GetBlockHandler)]
+                 (r'/get-block', GetBlockHandler), (r'/get-peers', GetPeersHandler)]

@@ -1,7 +1,9 @@
 import sys
 import json
+import logging
 import requests
 import datetime
+from asyncio import sleep as async_sleep
 from yadacoin.peers import Peers, Peer
 from yadacoin.blockchainutils import BU
 from yadacoin.blockchain import Blockchain
@@ -27,6 +29,7 @@ class Consensus(object):
     lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
     def __init__(self, config, mongo, debug=False, peers=None):
+        self.log = logging.getLogger("tornado.application")
         self.debug = debug
         self.config = config
         self.mongo = mongo
@@ -250,8 +253,10 @@ class Consensus(object):
         # Peers.init(self.config, self.mongo, self.config.network)
         if len(self.peers.peers) < 2:
             await self.peers.refresh()
+            await async_sleep(20)
         if len(self.peers.peers) < 1:
             print("No peer to connect to yet")
+            await async_sleep(10)
             return
         for peer in self.peers.peers:
             try:
