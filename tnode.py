@@ -101,6 +101,8 @@ def configure_logging():
     global app_log, access_log
     ch = logging.StreamHandler(stdout)
     ch.setLevel(logging.INFO)
+    if options.debug:
+        ch.setLevel(logging.DEBUG)
     # tornado.log.enable_pretty_logging()
     app_log = logging.getLogger("tornado.application")
     tornado.log.enable_pretty_logging(logger=logging.getLogger("tornado.application"))
@@ -121,6 +123,7 @@ def configure_logging():
     access_log.addHandler(rotateHandler2)
 
     app_log.propagate = False
+    access_log.propagate = False
 
 
 async def main():

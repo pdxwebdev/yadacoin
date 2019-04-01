@@ -29,7 +29,7 @@ class Consensus(object):
     lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
     def __init__(self, config, mongo, debug=False, peers=None):
-        self.log = logging.getLogger("tornado.application")
+        self.app_log = logging.getLogger("tornado.application")
         self.debug = debug
         self.config = config
         self.mongo = mongo
@@ -73,7 +73,7 @@ class Consensus(object):
         self.latest_block = genesis_block
 
     def verify_existing_blockchain(self, reset=False):
-        self.log('verifying existing blockchain')
+        self.app_log('verifying existing blockchain')
         result = self.existing_blockchain.verify(self.output)
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -193,7 +193,7 @@ class Consensus(object):
 
     def insert_consensus_block(self, block, peer):
         if self.debug:
-            print('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
+            self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
         self.mongo.db.consensus.update({
             'id': block.to_dict().get('id'),
             'peer': peer.to_string()
@@ -210,7 +210,7 @@ class Consensus(object):
         last_latest = self.latest_block
         self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
         if self.latest_block.index > last_latest.index:
-            print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
         self.remove_pending_transactions_now_in_chain()
         self.remove_fastgraph_transactions_now_in_chain()
 
@@ -222,7 +222,7 @@ class Consensus(object):
         if latest_consensus:
             latest_consensus = Block.from_dict(self.config, self.mongo, latest_consensus['block'])
             if self.debug:
-                print(latest_consensus.index, "latest consensus_block")
+                self.app_log.info(latest_consensus.index, "latest consensus_block")
 
             records = await self.mongo.async_db.consensus.find({
                 'index': self.latest_block.index + 1,
@@ -235,7 +235,7 @@ class Consensus(object):
             last_latest = self.latest_block
             self.latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
             if self.latest_block.index > last_latest.index:
-                print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+                self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             latest_consensus_now = await self.mongo.async_db.consensus.find_one({
                 'index': self.latest_block.index + 1,
                 'block.version': BU.get_version_for_height(self.latest_block.index + 1),
@@ -255,13 +255,13 @@ class Consensus(object):
             await self.peers.refresh()
             await async_sleep(20)
         if len(self.peers.peers) < 1:
-            print("No peer to connect to yet")
+            self.app_log.info("No peer to connect to yet")
             await async_sleep(10)
             return
         for peer in self.peers.peers:
             try:
                 if self.debug:
-                    print('requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()))
+                    self.app_log.info('requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()))
                     """
                     print('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),
@@ -295,7 +295,7 @@ class Consensus(object):
                         #print("pass", block.index)
             except Exception as e:
                 if self.debug:
-                    print(e)
+                    self.app_log.warning(e)
 
     def import_block(self, block_data):
         block = Block.from_dict(self.config, self.mongo, block_data['block'])
@@ -413,13 +413,13 @@ class Consensus(object):
 
     def retrace(self, block, peer):
         if self.debug:
-            self.log("retracing...")
+            self.app_log("retracing...")
         blocks = []
         blocks.append(block)
         while 1:
             if self.debug:
-                self.log(block.hash)
-                self.log(block.index)
+                self.app_log(block.hash)
+                self.app_llog(block.index)
             # get the previous block from either the consensus collection in mongo
             # or attempt to get the block from the remote peer
             previous_consensus_block = self.get_previous_consensus_block_from_local(block, peer)

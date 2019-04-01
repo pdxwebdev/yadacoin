@@ -3,7 +3,7 @@ from time import time
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from asyncio import sleep as async_sleep, gather
 from pymongo import ASCENDING, DESCENDING
-
+from logging import getLogger
 
 class Peers(object):
     """A Peer manager Class."""
@@ -16,6 +16,7 @@ class Peers(object):
         self.mongo = mongo
         self.network = config.network
         self.my_peer = None
+        self.app_log = getLogger("tornado.application")
 
     def init_local(self):
         raise RuntimeError("Peers, init_local is deprecated")
@@ -31,7 +32,7 @@ class Peers(object):
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
-        print("Async Peers refresh")
+        self.app_log.info("Async Peers refresh")
         if self.network == 'regnet':
             peer = await self.mongo.async_db.config.find_one({'mypeer': {"$ne": ""}})
             if not peer:
@@ -54,10 +55,10 @@ class Peers(object):
             try:
                 if last_seeded and int(last_seeded['last_seeded']) + 60 * 10 > time():
                     # 10 min mini between seed requests
-                    print('Too soon, waiting for seed')
+                    self.app_log.info('Too soon, waiting for seed...')
                     return
             except Exception as e:
-                print("Error: {} last_seeded".format(e))
+                self.app_log.error("Error: {} last_seeded".format(e))
 
             http_client = AsyncHTTPClient()
             test_after = int(time())  # new peers will be tested asap.
@@ -68,15 +69,16 @@ class Peers(object):
                     res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
                     if res > 0:
                         # We know him already, so it will be tested.
-                        print('Known')
+                        # print('Known')
                         pass
                     else:
                         await self.mongo.async_db.peers.insert_one({
                             'host': peer['host'], 'port': peer['port'], 'net':self.network,
                             'active': False, 'failed': 0, 'test_after': test_after})
-                        print('Inserted')
+                        # print('Inserted')
+                        self.app_log.debug("Inserted new peer {}:{}".format(peer['host'], peer['port']))
             except Exception as e:
-                print("Error: {} on url {}".format(e, url))
+                self.app_log.warning("Error: {} on url {}".format(e, url))
             await self.mongo.async_db.config.replace_one({"last_seeded": {"$exists": True}}, {"last_seeded": str(test_after)}, upsert=True)
             # self.mongo.db.config.update({'last_seeded': {"$ne": ""}}, {'last_seeded': str(test_after)}, upsert=True)
 
@@ -95,7 +97,7 @@ class Peers(object):
             res = await gather(*to_test)
             # print('res', res)
         except Exception as e:
-            print("Error: {} on test_some".format(e))
+            self.app_log.warning("Error: {} on test_some".format(e))
         # to_list(length=100)
 
     @classmethod
@@ -263,10 +265,9 @@ class Peer(object):
             response = await http_client.fetch(request)
             if response.code != 200:
                 raise RuntimeWarning('code {}'.format(response.code))
-            # TODO: store OK
             await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)}, {'$set': {'active': True, "failed":0}})
         except Exception as e:
-            print("Error: {} on url {}".format(e, hp))
+            # print("Error: {} on url {}".format(e, hp))
             # TODO: store error and next try
             return False
         return True
