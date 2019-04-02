@@ -16,6 +16,7 @@ class Config(object):
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
         self.use_pnp = config.get('use_pnp', True)
+        self.polling = config.get('polling', 30)
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
@@ -82,6 +83,7 @@ class Config(object):
             "serve_host": "0.0.0.0",
             "serve_port": 8000,
             "use_pnp": True,
+            "polling": 30,
             "peer_host": "",
             "peer_port": 8000,
             "web_server_host": "0.0.0.0",
@@ -105,6 +107,7 @@ class Config(object):
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
         cls.use_pnp = config.get('use_pnp', True)
+        cls.polling = config.get('polling', -1)
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cls.public_key)))
@@ -174,6 +177,7 @@ class Config(object):
             'serve_port': self.serve_port,
             'use_pnp': self.use_pnp,
             'fcm_key': self.fcm_key,
+            'polling': self.polling,
             'callbackurl': self.callbackurl
         }
 

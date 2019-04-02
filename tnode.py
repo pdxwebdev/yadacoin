@@ -30,11 +30,12 @@ from yadacoin.mongo import Mongo
 from yadacoin.peers import Peer, Peers
 
 
-__version__ = '0.0.7'
+__version__ = '0.0.8'
 
 
 app_log = None
 access_log = None
+config = None
 
 
 class NodeApplication(Application):
@@ -66,7 +67,8 @@ class NodeApplication(Application):
             yadacoin_config=config,
             mp = None,
             mongo=mongo,
-            peers=peers
+            peers=peers,
+            version= __version__
         )
         yadacoin.yadawebsockethandler.WS_CONFIG = config
         yadacoin.yadawebsockethandler.WS_MONGO = mongo
@@ -75,11 +77,14 @@ class NodeApplication(Application):
 
 
 async def background_consensus(consensus):
+    if config.polling <= 0:
+        app_log.error("No consensus polling")
+        return
     while True:
         try:
             wait = await consensus.sync_bottom_up()
             if wait:
-                await async_sleep(1)
+                await async_sleep(config.polling)
         except Exception as e:
             app_log.error("{} in Background_consensus".format(e))
 
@@ -105,7 +110,7 @@ def configure_logging():
         ch.setLevel(logging.DEBUG)
     # tornado.log.enable_pretty_logging()
     app_log = logging.getLogger("tornado.application")
-    tornado.log.enable_pretty_logging(logger=logging.getLogger("tornado.application"))
+    tornado.log.enable_pretty_logging(logger=app_log)
     # app_log.addHandler(ch)
     logfile = path.abspath("yada_app.log")
     # Rotate log after reaching 512K, keep 5 old copies.
@@ -127,6 +132,8 @@ def configure_logging():
 
 
 async def main():
+    global config
+
     define("debug", default=False, help="debug mode", type=bool)
     define("verbose", default=False, help="verbose mode", type=bool)
     define("network", default='mainnet', help="mainnet, testnet or regnet", type=str)

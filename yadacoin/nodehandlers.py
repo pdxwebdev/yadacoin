@@ -62,5 +62,18 @@ class GetPeersHandler(BaseHandler):
         self.render_as_json(self.peers.to_dict())
 
 
+class GetStatusHandler(BaseHandler):
+
+    async def get(self):
+        """
+        :return:
+        """
+        # TODO: complete and cache
+        status = {'version': self.settings['version'], 'network': self.yadacoin_config.network,
+                  'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
+                  'peers': {'active': -1, 'inactive': -1}}
+        self.render_as_json(status)
+
+
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler), (r'/get-blocks', GetBlocksHandler),
-                 (r'/get-block', GetBlockHandler), (r'/get-peers', GetPeersHandler)]
+                 (r'/get-block', GetBlockHandler), (r'/get-peers', GetPeersHandler), (r'/get-status', GetStatusHandler)]

@@ -305,7 +305,7 @@ class Consensus(object):
         else:
             extra_blocks = None
         if self.debug:
-            print(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1))
+            self.app_log.debug(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1))
         try:
             result = self.integrate_block_with_existing_chain(block, extra_blocks)
             if result is False:
@@ -394,7 +394,7 @@ class Consensus(object):
                 except:
                     self.existing_blockchain.blocks.append(block)
                 if self.debug:
-                    print("New block inserted for height: ", block.index)
+                    self.app_log.info("New block inserted for height: ", block.index)
                 return True
             else:
                 print("Integrate block error 4")
