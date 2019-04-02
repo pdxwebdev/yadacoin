@@ -138,6 +138,7 @@ class Peer(object):
         self.port = port
         self.bulletin_secret = bulletin_secret
         self.is_me = is_me
+        self.app_log = getLogger("tornado.application")
 
     @classmethod
     def from_string(cls, config, mongo, peerstr):
@@ -266,6 +267,31 @@ class Peer(object):
             if response.code != 200:
                 raise RuntimeWarning('code {}'.format(response.code))
             await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)}, {'$set': {'active': True, "failed":0}})
+            # TODO: get peers from that node and merge.
+            # DUP CODE with initial seed - TODO
+            http_client = AsyncHTTPClient()
+            test_after = int(time()) + 30  # 2nd layer peers will be tested after 1st layer
+            url = "http://{}/get-peers".format(hp)
+            try:
+                response = await http_client.fetch(url)
+                if response.code != 200:
+                    # Not available or too old a version, just ignore.
+                    return
+                seeds = json.loads(response.body.decode('utf-8'))['peers']
+                for peer in seeds:
+                    res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
+                    if res > 0:
+                        # We know him already, so it will be tested.
+                        # print('Known')
+                        pass
+                    else:
+                        await self.mongo.async_db.peers.insert_one({
+                            'host': peer['host'], 'port': peer['port'], 'net': self.network,
+                            'active': False, 'failed': 0, 'test_after': test_after})
+                        # print('Inserted')
+                        self.app_log.debug("Inserted new peer {}:{}".format(peer['host'], peer['port']))
+            except Exception as e:
+                self.app_log.warning("Error: {} on url {}".format(e, url))
         except Exception as e:
             # print("Error: {} on url {}".format(e, hp))
             # TODO: store error and next try

@@ -28,6 +28,8 @@ class GetBlocksHandler(BaseHandler):
         start_index = int(self.get_argument("start_index", 0))
         end_index = int(self.get_argument("end_index", 0))
         # TODO: safety, add bound on block# to fetch
+        # TODO: global chain object with cache of current block height,
+        # so we can instantly answer to pulling requests without any db request
         blocks = [x for x in self.mongo.db.blocks.find({
             '$and': [
                 {'index':
@@ -71,7 +73,8 @@ class GetStatusHandler(BaseHandler):
         # TODO: complete and cache
         status = {'version': self.settings['version'], 'network': self.yadacoin_config.network,
                   'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
-                  'peers': {'active': -1, 'inactive': -1}}
+                  'peers': {'active': -1, 'inactive': -1},
+                  'uptime': 0}
         self.render_as_json(status)
 
 

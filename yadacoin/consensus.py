@@ -261,7 +261,7 @@ class Consensus(object):
         for peer in self.peers.peers:
             try:
                 if self.debug:
-                    self.app_log.info('requesting %s from %s' % (self.latest_block.index + 1, peer.to_string()))
+                    self.app_log.info('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
                     """
                     print('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),
@@ -273,7 +273,7 @@ class Consensus(object):
                         peer=str(peer.to_string()),
                         start_index=int(self.latest_block.index) +1,
                         end_index=int(self.latest_block.index) + 100
-                    ), timeout=1)
+                    ), timeout=2)
                 except Exception as e:
                     raise e
                 try:
@@ -394,7 +394,7 @@ class Consensus(object):
                 except:
                     self.existing_blockchain.blocks.append(block)
                 if self.debug:
-                    self.app_log.info("New block inserted for height: ", block.index)
+                    self.app_log.info("New block inserted for height: {}".format(block.index))
                 return True
             else:
                 print("Integrate block error 4")
