@@ -4,3 +4,4 @@ venv
 localtests
 .idea
 *.log
+*.log.*
