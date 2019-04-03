@@ -5,16 +5,18 @@ from asyncio import sleep as async_sleep, gather
 from pymongo import ASCENDING, DESCENDING
 from logging import getLogger
 
+from yadacoin.config import get_config
+
 class Peers(object):
     """A Peer manager Class."""
 
     peers = []
     # peers_json = ''
 
-    def __init__(self, config, mongo):
-        self.config = config
-        self.mongo = mongo
-        self.network = config.network
+    def __init__(self):
+        self.config = get_config()
+        self.mongo = self.config.mongo
+        self.network = self.config.network
         self.my_peer = None
         self.app_log = getLogger("tornado.application")
 
@@ -132,8 +134,8 @@ class Peer(object):
     """An individual Peer object"""
 
     def __init__(self, config, mongo, host, port, bulletin_secret=None, is_me=False):
-        self.config = config
-        self.mongo = mongo
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.host = host
         self.port = port
         self.bulletin_secret = bulletin_secret

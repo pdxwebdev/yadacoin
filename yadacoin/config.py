@@ -7,6 +7,13 @@ from coincurve import PrivateKey, PublicKey
 from mnemonic import Mnemonic
 from bip32utils import BIP32Key
 
+CONFIG = None
+MONGO = None
+
+
+def get_config():
+    return CONFIG
+
 
 class Config(object):
 
@@ -40,6 +47,10 @@ class Config(object):
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
+        self.mongo = None
+        self.peers = None
+        self.BU = None
+        self.GU = None
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None):

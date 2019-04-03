@@ -18,7 +18,7 @@ import socketio
 
 import yadacoin.blockchainutils
 import yadacoin.yadawebsockethandler
-from yadacoin.config import Config
+import yadacoin.config
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
 from yadacoin.graphhandlers import GRAPH_HANDLERS
 from yadacoin.nodehandlers import NODE_HANDLERS
@@ -153,12 +153,17 @@ async def main():
         exit()
 
     with open(options.config) as f:
-        config = Config(json.loads(f.read()))
+        config = yadacoin.config.Config(json.loads(f.read()))
+        # Sets the global var for all objects
+        yadacoin.config.CONFIG = config
 
-    mongo = Mongo(config)
+    mongo = Mongo()
+    config.mongo = mongo
 
-    peers = Peers(config, mongo)
+    peers = Peers()
+    yadacoin.config.peers = peers
     yadacoin.blockchainutils.set_BU(yadacoin.blockchainutils.BlockChainUtils(config, mongo))
+    # yadacoin.config.BU = yadacoin.blockchainutils.BlockChainUtils(config, mongo)
 
     consensus = Consensus(config, mongo, options.debug, peers)
     if options.verify:

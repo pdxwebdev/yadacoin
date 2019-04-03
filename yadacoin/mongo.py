@@ -1,10 +1,13 @@
 from pymongo import MongoClient, IndexModel, ASCENDING, DESCENDING
 from motor.motor_tornado import MotorClient
 
+from yadacoin.config import get_config
+
 
 class Mongo(object):
-    def __init__(self, config):
-        self.config = config
+
+    def __init__(self):
+        self.config = get_config()
         self.client = MongoClient(self.config.mongodb_host)
         self.db = self.client[self.config.database]
         self.site_db = self.client[self.config.site_database]
