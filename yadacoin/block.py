@@ -23,17 +23,17 @@ class BlockFactory(object):
     def __init__(self, config, mongo, transactions, public_key, private_key, version, index=None, force_time=None):
         self.config = config
         self.mongo = mongo
-        self.version = BU.get_version_for_height(index)
+        self.version = BU().get_version_for_height(index)
         if force_time:
             self.time = str(int(force_time))
         else:
             self.time = str(int(time.time()))
-        blocks = BU.get_blocks(self.config, self.mongo)
+        blocks = BU().get_blocks()
         self.index = index
         if self.index == 0:
             self.prev_hash = '' 
         else:
-            self.prev_hash = BU.get_latest_block(self.config, self.mongo)['hash']
+            self.prev_hash = BU().get_latest_block()['hash']
         self.public_key = public_key
         self.private_key = private_key
 
@@ -58,8 +58,8 @@ class BlockFactory(object):
 
                 if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
                     for input_id in transaction_obj.inputs:
-                        input_block = BU.get_transaction_by_id(self.config, self.mongo, input_id.id, give_block=True)
-                        if input_block and input_block['index'] > (BU.get_latest_block(self.config, self.mongo)['index'] - 2016):
+                        input_block = BU().get_transaction_by_id(input_id.id, give_block=True)
+                        if input_block and input_block['index'] > (BU().get_latest_block()['index'] - 2016):
                             continue
 
             except:
@@ -84,7 +84,7 @@ class BlockFactory(object):
             if address in unspent_indexed:
                 unspent_ids = unspent_indexed[address]
             else:
-                res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address)
+                res = BU().get_wallet_unspent_transactions(address)
                 unspent_ids = [x['id'] for x in res]
                 unspent_indexed[address] = unspent_ids
 
@@ -94,9 +94,9 @@ class BlockFactory(object):
             for x in transaction_obj.inputs:
                 if x.id not in unspent_ids:
                     if isinstance(x, ExternalInput):
-                        txn2 = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True)
+                        txn2 = BU().get_transaction_by_id(x.id, instance=True)
                         address2 = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn2.public_key)))
-                        res = BU.get_wallet_unspent_transactions(self.config, self.mongo, address2)
+                        res = BU().get_wallet_unspent_transactions(address2)
                         unspent_ids2 = [y['id'] for y in res]
                         if x.id not in unspent_ids2:
                             failed = True
@@ -106,7 +106,7 @@ class BlockFactory(object):
             if not failed:
                 transaction_objs.append(transaction_obj)
                 fee_sum += float(transaction_obj.fee)
-        block_reward = BU.get_block_reward(self.config, self.mongo)
+        block_reward = BU().get_block_reward()
         coinbase_txn_fctry = TransactionFactory(
             config,
             mongo,
@@ -180,7 +180,7 @@ class BlockFactory(object):
         two_weeks = 1209600  # seconds
         half_week = 302400  # seconds
         if height > 0 and height % retarget_period == 0:
-            block_from_2016_ago = Block.from_dict(config, mongo, BU.get_block_by_index(config, mongo, height - retarget_period))
+            block_from_2016_ago = Block.from_dict(config, mongo, BU().get_block_by_index(height - retarget_period))
             two_weeks_ago_time = block_from_2016_ago.time
             elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
             # greater than two weeks?
@@ -361,8 +361,8 @@ class Block(object):
 
     def verify(self):
         getcontext().prec = 8
-        if int(self.version) != int(BU.get_version_for_height(self.index)):
-            raise Exception("Wrong version for block height", self.version, BU.get_version_for_height(self.index))
+        if int(self.version) != int(BU().get_version_for_height(self.index)):
+            raise Exception("Wrong version for block height", self.version, BU().get_version_for_height(self.index))
         try:
             txns = self.get_transaction_hashes()
             self.set_merkle_root(txns)
@@ -403,7 +403,7 @@ class Block(object):
         for txn in self.transactions:
             if not txn.coinbase:
                 fee_sum += float(txn.fee)
-        reward = BU.get_block_reward(self.config, self.mongo, self)
+        reward = BU().get_block_reward(self)
 
         #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
         """
@@ -437,7 +437,7 @@ class Block(object):
         for txn in self.transactions:
             if txn.inputs:
                 address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
-                unspent = BU.get_wallet_unspent_transactions(self.config, self.mongo,address, [x.id for x in txn.inputs])
+                unspent = BU().get_wallet_unspent_transactions(address, [x.id for x in txn.inputs])
                 unspent_ids = [x['id'] for x in unspent]
                 failed = False
                 used_ids_in_this_txn = []

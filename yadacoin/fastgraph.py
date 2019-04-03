@@ -7,6 +7,7 @@ from coincurve.utils import verify_signature
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 from yadacoin.blockchainutils import BU
+
 from yadacoin.transaction import Transaction, Relationship, Input, Output, ExternalInput
 from yadacoin.peers import Peers
 
@@ -115,7 +116,7 @@ class FastGraph(Transaction):
         for inp in self.inputs:
             inp = inp.id
             while 1:
-                txn = BU.get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=True)
+                txn = BU().get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=True)
                 if txn:
                     if 'rid' in txn and txn['rid'] and 'dh_public_key' in txn and txn['dh_public_key']:
                         if rid and txn['rid'] != rid:
@@ -127,7 +128,7 @@ class FastGraph(Transaction):
                             rids.append(txn['requested_rid'])
                         
                         # we need their public_key, not mine, so we get both transactions for the relationship
-                        txn_for_rids = BU.get_transaction_by_rid(self.config, self.mongo, rids, bulletin_secret=bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
+                        txn_for_rids = BU().get_transaction_by_rid(self.config, self.mongo, rids, bulletin_secret=bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
 
                         if txn_for_rids:
                             return txn_for_rids
@@ -153,8 +154,8 @@ class FastGraph(Transaction):
             raise InvalidFastGraphTransactionException('no signatures were provided')
 
         xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        unspent = [x['id'] for x in BU.get_wallet_unspent_transactions(self.config, self.mongo, xaddress)]
-        unspent_fastgraph = [x['id'] for x in BU.get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, xaddress)]
+        unspent = [x['id'] for x in BU().get_wallet_unspent_transactions(self.config, self.mongo, xaddress)]
+        unspent_fastgraph = [x['id'] for x in BU().get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, xaddress)]
         inputs = [x.id for x in self.inputs]
         if len(set(inputs) & set(unspent)) != len(inputs) and len(set(inputs) & set(unspent_fastgraph)) != len(inputs):
             raise InvalidFastGraphTransactionException('Input not found in unspent')
@@ -177,7 +178,7 @@ class FastGraph(Transaction):
             """
             # This is for a later fork to include a wider consensus area for a larger spending group
             else:
-                mutual_friends = [x for x in BU.get_transactions_by_rid(self.config, self.mongo, self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
+                mutual_friends = [x for x in BU().get_transactions_by_rid(self.config, self.mongo, self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
                 for mutual_friend in mutual_friends:
                     mutual_friend = Transaction.from_dict(self.config, self.mongo, mutual_friend)
                     if isinstance(mutual_friend.relationship, Relationship) and signature.bulletin_secret == mutual_friend.relationship.their_bulletin_secret:

@@ -16,6 +16,7 @@ from sys import exit, stdout
 from asyncio import sleep as async_sleep
 import socketio
 
+import yadacoin.blockchainutils
 import yadacoin.yadawebsockethandler
 from yadacoin.config import Config
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
@@ -30,7 +31,7 @@ from yadacoin.mongo import Mongo
 from yadacoin.peers import Peer, Peers
 
 
-__version__ = '0.0.8'
+__version__ = '0.0.9'
 
 
 app_log = None
@@ -68,7 +69,8 @@ class NodeApplication(Application):
             mp = None,
             mongo=mongo,
             peers=peers,
-            version= __version__
+            version= __version__,
+            BU = yadacoin.blockchainutils.GLOBAL_BU
         )
         yadacoin.yadawebsockethandler.WS_CONFIG = config
         yadacoin.yadawebsockethandler.WS_MONGO = mongo
@@ -156,6 +158,8 @@ async def main():
     mongo = Mongo(config)
 
     peers = Peers(config, mongo)
+    yadacoin.blockchainutils.set_BU(yadacoin.blockchainutils.BlockChainUtils(config, mongo))
+
     consensus = Consensus(config, mongo, options.debug, peers)
     if options.verify:
         app_log.info("Verifying existing blockchain".format(config.serve_host, config.serve_port))

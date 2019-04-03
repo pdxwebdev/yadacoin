@@ -116,7 +116,7 @@ class TransactionFactory(object):
 
     def do_money(self):
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        input_txns = BU.get_wallet_unspent_transactions(self.config, self.mongo, my_address)
+        input_txns = BU().get_wallet_unspent_transactions(my_address)
         miner_transactions = self.mongo.db.miner_transactions.find()
         mtxn_ids = []
         for mtxn in miner_transactions:
@@ -143,7 +143,7 @@ class TransactionFactory(object):
                 done = False
                 for y in inputs:
                     print(y.id)
-                    txn = BU.get_transaction_by_id(self.config, self.mongo, y.id, instance=True)
+                    txn = BU().get_transaction_by_id(y.id, instance=True)
                     if isinstance(y, ExternalInput):
                         y.verify()
                         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
@@ -183,7 +183,7 @@ class TransactionFactory(object):
         from yadacoin.fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+            txn = BU().get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             input_hashes.append(str(txn.transaction_signature))
 
         return ''.join(sorted(input_hashes, key=str.lower))
@@ -348,7 +348,7 @@ class Transaction(object):
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            input_txn = BU.get_transaction_by_id(self.config, self.mongo, txn.id, include_fastgraph=isinstance(self, FastGraph))
+            input_txn = BU().get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
                 raise InvalidTransactionException("Input not found on blockchain.")
             txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, input_txn)
@@ -428,7 +428,7 @@ class Transaction(object):
         from yadacoin.fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU.get_transaction_by_id(self.config, self.mongo, x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+            txn = BU().get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             if txn:
                 input_hashes.append(str(txn.transaction_signature))
             else:
@@ -504,7 +504,7 @@ class ExternalInput(Input):
         self.address = address
 
     def verify(self):
-        txn = BU.get_transaction_by_id(self.config, self.mongo, self.id, instance=True)
+        txn = BU().get_transaction_by_id(self.id, instance=True)
         result = verify_signature(base64.b64decode(self.signature), self.id.encode('utf-8'), bytes.fromhex(txn.public_key))
         if not result:
             raise Exception('Invalid external input')

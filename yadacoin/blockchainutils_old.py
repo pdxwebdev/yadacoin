@@ -7,62 +7,44 @@ from bson.son import SON
 from coincurve import PrivateKey
 
 
-
-# Circular reference
-#from yadacoin.block import Block
-
-
-GLOBAL_BU = None
-
-
-def BU():
-    return GLOBAL_BU
-
-
-def set_BU(BU):
-    global GLOBAL_BU
-    GLOBAL_BU = BU
-
-
-class BlockChainUtils(object):
-    # Blockchain Utilities
-    
+class _BU(object):  # Blockchain Utilities
     collection = None
     database = None
-        
-    def __init__(self, config, mongo):
-        self.config = config        
-        self.mongo = mongo
-    
-    def get_blocks(self, reverse=False):
+    @classmethod
+    def get_blocks(cls, config, mongo, reverse=False):
         if reverse:
-            return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
+            return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
         else:
-            return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
+            return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
 
-    def get_latest_blocks(self):
-        return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
+    @classmethod
+    def get_latest_blocks(cls, config, mongo):
+        return mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
-    def get_latest_block(self):
+    @classmethod
+    def get_latest_block(cls, config, mongo):
+        return mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
 
-        # TODO: cache
-        return self.mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-
-    def get_block_by_index(self, index):
-        res = self.mongo.db.blocks.find({'index': index}, {'_id': 0})
+    @classmethod
+    def get_block_by_index(cls, config, mongo, index):
+        res = mongo.db.blocks.find({'index': index}, {'_id': 0})
         if res.count():
             return res[0]
 
-    def get_block_objs(self):
+    @classmethod
+    def get_block_objs(cls, config, mongo):
         from yadacoin.block import Block
         # from yadacoin.transaction import Transaction, Input, Crypt
-        blocks = self.get_blocks()
-        block_objs = [Block.from_dict(self.config, self.mongo, block) for block in blocks]
+        blocks = cls.get_blocks(config, mongo)
+        block_objs = []
+        for block in blocks:
+            block_objs.append(Block.from_dict(config, mongo, block))
         return block_objs
 
-    def get_wallet_balance(self, address):
-        unspent_transactions = self.get_wallet_unspent_transactions(address)
-        unspent_fastgraph_transactions = self.get_wallet_unspent_fastgraph_transactions(address)
+    @classmethod
+    def get_wallet_balance(cls, config, mongo, address):
+        unspent_transactions = cls.get_wallet_unspent_transactions(config, mongo, address)
+        unspent_fastgraph_transactions = cls.get_wallet_unspent_fastgraph_transactions(config, mongo, address)
         balance = 0
         used_ids = []
         for txn in unspent_transactions:
@@ -81,14 +63,16 @@ class BlockChainUtils(object):
         else:
             return 0
 
-    def get_wallet_unspent_transactions(self, address, ids=None, needed_value=None):
-        res = self.wallet_unspent_worker(address, ids, needed_value)
+    @classmethod
+    def get_wallet_unspent_transactions(cls, config, mongo, address, ids=None, needed_value=None):
+        res = cls.wallet_unspent_worker(config, mongo, address, ids, needed_value)
         for x in res:
             x['txn']['height'] = x['height']
             yield x['txn']
 
-    def wallet_unspent_worker(self, address, ids=None, needed_value=None):
-        unspent_cache = self.mongo.db.unspent_cache.find({'address': address}).sort([('height', -1)])
+    @classmethod
+    def wallet_unspent_worker(cls, config, mongo, address, ids=None, needed_value=None):
+        unspent_cache = mongo.db.unspent_cache.find({'address': address}).sort([('height', -1)])
 
         if unspent_cache.count():
             unspent_cache = unspent_cache[0]
@@ -133,13 +117,13 @@ class BlockChainUtils(object):
             }
         ]
 
-        received = self.mongo.db.blocks.aggregate(received_query, allowDiskUse=True)
+        received = mongo.db.blocks.aggregate(received_query, allowDiskUse=True)
 
         reverse_public_key = ''
         for x in received:
             # we ALWAYS put our own address in the outputs even if the value is zero.
             # txn is invalid if it isn't present
-            self.mongo.db.unspent_cache.update({
+            mongo.db.unspent_cache.update({
                 'address': address,
                 'id': x['txn']['id'],
                 'height': x['height'],
@@ -157,7 +141,7 @@ class BlockChainUtils(object):
             if xaddress == address:
                 reverse_public_key = x['public_key']
 
-        spent = self.mongo.db.blocks.aggregate([
+        spent = mongo.db.blocks.aggregate([
             {
                 "$match": {
                     "index": {"$gt": block_height}
@@ -201,7 +185,7 @@ class BlockChainUtils(object):
         ids_spent_by_me = []
         for x in spent:
             for i in x['txn']['inputs']:
-                self.mongo.db.unspent_cache.update({
+                mongo.db.unspent_cache.update({
                     'address': address,
                     'id': i['id']
                 },
@@ -212,19 +196,20 @@ class BlockChainUtils(object):
                 })
 
         if ids:
-            res = self.mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
+            res = mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
         else:
-            res = self.mongo.db.unspent_cache.find({'address': address, 'spent': False})
+            res = mongo.db.unspent_cache.find({'address': address, 'spent': False})
         return res
-
-    def get_wallet_unspent_fastgraph_transactions(self, address):
-        result = self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
+    
+    @classmethod
+    def get_wallet_unspent_fastgraph_transactions(cls, config, mongo, address):
+        result = mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
         for x in result:
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
             if xaddress == address:
                 reverse_public_key = x['public_key']
-                spent_on_fastgraph = self.mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
-                spent_on_blockchain = self.mongo.db.blocks.find({'public_key': reverse_public_key, 'transactions.inputs.id': x['id']})
+                spent_on_fastgraph = mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
+                spent_on_blockchain = mongo.db.blocks.find({'public_key': reverse_public_key, 'transactions.inputs.id': x['id']})
                 if not spent_on_fastgraph.count() and not spent_on_blockchain.count():
                     # x['txn']['height'] = x['height'] # TODO: make height work for frastgraph transactions so we can order messages etc.
                     yield x['txn']
@@ -1220,34 +1205,38 @@ class BlockChainUtils(object):
             x['txn']['height'] = x['height']
             yield x['txn']
 
-    def get_mutual_rids(self, rid):
+    @classmethod
+    def get_mutual_rids(cls, config, mongo, rid):
         # find the requested and requester rids where rid is present in those fields
         rids = set()
-        rids.update([x['requested_rid'] for x in self.get_sent_friend_requests(rid)])
-        rids.update([x['requester_rid'] for x in self.get_friend_requests(rid)])
+        rids.update([x['requested_rid'] for x in cls.get_sent_friend_requests(config, mongo, rid)])
+        rids.update([x['requester_rid'] for x in cls.get_friend_requests(config, mongo, rid)])
         rids = list(rids)
         return rids
 
-    def get_mutual_bulletin_secrets(self, rid, at_block_height=None):
+    @classmethod
+    def get_mutual_bulletin_secrets(cls, config, mongo, rid, at_block_height=None):
         # Get the mutual relationships, then get the bulleting secrets for those relationships
         mutual_bulletin_secrets = set()
-        rids = self.get_mutual_rids(rid)
-        for transaction in self.get_transactions_by_rid(rids, self.config.bulletin_secret, rid=True):
+        rids = cls.get_mutual_rids(config, mongo, rid)
+        for transaction in cls.get_transactions_by_rid(config, mongo, rids, config.bulletin_secret, rid=True):
             if 'bulletin_secret' in transaction['relationship']:
                 mutual_bulletin_secrets.add(transaction['relationship']['bulletin_secret'])
         return list(mutual_bulletin_secrets)
 
-    def generate_signature(self, message, private_key):
+    @classmethod
+    def generate_signature(cls, message, private_key):
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message)
         return base64.b64encode(signature).decode("utf-8")
 
-    def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False):
+    @classmethod
+    def get_transaction_by_id(cls, config, mongo, id, instance=False, give_block=False, include_fastgraph=False):
         from yadacoin.transaction import Transaction
         # from yadacoin.crypt import Crypt
         from yadacoin.fastgraph import FastGraph
-        res = self.mongo.db.blocks.find({"transactions.id": id})
-        res2 = self.mongo.db.fastgraph_transactions.find({"txn.id": id})
+        res = mongo.db.blocks.find({"transactions.id": id})
+        res2 = mongo.db.fastgraph_transactions.find({"txn.id": id})
         if res.count():
             for block in res:
                 if give_block:
@@ -1255,29 +1244,31 @@ class BlockChainUtils(object):
                 for txn in block['transactions']:
                     if txn['id'] == id:
                         if instance:
-                            return Transaction.from_dict(self.config, self.mongo, block['index'], txn)
+                            return Transaction.from_dict(config, mongo, block['index'], txn)
                         else:
                             return txn
         elif res2.count() and include_fastgraph:
             if give_block:
                 return None
             if instance:
-                return FastGraph.from_dict(self.config, self.mongo, 0, res2[0]['txn'])
+                return FastGraph.from_dict(config, mongo, 0, res2[0]['txn'])
             else:
                 return res2[0]['txn']
         else:
             # fix for bug when unspent cache returns an input 
             # that has been removed from the chain
-            self.mongo.db.unspent_cache.remove({})
+            mongo.db.unspent_cache.remove({})
             return None
-
-    def get_version_for_height(self, height):
+    
+    @classmethod
+    def get_version_for_height(cls, height):
         if int(height) <= 14484:
             return 1
         else:
             return 2
 
-    def get_block_reward(self, block=None):
+    @classmethod
+    def get_block_reward(cls, config, mongo, block=None):
         block_rewards = [
             {"block": "0", "reward": "50"},
             {"block": "210000", "reward": "25"},
@@ -1315,7 +1306,7 @@ class BlockChainUtils(object):
             {"block": "6930000", "reward": "0"}
         ]
 
-        latest_block = self.get_latest_block()
+        latest_block = cls.get_latest_block(config, mongo)
         if latest_block:
             block_count = (latest_block['index'] + 1)
         else:
