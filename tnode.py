@@ -161,9 +161,10 @@ async def main():
     config.mongo = mongo
 
     peers = Peers()
-    yadacoin.config.peers = peers
+    config.peers = peers
     yadacoin.blockchainutils.set_BU(yadacoin.blockchainutils.BlockChainUtils(config, mongo))
-    # yadacoin.config.BU = yadacoin.blockchainutils.BlockChainUtils(config, mongo)
+    # config.BU = yadacoin.blockchainutils.BlockChainUtils()
+    # config.GU = yadacoin.blockchainutils.GraphUtils()
 
     consensus = Consensus(config, mongo, options.debug, peers)
     if options.verify:

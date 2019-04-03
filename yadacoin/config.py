@@ -8,7 +8,6 @@ from mnemonic import Mnemonic
 from bip32utils import BIP32Key
 
 CONFIG = None
-MONGO = None
 
 
 def get_config():
