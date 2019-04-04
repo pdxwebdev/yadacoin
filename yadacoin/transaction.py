@@ -293,15 +293,13 @@ class Transaction(object):
         self.coinbase = coinbase
 
     @classmethod
-    def from_dict(cls, config, mongo, block_height, txn):
+    def from_dict(cls, block_height, txn):
         try:
             relationship = Relationship(**txn.get('relationship', ''))
         except:
             relationship = txn.get('relationship', '')
         
         return cls(
-            config=config,
-            mongo=mongo,
             block_height=block_height,
             txn_time=txn.get('time', ''),
             transaction_signature=txn.get('id'),
@@ -348,7 +346,7 @@ class Transaction(object):
             input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
                 raise InvalidTransactionException("Input not found on blockchain.")
-            txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, input_txn)
+            txn_input = Transaction.from_dict(self.block_height, input_txn)
 
             found = False
             for output in txn_input.outputs:

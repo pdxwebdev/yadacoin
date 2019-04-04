@@ -41,7 +41,7 @@ def chat_disconnect(sid):
 async def newtransaction(sid, data):
     print("newtransaction", data)
     try:
-        incoming_txn = Transaction.from_dict(get_config(), get_config().mongo, BU().get_latest_block()['index'], data)
+        incoming_txn = Transaction.from_dict(BU().get_latest_block()['index'], data)
     except Exception as e:
         print("transaction is bad", e)
         raise Exception("transaction is bad")

@@ -411,7 +411,7 @@ class BlockChainUtils(object):
                 for txn in block['transactions']:
                     if txn['id'] == id:
                         if instance:
-                            return Transaction.from_dict(self.config, self.mongo, block['index'], txn)
+                            return Transaction.from_dict(block['index'], txn)
                         else:
                             return txn
         elif res2.count() and include_fastgraph:

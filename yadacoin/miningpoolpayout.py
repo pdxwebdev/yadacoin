@@ -93,8 +93,8 @@ class PoolPayer(object):
                 return
             else:
                 # rebroadcast
-                transaction = Transaction.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo)['index'], existing['txn'])
-                TU.save(self.config, self.mongo, transaction)
+                transaction = Transaction.from_dict(BU.get_latest_block()['index'], existing['txn'])
+                TU.save(transaction)
                 self.broadcast_transaction(transaction)
                 return
 

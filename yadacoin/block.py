@@ -48,7 +48,7 @@ class BlockFactory(object):
                 if isinstance(txn, Transaction):
                     transaction_obj = txn
                 else:
-                    transaction_obj = Transaction.from_dict(self.config, self.mongo, self.index, txn)
+                    transaction_obj = Transaction.from_dict(self.index, txn)
 
                 if transaction_obj.transaction_signature in used_sigs:
                     print('duplicate transaction found and removed')
@@ -334,7 +334,7 @@ class Block(object):
             if 'signatures' in txn:
                 transactions.append(FastGraph.from_dict(config, mongo, block.get('index'), txn))
             else:
-                transactions.append(Transaction.from_dict(config, mongo, block.get('index'), txn))
+                transactions.append(Transaction.from_dict(block.get('index'), txn))
 
         return cls(
             config=config,
