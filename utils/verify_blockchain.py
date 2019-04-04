@@ -18,7 +18,7 @@ with open('config/config.json') as f:
 
 mongo = Mongo(config)
 blocks = BU.get_blocks(config, mongo)
-blockchain = Blockchain(config, mongo, blocks)
+blockchain = Blockchain(blocks)
 blockchain.verify(output)
 
 

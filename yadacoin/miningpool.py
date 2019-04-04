@@ -103,9 +103,7 @@ class MiningPool(object):
             latest_block,
             self.block_factory.block,
             Blockchain(
-                self.config,
-                self.mongo,
-                chain,
+                blocks=chain,
                 partial=True
             )
         )
