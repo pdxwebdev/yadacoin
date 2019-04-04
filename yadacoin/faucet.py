@@ -29,8 +29,6 @@ class Faucet(object):
 
             try:
                 transaction = TransactionFactory(
-                    config,
-                    mongo,
                     block_height=BU.get_latest_block(config, mongo)['index'],
                     fee=0.01,
                     public_key=config.public_key,

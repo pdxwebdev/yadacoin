@@ -22,9 +22,9 @@ from pbkdf2 import PBKDF2
 from flask import Flask, request, render_template, session, redirect, current_app
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin import (
-    BU, TU, Transaction, TransactionFactory, Output, Input, 
-    Config, Peers, Graph, Block, Mongo, InvalidTransactionException, 
-    InvalidTransactionSignatureException, MissingInputTransactionException, MiningPool, endpoints
+    BU, TU, Transaction, TransactionFactory, Output, Input,
+    Config, Peers, Graph, Block, Mongo, InvalidTransactionException,
+    InvalidTransactionSignatureException, MissingInputTransactionException, MiningPool, endpoints_old
 )
 from pymongo import MongoClient
 from socketIO_client import SocketIO, BaseNamespace
@@ -263,26 +263,26 @@ def get_base_graph(self):
     graph = Graph(app.config['yada_config'], app.config['yada_mongo'], bulletin_secret, ids)
     return graph
 
-endpoints.BaseGraphView.get_base_graph = get_base_graph
+endpoints_old.BaseGraphView.get_base_graph = get_base_graph
 
-app.add_url_rule('/register', view_func=endpoints.RegisterView.as_view('register'))
-app.add_url_rule('/transaction', view_func=endpoints.TransactionView.as_view('transaction'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-info', view_func=endpoints.GraphView.as_view('graph'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-sent-friend-requests', view_func=endpoints.GraphSentFriendRequestsView.as_view('graphsentfriendrequests'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-friend-requests', view_func=endpoints.GraphFriendRequestsView.as_view('graphfriendrequests'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-friends', view_func=endpoints.GraphFriendsView.as_view('graphfriends'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-posts', view_func=endpoints.GraphPostsView.as_view('graphposts'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-messages', view_func=endpoints.GraphMessagesView.as_view('graphmessages'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-new-messages', view_func=endpoints.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
-app.add_url_rule('/get-graph-comments', view_func=endpoints.GraphCommentsView.as_view('get-comments'), methods=['POST'])
-app.add_url_rule('/get-graph-reacts', view_func=endpoints.GraphReactsView.as_view('get-reacts'), methods=['POST'])
-app.add_url_rule('/get-graph-wallet', view_func=endpoints.RidWalletView.as_view('get-wallet'))
-app.add_url_rule('/wallet', view_func=endpoints.WalletView.as_view('wallet'))
-app.add_url_rule('/faucet', view_func=endpoints.FaucetView.as_view('faucet'))
-app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_view('explorer-search'))
-app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
-app.add_url_rule('/create-relationship', view_func=endpoints.CreateRelationshipView.as_view('create-relationship'))
-app.add_url_rule('/yada_config.json', view_func=endpoints.GetYadaConfigView.as_view('yada-config'))
+app.add_url_rule('/register', view_func=endpoints_old.RegisterView.as_view('register'))
+app.add_url_rule('/transaction', view_func=endpoints_old.TransactionView.as_view('transaction'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-info', view_func=endpoints_old.GraphView.as_view('graph'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-sent-friend-requests', view_func=endpoints_old.GraphSentFriendRequestsView.as_view('graphsentfriendrequests'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-friend-requests', view_func=endpoints_old.GraphFriendRequestsView.as_view('graphfriendrequests'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-friends', view_func=endpoints_old.GraphFriendsView.as_view('graphfriends'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-posts', view_func=endpoints_old.GraphPostsView.as_view('graphposts'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-messages', view_func=endpoints_old.GraphMessagesView.as_view('graphmessages'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-new-messages', view_func=endpoints_old.GraphNewMessagesView.as_view('graphnewmessages'), methods=['GET', 'POST'])
+app.add_url_rule('/get-graph-comments', view_func=endpoints_old.GraphCommentsView.as_view('get-comments'), methods=['POST'])
+app.add_url_rule('/get-graph-reacts', view_func=endpoints_old.GraphReactsView.as_view('get-reacts'), methods=['POST'])
+app.add_url_rule('/get-graph-wallet', view_func=endpoints_old.RidWalletView.as_view('get-wallet'))
+app.add_url_rule('/wallet', view_func=endpoints_old.WalletView.as_view('wallet'))
+app.add_url_rule('/faucet', view_func=endpoints_old.FaucetView.as_view('faucet'))
+app.add_url_rule('/explorer-search', view_func=endpoints_old.ExplorerSearchView.as_view('explorer-search'))
+app.add_url_rule('/get-latest-block', view_func=endpoints_old.GetLatestBlockView.as_view('get-latest-block'))
+app.add_url_rule('/create-relationship', view_func=endpoints_old.CreateRelationshipView.as_view('create-relationship'))
+app.add_url_rule('/yada_config.json', view_func=endpoints_old.GetYadaConfigView.as_view('yada-config'))
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',

@@ -410,8 +410,6 @@ class CreateRelationshipView(View):
         dh_private_key = a.hex()
 
         transaction = TransactionFactory(
-            config=config,
-            mongo=mongo,
             block_height=BU.get_latest_block(config, mongo)['index'],
             bulletin_secret=bulletin_secret,
             username=username,
@@ -612,8 +610,6 @@ class CreateRawTransactionView(View):
             return json.dumps({'status': 'error', 'msg': 'not enough inputs to pay for transaction outputs + fee'})
         try:
             txn = TransactionFactory(
-                config,
-                mongo,
                 block_height=BU.get_latest_block(config, mongo)['index'],
                 public_key=request.json.get('public_key'),
                 fee=float(request.json.get('fee')),

@@ -21,10 +21,10 @@ from flask import Flask, render_template, request, Response
 from flask_cors import CORS
 from yadacoin import (
     TransactionFactory, Transaction, MissingInputTransactionException,
-    Input, Output, Block, Config, Peers, 
-    Blockchain, BlockChainException, TU, BU, 
-    Mongo, BlockFactory, NotEnoughMoneyException, Peer, 
-    Consensus, PoolPayer, Faucet, Send, Graph, Serve, endpoints, Wallet
+    Input, Output, Block, Config, Peers,
+    Blockchain, BlockChainException, TU, BU,
+    Mongo, BlockFactory, NotEnoughMoneyException, Peer,
+    Consensus, PoolPayer, Faucet, Send, Graph, Serve, endpoints_old, Wallet
 )
 from yadacoin import MiningPool
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
@@ -154,8 +154,6 @@ if __name__ == '__main__':
 
     # this
     transaction = Transaction(
-        config,
-        mongo,
         block_height=BU.get_latest_block(config, mongo)['index'],
         fee=0.01,
         public_key=config.public_key,

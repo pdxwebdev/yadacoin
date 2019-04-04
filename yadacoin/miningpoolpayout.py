@@ -122,8 +122,6 @@ class PoolPayer(object):
 
         try:
             transaction = TransactionFactory(
-                self.config,
-                self.mongo,
                 block_height=block.index,
                 fee=0.0001,
                 public_key=self.config.public_key,

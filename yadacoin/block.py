@@ -109,8 +109,6 @@ class BlockFactory(object):
                 fee_sum += float(transaction_obj.fee)
         block_reward = self.config.BU.get_block_reward()
         coinbase_txn_fctry = TransactionFactory(
-            self.config,
-            self.mongo,
             self.index,
             public_key=self.public_key,
             private_key=self.private_key,
