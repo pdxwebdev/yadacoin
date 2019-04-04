@@ -29,6 +29,7 @@ from yadacoin.yadawebsockethandler import SIO
 from yadacoin.consensus import Consensus
 from yadacoin.mongo import Mongo
 from yadacoin.peers import Peer, Peers
+from yadacoin.graphutils import GraphUtils
 
 
 __version__ = '0.0.9'
@@ -162,9 +163,9 @@ async def main():
 
     peers = Peers()
     config.peers = peers
-    yadacoin.blockchainutils.set_BU(yadacoin.blockchainutils.BlockChainUtils(config, mongo))
-    # config.BU = yadacoin.blockchainutils.BlockChainUtils()
-    # config.GU = yadacoin.blockchainutils.GraphUtils()
+    config.BU = yadacoin.blockchainutils.BlockChainUtils()
+    yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
+    config.GU = GraphUtils()
 
     consensus = Consensus(config, mongo, options.debug, peers)
     if options.verify:
