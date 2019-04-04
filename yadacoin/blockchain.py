@@ -1,5 +1,6 @@
 from yadacoin.block import Block, BlockFactory
 from yadacoin.transaction import InvalidTransactionException, MissingInputTransactionException
+from yadacoin.config import get_config
 
 
 class BlockChainException(Exception):
@@ -8,9 +9,9 @@ class BlockChainException(Exception):
 
 class Blockchain(object):
 
-    def __init__(self, config, mongo, blocks=None, partial=False):
-        self.config = config
-        self.mongo = mongo
+    def __init__(self, blocks=None, partial=False):
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.blocks = []
         last_index = None
         for block in blocks:
