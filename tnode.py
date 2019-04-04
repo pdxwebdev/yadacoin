@@ -167,7 +167,7 @@ async def main():
     yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
     config.GU = GraphUtils()
 
-    consensus = Consensus(config, mongo, options.debug, peers)
+    consensus = Consensus(options.debug, peers)
     if options.verify:
         app_log.info("Verifying existing blockchain".format(config.serve_host, config.serve_port))
         consensus.verify_existing_blockchain(reset=options.reset)

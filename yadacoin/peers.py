@@ -7,6 +7,7 @@ from logging import getLogger
 
 from yadacoin.config import get_config
 
+
 class Peers(object):
     """A Peer manager Class."""
 
