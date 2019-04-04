@@ -11,15 +11,14 @@ from eccsnacks.curve25519 import scalarmult_base
 
 from yadacoin.crypt import Crypt
 from yadacoin.transactionutils import TU
-from yadacoin.blockchainutils import BU
+# from yadacoin.blockchainutils import BU
+from yadacoin.config import get_config
 
 
 class TransactionFactory(object):
     
     def __init__(
         self,
-        config,
-        mongo,
         block_height,
         bulletin_secret='',
         username='',
@@ -38,8 +37,8 @@ class TransactionFactory(object):
         chattext=None,
         signin=None
     ):
-        self.config = config
-        self.mongo = mongo
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.block_height = block_height
         self.bulletin_secret = bulletin_secret
         self.username = username
@@ -116,7 +115,7 @@ class TransactionFactory(object):
 
     def do_money(self):
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        input_txns = BU().get_wallet_unspent_transactions(my_address)
+        input_txns = self.config.BU.get_wallet_unspent_transactions(my_address)
         miner_transactions = self.mongo.db.miner_transactions.find()
         mtxn_ids = []
         for mtxn in miner_transactions:
@@ -143,7 +142,7 @@ class TransactionFactory(object):
                 done = False
                 for y in inputs:
                     print(y.id)
-                    txn = BU().get_transaction_by_id(y.id, instance=True)
+                    txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
                     if isinstance(y, ExternalInput):
                         y.verify()
                         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
@@ -183,7 +182,7 @@ class TransactionFactory(object):
         from yadacoin.fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU().get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+            txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             input_hashes.append(str(txn.transaction_signature))
 
         return ''.join(sorted(input_hashes, key=str.lower))
@@ -252,8 +251,6 @@ class Transaction(object):
 
     def __init__(
         self,
-        config,
-        mongo,
         block_height,
         txn_time='',
         rid='',
@@ -270,8 +267,8 @@ class Transaction(object):
         coinbase=False,
         extra_blocks=None
     ):
-        self.config = config
-        self.mongo = mongo
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.block_height = block_height
         self.time = txn_time
         self.rid = rid
@@ -348,7 +345,7 @@ class Transaction(object):
         # verify spend
         total_input = 0
         for txn in self.inputs:
-            input_txn = BU().get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
+            input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
                 raise InvalidTransactionException("Input not found on blockchain.")
             txn_input = Transaction.from_dict(self.config, self.mongo, self.block_height, input_txn)
@@ -428,7 +425,7 @@ class Transaction(object):
         from yadacoin.fastgraph import FastGraph
         input_hashes = []
         for x in self.inputs:
-            txn = BU().get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+            txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             if txn:
                 input_hashes.append(str(txn.transaction_signature))
             else:
@@ -504,7 +501,7 @@ class ExternalInput(Input):
         self.address = address
 
     def verify(self):
-        txn = BU().get_transaction_by_id(self.id, instance=True)
+        txn = self.config.BU.get_transaction_by_id(self.id, instance=True)
         result = verify_signature(base64.b64decode(self.signature), self.id.encode('utf-8'), bytes.fromhex(txn.public_key))
         if not result:
             raise Exception('Invalid external input')
