@@ -17,7 +17,7 @@ from asyncio import sleep as async_sleep
 import socketio
 
 import yadacoin.blockchainutils
-import yadacoin.yadawebsockethandler
+# import yadacoin.yadawebsockethandler
 import yadacoin.config
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
 from yadacoin.graphhandlers import GRAPH_HANDLERS
@@ -73,8 +73,8 @@ class NodeApplication(Application):
             version= __version__,
             BU = yadacoin.blockchainutils.GLOBAL_BU
         )
-        yadacoin.yadawebsockethandler.WS_CONFIG = config
-        yadacoin.yadawebsockethandler.WS_MONGO = mongo
+        # yadacoin.yadawebsockethandler.WS_CONFIG = config
+        # yadacoin.yadawebsockethandler.WS_MONGO = mongo
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
 

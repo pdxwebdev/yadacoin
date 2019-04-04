@@ -6,6 +6,7 @@ Web socket handler for yadacoin
 import socketio
 from yadacoin.transaction import Transaction
 
+from yadacoin.config import get_config
 from yadacoin.blockchainutils import BU
 
 SIO = socketio.AsyncServer(async_mode='tornado')
@@ -13,8 +14,8 @@ SIO = socketio.AsyncServer(async_mode='tornado')
 
 # TODO: refactor as a class or use a global CONFIG var from yadacoin.config, would avoid passing config as param everywhere
 # Same goes for mongo
-WS_CONFIG = None
-WS_MONGO = None
+#WS_CONFIG = None
+#WS_MONGO = None
 
 
 @SIO.on('connect', namespace='/chat')
@@ -40,18 +41,18 @@ def chat_disconnect(sid):
 async def newtransaction(sid, data):
     print("newtransaction", data)
     try:
-        incoming_txn = Transaction.from_dict(WS_CONFIG, WS_MONGO, BU().get_latest_block()['index'], data)
+        incoming_txn = Transaction.from_dict(get_config(), get_config().mongo, BU().get_latest_block()['index'], data)
     except Exception as e:
         print("transaction is bad", e)
         raise Exception("transaction is bad")
 
     try:
         print(incoming_txn.transaction_signature)
-        dup_check = WS_MONGO.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
+        dup_check = get_config().mongo.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
         if dup_check.count():
             print('found duplicate')
             raise Exception("duplicate")
-        WS_MONGO.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(), upsert=True)
+            get_config().mongo.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(), upsert=True)
     except Exception as e:
         raise Exception("transaction is bad", e)
 
