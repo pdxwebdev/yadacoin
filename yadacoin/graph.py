@@ -31,7 +31,7 @@ class Graph(object):
             self.wallet_mode = True
 
             rids = [x['rid'] for x in all_relationships]
-            self.rid_transactions = BU.get_transactions_by_rid(self.config, self.mongo, rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
+            self.rid_transactions = BU.get_transactions_by_rid(rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
             self.wallet_mode = False
             self.registered = False
@@ -47,7 +47,7 @@ class Graph(object):
                 self.human_hash = humanhash.humanize(self.rid)
             start_height = 0
             # this will get any transactions between the client and server
-            nodes = BU.get_transactions_by_rid(self.config, self.mongo, bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
+            nodes = BU.get_transactions_by_rid(bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
             already_done = []
             for node in nodes:
                 if node.get('dh_public_key'):
@@ -96,18 +96,18 @@ class Graph(object):
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
-        lookup_rids.extend([x['rid'] for x in BU.get_friend_requests(self.config, self.mongo, self.rid)])
-        lookup_rids.extend([x['rid'] for x in BU.get_sent_friend_requests(self.config, self.mongo, self.rid)])
+        lookup_rids.extend([x['rid'] for x in BU.get_friend_requests(self.rid)])
+        lookup_rids.extend([x['rid'] for x in BU.get_sent_friend_requests(self.rid)])
         return list(set(lookup_rids))
 
     def get_request_rids_for_rid(self):
         lookup_rids = {}
-        for x in BU.get_friend_requests(self.config, self.mongo, self.rid):
+        for x in BU.get_friend_requests(self.rid):
             if x['rid'] not in lookup_rids:
                 lookup_rids[x['rid']] = []
             lookup_rids[x['rid']].append(x['requester_rid'])
 
-        for x in BU.get_sent_friend_requests(self.config, self.mongo, self.rid):
+        for x in BU.get_sent_friend_requests(self.rid):
             if x['rid'] not in lookup_rids:
                 lookup_rids[x['rid']] = []
             lookup_rids[x['rid']].append(x['requested_rid'])
@@ -119,7 +119,7 @@ class Graph(object):
             self.friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
             return
         else:
-            friend_requests = [x for x in BU.get_friend_requests(self.config, self.mongo, self.rid)] # include fastgraph
+            friend_requests = [x for x in BU.get_friend_requests(self.rid)] # include fastgraph
 
         for i, friend_request in enumerate(friend_requests):
             # attach bulletin_secets
@@ -134,7 +134,7 @@ class Graph(object):
             self.sent_friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
             return
         else:
-            sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.config, self.mongo, self.rid)]
+            sent_friend_requests = [x for x in BU.get_sent_friend_requests(self.rid)]
 
         for i, sent_friend_request in enumerate(sent_friend_requests):
             # attach usernames
@@ -160,7 +160,7 @@ class Graph(object):
         else:
             lookup_rids = self.get_request_rids_for_rid()
             lookup_rids[self.rid] = [self.rid]
-            messages = [x for x in BU.get_messages(self.config, self.mongo, self.get_lookup_rids())]
+            messages = [x for x in BU.get_messages(self.get_lookup_rids())]
 
             out_messages = []
             for i, message in enumerate(messages):
@@ -194,7 +194,7 @@ class Graph(object):
         posts = []
         blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
         flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
-        for x in BU.get_posts(self.config, self.mongo, self.rid):
+        for x in BU.get_posts(self.rid):
             rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
             rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
             if rid in self.rid_usernames:
@@ -215,7 +215,7 @@ class Graph(object):
         out = {}
         if not self.ids:
             return json.dumps({})
-        for x in BU.get_comments(self.config, self.mongo, self.rid, self.ids):
+        for x in BU.get_comments(self.rid, self.ids):
             if x['relationship'].get('id') not in out:
                 out[x['relationship'].get('id')] = []
 
@@ -243,7 +243,7 @@ class Graph(object):
         out = {}
         if not self.ids:
             return json.dumps({})
-        for x in BU.get_reacts(self.config, self.mongo, self.rid, self.ids):
+        for x in BU.get_reacts(self.rid, self.ids):
             if x['relationship'].get('id') not in out:
                 out[x['relationship'].get('id')] = []
 

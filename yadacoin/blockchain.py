@@ -16,7 +16,7 @@ class Blockchain(object):
         last_index = None
         for block in blocks:
             if not isinstance(block, Block):
-                block = Block.from_dict(self.config, self.mongo, block)
+                block = Block.from_dict(block)
             
             if last_index and (block.index - last_index) != 1:
                 raise Exception('Either incomplete blockchain or unordered.')
@@ -60,7 +60,7 @@ class Blockchain(object):
                     else:
                         return {'verified': False, 'message': e}
             if last_block:
-                target = BlockFactory.get_target(self.config, self.mongo, block.index, last_block, block, self)
+                target = BlockFactory.get_target(block.index, last_block, block, self)
                 if int(block.hash, 16) > target and not block.special_min:
                     return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
                 if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:

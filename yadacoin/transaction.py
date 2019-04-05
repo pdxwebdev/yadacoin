@@ -58,7 +58,7 @@ class TransactionFactory(object):
         self.inputs = []
         for x in inputs:
             if 'signature' in x and 'public_key' in x and 'address' in x:
-                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
+                self.inputs.append(ExternalInput.from_dict(x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
@@ -76,7 +76,7 @@ class TransactionFactory(object):
                 self.cipher = Crypt(self.config.wif)
                 self.encrypted_relationship = self.cipher.encrypt(self.relationship)
             elif self.signin:
-                for shared_secret in TU.get_shared_secrets_by_rid(self.config, self.mongo, self.rid):
+                for shared_secret in TU.get_shared_secrets_by_rid(self.rid):
                     self.relationship = SignIn(self.signin)
                     self.cipher = Crypt(shared_secret.hex(), shared=True)
                     self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
@@ -129,7 +129,7 @@ class TransactionFactory(object):
             for input_txn in input_txns:
                 if input_txn['id'] not in mtxn_ids:
                     if 'signature' in input_txn and 'public_key' in input_txn and 'address' in input_txn:
-                        inputs.append(ExternalInput.from_dict(self.config, self.mongo, input_txn))
+                        inputs.append(ExternalInput.from_dict(input_txn))
                     else:
                         inputs.append(Input.from_dict(input_txn))
 
@@ -287,7 +287,7 @@ class Transaction(object):
         self.inputs = []
         for x in inputs:
             if 'signature' in x and 'public_key' in x and 'address' in x:
-                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
+                self.inputs.append(ExternalInput.from_dict(x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase

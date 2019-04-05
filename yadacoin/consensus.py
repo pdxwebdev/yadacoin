@@ -42,7 +42,7 @@ class Consensus(object):
             self.peers = Peers()
         latest_block = self.config.BU.get_latest_block()
         if latest_block:
-            self.latest_block = Block.from_dict(self.config, self.mongo, latest_block)
+            self.latest_block = Block.from_dict( latest_block)
         else:
             self.insert_genesis()
         
@@ -59,7 +59,7 @@ class Consensus(object):
 
     def insert_genesis(self):
         #insert genesis if it doesn't exist
-        genesis_block = BlockFactory.get_genesis_block(self.config, self.mongo)
+        genesis_block = BlockFactory.get_genesis_block()
         genesis_block.save()
         self.mongo.db.consensus.update({
             'block': genesis_block.to_dict(),
@@ -113,7 +113,7 @@ class Consensus(object):
         latests = self.get_latest_consensus_blocks()
         for latest in latests:
             if int(latest['block']['version']) == self.config.BU.get_version_for_height(latest['block']['index']):
-                return Block.from_dict(self.config, self.mongo, latest['block'])
+                return Block.from_dict( latest['block'])
 
     def get_consensus_blocks_by_index(self, index):
         return self.mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}, 'block.version': self.config.BU.get_version_for_height(index)}, {'_id': 0})
@@ -128,8 +128,8 @@ class Consensus(object):
 
         ranks = []
         for record in records:
-            peer = Peer.from_string(self.config, self.mongo, record['peer'])
-            block = Block.from_dict(self.config, self.mongo, record['block'])
+            peer = Peer.from_string( record['peer'])
+            block = Block.from_dict( record['block'])
             target = int(record['block']['hash'], 16)
             if target < lowest:
                 ranks.append({
@@ -147,7 +147,7 @@ class Consensus(object):
             'block.version': self.config.BU.get_version_for_height((block.index + 1))
         })
         if new_block:
-            new_block = Block.from_dict(self.config, self.mongo, new_block['block'])
+            new_block = Block.from_dict( new_block['block'])
             if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
                 return new_block
             else:
@@ -163,7 +163,7 @@ class Consensus(object):
             'ignore': {'$ne': True}
         })
         if new_block:
-            new_block = Block.from_dict(self.config, self.mongo, new_block['block'])
+            new_block = Block.from_dict( new_block['block'])
             if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
                 return new_block
             else:
@@ -187,7 +187,7 @@ class Consensus(object):
             try:
                 if self.debug:
                     print('response code: ', res.status_code)
-                new_block = Block.from_dict(self.config, self.mongo, json.loads(res.content))
+                new_block = Block.from_dict( json.loads(res.content))
                 if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
                     return new_block
                 else:
@@ -213,7 +213,7 @@ class Consensus(object):
         try:
             #bottom up syncing
             last_latest = self.latest_block
-            self.latest_block = Block.from_dict(self.config, self.mongo, self.config.BU.get_latest_block())
+            self.latest_block = Block.from_dict( self.config.BU.get_latest_block())
             if self.latest_block.index > last_latest.index:
                 self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             self.remove_pending_transactions_now_in_chain()
@@ -225,7 +225,7 @@ class Consensus(object):
                 'ignore': {'$ne': True}
             })
             if latest_consensus:
-                latest_consensus = Block.from_dict(self.config, self.mongo, latest_consensus['block'])
+                latest_consensus = Block.from_dict( latest_consensus['block'])
                 if self.debug:
                     self.app_log.info("Latest consensus_block {}".format(latest_consensus.index))
 
@@ -238,7 +238,7 @@ class Consensus(object):
                     result = self.import_block(record)
 
                 last_latest = self.latest_block
-                self.latest_block = Block.from_dict(self.config, self.mongo, self.config.BU.get_latest_block())
+                self.latest_block = Block.from_dict( self.config.BU.get_latest_block())
                 if self.latest_block.index > last_latest.index:
                     self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                 latest_consensus_now = await self.mongo.async_db.consensus.find_one({
@@ -260,7 +260,7 @@ class Consensus(object):
             raise
 
     async def search_network_for_new(self):
-        # Peers.init(self.config, self.mongo, self.config.network)
+        # Peers.init( self.config.network)
         if len(self.peers.peers) < 2:
             await self.peers.refresh()
             await async_sleep(20)
@@ -292,7 +292,7 @@ class Consensus(object):
                     continue
                 for block in blocks:
                     # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
-                    block = Block.from_dict(self.config, self.mongo, block)
+                    block = Block.from_dict( block)
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
                         self.insert_consensus_block(block, peer)
                         # print("consensus ok", block.index)
@@ -309,10 +309,10 @@ class Consensus(object):
 
     def import_block(self, block_data):
         try:
-            block = Block.from_dict(self.config, self.mongo, block_data['block'])
-            peer = Peer.from_string(self.config, self.mongo, block_data['peer'])
+            block = Block.from_dict( block_data['block'])
+            peer = Peer.from_string( block_data['peer'])
             if 'extra_blocks' in block_data:
-                extra_blocks = [Block.from_dict(self.config, self.mongo, x) for x in block_data['extra_blocks']]
+                extra_blocks = [Block.from_dict( x) for x in block_data['extra_blocks']]
             else:
                 extra_blocks = None
             if self.debug:
@@ -395,7 +395,7 @@ class Consensus(object):
             print("Integrate block error 3")
             raise ForkException()
 
-        target = BlockFactory.get_target(self.config, self.mongo, height, last_block, block, self.existing_blockchain)
+        target = BlockFactory.get_target( height, last_block, block, self.existing_blockchain)
         target_block_time = 600
         if ((int(block.hash, 16) < target) or 
             (block.special_min and block.index < 35200) or 
@@ -498,7 +498,7 @@ class Consensus(object):
                                     start_index=block_for_next.index + 1,
                                     end_index=block_for_next.index + 100
                                 ), timeout=1)
-                                remote_blocks = [Block.from_dict(self.config, self.mongo, x) for x in json.loads(result.content)]
+                                remote_blocks = [Block.from_dict( x) for x in json.loads(result.content)]
                                 break_out = False
                                 for remote_block in remote_blocks:
                                     if remote_block.prev_hash == block_for_next.hash:
@@ -548,7 +548,7 @@ class Consensus(object):
                                 while 1:
                                     back_one_block = self.mongo.db.consensus.find_one({'block.hash': back_one_block.prev_hash})
                                     if back_one_block:
-                                        back_one_block = Block.from_dict(self.config, self.mongo, back_one_block['block'])
+                                        back_one_block = Block.from_dict( back_one_block['block'])
                                         try:
                                             result = self.integrate_block_with_existing_chain(back_one_block)
                                             if result:

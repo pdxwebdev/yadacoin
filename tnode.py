@@ -175,7 +175,7 @@ async def main():
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
     tornado.ioloop.IOLoop.instance().add_callback(background_peers_testing, peers)
 
-    my_peer = Peer.init_my_peer(config, mongo, config.network)
+    my_peer = Peer.init_my_peer(config.network)
     config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()
     app_log.info("API: http://{}".format(my_peer.to_string()))
 

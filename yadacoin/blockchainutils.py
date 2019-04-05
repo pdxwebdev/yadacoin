@@ -56,7 +56,7 @@ class BlockChainUtils(object):
         from yadacoin.block import Block
         # from yadacoin.transaction import Transaction, Input, Crypt
         blocks = self.get_blocks()
-        block_objs = [Block.from_dict(self.config, self.mongo, block) for block in blocks]
+        block_objs = [Block.from_dict(block) for block in blocks]
         return block_objs
 
     def get_wallet_balance(self, address):
@@ -227,38 +227,36 @@ class BlockChainUtils(object):
                 if not spent_on_fastgraph.count() and not spent_on_blockchain.count():
                     # x['txn']['height'] = x['height'] # TODO: make height work for frastgraph transactions so we can order messages etc.
                     yield x['txn']
-    
-    @classmethod
-    def get_wallet_spent_fastgraph_transactions(cls, config, mongo, address):
-        result = mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
+
+    def get_wallet_spent_fastgraph_transactions(self, address):
+        result = self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
         for x in result:
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
             if xaddress == address:
                 reverse_public_key = x['public_key']
-                spent_on_fastgraph = mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
-                spent_on_blockchain = mongo.db.blocks.find({'public_key': reverse_public_key, 'transactions.inputs.id': x['id']})
+                spent_on_fastgraph = self.mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
+                spent_on_blockchain = self.mongo.db.blocks.find({'public_key': reverse_public_key, 'transactions.inputs.id': x['id']})
                 if spent_on_fastgraph.count() or spent_on_blockchain.count():
                     # x['txn']['height'] = x['height'] # TODO: make height work for frastgraph transactions so we can order messages etc.
                     yield x['txn']
 
-    @classmethod
-    def get_transactions(cls, config, mongo, wif, query, queryType, raw=False, both=True, skip=None):
+    def get_transactions(self, wif, query, queryType, raw=False, both=True, skip=None):
         if not skip:
             skip = []
         #from block import Block
         #from transaction import Transaction
         from yadacoin.crypt import Crypt
 
-        get_transactions_cache = mongo.db.get_transactions_cache.find(
+        get_transactions_cache = self.mongo.db.get_transactions_cache.find(
                 {
-                    'public_key': config.public_key,
+                    'public_key': self.config.public_key,
                     'raw': raw,
                     'both': both,
                     'skip': skip,
                     'queryType': queryType
                 }
         ).sort([('height', -1)])
-        latest_block = cls.get_latest_block(config, mongo)
+        latest_block = self.get_latest_block()
         if get_transactions_cache.count():
             get_transactions_cache = get_transactions_cache[0]
             block_height = get_transactions_cache['height']
@@ -266,7 +264,7 @@ class BlockChainUtils(object):
             block_height = 0
 
         transactions = []
-        for block in mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}}):
+        for block in self.mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}}):
             for transaction in block.get('transactions'):
                 try:
                     if transaction.get('id') in skip:
@@ -281,9 +279,9 @@ class BlockChainUtils(object):
                         relationship = json.loads(decrypted)
                         transaction['relationship'] = relationship
                     transaction['height'] = block['index']
-                    mongo.db.get_transactions_cache.update(
+                    self.mongo.db.get_transactions_cache.update(
                         {
-                            'public_key': config.public_key,
+                            'public_key': self.config.public_key,
                             'raw': raw,
                             'both': both,
                             'skip': skip,
@@ -292,7 +290,7 @@ class BlockChainUtils(object):
                             'id': transaction['id']
                         },
                         {
-                            'public_key': config.public_key,
+                            'public_key': self.config.public_key,
                             'raw': raw,
                             'both': both,
                             'skip': skip,
@@ -305,9 +303,9 @@ class BlockChainUtils(object):
                 except:
                     if both:
                         transaction['height'] = block['index']
-                        mongo.db.get_transactions_cache.update(
+                        self.mongo.db.get_transactions_cache.update(
                             {
-                                'public_key': config.public_key,
+                                'public_key': self.config.public_key,
                                 'raw': raw,
                                 'both': both,
                                 'skip': skip,
@@ -315,7 +313,7 @@ class BlockChainUtils(object):
                                 'queryType': queryType
                             },
                             {
-                                'public_key': config.public_key,
+                                'public_key': self.config.public_key,
                                 'raw': raw,
                                 'both': both,
                                 'skip': skip,
@@ -327,8 +325,8 @@ class BlockChainUtils(object):
                     continue
 
         if not transactions:
-            mongo.db.get_transactions_cache.insert({
-                'public_key': config.public_key,
+            self.mongo.db.get_transactions_cache.insert({
+                'public_key': self.config.public_key,
                 'raw': raw,
                 'both': both,
                 'skip': skip,
@@ -336,14 +334,14 @@ class BlockChainUtils(object):
                 'height': latest_block['index']
             })
 
-        fastgraph_transactions = cls.get_fastgraph_transactions(config, mongo, wif, query, queryType, raw=False, both=True, skip=None)
+        fastgraph_transactions = self.get_fastgraph_transactions(wif, query, queryType, raw=False, both=True, skip=None)
 
         for fastgraph_transaction in fastgraph_transactions:
             yield fastgraph_transaction
 
 
         search_query = {
-                'public_key': config.public_key,
+                'public_key': self.config.public_key,
                 'raw': raw,
                 'both': both,
                 'skip': skip,
@@ -351,16 +349,15 @@ class BlockChainUtils(object):
                 'txn': {'$exists': True}
             }
         search_query.update(query)
-        transactions = mongo.db.get_transactions_cache.find(search_query).sort([('height', -1)])
+        transactions = self.mongo.db.get_transactions_cache.find(search_query).sort([('height', -1)])
 
         for transaction in transactions:
             yield transaction['txn']
         
-    
-    @classmethod
-    def get_fastgraph_transactions(cls, config, mongo, secret, query, queryType, raw=False, both=True, skip=None):
+
+    def get_fastgraph_transactions(self, secret, query, queryType, raw=False, both=True, skip=None):
         from yadacoin.crypt import Crypt
-        for transaction in mongo.db.fastgraph_transactions.find(query):
+        for transaction in self.mongo.db.fastgraph_transactions.find(query):
             if 'txn' in transaction:
                 try:
                     if transaction.get('id') in skip:
@@ -369,7 +366,7 @@ class BlockChainUtils(object):
                         continue
                     if not transaction['relationship']:
                         continue
-                    res = mongo.db.fastgraph_transaction_cache.find_one({
+                    res = self.mongo.db.fastgraph_transaction_cache.find_one({
                         'txn.id': transaction.get('id'),
                     })
                     if res:
@@ -379,7 +376,7 @@ class BlockChainUtils(object):
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted)
                         transaction['relationship'] = relationship
-                    mongo.db.fastgraph_transaction_cache.update(
+                    self.mongo.db.fastgraph_transaction_cache.update(
                         {
                             'txn': transaction,
                         }
@@ -387,11 +384,10 @@ class BlockChainUtils(object):
                 except:
                     continue
         
-        for x in mongo.db.fastgraph_transaction_cache.find({
+        for x in self.mongo.db.fastgraph_transaction_cache.find({
             'txn': {'$exists': True}
         }):
             yield x['tnx']
-
 
     def generate_signature(self, message, private_key):
         key = PrivateKey.from_hex(private_key)
@@ -418,7 +414,7 @@ class BlockChainUtils(object):
             if give_block:
                 return None
             if instance:
-                return FastGraph.from_dict(self.config, self.mongo, 0, res2[0]['txn'])
+                return FastGraph.from_dict(0, res2[0]['txn'])
             else:
                 return res2[0]['txn']
         else:
@@ -490,11 +486,10 @@ class BlockChainUtils(object):
 
         return float(block_reward['reward'])
 
-    @classmethod
-    def check_double_spend(cls, config, mongo, transaction_obj):
+    def check_double_spend(self, transaction_obj):
         double_spends = []
         for txn_input in transaction_obj.inputs:
-            res = mongo.db.blocks.aggregate([
+            res = self.mongo.db.blocks.aggregate([
                 {"$unwind": "$transactions" },
                 {
                     "$project": {

@@ -28,7 +28,7 @@ class Peers(object):
         self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
         try:
-            self.peers = [Peer(self.config, self.mongo, peer['host'], peer['port']) for peer in res]
+            self.peers = [Peer(peer['host'], peer['port']) for peer in res]
         except:
             pass
         return self.to_json()
@@ -41,8 +41,7 @@ class Peers(object):
             if not peer:
                 return
             # Insert ourself to have at least one peer. Not sure this is required, but allows for more tests coverage.
-            self.peers=[Peer(self.config, self.mongo,
-                             self.config.serve_host, self.config.serve_port,
+            self.peers=[Peer(self.config.serve_host, self.config.serve_port,
                              peer.get('bulletin_secret'))]
             return
         if self.network == 'mainnet':
@@ -86,7 +85,7 @@ class Peers(object):
             # self.mongo.db.config.update({'last_seeded': {"$ne": ""}}, {'last_seeded': str(test_after)}, upsert=True)
 
         # todo: probly more efficient not to rebuild the objects every time
-        self.peers = [Peer(self.config, self.mongo, peer['host'], peer['port']) for peer in res]
+        self.peers = [Peer(peer['host'], peer['port']) for peer in res]
 
     async def test_some(self, count=1):
         """Tests count peers from our base, by priority"""
@@ -94,7 +93,7 @@ class Peers(object):
             res = self.mongo.async_db.peers.find({'active': False, 'net': self.network, 'test_after': {"$lte": int(time())}}).sort('test_after', ASCENDING).limit(count)
             to_test = []
             async for a_peer in res:
-                peer = Peer(self.config, self.mongo, a_peer['host'], a_peer['port'])
+                peer = Peer(a_peer['host'], a_peer['port'])
                 # print("Testing", peer)
                 to_test.append(peer.test())
             res = await gather(*to_test)
@@ -104,7 +103,7 @@ class Peers(object):
         # to_list(length=100)
 
     @classmethod
-    def from_dict(cls, config, mongo):
+    def from_dict(cls):
         raise RuntimeError("Peers, from_dict is deprecated")
         """
         cls.peers = []
@@ -134,7 +133,7 @@ class Peers(object):
 class Peer(object):
     """An individual Peer object"""
 
-    def __init__(self, config, mongo, host, port, bulletin_secret=None, is_me=False):
+    def __init__(self, host, port, bulletin_secret=None, is_me=False):
         self.config = get_config()
         self.mongo = self.config.mongo
         self.host = host
@@ -144,12 +143,12 @@ class Peer(object):
         self.app_log = getLogger("tornado.application")
 
     @classmethod
-    def from_string(cls, config, mongo, peerstr):
+    def from_string(cls, peerstr):
         if ":" in peerstr:
             peer = peerstr.split(':')
-            return cls(config, mongo, peer[0], peer[1])
+            return cls(peer[0], peer[1])
         elif peerstr == 'me':
-            return cls(config, mongo, None, None, is_me=True)
+            return cls(None, None, is_me=True)
 
     def report(self):
         try:
@@ -182,7 +181,8 @@ class Peer(object):
         self.mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
 
     @classmethod
-    def init_my_peer(cls, config, mongo, network):
+    def init_my_peer(cls, network):
+        config = get_config()
         if config.use_pnp:
             import socket
             from miniupnpc import UPnP
@@ -213,15 +213,16 @@ class Peer(object):
                 config.peer_port = config.peer_port
                 print('UPnP failed: you must forward and/or whitelist port', config.peer_port)
 
-        cls.save_my_peer(config, mongo, network)
-        return cls(config, mongo, config.peer_host, config.peer_port)
+        cls.save_my_peer(network)
+        return cls(config.peer_host, config.peer_port)
     
     @classmethod
-    def save_my_peer(cls, config, mongo, network):
+    def save_my_peer(cls, network):
+        config = get_config()
         if config.network == 'regnet':
             return
         peer = config.peer_host + ":" + str(config.peer_port)
-        mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer, 'network': config.network}, upsert=True)
+        config.mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer, 'network': config.network}, upsert=True)
         if not config.post_peer:
             return
         """

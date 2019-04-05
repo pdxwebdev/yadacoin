@@ -2,9 +2,10 @@ from socketIO_client import SocketIO, BaseNamespace
 
 from yadacoin.peers import Peers
 from yadacoin.block import Block
-from yadacoin.blockchainutils import BU
+# from yadacoin.blockchainutils import BU
 from yadacoin.transaction import Transaction, TransactionFactory, Input, Output, NotEnoughMoneyException
 from yadacoin.transactionutils import TU
+from yadacoin.config import get_config
 
 
 class ChatNamespace(BaseNamespace):
@@ -22,9 +23,9 @@ class PartialPayoutException(Exception):
 
 class PoolPayer(object):
 
-    def __init__(self, config, mongo):
-        self.config = config
-        self.mongo = mongo
+    def __init__(self):
+        self.config = get_config()
+        self.mongo = self.config.mongo
     
     def get_difficulty(self, blocks):
         difficulty = 0
@@ -61,16 +62,16 @@ class PoolPayer(object):
     def do_payout(self):
         network = getattr(self.config, 'network', None)
         if network:
-            Peers.init(self.config, self.mongo, network)
+            Peers.init(network)
         else:
-            Peers.init(self.config, self.mongo)
+            Peers.init()
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
-        latest_block = Block.from_dict(self.config, self.mongo, BU.get_latest_block(self.config, self.mongo))
+        latest_block = Block.from_dict(BU.get_latest_block())
         won_blocks = self.mongo.db.blocks.find({'transactions.outputs.to': self.config.address}).sort([('index', 1)])
         for won_block in won_blocks:
-            won_block = Block.from_dict(self.config, self.mongo, won_block)
+            won_block = Block.from_dict(won_block)
             if (won_block.index + 6) <= latest_block.index:
                 print(won_block.index)
                 self.do_payout_for_block(won_block)
@@ -141,7 +142,7 @@ class PoolPayer(object):
             raise
             print('faucet transaction failed')
 
-        TU.save(self.config, self.mongo, transaction.transaction)
+        TU.save(transaction.transaction)
         self.mongo.db.share_payout.insert({'index': block.index, 'txn': transaction.transaction.to_dict()})
 
         self.broadcast_transaction(transaction.transaction)

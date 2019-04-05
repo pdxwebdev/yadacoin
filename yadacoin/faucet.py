@@ -1,3 +1,5 @@
+# TODO: not converted yet
+
 from socketIO_client import SocketIO, BaseNamespace
 
 from yadacoin.peers import Peers

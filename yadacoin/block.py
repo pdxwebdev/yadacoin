@@ -21,10 +21,13 @@ def quantize_eight(value):
 
 
 class BlockFactory(object):
-    def __init__(self, config, mongo, transactions, public_key, private_key, version, index=None, force_time=None):
+    def __init__(self, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.version = self.config.BU.get_version_for_height(index)
+        if force_version is None:
+            self.version = self.config.BU.get_version_for_height(index)
+        else:
+            self.version = force_version
         if force_time:
             self.time = str(int(force_time))
         else:
@@ -68,7 +71,7 @@ class BlockFactory(object):
                     if isinstance(txn, FastGraph):
                         transaction_obj = txn
                     else:
-                        transaction_obj = FastGraph.from_dict(self.config, self.mongo, self.index, txn)
+                        transaction_obj = FastGraph.from_dict(self.index, txn)
 
                     if transaction_obj.transaction.transaction_signature in used_sigs:
                         print('duplicate transaction found and removed')
@@ -125,8 +128,6 @@ class BlockFactory(object):
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
         self.block = Block(
-            self.config,
-            self.mongo,
             version=self.version,
             block_time=self.time,
             block_index=self.index,
@@ -171,7 +172,7 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def get_target(cls, config, mongo, height, last_block, block, blockchain):
+    def get_target(cls, height, last_block, block, blockchain):
         # change target
         max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
         max_block_time = 600
@@ -179,7 +180,7 @@ class BlockFactory(object):
         two_weeks = 1209600  # seconds
         half_week = 302400  # seconds
         if height > 0 and height % retarget_period == 0:
-            block_from_2016_ago = Block.from_dict(config, mongo, get_config().BU.get_block_by_index(height - retarget_period))
+            block_from_2016_ago = Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
             two_weeks_ago_time = block_from_2016_ago.time
             elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
             # greater than two weeks?
@@ -252,8 +253,8 @@ class BlockFactory(object):
         return lowest[1], lowest[2]
 
     @classmethod
-    def get_genesis_block(cls, config, mongo):
-        return Block.from_dict(config, mongo, {
+    def get_genesis_block(cls):
+        return Block.from_dict({
             "nonce" : 0,
             "hash" : "0dd0ec9ab91e9defe535841a4c70225e3f97b7447e5358250c2dc898b8bd3139",
             "public_key" : "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570",
@@ -290,8 +291,6 @@ class Block(object):
     
     def __init__(
         self,
-        config,
-        mongo,
         version='',
         block_time='',
         block_index='',
@@ -305,8 +304,8 @@ class Block(object):
         special_min='',
         target=0
     ):
-        self.config = config
-        self.mongo = mongo
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.version = version
         self.time = block_time
         self.index = block_index
@@ -323,7 +322,7 @@ class Block(object):
         self.target = target
 
     @classmethod
-    def from_dict(cls, config, mongo, block):
+    def from_dict(cls, block):
         transactions = []
         for txn in block.get('transactions'):
             # TODO: do validify checking for coinbase transactions
@@ -332,13 +331,11 @@ class Block(object):
             else:
                 txn['coinbase'] = False
             if 'signatures' in txn:
-                transactions.append(FastGraph.from_dict(config, mongo, block.get('index'), txn))
+                transactions.append(FastGraph.from_dict(block.get('index'), txn))
             else:
                 transactions.append(Transaction.from_dict(block.get('index'), txn))
 
         return cls(
-            config=config,
-            mongo=mongo,
             version=block.get('version'),
             block_time=block.get('time'),
             block_index=block.get('index'),

@@ -7,6 +7,7 @@ from coincurve.utils import verify_signature
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 from yadacoin.blockchainutils import BU
+from yadacoin.config import get_config
 
 from yadacoin.transaction import Transaction, Relationship, Input, Output, ExternalInput
 from yadacoin.peers import Peers
@@ -25,8 +26,6 @@ class FastGraph(Transaction):
 
     def __init__(
         self,
-        config,
-        mongo,
         block_height,
         time='',
         rid='',
@@ -44,8 +43,8 @@ class FastGraph(Transaction):
         signatures=None,
         extra_blocks=None
     ):
-        self.config = config
-        self.mongo = mongo
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.block_height = block_height
         self.time = time
         self.rid = rid
@@ -64,7 +63,7 @@ class FastGraph(Transaction):
         self.inputs = []
         for x in inputs:
             if 'signature' in x and 'public_key' in x and 'address' in x:
-                self.inputs.append(ExternalInput.from_dict(self.config, self.mongo, x))
+                self.inputs.append(ExternalInput.from_dict( x))
             else:
                 self.inputs.append(Input.from_dict(x))
         self.coinbase = coinbase
@@ -80,15 +79,14 @@ class FastGraph(Transaction):
                 self.signatures.append(FastGraphSignature(signature))
     
     @classmethod
-    def from_dict(cls, config, mongo, block_height, txn):
+    def from_dict(cls, block_height, txn):
+        config = get_config()
         try:
             relationship = Relationship(**txn.get('relationship', ''))
         except:
             relationship = txn.get('relationship', '')
 
         return cls(
-            config=config,
-            mongo=mongo,
             block_height=block_height,
             time=txn.get('time'),
             transaction_signature=txn.get('id'),
@@ -116,7 +114,7 @@ class FastGraph(Transaction):
         for inp in self.inputs:
             inp = inp.id
             while 1:
-                txn = BU().get_transaction_by_id(self.config, self.mongo, inp, give_block=False, include_fastgraph=True)
+                txn = BU().get_transaction_by_id( inp, give_block=False, include_fastgraph=True)
                 if txn:
                     if 'rid' in txn and txn['rid'] and 'dh_public_key' in txn and txn['dh_public_key']:
                         if rid and txn['rid'] != rid:
@@ -128,7 +126,7 @@ class FastGraph(Transaction):
                             rids.append(txn['requested_rid'])
                         
                         # we need their public_key, not mine, so we get both transactions for the relationship
-                        txn_for_rids = BU().get_transaction_by_rid(self.config, self.mongo, rids, bulletin_secret=bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
+                        txn_for_rids = BU().get_transaction_by_rid( rids, bulletin_secret=bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
 
                         if txn_for_rids:
                             return txn_for_rids
@@ -154,8 +152,8 @@ class FastGraph(Transaction):
             raise InvalidFastGraphTransactionException('no signatures were provided')
 
         xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        unspent = [x['id'] for x in BU().get_wallet_unspent_transactions(self.config, self.mongo, xaddress)]
-        unspent_fastgraph = [x['id'] for x in BU().get_wallet_unspent_fastgraph_transactions(self.config, self.mongo, xaddress)]
+        unspent = [x['id'] for x in BU().get_wallet_unspent_transactions( xaddress)]
+        unspent_fastgraph = [x['id'] for x in BU().get_wallet_unspent_fastgraph_transactions( xaddress)]
         inputs = [x.id for x in self.inputs]
         if len(set(inputs) & set(unspent)) != len(inputs) and len(set(inputs) & set(unspent_fastgraph)) != len(inputs):
             raise InvalidFastGraphTransactionException('Input not found in unspent')
@@ -178,13 +176,13 @@ class FastGraph(Transaction):
             """
             # This is for a later fork to include a wider consensus area for a larger spending group
             else:
-                mutual_friends = [x for x in BU().get_transactions_by_rid(self.config, self.mongo, self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
+                mutual_friends = [x for x in BU().get_transactions_by_rid( self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
                 for mutual_friend in mutual_friends:
-                    mutual_friend = Transaction.from_dict(self.config, self.mongo, mutual_friend)
+                    mutual_friend = Transaction.from_dict( mutual_friend)
                     if isinstance(mutual_friend.relationship, Relationship) and signature.bulletin_secret == mutual_friend.relationship.their_bulletin_secret:
                         other_mutual_friend = mutual_friend
                 for mutual_friend in mutual_friends:
-                    mutual_friend = Transaction.from_dict(self.config, self.mongo, mutual_friend)
+                    mutual_friend = Transaction.from_dict( mutual_friend)
                     if mutual_friend.public_key != self.config.public_key:
                         identity = verify_signature(
                             base64.b64decode(other_mutual_friend.relationship.their_bulletin_secret),
@@ -204,7 +202,7 @@ class FastGraph(Transaction):
                 raise InvalidFastGraphTransactionException('not all signatures verified')
 
     def get_signatures(self, peers):
-        Peers.init(self.config, self.mongo, self.config.network)
+        Peers.init( self.config.network)
         for peer in Peers.peers:
             try:
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)
@@ -217,7 +215,7 @@ class FastGraph(Transaction):
                 pass
 
     def broadcast(self):
-        Peers.init(self.config, self.mongo, self.config.network)
+        Peers.init( self.config.network)
         for peer in Peers.peers:
             try:
                 socketIO = SocketIO(peer.host, peer.port, wait_for_connection=False)

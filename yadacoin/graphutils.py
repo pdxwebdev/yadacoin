@@ -867,7 +867,7 @@ class GraphUtils(object):
         if res:
             received = True
         else:
-            shared_secrets = TU.get_shared_secrets_by_rid(self.config, self.mongo, rid)
+            shared_secrets = TU.get_shared_secrets_by_rid(rid)
             if txn_id:
                 txns = [self.config.BU.get_transaction_by_id(txn_id)]
             else:
