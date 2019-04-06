@@ -1,33 +1,36 @@
 <header>
-  <nav class="navbar navbar-expand-md navbar-dark fixed-top bg-dark">
-    <a class="navbar-brand" href="/">Yadacoin</a>
-    <button class="navbar-toggler" type="button" data-toggle="collapse" data-target="#navbarCollapse" aria-controls="navbarCollapse" aria-expanded="false" aria-label="Toggle navigation">
-      <span class="navbar-toggler-icon"></span>
-    </button>
-    <div class="collapse navbar-collapse" id="navbarCollapse">
-      <ul class="navbar-nav mr-auto">
-        <li class="nav-item {% if active=='home' %}active{% endif %}">
-          <a class="nav-link" href="/">Home <span class="sr-only">(current)</span></a>
-        </li>
-        <li class="nav-item {% if active=='team' %}active{% endif %}">
-          <a class="nav-link" href="/team">Team</a>
-        </li>
-        <li class="nav-item {% if active=='guide' %}active{% endif %}">
-          <a class="nav-link" href="/guide">Guide</a>
-        </li>
-        <li class="nav-item {% if active=='pool' %}active{% endif %}">
-          <a class="nav-link" href="/pool">Pool</a>
-        </li>
-        <li class="nav-item {% if active=='explorer' %}active{% endif %}">
-          <a class="nav-link" href="/explorer" target="_blank">Explorer</a>
-        </li>
-        <li class="nav-item {% if active=='docs' %}active{% endif %}">
-          <a class="nav-link" href="/static/docs/index.html">Docs</a>
-        </li>
-        <li class="nav-item">
-          <a class="nav-link" href="/hashrate">Hash Rate</a>
-        </li>
-      </ul>
+  <nav class="navbar navbar-custom navbar-fixed-top navbar-transparent" role="navigation">
+    <div class="container">
+      <div class="navbar-header">
+        <button class="navbar-toggle" type="button" data-toggle="collapse" data-target="#custom-collapse"><span class="sr-only">Toggle navigation</span><span class="icon-bar"></span><span class="icon-bar"></span><span class="icon-bar"></span></button><a class="navbar-brand" href="/">YadaCoin</a>
+      </div>
+      <div class="collapse navbar-collapse" id="custom-collapse">
+        <ul class="nav navbar-nav navbar-right">
+          <li><a href="/">Home</a></li>
+          <li ><a href="/team">Team</a></li>
+          <li class="dropdown"><a class="dropdown-toggle" href="#" data-toggle="dropdown">Blockchain</a>
+            <ul class="dropdown-menu">
+              <li><a href="/explorer">Explorer</a></li>
+              <li ><a href="/hashrate">hash rate graph</a></li>
+            </ul>
+          </li>
+          <li class="dropdown"><a class="dropdown-toggle" href="#" data-toggle="dropdown">documentation</a>
+            <ul class="dropdown-menu">
+              <li><a href="/pool">Join a pool</a></li>
+              <li><a href="/guide">Mining</a></li>
+              <li><a href="/docs" target="_blank">API Reference</a></li>
+            </ul>
+          </li>
+          {% if rid %}
+          <li class="dropdown"><i class="icon-user"></i><a class="dropdown-toggle" href="#" data-toggle="dropdown">{{username}}</a>
+            <ul class="dropdown-menu">
+              <li><a href="/profile">profile</a></li>
+              <li><a href="/logout">log out</a></li>
+            </ul>
+          </li>
+          {% endif %}
+        </ul>
+      </div>
     </div>
   </nav>
 </header>

@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>/get-graph-friend-requests - YadaCoin Docs</title>
+        <link href="../../css/bootstrap-custom.min.css" rel="stylesheet">
+        <link href="../../css/font-awesome.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/darcula.min.css">
+        <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+        <!--[if lt IE 9]>
+            <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+            <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+        <![endif]-->
+
+        <script src="../../js/jquery-1.10.2.min.js" defer></script>
+        <script src="../../js/bootstrap-3.0.3.min.js" defer></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+        <script>hljs.initHighlightingOnLoad();</script> 
+    </head>
+
+    <body>
+
+        <div class="navbar navbar-default navbar-fixed-top" role="navigation">
+            <div class="container">
+
+                <!-- Collapsed navigation -->
+                <div class="navbar-header">
+                    <!-- Expander button -->
+                    <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                    <a class="navbar-brand" href="../../index.html">YadaCoin Docs</a>
+                </div>
+
+                <!-- Expanded navigation -->
+                <div class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li >
+                                <a href="../../index.html">Getting Started</a>
+                            </li>
+                            <li class="dropdown active">
+                                <a href="#" class="dropdown-toggle" data-toggle="dropdown">API <b class="caret"></b></a>
+                                <ul class="dropdown-menu">
+                                    
+<li >
+    <a href="../overview.html">API Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Explorer</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../explorer/explorer-search.html">/explorer-search</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Graph</a>
+    <ul class="dropdown-menu">
+            
+<li class="active">
+    <a href="get-graph-friend-requests.html">/get-graph-friend-requests</a>
+</li>
+            
+<li >
+    <a href="get-graph-friends.html">/get-graph-friends</a>
+</li>
+            
+<li >
+    <a href="get-graph-info.html">/get-graph-info</a>
+</li>
+            
+<li >
+    <a href="get-graph-messages.html">/get-graph-messages</a>
+</li>
+            
+<li >
+    <a href="get-graph-new-messages.html">/get-graph-new-messages</a>
+</li>
+            
+<li >
+    <a href="get-graph-posts.html">/get-graph-posts</a>
+</li>
+            
+<li >
+    <a href="get-graph-sent-friend-requests.html">/get-graph-sent-friend-requests</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Node</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../node/create-raw-transaction.html">/create-raw-transaction</a>
+</li>
+            
+<li >
+    <a href="../node/get-block.html">/get-block</a>
+</li>
+            
+<li >
+    <a href="../node/get-latest-block.html">/get-latest-block</a>
+</li>
+            
+<li >
+    <a href="../node/sign-raw-transaction.html">/sign-raw-transaction</a>
+</li>
+            
+<li >
+    <a href="../node/transaction.html">/transaction</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Pool</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../pool/pool-block-details.html">/pool-block-details</a>
+</li>
+            
+<li >
+    <a href="../pool/pool-submit.html">/pool-submit</a>
+</li>
+            
+<li >
+    <a href="../pool/pool.html">/pool</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Wallet</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../wallet/generate-child-wallet.html">/generate-child-wallet</a>
+</li>
+            
+<li >
+    <a href="../wallet/generate-wallet.html">/generate-wallet</a>
+</li>
+            
+<li >
+    <a href="../wallet/wallet.html">/wallet</a>
+</li>
+    </ul>
+  </li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav navbar-right">
+                        <li>
+                            <a href="#" data-toggle="modal" data-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li >
+                                <a rel="next" href="../explorer/explorer-search.html">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li >
+                                <a rel="prev" href="get-graph-friends.html">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+                <div class="col-md-3"><div class="bs-sidebar hidden-print affix well" role="complementary">
+    <ul class="nav bs-sidenav">
+        <li class="main active"><a href="#get-graph-friend-requests">/get-graph-friend-requests</a></li>
+            <li><a href="#success-response">Success Response</a></li>
+    </ul>
+</div></div>
+                <div class="col-md-9" role="main">
+
+<h1 id="get-graph-friend-requests">/get-graph-friend-requests</h1>
+<p>Friend requests appear the in the <code>friend_requests</code> property of the graph output. The <code>relationship</code> property is not decryptable by you. Use the <code>dh_public_key</code> property to construct the shared secret for your relationship to decrypt the <code>relationship</code> property of further transactions.</p>
+<p><strong>URL</strong> : <code>/get-graph-friend-requests</code></p>
+<p><strong>Method</strong> : <code>GET</code></p>
+<p><strong>URL Parameters</strong> : </p>
+<p><code>bulletin_secret=[bulletin_secret from wallet]</code></p>
+<p><strong>Example URL</strong> : </p>
+<pre><code>/get-graph-friend-requests?bulletin_secret=MEQCIAY0KK8hBM2C5mXBoAn4WCR15iaQlxrhK2G4csXwDiUbAiBpzeVotPnF1p9RZApeddsmyaSdaguGDdtxQl8tSJtiYQ==
+</code></pre>
+
+<h2 id="success-response">Success Response</h2>
+<p><strong>Code</strong> : <code>200 OK</code></p>
+<p><strong>Content examples</strong></p>
+<pre><code class="json">{
+    &quot;logins&quot;: [], 
+    &quot;messages&quot;: [], 
+    &quot;registered&quot;: false, 
+    &quot;pending_registration&quot;: false, 
+    &quot;new_messages&quot;: [], 
+    &quot;human_hash&quot;: &quot;oklahoma-sweet-california-rugby&quot;, 
+    &quot;rid&quot;: &quot;d5286d56dad364086c3f2b49375247c412b5f35706c6b16c5c0aa87aa32cfc4a&quot;, 
+    &quot;friends&quot;: [], 
+    &quot;friend_requests&quot;: [{
+            &quot;public_key&quot;: &quot;02fa9550f57055c96c7ce4c6c9cd1411856beba5c7d5a07417e980a39aa03da3dc&quot;, 
+            &quot;fee&quot;: 0.0001, 
+            &quot;hash&quot;: &quot;061857e0d8b4c9564e5bf2c5cca1cf9d10ecd97994d1a334713be1941d2c0ba5&quot;, 
+            &quot;dh_public_key&quot;: &quot;8b4c9564e5bf264e5bf2c5cca1cf9d10ecd97994d1a3347138b4c9564e5bf2&quot;, 
+            &quot;relationship&quot;: &quot;MEUCIQDPkS0JQj92l68xal9Xy6qD2DJEra9BleJ2xZJoImVHQgIgfAVy+003qm1WeqnwcOz+XjhzgJgI4E3POIFBwoonBkcMEUCIQDPkS0JQj92l68xal9Xy6qD2DJEra9BleJ2xZJoImVHQgIgfAVy+003qm1WeqnwcOz+XjhzgJgI4E3POIFBwoonBkc=&quot;, 
+            &quot;inputs&quot;: [
+                {
+                    &quot;id&quot;: &quot;MEUCIQDPkS0JQj92l68xal9Xy6qD2DJEra9BleJ2xZJoImVHQgIgfAVy+003qm1WeqnwcOz+XjhzgJgI4E3POIFBwoonBkc=&quot;
+                }
+            ], 
+            &quot;outputs&quot;: [
+                {
+                    &quot;to&quot;: &quot;1ADY5MY8cZhLRhYAcaG7VVax73juXfAiJy&quot;, 
+                    &quot;value&quot;: 7.21874955854638
+                }
+            ],
+            &quot;rid&quot;: &quot;9d10ecd97994d1a334713be1941d2c0ba5ecd97994d1a334713be1941d2c0ba5&quot;, 
+            &quot;id&quot;: &quot;MEQCIFl7ekjQ9LT72bK1nvms7nbQv4M73nG1K7zk6Oo1lJBdAiApLqpKHWol2JarNEwtdl/TfSzewShz17IovfYHmqLi+Q==&quot;
+        }
+    ], 
+    &quot;posts&quot;: [], 
+    &quot;sent_friend_requests&quot;: []
+}
+</code></pre></div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"next": 78, "search": 83, "previous": 80, "help": 191};
+        </script>
+        <script src="../../js/base.js" defer></script>
+        <script src="../../search/main.js" defer></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="Search Modal" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="exampleModalLabel">Search</h4>
+            </div>
+            <div class="modal-body">
+                <p>
+                    From here you can search these documents. Enter
+                    your search terms below.
+                </p>
+                <form role="form">
+                    <div class="form-group">
+                        <input type="text" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="Keyboard Shortcuts Modal" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="exampleModalLabel">Keyboard Shortcuts</h4>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

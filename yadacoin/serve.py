@@ -7,8 +7,8 @@ from yadacoin.graph import Graph
 
 
 class Serve(object):
-    def __init__(self, config, mongo):
-        self.app = Flask(__name__)
+    def __init__(self, config, mongo, app):
+        self.app = app
         self.app.config['yada_config'] = config
         self.app.config['yada_mongo'] = mongo
         self.app.debug = True
@@ -58,7 +58,7 @@ class Serve(object):
         self.app.add_url_rule('/post-fastgraph-transaction', view_func=endpoints.PostFastGraphView.as_view('post-fastgraph-transaction'), methods=['POST'])
         self.app.add_url_rule('/yada_config.json', view_func=endpoints.GetYadaConfigView.as_view('yada-config'))
         self.app.add_url_rule('/login', view_func=endpoints.GetSiginCodeView.as_view('login'))
-        self.app.add_url_rule('/', view_func=endpoints.HomeView.as_view('home'))
+        self.app.add_url_rule('/authenticated', view_func=endpoints.AuthenticatedView.as_view('home'))
         self.app.add_url_rule('/search', view_func=endpoints.SearchView.as_view('search'))
         self.app.add_url_rule('/react', view_func=endpoints.ReactView.as_view('react'), methods=['POST'])
         self.app.add_url_rule('/comment-react', view_func=endpoints.CommentReactView.as_view('comment-react'), methods=['POST'])

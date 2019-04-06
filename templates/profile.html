@@ -1,0 +1,39 @@
+{% with title='YadaCoin - Blockchain Team', mixpanel='team page' %}
+  {% include 'head.html'  %}
+{% endwith %} 
+<body class="container bg-dark" data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
+    <main>
+      <div class="page-loader">
+        <div class="loader">Loading...</div>
+      </div>
+      <div class="main home-section">
+        <section class="module bg-dark" id="about">
+          {% with active='team' %}
+            {% include 'navigation.html'  %}
+          {% endwith %} 
+          <h1>Profile</h1>
+            <!-- Marketing messaging and featurettes
+            ================================================== -->
+            <!-- Wrap the rest of the page in another container to center all the content. -->
+
+            <div class="container marketing">
+                  <p>RID: <a href="/explorer?term={{rid}}">{{rid}}</a></p>
+                  <p>Username: {{username}}</p>
+
+
+            </div><!-- /.container -->
+
+
+            <!-- FOOTER -->
+            <footer class="container">
+              <p class="float-right"><a href="#">Back to top</a></p>
+              <p>© 2017 Yadacoin · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+            </footer>
+          </section>
+        </div>
+      </main>
+      {% with %}
+        {% include 'footer.html'  %}
+      {% endwith %} 
+  </body>
+</html>

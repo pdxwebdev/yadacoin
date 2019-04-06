@@ -1,165 +1,468 @@
-<html>
-<head>
-  <link rel="icon" href="/static/favicon.ico?v=1.1"> 
-  <title>YadaCoin - Blockchain Social Media</title>
-  <META NAME="Description" CONTENT="Revolutionary social media blockchain. Open source. Facebook alternative. Cryptocurrency.">
-  <META NAME="Keywords" CONTENT="blockchain social media graph crypto cryptocurrency facebook alternative">
-  <META NAME="distribution" CONTENT="Global">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/css/bootstrap.min.css" integrity="sha384-Zug+QiDoJOrZ5t4lssLdxGhVrurbmBWopoEl+M6BdEfwnCJZtKxi1KgxUyJq13dy" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.2.0/css/all.css" integrity="sha384-hWVjflwFxL6sNzntih27bfxkr27PmbbK/iSvJ+a4+0owXq79v+lsFkW54bOGbiDQ" crossorigin="anonymous">
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>
-    <style tyle="text/css">
-    /* GLOBAL STYLES
-
--------------------------------------------------- */
-/* Padding below the footer and lighter body text */
-.fab {
-    padding: 20px;
-    font-size: 30px;
-    width: 30px;
-    text-align: center;
-    text-decoration: none;
-    border-radius: 50%;
-}
-
-body {
-  padding-top: 4.5rem;
-  padding-bottom: 3rem;
-  color: #5a5a5a;
-}
-
-
-/* CUSTOMIZE THE CAROUSEL
--------------------------------------------------- */
-
-/* Carousel base class */
-
-/* Since positioning the image, we need to help out the caption */
-
-
-/* MARKETING CONTENT
--------------------------------------------------- */
-
-/* Center align the text within the three columns below the carousel */
-.marketing .col-lg-4 {
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
-.marketing h2 {
-  font-weight: 400;
-}
-.marketing .col-lg-4 p {
-  margin-right: .75rem;
-  margin-left: .75rem;
-}
-
-
-/* Featurettes
-------------------------- */
-
-.featurette-divider {
-  margin: 2rem 0; /* Space out the Bootstrap <hr> more */
-}
-
-/* Thin out the marketing headings */
-.featurette-heading {
-  font-weight: 300;
-  line-height: 1;
-  letter-spacing: -.05rem;
-}
-
-
-/* RESPONSIVE CSS
--------------------------------------------------- */
-
-
-@media (min-width: 62em) {
-  .featurette-heading {
-    margin-top: 7rem;
-  }
-}
-</style>
-<!-- start Mixpanel --><script type="text/javascript">(function(e,a){if(!a.__SV){var b=window;try{var c,l,i,j=b.location,g=j.hash;c=function(a,b){return(l=a.match(RegExp(b+"=([^&]*)")))?l[1]:null};g&&c(g,"state")&&(i=JSON.parse(decodeURIComponent(c(g,"state"))),"mpeditor"===i.action&&(b.sessionStorage.setItem("_mpcehash",g),history.replaceState(i.desiredHash||"",e.title,j.pathname+j.search)))}catch(m){}var k,h;window.mixpanel=a;a._i=[];a.init=function(b,c,f){function e(b,a){var c=a.split(".");2==c.length&&(b=b[c[0]],a=c[1]);b[a]=function(){b.push([a].concat(Array.prototype.slice.call(arguments,
-0)))}}var d=a;"undefined"!==typeof f?d=a[f]=[]:f="mixpanel";d.people=d.people||[];d.toString=function(b){var a="mixpanel";"mixpanel"!==f&&(a+="."+f);b||(a+=" (stub)");return a};d.people.toString=function(){return d.toString(1)+".people (stub)"};k="disable time_event track track_pageview track_links track_forms register register_once alias unregister identify name_tag set_config reset people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user".split(" ");
-for(h=0;h<k.length;h++)e(d,k[h]);a._i.push([b,c,f])};a.__SV=1.2;b=e.createElement("script");b.type="text/javascript";b.async=!0;b.src="undefined"!==typeof MIXPANEL_CUSTOM_LIB_URL?MIXPANEL_CUSTOM_LIB_URL:"file:"===e.location.protocol&&"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js".match(/^\/\//)?"https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js":"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";c=e.getElementsByTagName("script")[0];c.parentNode.insertBefore(b,c)}})(document,window.mixpanel||[]);
-mixpanel.init("4e29328ef697408a91a5aad0552705af");
-if(window.location.href.indexOf("yadacoin.io") > 0)
-mixpanel.track("index page");</script><!-- end Mixpanel -->
-</head>
-<body>
-    {% with active='home' %}
+{% with title='YadaCoin - Blockchain Social Media', mixpanel='index page' %}
+  {% include 'head.html'  %}
+{% endwith %}
+<body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
+  <main>
+    <div class="page-loader">
+      <div class="loader">Loading...</div>
+    </div>
+    {% with active='index' %}
       {% include 'navigation.html'  %}
     {% endwith %}
-
-    <main role="main">
-
-      
-      <div style="text-align:center;">
-        <img src="/static/yadacoinlogo.png">
+    <section class="home-section bg-dark-30" id="home" data-background="static/yadacoinicon.png">
+      <div class="video-player" data-property="{videoURL:'https://www.youtube.com/watch?v=zFmjG3qVERA', containment:'.home-section', startAt:0, mute:false, autoPlay:true, loop:true, opacity:1, showControls:false, showYTLogo:false, vol:25}"></div>
+      <div class="video-controls-box">
+        <div class="container">
+          <div class="video-controls"><a class="fa fa-volume-up" id="video-volume" href="#">&nbsp;</a><a class="fa fa-pause" id="video-play" href="#">&nbsp;</a></div>
+        </div>
       </div>
-      <div style="text-align:center;">
-        <a href="https://twitter.com/yadablockchain" class="fab fa-twitter" target="_blank"></a>
-        <a href="https://www.reddit.com/r/yadacoin" class="fab fa-reddit" target="_blank"></a>
-        <a href="https://discord.gg/JEDJaFS" class="fab fa-discord" target="_blank"></a>
-        <a href="https://www.instagram.com/mrmattvogel/" class="fab fa-instagram" target="_blank"></a>
+      <div class="titan-caption">
+        <div class="caption-content">
+          <div class="font-alt mb-30 titan-title-size-1">Hello &amp; welcome</div>
+          <div class="font-alt mb-40 titan-title-size-4">We are YadaCoin</div><a class="section-scroll btn btn-border-w btn-round" href="#about">Learn More</a>
+        </div>
       </div>
-      <div style="text-align:center;margin-bottom:20px;">
-        <a href="https://www.youtube.com/watch?v=EsxKzQtwDR0" target="_blank">
-          <img src="/static/watch_video_icon.png" width="400">
-        </a>
+    </section>
+    <div class="main">
+      <section class="module" id="about">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-8 col-sm-offset-2">
+              <h2 class="module-title font-alt">Welcome to YadaCoin</h2>
+              <div class="module-subtitle font-serif large-text">We are a blockchain social media protocol.</div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-sm-2 col-sm-offset-5">
+              <div class="large-text align-center"><a class="section-scroll" href="#services"><i class="fa fa-angle-down"></i></a></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <hr class="divider-w">
+      <section class="module" id="services">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-6 col-sm-offset-3">
+              <h2 class="module-title font-alt">Our Features</h2>
+              <div class="module-subtitle font-serif">YadaCoin is a social media protocol that pays for a itself using it's own crypto currency.</div>
+            </div>
+          </div>
+          <div class="row multi-columns-row">
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-lightbulb"></span></div>
+                <h3 class="features-title font-alt">User authentication</h3>
+                <p>Using open standards, YadaCoin enables instantaneous off-chain user authentication.</p>
+              </div>
+            </div>
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-bike"></span></div>
+                <h3 class="features-title font-alt">Open relationships</h3>
+                <p>Make a friend on a YadaCoin enabled site and you are able to share that relatinship on other YadaCoin enabled sites.</p>
+              </div>
+            </div>
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-tools"></span></div>
+                <h3 class="features-title font-alt">inter-organizational</h3>
+                <p>Because the user relationships are stored on a blockchain, inter-organizational interactivity is possible, supplanting email.</p>
+              </div>
+            </div>
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-shield"></span></div>
+                <h3 class="features-title font-alt">Privacy</h3>
+                <p>Unique user identifiers are not stored on the blockchain, so outsiders cannot see your organization.</p>
+              </div>
+            </div>
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-lock"></span></div>
+                <h3 class="features-title font-alt">Security</h3>
+                <p>YadaCoin uses well-established open standards to secure its network and protocol.</p>
+              </div>
+            </div>
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-tools-2"></span></div>
+                <h3 class="features-title font-alt">Open source</h3>
+                <p>Careful attention to detail and clean, well structured code ensures a smooth user experience for all your visitors.</p>
+              </div>
+            </div>
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-mobile"></span></div>
+                <h3 class="features-title font-alt">Easy-to-use protocol</h3>
+                <p>Careful attention to detail and clean, well structured code ensures a smooth user experience for all your visitors.</p>
+              </div>
+            </div>
+            <div class="col-md-3 col-sm-6 col-xs-12">
+              <div class="features-item">
+                <div class="features-icon"><span class="icon-lifesaver"></span></div>
+                <h3 class="features-title font-alt">User centric</h3>
+                <p>Careful attention to detail and clean, well structured code ensures a smooth user experience for all your visitors.</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="module bg-dark-60" data-background="static/yadacoinicon.jpg">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-12">
+              <div class="video-box">
+                <div class="video-box-icon"><a class="video-pop-up" href="https://www.youtube.com/watch?v=EsxKzQtwDR0"><span class="icon-video"></span></a></div>
+                <div class="video-title font-alt">Presentation</div>
+                <div class="video-subtitle font-alt">Watch the video about our product</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="module-small bg-dark">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-6 col-md-8 col-lg-6 col-lg-offset-2">
+              <div class="callout-text font-alt">
+                <h3 class="callout-title">Want to see more works?</h3>
+                <p>We are always open to interesting projects.</p>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4 col-lg-2">
+              <div class="callout-btn-box"><a class="btn btn-w btn-round" href="portfolio_boxed_gutter_col_3.html">Lets view portfolio</a></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <hr class="divider-w">
+      <section class="module" id="team">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-6 col-sm-offset-3">
+              <h2 class="module-title font-alt">Meet Our Team</h2>
+              <div class="module-subtitle font-serif">Our passionate and capable team is going all the way.</div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="mb-sm-20 wow fadeInUp col-sm-6 col-md-3" onclick="wow fadeInUp">
+              <div class="team-item">
+                <div class="team-image"><img src="static/matt.jpg" alt="Member Photo"/>
+                  <div class="team-detail">
+                    <h5 class="font-alt">Hi all</h5>
+                    <p class="font-serif">Matt is a software engineer and the author of Remotely Rich. His passion for privacy and anonymity has grown immensely since integrating his patent pending social networking and payment system protocol with blockchain technology which he invented in 2009.</p>
+                    <div class="team-social"><a href="#"><i class="fa fa-facebook"></i></a><a href="#"><i class="fa fa-twitter"></i></a><a href="#"><i class="fa fa-dribbble"></i></a><a href="#"><i class="fa fa-skype"></i></a></div>
+                  </div>
+                </div>
+                <div class="team-descr font-alt">
+                  <div class="team-name">Matt Vogel</div>
+                  <div class="team-role">Founder / Developer</div>
+                </div>
+              </div>
+            </div>
+            <div class="mb-sm-20 wow fadeInUp col-sm-6 col-md-3" onclick="wow fadeInUp">
+              <div class="team-item">
+                <div class="team-image"><img src="static/selina.jpg" alt="Member Photo"/>
+                  <div class="team-detail">
+                    <h5 class="font-alt">Good day</h5>
+                    <p class="font-serif">Selina Herrera has a decade's worth of experience in the field of applied arts and social media marketing. Selina brings with her a truly one-of-a-kind mind for marketing especially when it comes to social media. Selina has an enormous passion for bringing change to social media.</p>
+                    <div class="team-social"><a href="#"><i class="fa fa-facebook"></i></a><a href="#"><i class="fa fa-twitter"></i></a><a href="#"><i class="fa fa-dribbble"></i></a><a href="#"><i class="fa fa-skype"></i></a></div>
+                  </div>
+                </div>
+                <div class="team-descr font-alt">
+                  <div class="team-name">Selina Herrera</div>
+                  <div class="team-role">Chief of Marketing</div>
+                </div>
+              </div>
+            </div>
+            <div class="mb-sm-20 wow fadeInUp col-sm-6 col-md-3" onclick="wow fadeInUp">
+              <div class="team-item">
+                <div class="team-image"><img src="static/anna.jpg" alt="Member Photo"/>
+                  <div class="team-detail">
+                    <h5 class="font-alt">Hello</h5>
+                    <p class="font-serif">Anna Buchholz is persuing a master's degree in organizational psychology and has nearly a decade of experience building high performance teams that develop world class software. Anna brings an unmatched level of tenacity and efficacy to an industry she is determined to change.</p>
+                    <div class="team-social"><a href="#"><i class="fa fa-facebook"></i></a><a href="#"><i class="fa fa-twitter"></i></a><a href="#"><i class="fa fa-dribbble"></i></a><a href="#"><i class="fa fa-skype"></i></a></div>
+                  </div>
+                </div>
+                <div class="team-descr font-alt">
+                  <div class="team-name">Anna Buchholz</div>
+                  <div class="team-role">Chief of Strategy</div>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <section class="module bg-dark-60 pt-0 pb-0 parallax-bg testimonial" data-background="static/yadabanner.jpg">
+        <div class="testimonials-slider pt-140 pb-140">
+          <ul class="slides">
+            <li>
+              <div class="container">
+                <div class="row">
+                  <div class="col-sm-12">
+                    <div class="module-icon"><span class="icon-quote"></span></div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="col-sm-8 col-sm-offset-2">
+                    <blockquote class="testimonial-text font-alt">When there is no finish line, the winner is the last one standing.</blockquote>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="col-sm-4 col-sm-offset-4">
+                    <div class="testimonial-author">
+                      <div class="testimonial-caption font-alt">
+                        <div class="testimonial-title">Matt Vogel</div>
+                        <div class="testimonial-descr">YadaCoin, Founder</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </li>
+            <li>
+              <div class="container">
+                <div class="row">
+                  <div class="col-sm-12">
+                    <div class="module-icon"><span class="icon-quote"></span></div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="col-sm-8 col-sm-offset-2">
+                    <blockquote class="testimonial-text font-alt">You don't need to know everything when you start, you just need to know you can finish.</blockquote>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="col-sm-4 col-sm-offset-4">
+                    <div class="testimonial-author">
+                      <div class="testimonial-caption font-alt">
+                        <div class="testimonial-title">Matt Vogel</div>
+                        <div class="testimonial-descr">YadaCoin, Founder</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </li>
+            <li>
+              <div class="container">
+                <div class="row">
+                  <div class="col-sm-12">
+                    <div class="module-icon"><span class="icon-quote"></span></div>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="col-sm-8 col-sm-offset-2">
+                    <blockquote class="testimonial-text font-alt">It's not who is the smartest, it's who can last the longest. Sheer determination is what gets you across the finish line.</blockquote>
+                  </div>
+                </div>
+                <div class="row">
+                  <div class="col-sm-4 col-sm-offset-4">
+                    <div class="testimonial-author">
+                      <div class="testimonial-caption font-alt">
+                        <div class="testimonial-title">Matt Vogel</div>
+                        <div class="testimonial-descr">YadaCoin, Founder</div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </li>
+          </ul>
+        </div>
+      </section>
+      <!--https://www.youtube.com/feeds/videos.xml?channel_id=UCcBSRBi0OGxKouIbaqP2lGg
+      <section class="module" id="news">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-6 col-sm-offset-3">
+              <h2 class="module-title font-alt">Latest blog posts</h2>
+              <div class="module-subtitle font-serif">A wonderful serenity has taken possession of my entire soul, like these sweet mornings of spring which I enjoy with my whole heart.</div>
+            </div>
+          </div>
+          <div class="row multi-columns-row post-columns">
+            <div class="col-sm-6 col-md-4 col-lg-4">
+              <div class="post mb-20">
+                <div class="post-thumbnail"><a href="#"><img src="static/images/post-1.jpg" alt="Blog-post Thumbnail"/></a></div>
+                <div class="post-header font-alt">
+                  <h2 class="post-title"><a href="#">Our trip to the Alps</a></h2>
+                  <div class="post-meta">By&nbsp;<a href="#">Mark Stone</a>&nbsp;| 23 November | 3 Comments
+                  </div>
+                </div>
+                <div class="post-entry">
+                  <p>A wonderful serenity has taken possession of my entire soul, like these sweet mornings of spring which I enjoy with my whole heart.</p>
+                </div>
+                <div class="post-more"><a class="more-link" href="#">Read more</a></div>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4 col-lg-4">
+              <div class="post mb-20">
+                <div class="post-thumbnail"><a href="#"><img src="static/images/post-2.jpg" alt="Blog-post Thumbnail"/></a></div>
+                <div class="post-header font-alt">
+                  <h2 class="post-title"><a href="#">Shore after the tide</a></h2>
+                  <div class="post-meta">By&nbsp;<a href="#">Andy River</a>&nbsp;| 11 November | 4 Comments
+                  </div>
+                </div>
+                <div class="post-entry">
+                  <p>A wonderful serenity has taken possession of my entire soul, like these sweet mornings of spring which I enjoy with my whole heart.</p>
+                </div>
+                <div class="post-more"><a class="more-link" href="#">Read more</a></div>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-4 col-lg-4">
+              <div class="post mb-20">
+                <div class="post-thumbnail"><a href="#"><img src="static/images/post-3.jpg" alt="Blog-post Thumbnail"/></a></div>
+                <div class="post-header font-alt">
+                  <h2 class="post-title"><a href="#">We in New Zealand</a></h2>
+                  <div class="post-meta">By&nbsp;<a href="#">Dylan Woods</a>&nbsp;| 5 November | 15 Comments
+                  </div>
+                </div>
+                <div class="post-entry">
+                  <p>A wonderful serenity has taken possession of my entire soul, like these sweet mornings of spring which I enjoy with my whole heart.</p>
+                </div>
+                <div class="post-more"><a class="more-link" href="#">Read more</a></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </section> -->
+      <div class="module-small bg-dark">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-6 col-md-6 col-lg-4 col-lg-offset-2">
+              <div class="callout-text font-alt">
+                <h3 class="callout-title">Subscribe now</h3>
+                <p>We will not spam your email.</p>
+              </div>
+            </div>
+            <div class="col-sm-6 col-md-6 col-lg-4">
+              <div class="callout-btn-box">
+                <form id="subscription-form" role="form" method="post" action="php/subscribe.php">
+                  <div class="input-group">
+                    <input class="form-control" type="email" id="semail" name="semail" placeholder="Your Email" data-validation-required-message="Please enter your email address." required="required"/><span class="input-group-btn">
+                      <button class="btn btn-g btn-round" id="subscription-form-submit" type="submit">Submit</button></span>
+                  </div>
+                </form>
+                <div class="text-center" id="subscription-response"></div>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-      <div style="text-align:center;margin-bottom:20px;">
-        <a href="https://itunes.apple.com/WebObjects/MZStore.woa/wa/viewSoftware?id=1397131708&mt=8" target="_blank">
-          <img src="/static/itunes.png" width="200">
-        </a>
-        <a href="https://play.google.com/store/apps/details?id=io.yadacoin.mobile" target="_blank">
-          <img src="/static/google-play.png" width="200">
-        </a>
+      <section class="module" id="contact">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-6 col-sm-offset-3">
+              <h2 class="module-title font-alt">Get in touch</h2>
+              <div class="module-subtitle font-serif"></div>
+            </div>
+          </div>
+          <div class="row">
+            <div class="col-sm-6 col-sm-offset-3">
+              <form id="contactForm" role="form" method="post" action="php/contact.php">
+                <div class="form-group">
+                  <label class="sr-only" for="name">Name</label>
+                  <input class="form-control" type="text" id="name" name="name" placeholder="Your Name*" required="required" data-validation-required-message="Please enter your name."/>
+                  <p class="help-block text-danger"></p>
+                </div>
+                <div class="form-group">
+                  <label class="sr-only" for="email">Email</label>
+                  <input class="form-control" type="email" id="email" name="email" placeholder="Your Email*" required="required" data-validation-required-message="Please enter your email address."/>
+                  <p class="help-block text-danger"></p>
+                </div>
+                <div class="form-group">
+                  <textarea class="form-control" rows="7" id="message" name="message" placeholder="Your Message*" required="required" data-validation-required-message="Please enter your message."></textarea>
+                  <p class="help-block text-danger"></p>
+                </div>
+                <div class="text-center">
+                  <button class="btn btn-block btn-round btn-d" id="cfsubmit" type="submit">Submit</button>
+                </div>
+              </form>
+              <div class="ajax-response font-alt" id="contactFormResponse"></div>
+            </div>
+          </div>
+        </div>
+      </section>
+      <div class="module-small bg-dark">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-3">
+              <div class="widget">
+                <h5 class="widget-title font-alt">About YadaCoin</h5>
+                <p>The languages only differ in their grammar, their pronunciation and their most common words.</p>
+                <p>Phone: +1 234 567 89 10</p>Fax: +1 234 567 89 10
+                <p>Email:<a href="#">somecompany@example.com</a></p>
+              </div>
+            </div>
+            <div class="col-sm-3">
+              <div class="widget">
+                <h5 class="widget-title font-alt">Recent Comments</h5>
+                <ul class="icon-list">
+                  <li>Maria on <a href="#">Designer Desk Essentials</a></li>
+                  <li>John on <a href="#">Realistic Business Card Mockup</a></li>
+                  <li>Andy on <a href="#">Eco bag Mockup</a></li>
+                  <li>Jack on <a href="#">Bottle Mockup</a></li>
+                  <li>Mark on <a href="#">Our trip to the Alps</a></li>
+                </ul>
+              </div>
+            </div>
+            <div class="col-sm-3">
+              <div class="widget">
+                <h5 class="widget-title font-alt">Blog Categories</h5>
+                <ul class="icon-list">
+                  <li><a href="#">Photography - 7</a></li>
+                  <li><a href="#">Web Design - 3</a></li>
+                  <li><a href="#">Illustration - 12</a></li>
+                  <li><a href="#">Marketing - 1</a></li>
+                  <li><a href="#">Wordpress - 16</a></li>
+                </ul>
+              </div>
+            </div>
+            <div class="col-sm-3">
+              <div class="widget">
+                <h5 class="widget-title font-alt">Popular Posts</h5>
+                <ul class="widget-posts">
+                  <li class="clearfix">
+                    <div class="widget-posts-image"><a href="#"><img src="static/images/rp-1.jpg" alt="Post Thumbnail"/></a></div>
+                    <div class="widget-posts-body">
+                      <div class="widget-posts-title"><a href="#">Designer Desk Essentials</a></div>
+                      <div class="widget-posts-meta">23 january</div>
+                    </div>
+                  </li>
+                  <li class="clearfix">
+                    <div class="widget-posts-image"><a href="#"><img src="static/images/rp-2.jpg" alt="Post Thumbnail"/></a></div>
+                    <div class="widget-posts-body">
+                      <div class="widget-posts-title"><a href="#">Realistic Business Card Mockup</a></div>
+                      <div class="widget-posts-meta">15 February</div>
+                    </div>
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
       </div>
-
-
-        <hr class="featurette-divider">
-      <!-- Marketing messaging and featurettes
-      ================================================== -->
-      <!-- Wrap the rest of the page in another container to center all the content. -->
-
-      <div class="container marketing">
-
-        <!-- Three columns of text below the carousel -->
-        <div class="row">
-          <div class="col-lg-4">
-            <img class="rounded-circle" src="/static/2phones.png" alt="Generic placeholder image" width="140" height="140">
-            <h2>Single sign on</h2>
-            <p>Using a protocol similar to SAML, we can easily convert any existing application into an one that utilizes the user-base from the YadaCoin blockchain.</p>
-            <p><a class="btn btn-secondary" href="/static/yadacoin-whitepaper.pdf" role="button">Read our white paper »</a></p>
-          </div><!-- /.col-lg-4 -->
-          <div class="col-lg-4">
-            <img class="rounded-circle" src="/static/suspended.png" alt="Generic placeholder image" width="140" height="140">
-            <h2>User centric content</h2>
-            <p>YadaCoin allows a user to post content once and let it be shared throughout any site that implements the YadaCoin protocol. This means content creators will monetize their content more effectively with YadaCoin.</p>
-            <p><a class="btn btn-secondary" href="https://trello.com/b/OBucq4ik/yadacoin-roadmap" role="button" target="_blank">Check out our roadmap »</a></p>
-          </div><!-- /.col-lg-4 -->
-          <div class="col-lg-4">
-            <img class="rounded-circle" src="/static/2phones3.png" alt="Generic placeholder image" width="140" height="140">
-            <h2>Secure data exchange</h2>
-            <p>When it comes to private messages between humans or data between applications, YadaCoin is the right choice for secure communication.</p>
-            <p><a class="btn btn-secondary" href="/app" role="button">Use the desktop app »</a></p>
-          </div><!-- /.col-lg-4 -->
-        </div><!-- /.row -->
-
-
-        <!-- /END THE FEATURETTES -->
-
-      </div><!-- /.container -->
-
-
-      <!-- FOOTER -->
-      <footer class="container">
-        <p class="float-right"><a href="#">Back to top</a></p>
-        <p>© 2017 Yadacoin · <a href="/privacy">Privacy</a> · <a href="/terms">Terms</a></p>
+      <hr class="divider-d">
+      <footer class="footer bg-dark">
+        <div class="container">
+          <div class="row">
+            <div class="col-sm-6">
+              <p class="copyright font-alt">&copy; 2019&nbsp;<a href="index.html">YadaCoin</a>, All Rights Reserved</p>
+            </div>
+            <div class="col-sm-6">
+              <div class="footer-social-links"><a href="#"><i class="fa fa-facebook"></i></a><a href="#"><i class="fa fa-twitter"></i></a><a href="#"><i class="fa fa-dribbble"></i></a><a href="#"><i class="fa fa-skype"></i></a>
+              </div>
+            </div>
+          </div>
+        </div>
       </footer>
-    </main>
-  </body>
+    </div>
+    <div class="scroll-up"><a href="#totop"><i class="fa fa-angle-double-up"></i></a></div>
+  </main>
+  
+{% with %}
+  {% include 'footer.html'  %}
+{% endwith %} 
+</body>
 </html>

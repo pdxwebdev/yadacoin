@@ -1,0 +1,24 @@
+{% with title='YadaCoin - Blockchain Explorer', mixpanel='explorer page' %}
+  {% include 'head.html'  %}
+{% endwith %} 
+<body class="container bg-dark" data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
+  <main>
+    <div class="page-loader">
+      <div class="loader">Loading...</div>
+    </div>
+    {% with active='explorer' %}
+      {% include 'navigation.html'  %}
+    {% endwith %} 
+    <div class="main home-section">
+      <section class="module bg-dark" id="about">
+        <base href="/static/explorer/" />
+        <app-root></app-root>
+      </section>
+    </div>
+  </main>
+  {% with %}
+    {% include 'footer.html'  %}
+  {% endwith %} 
+</body>
+<script type="text/javascript" src="runtime.js"></script><script type="text/javascript" src="polyfills.js"></script><script type="text/javascript" src="styles.js"></script><script type="text/javascript" src="vendor.js"></script><script type="text/javascript" src="main.js"></script></body>
+</html>

@@ -1,6 +1,5 @@
 import json
 import hashlib
-import humanhash
 
 from yadacoin.blockchainutils import BU
 from yadacoin.transactionutils import TU
@@ -42,9 +41,9 @@ class Graph(object):
 
             res = self.mongo.site_db.usernames.find({"rid": self.rid})
             if res.count():
-                self.human_hash = res[0]['username']
+                self.username = res[0]['username']
             else:
-                self.human_hash = humanhash.humanize(self.rid)
+                self.username = '[none]'
             start_height = 0
             # this will get any transactions between the client and server
             nodes = BU.get_transactions_by_rid(self.config, self.mongo, bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
@@ -66,6 +65,7 @@ class Graph(object):
 
             self.registered = False
             shared_secrets = TU.get_shared_secrets_by_rid(config, mongo, rid)
+            print(shared_secrets)
             if shared_secrets:
                 self.registered = True
 
@@ -75,11 +75,11 @@ class Graph(object):
                         if y['to'] != config.address:
                             self.mongo.site_db.usernames.update({
                                 'rid': self.rid,
-                                'username': self.human_hash,
+                                'username': self.username,
                                 },
                                 {
                                 'rid': self.rid,
-                                'username': self.human_hash,
+                                'username': self.username,
                                 'to': y['to'],
                                 'relationship': {
                                     'bulletin_secret': bulletin_secret
@@ -142,7 +142,7 @@ class Graph(object):
             if res.count():
                 sent_friend_requests[i]['username'] = res[0]['username']
             else:
-                sent_friend_requests[i]['username'] = humanhash.humanize(sent_friend_request.get('requested_rid'))
+                sent_friend_requests[i]['username'] = '[None]'
         self.sent_friend_requests = sent_friend_requests
 
     def get_messages(self, not_mine=False):
@@ -169,7 +169,7 @@ class Graph(object):
                 if res.count():
                     messages[i]['username'] = res[0]['username']
                 else:
-                    messages[i]['username'] = humanhash.humanize(message.get('rid'))
+                    messages[i]['username'] = '[None]'
                 exclude = self.mongo.db.exclude_messages.find({'id': message.get('id')})
                 if exclude.count() > 0:
                     continue
@@ -267,7 +267,7 @@ class Graph(object):
         self.logins = obj['logins']
         self.messages = obj['messages']
         self.rid = obj['rid']
-        self.human_hash = obj['human_hash']
+        self.username = obj['username']
 
     def to_dict(self):
         if self.wallet_mode:
@@ -288,7 +288,7 @@ class Graph(object):
                 'logins': self.logins,
                 'messages': self.messages,
                 'rid': self.rid,
-                'human_hash': self.human_hash,
+                'username': self.username,
                 'registered': self.registered,
                 'pending_registration': self.pending_registration,
                 'new_messages': self.new_messages,

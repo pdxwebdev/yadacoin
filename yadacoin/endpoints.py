@@ -28,28 +28,58 @@ from flask.views import View
 from coincurve.utils import verify_signature
 
 
-class HomeView(View):
+class AuthenticatedView(View):
     def dispatch_request(self):
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
-        if not request.args.get('rid'):
-            return '{"error": "rid not in query params"}'
+        rid = request.args.get('rid')
+        if not rid:
+            return '{"error": "rid not in query params"}', 400
+
+        txn_id = request.args.get('id')
+        if not txn_id:
+            return json.dumps({
+                'authenticated': False
+            })
+        
+        bulletin_secret = request.args.get('bulletin_secret')
+        if not bulletin_secret:
+            return '{"error": "bulletin_secret not in query params"}', 400
+        
         result = BU.verify_message(
             config,
             mongo,
             request.args.get('rid'),
             session.get('siginin_code'),
             config.public_key,
-            request.args.get('id').replace(' ', '+'))
+            txn_id.replace(' ', '+'))
+        
+        if result[1]:
+            session['rid'] = rid
+            username_txns = [x for x in BU.search_rid(config, mongo, rid)]
+            session['username'] = username_txns[0]['relationship']['their_username']
+            return json.dumps({
+                'authenticated': True
+            })
+        
         return json.dumps({
-            'authenticated': True if result[1] else False
+            'authenticated': False
         })
 
+class LogoutView(View):
+    def dispatch_request(self):
+        config = app.config['yada_config']
+        mongo = app.config['yada_mongo']
+        session.pop('username', None)
+        session.pop('rid', None)
+        return json.dumps({
+            'authenticated': False
+        })
 
 class GetYadaConfigView(View):
     def dispatch_request(self):
         config = app.config['yada_config']
-        peer = "http://%s:%s" % (config.peer_host, config.peer_port)
+        peer = "http://%s:%s" % (config.web_server_host, config.peer_port)
         return json.dumps({
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
@@ -57,7 +87,9 @@ class GetYadaConfigView(View):
             "graphUrl": "{}".format(peer),
             "walletUrl": "{}/get-graph-wallet".format(peer),
             "loginUrl": "{}/login".format(peer),
-            "registerUrl": "{}/create-relationship".format(peer)
+            "registerUrl": "{}/create-relationship".format(peer),
+            "authenticatedUrl": "{}/authenticated".format(peer),
+            "logoData": config.logo_data
         }, indent=4)
 
 
@@ -295,8 +327,13 @@ class RidWalletView(View):
         bulletin_secret = request.args.get('bulletin_secret').replace(' ', "+")
         rid = TU.generate_rid(config, bulletin_secret)
         unspent_transactions = [x for x in BU.get_wallet_unspent_transactions(config, mongo, address)]
+        spent_txn_ids = []
+        for x in unspent_transactions:
+            spent_txn_ids.extend([y['id'] for y in x['inputs']])
+
+        unspent_fastgraph_transactions = [x for x in BU.get_wallet_unspent_fastgraph_transactions(config, mongo, address) if x['id'] not in spent_txn_ids]
         spent_fastgraph_ids = []
-        for x in BU.get_wallet_unspent_fastgraph_transactions(config, mongo, address):
+        for x in unspent_fastgraph_transactions:
             spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
 
         regular_txns = []
@@ -316,6 +353,9 @@ class RidWalletView(View):
                     txns_for_fastgraph.append(txn)
                 else:
                     regular_txns.append(txn)
+        print(unspent_fastgraph_transactions)
+        if unspent_fastgraph_transactions:
+            txns_for_fastgraph.extend(unspent_fastgraph_transactions)
         wallet = {
             'balance': BU.get_wallet_balance(config, mongo, address),
             'unspent_transactions': regular_txns,
@@ -358,6 +398,7 @@ class FaucetView(View):
 class RegisterView(View):
     def dispatch_request(self):
         config = app.config['yada_config']
+        print(config.to_json())
         data = {
             'bulletin_secret': config.bulletin_secret,
             'username': config.username,
@@ -405,9 +446,9 @@ class CreateRelationshipView(View):
         for mtxn in checked_out_txn_ids:
             mtxn_ids.append(mtxn['id'])
 
-        a = os.urandom(32)
-        dh_public_key = scalarmult_base(a).hex()
-        dh_private_key = a.hex()
+        a = os.urandom(32).decode('latin1')
+        dh_public_key = scalarmult_base(a).encode('latin1').hex()
+        dh_private_key = a.encode('latin1').hex()
 
         transaction = TransactionFactory(
             config=config,
@@ -630,6 +671,7 @@ class SignRawTransactionView(View):
         config = app.config['yada_config']
         mongo = app.config['yada_mongo']
         res = mongo.db.signed_transactions.find_one({'hash': request.json.get('hash')})
+        print(request.json)
         if res:
             return 'no', 400
         try:
@@ -663,7 +705,7 @@ class SignRawTransactionView(View):
                 return 'no transactions with this input found', 400
 
             if verified:
-                transaction_signature = TU.generate_signature_with_private_key(config.private_key, request.json.get('hash'))
+                transaction_signature = TU.generate_signature_with_private_key(config.private_key, request.json.get('hash').encode('utf-8'))
                 signature = {
                     'signature': transaction_signature,
                     'hash': request.json.get('hash'),
@@ -678,6 +720,7 @@ class SignRawTransactionView(View):
             else:
                 return 'no', 400
         except Exception as e:
+            raise
             return json.dumps({
                 'status': 'error',
                 'msg': e

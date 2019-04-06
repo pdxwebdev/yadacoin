@@ -37,7 +37,7 @@ from bson.objectid import ObjectId
 
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
-        print 'error'
+        print('error')
 
 def make_qr(data):
     qr = qrcode.QRCode(
@@ -59,11 +59,27 @@ def make_qr(data):
 app = Flask(__name__)
 app.debug = True
 app.secret_key = '23ljk2l9a08sd7f09as87df09as87df3k4j'
-CORS(app)
+CORS(app, supports_credentials=True)
 
 @app.route('/pool', methods=['GET', 'POST'])
 def pool():
-    return render_template('pool.html')
+    rid = session.get('rid')
+    username = session.get('username')
+    return render_template(
+        'pool.html',
+        rid=rid,
+        username=username
+        )
+
+@app.route('/profile', methods=['GET', 'POST'])
+def profile():
+    rid = session.get('rid')
+    username = session.get('username')
+    return render_template(
+        'profile.html',
+        rid=rid,
+        username=username
+        )
 
 @app.route('/firebase-messaging-sw.js')
 def firebase_service_worker():
@@ -75,7 +91,7 @@ def fcm_token():
         config = current_app.config['yada_config']
         mongo = current_app.config['yada_mongo']
         token = request.json.get('token')
-        print token
+        print(token)
         rid = request.json.get('rid')
         txn = BU.get_transaction_by_rid(rid, rid=True) 
         mongo.site_db.fcmtokens.update({'rid': rid}, {
@@ -96,7 +112,17 @@ def screen():
 
 @app.route('/explorer')
 def explorer():
-    return app.send_static_file('explorer/index.html')
+    rid = session.get('rid')
+    username = session.get('username')
+    return render_template(
+        'explorer.html',
+        rid=rid,
+        username=username
+        )
+
+@app.route('/docs')
+def docs():
+    return app.send_static_file('docs/index.html')
 
 def changetime(block):
     from datetime import datetime
@@ -105,7 +131,13 @@ def changetime(block):
 
 @app.route('/hashrate')
 def hashrate():
-    return render_template('hashrate.html')
+    rid = session.get('rid')
+    username = session.get('username')
+    return render_template(
+        'hashrate.html',
+        rid=rid,
+        username=username
+        )
 
 @app.route('/api-stats')
 def api_stats():
@@ -166,20 +198,32 @@ def get_blockchain():
 
 @app.route('/')
 def index():
+    rid = session.get('rid')
+    username = session.get('username')
     return render_template(
         'index.html',
+        rid=rid,
+        username=username
         )
 
 @app.route('/guide')
 def guide():
+    rid = session.get('rid')
+    username = session.get('username')
     return render_template(
         'guide.html',
+        rid=rid,
+        username=username
         )
 
 @app.route('/team')
 def team():
+    rid = session.get('rid')
+    username = session.get('username')
     return render_template(
         'team.html',
+        rid=rid,
+        username=username
         )
 
 @app.route('/get-rid')
@@ -283,14 +327,19 @@ app.add_url_rule('/explorer-search', view_func=endpoints.ExplorerSearchView.as_v
 app.add_url_rule('/get-latest-block', view_func=endpoints.GetLatestBlockView.as_view('get-latest-block'))
 app.add_url_rule('/create-relationship', view_func=endpoints.CreateRelationshipView.as_view('create-relationship'))
 app.add_url_rule('/yada_config.json', view_func=endpoints.GetYadaConfigView.as_view('yada-config'))
+app.add_url_rule('/authenticated', view_func=endpoints.AuthenticatedView.as_view('authenticated'))
+app.add_url_rule('/logout', view_func=endpoints.LogoutView.as_view('logout'))
 
 parser = argparse.ArgumentParser(description='Process some integers.')
 parser.add_argument('--conf',
                 help='set your config file')
 args = parser.parse_args()
-conf = args.conf or 'config/config.json'
+conf = args.conf or 'config/regnet.json'
 with open(conf) as f:
     config = Config(json.loads(f.read()))
+
+with open('logodata.b64') as f:
+    config.logo_data = f.read()
 
 app.config['yada_config'] = config
 app.config['yada_mongo'] = Mongo(config)

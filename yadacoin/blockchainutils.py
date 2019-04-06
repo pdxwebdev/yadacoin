@@ -264,7 +264,7 @@ class BU(object):  # Blockchain Utilities
                     if not raw:
                         cipher = Crypt(wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
-                        relationship = json.loads(decrypted)
+                        relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     transaction['height'] = block['index']
                     mongo.db.get_transactions_cache.update(
@@ -363,7 +363,7 @@ class BU(object):  # Blockchain Utilities
                     if not raw:
                         cipher = Crypt(secret)
                         decrypted = cipher.decrypt(transaction['relationship'])
-                        relationship = json.loads(decrypted)
+                        relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     mongo.db.fastgraph_transaction_cache.update(
                         {
@@ -496,7 +496,7 @@ class BU(object):  # Blockchain Utilities
                             decrypted = base64.b64decode(decrypted)
                         except:
                             raise
-                        data = json.loads(decrypted)
+                        data = json.loads(decrypted.decode('latin1'))
                         x['txn']['relationship'] = data
                         if 'postText' in decrypted:
                             had_txns = True
@@ -645,7 +645,7 @@ class BU(object):  # Blockchain Utilities
                             decrypted = base64.b64decode(decrypted)
                         except:
                             raise
-                        data = json.loads(decrypted)
+                        data = json.loads(decrypted.decode('latin1'))
                         x['txn']['relationship'] = data
                         if 'react' in decrypted:
                             had_txns = True
@@ -782,7 +782,7 @@ class BU(object):  # Blockchain Utilities
                             decrypted = base64.b64decode(decrypted)
                         except:
                             raise
-                        data = json.loads(decrypted)
+                        data = json.loads(decrypted.decode('latin1'))
                         x['txn']['relationship'] = data
                         if 'comment' in decrypted:
                             had_txns = True
@@ -845,7 +845,7 @@ class BU(object):  # Blockchain Utilities
                 try:
                     cipher = Crypt(wif)
                     decrypted = cipher.decrypt(transaction['relationship'])
-                    relationship = json.loads(decrypted)
+                    relationship = json.loads(decrypted.decode('latin1'))
                     relationships.append(relationship)
                 except:
                     continue
@@ -878,7 +878,7 @@ class BU(object):  # Blockchain Utilities
                     try:
                         cipher = Crypt(wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
-                        relationship = json.loads(decrypted)
+                        relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     except:
                         continue
@@ -935,9 +935,10 @@ class BU(object):  # Blockchain Utilities
                         try:
                             cipher = Crypt(config.wif)
                             decrypted = cipher.decrypt(transaction['relationship'])
-                            relationship = json.loads(decrypted)
+                            relationship = json.loads(decrypted.decode('latin1'))
                             transaction['relationship'] = relationship
-                        except:
+                        except Exception as e:
+                            print(e)
                             continue
                     for selector in selectors:
                         print('caching transactions_by_rid at height:', block['index'])
@@ -1370,16 +1371,22 @@ class BU(object):  # Blockchain Utilities
         else:
             shared_secrets = TU.get_shared_secrets_by_rid(config, mongo, rid)
             if txn_id:
-                txns = [BU.get_transaction_by_id(config, mongo, txn_id)]
+                txns = []
+                txn = BU.get_transaction_by_id(config, mongo, txn_id, include_fastgraph=True)
+                if txn:
+                    txns.append(txn)
             else:
                 txns = [x for x in BU.get_transactions_by_rid(config, mongo, rid, config.bulletin_secret, rid=True, raw=True)]
                 fastgraph_transactions = mongo.db.fastgraph_transactions.find({"txn.rid": rid})
-                txns.extend([x['txn'] for x in fastgraph_transactions])
+                if fastgraph_transactions.count() > 0:
+                    txns.extend([x['txn'] for x in fastgraph_transactions])
+
             for txn in txns:
+                print(txn)
                 for shared_secret in list(set(shared_secrets)):
                     res = mongo.db.verify_message_cache.find_one({
                         'rid': rid,
-                        'shared_secret': shared_secret.hex(),
+                        'shared_secret': shared_secret,
                         'id': txn['id']
                     })
                     try:
@@ -1393,7 +1400,7 @@ class BU(object):  # Blockchain Utilities
                         else:
                             cipher = Crypt(shared_secret.hex(), shared=True)
                             decrypted = cipher.shared_decrypt(txn['relationship'])
-                            signin = json.loads(decrypted)
+                            signin = json.loads(decrypted.decode('latin1'))
                             mongo.db.verify_message_cache.update({
                                 'rid': rid,
                                 'shared_secret': shared_secret.hex(),
@@ -1413,6 +1420,7 @@ class BU(object):  # Blockchain Utilities
                             else:
                                 sent = True
                     except:
+                        raise
                         mongo.db.verify_message_cache.update({
                             'rid': rid,
                             'shared_secret': shared_secret.hex(),

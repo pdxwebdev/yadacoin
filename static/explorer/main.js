@@ -41,7 +41,7 @@ module.exports = ""
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-module.exports = "<!--The content below is only a placeholder and can be replaced.-->\n<div style=\"text-align:center\">\n  <h1>\n    Yada Coin Explorer\n  </h1>\n</div>\n<app-search-form></app-search-form>\n\n"
+module.exports = "<!--The content below is only a placeholder and can be replaced.-->\n<div>\n  <h1>\n    Explorer\n  </h1>\n</div>\n<app-search-form></app-search-form>\n\n"
 
 /***/ }),
 

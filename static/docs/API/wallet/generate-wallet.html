@@ -1,0 +1,307 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <meta charset="utf-8">
+        <meta http-equiv="X-UA-Compatible" content="IE=edge">
+        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+        
+        
+        
+        <link rel="shortcut icon" href="../../img/favicon.ico">
+        <title>/generate-wallet - YadaCoin Docs</title>
+        <link href="../../css/bootstrap-custom.min.css" rel="stylesheet">
+        <link href="../../css/font-awesome.min.css" rel="stylesheet">
+        <link href="../../css/base.css" rel="stylesheet">
+        <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/styles/darcula.min.css">
+        <!-- HTML5 shim and Respond.js IE8 support of HTML5 elements and media queries -->
+        <!--[if lt IE 9]>
+            <script src="https://oss.maxcdn.com/libs/html5shiv/3.7.0/html5shiv.js"></script>
+            <script src="https://oss.maxcdn.com/libs/respond.js/1.4.2/respond.min.js"></script>
+        <![endif]-->
+
+        <script src="../../js/jquery-1.10.2.min.js" defer></script>
+        <script src="../../js/bootstrap-3.0.3.min.js" defer></script>
+        <script src="https://cdnjs.cloudflare.com/ajax/libs/highlight.js/9.12.0/highlight.min.js"></script>
+        <script>hljs.initHighlightingOnLoad();</script> 
+    </head>
+
+    <body>
+
+        <div class="navbar navbar-default navbar-fixed-top" role="navigation">
+            <div class="container">
+
+                <!-- Collapsed navigation -->
+                <div class="navbar-header">
+                    <!-- Expander button -->
+                    <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+                        <span class="sr-only">Toggle navigation</span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                        <span class="icon-bar"></span>
+                    </button>
+                    <a class="navbar-brand" href="../../index.html">YadaCoin Docs</a>
+                </div>
+
+                <!-- Expanded navigation -->
+                <div class="navbar-collapse collapse">
+                        <!-- Main navigation -->
+                        <ul class="nav navbar-nav">
+                            <li >
+                                <a href="../../index.html">Getting Started</a>
+                            </li>
+                            <li class="dropdown active">
+                                <a href="#" class="dropdown-toggle" data-toggle="dropdown">API <b class="caret"></b></a>
+                                <ul class="dropdown-menu">
+                                    
+<li >
+    <a href="../overview.html">API Overview</a>
+</li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Explorer</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../explorer/explorer-search.html">/explorer-search</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Graph</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../graph/get-graph-friend-requests.html">/get-graph-friend-requests</a>
+</li>
+            
+<li >
+    <a href="../graph/get-graph-friends.html">/get-graph-friends</a>
+</li>
+            
+<li >
+    <a href="../graph/get-graph-info.html">/get-graph-info</a>
+</li>
+            
+<li >
+    <a href="../graph/get-graph-messages.html">/get-graph-messages</a>
+</li>
+            
+<li >
+    <a href="../graph/get-graph-new-messages.html">/get-graph-new-messages</a>
+</li>
+            
+<li >
+    <a href="../graph/get-graph-posts.html">/get-graph-posts</a>
+</li>
+            
+<li >
+    <a href="../graph/get-graph-sent-friend-requests.html">/get-graph-sent-friend-requests</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Node</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../node/create-raw-transaction.html">/create-raw-transaction</a>
+</li>
+            
+<li >
+    <a href="../node/get-block.html">/get-block</a>
+</li>
+            
+<li >
+    <a href="../node/get-latest-block.html">/get-latest-block</a>
+</li>
+            
+<li >
+    <a href="../node/sign-raw-transaction.html">/sign-raw-transaction</a>
+</li>
+            
+<li >
+    <a href="../node/transaction.html">/transaction</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Pool</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="../pool/pool-block-details.html">/pool-block-details</a>
+</li>
+            
+<li >
+    <a href="../pool/pool-submit.html">/pool-submit</a>
+</li>
+            
+<li >
+    <a href="../pool/pool.html">/pool</a>
+</li>
+    </ul>
+  </li>
+                                    
+  <li class="dropdown-submenu">
+    <a href="#">Wallet</a>
+    <ul class="dropdown-menu">
+            
+<li >
+    <a href="generate-child-wallet.html">/generate-child-wallet</a>
+</li>
+            
+<li class="active">
+    <a href="generate-wallet.html">/generate-wallet</a>
+</li>
+            
+<li >
+    <a href="wallet.html">/wallet</a>
+</li>
+    </ul>
+  </li>
+                                </ul>
+                            </li>
+                        </ul>
+
+                    <ul class="nav navbar-nav navbar-right">
+                        <li>
+                            <a href="#" data-toggle="modal" data-target="#mkdocs_search_modal">
+                                <i class="fa fa-search"></i> Search
+                            </a>
+                        </li>
+                            <li >
+                                <a rel="next" href="generate-child-wallet.html">
+                                    <i class="fa fa-arrow-left"></i> Previous
+                                </a>
+                            </li>
+                            <li >
+                                <a rel="prev" href="wallet.html">
+                                    Next <i class="fa fa-arrow-right"></i>
+                                </a>
+                            </li>
+                    </ul>
+                </div>
+            </div>
+        </div>
+
+        <div class="container">
+                <div class="col-md-3"><div class="bs-sidebar hidden-print affix well" role="complementary">
+    <ul class="nav bs-sidenav">
+        <li class="main active"><a href="#generate-wallet">/generate-wallet</a></li>
+            <li><a href="#success-responses">Success Responses</a></li>
+    </ul>
+</div></div>
+                <div class="col-md-9" role="main">
+
+<h1 id="generate-wallet">/generate-wallet</h1>
+<p>Generate a new seed and HD wallet</p>
+<p><strong>URL</strong> : <code>/generate-wallet</code></p>
+<p><strong>Method</strong> : <code>GET</code></p>
+<h2 id="success-responses">Success Responses</h2>
+<p><strong>Code</strong> : <code>200 OK</code></p>
+<p><strong>Content example</strong> : Response will reflect back the updated information. A
+User with <code>id</code> of '1234' sets their name, passing <code>UAPP</code> header of 'ios1_2':</p>
+<pre><code class="json">{
+    &quot;username&quot;: &quot;&quot;, 
+    &quot;public_key&quot;: &quot;031df11550ba23d1738d2b3227a8e8b28f7e35a1a369967ea7ebde37d5cfcabc6c&quot;, 
+    &quot;private_key&quot;: &quot;208133c5107465c328d457380d3749a3de6a6c1f29265179eddb177ad91fb4e7&quot;, 
+    &quot;serve_port&quot;: 8000, 
+    &quot;site_database&quot;: &quot;yadacoinsite&quot;, 
+    &quot;wif&quot;: &quot;KxJtubo885q2qVrEf4MP6Kjtwaj5sWH4AKjMPY3eNQQk9iSm513v&quot;, 
+    &quot;web_server_host&quot;: &quot;0.0.0.0&quot;, 
+    &quot;database&quot;: &quot;yadacoin&quot;, 
+    &quot;web_server_port&quot;: 5000, 
+    &quot;peer_port&quot;: 8000, 
+    &quot;peer_host&quot;: &quot;&quot;, 
+    &quot;fcm_key&quot;: &quot;&quot;, 
+    &quot;seed&quot;: &quot;&quot;, 
+    &quot;address&quot;: &quot;1KYZoqeQZfm3LpmL2rh5K3jhRPwN3AAU5&quot;, 
+    &quot;serve_host&quot;: &quot;0.0.0.0&quot;, 
+    &quot;bulletin_secret&quot;: &quot;MEQCIBMi1nb3/bSee5aAxAWscAL7EC855Y4w2Pq2nWIXRItMAiBtOAbgDkjJkvVTvGFFdG/gpWoESwC7CGjgslnGc9RX4w==&quot;, 
+    &quot;xprv&quot;: &quot;xprv9s21ZrQH143K3Cy78KacBtuV64s3Fi9xK3TkFzFS85Gv3Ss6MkWyzFeSaxQcjX64YsXD5YhBA3GUQRpnRn7fdi872vaQX4SGyi4psXGZ8sY&quot;, 
+    &quot;callbackurl&quot;: &quot;http://0.0.0.0:5000/create-relationship&quot;, 
+    &quot;mongodb_host&quot;: &quot;localhost&quot;
+}
+</code></pre></div>
+        </div>
+
+        <footer class="col-md-12">
+            <hr>
+            <p>Documentation built with <a href="https://www.mkdocs.org/">MkDocs</a>.</p>
+        </footer>
+        <script>
+            var base_url = "../..",
+                shortcuts = {"next": 78, "search": 83, "previous": 80, "help": 191};
+        </script>
+        <script src="../../js/base.js" defer></script>
+        <script src="../../search/main.js" defer></script>
+
+        <div class="modal" id="mkdocs_search_modal" tabindex="-1" role="dialog" aria-labelledby="Search Modal" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="exampleModalLabel">Search</h4>
+            </div>
+            <div class="modal-body">
+                <p>
+                    From here you can search these documents. Enter
+                    your search terms below.
+                </p>
+                <form role="form">
+                    <div class="form-group">
+                        <input type="text" class="form-control" placeholder="Search..." id="mkdocs-search-query" title="Type search term here">
+                    </div>
+                </form>
+                <div id="mkdocs-search-results"></div>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div><div class="modal" id="mkdocs_keyboard_modal" tabindex="-1" role="dialog" aria-labelledby="Keyboard Shortcuts Modal" aria-hidden="true">
+    <div class="modal-dialog">
+        <div class="modal-content">
+            <div class="modal-header">
+                <button type="button" class="close" data-dismiss="modal"><span aria-hidden="true">&times;</span><span class="sr-only">Close</span></button>
+                <h4 class="modal-title" id="exampleModalLabel">Keyboard Shortcuts</h4>
+            </div>
+            <div class="modal-body">
+              <table class="table">
+                <thead>
+                  <tr>
+                    <th style="width: 20%;">Keys</th>
+                    <th>Action</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td class="help shortcut"><kbd>?</kbd></td>
+                    <td>Open this help</td>
+                  </tr>
+                  <tr>
+                    <td class="next shortcut"><kbd>n</kbd></td>
+                    <td>Next page</td>
+                  </tr>
+                  <tr>
+                    <td class="prev shortcut"><kbd>p</kbd></td>
+                    <td>Previous page</td>
+                  </tr>
+                  <tr>
+                    <td class="search shortcut"><kbd>s</kbd></td>
+                    <td>Search</td>
+                  </tr>
+                </tbody>
+              </table>
+            </div>
+            <div class="modal-footer">
+            </div>
+        </div>
+    </div>
+</div>
+
+    </body>
+</html>

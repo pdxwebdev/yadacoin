@@ -2,7 +2,7 @@ import hashlib
 import base64
 import random
 import sys
-
+from binascii import unhexlify
 from coincurve.keys import PrivateKey
 from coincurve._libsecp256k1 import ffi
 from eccsnacks.curve25519 import scalarmult
@@ -12,7 +12,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def hash(cls, message):
-        return hashlib.sha256(message).digest().hex()
+        return hashlib.sha256(message.encode('utf-8')).digest().hex()
 
     @classmethod
     def generate_deterministic_signature(cls, config, message:str, private_key=None):
@@ -35,7 +35,7 @@ class TU(object):  # Transaction Utilities
         x = ffi.new('long *')
         x[0] = random.SystemRandom().randint(0, sys.maxsize)
         key = PrivateKey.from_hex(private_key)
-        signature = key.sign(message, custom_nonce=(ffi.NULL, x))
+        signature = key.sign(message.encode('utf-8'), custom_nonce=(ffi.NULL, x))
         return base64.b64encode(signature).decode('utf-8')
 
     @classmethod
@@ -61,7 +61,7 @@ class TU(object):  # Transaction Utilities
                 dh_public_keys.append(txn['dh_public_key'])
         for dh_public_key in dh_public_keys:
             for dh_private_key in dh_private_keys:
-                shared_secrets.append(scalarmult(bytes.fromhex(dh_private_key), bytes.fromhex(dh_public_key)))
+                shared_secrets.append(scalarmult(unhexlify(dh_private_key).decode('latin1'), unhexlify(dh_public_key).decode('latin1')).encode('latin1'))
         return shared_secrets
 
     @classmethod

@@ -1,230 +1,227 @@
-<html>
-<head>
-  <title>YadaCoin - How-To Guides / Tutorials</title>
-  <META NAME="Description" CONTENT="Revolutionary social media blockchain. Open source. Facebook alternative. Cryptocurrency.">
-  <META NAME="Keywords" CONTENT="blockchain social media graph crypto cryptocurrency facebook alternative">
-  <META NAME="distribution" CONTENT="Global">
-    <link rel="stylesheet" href="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/css/bootstrap.min.css" integrity="sha384-Zug+QiDoJOrZ5t4lssLdxGhVrurbmBWopoEl+M6BdEfwnCJZtKxi1KgxUyJq13dy" crossorigin="anonymous">
-    <link rel="stylesheet" href="https://use.fontawesome.com/releases/v5.2.0/css/all.css" integrity="sha384-hWVjflwFxL6sNzntih27bfxkr27PmbbK/iSvJ+a4+0owXq79v+lsFkW54bOGbiDQ" crossorigin="anonymous">
-    <script src="https://code.jquery.com/jquery-3.2.1.slim.min.js" integrity="sha384-KJ3o2DKtIkvYIK3UENzmM7KCkRr/rE9/Qpg6aAZGJwFDMVNA/GpGFF93hXpG5KkN" crossorigin="anonymous"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/popper.js/1.12.9/umd/popper.min.js" integrity="sha384-ApNbgh9B+Y1QKtv3Rn7W3mgPxhU9K/ScQsAP7hUibX39j7fakFPskvXusvfa0b4Q" crossorigin="anonymous"></script>
-    <script src="https://maxcdn.bootstrapcdn.com/bootstrap/4.0.0-beta.3/js/bootstrap.min.js" integrity="sha384-a5N7Y/aK3qNeh15eJKGWxsqtnX/wWdSZSKp+81YjTmS15nvnvxKHuzaWwXHDli+4" crossorigin="anonymous"></script>
-    <style tyle="text/css">
+{% with title='YadaCoin - How-To Guides / Tutorials', mixpanel='guide page' %}
+  {% include 'head.html'  %}
+{% endwith %} 
+<body class="container bg-dark" data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
+  <main>
+    <div class="page-loader">
+      <div class="loader">Loading...</div>
+    </div>
+    <div class="main home-section">
+      <section class="module bg-dark" id="about">
+        {% with active='guide' %}
+          {% include 'navigation.html'  %}
+        {% endwith %}  
+        <div class="row">
+          <h1>Join a pool:</h1>
+        </div>
+        <div class="row">
+          <p>Visit the <a href="/pool">pools page</a> to download the pool client and start mining YadaCoins instantly.</p>
+        </div>
+        <hr />
+        <div class="row">
+          <h1>Solo mining / Create a Pool:</h1>
+        </div>
+        <div class="row">
+          <p>Joining a pool is the easiest and fastest way to mine YadaCoins but if your computer is a monster then perhaps you can win blocks on your own. The instructions below are for those who want to run full nodes. <strong>You do not need to keep reading below if you join a pool. You can stop here and goto the <a href="/pool">pools page</a>.</strong></strong></p>
+        </div>
+        <div class="row">
+          <h2>Docker</h2>
+        </div>
+        <div class="row">
+          <h3>Ubuntu 16.04 / 18.04</h3>
+        </div>
+        <div class="row">
+          <pre>
+            apt-get update
+            apt-get install docker docker-compose
+            cd ~
+            mkdir YADA
+            cd YADA
+            wget https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/docker-compose.yml
+            docker-compose build
+            docker-compose up
+          </pre>
+        </div>
+        <div class="row">
+          <h2>Windows 10 64-bit</h2>
+        </div>
+        <div class="row">
+            <p></p>
+        </div>
+        <div class="row">
+            <p>Download and install docker: https://download.docker.com/win/stable/Docker%20for%20Windows%20Installer.exe</p>
+        </div>
+        <div class="row">
+            <p>Download https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/docker-compose.yml</p>
+        </div>
+        <div class="row">
+          <pre>
+            start -> run -> "cmd" [enter]
+            cd /your/download/folder
+            docker-compose build
+            docker-compose up
+          </pre>
+        </div>
+        <div class="row">
+          <h2>After you're setup</h2>
+        </div>
+        <div class="row">
+          <p>Verify your public IP address and port are listed in the peer list at <a href="https://yadacoin.io/peers" target="_blank">YadaCoin's peer list</a></p>
+          <p>Note: Your serve process must be publicly accessible. If the serve process stops running or you're behind a firewall, the network will kick you from the peer list after too many failed attempts at sending you blocks.</a></p>
+        </div>
+        <div class="row">
+          <h2>Having trouble?</h2>
+        </div>
+        <div class="row">
+          <p>Come ask questions on <a href="https://discord.gg/JEDJaFS" target="_blank">our discord server</a>.</p>
+        </div>
+        <div class="row">
+          <h2>Mining</h2>
+        </div>
+        <hr/>
+        <div class="row">
+          <h3>Windows</h3>
+        </div>
+        <div class="row">
+          <p>install mongodb: <a href="https://www.mongodb.com/download-center?initial=true#community" target="_blank">MongoDB for Windows</a></p>
+        </div>
+        <div>
+          <p>Download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">latest Windows binary</a> and follow this video</p>
+        </div>
+        <div class="row">
+          <iframe width="560" height="315" src="https://www.youtube.com/embed/JeHQcafwGNw" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+        <div class="row">
+          <p>Open three terminal windows and in the first terminal window, execute this command: </p>
+        </div>
+        <div class="row">
+          <pre class="card">YadaCoinConfig.exe auto > config.json</pre>
+        </div>
+        <div class="row">
+          <p>Then in that same terminal, execute this command.</p>
+        </div>
+        <div class="row">
+          <pre class="card">YadaCoin.exe serve config.json</pre>
+        </div>
+        <div class="row">
+          <p>Then in the second terminal, execute this command.</p>
+        </div>
+        <div class="row">
+          <pre class="card">YadaCoin.exe consensus config.json</pre>
+        </div>
+        <div class="row">
+          <p>Wait approximately 10 minutes for a new block to be found by the network then you'll start syncing.</p>
+        </div>
+        <div class="row">
+          <p>Once the countdown reaches zero, you'll be ready to start mining.</p>
+        </div>
+        <div class="row">
+          <p>In the third terminal window, execute this command:</p>
+        </div>
+        <div class="row">
+          <pre class="card">YadaCoin.exe mine config.json</pre>
+        </div>
+        <hr/>
+        <div class="row">
+          <h3>Ubuntu</h3>
+        </div>
+        <div class="row">
+          <iframe width="560" height="315" src="https://www.youtube.com/embed/vaJPSJhLjOY" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+        </div>
+        <div class="row">
+          <p>Open a terminal window and execute this command: </p>
+        </div>
+        <div class="row">
+          <pre class="card">wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/setup.sh | bash</pre>
+        </div>
+        <div class="row">
+          <p>This will start the serve, consensus, and mining processes. You can check their status with the following commands:</p>
+        </div>
+        <div class="row">
+          <pre class="card">sudo service yadacoin-serve status</pre>
+        </div>
+        <div class="row">
+          <pre class="card">sudo service yadacoin-consensus status</pre>
+        </div>
+        <div class="row">
+          <pre class="card">sudo service yadacoin-mine status</pre>
+        </div>
+      </section>
+    </div>
+  </main>
+  {% with %}
+    {% include 'footer.html'  %}
+  {% endwith %} 
+  <style tyle="text/css">
     /* GLOBAL STYLES
-
--------------------------------------------------- */
-/* Padding below the footer and lighter body text */
-.fab {
-    padding: 20px;
-    font-size: 30px;
-    width: 30px;
-    text-align: center;
-    text-decoration: none;
-    border-radius: 50%;
-}
-
-body {
-  padding-top: 4.5rem;
-  padding-bottom: 3rem;
-  color: #5a5a5a;
-}
-
-
-/* CUSTOMIZE THE CAROUSEL
--------------------------------------------------- */
-
-/* Carousel base class */
-
-/* Since positioning the image, we need to help out the caption */
-
-
-/* MARKETING CONTENT
--------------------------------------------------- */
-
-/* Center align the text within the three columns below the carousel */
-.marketing .col-lg-4 {
-  margin-bottom: 1.5rem;
-  text-align: center;
-}
-.marketing h2 {
-  font-weight: 400;
-}
-.marketing .col-lg-4 p {
-  margin-right: .75rem;
-  margin-left: .75rem;
-}
-
-
-/* Featurettes
-------------------------- */
-
-.featurette-divider {
-  margin: 2rem 0; /* Space out the Bootstrap <hr> more */
-}
-
-/* Thin out the marketing headings */
-.featurette-heading {
-  font-weight: 300;
-  line-height: 1;
-  letter-spacing: -.05rem;
-}
-
-
-/* RESPONSIVE CSS
--------------------------------------------------- */
-
-
-@media (min-width: 62em) {
-  .featurette-heading {
-    margin-top: 7rem;
+  
+  -------------------------------------------------- */
+  /* Padding below the footer and lighter body text */
+  .fab {
+      padding: 20px;
+      font-size: 30px;
+      width: 30px;
+      text-align: center;
+      text-decoration: none;
+      border-radius: 50%;
   }
-}
-</style>
-<!-- start Mixpanel --><script type="text/javascript">(function(e,a){if(!a.__SV){var b=window;try{var c,l,i,j=b.location,g=j.hash;c=function(a,b){return(l=a.match(RegExp(b+"=([^&]*)")))?l[1]:null};g&&c(g,"state")&&(i=JSON.parse(decodeURIComponent(c(g,"state"))),"mpeditor"===i.action&&(b.sessionStorage.setItem("_mpcehash",g),history.replaceState(i.desiredHash||"",e.title,j.pathname+j.search)))}catch(m){}var k,h;window.mixpanel=a;a._i=[];a.init=function(b,c,f){function e(b,a){var c=a.split(".");2==c.length&&(b=b[c[0]],a=c[1]);b[a]=function(){b.push([a].concat(Array.prototype.slice.call(arguments,
-0)))}}var d=a;"undefined"!==typeof f?d=a[f]=[]:f="mixpanel";d.people=d.people||[];d.toString=function(b){var a="mixpanel";"mixpanel"!==f&&(a+="."+f);b||(a+=" (stub)");return a};d.people.toString=function(){return d.toString(1)+".people (stub)"};k="disable time_event track track_pageview track_links track_forms register register_once alias unregister identify name_tag set_config reset people.set people.set_once people.unset people.increment people.append people.union people.track_charge people.clear_charges people.delete_user".split(" ");
-for(h=0;h<k.length;h++)e(d,k[h]);a._i.push([b,c,f])};a.__SV=1.2;b=e.createElement("script");b.type="text/javascript";b.async=!0;b.src="undefined"!==typeof MIXPANEL_CUSTOM_LIB_URL?MIXPANEL_CUSTOM_LIB_URL:"file:"===e.location.protocol&&"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js".match(/^\/\//)?"https://cdn.mxpnl.com/libs/mixpanel-2-latest.min.js":"//cdn.mxpnl.com/libs/mixpanel-2-latest.min.js";c=e.getElementsByTagName("script")[0];c.parentNode.insertBefore(b,c)}})(document,window.mixpanel||[]);
-mixpanel.init("4e29328ef697408a91a5aad0552705af");
-if(window.location.href.indexOf("yadacoin.io") > 0)
-mixpanel.track("guide page");</script><!-- end Mixpanel -->
-</head>
-<body class="container">
-    {% with active='guide' %}
-      {% include 'navigation.html'  %}
-    {% endwith %}
-  <div class="row">
-    <h1>Join a pool:</h1>
-  </div>
-  <div class="row">
-    <p>Visit the <a href="/pool">pools page</a> to download the pool client and start mining YadaCoins instantly.</p>
-  </div>
-  <hr />
-  <div class="row">
-    <h1>Solo mining / Create a Pool:</h1>
-  </div>
-  <div class="row">
-    <p>Joining a pool is the easiest and fastest way to mine YadaCoins but if your computer is a monster then perhaps you can win blocks on your own. The instructions below are for those who want to run full nodes. <strong>You do not need to keep reading below if you join a pool. You can stop here and goto the <a href="/pool">pools page</a>.</strong></strong></p>
-  </div>
-  <div class="row">
-    <h2>Docker</h2>
-  </div>
-  <div class="row">
-    <h3>Ubuntu 16.04 / 18.04</h3>
-  </div>
-  <div class="row">
-    <pre>
-      apt-get update
-      apt-get install docker docker-compose
-      cd ~
-      mkdir YADA
-      cd YADA
-      wget https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/docker-compose.yml
-      docker-compose build
-      docker-compose up
-    </pre>
-  </div>
-  <div class="row">
-    <h2>Windows 10 64-bit</h2>
-  </div>
-  <div class="row">
-      <p></p>
-  </div>
-  <div class="row">
-      <p>Download and install docker: https://download.docker.com/win/stable/Docker%20for%20Windows%20Installer.exe</p>
-  </div>
-  <div class="row">
-      <p>Download https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/docker/docker-compose.yml</p>
-  </div>
-  <div class="row">
-    <pre>
-      start -> run -> "cmd" [enter]
-      cd /your/download/folder
-      docker-compose build
-      docker-compose up
-    </pre>
-  </div>
-  <div class="row">
-    <h2>After you're setup</h2>
-  </div>
-  <div class="row">
-    <p>Verify your public IP address and port are listed in the peer list at <a href="https://yadacoin.io/peers" target="_blank">YadaCoin's peer list</a></p>
-    <p>Note: Your serve process must be publicly accessible. If the serve process stops running or you're behind a firewall, the network will kick you from the peer list after too many failed attempts at sending you blocks.</a></p>
-  </div>
-  <div class="row">
-    <h2>Having trouble?</h2>
-  </div>
-  <div class="row">
-    <p>Come ask questions on <a href="https://discord.gg/JEDJaFS" target="_blank">our discord server</a>.</p>
-  </div>
-  <div class="row">
-    <h2>Mining</h2>
-  </div>
-  <hr/>
-  <div class="row">
-    <h3>Windows</h3>
-  </div>
-  <div class="row">
-    <p>install mongodb: <a href="https://www.mongodb.com/download-center?initial=true#community" target="_blank">MongoDB for Windows</a></p>
-  </div>
-  <div>
-    <p>Download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">latest Windows binary</a> and follow this video</p>
-  </div>
-  <div class="row">
-    <iframe width="560" height="315" src="https://www.youtube.com/embed/JeHQcafwGNw" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-  </div>
-  <div class="row">
-    <p>Open three terminal windows and in the first terminal window, execute this command: </p>
-  </div>
-  <div class="row">
-    <pre class="card">YadaCoinConfig.exe auto > config.json</pre>
-  </div>
-  <div class="row">
-    <p>Then in that same terminal, execute this command.</p>
-  </div>
-  <div class="row">
-    <pre class="card">YadaCoin.exe serve config.json</pre>
-  </div>
-  <div class="row">
-    <p>Then in the second terminal, execute this command.</p>
-  </div>
-  <div class="row">
-    <pre class="card">YadaCoin.exe consensus config.json</pre>
-  </div>
-  <div class="row">
-    <p>Wait approximately 10 minutes for a new block to be found by the network then you'll start syncing.</p>
-  </div>
-  <div class="row">
-    <p>Once the countdown reaches zero, you'll be ready to start mining.</p>
-  </div>
-  <div class="row">
-    <p>In the third terminal window, execute this command:</p>
-  </div>
-  <div class="row">
-    <pre class="card">YadaCoin.exe mine config.json</pre>
-  </div>
-  <hr/>
-  <div class="row">
-    <h3>Ubuntu</h3>
-  </div>
-  <div class="row">
-    <iframe width="560" height="315" src="https://www.youtube.com/embed/vaJPSJhLjOY" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
-  </div>
-  <div class="row">
-    <p>Open a terminal window and execute this command: </p>
-  </div>
-  <div class="row">
-    <pre class="card">wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/setup.sh | bash</pre>
-  </div>
-  <div class="row">
-    <p>This will start the serve, consensus, and mining processes. You can check their status with the following commands:</p>
-  </div>
-  <div class="row">
-    <pre class="card">sudo service yadacoin-serve status</pre>
-  </div>
-  <div class="row">
-    <pre class="card">sudo service yadacoin-consensus status</pre>
-  </div>
-  <div class="row">
-    <pre class="card">sudo service yadacoin-mine status</pre>
-  </div>
+  
+  body {
+    padding-top: 4.5rem;
+    padding-bottom: 3rem;
+    color: #5a5a5a;
+  }
+  
+  
+  /* CUSTOMIZE THE CAROUSEL
+  -------------------------------------------------- */
+  
+  /* Carousel base class */
+  
+  /* Since positioning the image, we need to help out the caption */
+  
+  
+  /* MARKETING CONTENT
+  -------------------------------------------------- */
+  
+  /* Center align the text within the three columns below the carousel */
+  .marketing .col-lg-4 {
+    margin-bottom: 1.5rem;
+    text-align: center;
+  }
+  .marketing h2 {
+    font-weight: 400;
+  }
+  .marketing .col-lg-4 p {
+    margin-right: .75rem;
+    margin-left: .75rem;
+  }
+  
+  
+  /* Featurettes
+  ------------------------- */
+  
+  .featurette-divider {
+    margin: 2rem 0; /* Space out the Bootstrap <hr> more */
+  }
+  
+  /* Thin out the marketing headings */
+  .featurette-heading {
+    font-weight: 300;
+    line-height: 1;
+    letter-spacing: -.05rem;
+  }
+  
+  
+  /* RESPONSIVE CSS
+  -------------------------------------------------- */
+  
+  
+  @media (min-width: 62em) {
+    .featurette-heading {
+      margin-top: 7rem;
+    }
+  }
+  </style>
 </body>
 </html>
