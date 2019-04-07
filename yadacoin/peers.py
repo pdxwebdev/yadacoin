@@ -21,8 +21,9 @@ class Peers(object):
         self.network = self.config.network
         self.my_peer = None
         self.app_log = getLogger("tornado.application")
-        self.inbound = []  # a list of inbound streams
-        self.outbound = []  # a list of outbound streams
+        self.inbound = {}  # a dict of inbound streams, keys are sids
+        self.outbound = {}  # a dict of outbound streams, keys are sids
+        self.connected_ips = []  # a list of peers ip we're connected to
 
     def init_local(self):
         raise RuntimeError("Peers, init_local is deprecated")
@@ -36,26 +37,48 @@ class Peers(object):
             pass
         return self.to_json()
 
-    def allow_in(self, IP):
-        """Returns True if that ip can inbound connect"""
-        # TODO
-        return True
+    def get_status(self):
+        """Returns peers status as explicit dict"""
+        # TODO: cache?
+        status = {"inbound": len(self.inbound), "outbound": len(self.outbound)}
+        return status
+
+    @property
+    def free_inbound_slots(self):
+        """How many free inbound slots we have"""
+        return self.config.max_inbound - len(self.inbound)
+
+    def allow_ip(self, IP):
+        """Returns True if that ip can connect - inbound or outbound"""
+        # TODO - add blacklist
+        # TODO: if verbose, say why
+        return IP not in self.connected_ips  # Allows if we're not connected already.
 
     def on_new_inbound(self, ip, port, version, sid):
-        # TODO
-        self.app_log.error("TODO Peers on_new_inbound {}:{} {}".format(ip, port, version))
+        self.app_log.info("on_new_inbound {}:{} {}".format(ip, port, version))
+        self.connected_ips.append(ip)
+        # TODO: maybe version is not to be stored, then we could only store ip:port as string to avoid dict overhead.
+        self.inbound[sid] = {"ip":ip, "port":port, "version": version}
 
     def on_close_inbound(self, sid):
-        # TODO - Only need ip because we only allow one in or out per ip
-        self.app_log.error("TODO Peers on_close_inbound {}".format(sid))
+        # We only allow one in or out per ip
+        self.app_log.info("on_close_inbound {}".format(sid))
+        info = self.inbound.pop(sid, None)
+        ip = info['ip']
+        self.connected_ips.remove(ip)
 
     def on_new_outbound(self, ip, port, version, sid):
-        # TODO
-        self.app_log.error("TODO Peers on_new_outbound {}:{} {}".format(ip, port, version))
+        self.app_log.info("on_new_outbound {}:{} {}".format(ip, port, version))
+        self.connected_ips.append(ip)
+        # TODO: maybe version is not to be stored, then we could only store ip:port as string to avoid dict overhead.
+        self.outbound[sid] = {"ip":ip, "port":port, "version": version}
 
     def on_close_outbound(self, sid):
-        # TODO - Only need ip because we only allow one in or out per ip
-        self.app_log.error("TODO Peers on_close_outbound {}".format(sid))
+        # We only allow one in or out per ip
+        self.app_log.info("on_close_outbound {}".format(sid))
+        info = self.outbound.pop(sid, None)
+        ip = info['ip']
+        self.connected_ips.remove(ip)
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
@@ -68,9 +91,8 @@ class Peers(object):
             self.peers=[Peer(self.config.serve_host, self.config.serve_port,
                              peer.get('bulletin_secret'))]
             return
-        if self.network == 'mainnet':
-            url = 'https://yadacoin.io/peers'
-        elif self.network == 'testnet':
+        url = 'https://yadacoin.io/peers'  # Default value
+        if self.network == 'testnet':
             url = 'http://yadacoin.io:8888/peers'
 
         res = await self.mongo.async_db.peers.find({'active': True, 'net':self.network}, {'_id': 0}).to_list(length=100)
@@ -91,18 +113,7 @@ class Peers(object):
             try:
                 response = await http_client.fetch(url)
                 seeds = json.loads(response.body.decode('utf-8'))['peers']
-                for peer in seeds:
-                    res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
-                    if res > 0:
-                        # We know him already, so it will be tested.
-                        # print('Known')
-                        pass
-                    else:
-                        await self.mongo.async_db.peers.insert_one({
-                            'host': peer['host'], 'port': peer['port'], 'net':self.network,
-                            'active': False, 'failed': 0, 'test_after': test_after})
-                        # print('Inserted')
-                        self.app_log.debug("Inserted new peer {}:{}".format(peer['host'], peer['port']))
+                await self.on_new_peer_list(seeds, test_after)
             except Exception as e:
                 self.app_log.warning("Error: {} on url {}".format(e, url))
             await self.mongo.async_db.config.replace_one({"last_seeded": {"$exists": True}}, {"last_seeded": str(test_after)}, upsert=True)
@@ -110,6 +121,22 @@ class Peers(object):
 
         # todo: probly more efficient not to rebuild the objects every time
         self.peers = [Peer(peer['host'], peer['port']) for peer in res]
+
+    async def on_new_peer_list(self, peer_list: list, test_after=None):
+        """Process an external peer list, and saves the new ones"""
+        if test_after is None:
+            test_after = int(time())  # new peers will be tested asap.
+        for peer in peer_list:
+            res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
+            if res > 0:
+                # We know him already, so it will be tested.
+               self.app_log.debug('Known peer {}:{}'.format(peer['host'], peer['port']))
+            else:
+                await self.mongo.async_db.peers.insert_one({
+                    'host': peer['host'], 'port': peer['port'], 'net': self.network,
+                    'active': False, 'failed': 0, 'test_after': test_after})
+                # print('Inserted')
+                self.app_log.debug("Inserted new peer {}:{}".format(peer['host'], peer['port']))
 
     async def test_some(self, count=1):
         """Tests count peers from our base, by priority"""
@@ -309,6 +336,7 @@ class Peer(object):
             # DUP CODE with initial seed - TODO
             http_client = AsyncHTTPClient()
             test_after = int(time()) + 30  # 2nd layer peers will be tested after 1st layer
+            # This "get peers from url" is used twice, could be factorized. But could be deprecated soon with websockets.
             url = "http://{}/get-peers".format(hp)
             try:
                 response = await http_client.fetch(url)
@@ -316,18 +344,7 @@ class Peer(object):
                     # Not available or too old a version, just ignore.
                     return
                 seeds = json.loads(response.body.decode('utf-8'))['peers']
-                for peer in seeds:
-                    res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
-                    if res > 0:
-                        # We know him already, so it will be tested.
-                        # print('Known')
-                        pass
-                    else:
-                        await self.mongo.async_db.peers.insert_one({
-                            'host': peer['host'], 'port': peer['port'], 'net': self.config.network,
-                            'active': False, 'failed': 0, 'test_after': test_after})
-                        # print('Inserted')
-                        self.app_log.debug("Inserted new peer {}:{}".format(peer['host'], peer['port']))
+                await self.config.peers.on_new_peer_list(seeds, test_after)
             except Exception as e:
                 self.app_log.warning("Error: {} on url {}".format(e, url))
         except Exception as e:

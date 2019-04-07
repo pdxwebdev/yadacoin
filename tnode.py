@@ -72,10 +72,8 @@ class NodeApplication(Application):
             mongo=mongo,
             peers=peers,
             version= __version__,
-            BU = yadacoin.blockchainutils.GLOBAL_BU
+            BU=yadacoin.blockchainutils.GLOBAL_BU
         )
-        # yadacoin.yadawebsockethandler.WS_CONFIG = config
-        # yadacoin.yadawebsockethandler.WS_MONGO = mongo
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
 
@@ -107,6 +105,16 @@ async def background_peers_testing(peers: Peers):
             app_log.error("{} in Background_consensus".format(e))
 
 
+async def background_status():
+    while True:
+        try:
+            await async_sleep(30)
+            status = {"peers": config.peers.get_status()}
+            app_log.info(json.dumps(status))
+        except Exception as e:
+            app_log.error("{} in Background_status".format(e))
+
+
 def configure_logging():
     global app_log, access_log
     ch = logging.StreamHandler(stdout)
@@ -123,6 +131,8 @@ def configure_logging():
     formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     rotateHandler.setFormatter(formatter)
     app_log.addHandler(rotateHandler)
+    if options.debug:
+        app_log.setLevel(logging.DEBUG)
 
     access_log = logging.getLogger("tornado.access")
     tornado.log.enable_pretty_logging()
@@ -181,6 +191,7 @@ async def main():
 
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
     tornado.ioloop.IOLoop.instance().add_callback(background_peers_testing, peers)
+    tornado.ioloop.IOLoop.instance().add_callback(background_status)
 
     my_peer = Peer.init_my_peer(config.network)
     config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()

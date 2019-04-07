@@ -25,6 +25,10 @@ class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
         print('error')
 
+    def on_peers(self, *args):
+        print("peers", args)
+
+
 
 if __name__ == "__main__":
 
@@ -38,9 +42,13 @@ if __name__ == "__main__":
 
     socketIO = SocketIO(options.ip, DEFAULT_PORT, wait_for_connection=False)
     chat_namespace = socketIO.define(ChatNamespace, '/chat')
-    sleep(1)
+    # sleep(1)  # not needed
+    # We have to id ourselve first of all
     chat_namespace.emit('hello', {"version": 2, "ip":"127.0.0.1", "port":DEFAULT_PORT})
+
+    chat_namespace.emit('get_peers', {})
+
     # chat_namespace.emit('newtransaction', {"data":0})
 
-
+    sleep(10)
     socketIO.disconnect()

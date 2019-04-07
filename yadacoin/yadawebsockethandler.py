@@ -3,7 +3,7 @@ Web socket handler for yadacoin
 """
 
 import json
-import socketio
+from socketio import AsyncServer, AsyncNamespace
 from logging import getLogger
 from yadacoin.transaction import Transaction
 
@@ -11,7 +11,8 @@ from yadacoin.config import get_config
 from yadacoin.blockchainutils import BU
 
 
-class ChatNamespace(socketio.AsyncNamespace):
+# TODO: rename "chat" to something more meaningful, like "yada" or "node" ?
+class ChatNamespace(AsyncNamespace):
 
     async def on_connect(self, sid, environ):
         if not 'config' in self.__dict__:
@@ -20,7 +21,10 @@ class ChatNamespace(socketio.AsyncNamespace):
             self.app_log = getLogger("tornado.application")
             self.peers = self.config.peers
         IP = environ['REMOTE_ADDR']
-        if not self.peers.allow_in(IP):
+        if self.peers.free_inbound_slots <= 0:
+            self.app_log.warning('No free slot, client rejected: {}'.format(IP))
+            return False  # This will close the socket
+        if not self.peers.allow_ip(IP):
             self.app_log.info('Client rejected: {}'.format(IP))
             return False  # This will close the socket
         await self.save_session(sid, {'IP': IP})
@@ -34,6 +38,10 @@ class ChatNamespace(socketio.AsyncNamespace):
     def on_disconnect(self, sid):
         if self.config.debug:
             self.app_log.info('Client disconnected: {}'.format(sid))
+        try:
+            self.config.peers.on_close_inbound(sid)
+        except Exception as e:
+            self.app_log.warning("Error on_disconnect: {}".format(e))
 
     async def force_close(self, sid):
         # TODO: can we force close the socket?
@@ -41,23 +49,19 @@ class ChatNamespace(socketio.AsyncNamespace):
         # This processes a disconnect event, but does not close the underlying socket. Client still can send messages.
 
     async def on_newtransaction(self, sid, data):
-        self.app_log.info('WS newtransaction: {} {}'.format(sid, json.dumps(data)))
+        # TODO: generic test, is the peer known and has rights for this command? Decorator?
+        if self.config.debug:
+            self.app_log.info('WS newtransaction: {} {}'.format(sid, json.dumps(data)))
         try:
             incoming_txn = Transaction.from_dict(BU().get_latest_block()['index'], data)
+            # print(incoming_txn.transaction_signature)
+            dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({'id': incoming_txn.transaction_signature})
+            if dup_check_count:
+                self.app_log.warning('found duplicate tx {}'.format(incoming_txn.transaction_signature))
+                raise Exception("duplicate tx {}".format(incoming_txn.transaction_signature))
+            await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
         except Exception as e:
-            self.app_log.warning('Bad tx: {}'.format(e))
-            await self.force_close(sid)
-
-        try:
-            print(incoming_txn.transaction_signature)
-            dup_check = get_config().mongo.db.miner_transactions.find({'id': incoming_txn.transaction_signature})
-            if dup_check.count():
-                self.app_log.warning('found duplicate tx')
-                raise Exception("duplicate")
-                get_config().mongo.db.miner_transactions.update(incoming_txn.to_dict(), incoming_txn.to_dict(),
-                                                                upsert=True)
-        except Exception as e:
-            self.app_log.warning("transaction is bad", e)
+            self.app_log.warning("Bad transaction: {}".format(e))
             await self.force_close(sid)
 
     async def on_hello(self, sid, data):
@@ -66,13 +70,31 @@ class ChatNamespace(socketio.AsyncNamespace):
             async with self.session(sid) as session:
                 if session['IP'] != data['ip']:
                     raise Exception("IP mismatch")
+                # TODO: test version also (ie: protocol version)
+                # If peer data seem correct, add to our pool of inbound peers
                 self.config.peers.on_new_inbound(session['IP'], data['port'], data['version'], sid)
         except Exception as e:
             self.app_log.warning("bad hello: {}".format(e))
             await self.force_close(sid)
 
+    async def on_peers(self, sid, data):
+        """we got a list of peers"""
+        self.app_log.info('WS peers: {} {}'.format(sid, json.dumps(data)))
+        # This will process and insert the new peers if any, then queue them for testing
+        await self.peers.on_new_peer_list(data['peers'])
+        #
 
-SIO = socketio.AsyncServer(async_mode='tornado')
+    async def on_get_peers(self, sid, data):
+        """peer ask for list of our list of peers"""
+        self.app_log.info('WS get-peers: {} {}'.format(sid, json.dumps(data)))
+        data = self.peers.to_dict()  # this only includes active peers from last refresh
+        # TODO: include refresh date?
+        await self.emit('peers', data)
+
+#
+
+
+SIO = AsyncServer(async_mode='tornado')
 # see https://github.com/miguelgrinberg/python-socketio/blob/master/examples/server/tornado/app.py
 
 SIO.register_namespace(ChatNamespace('/chat'))

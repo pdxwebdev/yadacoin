@@ -22,6 +22,8 @@ class Config(object):
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
         self.use_pnp = config.get('use_pnp', True)
+        self.max_inbound = config.get('max_inbound', 10)
+        self.max_outbound = config.get('max_outbound', 10)
         self.polling = config.get('polling', 30)
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
@@ -36,9 +38,9 @@ class Config(object):
         self.web_server_host = config['web_server_host']
         self.web_server_port = config['web_server_port']
         if config['peer_host'] == '0.0.0.0' or config['peer_host'] == 'localhost':
-            raise Exception("cannot use localhost or 0.0.0.0, must specify public ipv4 address")
+            raise Exception("Cannot use localhost or 0.0.0.0, must specify public ipv4 address")
         if config['peer_host'] == '[my public ip]':
-            raise Exception("please configure your peer_post to your public ipv4 address")
+            raise Exception("Please configure your peer_post to your public ipv4 address")
         self.peer_host = config['peer_host']
         self.peer_port = config['peer_port']
         self.serve_host = config['serve_host']

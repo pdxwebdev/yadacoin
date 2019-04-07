@@ -47,7 +47,7 @@ class Consensus(object):
             self.insert_genesis()
         
         self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
-        print("len", len(self.existing_blockchain.blocks))
+        # print("len", len(self.existing_blockchain.blocks))
 
     def output(self, string):
         sys.stdout.write(string)  # write the next character
@@ -78,7 +78,7 @@ class Consensus(object):
         self.latest_block = genesis_block
 
     def verify_existing_blockchain(self, reset=False):
-        self.app_log('verifying existing blockchain')
+        self.app_log.info('verifying existing blockchain')
         result = self.existing_blockchain.verify(self.output)
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -317,7 +317,7 @@ class Consensus(object):
             else:
                 extra_blocks = None
             if self.debug:
-                self.app_log.debug(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1))
+                self.app_log.debug("{} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
             try:
                 result = self.integrate_block_with_existing_chain(block, extra_blocks)
                 if result is False:
