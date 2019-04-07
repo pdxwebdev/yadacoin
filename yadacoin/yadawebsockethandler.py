@@ -56,6 +56,13 @@ async def newtransaction(sid, data):
     except Exception as e:
         raise Exception("transaction is bad", e)
 
+@SIO.on('hello', namespace='/chat')
+async def newtransaction(sid, data):
+    print("hello", data)
+    try:
+        pass
+    except Exception as e:
+        raise Exception("bad hello")
 
 # no newblock websocket event seems used
 """

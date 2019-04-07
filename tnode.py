@@ -34,6 +34,7 @@ from yadacoin.graphutils import GraphUtils
 
 __version__ = '0.0.9'
 
+PROTOCOL_VERSION = 2
 
 app_log = None
 access_log = None
@@ -83,6 +84,7 @@ async def background_consensus(consensus):
     if config.polling <= 0:
         app_log.error("No consensus polling")
         return
+    await async_sleep(5)
     while True:
         try:
             wait = await consensus.sync_bottom_up()
@@ -139,7 +141,7 @@ async def main():
 
     define("debug", default=False, help="debug mode", type=bool)
     define("verbose", default=False, help="verbose mode", type=bool)
-    define("network", default='mainnet', help="mainnet, testnet or regnet", type=str)
+    define("network", default='', help="Force mainnet, testnet or regnet", type=str)
     define("reset", default=False, help="If blockchain is invalid, truncate at error block", type=bool)
     define("config", default='config/config.json', help="Config file location, default is 'config/config.json'",
            type=str)
@@ -157,6 +159,11 @@ async def main():
         config = yadacoin.config.Config(json.loads(f.read()))
         # Sets the global var for all objects
         yadacoin.config.CONFIG = config
+        config.debug = options.debug
+        # force network, command line one takes precedence
+        if options.network != '':
+            config.network = options.network
+        config.protocol_version = PROTOCOL_VERSION
 
     mongo = Mongo()
     config.mongo = mongo

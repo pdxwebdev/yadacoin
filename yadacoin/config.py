@@ -50,6 +50,8 @@ class Config(object):
         self.peers = None
         self.BU = None
         self.GU = None
+        self.debug = False
+        self.protocol_version = 1
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None):

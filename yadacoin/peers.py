@@ -1,4 +1,5 @@
 import json
+import requests
 from time import time
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from asyncio import sleep as async_sleep, gather
@@ -20,6 +21,8 @@ class Peers(object):
         self.network = self.config.network
         self.my_peer = None
         self.app_log = getLogger("tornado.application")
+        self.inbound = []  # a list of inbound streams
+        self.outbound = []  # a list of outbound streams
 
     def init_local(self):
         raise RuntimeError("Peers, init_local is deprecated")
@@ -32,6 +35,22 @@ class Peers(object):
         except:
             pass
         return self.to_json()
+
+    def on_new_inbound(self, ip, port, version, stream):
+        # TODO
+        self.app_log.error("TODO Peers on_new_inbound {}:{} {}".format(ip, port, version))
+
+    def on_close_inbound(self, ip):
+        # TODO - Only need ip because we only allow one in or out per ip
+        self.app_log.error("TODO Peers on_close_inbound {}".format(ip))
+
+    def on_new_outbound(self, ip, port, version, stream):
+        # TODO
+        self.app_log.error("TODO Peers on_new_outbound {}:{} {}".format(ip, port, version))
+
+    def on_close_outbound(self, ip):
+        # TODO - Only need ip because we only allow one in or out per ip
+        self.app_log.error("TODO Peers on_close_outbound {}".format(ip))
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
@@ -133,7 +152,7 @@ class Peers(object):
 class Peer(object):
     """An individual Peer object"""
 
-    def __init__(self, host, port, bulletin_secret=None, is_me=False):
+    def __init__(self, host, port, bulletin_secret=None, is_me=False, stream=None, inbound=False):
         self.config = get_config()
         self.mongo = self.config.mongo
         self.host = host
@@ -141,6 +160,8 @@ class Peer(object):
         self.bulletin_secret = bulletin_secret
         self.is_me = is_me
         self.app_log = getLogger("tornado.application")
+        self.stream = stream
+        self.inbound = inbound
 
     @classmethod
     def from_string(cls, peerstr):
@@ -151,6 +172,7 @@ class Peer(object):
             return cls(None, None, is_me=True)
 
     def report(self):
+        raise RuntimeError("Peers, report is deprecated")
         try:
             if self.config.network == 'regnet':
                 return
@@ -171,13 +193,16 @@ class Peer(object):
             pass
 
     def is_broken(self):
+        raise RuntimeError("Peers, is_broken is deprecated")
         broken_test = [x for x in self.mongo.db.broken_peers.find({"peer": self.to_string()})]
         return broken_test and broken_test[0]['broken']
 
     def set_broken(self):
+        raise RuntimeError("Peers, set_broken is deprecated")
         self.mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": True}, upsert=True)
 
     def unset_broken(self):
+        raise RuntimeError("Peers, unset_broken is deprecated")
         self.mongo.db.broken_peers.update({"peer": self.to_string()}, {"peer": self.to_string(), "broken": False}, upsert=True)
 
     @classmethod
@@ -225,10 +250,11 @@ class Peer(object):
         config.mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer, 'network': config.network}, upsert=True)
         if not config.post_peer:
             return
-        """
-        if network == 'mainnet':
-            url = 'https://yadacoin.io/peers'
-        elif network == 'testnet':
+        if config.debug:
+            # Do not report debug nodes
+            return
+        url = 'https://yadacoin.io/peers'  # default url
+        if network == 'testnet':
             url = 'http://yadacoin.io:8888/peers'
         try:
             requests.post(
@@ -242,10 +268,9 @@ class Peer(object):
                     "Content-Type": "application/json"
                 }
             )
-        except:
+        except:  # TODO: catch specific exception
             print('ERROR: failed to get peers, exiting...')
             exit()
-        """
 
     def to_dict(self):
         return {
@@ -290,7 +315,7 @@ class Peer(object):
                         pass
                     else:
                         await self.mongo.async_db.peers.insert_one({
-                            'host': peer['host'], 'port': peer['port'], 'net': self.network,
+                            'host': peer['host'], 'port': peer['port'], 'net': self.config.network,
                             'active': False, 'failed': 0, 'test_after': test_after})
                         # print('Inserted')
                         self.app_log.debug("Inserted new peer {}:{}".format(peer['host'], peer['port']))

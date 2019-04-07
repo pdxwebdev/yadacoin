@@ -47,6 +47,7 @@ class Consensus(object):
             self.insert_genesis()
         
         self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
+        print("len", len(self.existing_blockchain.blocks))
 
     def output(self, string):
         sys.stdout.write(string)  # write the next character
