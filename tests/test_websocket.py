@@ -9,6 +9,8 @@ Crude websocket client for tests
 from tornado.options import define, options
 from socketIO_client import SocketIO, BaseNamespace
 
+from time import sleep
+
 # TODO: rewrite using the https://python-socketio.readthedocs.io/en/latest/client.html
 # So not to require two different libs for client and server.
 
@@ -19,6 +21,7 @@ DEFAULT_PORT = 8000
 
 
 class ChatNamespace(BaseNamespace):
+
     def on_error(self, event, *args):
         print('error')
 
@@ -35,6 +38,7 @@ if __name__ == "__main__":
 
     socketIO = SocketIO(options.ip, DEFAULT_PORT, wait_for_connection=False)
     chat_namespace = socketIO.define(ChatNamespace, '/chat')
+    sleep(1)
     chat_namespace.emit('hello', {"version": 2, "ip":"127.0.0.1", "port":DEFAULT_PORT})
     # chat_namespace.emit('newtransaction', {"data":0})
 

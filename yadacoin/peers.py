@@ -36,21 +36,26 @@ class Peers(object):
             pass
         return self.to_json()
 
-    def on_new_inbound(self, ip, port, version, stream):
+    def allow_in(self, IP):
+        """Returns True if that ip can inbound connect"""
+        # TODO
+        return True
+
+    def on_new_inbound(self, ip, port, version, sid):
         # TODO
         self.app_log.error("TODO Peers on_new_inbound {}:{} {}".format(ip, port, version))
 
-    def on_close_inbound(self, ip):
+    def on_close_inbound(self, sid):
         # TODO - Only need ip because we only allow one in or out per ip
-        self.app_log.error("TODO Peers on_close_inbound {}".format(ip))
+        self.app_log.error("TODO Peers on_close_inbound {}".format(sid))
 
-    def on_new_outbound(self, ip, port, version, stream):
+    def on_new_outbound(self, ip, port, version, sid):
         # TODO
         self.app_log.error("TODO Peers on_new_outbound {}:{} {}".format(ip, port, version))
 
-    def on_close_outbound(self, ip):
+    def on_close_outbound(self, sid):
         # TODO - Only need ip because we only allow one in or out per ip
-        self.app_log.error("TODO Peers on_close_outbound {}".format(ip))
+        self.app_log.error("TODO Peers on_close_outbound {}".format(sid))
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
@@ -152,7 +157,10 @@ class Peers(object):
 class Peer(object):
     """An individual Peer object"""
 
-    def __init__(self, host, port, bulletin_secret=None, is_me=False, stream=None, inbound=False):
+    # slots allow to lower ram usage for objects with many instances
+    __slots__ = ('config', 'mongo', 'host', 'port', 'bulletin_secret', 'is_me', 'app_log', 'stream', 'inbound', 'sid')
+
+    def __init__(self, host, port, bulletin_secret=None, is_me=False, stream=None, inbound=False, sid=None):
         self.config = get_config()
         self.mongo = self.config.mongo
         self.host = host
@@ -160,8 +168,9 @@ class Peer(object):
         self.bulletin_secret = bulletin_secret
         self.is_me = is_me
         self.app_log = getLogger("tornado.application")
-        self.stream = stream
-        self.inbound = inbound
+        self.stream = stream  # for async http
+        self.inbound = inbound  # Is this an inbound connection? If it is, we can't rely on the port.
+        self.sid = sid  # This is the websocket session id
 
     @classmethod
     def from_string(cls, peerstr):
