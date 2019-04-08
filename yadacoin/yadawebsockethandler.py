@@ -12,6 +12,9 @@ from yadacoin.blockchainutils import BU
 from yadacoin.poolnamespace import PoolNamespace
 
 
+SIO = None
+
+
 # TODO: rename "chat" to something more meaningful, like "yada" or "node" ?
 class ChatNamespace(AsyncNamespace):
 
@@ -96,12 +99,22 @@ class ChatNamespace(AsyncNamespace):
 #
 
 
-SIO = AsyncServer(async_mode='tornado')
-# see https://github.com/miguelgrinberg/python-socketio/blob/master/examples/server/tornado/app.py
+def get_sio():
+    global SIO
+    if SIO is None:
+        ws_init()
+    return SIO
 
-SIO.register_namespace(ChatNamespace('/chat'))
-# See https://python-socketio.readthedocs.io/en/latest/server.html#namespaces
-SIO.register_namespace(PoolNamespace('/pool'))
+
+def ws_init():
+    global SIO
+    SIO = AsyncServer(async_mode='tornado')
+    # see https://github.com/miguelgrinberg/python-socketio/blob/master/examples/server/tornado/app.py
+    SIO.register_namespace(ChatNamespace('/chat'))
+    # See https://python-socketio.readthedocs.io/en/latest/server.html#namespaces
+    if get_config().max_miners > 0:
+        # Only register pool namespace if we want to run a pool
+        SIO.register_namespace(PoolNamespace('/pool'))
 
 
 

@@ -15,9 +15,9 @@ import tornado.locks
 from sys import exit, stdout
 from asyncio import sleep as async_sleep
 import socketio
+from hashlib import sha256
 
 import yadacoin.blockchainutils
-# import yadacoin.yadawebsockethandler
 import yadacoin.config
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
 from yadacoin.graphhandlers import GRAPH_HANDLERS
@@ -25,14 +25,14 @@ from yadacoin.nodehandlers import NODE_HANDLERS
 from yadacoin.poolhandlers import POOL_HANDLERS
 from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
-from yadacoin.yadawebsockethandler import SIO
+from yadacoin.yadawebsockethandler import get_sio, ws_init
 from yadacoin.consensus import Consensus
 from yadacoin.mongo import Mongo
 from yadacoin.peers import Peer, Peers
 from yadacoin.graphutils import GraphUtils
 
 
-__version__ = '0.0.9'
+__version__ = '0.0.10'
 
 PROTOCOL_VERSION = 2
 
@@ -47,13 +47,14 @@ class NodeApplication(Application):
         static_path = path.join(path.dirname(__file__), 'static')
         self.default_handlers = [
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
-            (r"/socket.io/", socketio.get_tornado_handler(SIO))
+            (r"/socket.io/", socketio.get_tornado_handler(get_sio()))
         ]
         self.default_handlers.extend(NODE_HANDLERS)
         self.default_handlers.extend(GRAPH_HANDLERS)
         # TODO: use config to enable/disable specific routes
         self.default_handlers.extend(EXPLORER_HANDLERS)
-        self.default_handlers.extend(POOL_HANDLERS)
+        if config.max_miners > 0:
+            self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)
         self.default_handlers.extend(WEB_HANDLERS)
 
@@ -62,7 +63,7 @@ class NodeApplication(Application):
             template_path=path.join(path.dirname(__file__), 'templates'),
             static_path=path.join(path.dirname(__file__), static_path),
             xsrf_cookies=True,
-            cookie_secret="__TODO:_GENERATE_YOUR_OWN_RANDOM_VALUE_HERE__",
+            cookie_secret=sha256(config.private_key.encode('utf-8')).hexdigest(),
             compress_response=True,
             debug=options.debug,  # Also activates auto reload
             serve_traceback=options.debug,
@@ -72,6 +73,7 @@ class NodeApplication(Application):
             mongo=mongo,
             peers=peers,
             version= __version__,
+            protocol_version=PROTOCOL_VERSION,
             BU=yadacoin.blockchainutils.GLOBAL_BU
         )
         handlers = self.default_handlers.copy()
@@ -186,8 +188,17 @@ async def main():
 
     consensus = Consensus(options.debug, peers)
     if options.verify:
-        app_log.info("Verifying existing blockchain".format(config.serve_host, config.serve_port))
+        app_log.info("Verifying existing blockchain")
         consensus.verify_existing_blockchain(reset=options.reset)
+    else:
+        app_log.info("Verification of existing blockchain skipped by config")
+
+    if config.max_miners > 0:
+        app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
+    else:
+        app_log.info("MiningPool disabled by config")
+
+    ws_init()
 
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
     tornado.ioloop.IOLoop.instance().add_callback(background_peers_testing, peers)

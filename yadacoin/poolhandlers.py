@@ -27,6 +27,7 @@ class PoolHandler(BaseHandler):
             'special_min': self.mp.block_factory.block.special_min,
             'header': self.mp.block_factory.block.header,
             'version': self.mp.block_factory.block.version,
+            'height': self.mp.block_factory.block.index,  # This is the height of the one we are mining
         })
 
 

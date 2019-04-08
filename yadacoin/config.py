@@ -27,6 +27,7 @@ class Config(object):
         self.use_pnp = config.get('use_pnp', True)
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
+        self.max_miners = config.get('max_miners', -1)
         self.polling = config.get('polling', 30)
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
