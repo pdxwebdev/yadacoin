@@ -72,7 +72,11 @@ class MiningPool(object):
             pass
 
     def refresh(self, block=None):
-        # Peers.init(self.config.network)
+        """Refresh computes a new bloc to mine. The block is stored in self.block_factory.block and contains
+        the transactions at the time of the refresh. Since tx hash is in the header, a refresh here means we have to
+        trigger the events for the pools, even if the block index did not change."""
+        # TODO: to be taken care of, no refresh atm between blocks
+
         if block is None:
             block = self.config.BU.get_latest_block()
         if block:
@@ -91,13 +95,13 @@ class MiningPool(object):
             self.height = block.index
 
         try:
-            # TODO: store pending transactions for a while
             self.block_factory = BlockFactory(
                 transactions=self.get_pending_transactions(),
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,
                 index=self.height)
-            
+
+            # TODO: centralize handling of min target
             self.set_target(int(self.block_factory.block.time))
             if not self.block_factory.block.special_min:
                 self.set_target_from_last_non_special_min(block)
