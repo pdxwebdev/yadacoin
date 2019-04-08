@@ -24,22 +24,26 @@ class GetBlocksHandler(BaseHandler):
 
     async def get(self):
         start_index = int(self.get_argument("start_index", 0))
-        end_index = int(self.get_argument("end_index", 0))
-        # TODO: safety, add bound on block# to fetch
-        # TODO: global chain object with cache of current block height,
+        # safety, add bound on block# to fetch
+        end_index = min(int(self.get_argument("end_index", 0)), start_index + 200)  # TODO: store 200 as chain param
+        # global chain object with cache of current block height,
         # so we can instantly answer to pulling requests without any db request
-        blocks = self.mongo.async_db.blocks.find({
-            '$and': [
-                {'index':
-                    {'$gte': start_index}
+        if start_index > self.yadacoin_config.BU.get_latest_block()['index']:
+            # early exit without request
+            self.render_as_json([])
+        else:
+            blocks = self.mongo.async_db.blocks.find({
+                '$and': [
+                    {'index':
+                        {'$gte': start_index}
 
-                },
-                {'index':
-                    {'$lte': end_index}
-                }
-            ]
-        }, {'_id': 0}).sort([('index',1)])
-        self.render_as_json(await blocks.to_list(length=500))
+                    },
+                    {'index':
+                        {'$lte': end_index}
+                    }
+                ]
+            }, {'_id': 0}).sort([('index',1)])
+            self.render_as_json(await blocks.to_list(length=500))
 
 
 class GetBlockHandler(BaseHandler):

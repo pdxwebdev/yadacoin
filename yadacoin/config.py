@@ -52,6 +52,8 @@ class Config(object):
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
+        self.protocol_version = 1
+        # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
         self.peers = None
         self.BU = None
@@ -59,7 +61,6 @@ class Config(object):
         self.SIO = None
         self.debug = False
         self.mp = None
-        self.protocol_version = 1
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event
