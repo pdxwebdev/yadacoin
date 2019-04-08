@@ -2,19 +2,20 @@ import time
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 
-from yadacoin.peers import Peers, Peer
+from yadacoin.config import get_config
+# from yadacoin.peers import Peers, Peer
 from yadacoin.block import Block, BlockFactory
 from yadacoin.blockchain import Blockchain
-from yadacoin.blockchainutils import BU
+# from yadacoin.blockchainutils import BU
 from yadacoin.transaction import Transaction, MissingInputTransactionException, InvalidTransactionException, \
     InvalidTransactionSignatureException
 from yadacoin.fastgraph import FastGraph
 
 
 class MiningPool(object):
-    def __init__(self, config, mongo):
-        self.config = config
-        self.mongo = mongo
+    def __init__(self):
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.block_factory = None
 
         if self.config.network == 'mainnet':
@@ -27,8 +28,8 @@ class MiningPool(object):
         self.max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
 
     def refresh(self):
-        Peers.init(self.config.network)
-        block = BU.get_latest_block()
+        # Peers.init(self.config.network)
+        block = self.config.BU.get_latest_block()
         if block:
             block = Block.from_dict(block)
             self.height = block.index + 1
@@ -41,7 +42,7 @@ class MiningPool(object):
                 'id': genesis_block.signature,
                 'index': 0
                 })
-            block = Block.from_dict(BU.get_latest_block())
+            block = Block.from_dict(self.config.BU.get_latest_block())
             self.height = block.index
 
         try:
@@ -59,7 +60,7 @@ class MiningPool(object):
             raise e
 
     def set_target(self, to_time):
-        latest_block = BU.get_latest_block()
+        latest_block = self.config.BU.get_latest_block()
         if self.block_factory.block.index >= 38600:
             if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
                 target_factor = (int(to_time) - int(latest_block['time'])) / self.max_block_time
@@ -104,9 +105,10 @@ class MiningPool(object):
         )
     
     def nonce_generator(self):
-        latest_block_index = BU.get_latest_block()['index']
+        latest_block_index = self.config.BU.get_latest_block()['index']
+        start_nonce = 0
         while 1:
-            next_latest_block = BU.get_latest_block()
+            next_latest_block = self.config.BU.get_latest_block()
             next_latest_block_index = next_latest_block['index']
             if latest_block_index < next_latest_block_index:
                 latest_block_index = next_latest_block_index
@@ -148,9 +150,9 @@ class MiningPool(object):
                 elif isinstance(txn, Transaction):
                     transaction_obj = txn
                 elif isinstance(txn, dict) and 'signatures' in txn:
-                    transaction_obj = FastGraph.from_dict(BU.get_latest_block()['index'], txn)
+                    transaction_obj = FastGraph.from_dict(self.config.BU.get_latest_block()['index'], txn)
                 elif isinstance(txn, dict):
-                    transaction_obj = Transaction.from_dict(BU.get_latest_block()['index'], txn)
+                    transaction_obj = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
                 else:
                     print('transaction unrecognizable, skipping')
                     continue
@@ -164,8 +166,8 @@ class MiningPool(object):
 
                 if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
                     for input_id in transaction_obj.inputs:
-                        input_block = BU.get_transaction_by_id(input_id.id, give_block=True)
-                        if input_block and input_block['index'] > (BU.get_latest_block()['index'] - 2016):
+                        input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
+                        if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
                             continue
 
                 #check double spend
@@ -174,7 +176,7 @@ class MiningPool(object):
                     unspent_ids = unspent_indexed[address]
                 else:
                     needed_value = sum([float(x.value) for x in transaction_obj.outputs]) + float(transaction_obj.fee)
-                    res = BU.get_wallet_unspent_transactions(address, needed_value=needed_value)
+                    res = self.config.BU.get_wallet_unspent_transactions(address, needed_value=needed_value)
                     unspent_ids = [x['id'] for x in res]
                     unspent_indexed[address] = unspent_ids
 
@@ -228,20 +230,23 @@ class MiningPool(object):
                 print(e)
 
     def broadcast_block(self, block):
-        Peers.init(self.config.network)
-        Peer.save_my_peer(self.config.network)
+        # Peers.init(self.config.network)
+        # Peer.save_my_peer(self.config.network)
         print('\r\nCandidate submitted for index:', block.index)
         print('\r\nTransactions:')
         for x in block.transactions:
             print(x.transaction_signature)
         self.mongo.db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
         print('\r\nSent block to:')
-        for peer in Peers.peers:
+        # TODO: convert to async // send
+        # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
+        # Then maybe a list of "root" nodes (explorer, known pools) just to make sure.
+        for peer in self.config.peers.peers:
             if peer.is_me:
                 continue
             try:
                 block_dict = block.to_dict()
-                block_dict['peer'] = Peers.my_peer
+                block_dict['peer'] = self.config.peers.my_peer
                 requests.post(
                     'http://{peer}/newblock'.format(
                         peer=peer.host + ":" + str(peer.port)

@@ -25,7 +25,8 @@ class PoolHandler(BaseHandler):
             'nonces': next(self.mp.gen),
             'target': self.mp.block_factory.block.target,
             'special_min': self.mp.block_factory.block.special_min,
-            'header': self.mp.block_factory.block.header
+            'header': self.mp.block_factory.block.header,
+            'version': self.mp.block_factory.block.version,
         })
 
 

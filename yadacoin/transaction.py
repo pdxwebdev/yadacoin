@@ -209,8 +209,6 @@ class TransactionFactory(object):
 
     def generate_transaction(self):
         return Transaction(
-            self.config,
-            self.mongo,
             self.block_height,
             self.time,
             self.rid,
