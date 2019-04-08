@@ -65,6 +65,8 @@ class MiningPool(object):
             info = self.inbound.pop(sid, None)
             ip = info['ip']
             self.connected_ips[ip] -= 1
+            if self.connected_ips[ip] <= 0:
+                self.connected_ips.pop(ip)
         except Exception as e:
             print(e)
             pass
