@@ -73,9 +73,8 @@ class Config(object):
         self.mp.refresh(block_dict)
         # Update the miners (websockets)
         await self.SIO.emit('header', data=self.mp.block_to_mine_info(), namespace='/pool')
-
-        # broadcast to the peers we're connected to (clients of our ws server)
-        # broadcast to the peers we're connected to (ws servers we're clients of)
+        # TODO: broadcast to the peers we're connected to (clients of our ws server)
+        # TODO: broadcast to the peers we're connected to (ws servers we're clients of)
 
 
     def get_status(self):
