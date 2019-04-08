@@ -140,9 +140,9 @@ class Consensus(object):
                 })
         return sorted(ranks, key=lambda x: x['target'])
 
-    def get_next_consensus_block_from_local(self, block):
+    async def get_next_consensus_block_from_local(self, block):
         #table cleanup
-        new_block = self.mongo.db.consensus.find_one({
+        new_block = await self.mongo.async_db.consensus.find_one({
             'block.prevHash': block.hash,
             'block.index': (block.index + 1),
             'block.version': self.config.BU.get_version_for_height((block.index + 1))
@@ -155,16 +155,16 @@ class Consensus(object):
                 return None
         return None
 
-    def get_previous_consensus_block_from_local(self, block, peer):
+    async def get_previous_consensus_block_from_local(self, block, peer):
         #table cleanup
-        new_block = self.mongo.db.consensus.find_one({
+        new_block = await self.mongo.async_db.consensus.find_one({
             'block.hash': block.prev_hash,
             'block.index': (block.index - 1),
             'block.version': self.config.BU.get_version_for_height((block.index - 1)),
             'ignore': {'$ne': True}
         })
         if new_block:
-            new_block = Block.from_dict( new_block['block'])
+            new_block = Block.from_dict(new_block['block'])
             if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
                 return new_block
             else:
@@ -172,6 +172,7 @@ class Consensus(object):
         return None
 
     def get_previous_consensus_block_from_remote(self, block, peer):
+        # TODO: async conversion
         retry = 0
         while True:
             try:
@@ -188,7 +189,7 @@ class Consensus(object):
             try:
                 if self.debug:
                     print('response code: ', res.status_code)
-                new_block = Block.from_dict( json.loads(res.content))
+                new_block = Block.from_dict(json.loads(res.content))
                 if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
                     return new_block
                 else:
@@ -341,9 +342,9 @@ class Consensus(object):
                     {'$set': {'ignore': True}}
                 )
             except ForkException as e:
-                self.retrace(block, peer)
+                await self.retrace(block, peer)
             except IndexError as e:
-                self.retrace(block, peer)
+                await self.retrace(block, peer)
             except Exception as e:
                 print("348", e)
                 exc_type, exc_obj, exc_tb = exc_info()
@@ -444,19 +445,21 @@ class Consensus(object):
             difficulty += (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target)
         return difficulty
 
-    def retrace(self, block, peer):
+    async def retrace(self, block, peer):
+        """We got a non compatible block. Retrace other chains to find a common ancestor and evaluate chains."""
+        # TODO: more async conversion TBD here. Low priority since not called often atm.
+        # TODO: cleanup print and logging
         try:
             if self.debug:
-                self.app_log.info("retracing...")
-            blocks = []
-            blocks.append(block)
+                self.app_log.info("Retracing...")
+            blocks = [block]
             while 1:
                 if self.debug:
                     self.app_log.info(block.hash)
                     self.app_log.info(block.index)
                 # get the previous block from either the consensus collection in mongo
                 # or attempt to get the block from the remote peer
-                previous_consensus_block = self.get_previous_consensus_block_from_local(block, peer)
+                previous_consensus_block = await self.get_previous_consensus_block_from_local(block, peer)
                 if previous_consensus_block:
                         block = previous_consensus_block
                         blocks.append(block)
@@ -474,7 +477,7 @@ class Consensus(object):
                         block = previous_consensus_block
                         blocks.append(block)
                         try:
-                            self.insert_consensus_block(block, peer)
+                            await self.insert_consensus_block(block, peer)
                         except Exception as e:
                             if self.debug:
                                 print(e) # we should do something here to keep it from looping on this failed block
@@ -496,7 +499,7 @@ class Consensus(object):
                     blocks = sorted(blocks, key=lambda x: x.index)
                     block_for_next = blocks[-1]
                     while 1:
-                        next_block = self.get_next_consensus_block_from_local(block_for_next)
+                        next_block = await self.get_next_consensus_block_from_local(block_for_next)
                         if next_block:
                             blocks.append(next_block)
                             block_for_next = next_block
@@ -557,7 +560,7 @@ class Consensus(object):
                             try:
                                 if block.index == 0:
                                     continue
-                                self.integrate_block_with_existing_chain(block)
+                                await self.integrate_block_with_existing_chain(block)
                                 if self.debug:
                                     print('inserted ', block.index)
                             except ForkException as e:
@@ -569,7 +572,7 @@ class Consensus(object):
                                         try:
                                             result = self.integrate_block_with_existing_chain(back_one_block)
                                             if result:
-                                                self.integrate_block_with_existing_chain(block)
+                                                await self.integrate_block_with_existing_chain(block)
                                                 break
                                         except ForkException as e:
                                             pass
