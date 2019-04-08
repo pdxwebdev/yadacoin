@@ -1,6 +1,7 @@
+from yadacoin.chain import CHAIN
+from yadacoin.config import get_config
 from yadacoin.block import Block, BlockFactory
 from yadacoin.transaction import InvalidTransactionException, MissingInputTransactionException
-from yadacoin.config import get_config
 
 
 class BlockChainException(Exception):
@@ -91,7 +92,7 @@ class Blockchain(object):
         difficulty = 0
         for block in self.blocks:
             target = int(block.hash, 16)
-            difficulty += (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target)
+            difficulty += CHAIN.MAX_TARGET - target
         return difficulty
 
     def get_highest_block_height(self):

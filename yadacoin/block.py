@@ -8,10 +8,11 @@ from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 
+from yadacoin.chain import CHAIN
+from yadacoin.config import get_config
 from yadacoin.fastgraph import FastGraph
 from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, ExternalInput
 # from yadacoin.blockchainutils import BU
-from yadacoin.config import get_config
 
 
 def quantize_eight(value):
@@ -174,7 +175,7 @@ class BlockFactory(object):
     @classmethod
     def get_target(cls, height, last_block, block, blockchain):
         # change target
-        max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        max_target = CHAIN.MAX_TARGET
         max_block_time = 600
         retarget_period = 2016  # blocks
         two_weeks = 1209600  # seconds
@@ -238,7 +239,7 @@ class BlockFactory(object):
     @classmethod
     def mine(cls, header, target, nonces, special_min=False):
 
-        lowest = (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff, 0, '')
+        lowest = (CHAIN.MAX_TARGET, 0, '')
         nonce = nonces[0]
         while nonce < nonces[1]:
             hash_test = cls.generate_hash_from_header(header, str(nonce))
@@ -261,7 +262,7 @@ class BlockFactory(object):
             "id" : "MEUCIQDDicnjg9DTSnGOMLN3rq2VQC1O9ABDiXygW7QDB6SNzwIga5ri7m9FNlc8dggJ9sDg0QXUugrHwpkVKbmr3kYdGpc=",
             "merkleRoot" : "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546",
             "index" : 0,
-            "target" : "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+            "target" : CHAIN.MAX_TARGET_HEX,
             "special_min" : False,
             "version" : "1",
             "transactions" : [ 

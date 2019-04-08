@@ -1,11 +1,12 @@
 from socketIO_client import SocketIO, BaseNamespace
 
+from yadacoin.chain import CHAIN
+from yadacoin.config import get_config
 from yadacoin.peers import Peers
 from yadacoin.block import Block
 # from yadacoin.blockchainutils import BU
 from yadacoin.transaction import Transaction, TransactionFactory, Input, Output, NotEnoughMoneyException
 from yadacoin.transactionutils import TU
-from yadacoin.config import get_config
 
 
 class ChatNamespace(BaseNamespace):
@@ -31,7 +32,7 @@ class PoolPayer(object):
         difficulty = 0
         for block in blocks:
             target = int(block['hash'], 16)
-            difficulty += (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target)
+            difficulty += CHAIN.MAX_TARGET - target
         return difficulty
 
     def get_share_list_for_height(self, index):

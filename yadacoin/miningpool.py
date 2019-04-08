@@ -3,6 +3,7 @@ import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from logging import getLogger
 
+from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 # from yadacoin.peers import Peers, Peer
 from yadacoin.block import Block, BlockFactory
@@ -26,7 +27,7 @@ class MiningPool(object):
             self.max_block_time = 10
         elif self.config.network == 'regnet':
             self.max_block_time = 0
-        self.max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        self.max_target = CHAIN.MAX_TARGET
         self.inbound = {}
         self.connected_ips = {}
 
@@ -146,7 +147,7 @@ class MiningPool(object):
             res = self.mongo.db.blocks.find_one({
                 'index': self.height - i,
                 'special_min': False,
-                'target': {'$ne': 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'}
+                'target': {'$ne': CHAIN.MAX_TARGET_HEX}
             })
             if res:
                 chain = [x for x in self.mongo.db.blocks.find({

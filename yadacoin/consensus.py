@@ -6,13 +6,14 @@ import logging
 import requests
 import datetime
 from asyncio import sleep as async_sleep
+
+from yadacoin.chain import CHAIN
+from yadacoin.config import get_config
 from yadacoin.peers import Peers, Peer
-# from yadacoin.blockchainutils import BU
 from yadacoin.blockchain import Blockchain
 from yadacoin.block import Block, BlockFactory
 from yadacoin.transaction import InvalidTransactionException, InvalidTransactionSignatureException, \
     MissingInputTransactionException, NotEnoughMoneyException
-from yadacoin.config import get_config
 
 
 class BadPeerException(Exception):
@@ -29,7 +30,7 @@ class ForkException(Exception):
 
 class Consensus(object):
 
-    lowest = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    lowest = CHAIN.MAX_TARGET
 
     def __init__(self, debug=False, peers=None):
         self.app_log = logging.getLogger("tornado.application")
@@ -439,16 +440,18 @@ class Consensus(object):
             raise
     
     def get_difficulty(self, blocks):
+        """Computes a list of blocks difficulty. This is the sum of the distance to the highest possible target"""
         difficulty = 0
         for block in blocks:
             target = int(block.hash, 16)
-            difficulty += (0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff - target)
+            difficulty += (CHAIN.MAX_TARGET - target)
         return difficulty
 
     async def retrace(self, block, peer):
         """We got a non compatible block. Retrace other chains to find a common ancestor and evaluate chains."""
         # TODO: more async conversion TBD here. Low priority since not called often atm.
         # TODO: cleanup print and logging
+        # TODO: limit possible retrace blocks vs max(known chains) - store in chain config
         try:
             if self.debug:
                 self.app_log.info("Retracing...")
