@@ -56,9 +56,27 @@ class Config(object):
         self.peers = None
         self.BU = None
         self.GU = None
+        self.SIO = None
         self.debug = False
         self.mp = None
         self.protocol_version = 1
+
+    async def on_new_block(self, block):
+        """Dispatcher for the new bloc event
+        This is called with a block object when we insert a new one in the chain."""
+        # Update BU
+        # We can either invalidate, or directly set the block as cached one.
+        # self.BU.invalidate_last_block()
+        block_dict = block.to_dict()
+        self.BU.set_latest_block(block_dict)  # Warning, this is a dict, not a Block!
+        # Update the miners (/pool route) is done via latest_block => move to event to MiningPool stored by config
+        self.mp.refresh(block_dict)
+        # Update the miners (websockets)
+        await self.SIO.emit('header', data=self.mp.block_to_mine_info(), namespace='/pool')
+
+        # broadcast to the peers we're connected to (clients of our ws server)
+        # broadcast to the peers we're connected to (ws servers we're clients of)
+
 
     def get_status(self):
         pool_status = 'N/A'

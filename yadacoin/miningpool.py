@@ -71,9 +71,10 @@ class MiningPool(object):
             print(e)
             pass
 
-    def refresh(self):
+    def refresh(self, block=None):
         # Peers.init(self.config.network)
-        block = self.config.BU.get_latest_block()
+        if block is None:
+            block = self.config.BU.get_latest_block()
         if block:
             block = Block.from_dict(block)
             self.height = block.index + 1
@@ -90,6 +91,7 @@ class MiningPool(object):
             self.height = block.index
 
         try:
+            # TODO: store pending transactions for a while
             self.block_factory = BlockFactory(
                 transactions=self.get_pending_transactions(),
                 public_key=self.config.public_key,
@@ -103,13 +105,24 @@ class MiningPool(object):
         except Exception as e:
             raise e
 
+    def block_to_mine_info(self):
+        """Returns info for current block to mine"""
+        res = {
+            'target': hex(self.block_factory.block.target)[2:].rjust(64, '0'),  # target is now in hex format
+            'special_min': self.block_factory.block.special_min,
+            'header': self.block_factory.block.header,
+            'version': self.block_factory.block.version,
+            'height': self.block_factory.block.index,  # This is the height of the one we are mining
+        }
+        return res
+
     def set_target(self, to_time):
         latest_block = self.config.BU.get_latest_block()
         if self.block_factory.block.index >= 38600:
             if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
                 target_factor = (int(to_time) - int(latest_block['time'])) / self.max_block_time
-                print("mp", self.block_factory.block.target, target_factor)
-                print(self.block_factory.block.to_dict())
+                #print("mp", self.block_factory.block.target, target_factor)
+                #print(self.block_factory.block.to_dict())
                 target = self.block_factory.block.target * (target_factor * 4)
                 if target > self.max_target:
                     self.block_factory.block.target = self.max_target
@@ -181,7 +194,6 @@ class MiningPool(object):
         transactions = self.mongo.db.miner_transactions.find()
         for transaction in transactions:
             yield transaction
-        
 
     def get_pending_transactions(self):
         transaction_objs = []

@@ -11,24 +11,21 @@ from tornado import escape
 class PoolHandler(BaseHandler):
 
     async def get(self):
-        if not self.mp:
+        if self.yadacoin_config.mp is None:
             self.mp = MiningPool()
-            self.settings['mp'] = self.mp
-
-        if not self.mp.block_factory:
+            self.yadacoin_config.mp = self.mp
             self.mp.refresh()
+        """
+        if not self.mp.block_factory:
+            # first init
+            self.mp.refresh()
+        self.mining_index = self.mp.block_factory.block.index
 
-        if not hasattr(self.mp, 'gen'):
-            self.mp.gen = self.mp.nonce_generator()
-
-        self.render_as_json({
-            'nonces': next(self.mp.gen),
-            'target': self.mp.block_factory.block.target,
-            'special_min': self.mp.block_factory.block.special_min,
-            'header': self.mp.block_factory.block.header,
-            'version': self.mp.block_factory.block.version,
-            'height': self.mp.block_factory.block.index,  # This is the height of the one we are mining
-        })
+        if self.mining_index <= self.yadacoin_config.BU.get_latest_block()['index']:
+            # We're behind
+            self.mp.refresh()
+        """
+        self.render_as_json(self.mp.block_to_mine_info())
 
 
 class PoolSubmitHandler(BaseHandler):

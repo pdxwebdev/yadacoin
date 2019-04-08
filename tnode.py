@@ -202,6 +202,7 @@ async def main():
         app_log.info("MiningPool disabled by config")
 
     ws_init()
+    config.SIO = get_sio()
 
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
     tornado.ioloop.IOLoop.instance().add_callback(background_peers_testing, peers)

@@ -236,7 +236,7 @@ class Consensus(object):
                     'ignore': {'$ne': True}
                 }).to_list(length=100)
                 for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
-                    result = await self.import_block(record)
+                    await self.import_block(record)
 
                 last_latest = self.latest_block
                 self.latest_block = Block.from_dict(await self.config.BU.get_latest_block_async())
@@ -422,7 +422,7 @@ class Consensus(object):
                         self.existing_blockchain.blocks.append(block)
                     if self.debug:
                         self.app_log.info("New block inserted for height: {}".format(block.index))
-                    self.config.BU.invalidate_last_block()
+                    await self.config.on_new_block(block)  # This will propagate to everyone
                     return True
                 else:
                     print("Integrate block error 4")

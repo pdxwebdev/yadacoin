@@ -33,10 +33,10 @@ class BlockChainUtils(object):
     def __init__(self):
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.last_block = None
+        self.latest_block = None
 
-    def invalidate_last_block(self):
-        self.last_block = None
+    def invalidate_latest_block(self):
+        self.latest_block = None
 
     def get_blocks(self, reverse=False):
         if reverse:
@@ -48,20 +48,23 @@ class BlockChainUtils(object):
         return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
     def get_latest_block(self):
-        # cached
-        if not self.last_block is None:
-            return self.last_block
-        self.last_block = self.mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-        # print("last block", self.last_block)
-        return self.last_block
+        # cached - WARNING : this is a json doc, NOT a block
+        if not self.latest_block is None:
+            return self.latest_block
+        self.latest_block = self.mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+        print("last block", self.latest_block)
+        return self.latest_block
+
+    def set_latest_block(self, block: dict):
+        self.latest_block = block
 
     async def get_latest_block_async(self):
         # cached, async version
-        if not self.last_block is None:
-            return self.last_block
-        self.last_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-        # print("last block async", self.last_block)
-        return self.last_block
+        if not self.latest_block is None:
+            return self.latest_block
+        self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+        print("last block async", self.latest_block)
+        return self.latest_block
 
     def get_block_by_index(self, index):
         res = self.mongo.db.blocks.find({'index': index}, {'_id': 0})
