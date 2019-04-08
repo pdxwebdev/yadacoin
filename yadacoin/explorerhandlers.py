@@ -104,7 +104,7 @@ class ExplorerSearchHandler(BaseHandler):
             re.search(r'[A-Fa-f0-9]+', term).group(0)
             res = self.mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
             if res.count():
-                balance = BU.get_wallet_balance(self.yadacoin_config, self.mongo, term)
+                balance = BU.get_wallet_balance(term)
                 return self.render_as_json({
                     'balance': "{0:.8f}".format(balance),
                     'resultType': 'txn_outputs_to',

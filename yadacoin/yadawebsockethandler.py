@@ -27,6 +27,7 @@ class ChatNamespace(AsyncNamespace):
         if not self.peers.allow_ip(IP):
             self.app_log.info('Client rejected: {}'.format(IP))
             return False  # This will close the socket
+        self.config.peers.on_new_ip(IP)  # Store the ip to avoid duplicate connections
         await self.save_session(sid, {'IP': IP})
         if self.config.debug:
             self.app_log.info('Client connected: {}'.format(sid))
@@ -35,11 +36,11 @@ class ChatNamespace(AsyncNamespace):
         # print('Disconnect request')
         await SIO.disconnect(sid, namespace='/chat')
 
-    def on_disconnect(self, sid):
+    async def on_disconnect(self, sid):
         if self.config.debug:
             self.app_log.info('Client disconnected: {}'.format(sid))
         try:
-            self.config.peers.on_close_inbound(sid)
+            await self.config.peers.on_close_inbound(sid)
         except Exception as e:
             self.app_log.warning("Error on_disconnect: {}".format(e))
 
@@ -72,7 +73,7 @@ class ChatNamespace(AsyncNamespace):
                     raise Exception("IP mismatch")
                 # TODO: test version also (ie: protocol version)
                 # If peer data seem correct, add to our pool of inbound peers
-                self.config.peers.on_new_inbound(session['IP'], data['port'], data['version'], sid)
+                await self.config.peers.on_new_inbound(session['IP'], data['port'], data['version'], sid)
         except Exception as e:
             self.app_log.warning("bad hello: {}".format(e))
             await self.force_close(sid)

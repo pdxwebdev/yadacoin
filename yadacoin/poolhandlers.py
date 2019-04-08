@@ -12,7 +12,7 @@ class PoolHandler(BaseHandler):
 
     async def get(self):
         if not self.mp:
-            self.mp = MiningPool(self.yadacoin_config, self.mongo)
+            self.mp = MiningPool()
             self.settings['mp'] = self.mp
 
         if not self.mp.block_factory:

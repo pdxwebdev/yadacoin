@@ -54,13 +54,24 @@ class Peers(object):
         # TODO: if verbose, say why
         return IP not in self.connected_ips  # Allows if we're not connected already.
 
-    def on_new_inbound(self, ip, port, version, sid):
+    def on_new_ip(self, ip):
+        """We got an inbound or initiate an outbound connection from/to an ip, buit do not have the result yet.
+        avoid initiating one connection twice if the handshake does not go fast enough."""
+        self.app_log.info("on_new_ip:{}".format(ip))
+        if ip not in self.connected_ips:
+            self.connected_ips.append(ip)
+
+    async def on_new_inbound(self, ip:str, port:int, version, sid):
+        """Inbound peer provided a correct version and ip, add it to our pool"""
         self.app_log.info("on_new_inbound {}:{} {}".format(ip, port, version))
-        self.connected_ips.append(ip)
+        if ip not in self.connected_ips:
+            self.connected_ips.append(ip)
         # TODO: maybe version is not to be stored, then we could only store ip:port as string to avoid dict overhead.
         self.inbound[sid] = {"ip":ip, "port":port, "version": version}
+        # maybe it's an ip we don't have yet, add it
+        await self.on_new_peer_list([{'host': ip, 'port': port}])
 
-    def on_close_inbound(self, sid):
+    async def on_close_inbound(self, sid):
         # We only allow one in or out per ip
         self.app_log.info("on_close_inbound {}".format(sid))
         info = self.inbound.pop(sid, None)
@@ -68,8 +79,10 @@ class Peers(object):
         self.connected_ips.remove(ip)
 
     def on_new_outbound(self, ip, port, version, sid):
+        """Outbound peer connection was sucessful, add it to our pool"""
         self.app_log.info("on_new_outbound {}:{} {}".format(ip, port, version))
-        self.connected_ips.append(ip)
+        if ip not in self.connected_ips:
+            self.connected_ips.append(ip)
         # TODO: maybe version is not to be stored, then we could only store ip:port as string to avoid dict overhead.
         self.outbound[sid] = {"ip":ip, "port":port, "version": version}
 
@@ -332,8 +345,7 @@ class Peer(object):
             if response.code != 200:
                 raise RuntimeWarning('code {}'.format(response.code))
             await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)}, {'$set': {'active': True, "failed":0}})
-            # TODO: get peers from that node and merge.
-            # DUP CODE with initial seed - TODO
+            #  get peers from that node and merge.
             http_client = AsyncHTTPClient()
             test_after = int(time()) + 30  # 2nd layer peers will be tested after 1st layer
             # This "get peers from url" is used twice, could be factorized. But could be deprecated soon with websockets.
@@ -349,6 +361,19 @@ class Peer(object):
                 self.app_log.warning("Error: {} on url {}".format(e, url))
         except Exception as e:
             # print("Error: {} on url {}".format(e, hp))
-            # TODO: store error and next try
+            # store error and next try
+            res = await self.mongo.async_db.peers.find_one({'host': self.host, 'port': int(self.port)})
+            failed = res['failed'] + 1
+            factor = failed
+            if failed > 20:
+                factor = 240  # at most, test every 4 hours
+            elif failed > 10:
+                factor = 6 * factor
+            elif failed > 5:
+                factor = 2 * factor
+            test_after = int(time()) + factor * 60  #
+            await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)},
+                                                       {'$set': {'active': False, "test_after": test_after,
+                                                                 "failed": failed}})
             return False
         return True
