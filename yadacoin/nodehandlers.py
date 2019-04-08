@@ -1,10 +1,12 @@
 """
 Handlers required by the core chain operations
 """
+from time import time
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
 from yadacoin.common import ts_to_utc
+
 
 class GetLatestBlockHandler(BaseHandler):
 
@@ -69,7 +71,8 @@ class GetStatusHandler(BaseHandler):
         status = {'version': self.settings['version'], 'network': self.yadacoin_config.network,
                   # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
                   'peers': self.yadacoin_config.peers.get_status(),
-                  'uptime': 0}
+                  'uptime': int(time() - self.yadacoin_config.start_time)}
+        # TODO: add uptime in human readable format
         self.render_as_json(status)
 
 

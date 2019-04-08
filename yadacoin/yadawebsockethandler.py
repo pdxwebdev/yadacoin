@@ -5,10 +5,11 @@ Web socket handler for yadacoin
 import json
 from socketio import AsyncServer, AsyncNamespace
 from logging import getLogger
-from yadacoin.transaction import Transaction
 
+from yadacoin.transaction import Transaction
 from yadacoin.config import get_config
 from yadacoin.blockchainutils import BU
+from yadacoin.poolnamespace import PoolNamespace
 
 
 # TODO: rename "chat" to something more meaningful, like "yada" or "node" ?
@@ -100,6 +101,7 @@ SIO = AsyncServer(async_mode='tornado')
 
 SIO.register_namespace(ChatNamespace('/chat'))
 # See https://python-socketio.readthedocs.io/en/latest/server.html#namespaces
+SIO.register_namespace(PoolNamespace('/pool'))
 
 
 

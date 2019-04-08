@@ -1,11 +1,13 @@
+import binascii
 import hashlib
 import json
-import binascii
+from time import time
+
 import base58
+from bip32utils import BIP32Key
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 from mnemonic import Mnemonic
-from bip32utils import BIP32Key
 
 CONFIG = None
 
@@ -17,6 +19,7 @@ def get_config():
 class Config(object):
 
     def __init__(self, config):
+        self.start_time = int(time())
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
