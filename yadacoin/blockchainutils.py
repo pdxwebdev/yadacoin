@@ -10,7 +10,7 @@ from coincurve import PrivateKey
 from yadacoin.config import get_config
 # Circular reference
 #from yadacoin.block import Block
-
+from time import sleep
 
 GLOBAL_BU = None
 
@@ -33,7 +33,11 @@ class BlockChainUtils(object):
     def __init__(self):
         self.config = get_config()
         self.mongo = self.config.mongo
-    
+        self.last_block = None
+
+    def invalidate_last_block(self):
+        self.last_block = None
+
     def get_blocks(self, reverse=False):
         if reverse:
             return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
@@ -44,8 +48,20 @@ class BlockChainUtils(object):
         return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
     def get_latest_block(self):
-        # TODO: cache
-        return self.mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+        # cached
+        if not self.last_block is None:
+            return self.last_block
+        self.last_block = self.mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+        # print("last block", self.last_block)
+        return self.last_block
+
+    async def get_latest_block_async(self):
+        # cached, async version
+        if not self.last_block is None:
+            return self.last_block
+        self.last_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+        # print("last block async", self.last_block)
+        return self.last_block
 
     def get_block_by_index(self, index):
         res = self.mongo.db.blocks.find({'index': index}, {'_id': 0})

@@ -111,7 +111,8 @@ async def background_status():
     while True:
         try:
             await async_sleep(30)
-            status = {"peers": config.peers.get_status()}
+            # status = {"peers": config.peers.get_status()}
+            status = config.get_status()
             app_log.info(json.dumps(status))
         except Exception as e:
             app_log.error("{} in Background_status".format(e))

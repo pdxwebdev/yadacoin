@@ -42,7 +42,7 @@ class Consensus(object):
             self.peers = Peers()
         latest_block = self.config.BU.get_latest_block()
         if latest_block:
-            self.latest_block = Block.from_dict( latest_block)
+            self.latest_block = Block.from_dict(latest_block)
         else:
             self.insert_genesis()
         
@@ -196,10 +196,10 @@ class Consensus(object):
             except:
                 return None
 
-    def insert_consensus_block(self, block, peer):
+    async def insert_consensus_block(self, block, peer):
         if self.debug:
             self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
-        self.mongo.db.consensus.update({
+        await self.mongo.async_db.consensus.replace_one({
             'id': block.to_dict().get('id'),
             'peer': peer.to_string()
         },
@@ -214,7 +214,7 @@ class Consensus(object):
         try:
             #bottom up syncing
             last_latest = self.latest_block
-            self.latest_block = Block.from_dict( self.config.BU.get_latest_block())
+            self.latest_block = Block.from_dict(await self.config.BU.get_latest_block_async())
             if self.latest_block.index > last_latest.index:
                 self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             self.remove_pending_transactions_now_in_chain()
@@ -236,10 +236,10 @@ class Consensus(object):
                     'ignore': {'$ne': True}
                 }).to_list(length=100)
                 for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
-                    result = self.import_block(record)
+                    result = await self.import_block(record)
 
                 last_latest = self.latest_block
-                self.latest_block = Block.from_dict( self.config.BU.get_latest_block())
+                self.latest_block = Block.from_dict(await self.config.BU.get_latest_block_async())
                 if self.latest_block.index > last_latest.index:
                     self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                 latest_consensus_now = await self.mongo.async_db.consensus.find_one({
@@ -295,9 +295,9 @@ class Consensus(object):
                     # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                     block = Block.from_dict( block)
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
-                        self.insert_consensus_block(block, peer)
+                        await self.insert_consensus_block(block, peer)
                         # print("consensus ok", block.index)
-                        res = self.import_block({'peer': peer.to_string(), 'block': block.to_dict(), 'extra_blocks': blocks})
+                        res = await self.import_block({'peer': peer.to_string(), 'block': block.to_dict(), 'extra_blocks': blocks})
                         # print("import ", block.index, res)
                         if res:
                             self.latest_block = block
@@ -308,7 +308,7 @@ class Consensus(object):
                 if self.debug:
                     self.app_log.warning(e)
 
-    def import_block(self, block_data):
+    async def import_block(self, block_data):
         try:
             block = Block.from_dict( block_data['block'])
             peer = Peer.from_string( block_data['peer'])
@@ -319,9 +319,10 @@ class Consensus(object):
             if self.debug:
                 self.app_log.debug("{} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
             try:
-                result = self.integrate_block_with_existing_chain(block, extra_blocks)
+                result = await self.integrate_block_with_existing_chain(block, extra_blocks)
                 if result is False:
-                    self.mongo.db.consensus.update(
+                    # TODO: factorize
+                    await self.mongo.async_db.consensus.update_one(
                         {
                             'peer': peer.to_string(),
                             'index': block.index,
@@ -331,7 +332,7 @@ class Consensus(object):
                     )
                 return result
             except AboveTargetException as e:
-                self.mongo.db.consensus.update(
+                await self.mongo.async_db.consensus.update_one(
                     {
                         'peer': peer.to_string(),
                         'index': block.index,
@@ -344,7 +345,11 @@ class Consensus(object):
             except IndexError as e:
                 self.retrace(block, peer)
             except Exception as e:
-                self.mongo.db.consensus.update(
+                print("348", e)
+                exc_type, exc_obj, exc_tb = exc_info()
+                fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+                self.app_log.warning("{} {} {}".format(exc_type, fname, exc_tb.tb_lineno))
+                await self.mongo.async_db.consensus.update_one(
                     {
                         'peer': peer.to_string(),
                         'index': block.index,
@@ -358,68 +363,79 @@ class Consensus(object):
             self.app_log.warning("{} {} {}".format(exc_type, fname, exc_tb.tb_lineno))
             raise
 
-    def integrate_block_with_existing_chain(self, block, extra_blocks=None):
+    async def integrate_block_with_existing_chain(self, block, extra_blocks=None):
         try:
-            block.verify()
-        except Exception as e:
-            print("Integrate block error 1", e)
-            return False
-
-        for transaction in block.transactions:
             try:
-                if extra_blocks:
-                    transaction.extra_blocks = extra_blocks
-                transaction.verify()
-            except InvalidTransactionException as e:
-                print(e)
-                return False
-            except InvalidTransactionSignatureException as e:
-                print(e)
-                return False
-            except MissingInputTransactionException as e:
-                print(e)
-                return False
-            except NotEnoughMoneyException as e:
-                print(e)
-                return False
+                block.verify()
             except Exception as e:
-                print(e)
+                print("Integrate block error 1", e)
                 return False
-        if block.index == 0:
-            return True
-        height = block.index
-        last_block = self.existing_blockchain.blocks[block.index - 1]
-        if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
-            print("Integrate block error 2")
-            raise ForkException()
-        if not last_block:
-            print("Integrate block error 3")
-            raise ForkException()
 
-        target = BlockFactory.get_target( height, last_block, block, self.existing_blockchain)
-        target_block_time = 600
-        if ((int(block.hash, 16) < target) or 
-            (block.special_min and block.index < 35200) or 
-            (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time)):
-
-            if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
-                self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
-                self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
+            for transaction in block.transactions:
                 try:
-                    self.existing_blockchain.blocks[block.index] = block
-                    del self.existing_blockchain.blocks[block.index+1:]
-                except:
-                    self.existing_blockchain.blocks.append(block)
-                if self.debug:
-                    self.app_log.info("New block inserted for height: {}".format(block.index))
+                    if extra_blocks:
+                        transaction.extra_blocks = extra_blocks
+                    transaction.verify()
+                except InvalidTransactionException as e:
+                    print(e)
+                    return False
+                except InvalidTransactionSignatureException as e:
+                    print(e)
+                    return False
+                except MissingInputTransactionException as e:
+                    print(e)
+                    return False
+                except NotEnoughMoneyException as e:
+                    print(e)
+                    return False
+                except Exception as e:
+                    print(e)
+                    return False
+            if block.index == 0:
                 return True
-            else:
-                print("Integrate block error 4")
+            height = block.index
+            last_block = self.existing_blockchain.blocks[block.index - 1]
+            if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
+                print("Integrate block error 2")
                 raise ForkException()
-        else:
-            print("Integrate block error 5")
-            raise AboveTargetException()
-        return False
+            if not last_block:
+                print("Integrate block error 3")
+                raise ForkException()
+
+            target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
+            target_block_time = 600
+            if ((int(block.hash, 16) < target) or
+                (block.special_min and block.index < 35200) or
+                (block.index >= 35200 and block.index < 38600 and block.special_min and
+                (int(block.time) - int(last_block.time)) > target_block_time)):
+
+                if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
+                    # self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
+                    # self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
+                    await self.mongo.async_db.block.delete_many({'index': {"$gte": block.index}})
+                    await self.mongo.async_db.blocks.insert_one(block.to_dict())
+                    # TODO: why do we need to keep that one in memory?
+                    try:
+                        self.existing_blockchain.blocks[block.index] = block
+                        del self.existing_blockchain.blocks[block.index+1:]
+                    except:
+                        self.existing_blockchain.blocks.append(block)
+                    if self.debug:
+                        self.app_log.info("New block inserted for height: {}".format(block.index))
+                    self.config.BU.invalidate_last_block()
+                    return True
+                else:
+                    print("Integrate block error 4")
+                    raise ForkException()
+            else:
+                print("Integrate block error 5")
+                raise AboveTargetException()
+            return False
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = exc_info()
+            fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            self.app_log.warning("integrate_block_with_existing_chain {} {} {}".format(exc_type, fname, exc_tb.tb_lineno))
+            raise
     
     def get_difficulty(self, blocks):
         difficulty = 0

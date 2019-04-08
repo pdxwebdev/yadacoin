@@ -341,6 +341,7 @@ class Transaction(object):
         # verify spend
         total_input = 0
         for txn in self.inputs:
+            # TODO: move to async
             input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
                 raise InvalidTransactionException("Input not found on blockchain.")
