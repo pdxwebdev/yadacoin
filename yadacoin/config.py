@@ -57,6 +57,7 @@ class Config(object):
         self.BU = None
         self.GU = None
         self.debug = False
+        self.mp = None
         self.protocol_version = 1
 
     @classmethod

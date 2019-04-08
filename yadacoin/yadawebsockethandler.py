@@ -94,7 +94,7 @@ class ChatNamespace(AsyncNamespace):
         self.app_log.info('WS get-peers: {} {}'.format(sid, json.dumps(data)))
         data = self.peers.to_dict()  # this only includes active peers from last refresh
         # TODO: include refresh date?
-        await self.emit('peers', data)
+        await self.emit('peers', data, room=sid)
 
 #
 
@@ -108,7 +108,7 @@ def get_sio():
 
 def ws_init():
     global SIO
-    SIO = AsyncServer(async_mode='tornado')
+    SIO = AsyncServer(async_mode='tornado', logger=False, engineio_logger=None)
     # see https://github.com/miguelgrinberg/python-socketio/blob/master/examples/server/tornado/app.py
     SIO.register_namespace(ChatNamespace('/chat'))
     # See https://python-socketio.readthedocs.io/en/latest/server.html#namespaces

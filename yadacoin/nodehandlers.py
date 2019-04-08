@@ -68,9 +68,13 @@ class GetStatusHandler(BaseHandler):
         :return:
         """
         # TODO: complete and cache
+        pool_status = 'N/A'
+        if self.yadacoin_config.mp:
+            pool_status = self.yadacoin_config.mp.get_status()
         status = {'version': self.settings['version'], 'network': self.yadacoin_config.network,
                   # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
                   'peers': self.yadacoin_config.peers.get_status(),
+                  'pool': pool_status,
                   'uptime': int(time() - self.yadacoin_config.start_time)}
         # TODO: add uptime in human readable format
         self.render_as_json(status)

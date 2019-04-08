@@ -146,6 +146,9 @@ def configure_logging():
 
     app_log.propagate = False
     access_log.propagate = False
+    # This logguer config is quite a mess, but works well enough for the time being.
+    logging.getLogger("engineio").propagate = False
+    logging.getLogger("socketio").propagate = False
 
 
 async def main():
@@ -159,8 +162,7 @@ async def main():
            type=str)
     define("verify", default=True, help="Verify chain, default True", type=bool)
 
-    options.parse_command_line()
-
+    options.parse_command_line(final=False)
     configure_logging()
 
     if not path.isfile(options.config):

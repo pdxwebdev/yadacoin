@@ -1,6 +1,7 @@
 import time
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
+from logging import getLogger
 
 from yadacoin.config import get_config
 # from yadacoin.peers import Peers, Peer
@@ -17,15 +18,56 @@ class MiningPool(object):
         self.config = get_config()
         self.mongo = self.config.mongo
         self.block_factory = None
-
+        self.app_log = getLogger("tornado.application")
+        # TODO: have a network dict in common config helper file with these values.
         if self.config.network == 'mainnet':
             self.max_block_time = 600
         elif self.config.network == 'testnet':
             self.max_block_time = 10
         elif self.config.network == 'regnet':
             self.max_block_time = 0
-
         self.max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        self.inbound = {}
+        self.connected_ips = {}
+
+    def get_status(self):
+        """Returns pool status as explicit dict"""
+        status = {"miners": len(self.inbound), "ips": len(self.connected_ips)}
+        return status
+
+    @property
+    def free_inbound_slots(self):
+        """How many free inbound slots we have"""
+        return self.config.max_miners - len(self.inbound)
+
+    def allow_ip(self, IP):
+        """Returns True if that ip can connect"""
+        return True  # IP not in self.connected_ips  # Allows if we're not connected already.
+
+    def on_new_ip(self, ip):
+        """We got an inbound.
+        avoid initiating one connection twice if the handshake does not go fast enough."""
+        self.app_log.info("miner on_new_ip:{}".format(ip))
+        if ip not in self.connected_ips:
+            self.connected_ips[ip] = 1
+        else:
+            self.connected_ips[ip] += 1
+
+    async def on_new_inbound(self, ip:str, version, worker, address, type, sid):
+        """Inbound peer provided a correct version and ip, add it to our pool"""
+        self.app_log.info("miner on_new_inbound {}:{} {}".format(ip, address, worker))
+        self.inbound[sid] = {"ip":ip, "version": version, "worker": worker, "address": address, "type": type}
+
+    async def on_close_inbound(self, sid):
+        # We only allow one in or out per ip
+        try:
+            self.app_log.info("miner on_close_inbound {}".format(sid))
+            info = self.inbound.pop(sid, None)
+            ip = info['ip']
+            self.connected_ips[ip] -= 1
+        except Exception as e:
+            print(e)
+            pass
 
     def refresh(self):
         # Peers.init(self.config.network)
