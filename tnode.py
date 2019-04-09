@@ -32,7 +32,7 @@ from yadacoin.peers import Peer, Peers
 from yadacoin.graphutils import GraphUtils
 
 
-__version__ = '0.0.10'
+__version__ = '0.0.11'
 
 PROTOCOL_VERSION = 2
 
@@ -94,15 +94,16 @@ async def background_consensus(consensus):
             app_log.error("{} in Background_consensus".format(e))
 
 
-async def background_peers_testing(peers: Peers):
+async def background_peers(peers: Peers):
+    """Peers management coroutine. responsible for peers testing and outgoing connections"""
     while True:
         try:
-            await async_sleep(10)
-            if len(peers.peers) > 50:
-                # Enough peers, no need to waste resources
-                continue
-            # log.info('Should test peers')
-            await peers.test_some(count=2)
+            await async_sleep(10)  # Could be a config item
+            if len(peers.peers) <= 50:
+                # no need to waste resources if we have enough peers
+                # log.info('Should test peers')
+                await peers.test_some(count=2)
+            await peers.check_outgoing()
         except Exception as e:
             app_log.error("{} in Background_consensus".format(e))
 
@@ -205,7 +206,7 @@ async def main():
     config.SIO = get_sio()
 
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
-    tornado.ioloop.IOLoop.instance().add_callback(background_peers_testing, peers)
+    tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
     tornado.ioloop.IOLoop.instance().add_callback(background_status)
 
     my_peer = Peer.init_my_peer(config.network)

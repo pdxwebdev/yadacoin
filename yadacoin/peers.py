@@ -1,6 +1,8 @@
 import json
 import requests
 from time import time
+from random import choice
+from tornado import ioloop
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from asyncio import sleep as async_sleep, gather
 from pymongo import ASCENDING, DESCENDING
@@ -48,6 +50,15 @@ class Peers(object):
         """How many free inbound slots we have"""
         return self.config.max_inbound - len(self.inbound)
 
+    @property
+    def free_outbound_slots(self):
+        """How many free outbound slots we have"""
+        return self.config.max_outbound - len(self.outbound)
+
+    def potential_outbound_peers(self):
+        """List the working peers we know, we are not yet connected to"""
+        return [peer for peer in self.peers if peer.host not in self.connected_ips]
+
     def allow_ip(self, IP):
         """Returns True if that ip can connect - inbound or outbound"""
         # TODO - add blacklist
@@ -92,6 +103,22 @@ class Peers(object):
         info = self.outbound.pop(sid, None)
         ip = info['ip']
         self.connected_ips.remove(ip)
+
+    async def check_outgoing(self):
+        """Called by a background task.
+        Counts the current active outgoing connections, and tries to connect to more if needed"""
+        if self.free_outbound_slots <= 0:
+            return
+        targets = self.potential_outbound_peers()
+        if len(targets) <= 0:
+            return
+        peer = choice(targets)  # random peer from the available - and tested - pool
+        # Try to connect. We create a background co-routine that will handle the client side.
+        ioloop.IOLoop.instance().add_callback(self.background_peer, peer)
+
+    async def background_peer(self, peer):
+        self.app_log.debug("TODO: Peers background_peer {}".format(peer.to_dict()))
+        # TODO
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
