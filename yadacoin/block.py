@@ -12,7 +12,6 @@ from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.fastgraph import FastGraph
 from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, ExternalInput
-# from yadacoin.blockchainutils import BU
 
 
 def quantize_eight(value):
@@ -176,10 +175,10 @@ class BlockFactory(object):
     def get_target(cls, height, last_block, block, blockchain):
         # change target
         max_target = CHAIN.MAX_TARGET
-        max_block_time = 600
-        retarget_period = 2016  # blocks
-        two_weeks = 1209600  # seconds
-        half_week = 302400  # seconds
+        max_block_time = CHAIN.target_block_time(get_config().network)
+        retarget_period = CHAIN.RETARGET_PERIOD  # blocks
+        two_weeks = CHAIN.TWO_WEEKS  # seconds
+        half_week = CHAIN.HALF_WEEK  # seconds
         if height > 0 and height % retarget_period == 0:
             block_from_2016_ago = Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
             two_weeks_ago_time = block_from_2016_ago.time
@@ -360,21 +359,16 @@ class Block(object):
         getcontext().prec = 8
         if int(self.version) != int(self.config.BU.get_version_for_height(self.index)):
             raise Exception("Wrong version for block height", self.version, self.config.BU.get_version_for_height(self.index))
-        try:
-            txns = self.get_transaction_hashes()
-            self.set_merkle_root(txns)
-            if self.verify_merkle_root != self.merkle_root:
-                raise Exception("Invalid block merkle")
-        except:
-            raise
 
-        try:
-            header = BlockFactory.generate_header(self)
-            hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
-            if self.hash != hashtest:
-                raise Exception('Invalid block hash')
-        except:
-            raise
+        txns = self.get_transaction_hashes()
+        self.set_merkle_root(txns)
+        if self.verify_merkle_root != self.merkle_root:
+            raise Exception("Invalid block merkle root")
+
+        header = BlockFactory.generate_header(self)
+        hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
+        if self.hash != hashtest:
+            raise Exception('Invalid block hash')
 
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         try:
@@ -413,6 +407,7 @@ class Block(object):
             raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
 
     def get_transaction_hashes(self):
+        """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
 
     def set_merkle_root(self, txn_hashes):

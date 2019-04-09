@@ -443,12 +443,14 @@ class BlockChainUtils(object):
             return None
 
     def get_version_for_height(self, height):
+        # TODO: move to CHAIN
         if int(height) <= 14484:
             return 1
         else:
             return 2
 
     def get_block_reward(self, block=None):
+        # TODO: move to CHAIN
         block_rewards = [
             {"block": "0", "reward": "50"},
             {"block": "210000", "reward": "25"},

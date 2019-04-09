@@ -5,10 +5,8 @@ from logging import getLogger
 
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
-# from yadacoin.peers import Peers, Peer
 from yadacoin.block import Block, BlockFactory
 from yadacoin.blockchain import Blockchain
-# from yadacoin.blockchainutils import BU
 from yadacoin.transaction import Transaction, MissingInputTransactionException, InvalidTransactionException, \
     InvalidTransactionSignatureException
 from yadacoin.fastgraph import FastGraph
@@ -20,13 +18,7 @@ class MiningPool(object):
         self.mongo = self.config.mongo
         self.block_factory = None
         self.app_log = getLogger("tornado.application")
-        # TODO: have a network dict in common config helper file with these values.
-        if self.config.network == 'mainnet':
-            self.max_block_time = 600
-        elif self.config.network == 'testnet':
-            self.max_block_time = 10
-        elif self.config.network == 'regnet':
-            self.max_block_time = 0
+        self.target_block_time = CHAIN.target_block_time(self.config.network)
         self.max_target = CHAIN.MAX_TARGET
         self.inbound = {}
         self.connected_ips = {}
@@ -123,9 +115,9 @@ class MiningPool(object):
 
     def set_target(self, to_time):
         latest_block = self.config.BU.get_latest_block()
-        if self.block_factory.block.index >= 38600:
-            if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
-                target_factor = (int(to_time) - int(latest_block['time'])) / self.max_block_time
+        if self.block_factory.block.index >= 38600:  # TODO: use a CHAIN constant
+            if (int(to_time) - int(latest_block['time'])) > self.target_block_time:
+                target_factor = (int(to_time) - int(latest_block['time'])) / self.target_block_time
                 #print("mp", self.block_factory.block.target, target_factor)
                 #print(self.block_factory.block.to_dict())
                 target = self.block_factory.block.target * (target_factor * 4)
@@ -134,8 +126,8 @@ class MiningPool(object):
                 self.block_factory.block.special_min = True
             else:
                 self.block_factory.block.special_min = False
-        elif self.block_factory.block.index < 38600:
-            if (int(to_time) - int(latest_block['time'])) > self.max_block_time:
+        elif self.block_factory.block.index < 38600:  # TODO: use a CHAIN constant
+            if (int(to_time) - int(latest_block['time'])) > self.target_block_time:
                 self.block_factory.block.target = self.max_target
                 self.block_factory.block.special_min = True
             else:
@@ -167,6 +159,7 @@ class MiningPool(object):
         )
     
     def nonce_generator(self):
+        self.app_log.error("nonce_generator is deprecated")
         latest_block_index = self.config.BU.get_latest_block()['index']
         start_nonce = 0
         while 1:
@@ -301,7 +294,7 @@ class MiningPool(object):
         print('\r\nSent block to:')
         # TODO: convert to async // send
         # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
-        # Then maybe a list of "root" nodes (explorer, known pools) just to make sure.
+        # Then maybe a list of "root" nodes (explorer, known pools) from config, just to make sure.
         for peer in self.config.peers.peers:
             if peer.is_me:
                 continue
