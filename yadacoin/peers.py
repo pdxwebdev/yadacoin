@@ -9,6 +9,7 @@ from pymongo import ASCENDING, DESCENDING
 from logging import getLogger
 
 from yadacoin.config import get_config
+from yadacoin.yadawebsocketclient import YadaWebSocketClient
 
 
 class Peers(object):
@@ -119,6 +120,11 @@ class Peers(object):
     async def background_peer(self, peer):
         self.app_log.debug("TODO: Peers background_peer {}".format(peer.to_dict()))
         # TODO
+        # How to handle hosts that will not accept a websocket connection, but an http one?
+        # Can we ignore and suppose enough will be up to date?
+        # or add "polling peers" in config for the transition period
+        client = YadaWebSocketClient(peer)
+        await client.start()
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
