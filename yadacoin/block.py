@@ -327,6 +327,7 @@ class Block(object):
         txn_hashes = self.get_transaction_hashes()
         self.set_merkle_root(txn_hashes)
         self.merkle_root = merkle_root
+        self.verify_merkle_root = ''
         self.hash = block_hash
         self.public_key = public_key
         self.signature = signature
@@ -474,7 +475,7 @@ class Block(object):
             'hash': self.hash,
             'merkleRoot': self.merkle_root,
             'special_min': self.special_min,
-            'target': format(self.target, 'x'),
+            'target': hex(self.target)[2:].rjust(64, '0'),
             'id': self.signature
         }
 

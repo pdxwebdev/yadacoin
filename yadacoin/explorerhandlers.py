@@ -4,10 +4,10 @@ Handlers required by the explorer operations
 
 import base64
 import re
-from datetime import datetime
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
+from yadacoin.common import changetime, abstract_block
 
 
 class ExplorerSearchHandler(BaseHandler):
@@ -23,7 +23,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'block_height',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -32,7 +32,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'block_height',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -41,7 +41,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'block_height',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -51,7 +51,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'block_hash',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -62,7 +62,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'block_id',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -73,7 +73,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'txn_hash',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -84,7 +84,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'txn_rid',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -95,7 +95,7 @@ class ExplorerSearchHandler(BaseHandler):
             if res.count():
                 return self.render_as_json({
                     'resultType': 'txn_id',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             pass
@@ -104,20 +104,31 @@ class ExplorerSearchHandler(BaseHandler):
             re.search(r'[A-Fa-f0-9]+', term).group(0)
             res = self.mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
             if res.count():
-                balance = BU.get_wallet_balance(term)
+                balance = BU().get_wallet_balance(term)
                 return self.render_as_json({
                     'balance': "{0:.8f}".format(balance),
                     'resultType': 'txn_outputs_to',
-                    'result': [self.changetime(x) for x in res]
+                    'result': [changetime(x) for x in res]
                 })
         except:
             return self.render_as_json({})
 
         return self.render_as_json({})
 
-    def changetime(self, block):
-        block['time'] = datetime.utcfromtimestamp(int(block['time'])).strftime('%Y-%m-%dT%H:%M:%S UTC')
-        return block
 
 
-EXPLORER_HANDLERS = [(r'/explorer-search', ExplorerSearchHandler)]
+class ExplorerLatestHandler(BaseHandler):
+
+    async def get(self):
+        """Returns abstract of the latest 10 blocks"""
+        res = self.mongo.async_db.blocks.find({}, {'_id': 0}).sort('index', -1).limit(10)
+        res = await res.to_list(length=10)
+        print(res[0])
+        return self.render_as_json({
+            'resultType': 'blocks',
+            'result': [abstract_block(x) for x in res]
+        })
+
+
+EXPLORER_HANDLERS = [(r'/explorer-search', ExplorerSearchHandler),
+                     (r'/explorer-latest', ExplorerLatestHandler)]
