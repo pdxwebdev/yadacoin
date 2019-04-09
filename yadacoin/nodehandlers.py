@@ -28,7 +28,7 @@ class GetBlocksHandler(BaseHandler):
         end_index = min(int(self.get_argument("end_index", 0)), start_index + 200)  # TODO: store 200 as chain param
         # global chain object with cache of current block height,
         # so we can instantly answer to pulling requests without any db request
-        if start_index > self.yadacoin_config.BU.get_latest_block()['index']:
+        if start_index > self.config.BU.get_latest_block()['index']:
             # early exit without request
             self.render_as_json([])
         else:
@@ -72,7 +72,7 @@ class GetStatusHandler(BaseHandler):
         :return:
         """
         # TODO: complete and cache
-        status = self.yadacoin_config.get_status()
+        status = self.config.get_status()
         self.render_as_json(status)
 
 

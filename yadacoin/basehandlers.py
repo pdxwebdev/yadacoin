@@ -14,9 +14,9 @@ class BaseHandler(RequestHandler):
     def initialize(self):
         """Common init for every request"""
         self.app_log = logging.getLogger("tornado.application")
-        self.yadacoin_config = self.settings['yadacoin_config']
+        self.config = self.settings['yadacoin_config']
         self.mongo = self.settings['mongo']
-        self.mp = self.yadacoin_config.mp
+        self.mp = self.config.mp
         self.peers = self.settings['peers']
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]

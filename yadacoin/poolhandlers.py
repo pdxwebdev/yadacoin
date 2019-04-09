@@ -4,16 +4,15 @@ Handlers required by the pool operations
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.miningpool import MiningPool
-from yadacoin.blockchainutils import BU
 from tornado import escape
 
 
 class PoolHandler(BaseHandler):
 
     async def get(self):
-        if self.yadacoin_config.mp is None:
+        if self.config.mp is None:
             self.mp = MiningPool()
-            self.yadacoin_config.mp = self.mp
+            self.config.mp = self.mp
             self.mp.refresh()
         """
         if not self.mp.block_factory:
@@ -21,7 +20,7 @@ class PoolHandler(BaseHandler):
             self.mp.refresh()
         self.mining_index = self.mp.block_factory.block.index
 
-        if self.mining_index <= self.yadacoin_config.BU.get_latest_block()['index']:
+        if self.mining_index <= self.config.BU.get_latest_block()['index']:
             # We're behind
             self.mp.refresh()
         """
@@ -39,11 +38,11 @@ class PoolSubmitHandler(BaseHandler):
             block.special_min = self.mp.block_factory.block.special_min
             block.hash = self.get_query_arguments("hash")
             block.nonce = self.get_query_arguments("nonce")
-            block.signature = BU.generate_signature(block.hash.encode('utf-8'), self.yadacoin_config.private_key)
+            block.signature = self.config.BU.generate_signature(block.hash.encode('utf-8'), self.config.private_key)
             try:
                 block.verify()
             except Exception as e:
-                print('block failed verification', str(e))
+                self.app_log.warning('Block failed verification {}'.format(e))
                 self.mongo.db.log.insert({
                     'error': 'block failed verification',
                     'block': block.to_dict(),
@@ -65,14 +64,15 @@ class PoolSubmitHandler(BaseHandler):
             }, upsert=True)
 
             if int(block.target) > int(block.hash, 16) or block.special_min:
+                # TODO: quickly insert into our own chain first.
                 # broadcast winning block
                 self.mp.broadcast_block(block)
-                print('block ok')
+                self.app_log.info('Block ok')
             else:
-                print('share ok')
+                self.app_log.warning('Share ok')
             return block.to_json()
         except Exception as e:
-            print('block submit error', str(e))
+            self.app_log.warning('Block submit error {}'.format(e))
             return 'error', 400
 
 
@@ -87,10 +87,10 @@ class PoolExplorer(BaseHandler):
         res = self.mongo.db.shares.find_one(query, {'_id': 0}, sort=[('index', -1)])
         if res and query:
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s' % (
-            self.yadacoin_config.address, self.yadacoin_config.address, res.get('index'))
+                self.config.address, self.config.address, res.get('index'))
         else:
             return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history' % (
-                self.yadacoin_config.address, self.yadacoin_config.address)
+                self.config.address, self.config.address)
 
 
 POOL_HANDLERS = [(r'/pool', PoolHandler), (r'/pool-submit', PoolSubmitHandler),
