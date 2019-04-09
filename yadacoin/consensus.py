@@ -108,17 +108,17 @@ class Consensus(object):
 
     def get_latest_consensus_blocks(self):
         for x in self.mongo.db.consensus.find({}, {'_id': 0}).sort([('index', -1)]):
-            if self.config.BU.get_version_for_height(x['block']['index']) == int(x['block']['version']):
+            if CHAIN.get_version_for_height(x['block']['index']) == int(x['block']['version']):
                 yield x
 
     def get_latest_consensus_block(self):
         latests = self.get_latest_consensus_blocks()
         for latest in latests:
-            if int(latest['block']['version']) == self.config.BU.get_version_for_height(latest['block']['index']):
+            if int(latest['block']['version']) == CHAIN.get_version_for_height(latest['block']['index']):
                 return Block.from_dict( latest['block'])
 
     def get_consensus_blocks_by_index(self, index):
-        return self.mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}, 'block.version': self.config.BU.get_version_for_height(index)}, {'_id': 0})
+        return self.mongo.db.consensus.find({'index': index, 'block.prevHash': {'$ne': ''}, 'block.version': CHAIN.get_version_for_height(index)}, {'_id': 0})
 
     def get_consensus_block_by_index(self, index):
         return self.get_consensus_blocks_by_index(index).limit(1)[0]
@@ -146,11 +146,11 @@ class Consensus(object):
         new_block = await self.mongo.async_db.consensus.find_one({
             'block.prevHash': block.hash,
             'block.index': (block.index + 1),
-            'block.version': self.config.BU.get_version_for_height((block.index + 1))
+            'block.version': CHAIN.get_version_for_height((block.index + 1))
         })
         if new_block:
             new_block = Block.from_dict( new_block['block'])
-            if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
+            if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
                 return new_block
             else:
                 return None
@@ -161,12 +161,12 @@ class Consensus(object):
         new_block = await self.mongo.async_db.consensus.find_one({
             'block.hash': block.prev_hash,
             'block.index': (block.index - 1),
-            'block.version': self.config.BU.get_version_for_height((block.index - 1)),
+            'block.version': CHAIN.get_version_for_height((block.index - 1)),
             'ignore': {'$ne': True}
         })
         if new_block:
             new_block = Block.from_dict(new_block['block'])
-            if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
+            if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
                 return new_block
             else:
                 return None
@@ -191,7 +191,7 @@ class Consensus(object):
                 if self.debug:
                     print('response code: ', res.status_code)
                 new_block = Block.from_dict(json.loads(res.content))
-                if int(new_block.version) == self.config.BU.get_version_for_height(new_block.index):
+                if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
                     return new_block
                 else:
                     return None
@@ -224,7 +224,7 @@ class Consensus(object):
 
             latest_consensus = await self.mongo.async_db.consensus.find_one({
                 'index': self.latest_block.index + 1,
-                'block.version': self.config.BU.get_version_for_height(self.latest_block.index + 1),
+                'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
                 'ignore': {'$ne': True}
             })
             if latest_consensus:
@@ -234,7 +234,7 @@ class Consensus(object):
 
                 records = await self.mongo.async_db.consensus.find({
                     'index': self.latest_block.index + 1,
-                    'block.version': self.config.BU.get_version_for_height(self.latest_block.index + 1),
+                    'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
                     'ignore': {'$ne': True}
                 }).to_list(length=100)
                 for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
@@ -246,7 +246,7 @@ class Consensus(object):
                     self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
                 latest_consensus_now = await self.mongo.async_db.consensus.find_one({
                     'index': self.latest_block.index + 1,
-                    'block.version': self.config.BU.get_version_for_height(self.latest_block.index + 1),
+                    'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
                     'ignore': {'$ne': True}
                 })
 

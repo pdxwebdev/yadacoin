@@ -88,6 +88,7 @@ class MiningPool(object):
             self.height = block.index
 
         try:
+            self.app_log.debug('Refreshing mp block Factory')
             self.block_factory = BlockFactory(
                 transactions=self.get_pending_transactions(),
                 public_key=self.config.public_key,
@@ -114,12 +115,17 @@ class MiningPool(object):
         return res
 
     def set_target(self, to_time):
+        self.app_log.debug("set_target {}".format(to_time))
+        # todo: keep block target at normal target, for header and block info.
+        # Only tweak target at validation time, and don't include special_min into header
         latest_block = self.config.BU.get_latest_block()
+        print(latest_block)
         if self.block_factory.block.index >= 38600:  # TODO: use a CHAIN constant
             if (int(to_time) - int(latest_block['time'])) > self.target_block_time:
+                # TODO: adjust depending on block height
                 target_factor = (int(to_time) - int(latest_block['time'])) / self.target_block_time
-                #print("mp", self.block_factory.block.target, target_factor)
-                #print(self.block_factory.block.to_dict())
+                print("mp", self.block_factory.block.target, target_factor)
+                print(self.block_factory.block.to_dict())
                 target = self.block_factory.block.target * (target_factor * 4)
                 if target > self.max_target:
                     self.block_factory.block.target = self.max_target

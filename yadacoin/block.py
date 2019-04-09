@@ -25,7 +25,7 @@ class BlockFactory(object):
         self.config = get_config()
         self.mongo = self.config.mongo
         if force_version is None:
-            self.version = self.config.BU.get_version_for_height(index)
+            self.version = CHAIN.get_version_for_height(index)
         else:
             self.version = force_version
         if force_time:
@@ -110,7 +110,7 @@ class BlockFactory(object):
             if not failed:
                 transaction_objs.append(transaction_obj)
                 fee_sum += float(transaction_obj.fee)
-        block_reward = self.config.BU.get_block_reward()
+        block_reward = CHAIN.get_block_reward()
         coinbase_txn_fctry = TransactionFactory(
             self.index,
             public_key=self.public_key,
@@ -139,15 +139,27 @@ class BlockFactory(object):
     
     @classmethod
     def generate_header(cls, block):
-        return str(block.version) + \
-            str(block.time) + \
-            block.public_key + \
-            str(block.index) + \
-            block.prev_hash + \
-            '{nonce}' + \
-            str(block.special_min) + \
-            str(block.target) + \
-            block.merkle_root
+        if block.version < 3:
+            return str(block.version) + \
+                str(block.time) + \
+                block.public_key + \
+                str(block.index) + \
+                block.prev_hash + \
+                '{nonce}' + \
+                str(block.special_min) + \
+                str(block.target) + \
+                block.merkle_root
+        else:
+            # version 3 block do not contain special_min anymore and have target as 64 hex string
+            return str(block.version) + \
+                   str(block.time) + \
+                   block.public_key + \
+                   str(block.index) + \
+                   block.prev_hash + \
+                   '{nonce}' + \
+                   hex(block.target)[2:].rjust(64, '0') + \
+                   block.merkle_root
+
 
     @classmethod
     def generate_hash_from_header(cls, header, nonce):
@@ -291,17 +303,17 @@ class Block(object):
     
     def __init__(
         self,
-        version='',
-        block_time='',
-        block_index='',
+        version=0,
+        block_time=0,
+        block_index=-1,
         prev_hash='',
         nonce='',
-        transactions='',
+        transactions=None,
         block_hash='',
         merkle_root='',
         public_key='',
         signature='',
-        special_min='',
+        special_min: bool=False,
         target=0
     ):
         self.config = get_config()
@@ -357,8 +369,8 @@ class Block(object):
 
     def verify(self):
         getcontext().prec = 8
-        if int(self.version) != int(self.config.BU.get_version_for_height(self.index)):
-            raise Exception("Wrong version for block height", self.version, self.config.BU.get_version_for_height(self.index))
+        if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
+            raise Exception("Wrong version for block height", self.version, CHAIN.get_version_for_height(self.index))
 
         txns = self.get_transaction_hashes()
         self.set_merkle_root(txns)
@@ -394,7 +406,7 @@ class Block(object):
         for txn in self.transactions:
             if not txn.coinbase:
                 fee_sum += float(txn.fee)
-        reward = self.config.BU.get_block_reward(self)
+        reward = CHAIN.get_block_reward(self.index)
 
         #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
         """

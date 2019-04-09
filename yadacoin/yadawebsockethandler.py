@@ -129,7 +129,7 @@ async def on_newblock(self, data):
         block = Block.from_dict(WS_CONFIG, WS_MONGO, data)
         if block.index == 0:
             return
-        if int(block.version) != BU().get_version_for_height(block.index):
+        if int(block.version) != CHAIN.get_version_for_height(block.index):
             print('rejected old version %s from %s' % (block.version, peer))
             return
         WS_MONGO.db.consensus.update({

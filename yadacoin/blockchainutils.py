@@ -1,12 +1,13 @@
 import json
 import base64
 
-from yadacoin.transactionutils import TU
+# from yadacoin.transactionutils import TU
 from bitcoin.wallet import P2PKHBitcoinAddress
 from bson.son import SON
 from coincurve import PrivateKey
 
 
+from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 # Circular reference
 #from yadacoin.block import Block
@@ -79,6 +80,7 @@ class BlockChainUtils(object):
         return block_objs
 
     def get_wallet_balance(self, address):
+        # TODO: factorize in an async mongo.method?
         unspent_transactions = self.get_wallet_unspent_transactions(address)
         unspent_fastgraph_transactions = self.get_wallet_unspent_fastgraph_transactions(address)
         balance = 0
@@ -442,14 +444,16 @@ class BlockChainUtils(object):
             self.mongo.db.unspent_cache.remove({})
             return None
 
-    def get_version_for_height(self, height):
+    def get_version_for_height_DEPRECATED(self, height:int):
         # TODO: move to CHAIN
         if int(height) <= 14484:
             return 1
-        else:
+        elif int(height) <= CHAIN.POW_FORK_V2:
             return 2
+        else:
+            return 3
 
-    def get_block_reward(self, block=None):
+    def get_block_reward_DEPRECATED(self, block=None):
         # TODO: move to CHAIN
         block_rewards = [
             {"block": "0", "reward": "50"},
