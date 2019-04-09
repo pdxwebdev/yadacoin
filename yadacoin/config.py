@@ -52,6 +52,7 @@ class Config(object):
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
+        self.peers_seed = config.get('peers_seed', [])
         self.protocol_version = 1
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None

@@ -121,14 +121,19 @@ class Peers(object):
             except Exception as e:
                 self.app_log.error("Error: {} last_seeded".format(e))
 
-            http_client = AsyncHTTPClient()
             test_after = int(time())  # new peers will be tested asap.
-            try:
-                response = await http_client.fetch(url)
-                seeds = json.loads(response.body.decode('utf-8'))['peers']
-                await self.on_new_peer_list(seeds, test_after)
-            except Exception as e:
-                self.app_log.warning("Error: {} on url {}".format(e, url))
+            if len(self.config.peers_seed):
+                # add from our config file
+                await self.on_new_peer_list(self.config.peers_seed, test_after)
+            else:
+                # or from central yadacoin.io if none
+                http_client = AsyncHTTPClient()
+                try:
+                    response = await http_client.fetch(url)
+                    seeds = json.loads(response.body.decode('utf-8'))['peers']
+                    await self.on_new_peer_list(seeds, test_after)
+                except Exception as e:
+                    self.app_log.warning("Error: {} on url {}".format(e, url))
             await self.mongo.async_db.config.replace_one({"last_seeded": {"$exists": True}}, {"last_seeded": str(test_after)}, upsert=True)
             # self.mongo.db.config.update({'last_seeded': {"$ne": ""}}, {'last_seeded': str(test_after)}, upsert=True)
 

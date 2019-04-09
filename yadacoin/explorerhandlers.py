@@ -116,7 +116,6 @@ class ExplorerSearchHandler(BaseHandler):
         return self.render_as_json({})
 
 
-
 class ExplorerLatestHandler(BaseHandler):
 
     async def get(self):
