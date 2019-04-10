@@ -44,6 +44,7 @@ class ChatNamespace(AsyncNamespace):
         if self.config.debug:
             self.app_log.info('Client disconnected: {}'.format(sid))
         try:
+            # This will also unregister the ip
             await self.config.peers.on_close_inbound(sid)
         except Exception as e:
             self.app_log.warning("Error on_disconnect: {}".format(e))

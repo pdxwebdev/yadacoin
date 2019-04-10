@@ -25,8 +25,10 @@ class Peers(object):
         self.my_peer = None
         self.app_log = getLogger("tornado.application")
         self.inbound = {}  # a dict of inbound streams, keys are sids
-        self.outbound = {}  # a dict of outbound streams, keys are sids
+        self.outbound = {}  # a dict of outbound streams, keys are ips
         self.connected_ips = []  # a list of peers ip we're connected to
+        # I chose to have 2 indexs and more memory footprint rather than iterating over one to get the other.
+        self.probable_old_nodes = {}  # dict : keys are ip, value time when to delete from list
 
     def init_local(self):
         raise RuntimeError("Peers, init_local is deprecated")
@@ -58,7 +60,11 @@ class Peers(object):
 
     def potential_outbound_peers(self):
         """List the working peers we know, we are not yet connected to"""
-        return [peer for peer in self.peers if peer.host not in self.connected_ips]
+        now = time()
+        self.probable_old_nodes = {key: delete_at for key, delete_at in self.probable_old_nodes.items() if delete_at > now}
+        return [peer for peer in self.peers
+                if peer.host not in self.connected_ips
+                and peer.host not in self.probable_old_nodes]
 
     def allow_ip(self, IP):
         """Returns True if that ip can connect - inbound or outbound"""
@@ -72,6 +78,11 @@ class Peers(object):
         self.app_log.info("on_new_ip:{}".format(ip))
         if ip not in self.connected_ips:
             self.connected_ips.append(ip)
+
+    def on_lost_ip(self, ip):
+        """Remove an ip that was not registered as outgoing or ingoing yet"""
+        self.app_log.info("on_lost_ip:{}".format(ip))
+        self.connected_ips.remove(ip)
 
     async def on_new_inbound(self, ip:str, port:int, version, sid):
         """Inbound peer provided a correct version and ip, add it to our pool"""
@@ -90,19 +101,17 @@ class Peers(object):
         ip = info['ip']
         self.connected_ips.remove(ip)
 
-    def on_new_outbound(self, ip, port, version, sid):
+    def on_new_outbound(self, ip, port, client):
         """Outbound peer connection was sucessful, add it to our pool"""
-        self.app_log.info("on_new_outbound {}:{} {}".format(ip, port, version))
+        self.app_log.info("on_new_outbound {}:{}".format(ip, port))
         if ip not in self.connected_ips:
             self.connected_ips.append(ip)
-        # TODO: maybe version is not to be stored, then we could only store ip:port as string to avoid dict overhead.
-        self.outbound[sid] = {"ip":ip, "port":port, "version": version}
+        self.outbound[ip] = {"ip":ip, "port":port, "client": client}
 
-    def on_close_outbound(self, sid):
+    def on_close_outbound(self, ip):
         # We only allow one in or out per ip
-        self.app_log.info("on_close_outbound {}".format(sid))
-        info = self.outbound.pop(sid, None)
-        ip = info['ip']
+        self.app_log.info("on_close_outbound {}".format(ip))
+        self.outbound.pop(ip, None)
         self.connected_ips.remove(ip)
 
     async def check_outgoing(self):
@@ -118,13 +127,22 @@ class Peers(object):
         ioloop.IOLoop.instance().add_callback(self.background_peer, peer)
 
     async def background_peer(self, peer):
-        self.app_log.debug("TODO: Peers background_peer {}".format(peer.to_dict()))
-        # TODO
-        # How to handle hosts that will not accept a websocket connection, but an http one?
-        # Can we ignore and suppose enough will be up to date?
-        # or add "polling peers" in config for the transition period
-        client = YadaWebSocketClient(peer)
-        await client.start()
+        self.app_log.debug("Peers background_peer {}".format(peer.to_dict()))
+        # lock that ip
+        self.on_new_ip(peer.host)
+        try:
+            client = YadaWebSocketClient(peer)
+            # This will run until disconnect
+            await client.start()
+        except Exception as e:
+            self.app_log.warning("Error: {} on background_peer {}".format(e, peer.host))
+        finally:
+            # If we get here with no outbound record, then it was an old node.
+            if peer.host not in self.outbound:
+                # add it to a temp "do not try ws soon" list
+                self.app_log.debug("Peer {} added to probable_old_nodes".format(peer.host))
+                self.probable_old_nodes[peer.host] = int(time()) + 3600  # try again in 1 hour
+            self.on_close_outbound(peer.host)
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
