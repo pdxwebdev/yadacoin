@@ -52,7 +52,7 @@ class YadaWebSocketClient(object):
             if self.peer.host not in self.config.peers.outbound:
                 # if we are not in the outgoing, we did not receive a peers answer, old peer (but ok)
                 self.app_log.warning("{} was not connected after {} sec, probable old node"
-                                     .format(self.WAIT_FOR_PEERS, self.peer.to_string()))
+                                     .format(self.peer.to_string(), self.WAIT_FOR_PEERS))
                 return
             while True:
                 self.app_log.debug("{} loop".format(self.peer.to_string()))

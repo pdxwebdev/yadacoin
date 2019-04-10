@@ -1,0 +1,10 @@
+base58
+coincurve
+bip32utils
+python-bitcoinlib
+mnemonic
+eccsnacks
+python-socketio[asyncio_client]
+pymongo
+socketIO-client
+motor

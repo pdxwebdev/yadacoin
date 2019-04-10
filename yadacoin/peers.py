@@ -61,7 +61,10 @@ class Peers(object):
     def potential_outbound_peers(self):
         """List the working peers we know, we are not yet connected to"""
         now = time()
-        self.probable_old_nodes = {key: delete_at for key, delete_at in self.probable_old_nodes.items() if delete_at > now}
+        # remove after timeout
+        self.probable_old_nodes = {key: delete_at
+                                   for key, delete_at in self.probable_old_nodes.items()
+                                   if delete_at > now}
         return [peer for peer in self.peers
                 if peer.host not in self.connected_ips
                 and peer.host not in self.probable_old_nodes]
@@ -102,7 +105,7 @@ class Peers(object):
         self.connected_ips.remove(ip)
 
     def on_new_outbound(self, ip, port, client):
-        """Outbound peer connection was sucessful, add it to our pool"""
+        """Outbound peer connection was successful, add it to our pool"""
         self.app_log.info("on_new_outbound {}:{}".format(ip, port))
         if ip not in self.connected_ips:
             self.connected_ips.append(ip)

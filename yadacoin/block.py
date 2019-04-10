@@ -139,7 +139,7 @@ class BlockFactory(object):
     
     @classmethod
     def generate_header(cls, block):
-        if block.version < 3:
+        if int(block.version) < 3:
             return str(block.version) + \
                 str(block.time) + \
                 block.public_key + \
