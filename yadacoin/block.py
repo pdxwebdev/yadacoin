@@ -273,7 +273,7 @@ class BlockFactory(object):
             "id" : "MEUCIQDDicnjg9DTSnGOMLN3rq2VQC1O9ABDiXygW7QDB6SNzwIga5ri7m9FNlc8dggJ9sDg0QXUugrHwpkVKbmr3kYdGpc=",
             "merkleRoot" : "705d831ced1a8545805bbb474e6b271a28cbea5ada7f4197492e9a3825173546",
             "index" : 0,
-            "target" : CHAIN.MAX_TARGET_HEX,
+            "target" : "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             "special_min" : False,
             "version" : "1",
             "transactions" : [ 
