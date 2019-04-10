@@ -8,3 +8,4 @@ python-socketio[asyncio_client]
 pymongo
 socketIO-client
 motor
+websocket-client

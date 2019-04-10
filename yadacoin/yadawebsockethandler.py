@@ -24,7 +24,7 @@ class ChatNamespace(AsyncNamespace):
             self.config = get_config()  # Will be done once at first request
             self.app_log = getLogger("tornado.application")
             self.peers = self.config.peers
-        IP = environ['REMOTE_ADDR']
+        IP = environ['tornado.handler'].request.remote_ip
         if self.peers.free_inbound_slots <= 0:
             self.app_log.warning('No free slot, client rejected: {}'.format(IP))
             return False  # This will close the socket

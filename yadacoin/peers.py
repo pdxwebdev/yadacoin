@@ -120,6 +120,8 @@ class Peers(object):
     async def check_outgoing(self):
         """Called by a background task.
         Counts the current active outgoing connections, and tries to connect to more if needed"""
+        if len(self.peers) < 2:
+            await self.refresh()
         if self.free_outbound_slots <= 0:
             return
         targets = self.potential_outbound_peers()
