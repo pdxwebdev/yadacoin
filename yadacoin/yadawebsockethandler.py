@@ -130,7 +130,7 @@ class ChatNamespace(AsyncNamespace):
                     }
                 ]
             }, {'_id': 0}).sort([('index',1)])
-            await self.emit('blocks', data=blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE), room=sid)
+            await self.emit('blocks', data=await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE), room=sid)
 
 
 

@@ -25,7 +25,8 @@ class ClientChatNamespace(AsyncClientNamespace):
 
     def on_disconnect(self):
         """Disconnect from our side or the server's one."""
-        self.app_log.debug('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
+        # self.app_log.debug('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
+        raise RuntimeWarning('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
         pass
 
     async def on_latest_block(self, data):
@@ -91,6 +92,6 @@ class YadaWebSocketClient(object):
             if data['index'] == my_index + 1:
                 self.app_log.debug("TODO: next index, should try to merge from {}".format(self.peer.to_string()))
             elif data['index'] > my_index + 1:
-                self.app_log.debug("TODO: missing blocks between {} and {} , asking more to {}".format(my_index, data['index'], self.peer.to_string()))
+                self.app_log.debug("Missing blocks between {} and {} , asking more to {}".format(my_index, data['index'], self.peer.to_string()))
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
                 await self.client.emit('get_blocks', data=data, namespace="/chat")
