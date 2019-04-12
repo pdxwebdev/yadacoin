@@ -31,7 +31,6 @@ class ClientChatNamespace(AsyncClientNamespace):
     async def on_latest_block(self, data):
         """Peer sent us its latest block, store it and consider it a valid peer."""
         self.app_log.debug("ws client got latest block {} from {}:{} {}".format(data['index'], self.ip, self.port, data))
-        await self.config.peers.on_latest_block_outgoing(data, self.ip, self.port)
         await self.client.manager.on_latest_block(data)
 
     async def on_peers(self, data):
