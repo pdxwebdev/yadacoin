@@ -17,6 +17,9 @@ class CHAIN(object):
     TWO_WEEKS = 1209600  # seconds
     HALF_WEEK = 302400  # seconds
 
+    MAX_BLOCKS_PER_MESSAGE = 200  # Not really a chain param, but better if coherent across peers
+    MAX_RETRACE_DEPTH = 20  # Max allowed retrace. Deeper retrace would need manual chain truncating
+
     # TODO: add block time depending on network + escape hatch
 
     @classmethod

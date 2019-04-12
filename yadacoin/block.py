@@ -300,6 +300,10 @@ class BlockFactory(object):
 
 
 class Block(object):
+
+    # Memory optimization
+    __slots__ = ('config', 'mongo', 'version', 'time', 'index', 'prev_hash', 'nonce', 'transactions', 'txn_hashes',
+                 'merkle_root', 'verify_merkle_root','hash', 'public_key', 'signature', 'special_min', 'target')
     
     def __init__(
         self,

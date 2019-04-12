@@ -10,7 +10,8 @@ from yadacoin.transaction import Transaction
 from yadacoin.config import get_config
 from yadacoin.blockchainutils import BU
 from yadacoin.poolnamespace import PoolNamespace
-
+from yadacoin.common import ts_to_utc
+from yadacoin.chain import CHAIN
 
 SIO = None
 
@@ -22,6 +23,7 @@ class ChatNamespace(AsyncNamespace):
         if not 'config' in self.__dict__:
             # ChatNamespace is a singleton, same instance for everyone
             self.config = get_config()  # Will be done once at first request
+            self.mongo = self.config.mongo
             self.app_log = getLogger("tornado.application")
             self.peers = self.config.peers
         IP = environ['tornado.handler'].request.remote_ip
@@ -97,7 +99,42 @@ class ChatNamespace(AsyncNamespace):
         # TODO: include refresh date?
         await self.emit('peers', data, room=sid)
 
-#
+    async def on_get_latest_block(self, sid, data):
+        """peer ask for our latest block"""
+        self.app_log.info('WS get-latest-block: {} {}'.format(sid, json.dumps(data)))
+        block = self.config.BU.get_latest_block()
+        block['time_utc'] = ts_to_utc(block['time'])
+        await self.emit('latest_block', data=block, room=sid)
+
+    async def on_get_blocks(self, sid, data):
+        """peer ask for list of blocks"""
+        # TODO: dup code between http route and websocket handlers. move to a .mongo method?
+        self.app_log.info('WS get-blocks: {} {}'.format(sid, json.dumps(data)))
+        start_index = int(data.get("start_index", 0))
+        # safety, add bound on block# to fetch
+        end_index = min(int(data.get("end_index", 0)), start_index + CHAIN.MAX_BLOCKS_PER_MESSAGE)
+        # global chain object with cache of current block height,
+        # so we can instantly answer to pulling requests without any db request
+        if start_index > self.config.BU.get_latest_block()['index']:
+            # early exit without request
+            await self.emit('peers', data=[], room=sid)
+        else:
+            blocks = self.mongo.async_db.blocks.find({
+                '$and': [
+                    {'index':
+                        {'$gte': start_index}
+
+                    },
+                    {'index':
+                        {'$lte': end_index}
+                    }
+                ]
+            }, {'_id': 0}).sort([('index',1)])
+            await self.emit('blocks', data=blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE), room=sid)
+
+
+
+
 
 
 def get_sio():

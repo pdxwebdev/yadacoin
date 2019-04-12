@@ -6,6 +6,7 @@ from time import time
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
 from yadacoin.common import ts_to_utc
+from yadacoin.chain import CHAIN
 
 
 class GetLatestBlockHandler(BaseHandler):
@@ -23,9 +24,10 @@ class GetLatestBlockHandler(BaseHandler):
 class GetBlocksHandler(BaseHandler):
 
     async def get(self):
+        # TODO: dup code between http route and websocket handlers. move to a .mongo method?
         start_index = int(self.get_argument("start_index", 0))
         # safety, add bound on block# to fetch
-        end_index = min(int(self.get_argument("end_index", 0)), start_index + 200)  # TODO: store 200 as chain param
+        end_index = min(int(self.get_argument("end_index", 0)), start_index + CHAIN.MAX_BLOCKS_PER_MESSAGE)
         # global chain object with cache of current block height,
         # so we can instantly answer to pulling requests without any db request
         if start_index > self.config.BU.get_latest_block()['index']:
@@ -43,7 +45,7 @@ class GetBlocksHandler(BaseHandler):
                     }
                 ]
             }, {'_id': 0}).sort([('index',1)])
-            self.render_as_json(await blocks.to_list(length=500))
+            self.render_as_json(await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE))
 
 
 class GetBlockHandler(BaseHandler):
