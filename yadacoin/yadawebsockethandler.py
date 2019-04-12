@@ -117,7 +117,7 @@ class ChatNamespace(AsyncNamespace):
         # so we can instantly answer to pulling requests without any db request
         if start_index > self.config.BU.get_latest_block()['index']:
             # early exit without request
-            await self.emit('peers', data=[], room=sid)
+            await self.emit('blocks', data=[], room=sid)
         else:
             blocks = self.mongo.async_db.blocks.find({
                 '$and': [

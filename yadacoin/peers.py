@@ -68,7 +68,8 @@ class Peers(object):
                                    if delete_at > now}
         return [peer for peer in self.peers
                 if peer.host not in self.connected_ips
-                and peer.host not in self.probable_old_nodes]
+                and peer.host not in self.probable_old_nodes
+                and peer.host not in self.config.outgoing_blacklist]
 
     def allow_ip(self, IP):
         """Returns True if that ip can connect - inbound or outbound"""

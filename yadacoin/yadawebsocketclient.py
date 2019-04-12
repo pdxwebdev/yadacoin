@@ -37,7 +37,11 @@ class ClientChatNamespace(AsyncClientNamespace):
     async def on_peers(self, data):
         self.app_log.debug("ws client got peers from {}:{} {}".format(self.ip, self.port, data))
         self.config.peers.on_new_outbound(self.ip, self.port, self.client)
-        await self.config.peers.on_new_peer_list(data['peers'])
+        try:
+            await self.config.peers.on_new_peer_list(data['peers'])
+        except Exception as e:
+            print(data)
+            self.app_log.warning('ws on_peers error {}'.format(e))
         # Get the peers current block as sync starting point
         await self.emit('get_latest_block', data={}, namespace="/chat")
 
@@ -84,6 +88,7 @@ class YadaWebSocketClient(object):
             while self.connected:
                 self.app_log.debug("{} loop".format(self.peer.to_string(), self.client.eio.state))
                 await async_sleep(30)
+                # TODO: poll here after some time without activity?
         except Exception as e:
             self.app_log.warning("Exception {} connecting to {}".format(e, self.peer.to_string()))
         finally:
@@ -97,11 +102,25 @@ class YadaWebSocketClient(object):
             self.app_log.debug("Trying to sync on latest block from {}".format(self.peer.to_string()))
             my_index = self.config.BU.get_latest_block()['index']
             if data['index'] == my_index + 1:
-                self.app_log.debug("TODO: next index, should try to merge from {}".format(self.peer.to_string()))
+                self.app_log.debug("Next index, should try to merge from {}".format(self.peer.to_string()))
+                self.process_next_block(data)
             elif data['index'] > my_index + 1:
                 self.app_log.debug("Missing blocks between {} and {} , asking more to {}".format(my_index, data['index'], self.peer.to_string()))
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
                 await self.client.emit('get_blocks', data=data, namespace="/chat")
+
+    async def process_next_block(self, block_data: dict) -> bool:
+        from yadacoin.block import Block  # Circular reference. Not good!
+        block_object = Block.from_dict(block_data)
+        await self.consensus.insert_consensus_block(block_object, self.peer)
+        self.app_log.debug("Consensus ok {}".format(block_object.index))
+        res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block_data})
+        self.app_log.debug("Import_block {} {}".format(block_object.index, res))
+        if res:
+            self.latest_block = block_object
+            return True
+        else:
+            return False
 
     async def on_blocks(self, data):
         from yadacoin.block import Block  # Circular reference. Not good!
@@ -113,19 +132,17 @@ class YadaWebSocketClient(object):
             for block in data:
                 # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                 if block['index'] == my_index + 1:
-                    block_object = Block.from_dict(block)
-                    await self.consensus.insert_consensus_block(block_object, self.peer)
-                    self.app_log.debug("consensus ok {}".format(block_object.index))
-                    res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block})
-                    self.app_log.debug("import_block {} {}".format(block_object.index, res))
-                    if res:
-                        self.latest_block = block_object
+                    if await self.process_next_block(block):
                         my_index = block['index']
+                    else:
+                        self.app_log.debug("Import aborted block 1: {}".format(block['index']))
+                        return
                 else:
                     # As soon as a block fails, abort
-                    self.app_log.debug("import aborted block {}".format(block['index']))
+                    self.app_log.debug("Import aborted block 2: {}".format(block['index']))
                     return
             # If import was successful, ask for the next batch
+            data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
             await self.client.emit('get_blocks', data=data, namespace="/chat")
         except Exception as e:
             self.app_log.warning("Exception {} on_blocks".format(e))
