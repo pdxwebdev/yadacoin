@@ -115,7 +115,7 @@ class YadaWebSocketClient(object):
                 if block['index'] == my_index + 1:
                     block_object = Block.from_dict(block)
                     await self.consensus.insert_consensus_block(block_object, self.peer)
-                    self.app_log.debug("consensus ok {}".format(block.index))
+                    self.app_log.debug("consensus ok {}".format(block_object.index))
                     res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block})
                     self.app_log.debug("import_block {} {}".format(block_object.index, res))
                     if res:
@@ -123,7 +123,7 @@ class YadaWebSocketClient(object):
                         my_index = block['index']
                 else:
                     # As soon as a block fails, abort
-                    self.app_log.debug("import aborted block {}".format(block.index))
+                    self.app_log.debug("import aborted block {}".format(block['index']))
                     return
             # If import was successful, ask for the next batch
             await self.client.emit('get_blocks', data=data, namespace="/chat")
