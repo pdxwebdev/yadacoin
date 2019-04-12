@@ -56,12 +56,14 @@ class Config(object):
         self.protocol_version = 1
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
+        self.consensus = None
         self.peers = None
         self.BU = None
         self.GU = None
         self.SIO = None
         self.debug = False
         self.mp = None
+
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event

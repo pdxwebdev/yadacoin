@@ -312,8 +312,8 @@ class Consensus(object):
 
     async def import_block(self, block_data):
         try:
-            block = Block.from_dict( block_data['block'])
-            peer = Peer.from_string( block_data['peer'])
+            block = Block.from_dict(block_data['block'])
+            peer = Peer.from_string(block_data['peer'])
             if 'extra_blocks' in block_data:
                 extra_blocks = [Block.from_dict( x) for x in block_data['extra_blocks']]
             else:

@@ -196,6 +196,7 @@ async def main():
         consensus.verify_existing_blockchain(reset=options.reset)
     else:
         app_log.info("Verification of existing blockchain skipped by config")
+    config.consensus = consensus
 
     if config.max_miners > 0:
         app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
