@@ -29,6 +29,7 @@ class Peers(object):
         self.connected_ips = []  # a list of peers ip we're connected to
         # I chose to have 2 indexs and more memory footprint rather than iterating over one to get the other.
         self.probable_old_nodes = {}  # dict : keys are ip, value time when to delete from list
+        self.syncing = False
 
     def init_local(self):
         raise RuntimeError("Peers, init_local is deprecated")
@@ -148,6 +149,12 @@ class Peers(object):
                 self.app_log.debug("Peer {} added to probable_old_nodes".format(peer.host))
                 self.probable_old_nodes[peer.host] = int(time()) + 3600  # try again in 1 hour
             self.on_close_outbound(peer.host)
+
+    async def on_latest_block_outgoing(self, data, ip, port):
+        """An outgoing peer sent us its initial state or a new block"""
+        from yadacoin.block import Block  # Circular reference. Not good!
+        raise RuntimeError("TODO: Not sure that fits here")
+        pass
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
