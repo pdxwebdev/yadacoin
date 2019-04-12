@@ -69,7 +69,7 @@ class YadaWebSocketClient(object):
         self.peers = self.config.peers
         self.app_log = getLogger("tornado.application")
 
-        self.latest_block = None
+        self.latest_peer_block = None
         self.connected = False
 
     async def start(self):
@@ -97,17 +97,21 @@ class YadaWebSocketClient(object):
     async def on_latest_block(self, data):
         from yadacoin.block import Block  # Circular reference. Not good! - Do we need the object here?
         # processing in this object rather than ClientChatNamespace so consensus data is available from peers
-        self.latest_block = Block.from_dict(data)
+        self.latest_peer_block = Block.from_dict(data)
         if not self.peers.syncing:
             self.app_log.debug("Trying to sync on latest block from {}".format(self.peer.to_string()))
             my_index = self.config.BU.get_latest_block()['index']
             if data['index'] == my_index + 1:
-                self.app_log.debug("Next index, should try to merge from {}".format(self.peer.to_string()))
-                self.process_next_block(data)
+                self.app_log.debug("Next index, trying to merge from {}".format(self.peer.to_string()))
+                if await self.process_next_block(data):
+                    await self.peers.on_block_insert(data)
             elif data['index'] > my_index + 1:
                 self.app_log.debug("Missing blocks between {} and {} , asking more to {}".format(my_index, data['index'], self.peer.to_string()))
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
                 await self.client.emit('get_blocks', data=data, namespace="/chat")
+            else:
+                # Remove later on
+                self.app_log.debug("Old or same index, ignoring {} from {}".format(data['index'], self.peer.to_string()))
 
     async def process_next_block(self, block_data: dict) -> bool:
         from yadacoin.block import Block  # Circular reference. Not good!
@@ -116,11 +120,7 @@ class YadaWebSocketClient(object):
         self.app_log.debug("Consensus ok {}".format(block_object.index))
         res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block_data})
         self.app_log.debug("Import_block {} {}".format(block_object.index, res))
-        if res:
-            self.latest_block = block_object
-            return True
-        else:
-            return False
+        return res
 
     async def on_blocks(self, data):
         from yadacoin.block import Block  # Circular reference. Not good!
@@ -129,22 +129,33 @@ class YadaWebSocketClient(object):
             return
         self.peers.syncing = True
         try:
+            inserted = False
             for block in data:
                 # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                 if block['index'] == my_index + 1:
                     if await self.process_next_block(block):
+                        inserted = True
                         my_index = block['index']
                     else:
-                        self.app_log.debug("Import aborted block 1: {}".format(block['index']))
-                        return
+                        break
                 else:
                     # As soon as a block fails, abort
-                    self.app_log.debug("Import aborted block 2: {}".format(block['index']))
-                    return
-            # If import was successful, ask for the next batch
-            data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
-            await self.client.emit('get_blocks', data=data, namespace="/chat")
+                    break
+            if inserted:
+                # If import was successful, inform out peers
+                await self.peers.on_block_insert(block)
+                # then ask for the potential next batch
+                data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
+                await self.client.emit('get_blocks', data=data, namespace="/chat")
+            else:
+               self.app_log.debug("Import aborted block: {}".format(my_index))
+               return
         except Exception as e:
+            import sys, os
             self.app_log.warning("Exception {} on_blocks".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+
         finally:
             self.peers.syncing = False

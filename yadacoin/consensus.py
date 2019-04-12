@@ -293,9 +293,10 @@ class Consensus(object):
                     blocks = json.loads(result.content)
                 except ValueError:
                     continue
+                inserted = False
                 for block in blocks:
                     # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
-                    block = Block.from_dict( block)
+                    block = Block.from_dict(block)
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
                         await self.insert_consensus_block(block, peer)
                         # print("consensus ok", block.index)
@@ -303,9 +304,12 @@ class Consensus(object):
                         # print("import ", block.index, res)
                         if res:
                             self.latest_block = block
+                            inserted = True
                     else:
                         pass
                         #print("pass", block.index)
+                if inserted:
+                    await self.peers.on_block_insert(self.latest_block.to_dict())
             except Exception as e:
                 if self.debug:
                     self.app_log.warning(e)

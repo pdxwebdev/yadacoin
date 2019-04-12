@@ -151,11 +151,21 @@ class Peers(object):
                 self.probable_old_nodes[peer.host] = int(time()) + 3600  # try again in 1 hour
             self.on_close_outbound(peer.host)
 
-    async def on_latest_block_outgoing(self, data, ip, port):
-        """An outgoing peer sent us its initial state or a new block"""
-        from yadacoin.block import Block  # Circular reference. Not good!
-        raise RuntimeError("TODO: Not sure that fits here")
-        pass
+    async def on_block_insert(self, block_data: dict):
+        """This is what triggers the event to all connected ws peers, in or outgoing"""
+        # outgoing
+        self.app_log.debug("Block Insert event index ".format(block_data['index']))
+
+        for ip, outgoing in self.outbound.items():
+            try:
+                await outgoing['client'].client.emit("latest_block", data=block_data, namespace="/chat")
+            except Exception as e:
+                self.app_log.warning("Error {} notifying outgoing {}".format(e, ip))
+        # ingoing
+        try:
+            await self.config.SIO.emit("latest_block", data=block_data, namespace="/chat")
+        except Exception as e:
+            self.app_log.warning("Error {} notifying ws clients".format(e))
 
     async def refresh(self):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
