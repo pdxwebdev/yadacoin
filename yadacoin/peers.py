@@ -158,7 +158,7 @@ class Peers(object):
 
         for ip, outgoing in self.outbound.items():
             try:
-                await outgoing['client'].client.emit("latest_block", data=block_data, namespace="/chat")
+                await outgoing['client'].emit("latest_block", data=block_data, namespace="/chat")
             except Exception as e:
                 self.app_log.warning("Error {} notifying outgoing {}".format(e, ip))
         # ingoing
