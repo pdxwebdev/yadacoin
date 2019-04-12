@@ -26,7 +26,9 @@ class ClientChatNamespace(AsyncClientNamespace):
     def on_disconnect(self):
         """Disconnect from our side or the server's one."""
         # self.app_log.debug('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
-        raise RuntimeWarning('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
+        self.client.manager.connected = False
+        print('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
+
         pass
 
     async def on_latest_block(self, data):
@@ -43,7 +45,7 @@ class ClientChatNamespace(AsyncClientNamespace):
 
     async def on_blocks(self, data):
         """Peer sent us its latest block, store it and consider it a valid peer."""
-        self.app_log.debug("ws client got {} blocks from {}:{} {}".format(len(data), self.ip, self.port, data))
+        self.app_log.debug("ws client got {} blocks from {}:{}".format(len(data), self.ip, self.port))
         if self.config.peers.syncing:
             self.app_log.debug("Ignoring, already syncing")
             return
@@ -62,12 +64,14 @@ class YadaWebSocketClient(object):
         self.app_log = getLogger("tornado.application")
 
         self.latest_block = None
+        self.connected = False
 
     async def start(self):
         try:
             self.client.manager = self
             self.client.register_namespace(ClientChatNamespace('/chat'))
             await self.client.connect("http://{}:{}".format(self.peer.host, self.peer.port))
+            self.connected = True
             await async_sleep(self.WAIT_FOR_PEERS)  # wait for an answer
             if self.peer.host not in self.config.peers.outbound:
                 # if we are not in the outgoing, we did not receive a peers answer, old peer (but ok)
@@ -75,7 +79,7 @@ class YadaWebSocketClient(object):
                                      .format(self.peer.to_string(), self.WAIT_FOR_PEERS))
                 await self.client.disconnect()
                 return
-            while True:
+            while self.connected:
                 self.app_log.debug("{} loop".format(self.peer.to_string(), self.client.eio.state))
                 await async_sleep(30)
         except Exception as e:
