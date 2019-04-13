@@ -2,6 +2,7 @@
 Client side of the websocket /chat
 """
 
+import json
 from asyncio import sleep as async_sleep
 from logging import getLogger
 
@@ -9,12 +10,14 @@ from socketio import AsyncClient, AsyncClientNamespace
 
 from yadacoin.config import get_config
 from yadacoin.chain import CHAIN
+from yadacoin.common import ts_to_utc
 
 
 class ClientChatNamespace(AsyncClientNamespace):
 
     async def on_connect(self):
         self.config = get_config()
+        self.mongo = self.config.mongo
         self.app_log = getLogger("tornado.application")
         _, ip_port = self.client.connection_url.split('//')  # extract ip:port
         self.ip, self.port = ip_port.split(':')
@@ -25,9 +28,13 @@ class ClientChatNamespace(AsyncClientNamespace):
 
     def on_disconnect(self):
         """Disconnect from our side or the server's one."""
-        # self.app_log.debug('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
+        #
         self.client.manager.connected = False
-        print('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
+        try:
+            self.app_log.debug('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
+        except:
+            # self.app_log sometimes seem not to be init?
+            print('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
 
     async def on_latest_block(self, data):
         """Peer sent us its latest block, store it and consider it a valid peer."""
@@ -55,6 +62,43 @@ class ClientChatNamespace(AsyncClientNamespace):
             return
         # TODO: if index match and enough blocks, Set syncing and do it
         await self.client.manager.on_blocks(data)
+
+    async def on_get_latest_block(self, data):
+        """Peer sent us its latest block, store it and consider it a valid peer."""
+        self.app_log.error("ws client got on_get_latest_block from {}:{}, IGNORED".format(self.ip, self.port, data))
+
+    async def on_get_blocks(self, data):
+        """server ask for list of blocks"""
+        try:
+            # TODO: dup code between http route and websocket handlers. AND... ws client + server!!!
+            self.app_log.info('WSclient get-blocks: {}'.format(json.dumps(data)))
+            start_index = int(data.get("start_index", 0))
+            # safety, add bound on block# to fetch
+            end_index = min(int(data.get("end_index", 0)), start_index + CHAIN.MAX_BLOCKS_PER_MESSAGE)
+            # global chain object with cache of current block height,
+            # so we can instantly answer to pulling requests without any db request
+            if start_index > self.config.BU.get_latest_block()['index']:
+                # early exit without request
+                await self.emit('blocks', data=[], namespace="/chat")
+            else:
+                blocks = self.mongo.async_db.blocks.find({
+                    '$and': [
+                        {'index':
+                            {'$gte': start_index}
+
+                        },
+                        {'index':
+                            {'$lte': end_index}
+                        }
+                    ]
+                }, {'_id': 0}).sort([('index',1)])
+                await self.emit('blocks', data=await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE), namespace="/chat")
+        except Exception as e:
+             import sys, os
+             self.app_log.warning("Exception {} on_get_blocks".format(e))
+             exc_type, exc_obj, exc_tb = sys.exc_info()
+             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+             print(exc_type, fname, exc_tb.tb_lineno)
 
 
 class YadaWebSocketClient(object):
@@ -103,7 +147,7 @@ class YadaWebSocketClient(object):
             my_index = self.config.BU.get_latest_block()['index']
             if data['index'] == my_index + 1:
                 self.app_log.debug("Next index, trying to merge from {}".format(self.peer.to_string()))
-                if await self.process_next_block(data):
+                if await self.consensus.process_next_block(data, self.peer):
                     pass
                     # if ok, block was inserted and event triggered by import block
                     # await self.peers.on_block_insert(data)
@@ -111,11 +155,17 @@ class YadaWebSocketClient(object):
                 self.app_log.debug("Missing blocks between {} and {} , asking more to {}".format(my_index, data['index'], self.peer.to_string()))
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
                 await self.client.emit('get_blocks', data=data, namespace="/chat")
+            elif data['index'] == my_index:
+                self.app_log.debug("Same index, ignoring {} from {}".format(data['index'], self.peer.to_string()))
             else:
-                # Remove later on
-                self.app_log.debug("Old or same index, ignoring {} from {}".format(data['index'], self.peer.to_string()))
+                # We have better
+                self.app_log.debug("We have higher index, sending {} to ws {}".format(data['index'], self.peer.to_string()))
+                block = self.config.BU.get_latest_block()
+                block['time_utc'] = ts_to_utc(block['time'])
+                await self.client.emit('latest_block', data=block, namespace="/chat")
 
-    async def process_next_block(self, block_data: dict, trigger_event=True) -> bool:
+    """
+    async def __process_next_block(self, block_data: dict, trigger_event=True) -> bool:
         from yadacoin.block import Block  # Circular reference. Not good!
         block_object = Block.from_dict(block_data)
         await self.consensus.insert_consensus_block(block_object, self.peer)
@@ -123,9 +173,9 @@ class YadaWebSocketClient(object):
         res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block_data}, trigger_event=trigger_event)
         self.app_log.debug("Import_block {} {}".format(block_object.index, res))
         return res
+    """
 
     async def on_blocks(self, data):
-        from yadacoin.block import Block  # Circular reference. Not good!
         my_index = self.config.BU.get_latest_block()['index']
         if data[0]['index'] != my_index + 1:
             return
@@ -136,7 +186,7 @@ class YadaWebSocketClient(object):
             for block in data:
                 # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                 if block['index'] == my_index + 1:
-                    if await self.process_next_block(block, trigger_event=False):
+                    if await self.consensus.process_next_block(block, self.peer, trigger_event=False):
                         inserted = True
                         my_index = block['index']
                     else:

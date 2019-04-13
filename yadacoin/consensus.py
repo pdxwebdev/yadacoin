@@ -407,6 +407,15 @@ class Consensus(object):
             await self.trigger_update_event()
         return True
 
+    async def process_next_block(self, block_data: dict, peer, trigger_event=True) -> bool:
+        block_object = Block.from_dict(block_data)
+        await self.insert_consensus_block(block_object, peer)
+        self.app_log.debug("Consensus ok {}".format(block_object.index))
+        res = await self.import_block({'peer': peer.to_string(), 'block': block_data},
+                                      trigger_event=trigger_event)
+        self.app_log.debug("Import_block {} {}".format(block_object.index, res))
+        return res
+
     async def integrate_block_with_existing_chain(self, block, extra_blocks=None):
         """Even in case of retrace, this iis the only place where we insert a new block into the block collection and update BU"""
         try:

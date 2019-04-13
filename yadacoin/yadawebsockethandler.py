@@ -12,6 +12,7 @@ from yadacoin.blockchainutils import BU
 from yadacoin.poolnamespace import PoolNamespace
 from yadacoin.common import ts_to_utc
 from yadacoin.chain import CHAIN
+from yadacoin.peers import Peer
 
 SIO = None
 
@@ -26,6 +27,7 @@ class ChatNamespace(AsyncNamespace):
             self.mongo = self.config.mongo
             self.app_log = getLogger("tornado.application")
             self.peers = self.config.peers
+            self.consensus = self.config.consensus
         IP = environ['tornado.handler'].request.remote_ip
         if self.peers.free_inbound_slots <= 0:
             self.app_log.warning('No free slot, client rejected: {}'.format(IP))
@@ -34,7 +36,7 @@ class ChatNamespace(AsyncNamespace):
             self.app_log.info('Client rejected: {}'.format(IP))
             return False  # This will close the socket
         self.config.peers.on_new_ip(IP)  # Store the ip to avoid duplicate connections
-        await self.save_session(sid, {'IP': IP})
+        await self.save_session(sid, {'ip': IP})
         if self.config.debug:
             self.app_log.info('Client connected: {}'.format(sid))
 
@@ -76,11 +78,12 @@ class ChatNamespace(AsyncNamespace):
         self.app_log.info('WS hello: {} {}'.format(sid, json.dumps(data)))
         try:
             async with self.session(sid) as session:
-                if session['IP'] != data['ip']:
+                if session['ip'] != data['ip']:
                     raise Exception("IP mismatch")
                 # TODO: test version also (ie: protocol version)
                 # If peer data seem correct, add to our pool of inbound peers
-                await self.config.peers.on_new_inbound(session['IP'], data['port'], data['version'], sid)
+            await self.save_session(sid, {'ip': data['ip'], 'port': data['port']})
+            await self.config.peers.on_new_inbound(session['ip'], data['port'], data['version'], sid)
         except Exception as e:
             self.app_log.warning("bad hello: {}".format(e))
             await self.force_close(sid)
@@ -132,8 +135,75 @@ class ChatNamespace(AsyncNamespace):
             }, {'_id': 0}).sort([('index',1)])
             await self.emit('blocks', data=await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE), room=sid)
 
+    async def on_latest_block(self, sid, data):
+        """Client informs us of its new block"""
+        # from yadacoin.block import Block  # Circular reference. Not good! - Do we need the object here?
+        self.app_log.info('WS latest-block: {} {}'.format(sid, json.dumps(data)))
+        # TODO: handle a dict here to store the consensus state
+        # self.latest_peer_block = Block.from_dict(data)
+        if not self.peers.syncing:
+            async with self.session(sid) as session:
+                peer = Peer(session['ip'], session['port'])
+            self.app_log.debug("Trying to sync on latest block from {}".format(peer.to_string()))
+            my_index = self.config.BU.get_latest_block()['index']
+            if data['index'] == my_index + 1:
+                self.app_log.debug("Next index, trying to merge from {}".format(peer.to_string()))
+                if await self.consensus.process_next_block(data, peer):
+                    pass
+                    # if ok, block was inserted and event triggered by import block
+                    # await self.peers.on_block_insert(data)
+            elif data['index'] > my_index + 1:
+                self.app_log.debug(
+                    "Missing blocks between {} and {} , asking more to {}".format(my_index, data['index'],
+                                                                                  peer.to_string()))
+                data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
+                await self.emit('get_blocks', data=data, room=sid)
+            else:
+                # Remove later on
+                self.app_log.debug(
+                    "Old or same index, ignoring {} from {}".format(data['index'], peer.to_string()))
 
-
+    async def on_blocks(self, sid, data):
+        self.app_log.info('WS blocks: {} {}'.format(sid, json.dumps(data)))
+        if not len(data):
+            return
+        my_index = self.config.BU.get_latest_block()['index']
+        if data[0]['index'] != my_index + 1:
+            return
+        self.peers.syncing = True
+        try:
+            async with self.session(sid) as session:
+                peer = Peer(session['ip'], session['port'])
+            inserted = False
+            block = None  # Avoid linter warning
+            for block in data:
+                # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
+                if block['index'] == my_index + 1:
+                    if await self.consensus.process_next_block(block, peer, trigger_event=False):
+                        inserted = True
+                        my_index = block['index']
+                    else:
+                        break
+                else:
+                    # As soon as a block fails, abort
+                    break
+            if inserted:
+                # If import was successful, inform out peers once the batch is processed
+                await self.peers.on_block_insert(block)
+                # then ask for the potential next batch
+                data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
+                await self.emit('get_blocks', data=data, room=sid)
+            else:
+               self.app_log.debug("Import aborted block: {}".format(my_index))
+               return
+        except Exception as e:
+            import sys, os
+            self.app_log.warning("Exception {} on_blocks".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+        finally:
+            self.peers.syncing = False
 
 
 
