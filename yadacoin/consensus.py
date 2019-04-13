@@ -271,16 +271,13 @@ class Consensus(object):
             self.app_log.info("No peer to connect to yet")
             await async_sleep(10)
             return
+        # TODO: use an aio lock
+        if self.peers.syncing:
+            self.app_log.debug("Already syncing, ignoring search_network_for_new")
         for peer in self.peers.peers:
+            self.peers.syncing = True
             try:
-                if self.debug:
-                    self.app_log.info('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
-                    """
-                    print('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                        peer=str(peer.to_string()),
-                        start_index=int(self.latest_block.index) + 1,
-                        end_index=int(self.latest_block.index) + 100))
-                    """
+                self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
                 try:
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),
@@ -300,30 +297,58 @@ class Consensus(object):
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
                         await self.insert_consensus_block(block, peer)
                         # print("consensus ok", block.index)
-                        res = await self.import_block({'peer': peer.to_string(), 'block': block.to_dict(), 'extra_blocks': blocks})
+                        res = await self.import_block({'peer': peer.to_string(), 'block': block.to_dict(),
+                                                       'extra_blocks': blocks},
+                                                      trigger_event=False)
                         # print("import ", block.index, res)
                         if res:
                             self.latest_block = block
                             inserted = True
+                        else:
+                            # 2 cases: bad block, or retrace.
+                            if self.existing_blockchain.blocks[-1].index == self.latest_block.index:
+                                # bad block, nothing moved, early exit
+                                self.app_log.debug('Bad block {}'.format(block.index))
+                            else:
+                                # retraced, sync
+                                self.latest_block = Block.from_dict(await self.config.BU.get_latest_block_async())
+                                self.app_log.debug('retraced up to {}'.format(self.latest_block.index))
+                                inserted = True
+                            # in both case, no need to process further blocks
+                            break
                     else:
-                        pass
+                        break
                         #print("pass", block.index)
                 if inserted:
-                    await self.peers.on_block_insert(self.latest_block.to_dict())
+                    await self.trigger_update_event()
+                    # await self.peers.on_block_insert(self.latest_block.to_dict())
             except Exception as e:
                 if self.debug:
                     self.app_log.warning(e)
+            finally:
+                self.peers.syncing = False
 
-    async def import_block(self, block_data):
+    async def trigger_update_event(self, block: dict=None):
+        """Update BU latest block info if unknown, then trigger the event to all connected peers"""
+        if block is None:
+            block = await self.config.BU.get_latest_block_async()
+        await self.peers.on_block_insert(block)  # This will propagate to everyone
+
+    async def import_block(self, block_data: dict, trigger_event=True) -> bool:
+        """Block_data contains peer and block keys. Tries to import that block, retrace if necessary
+        sends True if that block was inserted, False if it fails or if a retrace was needed.
+
+        This is the central entry point for inserting a block, that will modify the local chain and trigger the event,
+        unless we asked not to, becasue we're in a batch insert context"""
         try:
             block = Block.from_dict(block_data['block'])
             peer = Peer.from_string(block_data['peer'])
             if 'extra_blocks' in block_data:
-                extra_blocks = [Block.from_dict( x) for x in block_data['extra_blocks']]
+                extra_blocks = None
+                # extra_blocks = [Block.from_dict( x) for x in block_data['extra_blocks']]  # Not used later on, just ram and resources usage
             else:
                 extra_blocks = None
-            if self.debug:
-                self.app_log.debug("{} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
+            self.app_log.debug("{} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
             try:
                 result = await self.integrate_block_with_existing_chain(block, extra_blocks)
                 if result is False:
@@ -336,6 +361,8 @@ class Consensus(object):
                         },
                         {'$set': {'ignore': True}}
                     )
+                elif trigger_event:
+                    await self.trigger_update_event(block_data['block'])
                 return result
             except AboveTargetException as e:
                 await self.mongo.async_db.consensus.update_one(
@@ -348,8 +375,14 @@ class Consensus(object):
                 )
             except ForkException as e:
                 await self.retrace(block, peer)
+                if trigger_event:
+                    await self.trigger_update_event()
+                return False
             except IndexError as e:
                 await self.retrace(block, peer)
+                if trigger_event:
+                    await self.trigger_update_event()
+                return False
             except Exception as e:
                 print("348", e)
                 exc_type, exc_obj, exc_tb = exc_info()
@@ -367,9 +400,15 @@ class Consensus(object):
             exc_type, exc_obj, exc_tb = exc_info()
             fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             self.app_log.warning("{} {} {}".format(exc_type, fname, exc_tb.tb_lineno))
-            raise
+            if trigger_event:
+                await self.trigger_update_event()
+            return False
+        if trigger_event:
+            await self.trigger_update_event()
+        return True
 
     async def integrate_block_with_existing_chain(self, block, extra_blocks=None):
+        """Even in case of retrace, this iis the only place where we insert a new block into the block collection and update BU"""
         try:
             try:
                 block.verify()
@@ -429,7 +468,7 @@ class Consensus(object):
                         self.existing_blockchain.blocks.append(block)
                     if self.debug:
                         self.app_log.info("New block inserted for height: {}".format(block.index))
-                    await self.config.on_new_block(block)  # This will propagate to everyone
+                    await self.config.on_new_block(block)  # This will propagate to BU
                     return True
                 else:
                     print("Integrate block error 4")
@@ -437,7 +476,7 @@ class Consensus(object):
             else:
                 print("Integrate block error 5")
                 raise AboveTargetException()
-            return False
+            return False  # unreachable code
         except Exception as e:
             exc_type, exc_obj, exc_tb = exc_info()
             fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
@@ -458,13 +497,11 @@ class Consensus(object):
         # TODO: cleanup print and logging
         # TODO: limit possible retrace blocks vs max(known chains) - store in chain config
         try:
-            if self.debug:
-                self.app_log.info("Retracing...")
+            self.app_log.info("Retracing...")
             blocks = [block]
             while 1:
                 if self.debug:
-                    self.app_log.info(block.hash)
-                    self.app_log.info(block.index)
+                    self.app_log.info("{} : {}".format(block.hash, block.index))
                 # get the previous block from either the consensus collection in mongo
                 # or attempt to get the block from the remote peer
                 previous_consensus_block = await self.get_previous_consensus_block_from_local(block, peer)
@@ -488,7 +525,7 @@ class Consensus(object):
                             await self.insert_consensus_block(block, peer)
                         except Exception as e:
                             if self.debug:
-                                print(e) # we should do something here to keep it from looping on this failed block
+                                self.app_log.warning("Exception retrace insert_consensus_block: {}".format(e))  # we should do something here to keep it from looping on this failed block
                     else:
                         # identify missing and prune
                         # if the pruned chain is still longer, we'll take it
@@ -498,12 +535,12 @@ class Consensus(object):
                         else:
                             return
                 if self.debug:
-                    print('attempting sync at', block.prev_hash)
+                    self.app_log.info('attempting sync at {}'.format(block.prev_hash))
                 # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
                 if self.existing_blockchain.blocks[block.index - 1].hash == block.prev_hash:
                     prev_blocks_check = self.existing_blockchain.blocks[block.index - 1]
                     if self.debug:
-                        print(prev_blocks_check.hash, prev_blocks_check.index)
+                        self.app_log.debug("Previous block {}: {}".format(prev_blocks_check.hash, prev_blocks_check.index))
                     blocks = sorted(blocks, key=lambda x: x.index)
                     block_for_next = blocks[-1]
                     while 1:
@@ -520,7 +557,7 @@ class Consensus(object):
                         while 1:
                             try:
                                 if self.debug:
-                                    print('requesting %s from %s' % (block_for_next.index + 1, apeer.to_string()))
+                                    self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
                                 result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                                     peer=apeer.to_string(),
                                     start_index=block_for_next.index + 1,
@@ -570,7 +607,7 @@ class Consensus(object):
                                     continue
                                 await self.integrate_block_with_existing_chain(block)
                                 if self.debug:
-                                    print('inserted ', block.index)
+                                    self.app_log.debug('inserted {}'.format(block.index))
                             except ForkException as e:
                                 back_one_block = block
                                 while 1:
@@ -590,19 +627,15 @@ class Consensus(object):
                                 return
                             except IndexError as e:
                                 return
-                        if self.debug:
-                            print("Replaced chain with incoming")
+                        self.app_log.info("Retrace result: replaced chain with incoming")
                         return
                     else:
                         if not peer.is_me:
                             if self.debug:
-                                print (
-                                    "Incoming chain lost",
-                                    inbound_difficulty,
-                                    existing_difficulty,
-                                    blocks[-1].index,
-                                    self.existing_blockchain.blocks[-1].index
-                                )
+                                self.app_log.info("Incoming chain lost {} {} {} {}"
+                                                  .format(inbound_difficulty, existing_difficulty, blocks[-1].index,
+                                                          self.existing_blockchain.blocks[-1].index)
+                                                  )
                             for block in blocks:
                                 self.mongo.db.consensus.update({'block.hash': block.hash}, {'$set': {'ignore': True}}, multi=True)
                         return
@@ -612,12 +645,12 @@ class Consensus(object):
                 # if we get to index 1 and prev hash doesn't match the genesis, throw out the chain and black list the peer
                 # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
                 # blockchain against the proposed chain.
+
+                # TODO: Here, compare vs current known consensus height, and limit to consensus height - CHAIN.MAX_RETRACE_DEPTH
                 if block.index == 0:
-                    if self.debug:
-                        print("zero index reached")
+                    self.app_log.info("Retrace result: zero index reached")
                     return
-            if self.debug:
-                print("doesn't follow any known chain")  # throwing out the block for now
+            self.app_log.info("Retrace result: doesn't follow any known chain")  # throwing out the block for now
             return
         except Exception as e:
             exc_type, exc_obj, exc_tb = exc_info()

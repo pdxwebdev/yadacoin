@@ -104,7 +104,9 @@ class YadaWebSocketClient(object):
             if data['index'] == my_index + 1:
                 self.app_log.debug("Next index, trying to merge from {}".format(self.peer.to_string()))
                 if await self.process_next_block(data):
-                    await self.peers.on_block_insert(data)
+                    pass
+                    # if ok, block was inserted and event triggered by import block
+                    # await self.peers.on_block_insert(data)
             elif data['index'] > my_index + 1:
                 self.app_log.debug("Missing blocks between {} and {} , asking more to {}".format(my_index, data['index'], self.peer.to_string()))
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
@@ -113,12 +115,12 @@ class YadaWebSocketClient(object):
                 # Remove later on
                 self.app_log.debug("Old or same index, ignoring {} from {}".format(data['index'], self.peer.to_string()))
 
-    async def process_next_block(self, block_data: dict) -> bool:
+    async def process_next_block(self, block_data: dict, trigger_event=True) -> bool:
         from yadacoin.block import Block  # Circular reference. Not good!
         block_object = Block.from_dict(block_data)
         await self.consensus.insert_consensus_block(block_object, self.peer)
         self.app_log.debug("Consensus ok {}".format(block_object.index))
-        res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block_data})
+        res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block_data}, trigger_event=trigger_event)
         self.app_log.debug("Import_block {} {}".format(block_object.index, res))
         return res
 
@@ -130,10 +132,11 @@ class YadaWebSocketClient(object):
         self.peers.syncing = True
         try:
             inserted = False
+            block = None  # Avoid linter warning
             for block in data:
                 # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                 if block['index'] == my_index + 1:
-                    if await self.process_next_block(block):
+                    if await self.process_next_block(block, trigger_event=False):
                         inserted = True
                         my_index = block['index']
                     else:
@@ -142,7 +145,7 @@ class YadaWebSocketClient(object):
                     # As soon as a block fails, abort
                     break
             if inserted:
-                # If import was successful, inform out peers
+                # If import was successful, inform out peers once the batch is processed
                 await self.peers.on_block_insert(block)
                 # then ask for the potential next batch
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}

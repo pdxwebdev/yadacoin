@@ -154,7 +154,7 @@ class Peers(object):
     async def on_block_insert(self, block_data: dict):
         """This is what triggers the event to all connected ws peers, in or outgoing"""
         # outgoing
-        self.app_log.debug("Block Insert event index ".format(block_data['index']))
+        self.app_log.debug("Block Insert event index {}".format(block_data['index']))
 
         for ip, outgoing in self.outbound.items():
             try:

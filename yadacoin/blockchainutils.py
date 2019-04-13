@@ -59,7 +59,7 @@ class BlockChainUtils(object):
     def set_latest_block(self, block: dict):
         self.latest_block = block
 
-    async def get_latest_block_async(self):
+    async def get_latest_block_async(self) -> dict:
         # cached, async version
         if not self.latest_block is None:
             return self.latest_block
