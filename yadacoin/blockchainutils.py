@@ -172,10 +172,47 @@ class BlockChainUtils(object):
                 'txn': x['txn']
             },
             upsert=True)
-
+            
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
+
             if xaddress == address:
                 reverse_public_key = x['public_key']
+        
+        if reverse_public_key == '':
+            received_query = [
+                {
+                    "$match": {
+                        "transactions.outputs.to": address
+                    }
+                },
+                {"$unwind": "$transactions" },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "txn": "$transactions",
+                        "height": "$index"
+                    }
+                },
+                {
+                    "$match": {
+                        "txn.outputs.to": address
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "public_key": "$txn.public_key",
+                        "txn": "$txn",
+                        "height": "$height"
+                    }
+                }
+            ]
+            for x in self.mongo.db.blocks.aggregate(received_query, allowDiskUse=True):
+                xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
+
+                if xaddress == address:
+                    reverse_public_key = x['public_key']
+                    break
 
         spent = self.mongo.db.blocks.aggregate([
             {
@@ -217,9 +254,39 @@ class BlockChainUtils(object):
             }
         ])
 
+        spent_fastgraph = self.mongo.db.fastgraph_transactions.aggregate([
+            {
+                "$match": {
+                    "$or": [
+                        {"txn.public_key": reverse_public_key},
+                        {"txn.inputs.public_key": reverse_public_key},
+                        {"txn.inputs.address": address}
+                    ]
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "public_key": "$txn.public_key",
+                    "txn": "$txn"
+                }
+            }
+        ])
+
         # here we're assuming block/transaction validation ensures the inputs used are valid for this address
-        ids_spent_by_me = []
         for x in spent:
+            for i in x['txn']['inputs']:
+                self.mongo.db.unspent_cache.update({
+                    'address': address,
+                    'id': i['id']
+                },
+                {
+                    '$set': {
+                        'spent': True
+                    }
+                })
+
+        for x in spent_fastgraph:
             for i in x['txn']['inputs']:
                 self.mongo.db.unspent_cache.update({
                     'address': address,
@@ -297,7 +364,7 @@ class BlockChainUtils(object):
                     if not raw:
                         cipher = Crypt(wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
-                        relationship = json.loads(decrypted)
+                        relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     transaction['height'] = block['index']
                     self.mongo.db.get_transactions_cache.update(
@@ -395,7 +462,7 @@ class BlockChainUtils(object):
                     if not raw:
                         cipher = Crypt(secret)
                         decrypted = cipher.decrypt(transaction['relationship'])
-                        relationship = json.loads(decrypted)
+                        relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     self.mongo.db.fastgraph_transaction_cache.update(
                         {
@@ -412,7 +479,7 @@ class BlockChainUtils(object):
 
     def generate_signature(self, message, private_key):
         key = PrivateKey.from_hex(private_key)
-        signature = key.sign(message)
+        signature = key.sign(message.encode("utf-8"))
         return base64.b64encode(signature).decode("utf-8")
 
     def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False):

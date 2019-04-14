@@ -7,8 +7,8 @@ from yadacoin.graph import Graph
 
 
 class Serve(object):
-    def __init__(self, config, mongo):
-        self.app = Flask(__name__)
+    def __init__(self, config, mongo, app):
+        self.app = app
         self.app.config['yada_config'] = config
         self.app.config['yada_mongo'] = mongo
         self.app.debug = True

@@ -108,7 +108,7 @@ class TransactionFactory(object):
         )
         self.hash = hashlib.sha256(self.header.encode('utf-8')).digest().hex()
         if self.private_key:
-            self.transaction_signature = TU.generate_signature_with_private_key(private_key, self.hash.encode('utf-8'))
+            self.transaction_signature = TU.generate_signature_with_private_key(private_key, self.hash)
         else:
             self.transaction_signature = ''
         self.transaction = self.generate_transaction()

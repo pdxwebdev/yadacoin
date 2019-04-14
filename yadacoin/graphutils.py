@@ -1,6 +1,8 @@
 import json
 import base64
 
+from binascii import unhexlify
+from eccsnacks.curve25519 import scalarmult
 from yadacoin.transactionutils import TU
 from bitcoin.wallet import P2PKHBitcoinAddress
 from bson.son import SON
@@ -130,9 +132,9 @@ class GraphUtils(object):
                             decrypted = base64.b64decode(decrypted)
                         except:
                             raise
-                        data = json.loads(decrypted)
+                        data = json.loads(decrypted.decode('utf-8'))
                         x['txn']['relationship'] = data
-                        if 'postText' in decrypted:
+                        if 'postText' in data:
                             had_txns = True
                             print('caching posts at height:', x.get('height', 0))
                             for rid in rids:
@@ -278,9 +280,9 @@ class GraphUtils(object):
                             decrypted = base64.b64decode(decrypted)
                         except:
                             raise
-                        data = json.loads(decrypted)
+                        data = json.loads(decrypted.decode('utf-8'))
                         x['txn']['relationship'] = data
-                        if 'react' in decrypted:
+                        if 'react' in data:
                             had_txns = True
                             print('caching reacts at height:', x.get('height', 0))
                             for rid in rids:
@@ -414,9 +416,9 @@ class GraphUtils(object):
                             decrypted = base64.b64decode(decrypted)
                         except:
                             raise
-                        data = json.loads(decrypted)
+                        data = json.loads(decrypted.decode('utf-8'))
                         x['txn']['relationship'] = data
-                        if 'comment' in decrypted:
+                        if 'comment' in data:
                             had_txns = True
                             print('caching comments at height:', x.get('height', 0))
                             for rid in rids:
@@ -476,7 +478,7 @@ class GraphUtils(object):
                 try:
                     cipher = Crypt(wif)
                     decrypted = cipher.decrypt(transaction['relationship'])
-                    relationship = json.loads(decrypted)
+                    relationship = json.loads(decrypted.decode('latin1'))
                     relationships.append(relationship)
                 except:
                     continue
@@ -510,7 +512,7 @@ class GraphUtils(object):
                     try:
                         cipher = Crypt(wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
-                        relationship = json.loads(decrypted)
+                        relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     except:
                         continue
@@ -571,7 +573,7 @@ class GraphUtils(object):
                         try:
                             cipher = Crypt(self.config.wif)
                             decrypted = cipher.decrypt(transaction['relationship'])
-                            relationship = json.loads(decrypted)
+                            relationship = json.loads(decrypted.decode('latin1'))
                             transaction['relationship'] = relationship
                         except:
                             continue
@@ -601,6 +603,11 @@ class GraphUtils(object):
                         'height': latest_block['index']
                     }
                 )
+
+        for ftxn in self.mongo.db.fastgraph_transactions.find({'txn.rid': {'$in': selectors}}):
+            if 'txn' in ftxn:
+                yield ftxn['txn']
+
         for x in self.mongo.db.transactions_by_rid_cache.find(
                 {'raw': raw, 'rid': rid, 'returnheight': returnheight, 'selector': {'$in': selectors}}):
             if 'txn' in x:
@@ -856,6 +863,23 @@ class GraphUtils(object):
                 mutual_bulletin_secrets.add(transaction['relationship']['bulletin_secret'])
         return list(mutual_bulletin_secrets)
 
+    def get_shared_secrets_by_rid(self, rid):
+        shared_secrets = []
+        dh_public_keys = []
+        dh_private_keys = []
+        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True)
+        for txn in txns:
+            if str(txn['public_key']) == str(self.config.public_key) and txn['relationship']['dh_private_key']:
+                dh_private_keys.append(txn['relationship']['dh_private_key'])
+        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)
+        for txn in txns:
+            if str(txn['public_key']) != str(self.config.public_key) and txn['dh_public_key']:
+                dh_public_keys.append(txn['dh_public_key'])
+        for dh_public_key in dh_public_keys:
+            for dh_private_key in dh_private_keys:
+                shared_secrets.append(scalarmult(unhexlify(dh_private_key).decode('latin1'), unhexlify(dh_public_key).decode('latin1')).encode('latin1'))
+        return shared_secrets
+
     def verify_message(self, rid, message, public_key, txn_id=None):
         from yadacoin.crypt import Crypt
         sent = False
@@ -867,45 +891,51 @@ class GraphUtils(object):
         if res:
             received = True
         else:
-            shared_secrets = TU.get_shared_secrets_by_rid(rid)
+            shared_secrets = self.get_shared_secrets_by_rid(rid)
             if txn_id:
-                txns = [self.config.BU.get_transaction_by_id(txn_id)]
+                txns = []
+                txn = [self.config.BU.get_transaction_by_id(txn_id, include_fastgraph=True)]
+                if txn:
+                    txns.append(txn)
             else:
                 txns = [x for x in self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)]
                 fastgraph_transactions = self.mongo.db.fastgraph_transactions.find({"txn.rid": rid})
-                txns.extend([x['txn'] for x in fastgraph_transactions])
+                if fastgraph_transactions.count() > 0:
+                    txns.extend([x['txn'] for x in fastgraph_transactions])
+
             for txn in txns:
                 for shared_secret in list(set(shared_secrets)):
                     res = self.mongo.db.verify_message_cache.find_one({
                         'rid': rid,
                         'shared_secret': shared_secret.hex(),
+                        'message': message,
                         'id': txn['id']
                     })
                     try:
                         if res and res['success']:
-                            decrypted = res['message']
-                            signin = json.loads(decrypted)
-                            received = True
-                            return sent, received
+                            signin = res['message']
                         elif res and not res['success']:
                             continue
                         else:
                             cipher = Crypt(shared_secret.hex(), shared=True)
-                            decrypted = cipher.shared_decrypt(txn['relationship'])
-                            signin = json.loads(decrypted)
-                            self.mongo.db.verify_message_cache.update({
-                                'rid': rid,
-                                'shared_secret': shared_secret.hex(),
-                                'id': txn['id']
-                            },
-                            {
-                                'rid': rid,
-                                'shared_secret': shared_secret.hex(),
-                                'id': txn['id'],
-                                'message': signin,
-                                'success': True
-                            }
-                            , upsert=True)
+                            try:
+                                decrypted = cipher.shared_decrypt(txn['relationship'])
+                                signin = json.loads(decrypted.decode('latin1'))
+                                self.mongo.db.verify_message_cache.update({
+                                    'rid': rid,
+                                    'shared_secret': shared_secret.hex(),
+                                    'id': txn['id']
+                                },
+                                {
+                                    'rid': rid,
+                                    'shared_secret': shared_secret.hex(),
+                                    'id': txn['id'],
+                                    'message': signin,
+                                    'success': True
+                                }
+                                , upsert=True)
+                            except:
+                                continue
                         if u'signIn' in signin and message == signin['signIn']:
                             if public_key != txn['public_key']:
                                 received = True
