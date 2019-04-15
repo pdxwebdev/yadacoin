@@ -20,6 +20,7 @@ import multiprocessing
 
 from yadacoin.config import Config
 from yadacoin.mongo import Mongo
+from flask import Flask
 # from yadacoin.block import Block
 """"    (
     TransactionFactory, Transaction, MissingInputTransactionException,
@@ -61,6 +62,9 @@ if __name__ == '__main__':
     else:
         print("no config file found at '%s'" % args.config)
         sys.exit()
+
+    with open('logodata.b64') as f:
+        config.logo_data = f.read()
 
     mongo = Mongo(config)
     if args.mode == 'consensus':
@@ -147,10 +151,10 @@ if __name__ == '__main__':
         config.network = args.network
 
         my_peer = Peer.init_my_peer(config, mongo, config.network)
-        config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()
         print("http://{}".format(my_peer.to_string()))
 
-        serve = Serve(config, mongo)
-        serve.socketio.run(serve.app, config.serve_host, config.serve_port)
+        app = Flask(__name__)
+        serve = Serve(config, mongo, app)
+        app.run(config.serve_host, config.serve_port)
 
         

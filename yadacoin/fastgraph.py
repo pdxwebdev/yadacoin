@@ -7,6 +7,7 @@ from coincurve.utils import verify_signature
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 
 from yadacoin.blockchainutils import BU
+from yadacoin.graphutils import GraphUtils as GU
 from yadacoin.config import get_config
 
 from yadacoin.transaction import Transaction, Relationship, Input, Output, ExternalInput
@@ -41,7 +42,8 @@ class FastGraph(Transaction):
         outputs='',
         coinbase=False,
         signatures=None,
-        extra_blocks=None
+        extra_blocks=None,
+        raw=False
     ):
         self.config = get_config()
         self.mongo = self.config.mongo
@@ -58,6 +60,7 @@ class FastGraph(Transaction):
         self.hash = txn_hash
         self.outputs = []
         self.extra_blocks = extra_blocks
+        self.raw = raw
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
@@ -79,8 +82,7 @@ class FastGraph(Transaction):
                 self.signatures.append(FastGraphSignature(signature))
     
     @classmethod
-    def from_dict(cls, block_height, txn):
-        config = get_config()
+    def from_dict(cls, block_height, txn, raw=False):
         try:
             relationship = Relationship(**txn.get('relationship', ''))
         except:
@@ -101,7 +103,8 @@ class FastGraph(Transaction):
             inputs=txn.get('inputs', []),
             outputs=txn.get('outputs', []),
             coinbase=txn.get('coinbase', ''),
-            signatures=txn.get('signatures', [])
+            signatures=txn.get('signatures', []),
+            raw=raw
         )
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
@@ -119,19 +122,7 @@ class FastGraph(Transaction):
                     if 'rid' in txn and txn['rid'] and 'dh_public_key' in txn and txn['dh_public_key']:
                         if rid and txn['rid'] != rid:
                             continue
-                        rids = [txn['rid']]
-                        if 'requester_rid' in txn and txn['requester_rid']:
-                            rids.append(txn['requester_rid'])
-                        if 'requested_rid' in txn and txn['requested_rid']:
-                            rids.append(txn['requested_rid'])
-                        
-                        # we need their public_key, not mine, so we get both transactions for the relationship
-                        txn_for_rids = BU().get_transaction_by_rid( rids, bulletin_secret=bulletin_secret, raw=True, rid=True, theirs=True, public_key=self.public_key)
-
-                        if txn_for_rids:
-                            return txn_for_rids
-                        else:
-                            return False
+                        return txn
                     else:
                         inp = txn['inputs'][0]['id']
                 else:
@@ -144,11 +135,8 @@ class FastGraph(Transaction):
 
     def verify(self):
         super(FastGraph, self).verify()
-        result = self.mongo.db.fastgraph_transactions.find_one({
-            'txn.hash': self.hash
-        })
         
-        if not self.signatures:
+        if not self.signatures and not self.raw:
             raise InvalidFastGraphTransactionException('no signatures were provided')
 
         xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
@@ -158,45 +146,69 @@ class FastGraph(Transaction):
         if len(set(inputs) & set(unspent)) != len(inputs) and len(set(inputs) & set(unspent_fastgraph)) != len(inputs):
             raise InvalidFastGraphTransactionException('Input not found in unspent')
 
-        txn_for_rids = self.get_origin_relationship()
-        if not txn_for_rids:
+        origin_relationship = self.get_origin_relationship()
+        if not origin_relationship:
             raise InvalidFastGraphTransactionException('no origin transactions found')
-        public_key = txn_for_rids['public_key']
+
+        rids = [origin_relationship['rid']]  # for signin, we maybe sending messages directly to do the service provider
+        if 'requester_rid' in origin_relationship and origin_relationship['requester_rid']:
+            rids.append(origin_relationship['requester_rid'])
+        if 'requested_rid' in origin_relationship and origin_relationship['requested_rid']:
+            rids.append(origin_relationship['requested_rid'])
+        
+        # we need the public_key of the service provider, either requester_rid, or requested_rid, we don't know, so we try both
+        txns_for_rids = []
+        for rid in rids:
+            txn_for_rid = GU().get_transaction_by_rid(
+                rid,
+                raw=True,
+                rid=True,
+                theirs=True,
+                public_key=self.public_key
+            )
+            if txn_for_rid:
+                txns_for_rids.append(txn_for_rid)
 
         for signature in self.signatures:
-            signature.passed = False
-            signed = verify_signature(
-                base64.b64decode(signature.signature),
-                self.hash.encode('utf-8'),
-                bytes.fromhex(public_key)
-            )
-            if signed:
-                signature.passed = True
+            for txn_for_rid in txns_for_rids:
+                signature.passed = False
+                signed = verify_signature(
+                    base64.b64decode(signature.signature),
+                    self.hash.encode('utf-8'),
+                    bytes.fromhex(txn_for_rid['public_key'])
+                )
+                print(signed)
+                print(signature.signature)
+                print(self.hash.encode('utf-8'))
+                print(txn_for_rid['public_key'])
+                if signed:
+                    signature.passed = True
+                    break
 
-            """
-            # This is for a later fork to include a wider consensus area for a larger spending group
-            else:
-                mutual_friends = [x for x in BU().get_transactions_by_rid( self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
-                for mutual_friend in mutual_friends:
-                    mutual_friend = Transaction.from_dict( mutual_friend)
-                    if isinstance(mutual_friend.relationship, Relationship) and signature.bulletin_secret == mutual_friend.relationship.their_bulletin_secret:
-                        other_mutual_friend = mutual_friend
-                for mutual_friend in mutual_friends:
-                    mutual_friend = Transaction.from_dict( mutual_friend)
-                    if mutual_friend.public_key != self.config.public_key:
-                        identity = verify_signature(
-                            base64.b64decode(other_mutual_friend.relationship.their_bulletin_secret),
-                            other_mutual_friend.relationship.their_username.encode('utf-8'),
-                            bytes.fromhex(mutual_friend.public_key)
-                        )
-                        signed = verify_signature(
-                            base64.b64decode(signature.signature),
-                            self.hash.encode('utf-8'),
-                            bytes.fromhex(mutual_friend.public_key)
-                        )
-                        if identity and signed:
-                            signature.passed = True
-            """
+        """
+        # This is for a later fork to include a wider consensus area for a larger spending group
+        else:
+            mutual_friends = [x for x in BU.get_transactions_by_rid(self.config, self.mongo, self.rid, self.config.bulletin_secret, raw=True, rid=True, lt_block_height=highest_height)]
+            for mutual_friend in mutual_friends:
+                mutual_friend = Transaction.from_dict(self.config, self.mongo, mutual_friend)
+                if isinstance(mutual_friend.relationship, Relationship) and signature.bulletin_secret == mutual_friend.relationship.their_bulletin_secret:
+                    other_mutual_friend = mutual_friend
+            for mutual_friend in mutual_friends:
+                mutual_friend = Transaction.from_dict(self.config, self.mongo, mutual_friend)
+                if mutual_friend.public_key != self.config.public_key:
+                    identity = verify_signature(
+                        base64.b64decode(other_mutual_friend.relationship.their_bulletin_secret),
+                        other_mutual_friend.relationship.their_username.encode('utf-8'),
+                        bytes.fromhex(mutual_friend.public_key)
+                    )
+                    signed = verify_signature(
+                        base64.b64decode(signature.signature),
+                        self.hash.encode('utf-8'),
+                        bytes.fromhex(mutual_friend.public_key)
+                    )
+                    if identity and signed:
+                        signature.passed = True
+        """
         for signature in self.signatures:
             if not signature.passed:
                 raise InvalidFastGraphTransactionException('not all signatures verified')

@@ -84,7 +84,7 @@ class MiningPool(object):
                 'id': genesis_block.signature,
                 'index': 0
                 })
-            block = Block.from_dict(self.config.BU.get_latest_block())
+            block = Block.from_dict(self.config.BU().get_latest_block())
             self.height = block.index
 
         try:
@@ -301,6 +301,8 @@ class MiningPool(object):
         # TODO: convert to async // send
         # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
         # Then maybe a list of "root" nodes (explorer, known pools) from config, just to make sure.
+        if self.config.network == 'regnet':
+            return
         for peer in self.config.peers.peers:
             if peer.is_me:
                 continue

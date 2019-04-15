@@ -1,4 +1,5 @@
-site_name: YadaCoin Docs
+site_name: YadaCoin
+site_dir: '../static/docs'
 use_directory_urls: false
 theme:
-  name: 'material'
+  name: 'cyborg'
