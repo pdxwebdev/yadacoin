@@ -20,7 +20,7 @@ class Blockchain(object):
                 block = Block.from_dict(block)
             
             if last_index and (block.index - last_index) != 1:
-                raise Exception('Either incomplete blockchain or unordered.')
+                raise Exception('Either incomplete blockchain or unordered. block {} vs last {}'.format(block.index, last_index))
 
             self.blocks.append(block)
             last_index = block.index

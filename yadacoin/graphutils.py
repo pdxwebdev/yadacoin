@@ -4,9 +4,9 @@ import base64
 from binascii import unhexlify
 from eccsnacks.curve25519 import scalarmult
 from yadacoin.transactionutils import TU
-from bitcoin.wallet import P2PKHBitcoinAddress
-from bson.son import SON
-from coincurve import PrivateKey
+# from bitcoin.wallet import P2PKHBitcoinAddress
+# from bson.son import SON
+# from coincurve import PrivateKey
 
 from yadacoin.config import get_config
 

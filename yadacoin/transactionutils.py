@@ -2,10 +2,10 @@ import hashlib
 import base64
 import random
 import sys
-from binascii import unhexlify
+# from binascii import unhexlify
 from coincurve.keys import PrivateKey
 from coincurve._libsecp256k1 import ffi
-from eccsnacks.curve25519 import scalarmult
+# from eccsnacks.curve25519 import scalarmult
 
 
 class TU(object):  # Transaction Utilities
