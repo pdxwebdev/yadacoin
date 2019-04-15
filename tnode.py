@@ -160,7 +160,7 @@ async def main():
     define("verbose", default=False, help="verbose mode", type=bool)
     define("network", default='', help="Force mainnet, testnet or regnet", type=str)
     define("reset", default=False, help="If blockchain is invalid, truncate at error block", type=bool)
-    define("config", default='config/regnet.json', help="Config file location, default is 'config/config.json'",
+    define("config", default='config/config.json', help="Config file location, default is 'config/config.json'",
            type=str)
     define("verify", default=True, help="Verify chain, default True", type=bool)
 
