@@ -21,6 +21,8 @@ class Blockchain(object):
             
             if last_index and (block.index - last_index) != 1:
                 raise Exception('Either incomplete blockchain or unordered. block {} vs last {}'.format(block.index, last_index))
+                # In that case: (most often, dup buried block), check if block n+1 exists then remove the wrong block(s)
+                # see when inserting/replacing block how the dup insert occurs.
 
             self.blocks.append(block)
             last_index = block.index

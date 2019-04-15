@@ -563,30 +563,31 @@ class Consensus(object):
                     # self.peers.init(self.config.network)
 
                     for apeer in self.peers.peers:
-                        while 1:
-                            try:
-                                if self.debug:
-                                    self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
-                                result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                                    peer=apeer.to_string(),
-                                    start_index=block_for_next.index + 1,
-                                    end_index=block_for_next.index + 100
-                                ), timeout=1)
-                                remote_blocks = [Block.from_dict( x) for x in json.loads(result.content)]
-                                break_out = False
-                                for remote_block in remote_blocks:
-                                    if remote_block.prev_hash == block_for_next.hash:
-                                        blocks.append(remote_block)
-                                        block_for_next = remote_block
-                                    else:
-                                        break_out = True
-                                        break
-                                if break_out:
+                        # TODO: there was a "while 1:" there, that got the retrace stuck with only 1 peer and no escape route.
+                        # recheck the logic.
+                        try:
+                            if self.debug:
+                                self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
+                            result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
+                                peer=apeer.to_string(),
+                                start_index=block_for_next.index + 1,
+                                end_index=block_for_next.index + 100
+                            ), timeout=1)
+                            remote_blocks = [Block.from_dict( x) for x in json.loads(result.content)]
+                            break_out = False
+                            for remote_block in remote_blocks:
+                                if remote_block.prev_hash == block_for_next.hash:
+                                    blocks.append(remote_block)
+                                    block_for_next = remote_block
+                                else:
+                                    break_out = True
                                     break
-                            except Exception as e:
-                                if self.debug:
-                                    print(e)
+                            if break_out:
                                 break
+                        except Exception as e:
+                            if self.debug:
+                                print(e)
+                            break
 
                     # if we have it in our blockchain, then we've hit the fork point
                     # now we have to loop through the current block array and build a blockchain
