@@ -132,7 +132,8 @@ async def background_pool():
         """
         try:
             await async_sleep(10)
-            await config.mp.check_block_evolved()
+            if config.mp:
+                await config.mp.check_block_evolved()
 
         except Exception as e:
             app_log.error("{} in background_pool".format(e))
@@ -229,6 +230,7 @@ async def main():
     tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
     tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
     tornado.ioloop.IOLoop.instance().add_callback(background_status)
+    tornado.ioloop.IOLoop.instance().add_callback(background_pool)
 
     my_peer = Peer.init_my_peer(config.network)
     config.callbackurl = 'http://%s/create-relationship' % my_peer.to_string()

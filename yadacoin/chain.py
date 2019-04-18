@@ -35,19 +35,27 @@ class CHAIN(object):
         raise ValueError("Unknown network")
 
     @classmethod
-    def special_min_trigger(cls, network: str, block_height: int):
+    def special_min_trigger(cls, network: str, block_height: int) -> int:
         """When should special_min be activated?"""
         # For testnet and regnet, special min triggers at target_block_time + 1
-        if network == 'testnet':
-            return 10 + 1
-        elif network == 'regnet':
-            return 1 +1
-        elif network == 'mainnet':
-            if block_height <= cls.POW_FORK_V2:
-                return 600
-            else:
-                return 600 * 2
-        raise ValueError("Unknown network")
+        try:
+            if network == 'testnet':
+                return 10 + 1
+            elif network == 'regnet':
+                return 1 +1
+            elif network == 'mainnet':
+                if int(block_height) <= cls.POW_FORK_V2:
+                    # return 120  # temp debug
+                    return 600
+                else:
+                    return 600 * 2
+            raise ValueError("Unknown network")
+        except Exception as e:
+            print(e)
+            import sys, os
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
 
     @classmethod
     def get_version_for_height(cls, height: int):

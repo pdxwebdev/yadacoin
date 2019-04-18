@@ -409,6 +409,7 @@ class Consensus(object):
 
     async def process_next_block(self, block_data: dict, peer, trigger_event=True) -> bool:
         block_object = Block.from_dict(block_data)
+        # TODO: there is no check before inserting into consensus (previous hash, nor diff, nor valid tx)
         await self.insert_consensus_block(block_object, peer)
         self.app_log.debug("Consensus ok {}".format(block_object.index))
         res = await self.import_block({'peer': peer.to_string(), 'block': block_data},
@@ -417,8 +418,10 @@ class Consensus(object):
         return res
 
     async def integrate_block_with_existing_chain(self, block, extra_blocks=None):
-        """Even in case of retrace, this iis the only place where we insert a new block into the block collection and update BU"""
+        """Even in case of retrace, this is the only place where we insert a new block into the block collection and update BU"""
         try:
+            # TODO: reorg the checks, to have the faster ones first.
+            # Like, here we begin with checking every tx one by one, when <e did not even check index and provided hash matched previous one.
             try:
                 block.verify()
             except Exception as e:
@@ -458,7 +461,7 @@ class Consensus(object):
 
             target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
             target_block_time = CHAIN.target_block_time(self.config.network)
-            # TODO: use a CHAIN constant
+            # TODO: use a CHAIN constant for pow blocks limits
             if ((int(block.hash, 16) < target) or
                 (block.special_min and block.index < 35200) or
                 (block.index >= 35200 and block.index < 38600 and block.special_min and
@@ -467,6 +470,7 @@ class Consensus(object):
                 if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                     # self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
                     # self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
+                    # todo: is this useful? can we have more blocks above? No because if we had, we would have raised just above
                     await self.mongo.async_db.block.delete_many({'index': {"$gte": block.index}})
                     await self.mongo.async_db.blocks.insert_one(block.to_dict())
                     # TODO: why do we need to keep that one in memory?

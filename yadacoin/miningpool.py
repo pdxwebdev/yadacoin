@@ -22,7 +22,7 @@ class MiningPool(object):
         self.max_target = CHAIN.MAX_TARGET
         self.inbound = {}
         self.connected_ips = {}
-        self.last_block_time = 0
+        self.last_block_time = int(self.config.BU.get_latest_block()['time'])
         self.previous_block_to_mine = None  # todo
 
     @property
@@ -48,12 +48,23 @@ class MiningPool(object):
 
     def special_min_triggered(self):
         """Tells if we went past the special min trigger since our last call"""
-        if self.block_to_mine.special_min:
-            # We already are special_min
+        try:
+            if self.block_to_mine.special_min:
+                # We already are special_min
+                return False
+            # print(self.last_block_time, self.block_to_mine.index)
+            # print(CHAIN.special_min_trigger(self.config.network, self.block_to_mine.index))
+            if (self.last_block_time + CHAIN.special_min_trigger(self.config.network, self.block_to_mine.index)) < time():
+                return True
             return False
-        if self.last_block_time + CHAIN.special_min_trigger(self.config.network, self.block_to_mine.index) < time():
-            return True
-        return False
+        except Exception as e:
+            print(e)
+            import sys, os
+            self.app_log.error("Exception {} special_min_triggered".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+
 
     async def refresh_and_signal_miners(self):
         self.refresh()
@@ -123,7 +134,7 @@ class MiningPool(object):
                 })
             block = Block.from_dict(self.config.BU().get_latest_block())
             self.height = block.index
-        self.last_block_time = block.time
+        self.last_block_time = int(block.time)
         try:
             self.app_log.debug('Refreshing mp block Factory')
             self.block_factory = BlockFactory(
@@ -155,14 +166,18 @@ class MiningPool(object):
         self.app_log.debug("set_target {}".format(to_time))
         # todo: keep block target at normal target, for header and block info.
         # Only tweak target at validation time, and don't include special_min into header
-        latest_block = self.config.BU.get_latest_block()
-        print(latest_block)
         if self.block_factory.block.index >= 38600:  # TODO: use a CHAIN constant
-            if (int(to_time) - int(latest_block['time'])) > self.target_block_time:
+            # print("test target", int(to_time), self.last_block_time)
+            if self.block_factory.block.target == 0:
+                # If the node is started when the current block is special_min, then we have a 0 target
+                self.set_target_as_previous_non_special_min()
+                # print('target set to', self.block_factory.block.target)
+            if (int(to_time) - self.last_block_time) \
+                    > CHAIN.special_min_trigger(self.config.network, self.block_factory.block.index):
                 # TODO: adjust depending on block height
-                target_factor = (int(to_time) - int(latest_block['time'])) / self.target_block_time
-                print("mp", self.block_factory.block.target, target_factor)
-                print(self.block_factory.block.to_dict())
+                target_factor = (int(to_time) - self.last_block_time) / self.target_block_time
+                # print("mp", self.block_factory.block.target, target_factor)
+                # print(self.block_factory.block.to_dict())
                 target = self.block_factory.block.target * (target_factor * 4)
                 if target > self.max_target:
                     self.block_factory.block.target = self.max_target
@@ -170,12 +185,25 @@ class MiningPool(object):
             else:
                 self.block_factory.block.special_min = False
         elif self.block_factory.block.index < 38600:  # TODO: use a CHAIN constant
-            if (int(to_time) - int(latest_block['time'])) > self.target_block_time:
+            if (int(to_time) - self.last_block_time) > self.target_block_time:
                 self.block_factory.block.target = self.max_target
                 self.block_factory.block.special_min = True
             else:
                 self.block_factory.block.special_min = False
-    
+
+    def set_target_as_previous_non_special_min(self):
+        # TODO: move to async and above
+        """TODO: this is not correct, should use a cached version of the current target somewhere, and recalc on
+        new block event if we cross a boundary (% 2016 currently). Beware, at boundary we need to recalc the new diff one block ahead
+        that is, if we insert block before a boundary, we have to calc the diff for the next one right away."""
+        self.app_log.error("set_target_as_previous_non_special_min should not be called anymore")
+        res = self.mongo.db.blocks.find_one({
+            'special_min': False,
+        }, {'target': 1}, sort=[('index',-1)])
+        # print(res)
+        if res:
+            self.block_factory.block.target = int(res['target'], 16)
+
     def set_target_from_last_non_special_min(self, latest_block):
         i = 1
         while 1:

@@ -312,14 +312,14 @@ class Block(object):
         block_time=0,
         block_index=-1,
         prev_hash='',
-        nonce='',
+        nonce:str='',
         transactions=None,
         block_hash='',
         merkle_root='',
         public_key='',
         signature='',
         special_min: bool=False,
-        target=0
+        target: int=0
     ):
         self.config = get_config()
         self.mongo = self.config.mongo
@@ -337,6 +337,10 @@ class Block(object):
         self.public_key = public_key
         self.signature = signature
         self.special_min = special_min
+        if target==0:
+            # Same call as in new block check
+            target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
+                                             self.config.consensus.existing_blockchain)
         self.target = target
         self.header = ''
 
