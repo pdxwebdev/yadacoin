@@ -10,6 +10,8 @@ class CHAIN(object):
     MAX_TARGET = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     MAX_TARGET_HEX = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
+    MAX_NONCE_LEN = 64
+
     # The fork checkpoints, so we have a single reference for all the codebase and can use explicit names for forks.
     POW_FORK_V2 = 60000
 

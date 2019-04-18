@@ -22,121 +22,129 @@ def quantize_eight(value):
 
 class BlockFactory(object):
     def __init__(self, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
-        self.config = get_config()
-        self.mongo = self.config.mongo
-        if force_version is None:
-            self.version = CHAIN.get_version_for_height(index)
-        else:
-            self.version = force_version
-        if force_time:
-            self.time = str(int(force_time))
-        else:
-            self.time = str(int(time.time()))
-        blocks = self.config.BU.get_blocks()
-        self.index = index
-        if self.index == 0:
-            self.prev_hash = '' 
-        else:
-            self.prev_hash = self.config.BU.get_latest_block()['hash']
-        self.public_key = public_key
-        self.private_key = private_key
+        try:
+            self.config = get_config()
+            self.mongo = self.config.mongo
+            if force_version is None:
+                self.version = CHAIN.get_version_for_height(index)
+            else:
+                self.version = force_version
+            if force_time:
+                self.time = str(int(force_time))
+            else:
+                self.time = str(int(time.time()))
+            blocks = self.config.BU.get_blocks()
+            self.index = index
+            if self.index == 0:
+                self.prev_hash = ''
+            else:
+                self.prev_hash = self.config.BU.get_latest_block()['hash']
+            self.public_key = public_key
+            self.private_key = private_key
 
-        transaction_objs = []
-        fee_sum = 0.0
-        unspent_indexed = {}
-        unspent_fastgraph_indexed = {}
-        used_sigs = []
-        for txn in transactions:
-            try:
-                if isinstance(txn, Transaction):
-                    transaction_obj = txn
-                else:
-                    transaction_obj = Transaction.from_dict(self.index, txn)
-
-                if transaction_obj.transaction_signature in used_sigs:
-                    print('duplicate transaction found and removed')
-                    continue
-    
-                used_sigs.append(transaction_obj.transaction_signature)
-                transaction_obj.verify()
-
-                if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
-                    for input_id in transaction_obj.inputs:
-                        input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
-                        if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
-                            continue
-
-            except:
+            transaction_objs = []
+            fee_sum = 0.0
+            unspent_indexed = {}
+            unspent_fastgraph_indexed = {}
+            used_sigs = []
+            for txn in transactions:
                 try:
-                    if isinstance(txn, FastGraph):
+                    if isinstance(txn, Transaction):
                         transaction_obj = txn
                     else:
-                        transaction_obj = FastGraph.from_dict(self.index, txn)
+                        transaction_obj = Transaction.from_dict(self.index, txn)
 
-                    if transaction_obj.transaction.transaction_signature in used_sigs:
+                    if transaction_obj.transaction_signature in used_sigs:
                         print('duplicate transaction found and removed')
                         continue
-                    used_sigs.append(transaction_obj.transaction.transaction_signature)
-                    if not transaction_obj.verify():
-                        raise InvalidTransactionException("invalid transactions")
-                    transaction_obj = transaction_obj.transaction
+
+                    used_sigs.append(transaction_obj.transaction_signature)
+                    transaction_obj.verify()
+
+                    if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
+                        for input_id in transaction_obj.inputs:
+                            input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
+                            if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
+                                continue
+
                 except:
-                    raise InvalidTransactionException("invalid transactions")
+                    try:
+                        if isinstance(txn, FastGraph):
+                            transaction_obj = txn
+                        else:
+                            transaction_obj = FastGraph.from_dict(self.index, txn)
 
-            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
-            #check double spend
-            if address in unspent_indexed:
-                unspent_ids = unspent_indexed[address]
-            else:
-                res = self.config.BU.get_wallet_unspent_transactions(address)
-                unspent_ids = [x['id'] for x in res]
-                unspent_indexed[address] = unspent_ids
+                        if transaction_obj.transaction.transaction_signature in used_sigs:
+                            print('duplicate transaction found and removed')
+                            continue
+                        used_sigs.append(transaction_obj.transaction.transaction_signature)
+                        if not transaction_obj.verify():
+                            raise InvalidTransactionException("invalid transactions")
+                        transaction_obj = transaction_obj.transaction
+                    except:
+                        raise InvalidTransactionException("invalid transactions")
 
-            failed = False
-            used_ids_in_this_txn = []
-            
-            for x in transaction_obj.inputs:
-                if x.id not in unspent_ids:
-                    if isinstance(x, ExternalInput):
-                        txn2 = self.config.BU.get_transaction_by_id(x.id, instance=True)
-                        address2 = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn2.public_key)))
-                        res = self.config.BU.get_wallet_unspent_transactions(address2)
-                        unspent_ids2 = [y['id'] for y in res]
-                        if x.id not in unspent_ids2:
-                            failed = True
-                if x.id in used_ids_in_this_txn:
-                    failed = True
-                used_ids_in_this_txn.append(x.id)
-            if not failed:
-                transaction_objs.append(transaction_obj)
-                fee_sum += float(transaction_obj.fee)
-        block_reward = CHAIN.get_block_reward()
-        coinbase_txn_fctry = TransactionFactory(
-            self.index,
-            public_key=self.public_key,
-            private_key=self.private_key,
-            outputs=[{
-                'value': block_reward + float(fee_sum),
-                'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-            }],
-            coinbase=True
-        )
-        coinbase_txn = coinbase_txn_fctry.generate_transaction()
-        transaction_objs.append(coinbase_txn)
+                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
+                #check double spend
+                if address in unspent_indexed:
+                    unspent_ids = unspent_indexed[address]
+                else:
+                    res = self.config.BU.get_wallet_unspent_transactions(address)
+                    unspent_ids = [x['id'] for x in res]
+                    unspent_indexed[address] = unspent_ids
 
-        self.transactions = transaction_objs
-        txn_hashes = self.get_transaction_hashes()
-        self.set_merkle_root(txn_hashes)
-        self.block = Block(
-            version=self.version,
-            block_time=self.time,
-            block_index=self.index,
-            prev_hash=self.prev_hash,
-            transactions=self.transactions,
-            merkle_root=self.merkle_root,
-            public_key=self.public_key
-        )
-    
+                failed = False
+                used_ids_in_this_txn = []
+
+                for x in transaction_obj.inputs:
+                    if x.id not in unspent_ids:
+                        if isinstance(x, ExternalInput):
+                            txn2 = self.config.BU.get_transaction_by_id(x.id, instance=True)
+                            address2 = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn2.public_key)))
+                            res = self.config.BU.get_wallet_unspent_transactions(address2)
+                            unspent_ids2 = [y['id'] for y in res]
+                            if x.id not in unspent_ids2:
+                                failed = True
+                    if x.id in used_ids_in_this_txn:
+                        failed = True
+                    used_ids_in_this_txn.append(x.id)
+                if not failed:
+                    transaction_objs.append(transaction_obj)
+                    fee_sum += float(transaction_obj.fee)
+            block_reward = CHAIN.get_block_reward()
+            coinbase_txn_fctry = TransactionFactory(
+                self.index,
+                public_key=self.public_key,
+                private_key=self.private_key,
+                outputs=[{
+                    'value': block_reward + float(fee_sum),
+                    'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+                }],
+                coinbase=True
+            )
+            coinbase_txn = coinbase_txn_fctry.generate_transaction()
+            transaction_objs.append(coinbase_txn)
+
+            self.transactions = transaction_objs
+            txn_hashes = self.get_transaction_hashes()
+            self.set_merkle_root(txn_hashes)
+            self.block = Block(
+                version=self.version,
+                block_time=self.time,
+                block_index=self.index,
+                prev_hash=self.prev_hash,
+                transactions=self.transactions,
+                merkle_root=self.merkle_root,
+                public_key=self.public_key
+            )
+        except Exception as e:
+            import sys, os
+            print("Exception {} BlockFactory".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+            raise
+
     @classmethod
     def generate_header(cls, block):
         if int(block.version) < 3:
@@ -159,7 +167,6 @@ class BlockFactory(object):
                    '{nonce}' + \
                    hex(block.target)[2:].rjust(64, '0') + \
                    block.merkle_root
-
 
     @classmethod
     def generate_hash_from_header(cls, header, nonce):
@@ -319,6 +326,7 @@ class Block(object):
         public_key='',
         signature='',
         special_min: bool=False,
+        header= '',
         target: int=0
     ):
         self.config = get_config()
@@ -337,12 +345,12 @@ class Block(object):
         self.public_key = public_key
         self.signature = signature
         self.special_min = special_min
-        if target==0:
-            # Same call as in new block check
-            target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
-                                             self.config.consensus.existing_blockchain)
         self.target = target
-        self.header = ''
+        if target==0:
+            # Same call as in new block check - but there's a circular reference here.
+            self.target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
+                                                  self.config.consensus.existing_blockchain)
+        self.header = header
 
     @classmethod
     def from_dict(cls, block):
@@ -370,6 +378,7 @@ class Block(object):
             merkle_root=block.get('merkleRoot'),
             signature=block.get('id'),
             special_min=block.get('special_min'),
+            header=block.get('header', ''),
             target=int(block.get('target'), 16)
         )
     
@@ -486,6 +495,7 @@ class Block(object):
             'merkleRoot': self.merkle_root,
             'special_min': self.special_min,
             'target': hex(self.target)[2:].rjust(64, '0'),
+            'header': self.header,
             'id': self.signature
         }
 

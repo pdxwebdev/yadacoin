@@ -2,6 +2,7 @@ from time import time
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from logging import getLogger
+from threading import Thread
 
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
@@ -24,6 +25,7 @@ class MiningPool(object):
         self.connected_ips = {}
         self.last_block_time = int(self.config.BU.get_latest_block()['time'])
         self.previous_block_to_mine = None  # todo
+        self.last_refresh = 0
 
     @property
     def block_to_mine(self):
@@ -44,6 +46,11 @@ class MiningPool(object):
             return
         # second case would be new transactions received in the mean time
         # TODO - event on tx
+        # or enough time passed by
+        if self.last_refresh + 60 < time():
+            self.app_log.info("Refresh 60")
+            # Note that a refresh changes the block time, therefore it's header.
+            await self.refresh_and_signal_miners()
         pass
 
     def special_min_triggered(self):
@@ -99,6 +106,53 @@ class MiningPool(object):
         self.app_log.info("miner on_new_inbound {}:{} {}".format(ip, address, worker))
         self.inbound[sid] = {"ip":ip, "version": version, "worker": worker, "address": address, "type": type}
 
+    async def on_miner_status(self, sid, hash_rate_mhs:int, uptime:int):
+        """A miner sent extra status (optional)"""
+        self.inbound[sid]['mhs'] = hash_rate_mhs
+        self.inbound[sid]['uptime'] = uptime
+        # TODO: could be stored or averaged for pool dashboard
+
+    async def on_miner_nonce(self, sid, nonce:str) -> bool:
+        """We got a nonce from a miner"""
+        # Does it match current block?
+        # we can't avoid but compute the hash, since we can't trust the hash the miner could send to be honest.
+        hash1 = BlockFactory.generate_hash_from_header(self.block_to_mine.header, nonce)
+        if not hash1[:8] == '00000000':
+            # TODO If not, does it match previous block of same height?
+            self.app_log.warning("nonce {} did not match pool diff block, hash1 was {}".format(nonce, hash1))
+            if self.previous_block_to_mine is not None:
+                hash2 = BlockFactory.generate_hash_from_header(self.previous_block_to_mine.header, nonce)
+                if not hash2[:8] == '00000000':
+                    self.app_log.warning("nonce {} did not match pool diff block, hash2 was {}".format(nonce, hash2))
+                    return False
+                matching_block = self.previous_block_to_mine
+                matching_hash = hash2
+                self.app_log.warning("nonce {} matches pool diff, hash2 is {}".format(nonce, hash2))
+            else:
+                return False
+        else:
+            matching_hash = hash1
+            matching_block = self.block_to_mine
+            self.app_log.warning("nonce {} matches pool diff, hash1 is {}".format(nonce, hash1))
+        # TODO: store share and send block if enough
+        # No need to re-verify block, should be good since we forged it and nonce passes
+        # submit share
+        await self.mongo.async_db.shares.insert_one({
+            'address': self.inbound[sid]['address'],
+            'index': matching_block.index,
+            'hash': matching_hash
+        })
+
+        # todo: fork pow compare to reduced diff if special_min
+        if int(matching_block.target) > int(matching_block.hash, 16):
+            # broadcast winning block
+            await self.broadcast_block(matching_block.to_dict())
+            # Conversion to dict is important, or the object may change
+            self.app_log.debug('block ok')
+        else:
+            self.app_log.debug('share ok')
+
+
     async def on_close_inbound(self, sid):
         # We only allow one in or out per ip
         try:
@@ -117,12 +171,18 @@ class MiningPool(object):
         the transactions at the time of the refresh. Since tx hash is in the header, a refresh here means we have to
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
-
+        if self.block_factory:
+            current_index = self.block_factory.block.index
+            backup_block = self.block_factory.block.to_dict()
+            # print("backup_block header", backup_block['header'])
+        else:
+            current_index = 0
+            backup_block = None
+        self.last_refresh = time()
         if block is None:
             block = self.config.BU.get_latest_block()
         if block:
             block = Block.from_dict(block)
-            self.height = block.index + 1
         else:
             genesis_block = BlockFactory.get_genesis_block()
             genesis_block.save()
@@ -133,7 +193,7 @@ class MiningPool(object):
                 'index': 0
                 })
             block = Block.from_dict(self.config.BU().get_latest_block())
-            self.height = block.index
+        self.index = block.index + 1
         self.last_block_time = int(block.time)
         try:
             self.app_log.debug('Refreshing mp block Factory')
@@ -141,20 +201,33 @@ class MiningPool(object):
                 transactions=self.get_pending_transactions(),
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,
-                index=self.height)
+                index=self.index)
 
             # TODO: centralize handling of min target
             self.set_target(int(self.block_factory.block.time))
             if not self.block_factory.block.special_min:
                 self.set_target_from_last_non_special_min(block)
             self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
+            # print('block header', self.block_factory.block.header)
+            if self.block_factory.block.index == current_index:
+                # If we just refreshed the same block, keep the previous one so we can validate the nonces.
+                self.previous_block_to_mine = Block.from_dict(backup_block)
+                # print("previous_block header", self.previous_block_to_mine.header)
+            else:
+                self.previous_block_to_mine = None
         except Exception as e:
-            raise e
+            import sys, os
+            self.app_log.error("Exception {} mp.refresh".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+            raise
 
     def block_to_mine_info(self):
         """Returns info for current block to mine"""
         res = {
             'target': hex(self.block_factory.block.target)[2:].rjust(64, '0'),  # target is now in hex format
+            # TODO this is the network target, maybe also send some pool target?
             'special_min': self.block_factory.block.special_min,
             'header': self.block_factory.block.header,
             'version': self.block_factory.block.version,
@@ -208,7 +281,7 @@ class MiningPool(object):
         i = 1
         while 1:
             res = self.mongo.db.blocks.find_one({
-                'index': self.height - i,
+                'index': self.index - i,
                 'special_min': False,
                 'target': {'$ne': CHAIN.MAX_TARGET_HEX}
             })
@@ -220,7 +293,7 @@ class MiningPool(object):
             else:
                 i += 1
         self.block_factory.block.target = BlockFactory.get_target(
-            self.height,
+            self.index,
             latest_block,
             self.block_factory.block,
             Blockchain(
@@ -343,6 +416,7 @@ class MiningPool(object):
         return transaction_objs
 
     def pool_mine(self, pool_peer, address, header, target, nonces, special_min):
+        self.app_log.error("pool_mine is deprecated")
         nonce, lhash = BlockFactory.mine(header, target, nonces, special_min)
         if nonce and lhash:
             try:
@@ -354,35 +428,39 @@ class MiningPool(object):
             except Exception as e:
                 print(e)
 
-    def broadcast_block(self, block):
+    def send_it(self, block_dict: dict, peer: str):
+        """Quick hack for // send. TODO: To be converted to real async"""
+        try:
+            requests.post('http://{peer}/newblock'.format(peer=peer), json=block_dict, timeout=10, headers={'Connection':'close'})
+            print("Sent to peer {}".format(peer))
+        except Exception as e:
+            print("Error {} sending to peer {}".format(e, peer))
+
+    async def broadcast_block(self, block_data: dict):
         # Peers.init(self.config.network)
         # Peer.save_my_peer(self.config.network)
-        print('\r\nCandidate submitted for index:', block.index)
+        print('\r\nCandidate submitted for index:', block_data['index'])
         print('\r\nTransactions:')
-        for x in block.transactions:
-            print(x.transaction_signature)
-        self.mongo.db.consensus.insert({'peer': 'me', 'index': block.index, 'id': block.signature, 'block': block.to_dict()})
-        print('\r\nSent block to:')
+        for x in block_data['transactions']:
+            print(x['transaction_signature'])
+        # TODO: why do we only insert to consensus? Why not try to insert right away?
+        """
+        await self.mongo.db.consensus.insert_one({'peer': 'me', 'index': block_data['index'],
+                                                  'id': block_data['signature'], 'block': block_data})
+        """
+        print('\r\nSend block to:')
         # TODO: convert to async // send
         # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
         # Then maybe a list of "root" nodes (explorer, known pools) from config, just to make sure.
         if self.config.network == 'regnet':
             return
-        for peer in self.config.peers.peers:
-            if peer.is_me:
-                continue
+        for peer in self.config.force_broadcast_to:
             try:
-                block_dict = block.to_dict()
-                block_dict['peer'] = self.config.peers.my_peer
-                requests.post(
-                    'http://{peer}/newblock'.format(
-                        peer=peer.host + ":" + str(peer.port)
-                    ),
-                    json=block_dict,
-                    timeout=3,
-                    headers={'Connection':'close'}
-                )
-                print(peer.host + ":" + str(peer.port))
+                block_data['peer'] = self.config.peers.my_peer
+                t = Thread(target=self.send_it, args=(block_data, "{}:{}".format(peer['host'],peer['port'])))
+                t.setDaemon(True)
+                t.start()
             except Exception as e:
                 print(e)
                 peer.report()
+        await self.config.consensus.import_block(block_data)

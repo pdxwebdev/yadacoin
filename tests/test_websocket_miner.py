@@ -42,6 +42,7 @@ def mine():
     global sio
     while sio.connected:
         sleep(10)
+        sio.emit('nonce', data="fakenonce", namespace="/pool")
 
 
 if __name__ == "__main__":

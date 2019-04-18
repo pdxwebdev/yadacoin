@@ -7,6 +7,7 @@ from socketio import AsyncNamespace
 from logging import getLogger
 
 from yadacoin.config import get_config
+from yadacoin.chain import CHAIN
 from yadacoin.miningpool import MiningPool
 
 
@@ -55,9 +56,31 @@ class PoolNamespace(AsyncNamespace):
 
     async def on_register(self, sid, data):
         """Miner connects and sends his info"""
-        self.app_log.info('WS pool register: {} {}'.format(sid, json.dumps(data)))
+        self.app_log.debug('WS pool register: {} {}'.format(sid, json.dumps(data)))
         async with self.session(sid) as session:
             await self.mp.on_new_inbound(session['IP'], data['version'], data['worker'], data['address'], data['type'], sid)
         # TODO: check extra data to filter and close?
         # TODO: send current header to mine
         await self.emit('header', data=self.mp.block_to_mine_info(), room=sid)
+
+    async def on_status(self, sid, data):
+        """Miner sends status data"""
+        self.app_log.debug('WS pool status: {} {}'.format(sid, json.dumps(data)))
+        await self.mp.on_miner_status(sid, data['hash'], data['uptime'])
+
+    async def on_nonce(self, sid, data):
+        """Miner sends a solution at pool diff"""
+        self.app_log.debug('WS pool nonce: {} {}'.format(sid, json.dumps(data)))
+        # This is the most frequent message, keep it short, only nonce value
+        # check nonce format and len
+        if type(data) is not str:
+            await self.emit('n_Ko', room=sid)
+            return
+        if len(data) > CHAIN.MAX_NONCE_LEN:
+            await self.emit('n_Ko', room=sid)
+            return
+        result = await self.mp.on_miner_nonce(sid, data)
+        if result:
+            await self.emit('n_ok', room=sid)
+        else:
+            await self.emit('n_ko', room=sid)
