@@ -4,35 +4,37 @@ Async Yadacoin node poc
 
 import json
 import logging
-from os import path
-from tornado.web import Application, StaticFileHandler
-from tornado.options import define, options
+from asyncio import sleep as async_sleep
+from hashlib import sha256
 from logging.handlers import RotatingFileHandler
-from tornado.log import LogFormatter
-import tornado.log
+from os import path
+from sys import exit, stdout
+from time import time
+
+import socketio
 import tornado.ioloop
 import tornado.locks
-from sys import exit, stdout
-from asyncio import sleep as async_sleep
-import socketio
-from hashlib import sha256
+import tornado.log
+# from tornado.log import LogFormatter
+from tornado.options import define, options
+from tornado.web import Application, StaticFileHandler
 
 import yadacoin.blockchainutils
 import yadacoin.config
+from yadacoin.consensus import Consensus
+from yadacoin.chain import CHAIN
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
 from yadacoin.graphhandlers import GRAPH_HANDLERS
+from yadacoin.graphutils import GraphUtils
+from yadacoin.mongo import Mongo
 from yadacoin.nodehandlers import NODE_HANDLERS
+from yadacoin.peers import Peer, Peers
 from yadacoin.poolhandlers import POOL_HANDLERS
 from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
-from yadacoin.consensus import Consensus
-from yadacoin.mongo import Mongo
-from yadacoin.peers import Peer, Peers
-from yadacoin.graphutils import GraphUtils
 
-
-__version__ = '0.0.11'
+__version__ = '0.0.12'
 
 PROTOCOL_VERSION = 2
 
@@ -109,6 +111,7 @@ async def background_peers(peers: Peers):
 
 
 async def background_status():
+    """This background co-routine is responsible for status collection and display"""
     while True:
         try:
             await async_sleep(30)
@@ -117,6 +120,23 @@ async def background_status():
             app_log.info(json.dumps(status))
         except Exception as e:
             app_log.error("{} in Background_status".format(e))
+
+
+async def background_pool():
+    """Responsible for miner updates"""
+    while True:
+        """
+        New blocks will directly trigger the correct event.
+        This co-routine checks if new transactions have been received, or if special_min is triggered,
+        So we can update the miners.
+        """
+        try:
+            await async_sleep(10)
+            await config.mp.check_block_evolved()
+
+        except Exception as e:
+            app_log.error("{} in background_pool".format(e))
+
 
 
 def configure_logging():

@@ -74,13 +74,6 @@ class Config(object):
         # self.BU.invalidate_last_block()
         block_dict = block.to_dict()
         self.BU.set_latest_block(block_dict)  # Warning, this is a dict, not a Block!
-        # Update the miners (/pool route) is done via latest_block => move to event to MiningPool stored by config
-        if self.mp:
-            self.mp.refresh(block_dict)
-            # Update the miners (websockets)
-            await self.SIO.emit('header', data=self.mp.block_to_mine_info(), namespace='/pool')
-        # TODO: broadcast to the peers we're connected to (clients of our ws server)
-        # TODO: broadcast to the peers we're connected to (ws servers we're clients of)
 
 
     def get_status(self):

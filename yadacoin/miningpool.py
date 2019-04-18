@@ -1,4 +1,4 @@
-import time
+from time import time
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from logging import getLogger
@@ -22,6 +22,43 @@ class MiningPool(object):
         self.max_target = CHAIN.MAX_TARGET
         self.inbound = {}
         self.connected_ips = {}
+        self.last_block_time = 0
+        self.previous_block_to_mine = None  # todo
+
+    @property
+    def block_to_mine(self):
+        """Returns the block to mine"""
+        if self.block_factory is None:
+            self.refresh()
+        return self.block_factory.block
+
+    async def check_block_evolved(self):
+        """
+        Checks if special min triggered, or if new transactions were received, for the current block.
+        If so, refresh the block and triggers miners update
+        """
+        if self.special_min_triggered():
+            self.app_log.info("Special_min triggered")
+            await self.refresh_and_signal_miners()
+            # This will also refresh transactions, so we can early exit
+            return
+        # second case would be new transactions received in the mean time
+        # TODO - event on tx
+        pass
+
+    def special_min_triggered(self):
+        """Tells if we went past the special min trigger since our last call"""
+        if self.block_to_mine.special_min:
+            # We already are special_min
+            return False
+        if self.last_block_time + CHAIN.special_min_trigger(self.config.network, self.block_to_mine.index) < time():
+            return True
+        return False
+
+    async def refresh_and_signal_miners(self):
+        self.refresh()
+        # Update the miners (websockets)
+        await self.config.SIO.emit('header', data=self.block_to_mine_info(), namespace='/pool')
 
     def get_status(self):
         """Returns pool status as explicit dict"""
@@ -86,7 +123,7 @@ class MiningPool(object):
                 })
             block = Block.from_dict(self.config.BU().get_latest_block())
             self.height = block.index
-
+        self.last_block_time = block.time
         try:
             self.app_log.debug('Refreshing mp block Factory')
             self.block_factory = BlockFactory(
@@ -181,11 +218,11 @@ class MiningPool(object):
                 except:
                     start_nonce = 0
             self.index = latest_block_index
-            to_time = int(time.time())
+            to_time = int(time())
             self.set_target(to_time)
             if self.block_factory.block.special_min:
                 self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
-                self.block_factory.block.time = str(int(time.time()))
+                self.block_factory.block.time = str(int(time()))
             self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
             yield [start_nonce, start_nonce + 10000000]
 

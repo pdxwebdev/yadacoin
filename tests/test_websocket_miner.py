@@ -13,7 +13,7 @@ from socketio import Client, ClientNamespace
 from time import sleep
 
 
-__version__ = '0.0.1'
+__version__ = '0.0.2'
 
 
 DEFAULT_PORT = 8000
@@ -30,6 +30,8 @@ class PoolNamespace(ClientNamespace):
         pass
 
     def on_disconnect(self):
+        print('/Pool disconnected')
+        self.client.connected  =False
         pass
 
     def on_header(self, data):
@@ -37,7 +39,8 @@ class PoolNamespace(ClientNamespace):
 
 
 def mine():
-    while 1:
+    global sio
+    while sio.connected:
         sleep(10)
 
 
@@ -53,9 +56,11 @@ if __name__ == "__main__":
         print("Using {}".format(URL))
 
     # See options https://python-socketio.readthedocs.io/en/latest/api.html
-    sio = Client(logger=False)
+    sio = Client(logger=False, reconnection=False)
     sio.register_namespace(PoolNamespace('/pool'))
+    sio.connected = True
     sio.connect('http://{}:{}'.format(options.ip, DEFAULT_PORT), namespaces=['/pool'])
+    sleep(10)
     # We have to id ourselve first of all
     mine()
     # sio.wait()

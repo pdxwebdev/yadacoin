@@ -155,7 +155,12 @@ class Peers(object):
         """This is what triggers the event to all connected ws peers, in or outgoing"""
         # outgoing
         self.app_log.debug("Block Insert event index {}".format(block_data['index']))
-
+        # Update the miners (/pool http route) is done via latest_block => move to event to MiningPool stored by config
+        if self.config.mp:
+            self.config.mp.refresh(block_data)
+            # Update the miners (websockets)
+            await self.config.SIO.emit('header', data=self.config.mp.block_to_mine_info(), namespace='/pool')
+        # TODO: start all async at once then await gather to spare some delay
         for ip, outgoing in self.outbound.items():
             try:
                 await outgoing['client'].emit("latest_block", data=block_data, namespace="/chat")
