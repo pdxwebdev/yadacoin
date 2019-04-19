@@ -127,12 +127,14 @@ class MiningPool(object):
                     return False
                 matching_block = self.previous_block_to_mine
                 matching_hash = hash2
+                matching_block.hash = hash2
                 self.app_log.warning("nonce {} matches pool diff, hash2 is {}".format(nonce, hash2))
             else:
                 return False
         else:
             matching_hash = hash1
             matching_block = self.block_to_mine
+            matching_block.hash = hash1
             self.app_log.warning("nonce {} matches pool diff, hash1 is {}".format(nonce, hash1))
         # TODO: store share and send block if enough
         # No need to re-verify block, should be good since we forged it and nonce passes
@@ -442,7 +444,7 @@ class MiningPool(object):
         print('\r\nCandidate submitted for index:', block_data['index'])
         print('\r\nTransactions:')
         for x in block_data['transactions']:
-            print(x['transaction_signature'])
+            print(x['id'])
         # TODO: why do we only insert to consensus? Why not try to insert right away?
         """
         await self.mongo.db.consensus.insert_one({'peer': 'me', 'index': block_data['index'],

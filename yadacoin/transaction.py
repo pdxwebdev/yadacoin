@@ -14,7 +14,6 @@ from yadacoin.transactionutils import TU
 # from yadacoin.blockchainutils import BU
 from yadacoin.config import get_config
 
-
 class TransactionFactory(object):
     
     def __init__(
@@ -449,7 +448,7 @@ class Transaction(object):
         ret = {
             'time': self.time,
             'rid': self.rid,
-            'id': self.transaction_signature,
+            'id': self.transaction_signature,  # Beware: changing name between object/dict view is very error prone
             'relationship': self.relationship,
             'public_key': self.public_key,
             'dh_public_key': self.dh_public_key,
