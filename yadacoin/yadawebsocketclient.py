@@ -164,17 +164,6 @@ class YadaWebSocketClient(object):
                 block['time_utc'] = ts_to_utc(block['time'])
                 await self.client.emit('latest_block', data=block, namespace="/chat")
 
-    """
-    async def __process_next_block(self, block_data: dict, trigger_event=True) -> bool:
-        from yadacoin.block import Block  # Circular reference. Not good!
-        block_object = Block.from_dict(block_data)
-        await self.consensus.insert_consensus_block(block_object, self.peer)
-        self.app_log.debug("Consensus ok {}".format(block_object.index))
-        res = await self.consensus.import_block({'peer': self.peer.to_string(), 'block': block_data}, trigger_event=trigger_event)
-        self.app_log.debug("Import_block {} {}".format(block_object.index, res))
-        return res
-    """
-
     async def on_blocks(self, data):
         my_index = self.config.BU.get_latest_block()['index']
         if data[0]['index'] != my_index + 1:

@@ -465,4 +465,4 @@ class MiningPool(object):
             except Exception as e:
                 print(e)
                 peer.report()
-        await self.config.consensus.import_block(block_data)
+        await self.config.consensus.import_block({'peer': self.config.peers.my_peer.to_string(), 'block': block_data})
