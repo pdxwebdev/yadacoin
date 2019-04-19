@@ -437,6 +437,8 @@ class MiningPool(object):
             print("Sent to peer {}".format(peer))
         except Exception as e:
             print("Error {} sending to peer {}".format(e, peer))
+            # TODO
+            # peer.report()
 
     async def broadcast_block(self, block_data: dict):
         # Peers.init(self.config.network)
@@ -463,6 +465,5 @@ class MiningPool(object):
                 t.setDaemon(True)
                 t.start()
             except Exception as e:
-                print(e)
-                peer.report()
-        await self.config.consensus.import_block({'peer': self.config.peers.my_peer.to_string(), 'block': block_data})
+                print("Error ", e)
+        await self.config.consensus.import_block({'peer': self.config.peers.my_peer, 'block': block_data})

@@ -30,6 +30,8 @@ class Peers(object):
         # I chose to have 2 indexs and more memory footprint rather than iterating over one to get the other.
         self.probable_old_nodes = {}  # dict : keys are ip, value time when to delete from list
         self.syncing = False
+        self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')  # str
+        print(self.my_peer)
 
     def init_local(self):
         raise RuntimeError("Peers, init_local is deprecated")
