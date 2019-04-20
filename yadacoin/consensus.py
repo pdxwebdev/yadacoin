@@ -417,7 +417,7 @@ class Consensus(object):
         self.app_log.debug("Import_block {} {}".format(block_object.index, res))
         return res
 
-    async def integrate_block_with_existing_chain(self, block, extra_blocks=None):
+    async def integrate_block_with_existing_chain(self, block: Block, extra_blocks=None):
         """Even in case of retrace, this is the only place where we insert a new block into the block collection and update BU"""
         try:
             # TODO: reorg the checks, to have the faster ones first.

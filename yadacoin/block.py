@@ -399,21 +399,23 @@ class Block(object):
 
         header = BlockFactory.generate_header(self)
         hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
+        # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
         if self.hash != hashtest:
             raise Exception('Invalid block hash')
 
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         try:
+            # print("address", address, "sig", self.signature, "pubkey", self.public_key)
             result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
             if not result:
-                raise Exception("block signature is invalid")
+                raise Exception("block signature1 is invalid")
         except:
             try:
                 result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.signature)
                 if not result:
                     raise
             except:
-                raise Exception("block signature is invalid")
+                raise Exception("block signature2 is invalid")
 
         # verify reward
         coinbase_sum = 0

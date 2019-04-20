@@ -128,14 +128,14 @@ class MiningPool(object):
                 matching_block = self.previous_block_to_mine
                 matching_hash = hash2
                 matching_block.hash = hash2
-                self.app_log.warning("nonce {} matches pool diff, hash2 is {}".format(nonce, hash2))
+                self.app_log.warning("nonce {} matches pool diff, hash2 is {} header {}".format(nonce, hash2, matching_block.header))
             else:
                 return False
         else:
             matching_hash = hash1
             matching_block = self.block_to_mine
             matching_block.hash = hash1
-            self.app_log.warning("nonce {} matches pool diff, hash1 is {}".format(nonce, hash1))
+            self.app_log.warning("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
         # TODO: store share and send block if enough
         # No need to re-verify block, should be good since we forged it and nonce passes
         # submit share
@@ -145,6 +145,13 @@ class MiningPool(object):
             'hash': matching_hash
         })
 
+        matching_block.nonce = nonce
+        matching_block.signature = self.config.BU.generate_signature(matching_block.hash, self.config.private_key)
+        try:
+            matching_block.verify()
+        except Exception as e:
+            self.app_log.warning("Verify error {}".format(e))
+
         # todo: fork pow compare to reduced diff if special_min
         if int(matching_block.target) > int(matching_block.hash, 16):
             # broadcast winning block
@@ -153,7 +160,6 @@ class MiningPool(object):
             self.app_log.debug('block ok')
         else:
             self.app_log.debug('share ok')
-
 
     async def on_close_inbound(self, sid):
         # We only allow one in or out per ip
