@@ -125,7 +125,7 @@ class MiningPool(object):
                 if not hash2[:8] == '00000000':
                     self.app_log.warning("nonce {} did not match pool diff block, hash2 was {}".format(nonce, hash2))
                     return False
-                matching_block = self.previous_block_to_mine
+                matching_block = self.previous_block_to_mine.copy()
                 matching_hash = hash2
                 matching_block.hash = hash2
                 self.app_log.warning("nonce {} matches pool diff, hash2 is {} header {}".format(nonce, hash2, matching_block.header))
@@ -133,7 +133,7 @@ class MiningPool(object):
                 return False
         else:
             matching_hash = hash1
-            matching_block = self.block_to_mine
+            matching_block = self.block_to_mine.copy()
             matching_block.hash = hash1
             self.app_log.warning("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
         # TODO: store share and send block if enough

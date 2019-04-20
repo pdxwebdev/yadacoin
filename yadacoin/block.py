@@ -338,8 +338,8 @@ class Block(object):
         self.prev_hash = prev_hash
         self.nonce = nonce
         self.transactions = transactions
-        txn_hashes = self.get_transaction_hashes()
-        self.set_merkle_root(txn_hashes)
+        # txn_hashes = self.get_transaction_hashes()
+        # self.set_merkle_root(txn_hashes)
         self.merkle_root = merkle_root
         self.verify_merkle_root = ''
         self.hash = block_hash
@@ -352,6 +352,11 @@ class Block(object):
             self.target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
                                                   self.config.consensus.existing_blockchain)
         self.header = header
+        
+    def copy(self):
+        return Block(self.version, self.time, self.index, self.prev_hash, self.nonce, self.transactions,
+                     self.hash, self.merkle_root, self.public_key, self.signature, self.special_min,
+                     self.header, self.target)
 
     @classmethod
     def from_dict(cls, block):
