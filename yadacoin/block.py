@@ -401,6 +401,7 @@ class Block(object):
         hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
         # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
         if self.hash != hashtest:
+            self.config.app_log.warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
             raise Exception('Invalid block hash')
 
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))

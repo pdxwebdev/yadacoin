@@ -151,8 +151,8 @@ class MiningPool(object):
         try:
             matching_block.verify()
         except Exception as e:
-            self.app_log.warning("Verify error {}".format(e))
-            print(matching_block)
+            self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(e, matching_block.hash, matching_block.header, matching_block.nonce))
+            # print(matching_block.hash)
 
         # todo: fork pow compare to reduced diff if special_min
         if int(matching_block.target) > int(matching_block.hash, 16):
