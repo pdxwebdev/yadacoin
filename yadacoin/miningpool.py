@@ -117,7 +117,7 @@ class MiningPool(object):
         # Does it match current block?
         # we can't avoid but compute the hash, since we can't trust the hash the miner could send to be honest.
         block_to_mine = self.block_to_mine.copy()
-        previous_block_to_mine = self.previous_block_to_mine.copy()
+        previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
         hash1 = BlockFactory.generate_hash_from_header(block_to_mine.header, nonce)
         if not hash1[:8] == '00000000':
             # TODO If not, does it match previous block of same height?
