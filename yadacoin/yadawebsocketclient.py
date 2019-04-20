@@ -65,7 +65,7 @@ class ClientChatNamespace(AsyncClientNamespace):
 
     async def on_get_latest_block(self, data):
         """Peer sent us its latest block, store it and consider it a valid peer."""
-        self.app_log.error("ws client got on_get_latest_block from {}:{}, IGNORED".format(self.ip, self.port, data))
+        self.app_log.error("ws client got {} on_get_latest_block from {}:{}, IGNORED".format(data, self.ip, self.port))
 
     async def on_get_blocks(self, data):
         """server ask for list of blocks"""
@@ -130,7 +130,7 @@ class YadaWebSocketClient(object):
                 await self.client.disconnect()
                 return
             while self.connected:
-                self.app_log.debug("{} loop".format(self.peer.to_string(), self.client.eio.state))
+                self.app_log.debug("{} loop, state:{}".format(self.peer.to_string(), self.client.eio.state))
                 await async_sleep(30)
                 # TODO: poll here after some time without activity?
         except Exception as e:

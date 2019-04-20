@@ -1,16 +1,12 @@
-{% with title='YadaCoin - Blockchain Social Media', mixpanel='index page' %}
-  {% include 'head.html'  %}
-{% endwith %}
+{% include 'head.html' %}
 <body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
   <main>
     <div class="page-loader">
       <div class="loader">Loading...</div>
     </div>
-    {% with active='index' %}
-      {% include 'navigation.html'  %}
-    {% endwith %}
-    <section class="home-section bg-dark-30 nav-pass" id="home" data-background="static/yadacoinicon.png">
-      <div class="video-player" data-property="{videoURL:'https://www.youtube.com/watch?v=zFmjG3qVERA', containment:'.home-section', startAt:0, mute:false, autoPlay:true, loop:true, opacity:1, showControls:false, showYTLogo:false, vol:25}"></div>
+    {% include 'navigation.html'  %}
+    <section class="home-section bg-dark-30" id="home" data-background="static/yadacoinbigcoin.png">
+      <div class="video-player" data-property="{videoURL:'https://youtu.be/jZilxtkdR_k', containment:'.home-section', startAt:0, mute:false, autoPlay:true, loop:true, opacity:1, showControls:false, showYTLogo:false, vol:25}"></div>
       <div class="video-controls-box">
         <div class="container">
           <div class="video-controls"><a class="fa fa-volume-up" id="video-volume" href="#">&nbsp;</a><a class="fa fa-pause" id="video-play" href="#">&nbsp;</a></div>
@@ -320,9 +316,6 @@
     </div>
     <div class="scroll-up"><a href="#totop"><i class="fa fa-angle-double-up"></i></a></div>
   </main>
-  
-{% with %}
   {% include 'footer.html' %}
-{% endwith %} 
 </body>
 </html>

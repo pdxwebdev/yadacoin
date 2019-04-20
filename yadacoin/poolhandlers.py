@@ -1,7 +1,7 @@
 """
 Handlers required by the pool operations
 """
-
+import json
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.miningpool import MiningPool
 from tornado import escape
@@ -19,11 +19,12 @@ class PoolHandler(BaseHandler):
             # first init
             self.mp.refresh()
         self.mining_index = self.mp.block_factory.block.index
-
-        if self.mining_index <= self.config.BU.get_latest_block()['index']:
+        """
+        block = await self.config.mongo.async_db.blocks.find_one(sort=[('index',-1)])
+        if self.mp.block_factory.block.index <= block['index']:
             # We're behind
             self.mp.refresh()
-        """
+
         self.render_as_json(self.mp.block_to_mine_info())
 
 
@@ -31,14 +32,14 @@ class PoolSubmitHandler(BaseHandler):
 
     async def post(self):
         try:
-            pass
+            block_info = json.loads(self.request.body.decode('utf-8'))
             block = self.mp.block_factory.block
             block.target = self.mp.block_factory.block.target
             block.version = self.mp.block_factory.block.version
             block.special_min = self.mp.block_factory.block.special_min
-            block.hash = self.get_query_arguments("hash")
-            block.nonce = self.get_query_arguments("nonce")
-            block.signature = self.config.BU.generate_signature(block.hash.encode('utf-8'), self.config.private_key)
+            block.hash = block_info["hash"]
+            block.nonce = block_info["nonce"]
+            block.signature = self.config.BU.generate_signature(block.hash, self.config.private_key)
             try:
                 block.verify()
             except Exception as e:

@@ -1,14 +1,10 @@
-{% with title='YadaCoin - Blockchain Team', mixpanel='team page' %}
-  {% include 'head.html'  %}
-{% endwith %} 
+{% include 'head.html'  %}
 <body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
   <main>
     <div class="page-loader">
       <div class="loader">Loading...</div>
     </div>
-    {% with active='team' %}
-      {% include 'navigation.html'  %}
-    {% endwith %} 
+    {% include 'navigation.html'  %}
     <section class="module bg-dark-60 about-page-header" data-background="assets/images/about_bg.jpg">
       <div class="container">
         <div class="row">
@@ -133,8 +129,6 @@
     </div>
     <div class="scroll-up"><a href="#totop"><i class="fa fa-angle-double-up"></i></a></div>
   </main>
-{% with %}
   {% include 'footer.html' %}
-{% endwith %} 
 </body>
 </html>

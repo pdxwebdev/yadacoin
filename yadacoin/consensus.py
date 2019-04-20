@@ -6,7 +6,7 @@ import logging
 import requests
 import datetime
 from asyncio import sleep as async_sleep
-
+from pymongo.errors import DuplicateKeyError
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.peers import Peers, Peer
@@ -264,6 +264,8 @@ class Consensus(object):
 
     async def search_network_for_new(self):
         # Peers.init( self.config.network)
+        if self.config.network == 'regnet':
+            return
         if len(self.peers.peers) < 2:
             await self.peers.refresh()
             await async_sleep(20)
@@ -365,6 +367,15 @@ class Consensus(object):
                 elif trigger_event:
                     await self.trigger_update_event(block_data['block'])
                 return result
+            except DuplicateKeyError as e:
+                await self.mongo.async_db.consensus.update_one(
+                    {
+                        'peer': peer.to_string(),
+                        'index': block.index,
+                        'id': block.signature
+                    },
+                    {'$set': {'ignore': True}}
+                )
             except AboveTargetException as e:
                 await self.mongo.async_db.consensus.update_one(
                     {
@@ -473,7 +484,7 @@ class Consensus(object):
                     # self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
                     # todo: is this useful? can we have more blocks above? No because if we had, we would have raised just above
                     await self.mongo.async_db.block.delete_many({'index': {"$gte": block.index}})
-                    await self.mongo.async_db.blocks.insert_one(block.to_dict())
+                    await self.mongo.async_db.blocks.replace_one({'index': block.index}, block.to_dict(), upsert=True)
                     # TODO: why do we need to keep that one in memory?
                     try:
                         self.existing_blockchain.blocks[block.index] = block

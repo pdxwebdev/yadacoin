@@ -886,7 +886,7 @@ class GraphUtils(object):
         received = False
         res = self.mongo.db.verify_message_cache.find_one({
             'rid': rid,
-            'message.signIn': message
+            'message.signIn': message.decode('utf-8')
         })
         if res:
             received = True
@@ -908,7 +908,7 @@ class GraphUtils(object):
                     res = self.mongo.db.verify_message_cache.find_one({
                         'rid': rid,
                         'shared_secret': shared_secret.hex(),
-                        'message': message,
+                        'message': message.decode('utf-8'),
                         'id': txn['id']
                     })
                     try:
@@ -920,7 +920,7 @@ class GraphUtils(object):
                             cipher = Crypt(shared_secret.hex(), shared=True)
                             try:
                                 decrypted = cipher.shared_decrypt(txn['relationship'])
-                                signin = json.loads(decrypted.decode('latin1'))
+                                signin = json.loads(decrypted.decode('utf-8'))
                                 self.mongo.db.verify_message_cache.update({
                                     'rid': rid,
                                     'shared_secret': shared_secret.hex(),
@@ -936,7 +936,7 @@ class GraphUtils(object):
                                 , upsert=True)
                             except:
                                 continue
-                        if u'signIn' in signin and message == signin['signIn']:
+                        if u'signIn' in signin and message.decode('utf-8') == signin['signIn']:
                             if public_key != txn['public_key']:
                                 received = True
                             else:
