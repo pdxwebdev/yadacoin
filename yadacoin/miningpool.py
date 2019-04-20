@@ -112,41 +112,38 @@ class MiningPool(object):
         self.inbound[sid]['uptime'] = uptime
         # TODO: could be stored or averaged for pool dashboard
 
-    async def on_miner_nonce(self, sid, nonce:str) -> bool:
+    async def on_miner_nonce(self, sid, nonce: str) -> bool:
         """We got a nonce from a miner"""
         # Does it match current block?
         # we can't avoid but compute the hash, since we can't trust the hash the miner could send to be honest.
-        hash1 = BlockFactory.generate_hash_from_header(self.block_to_mine.header, nonce)
+        block_to_mine = self.block_to_mine.copy()
+        previous_block_to_mine = self.previous_block_to_mine.copy()
+        hash1 = BlockFactory.generate_hash_from_header(block_to_mine.header, nonce)
         if not hash1[:8] == '00000000':
             # TODO If not, does it match previous block of same height?
             self.app_log.warning("nonce {} did not match pool diff block, hash1 was {}".format(nonce, hash1))
             if self.previous_block_to_mine is not None:
-                hash2 = BlockFactory.generate_hash_from_header(self.previous_block_to_mine.header, nonce)
+                hash2 = BlockFactory.generate_hash_from_header(previous_block_to_mine.header, nonce)
                 if not hash2[:8] == '00000000':
                     self.app_log.warning("nonce {} did not match pool diff block, hash2 was {}".format(nonce, hash2))
                     return False
-                matching_block = self.previous_block_to_mine.copy()
+                # a shallow copy is required, or the block_to_mine can have changed until we verify it.
+                matching_block = previous_block_to_mine
                 matching_hash = hash2
                 matching_block.hash = hash2
+                matching_block.nonce = nonce
                 self.app_log.warning("nonce {} matches pool diff, hash2 is {} header {}".format(nonce, hash2, matching_block.header))
             else:
                 return False
         else:
+            matching_block = block_to_mine
             matching_hash = hash1
-            matching_block = self.block_to_mine.copy()
             matching_block.hash = hash1
+            matching_block.nonce = nonce
             self.app_log.warning("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
         # TODO: store share and send block if enough
         # No need to re-verify block, should be good since we forged it and nonce passes
-        # submit share
-        await self.mongo.async_db.shares.insert_one({
-            'address': self.inbound[sid]['address'],
-            'index': matching_block.index,
-            'hash': matching_hash
-        })
-
         # TODO: Gain time by only signing (and no need to verify after debug) if block passes net diff.
-        matching_block.nonce = nonce
         matching_block.signature = self.config.BU.generate_signature(matching_block.hash, self.config.private_key)
         try:
             matching_block.verify()
@@ -160,8 +157,15 @@ class MiningPool(object):
             await self.broadcast_block(matching_block.to_dict())
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok')
+            self.app_log.error('^^ ^^ ^^')
         else:
             self.app_log.debug('share ok')
+        # submit share only now, not to slow down if we had a block
+        await self.mongo.async_db.shares.insert_one({
+            'address': self.inbound[sid]['address'],
+            'index': matching_block.index,
+            'hash': matching_hash
+        })
 
     async def on_close_inbound(self, sid):
         # We only allow one in or out per ip

@@ -274,10 +274,11 @@ class Consensus(object):
         # TODO: use an aio lock
         if self.peers.syncing:
             self.app_log.debug("Already syncing, ignoring search_network_for_new")
+        self.app_log.debug('requesting {} ...'.format(self.latest_block.index + 1))
         for peer in self.peers.peers:
             self.peers.syncing = True
             try:
-                self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
+                # self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
                 try:
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                         peer=str(peer.to_string()),

@@ -352,7 +352,7 @@ class Block(object):
             self.target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
                                                   self.config.consensus.existing_blockchain)
         self.header = header
-        
+
     def copy(self):
         return Block(self.version, self.time, self.index, self.prev_hash, self.nonce, self.transactions,
                      self.hash, self.merkle_root, self.public_key, self.signature, self.special_min,
