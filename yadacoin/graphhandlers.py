@@ -44,7 +44,7 @@ class BaseGraphHandler(BaseHandler):
     def get_base_graph(self):
         bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
         if self.request.body:
-            ids = json.loads(self.request.body).get('ids')
+            ids = json.loads(self.request.body.decode('utf-8')).get('ids')
         else:
             ids = []
         return Graph(self.config, self.config.mongo, bulletin_secret, ids)
@@ -269,7 +269,7 @@ class GraphFriendsHandler(BaseGraphHandler):
 
 
 class GraphPostsHandler(BaseGraphHandler):
-    async def dispatch_request(self):
+    async def get(self):
         graph = self.get_base_graph()
         graph.get_posts()
         self.write(graph.to_json())
@@ -293,7 +293,7 @@ class GraphNewMessagesHandler(BaseGraphHandler):
 
 
 class GraphCommentsHandler(BaseGraphHandler):
-    async def get(self):
+    async def post(self):
         graph = self.get_base_graph()
         graph.get_comments()
         self.write(graph.to_json())
@@ -301,7 +301,7 @@ class GraphCommentsHandler(BaseGraphHandler):
 
 
 class GraphReactsHandler(BaseGraphHandler):
-    async def get(self):
+    async def post(self):
         graph = self.get_base_graph()
         graph.get_reacts()
         self.write(graph.to_json())
@@ -470,8 +470,8 @@ GRAPH_HANDLERS = [
     (r'/get-graph-posts', GraphPostsHandler), # get posts from friends that are mutual friends of client/server
     (r'/get-graph-messages', GraphMessagesHandler), # get messages from friends
     (r'/get-graph-new-messages', GraphNewMessagesHandler), # get new messages that are newer than a given timestamp
-    (r'/get-graph-reacts', GraphCommentsHandler), # get reacts for posts and comments
-    (r'/get-graph-comments', GraphReactsHandler), # get comments for posts
+    (r'/get-graph-reacts', GraphReactsHandler), # get reacts for posts and comments
+    (r'/get-graph-comments', GraphCommentsHandler), # get comments for posts
     (r'/search', SearchHandler), # search by username for friend of server. Server provides necessary information to generate friend request transaction, just like /register for the server.
     (r'/sign-raw-transaction', SignRawTransactionHandler), # server signs the client transaction
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client

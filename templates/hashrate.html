@@ -1,14 +1,10 @@
-{% with title='YadaCoin - Network Hashrate Chart', mixpanel='hashrate page' %}
-  {% include 'head.html'  %}
-{% endwith %} 
+{% include 'head.html'  %}
 <body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
     <main>
         <div class="page-loader">
             <div class="loader">Loading...</div>
         </div>
-        {% with active='guide' %}
         {% include 'navigation.html'  %}
-        {% endwith %} 
         <div class="main">
             <section class="module" id="about">
                 <h2 class="module-title font-alt">Hash rate</h2>
@@ -86,8 +82,6 @@
             </section>
         </div>
     </main>
-    {% with %}
-        {% include 'footer.html'  %}
-    {% endwith %} 
+    {% include 'footer.html'  %}
 </body>
 </html>
