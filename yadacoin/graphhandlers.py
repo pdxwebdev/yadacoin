@@ -2,26 +2,23 @@
 Handlers required by the graph operations
 """
 
+import base64
+import hashlib
 import json
 import os
-import hashlib
-import base64
-from eccsnacks.curve25519 import scalarmult, scalarmult_base
-from coincurve.utils import verify_signature
+
 from bitcoin.wallet import P2PKHBitcoinAddress
+from coincurve.utils import verify_signature
+from eccsnacks.curve25519 import scalarmult_base
+
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
-from yadacoin.transactionutils import TU
+from yadacoin.fastgraph import FastGraph
 from yadacoin.graph import Graph
 from yadacoin.graphutils import GraphUtils as GU
-from yadacoin.fastgraph import FastGraph
-from yadacoin.transaction import (
-    TransactionFactory,
-    Transaction,
-    InvalidTransactionException,
-    InvalidTransactionSignatureException,
-    MissingInputTransactionException
-)
+from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, \
+    InvalidTransactionSignatureException, MissingInputTransactionException
+from yadacoin.transactionutils import TU
 
 
 class GraphConfigHandler(BaseHandler):
@@ -40,6 +37,7 @@ class GraphConfigHandler(BaseHandler):
             "logoData": ''
         })
 
+
 class BaseGraphHandler(BaseHandler):
     def get_base_graph(self):
         bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
@@ -48,14 +46,14 @@ class BaseGraphHandler(BaseHandler):
         else:
             ids = []
         return Graph(self.config, self.config.mongo, bulletin_secret, ids)
+        # TODO: should have a self.render here instead
+
 
 class GraphInfoHandler(BaseGraphHandler):
 
     async def get(self):
         graph = self.get_base_graph()
-        self.write(graph.to_json())
-        self.finish()
-        return True
+        self.render_as_json(graph.to_dict())
 
 class GraphRIDWalletHandler(BaseHandler):
 
@@ -102,13 +100,12 @@ class GraphRIDWalletHandler(BaseHandler):
             'unspent_transactions': regular_txns,
             'txns_for_fastgraph': txns_for_fastgraph
         }
-        return self.render_as_json(wallet, indent=4)
+        self.render_as_json(wallet, indent=4)
 
 
 class RegistrationHandler(BaseHandler):
 
     async def get(self):
-
         data = {
             'bulletin_secret': self.config.bulletin_secret,
             'username': self.config.username,
@@ -126,8 +123,8 @@ class GraphTransactionHandler(BaseHandler):
             transactions = BU().get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)
         else:
             transactions = []
-        return json.dumps([x for x in transactions])
-    
+        self.render_as_json(list(transactions))
+
     async def post(self):
         items = json.loads(self.request.body.decode('utf-8'))
         if not isinstance(items, list):
@@ -140,7 +137,7 @@ class GraphTransactionHandler(BaseHandler):
             try:
                 transaction.verify()
             except InvalidTransactionException:
-                self.config.mongo.async_db.failed_transactions.insert({
+                await self.config.mongo.async_db.failed_transactions.insert({
                     'exception': 'InvalidTransactionException',
                     'txn': txn
                 })
@@ -148,7 +145,7 @@ class GraphTransactionHandler(BaseHandler):
                 return 'InvalidTransactionException', 400
             except InvalidTransactionSignatureException:
                 print('InvalidTransactionSignatureException')
-                self.config.mongo.async_db.failed_transactions.insert({
+                await self.config.mongo.async_db.failed_transactions.insert({
                     'exception': 'InvalidTransactionSignatureException',
                     'txn': txn
                 })
@@ -162,7 +159,7 @@ class GraphTransactionHandler(BaseHandler):
             transactions.append(transaction)
 
         for x in transactions:
-            self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
+            await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
         """
         # TODO: integrate new socket/peer framework for transmitting txns
 
@@ -249,63 +246,55 @@ class GraphSentFriendRequestsHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
         graph.get_sent_friend_requests()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class GraphFriendRequestsHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
         graph.get_friend_requests()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class GraphFriendsHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class GraphPostsHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
         graph.get_posts()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class GraphMessagesHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
         graph.get_messages()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class GraphNewMessagesHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
         graph.get_new_messages()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class GraphCommentsHandler(BaseGraphHandler):
     async def post(self):
         graph = self.get_base_graph()
         graph.get_comments()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class GraphReactsHandler(BaseGraphHandler):
     async def post(self):
         graph = self.get_base_graph()
         graph.get_reacts()
-        self.write(graph.to_json())
-        self.finish()
+        self.render_as_json(graph.to_dict())
 
 
 class SearchHandler(BaseHandler):
@@ -455,6 +444,7 @@ class FastGraphHandler(BaseHandler):
         # TODO: use new peer framework to broadcast fastgraph transactions
         #fastgraph.broadcast()
         self.render_as_json(fastgraph.to_dict())
+
 
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [

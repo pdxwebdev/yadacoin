@@ -74,7 +74,7 @@ class PoolSubmitHandler(BaseHandler):
                 self.app_log.info('Block ok')
             else:
                 self.app_log.warning('Share ok')
-            return block.to_json()
+            self.render_as_json(block.to_dict())
         except Exception as e:
             self.app_log.warning('Block submit error {}'.format(e))
             return 'error', 400
@@ -90,11 +90,11 @@ class PoolExplorer(BaseHandler):
             query['index'] = self.get_argument("index")
         res = self.mongo.db.shares.find_one(query, {'_id': 0}, sort=[('index', -1)])
         if res and query:
-            return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s' % (
-                self.config.address, self.config.address, res.get('index'))
+            self.render('Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, Latest block height share: %s'
+                        % (self.config.address, self.config.address, res.get('index')))
         else:
-            return 'Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history' % (
-                self.config.address, self.config.address)
+            self.render('Pool address: <a href="https://yadacoin.io/explorer?term=%s" target="_blank">%s</a>, No history'
+                        % (self.config.address, self.config.address))
 
 
 POOL_HANDLERS = [(r'/pool', PoolHandler), (r'/pool-submit', PoolSubmitHandler),

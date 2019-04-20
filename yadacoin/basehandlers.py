@@ -60,6 +60,15 @@ class BaseHandler(RequestHandler):
         self.finish()
         return True
 
+    def render_already_json(self, data, indent=None):
+        """Streams out provided json"""
+        json_result = json.dumps(data, indent=indent)
+        self.write(json_result)
+        self.set_header('Content-Type', 'application/json')
+        self.finish()
+        return True
+
+
     async def options(self):
         self.set_status(204)
         self.finish()
