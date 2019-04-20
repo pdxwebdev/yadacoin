@@ -566,12 +566,13 @@ class Consensus(object):
 
                     # self.peers.init(self.config.network)
 
+                    self.app_log.debug('requesting {} ...'.format(block_for_next.index + 1))
                     for apeer in self.peers.peers:
                         # TODO: there was a "while 1:" there, that got the retrace stuck with only 1 peer and no escape route.
                         # recheck the logic.
                         try:
-                            if self.debug:
-                                self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
+                            # if self.debug:
+                            #     self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
                             result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
                                 peer=apeer.to_string(),
                                 start_index=block_for_next.index + 1,

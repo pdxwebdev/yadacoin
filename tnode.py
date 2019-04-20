@@ -64,7 +64,7 @@ class NodeApplication(Application):
             app_title=u"Yadacoin Node",
             template_path=path.join(path.dirname(__file__), 'templates'),
             static_path=path.join(path.dirname(__file__), static_path),
-            xsrf_cookies=True,
+            xsrf_cookies=False,  # TODO: sort out, depending on python client version (< 3.6) does not work with xsrf activated
             cookie_secret=sha256(config.private_key.encode('utf-8')).hexdigest(),
             compress_response=True,
             debug=options.debug,  # Also activates auto reload

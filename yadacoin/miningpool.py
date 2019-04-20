@@ -145,12 +145,14 @@ class MiningPool(object):
             'hash': matching_hash
         })
 
+        # TODO: Gain time by only signing (and no need to verify after debug) if block passes net diff.
         matching_block.nonce = nonce
         matching_block.signature = self.config.BU.generate_signature(matching_block.hash, self.config.private_key)
         try:
             matching_block.verify()
         except Exception as e:
             self.app_log.warning("Verify error {}".format(e))
+            print(matching_block)
 
         # todo: fork pow compare to reduced diff if special_min
         if int(matching_block.target) > int(matching_block.hash, 16):
