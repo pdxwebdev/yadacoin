@@ -19,12 +19,15 @@ class PoolHandler(BaseHandler):
             # first init
             self.mp.refresh()
         self.mining_index = self.mp.block_factory.block.index
-        """
+        
         block = await self.config.mongo.async_db.blocks.find_one(sort=[('index',-1)])
+        # No need to run a query, this is cached in config object:
+        # self.config.BU.get_latest_block()['index']:
         if self.mp.block_factory.block.index <= block['index']:
             # We're behind
             self.mp.refresh()
-
+        """
+        # Since self.mp is updated by the inner events as soon as possible, no need to refresh anything, it always has the latest block.
         self.render_as_json(self.mp.block_to_mine_info())
 
 
