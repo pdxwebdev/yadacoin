@@ -20,6 +20,12 @@ class BaseHandler(RequestHandler):
         self.peers = self.settings['peers']
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]
+        self.set_header("Access-Control-Allow-Origin", 'http://localhost:8100')
+        self.set_header('Access-Control-Allow-Credentials', "true")
+        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
+        self.set_header('Access-Control-Expose-Headers', "Content-Type")
+        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
+        self.set_header('Access-Control-Max-Age', 600)
 
     # This could be static, but its easier to let it there so the template have direct access.
     def bool2str(self, a_boolean, iftrue, iffalse):
@@ -46,10 +52,14 @@ class BaseHandler(RequestHandler):
         """Display message template page"""
         self.render("message.html", yadacoin=self.yadacoin_vars, title=title, message=message, type=type)
 
-    def render_as_json(self, data):
+    def render_as_json(self, data, indent=None):
         """Converts to json and streams out"""
-        json_result = json.dumps(data)
+        json_result = json.dumps(data, indent=indent)
         self.write(json_result)
         self.set_header('Content-Type', 'application/json')
         self.finish()
         return True
+
+    async def options(self):
+        self.set_status(204)
+        self.finish()

@@ -284,7 +284,8 @@ class BlockChainUtils(object):
                     '$set': {
                         'spent': True
                     }
-                })
+                },
+                multi=True) # TODO: using multi because there is a bug currently that allows double spends on-chain
 
         for x in spent_fastgraph:
             for i in x['txn']['inputs']:
@@ -296,7 +297,8 @@ class BlockChainUtils(object):
                     '$set': {
                         'spent': True
                     }
-                })
+                },
+                multi=True) # TODO: using multi because there is a bug currently that allows double spends on-chain
 
         if ids:
             res = self.mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})

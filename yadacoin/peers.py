@@ -178,7 +178,10 @@ class Peers(object):
         """Refresh the in-memory peer list from db and api. Only contains Active peers"""
         self.app_log.info("Async Peers refresh")
         if self.network == 'regnet':
-            peer = await self.mongo.async_db.config.find_one({'mypeer': {"$ne": ""}})
+            peer = await self.mongo.async_db.config.find_one({
+                'mypeer': {"$ne": ""}, 
+                'mypeer': {'$exists': True}
+            })
             if not peer:
                 return
             # Insert ourself to have at least one peer. Not sure this is required, but allows for more tests coverage.
@@ -379,10 +382,11 @@ class Peer(object):
     @classmethod
     def save_my_peer(cls, network):
         config = get_config()
-        if config.network == 'regnet':
-            return
         peer = config.peer_host + ":" + str(config.peer_port)
         config.mongo.db.config.update({'mypeer': {"$ne": ""}}, {'mypeer': peer, 'network': config.network}, upsert=True)
+        
+        if config.network == 'regnet':
+            return
         if not config.post_peer:
             return
         if config.debug:

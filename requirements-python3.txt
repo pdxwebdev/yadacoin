@@ -11,3 +11,5 @@ pymongo
 socketIO-client
 motor
 websocket-client
+aiohttp
+websockets
