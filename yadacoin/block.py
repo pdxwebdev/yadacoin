@@ -7,6 +7,7 @@ from decimal import Decimal, getcontext
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
+from logging import getLogger
 
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
@@ -356,7 +357,7 @@ class Block(object):
     def from_dict(cls, block):
         transactions = []
         for txn in block.get('transactions'):
-            # TODO: do validify checking for coinbase transactions
+            # TODO: do validity checking for coinbase transactions
             if str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.get('public_key')))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1 and not txn.get('inputs') and not txn.get('relationship'):
                 txn['coinbase'] = True  
             else:
@@ -401,7 +402,7 @@ class Block(object):
         hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
         # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
         if self.hash != hashtest:
-            self.config.app_log.warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
+            getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
             raise Exception('Invalid block hash')
 
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
