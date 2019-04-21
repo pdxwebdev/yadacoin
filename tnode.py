@@ -1,7 +1,8 @@
 """
 Async Yadacoin node poc
 """
-
+import importlib
+import pkgutil
 import json
 import logging
 from asyncio import sleep as async_sleep
@@ -58,12 +59,16 @@ class NodeApplication(Application):
         if config.max_miners > 0:
             self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)
+
+        for finder, name, ispkg in pkgutil.iter_modules([path.join(path.dirname(__file__), 'plugins')]):
+            handlers = importlib.import_module('plugins.' + name + '.handlers')
+            self.default_handlers.extend(handlers.HANDLERS)
+
         self.default_handlers.extend(WEB_HANDLERS)
 
         settings = dict(
             app_title=u"Yadacoin Node",
             template_path=path.join(path.dirname(__file__), 'templates'),
-            static_path=path.join(path.dirname(__file__), static_path),
             xsrf_cookies=False,  # TODO: sort out, depending on python client version (< 3.6) does not work with xsrf activated
             cookie_secret=sha256(config.private_key.encode('utf-8')).hexdigest(),
             compress_response=True,

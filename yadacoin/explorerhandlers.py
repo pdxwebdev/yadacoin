@@ -19,7 +19,7 @@ class ExplorerSearchHandler(BaseHandler):
             return
 
         try:
-            res = self.mongo.db.blocks.find({'index': term}, {'_id': 0})
+            res = self.mongo.db.blocks.find({'index': int(term)}, {'_id': 0})
             if res.count():
                 return self.render_as_json({
                     'resultType': 'block_height',

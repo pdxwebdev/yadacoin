@@ -18,9 +18,7 @@ class HomeHandler(BaseHandler):
             "index.html",
             yadacoin=self.yadacoin_vars,
             username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid"),
-            title='YadaCoin - Blockchain Social Media',
-            mixpanel='index page'
+            rid=self.get_secure_cookie("rid")
         )
 
 
@@ -84,86 +82,6 @@ class LogoutHandler(BaseHandler):
             'authenticated': False
         })
 
-
-class ProfileHandler(BaseHandler):
-
-    async def get(self):
-        """
-        :return:
-        """
-        self.render(
-            "profile.html",
-            yadacoin=self.yadacoin_vars,
-            username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid"),
-            title='YadaCoin - Blockchain Profile',
-            mixpanel='profile page'
-        )
-
-
-class TeamHandler(BaseHandler):
-
-    async def get(self):
-        """
-        :return:
-        """
-        self.render(
-            "team.html",
-            yadacoin=self.yadacoin_vars,
-            username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid"),
-            title='YadaCoin - Blockchain Team',
-            mixpanel='team page'
-        )
-
-
-class EnterpriseHandler(BaseHandler):
-
-    async def get(self):
-        """
-        :return:
-        """
-        self.render(
-            "enterprise.html",
-            yadacoin=self.yadacoin_vars,
-            username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid"),
-            title='YadaCoin - Blockchain Team',
-            mixpanel='enterprise page'
-        )
-
-
-class ExplorerHandler(BaseHandler):
-
-    async def get(self):
-        """
-        :return:
-        """
-        self.render(
-            "explorer/index.html",
-            yadacoin=self.yadacoin_vars,
-            username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid"),
-            title='YadaCoin - Explorer',
-            mixpanel='explorer page'
-        )
-
-
-class HashrateHandler(BaseHandler):
-
-    async def get(self):
-        """
-        :return:
-        """
-        self.render(
-            "hashrate.html",
-            yadacoin=self.yadacoin_vars,
-            username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid"),
-            title='YadaCoin - Network Hashrate Chart',
-            mixpanel='hashrate page'
-        )
-
 class HashrateAPIHandler(BaseHandler):
 
     async def get(self):
@@ -204,10 +122,5 @@ WEB_HANDLERS = [
     (r'/authenticated', AuthenticatedHandler),
     (r'/login', LoginHandler),
     (r'/logout', LogoutHandler),
-    (r'/profile', ProfileHandler),
-    (r'/team', TeamHandler),
-    (r'/enterprise', EnterpriseHandler),
-    (r'/explorer', ExplorerHandler),
-    (r'/hashrate', HashrateHandler),
     (r'/api-stats', HashrateAPIHandler),
 ]
