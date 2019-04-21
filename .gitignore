@@ -5,3 +5,4 @@ localtests
 .idea
 *.log
 *.log.*
+plugins
