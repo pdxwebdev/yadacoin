@@ -166,6 +166,7 @@ class MiningPool(object):
             'index': matching_block.index,
             'hash': matching_hash
         })
+        return True
 
     async def on_close_inbound(self, sid):
         # We only allow one in or out per ip

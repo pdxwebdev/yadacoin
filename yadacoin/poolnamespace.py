@@ -70,6 +70,7 @@ class PoolNamespace(AsyncNamespace):
 
     async def on_nonce(self, sid, data):
         """Miner sends a solution at pool diff"""
+        # TODO: if we are not registered, deny access (will also limit DoS)
         self.app_log.debug('WS pool nonce: {} {}'.format(sid, json.dumps(data)))
         # This is the most frequent message, keep it short, only nonce value
         # check nonce format and len
@@ -77,10 +78,10 @@ class PoolNamespace(AsyncNamespace):
             await self.emit('n_Ko', room=sid)
             return
         if len(data) > CHAIN.MAX_NONCE_LEN:
-            await self.emit('n_Ko', room=sid)
+            await self.emit('n', data='Ko', room=sid)
             return
         result = await self.mp.on_miner_nonce(sid, data)
         if result:
-            await self.emit('n_ok', room=sid)
+            await self.emit('n', data='ok', room=sid)
         else:
-            await self.emit('n_ko', room=sid)
+            await self.emit('n', data='ko', room=sid)

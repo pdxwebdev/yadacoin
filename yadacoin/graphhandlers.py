@@ -46,7 +46,7 @@ class BaseGraphHandler(BaseHandler):
         else:
             ids = []
         return Graph(self.config, self.config.mongo, bulletin_secret, ids)
-        # TODO: should have a self.render here instead
+        # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
 
 class GraphInfoHandler(BaseGraphHandler):

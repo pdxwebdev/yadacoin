@@ -429,11 +429,12 @@ class Peer(object):
         hp = self.to_string()
         print('test', hp)
         http_client = AsyncHTTPClient()
-        request = HTTPRequest("http://{}".format(hp), connect_timeout=10, request_timeout=12)
+        request = HTTPRequest("http://{}/get-status".format(hp), connect_timeout=10, request_timeout=12)
         try:
             response = await http_client.fetch(request)
             if response.code != 200:
                 raise RuntimeWarning('code {}'.format(response.code))
+            # TODO: we got the status, we could run more logic here (depending on peer count, version, uptime, height)
             await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)}, {'$set': {'active': True, "failed":0}})
             #  get peers from that node and merge.
             http_client = AsyncHTTPClient()
@@ -450,7 +451,7 @@ class Peer(object):
             except Exception as e:
                 self.app_log.warning("Error: {} on url {}".format(e, url))
         except Exception as e:
-            # print("Error: {} on url {}".format(e, hp))
+            print("Error: {} on test url {}".format(e, hp))
             # store error and next try
             res = await self.mongo.async_db.peers.find_one({'host': self.host, 'port': int(self.port)})
             failed = res['failed'] + 1
