@@ -1,4 +1,4 @@
-tornado
+tornado>=6.0.2
 base58
 coincurve
 bip32utils

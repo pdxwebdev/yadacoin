@@ -70,7 +70,7 @@ class PoolSubmitHandler(BaseHandler):
             if int(block.target) > int(block.hash, 16) or block.special_min:
                 # TODO: quickly insert into our own chain first.
                 # broadcast winning block
-                await self.mp.broadcast_block(block)
+                await self.mp.broadcast_block(block.to_dict())
                 self.app_log.info('Block ok')
             else:
                 self.app_log.warning('Share ok')

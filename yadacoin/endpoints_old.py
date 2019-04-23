@@ -538,7 +538,7 @@ class MiningPoolSubmitView(View):
 
             if int(block.target) > int(block.hash, 16) or block.special_min:
                 # broadcast winning block
-                mp.broadcast_block(block)
+                mp.broadcast_block(block.to_dict())  # with newest code, needs a dict, but also is an async method
                 print('block ok')
             else:
                 print('share ok')
