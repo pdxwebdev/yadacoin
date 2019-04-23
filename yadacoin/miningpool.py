@@ -452,30 +452,33 @@ class MiningPool(object):
             # TODO
             # peer.report()
 
-    async def broadcast_block(self, block_data: dict):
+    async def broadcast_block(self, block: Block):
         # Peers.init(self.config.network)
         # Peer.save_my_peer(self.config.network)
-        print('\r\nCandidate submitted for index:', block_data['index'])
+        print('\r\nCandidate submitted for index:', block.index)
         print('\r\nTransactions:')
-        for x in block_data['transactions']:
-            print(x['id'])
-        # TODO: why do we only insert to consensus? Why not try to insert right away?
-        """
-        await self.mongo.db.consensus.insert_one({'peer': 'me', 'index': block_data['index'],
-                                                  'id': block_data['signature'], 'block': block_data})
-        """
+        for x in block.transactions:
+            print(x.transaction_signature)
+
         print('\r\nSend block to:')
         # TODO: convert to async // send
         # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
         # Then maybe a list of "root" nodes (explorer, known pools) from config, just to make sure.
+
+        # TODO: why do we only insert to consensus? Why not try to insert right away?
+        # TODO: this is needed until bottom-up syncing is deprecated
+        self.mongo.db.consensus.insert_one({'peer': 'me', 'index': block.index,
+                                                  'id': block.signature, 'block': block.to_dict()})
+        
+        await self.config.consensus.import_block({'peer': self.config.peers.my_peer, 'block': block.to_dict()})
+
         if self.config.network == 'regnet':
             return
         for peer in self.config.force_broadcast_to:
             try:
-                block_data['peer'] = self.config.peers.my_peer
-                t = Thread(target=self.send_it, args=(block_data, "{}:{}".format(peer['host'],peer['port'])))
+                peer = self.config.peers.my_peer
+                t = Thread(target=self.send_it, args=(block.to_dict(), "{}:{}".format(peer['host'],peer['port'])))
                 t.setDaemon(True)
                 t.start()
             except Exception as e:
                 print("Error ", e)
-        await self.config.consensus.import_block({'peer': self.config.peers.my_peer, 'block': block_data})
