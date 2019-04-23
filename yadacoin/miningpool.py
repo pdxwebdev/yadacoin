@@ -465,16 +465,15 @@ class MiningPool(object):
         # TODO: convert to async // send
         # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
         # Then maybe a list of "root" nodes (explorer, known pools) from config, just to make sure.
-        if self.config.network == 'regnet':
-            return
-        for peer in self.config.force_broadcast_to:
-            try:
-                peer = self.config.peers.my_peer
-                t = Thread(target=self.send_it, args=(block_data, "{}:{}".format(peer['host'],peer['port'])))
-                t.setDaemon(True)
-                t.start()
-            except Exception as e:
-                print("Error ", e)
+        if self.config.network != 'regnet':
+            for peer in self.config.force_broadcast_to:
+                try:
+                    peer = self.config.peers.my_peer
+                    t = Thread(target=self.send_it, args=(block_data, "{}:{}".format(peer['host'],peer['port'])))
+                    t.setDaemon(True)
+                    t.start()
+                except Exception as e:
+                    print("Error ", e)
         # TODO: why do we only insert to consensus? Why not try to insert right away?
         # TODO: this is needed until bottom-up syncing is deprecated
         self.mongo.db.consensus.insert_one({'peer': 'me', 'index': block_data['index'],
