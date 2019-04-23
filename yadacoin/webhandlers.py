@@ -35,6 +35,9 @@ class AuthenticatedHandler(BaseHandler):
         if not bulletin_secret:
             return '{"error": "bulletin_secret not in query params"}', 400
 
+        if not self.get_secure_cookie("siginin_code"):
+            self.set_secure_cookie("siginin_code", str(uuid.uuid4()))
+
         result = GU().verify_message(
             rid,
             self.get_secure_cookie("siginin_code"),

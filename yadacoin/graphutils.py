@@ -859,8 +859,8 @@ class GraphUtils(object):
         mutual_bulletin_secrets = set()
         rids = self.get_mutual_rids(rid)
         for transaction in self.get_transactions_by_rid(rids, self.config.bulletin_secret, rid=True):
-            if 'bulletin_secret' in transaction['relationship']:
-                mutual_bulletin_secrets.add(transaction['relationship']['bulletin_secret'])
+            if 'their_bulletin_secret' in transaction['relationship']:
+                mutual_bulletin_secrets.add(transaction['relationship']['their_bulletin_secret'])
         return list(mutual_bulletin_secrets)
 
     def get_shared_secrets_by_rid(self, rid):
