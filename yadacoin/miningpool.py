@@ -466,7 +466,8 @@ class MiningPool(object):
         self.app_log.info('Transactions:')
         for x in block_data['transactions']:
             self.app_log.info(x['id'])
-
+        if block_data.get('peer', '') == '':
+            block_data['peer'] = self.config.peers.my_peer
         self.app_log.info('Send block to:')
         # TODO: convert to async // send
         # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
