@@ -112,10 +112,16 @@ class MiningPool(object):
         self.inbound[sid]['uptime'] = uptime
         # TODO: could be stored or averaged for pool dashboard
 
-    async def on_miner_nonce(self, sid, nonce: str) -> bool:
-        """We got a nonce from a miner"""
+    async def on_miner_nonce(self, nonce: str, sid=0, address: str='') -> bool:
+        """We got a nonce from a miner.
+        we have to provied either a sid (websocket context, either an address (http context)"""
         # Does it match current block?
         # we can't avoid but compute the hash, since we can't trust the hash the miner could send to be honest.
+        if address == '':
+            try:
+                address = self.inbound[sid]['address']
+            except Exception as e:
+                self.app_log.warning("error {} getting address sid {}".format(e, sid))
         block_to_mine = self.block_to_mine.copy()
         previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
         hash1 = BlockFactory.generate_hash_from_header(block_to_mine.header, nonce)
@@ -162,7 +168,7 @@ class MiningPool(object):
             self.app_log.debug('share ok')
         # submit share only now, not to slow down if we had a block
         await self.mongo.async_db.shares.insert_one({
-            'address': self.inbound[sid]['address'],
+            'address': address,
             'index': matching_block.index,
             'hash': matching_hash
         })

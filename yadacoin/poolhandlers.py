@@ -4,6 +4,7 @@ Handlers required by the pool operations
 import json
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.miningpool import MiningPool
+from yadacoin.chain import CHAIN
 from tornado import escape
 
 
@@ -33,7 +34,7 @@ class PoolHandler(BaseHandler):
 
 class PoolSubmitHandler(BaseHandler):
 
-    async def post(self):
+    async def post_old(self):
         try:
             block_info = json.loads(self.request.body.decode('utf-8'))
             block = self.mp.block_factory.block
@@ -78,6 +79,22 @@ class PoolSubmitHandler(BaseHandler):
         except Exception as e:
             self.app_log.warning('Block submit error {}'.format(e))
             return 'error', 400
+
+    async def post(self):
+        block_info = json.loads(self.request.body.decode('utf-8'))
+        data = block_info["nonce"]
+        address = block_info["address"]
+        if type(data) is not str:
+            self.render_as_json({'n':'Ko'})
+            return
+        if len(data) > CHAIN.MAX_NONCE_LEN:
+            self.render_as_json({'n': 'Ko'})
+            return
+        result = await self.mp.on_miner_nonce(data, address=address)
+        if result:
+            self.render_as_json({'n': 'ok'})
+        else:
+            self.render_as_json({'n': 'ko'})
 
 
 class PoolExplorer(BaseHandler):
