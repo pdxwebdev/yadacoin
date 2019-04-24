@@ -474,7 +474,7 @@ class MiningPool(object):
         if self.config.network != 'regnet':
             for peer in self.config.force_broadcast_to:
                 try:
-                    peer = self.config.peers.my_peer
+                    # peer = self.config.peers.my_peer
                     t = Thread(target=self.send_it, args=(block_data, "{}:{}".format(peer['host'],peer['port'])))
                     t.setDaemon(True)
                     t.start()
