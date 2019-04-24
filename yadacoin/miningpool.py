@@ -453,21 +453,21 @@ class MiningPool(object):
         """Quick hack for // send. TODO: To be converted to real async"""
         try:
             requests.post('http://{peer}/newblock'.format(peer=peer), json=block_dict, timeout=10, headers={'Connection':'close'})
-            print("Sent to peer {}".format(peer))
+            self.app_log.info("Sent to peer {}".format(peer))
         except Exception as e:
-            print("Error {} sending to peer {}".format(e, peer))
+            self.app_log.info("Error {} sending to peer {}".format(e, peer))
             # TODO
             # peer.report()
 
     async def broadcast_block(self, block_data: dict):
         # Peers.init(self.config.network)
         # Peer.save_my_peer(self.config.network)
-        print('\r\nCandidate submitted for index:', block_data['index'])
-        print('\r\nTransactions:')
+        self.app_log.info('Candidate submitted for index: {}'.format(block_data['index']))
+        self.app_log.info('Transactions:')
         for x in block_data['transactions']:
-            print(x['id'])
+            self.app_log.info(x['id'])
 
-        print('\r\nSend block to:')
+        self.app_log.info('Send block to:')
         # TODO: convert to async // send
         # Do we need to send to other nodes than the ones we're connected to via websocket? Event will flow.
         # Then maybe a list of "root" nodes (explorer, known pools) from config, just to make sure.
