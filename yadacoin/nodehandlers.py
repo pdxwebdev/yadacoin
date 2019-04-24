@@ -1,7 +1,10 @@
 """
 Handlers required by the core chain operations
 """
+
+import json
 from time import time
+from tornado import escape
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
@@ -78,5 +81,54 @@ class GetStatusHandler(BaseHandler):
         self.render_as_json(status)
 
 
-NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler), (r'/get-blocks', GetBlocksHandler),
-                 (r'/get-block', GetBlockHandler), (r'/get-peers', GetPeersHandler), (r'/get-status', GetStatusHandler)]
+class NewBlockHandler(BaseHandler):
+
+    async def post(self):
+        """
+        A peer does notify us of a new block. This is deprecated, since the new code uses events via websocket to notify of a new block.
+        Still, can be used to force notification to important nodes, pools...
+        """
+        from yadacoin.peers import Peer
+        try:
+            block_data = escape.json_decode(self.request.body)
+            peer_string =  block_data.get('peer')
+
+            if block_data['index'] == 0:
+                return
+            if int(block_data['version']) != BU().get_version_for_height(block_data['index']):
+                print('rejected old version %s from %s' % (block_data['version'], peer_string))
+                return
+            # Dup code with websocket handler
+            self.app_log.info('Post new block: {} {}'.format(peer_string, json.dumps(block_data)))
+            # TODO: handle a dict here to store the consensus state
+            if not self.peers.syncing:
+                self.app_log.debug("Trying to sync on latest block from {}".format(peer_string))
+                my_index = self.config.BU.get_latest_block()['index']
+                # This is mostly to keep in sync with fast moving blocks from whitelisted peers and pools.
+                # ignore if this does not fit.
+                if block_data['index'] == my_index + 1:
+                    self.app_log.debug("Next index, trying to merge from {}".format(peer_string))
+                    peer = Peer.from_string(peer_string)
+                    if await self.config.consensus.process_next_block(block_data, peer):
+                        pass
+                        # if ok, block was inserted and event triggered by import block
+                        # await self.peers.on_block_insert(data)
+                elif block_data['index'] > my_index + 1:
+                    self.app_log.warning("Missing blocks between {} and {} , can't catch up from http route for {}"
+                                         .format(my_index, block_data['index'], peer_string))
+                    # data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
+                    # await self.emit('get_blocks', data=data, room=sid)
+                else:
+                    # Remove later on
+                    self.app_log.debug("Old or same index, ignoring {} from {}".format(block_data['index'], peer_string))
+
+        except:
+            print('ERROR: failed to get peers, exiting...')
+
+
+NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
+                 (r'/get-blocks', GetBlocksHandler),
+                 (r'/get-block', GetBlockHandler),
+                 (r'/get-peers', GetPeersHandler),
+                 (r'/newblock', NewBlockHandler),
+                 (r'/get-status', GetStatusHandler)]
