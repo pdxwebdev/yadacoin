@@ -129,5 +129,58 @@ class ExplorerLatestHandler(BaseHandler):
         })
 
 
+class ExplorerLast50(BaseHandler):
+
+    async def get(self):
+        """Returns abstract of the latest 50 blocks miners"""
+        latest = self.config.BU.get_latest_block()
+        pipeline = [
+                    {
+                       '$match' : { 'index' : {'$gte': latest['index'] - 50} }
+                    },
+                    {
+                        '$project':
+                        {
+                            'outputs': 1,
+                            'transaction': {'$arrayElemAt': ["$transactions",-1] }
+                        }
+                    },
+                    {
+                        '$project':
+                        {
+                            'outputs': 1,
+                            'output': {'$arrayElemAt': ["$transaction.outputs",0] }
+                        }
+                    }
+                    ,
+                    {
+                        '$project':
+                        {
+                            'outputs': 1,
+                            'to':"$output.to"
+                        }
+                    },
+                    {
+                        '$group': {
+                            '_id': "$to",
+                            'count': {
+                                '$sum': 1
+                            }
+                        }
+                    }
+                    ,
+                    {
+                        '$sort': {"count": -1}
+                    }
+                   ]
+
+        miners = []
+        async for doc in self.mongo.async_db.blocks.aggregate(pipeline):
+            miners.append(doc)
+
+        return self.render_as_json(miners)
+
+
 EXPLORER_HANDLERS = [(r'/explorer-search', ExplorerSearchHandler),
-                     (r'/explorer-latest', ExplorerLatestHandler)]
+                     (r'/explorer-latest', ExplorerLatestHandler),
+                     (r'/explorer-last50', ExplorerLast50)]

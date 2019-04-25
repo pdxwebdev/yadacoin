@@ -48,7 +48,7 @@ class BlockChainUtils(object):
     def get_latest_blocks(self):
         return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
-    def get_latest_block(self):
+    def get_latest_block(self) -> dict:
         # cached - WARNING : this is a json doc, NOT a block
         if not self.latest_block is None:
             return self.latest_block

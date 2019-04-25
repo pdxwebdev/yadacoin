@@ -16,18 +16,20 @@ from yadacoin.common import ts_to_utc
 class ClientChatNamespace(AsyncClientNamespace):
 
     async def on_connect(self):
+        self.app_log = getLogger("tornado.application")
+        print("CONNECT WS")
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.app_log = getLogger("tornado.application")
         _, ip_port = self.client.connection_url.split('//')  # extract ip:port
         self.ip, self.port = ip_port.split(':')
         self.app_log.debug('ws client /Chat connected to {}:{} - {}'.format(self.ip, self.port, self.client))
+        self.client.manager.connected = True
         await self.emit('hello', data={"version": 2, "ip": self.config.peer_host, "port": self.config.peer_port}, namespace="/chat")
         # ask the peer active list
         await self.emit('get_peers', data={}, namespace="/chat")
 
-    def on_disconnect(self):
-        """Disconnect from our side or the server's one."""
+    async def on_disconnect(self):
+        """Disconnected from our side or the server's one."""
         #
         self.client.manager.connected = False
         try:
@@ -92,13 +94,15 @@ class ClientChatNamespace(AsyncClientNamespace):
                         }
                     ]
                 }, {'_id': 0}).sort([('index',1)])
-                await self.emit('blocks', data=await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE), namespace="/chat")
+                await self.emit('blocks',
+                                data=await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE),
+                                namespace="/chat")
         except Exception as e:
-             import sys, os
-             self.app_log.warning("Exception {} on_get_blocks".format(e))
-             exc_type, exc_obj, exc_tb = sys.exc_info()
-             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-             print(exc_type, fname, exc_tb.tb_lineno)
+            import sys, os
+            self.app_log.warning("Exception {} on_get_blocks".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
 
 
 class YadaWebSocketClient(object):
@@ -115,18 +119,26 @@ class YadaWebSocketClient(object):
 
         self.latest_peer_block = None
         self.connected = False
+        self.probable_old = False
 
     async def start(self):
         try:
             self.client.manager = self
             self.client.register_namespace(ClientChatNamespace('/chat'))
-            await self.client.connect("http://{}:{}".format(self.peer.host, self.peer.port))
-            self.connected = True
+            await self.client.connect("http://{}:{}".format(self.peer.host, self.peer.port), namespaces=['/chat'])
+            # self.connected = True
             await async_sleep(self.WAIT_FOR_PEERS)  # wait for an answer
+            if not self.connected:
+                self.app_log.warning("{} was not connected after {} sec, incrementing fails"
+                                     .format(self.peer.to_string(), self.WAIT_FOR_PEERS))
+                # await self.peers.increment_failed(self.peer)
+                self.probable_old = True
+                return
             if self.peer.host not in self.config.peers.outbound:
                 # if we are not in the outgoing, we did not receive a peers answer, old peer (but ok)
                 self.app_log.warning("{} was not connected after {} sec, probable old node"
                                      .format(self.peer.to_string(), self.WAIT_FOR_PEERS))
+                self.probable_old = True
                 await self.client.disconnect()
                 return
             while self.connected:

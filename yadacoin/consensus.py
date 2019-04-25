@@ -14,6 +14,7 @@ from yadacoin.blockchain import Blockchain
 from yadacoin.block import Block, BlockFactory
 from yadacoin.transaction import InvalidTransactionException, InvalidTransactionSignatureException, \
     MissingInputTransactionException, NotEnoughMoneyException
+from urllib3.exceptions import *
 
 
 class BadPeerException(Exception):
@@ -283,12 +284,19 @@ class Consensus(object):
                 # self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
                 try:
                     result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                        peer=str(peer.to_string()),
+                        peer=peer.to_string(),
                         start_index=int(self.latest_block.index) +1,
                         end_index=int(self.latest_block.index) + 100
                     ), timeout=2)
+                except ConnectTimeoutError as e:
+                    self.app_log.warning('Timeout requesting from {} ...'.format(peer.to_string()))
+                    # add to failed peers
+                    await self.peers.increment_failed(peer)
+                    continue
                 except Exception as e:
-                    raise e
+                    self.app_log.error('error {} requesting from {} ...'.format(e, peer.to_string()))
+                    await self.peers.increment_failed(peer)
+                    continue
                 try:
                     blocks = json.loads(result.content)
                 except ValueError:

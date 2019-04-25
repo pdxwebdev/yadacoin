@@ -82,7 +82,7 @@ class Peers(object):
         return IP not in self.connected_ips  # Allows if we're not connected already.
 
     def on_new_ip(self, ip):
-        """We got an inbound or initiate an outbound connection from/to an ip, buit do not have the result yet.
+        """We got an inbound or initiate an outbound connection from/to an ip, but do not have the result yet.
         avoid initiating one connection twice if the handshake does not go fast enough."""
         self.app_log.info("on_new_ip:{}".format(ip))
         if ip not in self.connected_ips:
@@ -141,6 +141,7 @@ class Peers(object):
         self.app_log.debug("Peers background_peer {}".format(peer.to_dict()))
         # lock that ip
         self.on_new_ip(peer.host)
+        client = None
         try:
             client = YadaWebSocketClient(peer)
             # This will run until disconnect
@@ -149,7 +150,8 @@ class Peers(object):
             self.app_log.warning("Error: {} on background_peer {}".format(e, peer.host))
         finally:
             # If we get here with no outbound record, then it was an old node.
-            if peer.host not in self.outbound:
+            #if peer.host not in self.outbound:
+            if client and client.probable_old:
                 # add it to a temp "do not try ws soon" list
                 self.app_log.debug("Peer {} added to probable_old_nodes".format(peer.host))
                 self.probable_old_nodes[peer.host] = int(time()) + 3600  # try again in 1 hour
@@ -181,7 +183,7 @@ class Peers(object):
         self.app_log.info("Async Peers refresh")
         if self.network == 'regnet':
             peer = await self.mongo.async_db.config.find_one({
-                'mypeer': {"$ne": ""}, 
+                # 'mypeer': {"$ne": ""},
                 'mypeer': {'$exists': True}
             })
             if not peer:
@@ -225,6 +227,7 @@ class Peers(object):
 
         # todo: probly more efficient not to rebuild the objects every time
         self.peers = [Peer(peer['host'], peer['port']) for peer in res]
+        self.app_log.debug("Peers count {}".format(len(self.peers)))
 
     async def on_new_peer_list(self, peer_list: list, test_after=None):
         """Process an external peer list, and saves the new ones"""
@@ -256,6 +259,23 @@ class Peers(object):
         except Exception as e:
             self.app_log.warning("Error: {} on test_some".format(e))
         # to_list(length=100)
+
+    async def increment_failed(self, peer):
+        res = await self.mongo.async_db.peers.find_one({'host': peer.host, 'port': int(peer.port)})
+        failed = res.get('failed', 0) + 1
+        factor = failed
+        if failed > 20:
+            factor = 240  # at most, test every 4 hours
+        elif failed > 10:
+            factor = 6 * factor
+        elif failed > 5:
+            factor = 2 * factor
+        test_after = int(time()) + factor * 60  #
+        await self.mongo.async_db.peers.update_one({'host': peer.host, 'port': int(peer.port)},
+                                                   {'$set': {'active': False, "test_after": test_after,
+                                                             "failed": failed}})
+        # remove from in memory list
+        self.peers = [apeer for apeer in self.peers if apeer.host != peer.host]
 
     @classmethod
     def from_dict(cls):
@@ -441,7 +461,8 @@ class Peer(object):
             #  get peers from that node and merge.
             http_client = AsyncHTTPClient()
             test_after = int(time()) + 30  # 2nd layer peers will be tested after 1st layer
-            # This "get peers from url" is used twice, could be factorized. But could be deprecated soon with websockets.
+            # This "get peers from url" is used twice, could be factorized.
+            # But could be deprecated soon with websockets.
             url = "http://{}/get-peers".format(hp)
             try:
                 response = await http_client.fetch(url)
@@ -454,7 +475,9 @@ class Peer(object):
                 self.app_log.warning("Error: {} on url {}".format(e, url))
         except Exception as e:
             print("Error: {} on test url {}".format(e, hp))
-            # store error and next try
+            # store error and next try - factorized code. not sure test() should be in peer itself, rather peers.
+            await self.config.peers.increment_failed(self)
+            """
             res = await self.mongo.async_db.peers.find_one({'host': self.host, 'port': int(self.port)})
             failed = res['failed'] + 1
             factor = failed
@@ -468,5 +491,6 @@ class Peer(object):
             await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)},
                                                        {'$set': {'active': False, "test_after": test_after,
                                                                  "failed": failed}})
+            """
             return False
         return True
