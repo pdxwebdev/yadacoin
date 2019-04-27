@@ -24,7 +24,7 @@ from yadacoin.transactionutils import TU
 class GraphConfigHandler(BaseHandler):
 
     async def get(self):
-        peer = "http://{}:{}".format(self.config.serve_host, self.config.peer_port)
+        peer = "http://{}:{}".format(self.config.web_server_host, self.config.web_server_port)
         return self.render_as_json({
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
@@ -388,10 +388,25 @@ class SignRawTransactionHandler(BaseHandler):
                         self.write('already spent!')
                         self.finish()
                         return True
-                    self.set_status(400)
-                    self.write('already signed!')
-                    self.finish()
-                    return True
+                    else:
+                        signature['txn']['signatures'] = [signature['signature']]
+                        fastgraph = FastGraph.from_dict(0, signature['txn'])
+                        try:
+                            fastgraph.verify()
+                        except Exception as e:
+                            raise
+                            return 'did not verify', 400
+                        result = mongo.db.fastgraph_transactions.find_one({
+                            'txn.hash': fastgraph.hash
+                        })
+                        if result:
+                            return 'duplicate transaction found', 400
+                        spent_check = mongo.db.fastgraph_transactions.find_one({
+                            'txn.inputs.id': {'$in': [x.id for x in fastgraph.inputs]}
+                        })
+                        if spent_check:
+                            return 'already spent input', 400
+                        fastgraph.save()
             else:
                 return 'no transactions with this input found', 400
 
