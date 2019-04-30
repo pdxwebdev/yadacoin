@@ -55,6 +55,7 @@ class ChatNamespace(AsyncNamespace):
 
     async def force_close(self, sid):
         # TODO: can we force close the socket?
+        await self.config.peers.on_close_inbound(sid)
         await SIO.disconnect(sid, namespace='/chat')
         # This processes a disconnect event, but does not close the underlying socket. Client still can send messages.
 

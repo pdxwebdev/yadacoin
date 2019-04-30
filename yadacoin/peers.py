@@ -79,6 +79,7 @@ class Peers(object):
         """Returns True if that ip can connect - inbound or outbound"""
         # TODO - add blacklist
         # TODO: if verbose, say why
+        print(self.connected_ips)
         return IP not in self.connected_ips  # Allows if we're not connected already.
 
     def on_new_ip(self, ip):

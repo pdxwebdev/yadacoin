@@ -29,7 +29,6 @@ class ChatNamespace(BaseNamespace):
         print("peers", args)
 
 
-
 if __name__ == "__main__":
 
     define("ip", default='127.0.0.1', help="Server IP to connect to, default 127.0.0.1")
