@@ -104,12 +104,18 @@ class Peers(object):
         # maybe it's an ip we don't have yet, add it
         await self.on_new_peer_list([{'host': ip, 'port': port}])
 
-    async def on_close_inbound(self, sid):
-        # We only allow one in or out per ip
-        self.app_log.info("on_close_inbound {}".format(sid))
+    async def on_close_inbound(self, sid, ip=''):
+        # If the peer was fully connected, then it'in inbound.
+        # If not, we have no full info, but an ip optional field.
+        self.app_log.info("on_close_inbound {} - ip {}".format(sid, ip))
         info = self.inbound.pop(sid, None)
-        ip = info['ip']
-        self.connected_ips.remove(ip)
+        try:
+            stored_ip = info['ip']
+            self.connected_ips.remove(stored_ip)
+        except:
+            pass
+        if ip:
+            self.connected_ips.remove(ip)
 
     def on_new_outbound(self, ip, port, client):
         """Outbound peer connection was successful, add it to our pool"""
