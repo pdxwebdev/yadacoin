@@ -50,6 +50,7 @@ class Config(object):
         self.peer_port = config['peer_port']
         self.serve_host = config['serve_host']
         self.serve_port = config['serve_port']
+        self.public_ip = config.get('public_ip', self.serve_host)
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)

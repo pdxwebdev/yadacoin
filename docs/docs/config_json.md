@@ -43,6 +43,10 @@ The comments are not valid json, they are only there to explain each parameter
     # pnp should only be used for specific configs
     "use_pnp": false,
     "callbackurl": "http://0.0.0.0:5000/create-relationship",
+
+    # This is important, because it's no duplicate if behind a nat, and public ip != listen ip 
+    "public_ip": "192.168.1.173",
+
     
     # New params for peer control
     "max_inbound": 10,      # max number of allowed incoming websocket connections
