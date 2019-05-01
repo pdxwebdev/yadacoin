@@ -42,7 +42,8 @@ class Peers(object):
         self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
         try:
-            self.peers = [Peer(peer['host'], peer['port']) for peer in res]
+            # Do not include ourselve in the list
+            self.peers = [Peer(peer['host'], peer['port']) for peer in res if peer['host'] not in self.config.outgoing_blacklist]
         except:
             pass
         return self.to_json()
@@ -51,6 +52,13 @@ class Peers(object):
         """Returns peers status as explicit dict"""
         # TODO: cache?
         status = {"inbound": len(self.inbound), "outbound": len(self.outbound)}
+        if self.config.extended_status:
+            status['inbound_detail'] = self.inbound
+            status['outbound_detail'] = self.outbound
+            status['probable_old_nodes'] = self.probable_old_nodes
+            status['connected_ips'] = self.connected_ips
+            # TODO: too many conversions from/to object and string
+            status['peers'] = [peer.to_string() for peer in self.peers]
         return status
 
     @property

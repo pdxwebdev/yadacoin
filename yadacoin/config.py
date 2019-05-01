@@ -28,7 +28,6 @@ class Config(object):
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
         self.max_miners = config.get('max_miners', -1)
-        self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
         self.polling = config.get('polling', 30)
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
@@ -54,9 +53,13 @@ class Config(object):
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
-        self.extended_status = config.get('extended_status', True)
+        self.extended_status = config.get('extended_status', False)
         self.peers_seed = config.get('peers_seed', [])
         self.force_broadcast_to = config.get('force_broadcast_to', [])
+        self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
+        # Do not try to test or connect to ourselves.
+        self.outgoing_blacklist.append(self.serve_host)
+        self.outgoing_blacklist.append(self.public_ip)
         self.protocol_version = 1
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
