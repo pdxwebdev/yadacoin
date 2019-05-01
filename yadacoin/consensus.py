@@ -7,6 +7,7 @@ import requests
 import datetime
 from asyncio import sleep as async_sleep
 from pymongo.errors import DuplicateKeyError
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.peers import Peers, Peer
@@ -278,16 +279,26 @@ class Consensus(object):
         if self.peers.syncing:
             self.app_log.debug("Already syncing, ignoring search_network_for_new")
         self.app_log.debug('requesting {} ...'.format(self.latest_block.index + 1))
+        http_client = AsyncHTTPClient()
         for peer in self.peers.peers:
             self.peers.syncing = True
             try:
-                # self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
+                self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
                 try:
-                    result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                        peer=peer.to_string(),
-                        start_index=int(self.latest_block.index) +1,
-                        end_index=int(self.latest_block.index) + 100
-                    ), timeout=2)
+                    url = 'http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'\
+                        .format(peer=peer.to_string(),
+                                start_index=int(self.latest_block.index) +1,
+                                end_index=int(self.latest_block.index) + 100)
+                    request = HTTPRequest(url, connect_timeout=3,request_timeout=5)
+                    response = await http_client.fetch(request)
+                    if response.code != 200:
+                        continue
+                    # result = requests.get(url, timeout=2)
+                except HTTPError as e:
+                    self.app_log.warning('Error requesting from {} ...'.format(peer.to_string()))
+                    # add to failed peers
+                    await self.peers.increment_failed(peer)
+                    continue
                 except ConnectTimeoutError as e:
                     self.app_log.warning('Timeout requesting from {} ...'.format(peer.to_string()))
                     # add to failed peers
@@ -298,7 +309,8 @@ class Consensus(object):
                     await self.peers.increment_failed(peer)
                     continue
                 try:
-                    blocks = json.loads(result.content)
+                    blocks = json.loads(response.body.decode('utf-8'))
+                    # blocks = json.loads(result.content)
                 except ValueError:
                     continue
                 inserted = False

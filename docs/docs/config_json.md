@@ -52,13 +52,14 @@ The comments are not valid json, they are only there to explain each parameter
     "max_inbound": 10,      # max number of allowed incoming websocket connections
     "max_outbound": 10,     # max (and target) number of perrs to try to connect to
     "max_miners": 100,      # max allowed miners (set to -1 to deactivate pool)
-    "polling": 30,          # New node do not need polling anymore. You can set 0 to deactivate polling, 
-                            # or set a value high enough (in seconds) not to generate too much load.
+    "polling": 0,          # New node do not need polling anymore. You can set 0 to deactivate polling, 
+                            # or set a value high enough (in seconds, like 60) not to generate too much load.
                             # Should be 0 once a few new nodes are up.
     
     # Debug / dev params
     
     "post_peer": false,     # If false, will not post your ip to the central API (no more needed)
+    "extended_status": false,     # If true, will display full list of known peers and in/out connections.
     
     # You can optionally specify a list of seed nodes to use. If none is given, node will use the central API as seed. 
     

@@ -54,6 +54,7 @@ class Config(object):
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
+        self.extended_status = config.get('extended_status', True)
         self.peers_seed = config.get('peers_seed', [])
         self.force_broadcast_to = config.get('force_broadcast_to', [])
         self.protocol_version = 1

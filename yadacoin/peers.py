@@ -458,7 +458,9 @@ class Peer(object):
         hp = self.to_string()
         print('test', hp)
         http_client = AsyncHTTPClient()
-        request = HTTPRequest("http://{}/get-status".format(hp), connect_timeout=10, request_timeout=12)
+        url = "http://{}/get-latest-block".format(hp)
+        request = HTTPRequest(url, connect_timeout=10, request_timeout=12)
+        # TODO: move to get-status
         try:
             response = await http_client.fetch(request)
             if response.code != 200:
@@ -481,7 +483,7 @@ class Peer(object):
             except Exception as e:
                 self.app_log.warning("Error: {} on url {}".format(e, url))
         except Exception as e:
-            print("Error: {} on test url {}".format(e, hp))
+            print("Error: {} on test url {}".format(e, url))
             # store error and next try - factorized code. not sure test() should be in peer itself, rather peers.
             await self.config.peers.increment_failed(self)
             """
