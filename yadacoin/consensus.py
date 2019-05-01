@@ -282,7 +282,7 @@ class Consensus(object):
                 self.app_log.info("No peer to connect to yet")
                 await async_sleep(10)
                 return
-            polling_peers = [peer.to_string() for peer in self.peers]
+            polling_peers = [peer.to_string() for peer in self.peers.peers]
         # TODO: use an aio lock
         self.app_log.debug('requesting {} ...'.format(self.latest_block.index + 1))
         http_client = AsyncHTTPClient()
