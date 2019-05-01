@@ -64,6 +64,9 @@ The comments are not valid json, they are only there to explain each parameter
     # You can optionally specify a list of seed nodes to use. If none is given, node will use the central API as seed. 
     
     "peers_seed" : [{"host": "34.237.46.10","port": 8000 }, {"host": "116.203.24.126","port": 8000 }, {"host": "51.75.68.13","port": 8000 }, {"host": "178.32.96.27","port": 8000 }],
-    "outgoing_blacklist" : ["192.168.1.230"]  # debug/dev only, avoid any outgoing connection to this ip.
+    "outgoing_blacklist" : ["192.168.1.230"],  # debug/dev only, avoid any outgoing connection to this ip.
+    "force_polling": [{"host": "34.237.46.10","port": 8000 }, {"host": "116.203.24.126","port": 8000 },{"host": "188.165.250.78","port": 8000 }, {"host": "178.32.96.27","port": 8000 }]
+    # use these for polling, whatever the status is.
+
 }
 ```

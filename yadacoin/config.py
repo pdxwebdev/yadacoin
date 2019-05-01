@@ -56,6 +56,7 @@ class Config(object):
         self.extended_status = config.get('extended_status', False)
         self.peers_seed = config.get('peers_seed', [])
         self.force_broadcast_to = config.get('force_broadcast_to', [])
+        self.force_polling = config.get('force_polling', [])
         self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)

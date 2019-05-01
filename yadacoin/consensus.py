@@ -268,25 +268,34 @@ class Consensus(object):
         # Peers.init( self.config.network)
         if self.config.network == 'regnet':
             return
-        if len(self.peers.peers) < 2:
-            await self.peers.refresh()
-            await async_sleep(20)
-        if len(self.peers.peers) < 1:
-            self.app_log.info("No peer to connect to yet")
-            await async_sleep(10)
-            return
-        # TODO: use an aio lock
         if self.peers.syncing:
             self.app_log.debug("Already syncing, ignoring search_network_for_new")
+
+        if len(self.config.force_polling):
+            # This is a temp hack until everyone updated
+            polling_peers = ["{}:{}".format(peer['host'], peer['port']) for peer in self.config.force_polling]
+        else:
+            if len(self.peers.peers) < 2:
+                await self.peers.refresh()
+                await async_sleep(20)
+            if len(self.peers.peers) < 1:
+                self.app_log.info("No peer to connect to yet")
+                await async_sleep(10)
+                return
+            polling_peers = [peer.to_string() for peer in self.peers]
+        # TODO: use an aio lock
         self.app_log.debug('requesting {} ...'.format(self.latest_block.index + 1))
         http_client = AsyncHTTPClient()
-        for peer in self.peers.peers:
+
+        # for peer in self.peers.peers:
+        for peer_string in polling_peers:
             self.peers.syncing = True
             try:
-                self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.to_string()))
+                self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer_string))
+                peer = Peer.from_string(peer_string)
                 try:
                     url = 'http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'\
-                        .format(peer=peer.to_string(),
+                        .format(peer=peer_string,
                                 start_index=int(self.latest_block.index) +1,
                                 end_index=int(self.latest_block.index) + 100)
                     request = HTTPRequest(url, connect_timeout=3,request_timeout=5)
@@ -295,17 +304,17 @@ class Consensus(object):
                         continue
                     # result = requests.get(url, timeout=2)
                 except HTTPError as e:
-                    self.app_log.warning('Error requesting from {} ...'.format(peer.to_string()))
+                    self.app_log.warning('Error requesting from {} ...'.format(peer_string))
                     # add to failed peers
                     await self.peers.increment_failed(peer)
                     continue
                 except ConnectTimeoutError as e:
-                    self.app_log.warning('Timeout requesting from {} ...'.format(peer.to_string()))
+                    self.app_log.warning('Timeout requesting from {} ...'.format(peer_string))
                     # add to failed peers
                     await self.peers.increment_failed(peer)
                     continue
                 except Exception as e:
-                    self.app_log.error('error {} requesting from {} ...'.format(e, peer.to_string()))
+                    self.app_log.error('error {} requesting from {} ...'.format(e, peer_string))
                     await self.peers.increment_failed(peer)
                     continue
                 try:
@@ -320,7 +329,7 @@ class Consensus(object):
                     if block.index == (self.existing_blockchain.blocks[-1].index + 1):
                         await self.insert_consensus_block(block, peer)
                         # print("consensus ok", block.index)
-                        res = await self.import_block({'peer': peer.to_string(), 'block': block.to_dict(),
+                        res = await self.import_block({'peer': peer_string, 'block': block.to_dict(),
                                                        'extra_blocks': blocks},
                                                       trigger_event=False)
                         # print("import ", block.index, res)
