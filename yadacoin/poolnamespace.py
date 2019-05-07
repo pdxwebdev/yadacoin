@@ -80,7 +80,7 @@ class PoolNamespace(AsyncNamespace):
         if len(data) > CHAIN.MAX_NONCE_LEN:
             await self.emit('n', data='Ko', room=sid)
             return
-        result = await self.mp.on_miner_nonce(sid, data)
+        result = await self.mp.on_miner_nonce(data, sid=sid)
         if result:
             await self.emit('n', data='ok', room=sid)
         else:

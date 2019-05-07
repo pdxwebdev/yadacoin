@@ -55,6 +55,7 @@ class ChatNamespace(AsyncNamespace):
 
     async def force_close(self, sid):
         # TODO: can we force close the socket?
+
         await SIO.disconnect(sid, namespace='/chat')
         # This processes a disconnect event, but does not close the underlying socket. Client still can send messages.
 
@@ -79,6 +80,7 @@ class ChatNamespace(AsyncNamespace):
         try:
             async with self.session(sid) as session:
                 if session['ip'] != data['ip']:
+                    await self.config.peers.on_close_inbound(sid, ip=session['ip'])
                     raise Exception("IP mismatch")
                 # TODO: test version also (ie: protocol version)
                 # If peer data seem correct, add to our pool of inbound peers

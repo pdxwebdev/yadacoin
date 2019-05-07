@@ -42,7 +42,8 @@ class Peers(object):
         self.my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}}).get('mypeer')
         res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
         try:
-            self.peers = [Peer(peer['host'], peer['port']) for peer in res]
+            # Do not include ourselve in the list
+            self.peers = [Peer(peer['host'], peer['port']) for peer in res if peer['host'] not in self.config.outgoing_blacklist]
         except:
             pass
         return self.to_json()
@@ -51,6 +52,13 @@ class Peers(object):
         """Returns peers status as explicit dict"""
         # TODO: cache?
         status = {"inbound": len(self.inbound), "outbound": len(self.outbound)}
+        if self.config.extended_status:
+            status['inbound_detail'] = [peer['ip'] for peer in self.inbound]
+            status['outbound_detail'] = list(self.outbound.keys())
+            status['probable_old_nodes'] = self.probable_old_nodes
+            status['connected_ips'] = self.connected_ips
+            # TODO: too many conversions from/to object and string
+            status['peers'] = [peer.to_string() for peer in self.peers]
         return status
 
     @property
@@ -79,10 +87,11 @@ class Peers(object):
         """Returns True if that ip can connect - inbound or outbound"""
         # TODO - add blacklist
         # TODO: if verbose, say why
+        print(self.connected_ips)
         return IP not in self.connected_ips  # Allows if we're not connected already.
 
     def on_new_ip(self, ip):
-        """We got an inbound or initiate an outbound connection from/to an ip, buit do not have the result yet.
+        """We got an inbound or initiate an outbound connection from/to an ip, but do not have the result yet.
         avoid initiating one connection twice if the handshake does not go fast enough."""
         self.app_log.info("on_new_ip:{}".format(ip))
         if ip not in self.connected_ips:
@@ -103,12 +112,18 @@ class Peers(object):
         # maybe it's an ip we don't have yet, add it
         await self.on_new_peer_list([{'host': ip, 'port': port}])
 
-    async def on_close_inbound(self, sid):
-        # We only allow one in or out per ip
-        self.app_log.info("on_close_inbound {}".format(sid))
+    async def on_close_inbound(self, sid, ip=''):
+        # If the peer was fully connected, then it'in inbound.
+        # If not, we have no full info, but an ip optional field.
+        self.app_log.info("on_close_inbound {} - ip {}".format(sid, ip))
         info = self.inbound.pop(sid, None)
-        ip = info['ip']
-        self.connected_ips.remove(ip)
+        try:
+            stored_ip = info['ip']
+            self.connected_ips.remove(stored_ip)
+        except:
+            pass
+        if ip:
+            self.connected_ips.remove(ip)
 
     def on_new_outbound(self, ip, port, client):
         """Outbound peer connection was successful, add it to our pool"""
@@ -141,6 +156,7 @@ class Peers(object):
         self.app_log.debug("Peers background_peer {}".format(peer.to_dict()))
         # lock that ip
         self.on_new_ip(peer.host)
+        client = None
         try:
             client = YadaWebSocketClient(peer)
             # This will run until disconnect
@@ -149,7 +165,8 @@ class Peers(object):
             self.app_log.warning("Error: {} on background_peer {}".format(e, peer.host))
         finally:
             # If we get here with no outbound record, then it was an old node.
-            if peer.host not in self.outbound:
+            #if peer.host not in self.outbound:
+            if client and client.probable_old:
                 # add it to a temp "do not try ws soon" list
                 self.app_log.debug("Peer {} added to probable_old_nodes".format(peer.host))
                 self.probable_old_nodes[peer.host] = int(time()) + 3600  # try again in 1 hour
@@ -181,7 +198,7 @@ class Peers(object):
         self.app_log.info("Async Peers refresh")
         if self.network == 'regnet':
             peer = await self.mongo.async_db.config.find_one({
-                'mypeer': {"$ne": ""}, 
+                # 'mypeer': {"$ne": ""},
                 'mypeer': {'$exists': True}
             })
             if not peer:
@@ -225,6 +242,7 @@ class Peers(object):
 
         # todo: probly more efficient not to rebuild the objects every time
         self.peers = [Peer(peer['host'], peer['port']) for peer in res]
+        self.app_log.debug("Peers count {}".format(len(self.peers)))
 
     async def on_new_peer_list(self, peer_list: list, test_after=None):
         """Process an external peer list, and saves the new ones"""
@@ -256,6 +274,23 @@ class Peers(object):
         except Exception as e:
             self.app_log.warning("Error: {} on test_some".format(e))
         # to_list(length=100)
+
+    async def increment_failed(self, peer):
+        res = await self.mongo.async_db.peers.find_one({'host': peer.host, 'port': int(peer.port)})
+        failed = res.get('failed', 0) + 1
+        factor = failed
+        if failed > 20:
+            factor = 240  # at most, test every 4 hours
+        elif failed > 10:
+            factor = 6 * factor
+        elif failed > 5:
+            factor = 2 * factor
+        test_after = int(time()) + factor * 60  #
+        await self.mongo.async_db.peers.update_one({'host': peer.host, 'port': int(peer.port)},
+                                                   {'$set': {'active': False, "test_after": test_after,
+                                                             "failed": failed}})
+        # remove from in memory list
+        self.peers = [apeer for apeer in self.peers if apeer.host != peer.host]
 
     @classmethod
     def from_dict(cls):
@@ -431,7 +466,9 @@ class Peer(object):
         hp = self.to_string()
         print('test', hp)
         http_client = AsyncHTTPClient()
-        request = HTTPRequest("http://{}/get-status".format(hp), connect_timeout=10, request_timeout=12)
+        url = "http://{}/get-latest-block".format(hp)
+        request = HTTPRequest(url, connect_timeout=10, request_timeout=12)
+        # TODO: move to get-status
         try:
             response = await http_client.fetch(request)
             if response.code != 200:
@@ -441,7 +478,8 @@ class Peer(object):
             #  get peers from that node and merge.
             http_client = AsyncHTTPClient()
             test_after = int(time()) + 30  # 2nd layer peers will be tested after 1st layer
-            # This "get peers from url" is used twice, could be factorized. But could be deprecated soon with websockets.
+            # This "get peers from url" is used twice, could be factorized.
+            # But could be deprecated soon with websockets.
             url = "http://{}/get-peers".format(hp)
             try:
                 response = await http_client.fetch(url)
@@ -453,8 +491,10 @@ class Peer(object):
             except Exception as e:
                 self.app_log.warning("Error: {} on url {}".format(e, url))
         except Exception as e:
-            print("Error: {} on test url {}".format(e, hp))
-            # store error and next try
+            print("Error: {} on test url {}".format(e, url))
+            # store error and next try - factorized code. not sure test() should be in peer itself, rather peers.
+            await self.config.peers.increment_failed(self)
+            """
             res = await self.mongo.async_db.peers.find_one({'host': self.host, 'port': int(self.port)})
             failed = res['failed'] + 1
             factor = failed
@@ -468,5 +508,6 @@ class Peer(object):
             await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)},
                                                        {'$set': {'active': False, "test_after": test_after,
                                                                  "failed": failed}})
+            """
             return False
         return True
