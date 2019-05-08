@@ -143,6 +143,10 @@ class YadaWebSocketClient(object):
                 return
             while self.connected:
                 self.app_log.debug("{} loop, state:{}".format(self.peer.to_string(), self.client.eio.state))
+                # This is a mess, surely we can do better.
+                if self.client.eio.state == 'disconnected':
+                    self.connected = False
+                    return
                 await async_sleep(30)
                 # TODO: poll here after some time without activity?
         except Exception as e:

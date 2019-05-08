@@ -53,7 +53,8 @@ class Peers(object):
         # TODO: cache?
         status = {"inbound": len(self.inbound), "outbound": len(self.outbound)}
         if self.config.extended_status:
-            status['inbound_detail'] = [peer['ip'] for peer in self.inbound]
+            # print(self.inbound)
+            status['inbound_detail'] = [peer['ip'] for sid, peer in self.inbound.items()]
             status['outbound_detail'] = list(self.outbound.keys())
             status['probable_old_nodes'] = self.probable_old_nodes
             status['connected_ips'] = self.connected_ips
