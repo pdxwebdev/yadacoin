@@ -192,7 +192,7 @@ class Consensus(object):
             try:
                 if self.debug:
                     print('response code: ', res.status_code)
-                new_block = Block.from_dict(json.loads(res.content))
+                new_block = Block.from_dict(json.loads(res.content.decode('utf-8')))
                 if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
                     return new_block
                 else:
