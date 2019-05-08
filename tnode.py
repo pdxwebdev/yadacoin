@@ -122,7 +122,7 @@ async def background_status():
             await async_sleep(30)
             # status = {"peers": config.peers.get_status()}
             status = config.get_status()
-            print(status)
+            # print(status)
             app_log.info(json.dumps(status))
         except Exception as e:
             app_log.error("{} in Background_status".format(e))
@@ -143,7 +143,6 @@ async def background_pool():
 
         except Exception as e:
             app_log.error("{} in background_pool".format(e))
-
 
 
 def configure_logging():
