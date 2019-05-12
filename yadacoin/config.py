@@ -25,6 +25,7 @@ class Config(object):
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
         self.use_pnp = config.get('use_pnp', True)
+        self.ssl = config.get('ssl', False)
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
         self.max_miners = config.get('max_miners', -1)
@@ -137,6 +138,7 @@ class Config(object):
             "serve_host": "0.0.0.0",
             "serve_port": 8000,
             "use_pnp": True,
+            "ssl": False,
             "polling": 30,
             "peer_host": "",
             "peer_port": 8000,
@@ -161,6 +163,7 @@ class Config(object):
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
         cls.use_pnp = config.get('use_pnp', True)
+        cls.ssl = config.get('ssl', True)
         cls.polling = config.get('polling', -1)
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
@@ -230,6 +233,7 @@ class Config(object):
             'serve_host': self.serve_host,
             'serve_port': self.serve_port,
             'use_pnp': self.use_pnp,
+            'ssl': self.ssl,
             'fcm_key': self.fcm_key,
             'polling': self.polling,
             'callbackurl': self.callbackurl
