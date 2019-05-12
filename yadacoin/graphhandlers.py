@@ -24,7 +24,7 @@ from yadacoin.transactionutils import TU
 class GraphConfigHandler(BaseHandler):
 
     async def get(self):
-        peer = "http://{}:{}".format(self.config.web_server_host, self.config.web_server_port)
+        peer = "{}:{}".format(self.config.web_server_host, self.config.web_server_port)
         return self.render_as_json({
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
