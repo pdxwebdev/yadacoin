@@ -20,7 +20,7 @@ class BaseHandler(RequestHandler):
         self.peers = self.settings['peers']
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]
-        self.set_header("Access-Control-Allow-Origin", 'http://staging.yadacoin.io')
+        self.set_header("Access-Control-Allow-Origin", self.config.origin)
         self.set_header('Access-Control-Allow-Credentials', "true")
         self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
         self.set_header('Access-Control-Expose-Headers', "Content-Type")
