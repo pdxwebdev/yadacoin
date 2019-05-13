@@ -22,6 +22,8 @@ class CHAIN(object):
     MAX_BLOCKS_PER_MESSAGE = 200  # Not really a chain param, but better if coherent across peers
     MAX_RETRACE_DEPTH = 20  # Max allowed retrace. Deeper retrace would need manual chain truncating
 
+    TIME_TOLERANCE = 10  # MAX # of seconds in the future we allow a bloc or TX to be. NTP Sync required for nodes.
+
     # TODO: add block time depending on network + escape hatch
 
     @classmethod

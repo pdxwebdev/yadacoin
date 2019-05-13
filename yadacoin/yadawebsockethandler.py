@@ -65,6 +65,9 @@ class ChatNamespace(AsyncNamespace):
             self.app_log.info('WS newtransaction: {} {}'.format(sid, json.dumps(data)))
         try:
             incoming_txn = Transaction.from_dict(BU().get_latest_block()['index'], data)
+            if incoming_txn.in_the_future():
+                # Most important
+                raise ValueError('In the future {}'.format(incoming_txn.transaction_signature))
             # print(incoming_txn.transaction_signature)
             dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({'id': incoming_txn.transaction_signature})
             if dup_check_count:

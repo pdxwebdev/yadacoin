@@ -3,6 +3,8 @@ import hashlib
 import base64
 import time
 
+from sys import exc_info
+from os import path
 from decimal import Decimal, getcontext
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
@@ -394,58 +396,66 @@ class Block(object):
                 return txn
 
     def verify(self):
-        getcontext().prec = 8
-        if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
-            raise Exception("Wrong version for block height", self.version, CHAIN.get_version_for_height(self.index))
-
-        txns = self.get_transaction_hashes()
-        self.set_merkle_root(txns)
-        if self.verify_merkle_root != self.merkle_root:
-            raise Exception("Invalid block merkle root")
-
-        header = BlockFactory.generate_header(self)
-        hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
-        # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
-        if self.hash != hashtest:
-            getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
-            raise Exception('Invalid block hash')
-
-        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         try:
-            # print("address", address, "sig", self.signature, "pubkey", self.public_key)
-            result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
-            if not result:
-                raise Exception("block signature1 is invalid")
-        except:
+            getcontext().prec = 8
+            if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
+                raise Exception("Wrong version for block height", self.version, CHAIN.get_version_for_height(self.index))
+
+            txns = self.get_transaction_hashes()
+            self.set_merkle_root(txns)
+            if self.verify_merkle_root != self.merkle_root:
+                raise Exception("Invalid block merkle root")
+
+            header = BlockFactory.generate_header(self)
+            hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
+            # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
+            if self.hash != hashtest:
+                getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
+                raise Exception('Invalid block hash')
+
+            address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
             try:
-                result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.signature)
+                # print("address", address, "sig", self.signature, "pubkey", self.public_key)
+                result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
                 if not result:
-                    raise
+                    raise Exception("block signature1 is invalid")
             except:
-                raise Exception("block signature2 is invalid")
+                try:
+                    result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.signature)
+                    if not result:
+                        raise
+                except:
+                    raise Exception("block signature2 is invalid")
 
-        # verify reward
-        coinbase_sum = 0
-        for txn in self.transactions:
-            if txn.coinbase:
-                for output in txn.outputs:
-                    coinbase_sum += float(output.value)
+            # verify reward
+            coinbase_sum = 0
+            for txn in self.transactions:
+                if int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE:
+                    raise Exception("Block embeds txn too far in the future")
+                if txn.coinbase:
+                    for output in txn.outputs:
+                        coinbase_sum += float(output.value)
 
-        fee_sum = 0.0
-        for txn in self.transactions:
-            if not txn.coinbase:
-                fee_sum += float(txn.fee)
-        reward = CHAIN.get_block_reward(self.index)
+            fee_sum = 0.0
+            for txn in self.transactions:
+                if not txn.coinbase:
+                    fee_sum += float(txn.fee)
+            reward = CHAIN.get_block_reward(self.index)
 
-        #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
-        """
-        KO for block 13949
-        0.02099999 50.021 50.0
-        Integrate block error 1 ('Coinbase output total does not equal block reward + transaction fees', 0.020999999999999998, 0.021000000000000796)
-        """
-        if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
-            print(fee_sum, coinbase_sum, reward)
-            raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
+            #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
+            """
+            KO for block 13949
+            0.02099999 50.021 50.0
+            Integrate block error 1 ('Coinbase output total does not equal block reward + transaction fees', 0.020999999999999998, 0.021000000000000796)
+            """
+            if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
+                print(fee_sum, coinbase_sum, reward)
+                raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
+        except Exception as e:
+            exc_type, exc_obj, exc_tb = exc_info()
+            fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            getLogger("tornado.application").warning("verify {} {} {}".format(exc_type, fname, exc_tb.tb_lineno))
+            raise
 
     def get_transaction_hashes(self):
         """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""
@@ -510,3 +520,7 @@ class Block(object):
 
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
+
+    def in_the_future(self):
+        """Tells wether the block is too far away in the future"""
+        return int(self.time) > time.time() + CHAIN.TIME_TOLERANCE

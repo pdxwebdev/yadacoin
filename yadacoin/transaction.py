@@ -13,6 +13,8 @@ from yadacoin.crypt import Crypt
 from yadacoin.transactionutils import TU
 # from yadacoin.blockchainutils import BU
 from yadacoin.config import get_config
+from yadacoin.chain import CHAIN
+
 
 class TransactionFactory(object):
     
@@ -312,6 +314,10 @@ class Transaction(object):
             outputs=txn.get('outputs', []),
             coinbase=txn.get('coinbase', '')
         )
+
+    def in_the_future(self):
+        """Tells whether the transaction is too far away in the future"""
+        return int(self.time) > time.time() + CHAIN.TIME_TOLERANCE
 
     def verify(self):
         from yadacoin.fastgraph import FastGraph

@@ -203,6 +203,7 @@ class Consensus(object):
     async def insert_consensus_block(self, block, peer):
         if self.debug:
             self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
+
         await self.mongo.async_db.consensus.replace_one({
             'id': block.to_dict().get('id'),
             'peer': peer.to_string()
@@ -371,7 +372,7 @@ class Consensus(object):
         sends True if that block was inserted, False if it fails or if a retrace was needed.
 
         This is the central entry point for inserting a block, that will modify the local chain and trigger the event,
-        unless we asked not to, becasue we're in a batch insert context"""
+        unless we asked not to, because we're in a batch insert context"""
         try:
             block = Block.from_dict(block_data['block'])
             peer = Peer.from_string(block_data['peer'])
@@ -380,7 +381,10 @@ class Consensus(object):
                 # extra_blocks = [Block.from_dict( x) for x in block_data['extra_blocks']]  # Not used later on, just ram and resources usage
             else:
                 extra_blocks = None
-            self.app_log.debug("{} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
+            self.app_log.debug("Latest block was {} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
+            if block.time < self.latest_block.time:
+                self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index - 1))
+                return False
             try:
                 result = await self.integrate_block_with_existing_chain(block, extra_blocks)
                 if result is False:
@@ -449,7 +453,12 @@ class Consensus(object):
         return True
 
     async def process_next_block(self, block_data: dict, peer, trigger_event=True) -> bool:
+        """This is the common entry point for all new possible blocks to enter consensus and chain"""
         block_object = Block.from_dict(block_data)
+        if block_object.in_the_future():
+            # Most important
+            self.app_log.warning('Block in the future for height %s  from peer: %s' % (block_object.index, peer.to_string()))
+            return False
         # TODO: there is no check before inserting into consensus (previous hash, nor diff, nor valid tx)
         await self.insert_consensus_block(block_object, peer)
         self.app_log.debug("Consensus ok {}".format(block_object.index))
