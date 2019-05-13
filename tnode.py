@@ -244,8 +244,8 @@ async def main():
     app_log.info("Starting server on {}:{}".format(config.serve_host, config.serve_port))
     app.listen(config.serve_port, config.serve_host)
     if config.ssl:
-        http_server = tornado.httpserver.HTTPServer(app, ssl_options=config.ssl)
-        http_server.listen(443)
+        http_server = tornado.httpserver.HTTPServer(app, ssl_options=config.ssl['keys'])
+        http_server.listen(config.ssl['port'])
     # The server will simply run until interrupted
     # with Ctrl-C, but if you want to shut down more gracefully,
     # call shutdown_event.set().
