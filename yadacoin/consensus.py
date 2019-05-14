@@ -382,7 +382,7 @@ class Consensus(object):
             else:
                 extra_blocks = None
             self.app_log.debug("Latest block was {} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
-            if block.time < self.latest_block.time:
+            if int(block.index) > 35200 and block.time < self.latest_block.time:
                 self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index - 1))
                 return False
             try:
