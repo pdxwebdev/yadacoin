@@ -430,8 +430,10 @@ class Block(object):
             # verify reward
             coinbase_sum = 0
             for txn in self.transactions:
-                if int(self.index) > 38600 and int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE:
-                    raise Exception("Block embeds txn too far in the future")
+                # TODO: Future fork, this breaks sync for now.
+                #if int(self.index) > FUTURE_FORK and int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE:
+                #    raise Exception("Block embeds txn too far in the future")
+
                 if txn.coinbase:
                     for output in txn.outputs:
                         coinbase_sum += float(output.value)
