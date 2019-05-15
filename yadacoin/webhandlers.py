@@ -24,6 +24,15 @@ class HomeHandler(BaseHandler):
 
 class AuthenticatedHandler(BaseHandler):
     async def get(self):
+        origin = self.get_query_argument('origin')
+        if not origin:
+            return '{"error": "origin not in query params"}', 400
+        self.set_header("Access-Control-Allow-Origin", origin)
+        self.set_header('Access-Control-Allow-Credentials', "true")
+        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
+        self.set_header('Access-Control-Expose-Headers', "Content-Type")
+        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
+        self.set_header('Access-Control-Max-Age', 600)
         config = self.config
         rid = self.get_query_argument('rid')
         if not rid:
