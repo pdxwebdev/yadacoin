@@ -206,6 +206,11 @@ async def main():
         if options.network != '':
             config.network = options.network
         config.protocol_version = PROTOCOL_VERSION
+    # get seed.json from same dir as config.
+    peers_seed_filename = options.config.replace('config.json', 'seed.json')
+    if path.isfile(peers_seed_filename):
+        with open(peers_seed_filename) as f:
+            config.peers_seed = json.loads(f.read())
 
     mongo = Mongo()
     config.mongo = mongo

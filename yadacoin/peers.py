@@ -230,12 +230,15 @@ class Peers(object):
                 # add from our config file
                 await self.on_new_peer_list(self.config.peers_seed, test_after)
             else:
+                self.app_log.warning("No seed.json with config?")
                 # or from central yadacoin.io if none
                 http_client = AsyncHTTPClient()
                 try:
                     response = await http_client.fetch(url)
-                    seeds = json.loads(response.body.decode('utf-8'))['peers']
-                    await self.on_new_peer_list(seeds, test_after)
+                    seeds = json.loads(response.body.decode('utf-8'))['get-peers']
+                    if len(seeds['peers']) <= 0:
+                        self.app_log.warning("No peers on main yadacoin.io node")
+                    await self.on_new_peer_list(seeds['peers'], test_after)
                 except Exception as e:
                     self.app_log.warning("Error: {} on url {}".format(e, url))
             await self.mongo.async_db.config.replace_one({"last_seeded": {"$exists": True}}, {"last_seeded": str(test_after)}, upsert=True)

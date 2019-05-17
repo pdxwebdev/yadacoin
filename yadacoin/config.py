@@ -1,6 +1,7 @@
 import binascii
 import hashlib
 import json
+from logging import getLogger
 from time import time
 
 import base58
@@ -31,6 +32,9 @@ class Config(object):
         self.max_outbound = config.get('max_outbound', 10)
         self.max_miners = config.get('max_miners', -1)
         self.polling = config.get('polling', 30)
+        if 0 < self.polling < 30:
+            getLogger("tornado.application").error("Using too small a polling value ({}), use 0 or > 30"
+                                                   .format(self.polling))
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
@@ -56,7 +60,7 @@ class Config(object):
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
         self.extended_status = config.get('extended_status', False)
-        self.peers_seed = config.get('peers_seed', [])
+        self.peers_seed = config.get('peers_seed', [])  # not used, superceeded by config/seed.json
         self.force_broadcast_to = config.get('force_broadcast_to', [])
         self.force_polling = config.get('force_polling', [])
         self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
