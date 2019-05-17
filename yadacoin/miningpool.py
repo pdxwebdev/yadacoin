@@ -125,7 +125,7 @@ class MiningPool(object):
         block_to_mine = self.block_to_mine.copy()
         previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
         hash1 = BlockFactory.generate_hash_from_header(block_to_mine.header, nonce)
-        if not hash1[:8] == '00000000':
+        if not hash1[:8] == '00000000' and self.config.network != 'regnet':
             # TODO If not, does it match previous block of same height?
             self.app_log.warning("nonce {} did not match pool diff block, hash1 was {}".format(nonce, hash1))
             if self.previous_block_to_mine is not None:
