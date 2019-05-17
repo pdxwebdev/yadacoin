@@ -382,10 +382,9 @@ class Consensus(object):
             else:
                 extra_blocks = None
             self.app_log.debug("Latest block was {} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
-            # TODO: Future fork to check block times
-            # if int(block.index) > FUTURE_FORK and block.time < self.latest_block.time:
-            #     self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index - 1))
-            #     return False
+            if int(block.index) > CHAIN.CHECK_TIME_FROM and block.time < self.latest_block.time:
+                self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index - 1))
+                return False
             try:
                 result = await self.integrate_block_with_existing_chain(block, extra_blocks)
                 if result is False:

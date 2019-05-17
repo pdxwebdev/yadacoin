@@ -317,7 +317,7 @@ class Transaction(object):
 
     def in_the_future(self):
         """Tells whether the transaction is too far away in the future"""
-        return int(self.block_height) > 35200 and int(self.time) > time.time() + CHAIN.TIME_TOLERANCE
+        return int(self.time) > time.time() + CHAIN.TIME_TOLERANCE
 
     def verify(self):
         from yadacoin.fastgraph import FastGraph

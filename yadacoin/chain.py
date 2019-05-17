@@ -23,6 +23,7 @@ class CHAIN(object):
     MAX_RETRACE_DEPTH = 20  # Max allowed retrace. Deeper retrace would need manual chain truncating
 
     TIME_TOLERANCE = 10  # MAX # of seconds in the future we allow a bloc or TX to be. NTP Sync required for nodes.
+    CHECK_TIME_FROM = 59710  # Begin checks there
 
     # TODO: add block time depending on network + escape hatch
 
