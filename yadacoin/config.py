@@ -145,7 +145,7 @@ class Config(object):
             "use_pnp": True,
             "ssl": False,
             "origin": '',
-            "polling": 30,
+            "polling": 0,
             "post_peer": False,
             # "public_ip": "",  # TODO
             "peer_host": "",
