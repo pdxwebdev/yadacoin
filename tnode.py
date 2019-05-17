@@ -35,7 +35,7 @@ from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
 
-__version__ = '0.0.12'
+__version__ = '0.0.13'
 
 PROTOCOL_VERSION = 2
 
