@@ -12,3 +12,4 @@ motor
 websocket-client
 aiohttp
 websockets
+miniupnpc
