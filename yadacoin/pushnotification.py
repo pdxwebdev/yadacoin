@@ -86,7 +86,7 @@ class PushNotification(object):
                     result = self.push_service.notify_single_device(
                         registration_id=token['token'],
                         message_title='New message from %s!' % username,
-                        message_body='Go see what your %s said!' % username,
+                        message_body='Go see what %s said!' % username,
                         extra_kwargs={'priority': 'high'}
                     )
                     print(result)
