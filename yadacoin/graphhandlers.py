@@ -163,7 +163,8 @@ class GraphTransactionHandler(BaseGraphHandler):
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
             try:
                 self.config.push_service.do_push(x.to_dict(), self.bulletin_secret)
-            except:
+            except Exception as e:
+                print(e)
                 print('do_push failed')
         """
         # TODO: integrate new socket/peer framework for transmitting txns
@@ -443,7 +444,7 @@ class FastGraphHandler(BaseGraphHandler):
     async def post(self):
         # after the necessary signatures are gathered, the transaction is sent here.
         mongo = self.config.mongo
-        self.get_base_graph()
+        graph = self.get_base_graph()
         fastgraph = json.loads(self.request.body.decode('utf-8'))
         fastgraph = FastGraph.from_dict(0, fastgraph)
         try:
@@ -466,9 +467,9 @@ class FastGraphHandler(BaseGraphHandler):
         #fastgraph.broadcast()
         self.render_as_json(fastgraph.to_dict())
         try:
-            self.config.push_service.do_push(fastgraph.to_dict(), self.bulletin_secret)
-        except:
-            print('do_push failed')
+            await self.config.push_service.do_push(fastgraph.to_dict(), self.bulletin_secret, self.app_log)
+        except Exception as e:
+            self.app_log.error(e)
 
 
 # these routes are placed in the order of operations for getting started.

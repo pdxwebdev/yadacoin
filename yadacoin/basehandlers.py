@@ -6,6 +6,7 @@ import json
 import logging
 
 from tornado.web import RequestHandler
+from yadacoin.pushnotification import PushNotification
 
 
 class BaseHandler(RequestHandler):
@@ -26,6 +27,8 @@ class BaseHandler(RequestHandler):
         self.set_header('Access-Control-Expose-Headers', "Content-Type")
         self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
+        if not hasattr(self.config, 'push_service') and self.config.fcm_key:
+            self.config.push_service = PushNotification(self.config)
 
     # This could be static, but its easier to let it there so the template have direct access.
     def bool2str(self, a_boolean, iftrue, iffalse):

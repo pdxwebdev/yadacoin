@@ -1,3 +1,4 @@
+import json
 import hashlib
 from pyfcm import FCMNotification
 
@@ -6,16 +7,9 @@ class PushNotification(object):
         self.config = config
         self.push_service = FCMNotification(self.config.fcm_key)
 
-    async def do_push(self, txn, bulletin_secret):
+    async def do_push(self, txn, bulletin_secret, logger):
+        logger.error(bulletin_secret)
         mongo = self.config.mongo
-        my_bulletin_secret = self.config.bulletin_secret
-        rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-        rid = hashlib.sha256(str(rids[0]) + str(rids[1])).digest().encode('hex')
-
-        rids = self.config.GU.get_mutual_rids(rid)
-        username_txns = [x for x in self.config.GU.search_rid(rids)]
-        if username_txns:
-            username = username_txns[0]['relationship']['their_username']
 
         if txn.get('relationship') and txn.get('dh_public_key') and txn.get('requester_rid') == rid:
             #friend request
@@ -66,12 +60,23 @@ class PushNotification(object):
             #message
             #we find the relationship of the transaction rid and send a new message notification to the rid
             #of the relationship that does not match the arg rid
-            txns = [x for x in self.config.BU.get_transactions_by_rid(txn['rid'], self.config.bulletin_secret, rid=True, raw=True)]
+            my_bulletin_secret = self.config.bulletin_secret
+            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+            rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
+            logger.error(rid)
             rids = []
+            txns = [x for x in self.config.GU.get_transactions_by_rid(txn['rid'], self.config.bulletin_secret, rid=True, raw=True)]
             rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
             rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
+            logger.error(rids)
+            username_txns = [x for x in self.config.GU.search_rid(rid)]
+            username = ''
+            for username_txn in username_txns:
+                logger.error(username_txn['relationship']['their_username'])
+                if username_txn['rid'] == rid:
+                    username = username_txn['relationship']['their_username']
             for friend_rid in rids:
-                res = await mongo.async_mongo.site_db.fcmtokens.find({"rid": friend_rid})
+                res = mongo.site_db.fcmtokens.find({"rid": friend_rid})
                 used_tokens = []
                 for token in res:
                     if token['token'] in used_tokens:
@@ -81,7 +86,7 @@ class PushNotification(object):
                     result = self.push_service.notify_single_device(
                         registration_id=token['token'],
                         message_title='New message from %s!' % username,
-                        message_body='Go see what your friend said!',
+                        message_body='Go see what your %s said!' % username,
                         extra_kwargs={'priority': 'high'}
                     )
                     print(result)
