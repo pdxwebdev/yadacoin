@@ -161,7 +161,10 @@ class GraphTransactionHandler(BaseGraphHandler):
 
         for x in transactions:
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
-            self.do_push(x.to_dict(), self.bulletin_secret)
+            try:
+                self.do_push(x.to_dict(), self.bulletin_secret)
+            except:
+                print('do_push failed')
         """
         # TODO: integrate new socket/peer framework for transmitting txns
 
