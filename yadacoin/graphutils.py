@@ -40,11 +40,13 @@ class GraphUtils(object):
             queryType='searchUsername'
         )
 
-    def search_rid(self, rid):
+    def search_rid(self, rids):
+        if not isinstance(rids, (list, tuple)):
+            rids = [rids]
         return self.config.BU.get_transactions(
             wif=self.config.wif,
             both=False,
-            query={'txn.rid': rid},
+            query={'txn.rid': {'$in': rids}},
             queryType='searchRid'
         )
 
