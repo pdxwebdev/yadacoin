@@ -6,10 +6,12 @@ import base64
 import hashlib
 import json
 import os
+import time
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
+from logging import getLogger
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
@@ -20,6 +22,8 @@ from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransac
     InvalidTransactionSignatureException, MissingInputTransactionException
 from yadacoin.transactionutils import TU
 
+
+logger = getLogger('tornado.application')
 
 class GraphConfigHandler(BaseHandler):
 
@@ -61,22 +65,24 @@ class GraphRIDWalletHandler(BaseHandler):
         config = self.config
         address = self.get_query_argument('address')
         bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', "+")
+        amount_needed = self.get_query_argument('amount_needed', None)
+        if amount_needed:
+            amount_needed = int(amount_needed)
         rid = TU.generate_rid(config, bulletin_secret)
+        
         unspent_transactions = [x for x in BU().get_wallet_unspent_transactions(address)]
         spent_txn_ids = []
+        
         for x in unspent_transactions:
             spent_txn_ids.extend([y['id'] for y in x['inputs']])
 
         unspent_fastgraph_transactions = [x for x in BU().get_wallet_unspent_fastgraph_transactions(address) if x['id'] not in spent_txn_ids]
-        print('fastgraph uspent txn ids:')
-        print([x['id'] for x in unspent_fastgraph_transactions])
         spent_fastgraph_ids = []
         for x in unspent_fastgraph_transactions:
             spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
-        print('regular unspent txn ids:')
-        print([x['id'] for x in unspent_transactions])
         regular_txns = []
         txns_for_fastgraph = []
+        balance = 0
         for txn in unspent_transactions:
             if 'signatures' in txn and txn['signatures']:
                 fastgraph = FastGraph.from_dict(0, txn)
@@ -90,13 +96,17 @@ class GraphRIDWalletHandler(BaseHandler):
                     txns_for_fastgraph.append(txn)
                 else:
                     regular_txns.append(txn)
-        #print(unspent_fastgraph_transactions)
+            for output in txn['outputs']:
+                if output['to'] == address:
+                    balance += int(output['value'])
+            if amount_needed and balance >= amount_needed:
+                break
+        
         if unspent_fastgraph_transactions:
             txns_for_fastgraph.extend(unspent_fastgraph_transactions)
-        print('final txn ids:')
-        print([x['id'] for x in txns_for_fastgraph])
+        
         wallet = {
-            'balance': BU().get_wallet_balance(address),
+            'balance': balance,
             'unspent_transactions': regular_txns,
             'txns_for_fastgraph': txns_for_fastgraph
         }

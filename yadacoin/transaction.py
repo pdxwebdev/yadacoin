@@ -3,6 +3,7 @@ import hashlib
 import os
 import base64
 import time
+from logging import getLogger
 
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
@@ -40,6 +41,7 @@ class TransactionFactory(object):
     ):
         self.config = get_config()
         self.mongo = self.config.mongo
+        self.app_log = getLogger('tornado.application')
         self.block_height = block_height
         self.bulletin_secret = bulletin_secret
         self.username = username
@@ -116,16 +118,18 @@ class TransactionFactory(object):
 
     def do_money(self):
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        input_txns = self.config.BU.get_wallet_unspent_transactions(my_address)
         miner_transactions = self.mongo.db.miner_transactions.find()
         mtxn_ids = []
         for mtxn in miner_transactions:
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
-
+        
         if self.inputs:
             inputs = self.inputs
+        elif self.coinbase:
+            inputs = []
         else:
+            input_txns = self.config.BU.get_wallet_unspent_transactions(my_address, exclude_ids=mtxn_ids)
             inputs = []
             for input_txn in input_txns:
                 if input_txn['id'] not in mtxn_ids:
@@ -133,7 +137,7 @@ class TransactionFactory(object):
                         inputs.append(ExternalInput.from_dict(input_txn))
                     else:
                         inputs.append(Input.from_dict(input_txn))
-
+        
         input_sum = 0
         if self.coinbase:
             self.inputs = []

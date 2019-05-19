@@ -40,7 +40,5 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_rid(cls, config, bulletin_secret):
-        if config.bulletin_secret == bulletin_secret:
-            raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
         return hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
