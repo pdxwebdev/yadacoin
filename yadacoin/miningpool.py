@@ -160,7 +160,7 @@ class MiningPool(object):
         # todo: fork pow compare to reduced diff if special_min
         if int(matching_block.target) > int(matching_block.hash, 16):
             # broadcast winning block
-            self.broadcast_block(matching_block.to_dict())
+            await self.broadcast_block(matching_block.to_dict())
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok')
             self.app_log.error('^^ ^^ ^^')
