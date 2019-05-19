@@ -17,6 +17,9 @@ from yadacoin.peers import Peers
 class InvalidFastGraphTransactionException(Exception):
     pass
 
+class MissingFastGraphInputTransactionException(Exception):
+    pass
+
 
 class ChatNamespace(BaseNamespace):
     def on_error(self, event, *args):
@@ -144,7 +147,7 @@ class FastGraph(Transaction):
         unspent_fastgraph = [x['id'] for x in BU().get_wallet_unspent_fastgraph_transactions( xaddress)]
         inputs = [x.id for x in self.inputs]
         if len(set(inputs) & set(unspent)) != len(inputs) and len(set(inputs) & set(unspent_fastgraph)) != len(inputs):
-            raise InvalidFastGraphTransactionException('Input not found in unspent')
+            raise MissingFastGraphInputTransactionException('Input not found in unspent')
 
         origin_relationship = self.get_origin_relationship()
         if not origin_relationship:

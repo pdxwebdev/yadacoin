@@ -10,7 +10,7 @@ from yadacoin.block import Block, BlockFactory
 from yadacoin.blockchain import Blockchain
 from yadacoin.transaction import Transaction, MissingInputTransactionException, InvalidTransactionException, \
     InvalidTransactionSignatureException
-from yadacoin.fastgraph import FastGraph
+from yadacoin.fastgraph import FastGraph, MissingFastGraphInputTransactionException
 
 
 class MiningPool(object):
@@ -349,7 +349,7 @@ class MiningPool(object):
             yield [start_nonce, start_nonce + 10000000]
 
     def combine_transaction_lists(self):
-        transactions = self.mongo.db.fastgraph_transactions.find()
+        transactions = self.mongo.db.fastgraph_transactions.find({'$or': [{'ignore': False}, {'ignore': {'$exists': False}}]})
         for transaction in transactions:
             if 'txn' in transaction:
                 yield transaction['txn']
@@ -375,13 +375,31 @@ class MiningPool(object):
                 else:
                     print('transaction unrecognizable, skipping')
                     continue
+                try:
+                    transaction_obj.verify()
+                except MissingFastGraphInputTransactionException as e:
+                    self.mongo.async_db.orphaned_fastgraph.update_one({
+                        'id': transaction_obj.transaction_signature,
+                    }, {
+                        '$set': {
+                            'id': transaction_obj.transaction_signature,
+                            'inputs': [x.id for x in transaction_obj.inputs],
+                            'txn': transaction_obj.to_dict()
+                        }
+                    }, upsert=True) # ignore for now until we get the input
+                    self.mongo.async_db.fastgraph_transactions.update_one({
+                        'id': transaction_obj.transaction_signature
+                    }, {
+                        '$set': {'ignore': True}
+                    }) # ignore for now until we get the input
+
+                    raise e
+                    
 
                 if transaction_obj.transaction_signature in used_sigs:
                     print('duplicate transaction found and removed')
                     continue
                 used_sigs.append(transaction_obj.transaction_signature)
-
-                transaction_obj.verify()
 
                 if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
                     for input_id in transaction_obj.inputs:
