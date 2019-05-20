@@ -247,7 +247,7 @@ class MiningPool(object):
     def block_to_mine_info(self):
         """Returns info for current block to mine"""
         res = {
-            'target': hex(self.block_factory.block.target)[2:].rjust(64, '0'),  # target is now in hex format
+            'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0'),  # target is now in hex format
             # TODO this is the network target, maybe also send some pool target?
             'special_min': self.block_factory.block.special_min,
             'header': self.block_factory.block.header,
