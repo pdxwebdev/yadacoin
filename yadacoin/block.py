@@ -196,7 +196,7 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
 
     @classmethod
-    def get_target(cls, height, last_block, block, blockchain):
+    def get_target(cls, height, last_block, block, blockchain) -> int:
         # change target
         max_target = CHAIN.MAX_TARGET
         max_block_time = CHAIN.target_block_time(get_config().network)
@@ -228,7 +228,7 @@ class BlockFactory(object):
                 else:
                     target = block_to_check.target
                     break
-            new_target = (time_for_target * target) / two_weeks
+            new_target = int((time_for_target * target) / two_weeks)
             if new_target > max_target:
                 target = max_target
             else:
@@ -240,7 +240,7 @@ class BlockFactory(object):
             block_to_check = block
             if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time:
                 target_factor = (int(block.time) - int(last_block.time)) / max_block_time
-                target = block.target * (target_factor * 4)
+                target = int(block.target * (target_factor * 4))
                 if target > max_target:
                     return max_target
                 return target
@@ -257,7 +257,7 @@ class BlockFactory(object):
                 else:
                     target = block_to_check.target
                     break
-        return target
+        return int(target)
 
     @classmethod
     def mine(cls, header, target, nonces, special_min=False):
