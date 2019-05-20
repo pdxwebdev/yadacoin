@@ -162,13 +162,15 @@ class BlockFactory(object):
                 block.merkle_root
         else:
             # version 3 block do not contain special_min anymore and have target as 64 hex string
+            # print("target", block.target)
+            # TODO: somewhere, target is calc with a / and result is float instead of int.
             return str(block.version) + \
                    str(block.time) + \
                    block.public_key + \
                    str(block.index) + \
                    block.prev_hash + \
                    '{nonce}' + \
-                   hex(block.target)[2:].rjust(64, '0') + \
+                   hex(int(block.target))[2:].rjust(64, '0') + \
                    block.merkle_root
 
     @classmethod

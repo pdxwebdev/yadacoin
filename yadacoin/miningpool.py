@@ -272,7 +272,7 @@ class MiningPool(object):
                 target_factor = (int(to_time) - self.last_block_time) / self.target_block_time
                 # print("mp", self.block_factory.block.target, target_factor)
                 # print(self.block_factory.block.to_dict())
-                target = self.block_factory.block.target * (target_factor * 4)
+                target = int(self.block_factory.block.target * (target_factor * 4))
                 if target > self.max_target:
                     self.block_factory.block.target = self.max_target
                 self.block_factory.block.special_min = True
