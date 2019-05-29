@@ -375,27 +375,9 @@ class MiningPool(object):
                 else:
                     print('transaction unrecognizable, skipping')
                     continue
-                try:
-                    transaction_obj.verify()
-                except MissingFastGraphInputTransactionException as e:
-                    self.mongo.async_db.orphaned_fastgraph.update_one({
-                        'id': transaction_obj.transaction_signature,
-                    }, {
-                        '$set': {
-                            'id': transaction_obj.transaction_signature,
-                            'inputs': [x.id for x in transaction_obj.inputs],
-                            'txn': transaction_obj.to_dict()
-                        }
-                    }, upsert=True) # ignore for now until we get the input
-                    self.mongo.async_db.fastgraph_transactions.update_one({
-                        'id': transaction_obj.transaction_signature
-                    }, {
-                        '$set': {'ignore': True}
-                    }) # ignore for now until we get the input
-
-                    raise e
-                    
-
+                
+                transaction_obj.verify()
+                
                 if transaction_obj.transaction_signature in used_sigs:
                     print('duplicate transaction found and removed')
                     continue

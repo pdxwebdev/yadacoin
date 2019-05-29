@@ -129,7 +129,7 @@ class TransactionFactory(object):
         elif self.coinbase:
             inputs = []
         else:
-            input_txns = self.config.BU.get_wallet_unspent_transactions(my_address, exclude_ids=mtxn_ids)
+            input_txns = self.config.BU.get_wallet_unspent_transactions(my_address)
             inputs = []
             for input_txn in input_txns:
                 if input_txn['id'] not in mtxn_ids:

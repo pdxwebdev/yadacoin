@@ -23,13 +23,11 @@ from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransac
 from yadacoin.transactionutils import TU
 
 
-logger = getLogger('tornado.application')
-
 class GraphConfigHandler(BaseHandler):
 
     async def get(self):
         peer = "{}:{}".format(self.config.web_server_host, self.config.web_server_port)
-        return self.render_as_json({
+        yada_config = {
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
             "fastgraphUrl": "{}/post-fastgraph-transaction".format(peer),
@@ -39,7 +37,8 @@ class GraphConfigHandler(BaseHandler):
             "registerUrl": "{}/create-relationship".format(peer),
             "authenticatedUrl": "{}/authenticated".format(peer),
             "logoData": ''
-        })
+        }
+        return self.render_as_json(yada_config)
 
 
 class BaseGraphHandler(BaseHandler):
@@ -82,31 +81,37 @@ class GraphRIDWalletHandler(BaseHandler):
             spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
         regular_txns = []
         txns_for_fastgraph = []
-        balance = 0
-        for txn in unspent_transactions:
+        chain_balance = 0
+        fastgraph_balance = 0
+        for txn in unspent_transactions + unspent_fastgraph_transactions:
             if 'signatures' in txn and txn['signatures']:
                 fastgraph = FastGraph.from_dict(0, txn)
                 origin_fasttrack = fastgraph.get_origin_relationship(rid)
-                if origin_fasttrack:
+                if origin_fasttrack or (('rid' in txn and txn['rid'] == rid) or txn.get('requester_rid') == rid or txn.get('requested_rid') == rid):
                     txns_for_fastgraph.append(txn)
+                    for output in txn['outputs']:
+                        if output['to'] == address:
+                            fastgraph_balance += int(output['value'])
                 else:
                     regular_txns.append(txn)
+                    for output in txn['outputs']:
+                        if output['to'] == address:    
+                            chain_balance += int(output['value'])
+            elif 'dh_public_key' in txn and txn['dh_public_key'] and (('rid' in txn and txn['rid'] == rid) or txn.get('requester_rid') == rid or txn.get('requested_rid') == rid):
+                txns_for_fastgraph.append(txn)
+                for output in txn['outputs']:
+                    if output['to'] == address:
+                        fastgraph_balance += int(output['value'])
             else:
-                if 'rid' in txn and txn['rid'] == rid and 'dh_public_key' in txn and txn['dh_public_key']:
-                    txns_for_fastgraph.append(txn)
-                else:
-                    regular_txns.append(txn)
-            for output in txn['outputs']:
-                if output['to'] == address:
-                    balance += int(output['value'])
-            if amount_needed and balance >= amount_needed:
-                break
-        
-        if unspent_fastgraph_transactions:
-            txns_for_fastgraph.extend(unspent_fastgraph_transactions)
-        
+                regular_txns.append(txn)
+                for output in txn['outputs']:
+                    if output['to'] == address:
+                        chain_balance += int(output['value'])
+    
         wallet = {
-            'balance': balance,
+            'chain_balance': chain_balance,
+            'fastgraph_balance': fastgraph_balance,
+            'balance': fastgraph_balance + chain_balance,
             'unspent_transactions': regular_txns,
             'txns_for_fastgraph': txns_for_fastgraph
         }
@@ -172,7 +177,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         for x in transactions:
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
             try:
-                self.config.push_service.do_push(x.to_dict(), self.bulletin_secret)
+                self.config.push_service.do_push(x.to_dict(), self.bulletin_secret, self.app_log)
             except Exception as e:
                 print(e)
                 print('do_push failed')
@@ -361,7 +366,6 @@ class SignRawTransactionHandler(BaseHandler):
             raise
             return 'invalid transaction', 400
         res = mongo.db.signed_transactions.find_one({'hash': body.get('hash')})
-
         if res:
             return 'no', 400
         try:
@@ -380,7 +384,6 @@ class SignRawTransactionHandler(BaseHandler):
                 body.get('hash').encode('utf-8'),
                 bytes.fromhex(their_entry_for_relationship['public_key'])
             )
-
             address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(their_entry_for_relationship['public_key'])))
             found = False
             for x in BU().get_wallet_unspent_transactions(address, [body.get('input')]):
@@ -393,7 +396,10 @@ class SignRawTransactionHandler(BaseHandler):
                         found = True
 
             if found:
-                signature = mongo.db.signed_transactions.find_one({'input': body.get('input')})
+                signature = mongo.db.signed_transactions.find_one({
+                    'input': body.get('input'),
+                    'txn.public_key': body['txn']['public_key']
+                })
                 if signature:
                     already_spent = mongo.db.fastgraph_transactions.find_one({
                         'txn.inputs.id': body['input'],
@@ -425,7 +431,6 @@ class SignRawTransactionHandler(BaseHandler):
                         fastgraph.save()
             else:
                 return 'no transactions with this input found', 400
-
             if verified:
                 transaction_signature = TU.generate_signature_with_private_key(config.private_key, body.get('hash'))
                 signature = {
@@ -468,6 +473,7 @@ class FastGraphHandler(BaseGraphHandler):
         if result:
             return 'duplicate transaction found', 400
         spent_check = mongo.db.fastgraph_transactions.find_one({
+            'public_key': fastgraph.public_key,
             'txn.inputs.id': {'$in': [x.id for x in fastgraph.inputs]}
         })
         if spent_check:

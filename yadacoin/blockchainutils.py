@@ -5,7 +5,7 @@ import base64
 from bitcoin.wallet import P2PKHBitcoinAddress
 from bson.son import SON
 from coincurve import PrivateKey
-
+from logging import getLogger
 
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
@@ -35,6 +35,7 @@ class BlockChainUtils(object):
         self.config = get_config()
         self.mongo = self.config.mongo
         self.latest_block = None
+        self.app_log = getLogger('tornado.application')
 
     def invalidate_latest_block(self):
         self.latest_block = None
@@ -307,16 +308,23 @@ class BlockChainUtils(object):
         return res
 
     def get_wallet_unspent_fastgraph_transactions(self, address):
-        result = self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
+        result = [x for x in self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})]
+        reverse_public_key = None
         for x in result:
             xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
             if xaddress == address:
                 reverse_public_key = x['public_key']
-                spent_on_fastgraph = self.mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
-                spent_on_blockchain = self.mongo.db.blocks.find({'public_key': reverse_public_key, 'transactions.inputs.id': x['id']})
-                if not spent_on_fastgraph.count() and not spent_on_blockchain.count():
-                    # x['txn']['height'] = x['height'] # TODO: make height work for frastgraph transactions so we can order messages etc.
-                    yield x['txn']
+                break
+        if not reverse_public_key:
+            for x in result:
+                yield x['txn']
+            return
+        for x in result:
+            spent_on_fastgraph = self.mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
+            spent_on_blockchain = self.mongo.db.blocks.find({'public_key': reverse_public_key, 'transactions.inputs.id': x['id']})
+            if not spent_on_fastgraph.count() and not spent_on_blockchain.count():
+                # x['txn']['height'] = x['height'] # TODO: make height work for frastgraph transactions so we can order messages etc.
+                yield x['txn']
 
     def get_wallet_spent_fastgraph_transactions(self, address):
         result = self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})
