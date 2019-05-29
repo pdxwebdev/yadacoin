@@ -598,7 +598,7 @@ class Consensus(object):
                         else:
                             return
                 if self.debug:
-                    self.app_log.info('attempting sync at {}'.format(block.prev_hash))
+                    self.app_log.info('attempting sync at {}, len {}'.format(block.prev_hash, len(self.existing_blockchain.blocks)))
                 # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
                 if self.existing_blockchain.blocks[block.index - 1].hash == block.prev_hash:
                     prev_blocks_check = self.existing_blockchain.blocks[block.index - 1]

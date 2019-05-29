@@ -197,67 +197,87 @@ class BlockFactory(object):
 
     @classmethod
     def get_target(cls, height, last_block, block, blockchain) -> int:
-        # change target
-        max_target = CHAIN.MAX_TARGET
-        max_block_time = CHAIN.target_block_time(get_config().network)
-        retarget_period = CHAIN.RETARGET_PERIOD  # blocks
-        two_weeks = CHAIN.TWO_WEEKS  # seconds
-        half_week = CHAIN.HALF_WEEK  # seconds
-        if height > 0 and height % retarget_period == 0:
-            block_from_2016_ago = Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
-            two_weeks_ago_time = block_from_2016_ago.time
-            elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
-            # greater than two weeks?
-            if elapsed_time_from_2016_ago > two_weeks:
-                time_for_target = two_weeks
-            elif elapsed_time_from_2016_ago < half_week:
-                time_for_target = half_week
-            else:
-                time_for_target = int(elapsed_time_from_2016_ago)
-
-            block_to_check = last_block
-                
-            if blockchain.partial:
-                start_index = len(blockchain.blocks) - 1
-            else:
-                start_index = last_block.index
-            while 1:
-                if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                    block_to_check = blockchain.blocks[start_index]
-                    start_index -= 1
+        try:
+            # change target
+            max_target = CHAIN.MAX_TARGET
+            max_block_time = CHAIN.target_block_time(get_config().network)
+            retarget_period = CHAIN.RETARGET_PERIOD  # blocks
+            two_weeks = CHAIN.TWO_WEEKS  # seconds
+            half_week = CHAIN.HALF_WEEK  # seconds
+            if height > 0 and height % retarget_period == 0:
+                get_config().debug_log(
+                    "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
+                block_from_2016_ago = Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
+                get_config().debug_log(
+                    "Block_from_2016_ago - block {}/time {}".format(block_from_2016_ago.index, block_from_2016_ago.time))
+                two_weeks_ago_time = block_from_2016_ago.time
+                elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
+                get_config().debug_log("elapsed_time_from_2016_ago {} s {} days".format(int(elapsed_time_from_2016_ago), elapsed_time_from_2016_ago/(60*60*24)))
+                # greater than two weeks?
+                if elapsed_time_from_2016_ago > two_weeks:
+                    time_for_target = two_weeks
+                    get_config().debug_log("gt 2 weeks")
+                elif elapsed_time_from_2016_ago < half_week:
+                    time_for_target = half_week
+                    get_config().debug_log("lt half week")
                 else:
-                    target = block_to_check.target
-                    break
-            new_target = int((time_for_target * target) / two_weeks)
-            if new_target > max_target:
+                    time_for_target = int(elapsed_time_from_2016_ago)
+
+                block_to_check = last_block
+
+                if blockchain.partial:
+                    start_index = len(blockchain.blocks) - 1
+                else:
+                    start_index = last_block.index
+                get_config().debug_log("start_index {}".format(start_index))
+                while 1:
+                    if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
+                        block_to_check = blockchain.blocks[start_index]
+                        start_index -= 1
+                    else:
+                        target = block_to_check.target
+                        break
+                get_config().debug_log("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
+
+                new_target = int((time_for_target * target) / two_weeks)
+                get_config().debug_log("new_target {}".format(hex(int(new_target))[2:].rjust(64, '0')))
+
+                if new_target > max_target:
+                    target = max_target
+                else:
+                    target = new_target
+
+            elif height == 0:
                 target = max_target
             else:
-                target = new_target
+                block_to_check = block
+                if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time:
+                    target_factor = (int(block.time) - int(last_block.time)) / max_block_time
+                    target = int(block.target * (target_factor * 4))
+                    if target > max_target:
+                        return max_target
+                    return target
+                block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
-        elif height == 0:
-            target = max_target
-        else:
-            block_to_check = block
-            if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time:
-                target_factor = (int(block.time) - int(last_block.time)) / max_block_time
-                target = int(block.target * (target_factor * 4))
-                if target > max_target:
-                    return max_target
-                return target
-            block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
-
-            if blockchain.partial:
-                start_index = len(blockchain.blocks) - 1
-            else:
-                start_index = last_block.index
-            while 1:
-                if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                    block_to_check = blockchain.blocks[start_index]
-                    start_index -= 1
+                if blockchain.partial:
+                    start_index = len(blockchain.blocks) - 1
                 else:
-                    target = block_to_check.target
-                    break
-        return int(target)
+                    start_index = last_block.index
+                while 1:
+                    if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
+                        block_to_check = blockchain.blocks[start_index]
+                        start_index -= 1
+                    else:
+                        target = block_to_check.target
+                        break
+            return int(target)
+        except Exception as e:
+            import sys, os
+            print("Exception {} get_target".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+            raise
 
     @classmethod
     def mine(cls, header, target, nonces, special_min=False):

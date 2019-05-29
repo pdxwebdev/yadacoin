@@ -88,6 +88,10 @@ class Config(object):
         block_dict = block.to_dict()
         self.BU.set_latest_block(block_dict)  # Warning, this is a dict, not a Block!
 
+    def debug_log(self, string: str):
+        # Helper to write temp string to a debug file
+        with open("debug.log", "a") as fp:
+            fp.write(str(int(time())) + ' - ' + string + "\n")
 
     def get_status(self):
         pool_status = 'N/A'
