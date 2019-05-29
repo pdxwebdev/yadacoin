@@ -2,6 +2,7 @@ import hashlib
 import base64
 import json
 # TODO: socketio, socketio_client, flask.socketio => 3 different libs for the same thing?
+from logging import getLogger
 from socketIO_client import SocketIO, BaseNamespace
 from coincurve.utils import verify_signature
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
@@ -15,6 +16,9 @@ from yadacoin.peers import Peers
 
 
 class InvalidFastGraphTransactionException(Exception):
+    pass
+
+class MissingFastGraphInputTransactionException(Exception):
     pass
 
 
@@ -47,6 +51,7 @@ class FastGraph(Transaction):
     ):
         self.config = get_config()
         self.mongo = self.config.mongo
+        self.app_log = getLogger('tornado.application')
         self.block_height = block_height
         self.time = time
         self.rid = rid
@@ -117,11 +122,11 @@ class FastGraph(Transaction):
         for inp in self.inputs:
             inp = inp.id
             while 1:
-                txn = BU().get_transaction_by_id( inp, give_block=False, include_fastgraph=True)
+                txn = BU().get_transaction_by_id(inp, give_block=False, include_fastgraph=True)
                 if txn:
                     if 'rid' in txn and txn['rid'] and 'dh_public_key' in txn and txn['dh_public_key']:
-                        if rid and txn['rid'] != rid:
-                            continue
+                        if rid and txn['rid'] != rid and txn.get('requester_rid') != rid and txn.get('requested_rid') != rid:
+                            return False
                         return txn
                     else:
                         inp = txn['inputs'][0]['id']
@@ -138,13 +143,6 @@ class FastGraph(Transaction):
         
         if not self.signatures and not self.raw:
             raise InvalidFastGraphTransactionException('no signatures were provided')
-
-        xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        unspent = [x['id'] for x in BU().get_wallet_unspent_transactions( xaddress)]
-        unspent_fastgraph = [x['id'] for x in BU().get_wallet_unspent_fastgraph_transactions( xaddress)]
-        inputs = [x.id for x in self.inputs]
-        if len(set(inputs) & set(unspent)) != len(inputs) and len(set(inputs) & set(unspent_fastgraph)) != len(inputs):
-            raise InvalidFastGraphTransactionException('Input not found in unspent')
 
         origin_relationship = self.get_origin_relationship()
         if not origin_relationship:

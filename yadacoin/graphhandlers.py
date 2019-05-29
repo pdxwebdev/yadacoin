@@ -6,10 +6,12 @@ import base64
 import hashlib
 import json
 import os
+import time
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
+from logging import getLogger
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
@@ -25,7 +27,7 @@ class GraphConfigHandler(BaseHandler):
 
     async def get(self):
         peer = "{}:{}".format(self.config.web_server_host, self.config.web_server_port)
-        return self.render_as_json({
+        yada_config = {
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
             "fastgraphUrl": "{}/post-fastgraph-transaction".format(peer),
@@ -35,17 +37,18 @@ class GraphConfigHandler(BaseHandler):
             "registerUrl": "{}/create-relationship".format(peer),
             "authenticatedUrl": "{}/authenticated".format(peer),
             "logoData": ''
-        })
+        }
+        return self.render_as_json(yada_config)
 
 
 class BaseGraphHandler(BaseHandler):
     def get_base_graph(self):
-        bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
+        self.bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
         if self.request.body:
             ids = json.loads(self.request.body.decode('utf-8')).get('ids')
         else:
             ids = []
-        return Graph(self.config, self.config.mongo, bulletin_secret, ids)
+        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids)
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
 
@@ -61,42 +64,54 @@ class GraphRIDWalletHandler(BaseHandler):
         config = self.config
         address = self.get_query_argument('address')
         bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', "+")
+        amount_needed = self.get_query_argument('amount_needed', None)
+        if amount_needed:
+            amount_needed = int(amount_needed)
         rid = TU.generate_rid(config, bulletin_secret)
+        
         unspent_transactions = [x for x in BU().get_wallet_unspent_transactions(address)]
         spent_txn_ids = []
+        
         for x in unspent_transactions:
             spent_txn_ids.extend([y['id'] for y in x['inputs']])
 
         unspent_fastgraph_transactions = [x for x in BU().get_wallet_unspent_fastgraph_transactions(address) if x['id'] not in spent_txn_ids]
-        print('fastgraph uspent txn ids:')
-        print([x['id'] for x in unspent_fastgraph_transactions])
         spent_fastgraph_ids = []
         for x in unspent_fastgraph_transactions:
             spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
-        print('regular unspent txn ids:')
-        print([x['id'] for x in unspent_transactions])
         regular_txns = []
         txns_for_fastgraph = []
-        for txn in unspent_transactions:
+        chain_balance = 0
+        fastgraph_balance = 0
+        for txn in unspent_transactions + unspent_fastgraph_transactions:
             if 'signatures' in txn and txn['signatures']:
                 fastgraph = FastGraph.from_dict(0, txn)
                 origin_fasttrack = fastgraph.get_origin_relationship(rid)
-                if origin_fasttrack:
+                if origin_fasttrack or (('rid' in txn and txn['rid'] == rid) or txn.get('requester_rid') == rid or txn.get('requested_rid') == rid):
                     txns_for_fastgraph.append(txn)
+                    for output in txn['outputs']:
+                        if output['to'] == address:
+                            fastgraph_balance += int(output['value'])
                 else:
                     regular_txns.append(txn)
+                    for output in txn['outputs']:
+                        if output['to'] == address:    
+                            chain_balance += int(output['value'])
+            elif 'dh_public_key' in txn and txn['dh_public_key'] and (('rid' in txn and txn['rid'] == rid) or txn.get('requester_rid') == rid or txn.get('requested_rid') == rid):
+                txns_for_fastgraph.append(txn)
+                for output in txn['outputs']:
+                    if output['to'] == address:
+                        fastgraph_balance += int(output['value'])
             else:
-                if 'rid' in txn and txn['rid'] == rid and 'dh_public_key' in txn and txn['dh_public_key']:
-                    txns_for_fastgraph.append(txn)
-                else:
-                    regular_txns.append(txn)
-        #print(unspent_fastgraph_transactions)
-        if unspent_fastgraph_transactions:
-            txns_for_fastgraph.extend(unspent_fastgraph_transactions)
-        print('final txn ids:')
-        print([x['id'] for x in txns_for_fastgraph])
+                regular_txns.append(txn)
+                for output in txn['outputs']:
+                    if output['to'] == address:
+                        chain_balance += int(output['value'])
+    
         wallet = {
-            'balance': BU().get_wallet_balance(address),
+            'chain_balance': chain_balance,
+            'fastgraph_balance': fastgraph_balance,
+            'balance': fastgraph_balance + chain_balance,
             'unspent_transactions': regular_txns,
             'txns_for_fastgraph': txns_for_fastgraph
         }
@@ -115,7 +130,7 @@ class RegistrationHandler(BaseHandler):
         self.render_as_json(data)
 
 
-class GraphTransactionHandler(BaseHandler):
+class GraphTransactionHandler(BaseGraphHandler):
 
     async def get(self):
         rid = self.request.args.get('rid')
@@ -126,6 +141,7 @@ class GraphTransactionHandler(BaseHandler):
         self.render_as_json(list(transactions))
 
     async def post(self):
+        self.get_base_graph()  # TODO: did this to set bulletin_secret, refactor this
         items = json.loads(self.request.body.decode('utf-8'))
         if not isinstance(items, list):
             items = [items, ]
@@ -160,6 +176,11 @@ class GraphTransactionHandler(BaseHandler):
 
         for x in transactions:
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
+            try:
+                self.config.push_service.do_push(x.to_dict(), self.bulletin_secret, self.app_log)
+            except Exception as e:
+                print(e)
+                print('do_push failed')
         """
         # TODO: integrate new socket/peer framework for transmitting txns
 
@@ -345,7 +366,6 @@ class SignRawTransactionHandler(BaseHandler):
             raise
             return 'invalid transaction', 400
         res = mongo.db.signed_transactions.find_one({'hash': body.get('hash')})
-
         if res:
             return 'no', 400
         try:
@@ -364,7 +384,6 @@ class SignRawTransactionHandler(BaseHandler):
                 body.get('hash').encode('utf-8'),
                 bytes.fromhex(their_entry_for_relationship['public_key'])
             )
-
             address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(their_entry_for_relationship['public_key'])))
             found = False
             for x in BU().get_wallet_unspent_transactions(address, [body.get('input')]):
@@ -377,7 +396,10 @@ class SignRawTransactionHandler(BaseHandler):
                         found = True
 
             if found:
-                signature = mongo.db.signed_transactions.find_one({'input': body.get('input')})
+                signature = mongo.db.signed_transactions.find_one({
+                    'input': body.get('input'),
+                    'txn.public_key': body['txn']['public_key']
+                })
                 if signature:
                     already_spent = mongo.db.fastgraph_transactions.find_one({
                         'txn.inputs.id': body['input'],
@@ -409,7 +431,6 @@ class SignRawTransactionHandler(BaseHandler):
                         fastgraph.save()
             else:
                 return 'no transactions with this input found', 400
-
             if verified:
                 transaction_signature = TU.generate_signature_with_private_key(config.private_key, body.get('hash'))
                 signature = {
@@ -434,10 +455,11 @@ class SignRawTransactionHandler(BaseHandler):
             })
 
 
-class FastGraphHandler(BaseHandler):
+class FastGraphHandler(BaseGraphHandler):
     async def post(self):
         # after the necessary signatures are gathered, the transaction is sent here.
         mongo = self.config.mongo
+        graph = self.get_base_graph()
         fastgraph = json.loads(self.request.body.decode('utf-8'))
         fastgraph = FastGraph.from_dict(0, fastgraph)
         try:
@@ -451,6 +473,7 @@ class FastGraphHandler(BaseHandler):
         if result:
             return 'duplicate transaction found', 400
         spent_check = mongo.db.fastgraph_transactions.find_one({
+            'public_key': fastgraph.public_key,
             'txn.inputs.id': {'$in': [x.id for x in fastgraph.inputs]}
         })
         if spent_check:
@@ -459,6 +482,10 @@ class FastGraphHandler(BaseHandler):
         # TODO: use new peer framework to broadcast fastgraph transactions
         #fastgraph.broadcast()
         self.render_as_json(fastgraph.to_dict())
+        try:
+            await self.config.push_service.do_push(fastgraph.to_dict(), self.bulletin_secret, self.app_log)
+        except Exception as e:
+            self.app_log.error(e)
 
 
 # these routes are placed in the order of operations for getting started.

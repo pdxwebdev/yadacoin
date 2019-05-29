@@ -5,6 +5,8 @@ import importlib
 import pkgutil
 import json
 import logging
+import os
+import ssl
 from asyncio import sleep as async_sleep
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
@@ -249,7 +251,9 @@ async def main():
     app_log.info("Starting server on {}:{}".format(config.serve_host, config.serve_port))
     app.listen(config.serve_port, config.serve_host)
     if config.ssl:
-        http_server = tornado.httpserver.HTTPServer(app, ssl_options=config.ssl['keys'])
+        ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=config.ssl.get('cafile'))
+        ssl_ctx.load_cert_chain(config.ssl.get('certfile'), keyfile=config.ssl.get('keyfile'))
+        http_server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
         http_server.listen(config.ssl['port'])
     # The server will simply run until interrupted
     # with Ctrl-C, but if you want to shut down more gracefully,

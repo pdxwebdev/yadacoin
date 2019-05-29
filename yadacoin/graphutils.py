@@ -40,11 +40,13 @@ class GraphUtils(object):
             queryType='searchUsername'
         )
 
-    def search_rid(self, rid):
+    def search_rid(self, rids):
+        if not isinstance(rids, (list, tuple)):
+            rids = [rids]
         return self.config.BU.get_transactions(
             wif=self.config.wif,
             both=False,
-            query={'txn.rid': rid},
+            query={'txn.rid': {'$in': rids}},
             queryType='searchRid'
         )
 
@@ -501,8 +503,20 @@ class GraphUtils(object):
             else:
                 selectors = selector
 
-        for block in self.mongo.db.blocks.find(
-                {"transactions": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}}):
+            
+                    
+        def txn_gen():
+            res = self.mongo.db.blocks.find(
+                {"transactions": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}})
+            for x in res:
+                yield x
+        
+            res = self.mongo.db.fastgraph_transactions.find(
+                {"txn": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}})
+            for x in res:
+                yield x
+        
+        for block in txn_gen():
             for transaction in block.get('transactions'):
                 if theirs and public_key == transaction['public_key']:
                     continue

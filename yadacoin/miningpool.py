@@ -10,7 +10,7 @@ from yadacoin.block import Block, BlockFactory
 from yadacoin.blockchain import Blockchain
 from yadacoin.transaction import Transaction, MissingInputTransactionException, InvalidTransactionException, \
     InvalidTransactionSignatureException
-from yadacoin.fastgraph import FastGraph
+from yadacoin.fastgraph import FastGraph, MissingFastGraphInputTransactionException
 
 
 class MiningPool(object):
@@ -349,7 +349,7 @@ class MiningPool(object):
             yield [start_nonce, start_nonce + 10000000]
 
     def combine_transaction_lists(self):
-        transactions = self.mongo.db.fastgraph_transactions.find()
+        transactions = self.mongo.db.fastgraph_transactions.find({'$or': [{'ignore': False}, {'ignore': {'$exists': False}}]})
         for transaction in transactions:
             if 'txn' in transaction:
                 yield transaction['txn']
@@ -375,13 +375,13 @@ class MiningPool(object):
                 else:
                     print('transaction unrecognizable, skipping')
                     continue
-
+                
+                transaction_obj.verify()
+                
                 if transaction_obj.transaction_signature in used_sigs:
                     print('duplicate transaction found and removed')
                     continue
                 used_sigs.append(transaction_obj.transaction_signature)
-
-                transaction_obj.verify()
 
                 if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
                     for input_id in transaction_obj.inputs:

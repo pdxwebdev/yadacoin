@@ -34,52 +34,6 @@ class PoolHandler(BaseHandler):
 
 class PoolSubmitHandler(BaseHandler):
 
-    async def post_old(self):
-        try:
-            block_info = json.loads(self.request.body.decode('utf-8'))
-            block = self.mp.block_factory.block
-            block.target = self.mp.block_factory.block.target
-            block.version = self.mp.block_factory.block.version
-            block.special_min = self.mp.block_factory.block.special_min
-            block.hash = block_info["hash"]
-            block.nonce = block_info["nonce"]
-            block.signature = self.config.BU.generate_signature(block.hash, self.config.private_key)
-            try:
-                block.verify()
-            except Exception as e:
-                self.app_log.warning('Block failed verification {}'.format(e))
-                self.mongo.db.log.insert({
-                    'error': 'block failed verification',
-                    'block': block.to_dict(),
-                    'request': escape.json_decode(self.request.body)
-                })
-                return '', 400
-
-            # submit share
-            self.mongo.db.shares.update({
-                'address': self.get_query_arguments("address"),
-                'index': block.index,
-                'hash': block.hash
-            },
-            {
-                'address': self.get_query_arguments("address"),
-                'index': block.index,
-                'hash': block.hash,
-                'block': block.to_dict()
-            }, upsert=True)
-
-            if int(block.target) > int(block.hash, 16) or block.special_min:
-                # TODO: quickly insert into our own chain first.
-                # broadcast winning block
-                await self.mp.broadcast_block(block.to_dict())
-                self.app_log.info('Block ok')
-            else:
-                self.app_log.warning('Share ok')
-            self.render_as_json(block.to_dict())
-        except Exception as e:
-            self.app_log.warning('Block submit error {}'.format(e))
-            return 'error', 400
-
     async def post(self):
         block_info = json.loads(self.request.body.decode('utf-8'))
         data = block_info["nonce"]
