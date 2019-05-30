@@ -97,11 +97,13 @@ class Config(object):
         pool_status = 'N/A'
         if self.mp:
             pool_status = self.mp.get_status()
+        m, s = divmod(int(time() - self.start_time), 60)
+        h, m = divmod(m, 60)
         status = {'version': self.protocol_version, 'network': self.network,
                   # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
                   'peers': self.peers.get_status(),
                   'pool': pool_status, 'height': self.BU.get_latest_block()['index'],
-                  'uptime': int(time() - self.start_time)}
+                  'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s)}
         # TODO: add uptime in human readable format
         return status
 

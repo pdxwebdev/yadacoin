@@ -7,6 +7,7 @@ import json
 import logging
 import os
 import ssl
+import ntpath
 from asyncio import sleep as async_sleep
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
@@ -114,7 +115,7 @@ async def background_peers(peers: Peers):
                 await peers.test_some(count=2)
             await peers.check_outgoing()
         except Exception as e:
-            app_log.error("{} in Background_consensus".format(e))
+            app_log.error("{} in Background_peers".format(e))
 
 
 async def background_status():
@@ -209,7 +210,7 @@ async def main():
             config.network = options.network
         config.protocol_version = PROTOCOL_VERSION
     # get seed.json from same dir as config.
-    peers_seed_filename = options.config.replace('config.json', 'seed.json')
+    peers_seed_filename = options.config.replace(ntpath.basename(options.config), 'seed.json')
     if path.isfile(peers_seed_filename):
         with open(peers_seed_filename) as f:
             config.peers_seed = json.loads(f.read())

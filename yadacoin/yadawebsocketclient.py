@@ -22,7 +22,7 @@ class ClientChatNamespace(AsyncClientNamespace):
         self.mongo = self.config.mongo
         _, ip_port = self.client.connection_url.split('//')  # extract ip:port
         self.ip, self.port = ip_port.split(':')
-        self.app_log.debug('ws client /Chat connected to {}:{} - {}'.format(self.ip, self.port, self.client))
+        self.app_log.debug('ws client /Chat connected to {}:{} - {}'.format(self.ip, self.port, self.client.__dict__))
         self.client.manager.connected = True
         await self.emit('hello', data={"version": 2, "ip": self.config.public_ip, "port": self.config.peer_port}, namespace="/chat")
         # ask the peer active list

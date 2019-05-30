@@ -50,7 +50,7 @@ The comments are not valid json, they are only there to explain each parameter
     
     # New params for peer control
     "max_inbound": 10,      # max number of allowed incoming websocket connections
-    "max_outbound": 10,     # max (and target) number of perrs to try to connect to
+    "max_outbound": 10,     # max (and target) number of peers to try to connect to
     "max_miners": 100,      # max allowed miners (set to -1 to deactivate pool)
     "polling": 0,          # New node do not need polling anymore. You can set 0 to deactivate polling, 
                             # or set a value high enough (in seconds, like 60) not to generate too much load.
