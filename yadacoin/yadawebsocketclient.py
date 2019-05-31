@@ -32,10 +32,13 @@ class ClientChatNamespace(AsyncClientNamespace):
         """Disconnected from our side or the server's one."""
         #
         self.client.manager.connected = False
+        if not hasattr(self, 'ip'): # never connected, but this event fires for some reason
+            _, ip_port = self.client.connection_url.split('//')  # extract ip:port
+            self.ip, self.port = ip_port.split(':')
+        
         try:
             self.app_log.debug('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
         except:
-            # self.app_log sometimes seem not to be init?
             print('ws client /Chat disconnected from {}:{}'.format(self.ip, self.port))
 
     async def on_latest_block(self, data):
