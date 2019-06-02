@@ -120,7 +120,7 @@ class BlockChainUtils(object):
         received_query = [
             {
                 "$match": {
-                    "index": {"$gt": block_height}
+                    "index": {'$gte': block_height}
                 }
             },
             {
@@ -218,7 +218,7 @@ class BlockChainUtils(object):
         spent = self.mongo.db.blocks.aggregate([
             {
                 "$match": {
-                    "index": {"$gt": block_height}
+                    "index": {'$gte': block_height}
                 }
             },
             {

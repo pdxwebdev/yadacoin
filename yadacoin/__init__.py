@@ -1,6 +1,7 @@
 from .block import Block, BlockFactory
 from .blockchain import Blockchain, BlockChainException
 from .blockchainutils import BU
+from .chain import CHAIN
 from .config import Config
 from .consensus import Consensus
 from .crypt import Crypt

@@ -146,8 +146,10 @@ class TransactionFactory(object):
                 needed_inputs = []
                 done = False
                 for y in inputs:
-                    print(y.id)
                     txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
+                    if not txn:
+                        raise MissingInputTransactionException()
+                        
                     if isinstance(y, ExternalInput):
                         y.verify()
                         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
@@ -453,6 +455,20 @@ class Transaction(object):
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
         return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
+    
+    def used_as_input(self):
+        input_id_to_search = self.transaction_signature
+        block = self.config.mongo.db.blocks.find_one({ # we need to look ahead in the chain
+            'transactions.inputs.id': input_id_to_search
+        })
+        output_txn = None
+        if not block:
+            return output_txn
+        for txn in block['transactions']:
+            for inp in txn['inputs']:
+                if inp['id'] == input_id_to_search:
+                    output_txn = txn
+        return output_txn
 
     def to_dict(self):
         ret = {
