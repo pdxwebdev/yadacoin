@@ -62,14 +62,8 @@ class BlockFactory(object):
                         print('duplicate transaction found and removed')
                         continue
 
-                    used_sigs.append(transaction_obj.transaction_signature)
                     transaction_obj.verify()
-
-                    if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
-                        for input_id in transaction_obj.inputs:
-                            input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
-                            if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
-                                continue
+                    used_sigs.append(transaction_obj.transaction_signature)
 
                 except:
                     try:
@@ -78,15 +72,17 @@ class BlockFactory(object):
                         else:
                             transaction_obj = FastGraph.from_dict(self.index, txn)
 
-                        if transaction_obj.transaction.transaction_signature in used_sigs:
+                        if transaction_obj.transaction_signature in used_sigs:
                             print('duplicate transaction found and removed')
                             continue
-                        used_sigs.append(transaction_obj.transaction.transaction_signature)
+
                         if not transaction_obj.verify():
                             raise InvalidTransactionException("invalid transactions")
-                        transaction_obj = transaction_obj.transaction
                     except:
                         raise InvalidTransactionException("invalid transactions")
+
+                    transaction_obj.verify()
+                    used_sigs.append(transaction_obj.transaction_signature)
 
                 address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
                 #check double spend
@@ -129,13 +125,18 @@ class BlockFactory(object):
                             # No dups are allowed for an rid until the dup rid txn is spent entirely.
                             rid_txns = self.config.GU.get_transactions_by_rid(transaction_obj.rid, '', rid=True)
                             for rid_txn in rid_txns: # now we have to figure out if all of these are spent fully
+                                for output in rid_txn['outputs']:
+                                    if output['to'] == address and output['value'] == 0:
+                                        break # now we can create a duplicate relationship
+
                                 for rid_txn_input in rid_txn['inputs']:
                                     # if it's in the unspent list then we know it has a remaining balance 
                                     # and therefor should be used instead of creating a new relataionship.
                                     # This prevents someone from generating the same relationship repeatedly in order spent their coins more quickly.
-                                    if rid_txn_input['id'] in unspent_indexed[address]: 
+                                    if rid_txn_input['id'] in unspent_ids: 
                                         failed = True
                                         break
+
                                 while 1:
                                     rid_txn = Transaction.from_dict(self.index, rid_txn)
                                     spending_txn = rid_txn.used_as_input()
@@ -196,6 +197,10 @@ class BlockFactory(object):
                             if x.public_key == transaction_obj.public_key:
                                 failed = True
                                 break
+                        else:
+                            # The trasnaction is none of these types. So it's invalid.
+                            failed = True
+                            break
                              
 
                     if x.transaction_signature in used_ids_in_this_txn:
@@ -206,7 +211,7 @@ class BlockFactory(object):
                 if not failed:
                     transaction_objs.append(transaction_obj)
                     fee_sum += float(transaction_obj.fee)
-            block_reward = CHAIN.get_block_reward()
+            block_reward = CHAIN.get_block_reward(self.index)
             coinbase_txn_fctry = TransactionFactory(
                 self.index,
                 public_key=self.public_key,
@@ -465,7 +470,11 @@ class Block(object):
         self.target = target
         if target==0:
             # Same call as in new block check - but there's a circular reference here.
-            self.target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
+            latest_block = self.config.BU.get_latest_block()
+            if not latest_block:
+                self.target = CHAIN.MAX_TARGET
+            else:
+                self.target = BlockFactory.get_target(self.index, Block.from_dict(latest_block), self,
                                                   self.config.consensus.existing_blockchain)
         self.header = header
 
