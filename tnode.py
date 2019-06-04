@@ -24,6 +24,7 @@ from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
 import yadacoin.blockchainutils
+import yadacoin.transactionutils
 import yadacoin.config
 from yadacoin.consensus import Consensus
 from yadacoin.chain import CHAIN
@@ -84,7 +85,8 @@ class NodeApplication(Application):
             peers=peers,
             version= __version__,
             protocol_version=PROTOCOL_VERSION,
-            BU=yadacoin.blockchainutils.GLOBAL_BU
+            BU=yadacoin.blockchainutils.GLOBAL_BU,
+            TU=yadacoin.transactionutils.TU
         )
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
@@ -221,6 +223,7 @@ async def main():
     peers = Peers()
     config.peers = peers
     config.BU = yadacoin.blockchainutils.BlockChainUtils()
+    config.TU = yadacoin.transactionutils.TU
     yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
     config.GU = GraphUtils()
 
