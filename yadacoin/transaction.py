@@ -37,7 +37,8 @@ class TransactionFactory(object):
         outputs='',
         coinbase=False,
         chattext=None,
-        signin=None
+        signin=None,
+        no_relationship=False
     ):
         self.config = get_config()
         self.mongo = self.config.mongo
@@ -56,6 +57,7 @@ class TransactionFactory(object):
         self.to = to
         self.time = str(int(time.time()))
         self.outputs = []
+        self.no_relationship = no_relationship
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
         self.inputs = []
@@ -83,11 +85,14 @@ class TransactionFactory(object):
                     self.relationship = SignIn(self.signin)
                     self.cipher = Crypt(shared_secret.hex(), shared=True)
                     self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
+                    break
+            elif self.no_relationship:
+                self.encrypted_relationship = ''
             else:
                 if not self.dh_public_key or not self.dh_private_key:
-                    a = os.urandom(32)
-                    self.dh_public_key = scalarmult_base(a).hex()
-                    self.dh_private_key = a.hex()
+                    a = os.urandom(32).decode('latin1')
+                    self.dh_public_key = scalarmult_base(a).encode('latin1').hex()
+                    self.dh_private_key = a.encode().hex()
                 self.relationship = self.generate_relationship()
                 if not private_key:
                     raise Exception('missing private key')
@@ -138,6 +143,8 @@ class TransactionFactory(object):
                     else:
                         inputs.append(Input.from_dict(input_txn))
         
+        outputs_and_fee_total = sum([x.value for x in self.outputs])+self.fee
+
         input_sum = 0
         if self.coinbase:
             self.inputs = []
@@ -146,8 +153,10 @@ class TransactionFactory(object):
                 needed_inputs = []
                 done = False
                 for y in inputs:
-                    print(y.id)
                     txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
+                    if not txn:
+                        raise MissingInputTransactionException()
+                        
                     if isinstance(y, ExternalInput):
                         y.verify()
                         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
@@ -157,7 +166,7 @@ class TransactionFactory(object):
                         if txn_output.to == address:
                             input_sum += txn_output.value
                             needed_inputs.append(y)
-                            if input_sum >= (sum([x.value for x in self.outputs])+self.fee):
+                            if input_sum >= (outputs_and_fee_total):
                                 done = True
                                 break
                     if done:
@@ -453,6 +462,19 @@ class Transaction(object):
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
         return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
+    
+    def used_as_input(self, input_id):
+        block = self.config.mongo.db.blocks.find_one({ # we need to look ahead in the chain
+            'transactions.inputs.id': input_id
+        })
+        output_txn = None
+        if not block:
+            return output_txn
+        for txn in block['transactions']:
+            for inp in txn['inputs']:
+                if inp['id'] == input_id:
+                    output_txn = txn
+                    return output_txn
 
     def to_dict(self):
         ret = {

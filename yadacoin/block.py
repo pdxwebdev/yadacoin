@@ -14,7 +14,13 @@ from logging import getLogger
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.fastgraph import FastGraph
-from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, ExternalInput
+from yadacoin.transaction import (
+    TransactionFactory,
+    Transaction,
+    InvalidTransactionException,
+    ExternalInput,
+    MissingInputTransactionException
+)
 
 
 def quantize_eight(value):
@@ -23,11 +29,40 @@ def quantize_eight(value):
     return value
 
 
+class CoinbaseRule1(Exception):
+    pass
+
+class CoinbaseRule2(Exception):
+    pass
+
+class CoinbaseRule3(Exception):
+    pass
+
+class CoinbaseRule4(Exception):
+    pass
+
+class RelationshipRule1(Exception):
+    pass
+
+class RelationshipRule2(Exception):
+    pass
+
+class FastGraphRule1(Exception):
+    pass
+
+class FastGraphRule2(Exception):
+    pass
+
+class ExternalInputSpentException(Exception):
+    pass
+
+
 class BlockFactory(object):
     def __init__(self, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
         try:
             self.config = get_config()
             self.mongo = self.config.mongo
+            self.app_log = getLogger("tornado.application")
             if force_version is None:
                 self.version = CHAIN.get_version_for_height(index)
             else:
@@ -36,8 +71,7 @@ class BlockFactory(object):
                 self.time = str(int(force_time))
             else:
                 self.time = str(int(time.time()))
-            blocks = self.config.BU.get_blocks()
-            self.index = index
+            self.index = int(index)
             if self.index == 0:
                 self.prev_hash = ''
             else:
@@ -47,74 +81,49 @@ class BlockFactory(object):
 
             transaction_objs = []
             fee_sum = 0.0
-            unspent_indexed = {}
-            unspent_fastgraph_indexed = {}
             used_sigs = []
             for txn in transactions:
                 try:
-                    if isinstance(txn, Transaction):
+                    if isinstance(txn, FastGraph):
                         transaction_obj = txn
                     else:
-                        transaction_obj = Transaction.from_dict(self.index, txn)
+                        transaction_obj = FastGraph.from_dict(self.index, txn)
 
                     if transaction_obj.transaction_signature in used_sigs:
                         print('duplicate transaction found and removed')
                         continue
 
-                    used_sigs.append(transaction_obj.transaction_signature)
-                    transaction_obj.verify()
+                    if not transaction_obj.verify():
+                        raise InvalidTransactionException("invalid transactions")
 
-                    if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
-                        for input_id in transaction_obj.inputs:
-                            input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
-                            if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
-                                continue
+                    used_sigs.append(transaction_obj.transaction_signature)
 
                 except:
                     try:
-                        if isinstance(txn, FastGraph):
+                        if isinstance(txn, Transaction):
                             transaction_obj = txn
                         else:
-                            transaction_obj = FastGraph.from_dict(self.index, txn)
+                            transaction_obj = Transaction.from_dict(self.index, txn)
 
-                        if transaction_obj.transaction.transaction_signature in used_sigs:
+                        if transaction_obj.transaction_signature in used_sigs:
                             print('duplicate transaction found and removed')
                             continue
-                        used_sigs.append(transaction_obj.transaction.transaction_signature)
-                        if not transaction_obj.verify():
-                            raise InvalidTransactionException("invalid transactions")
-                        transaction_obj = transaction_obj.transaction
+
+                        transaction_obj.verify()
+                        used_sigs.append(transaction_obj.transaction_signature)
                     except:
                         raise InvalidTransactionException("invalid transactions")
-
-                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
-                #check double spend
-                if address in unspent_indexed:
-                    unspent_ids = unspent_indexed[address]
-                else:
-                    res = self.config.BU.get_wallet_unspent_transactions(address)
-                    unspent_ids = [x['id'] for x in res]
-                    unspent_indexed[address] = unspent_ids
-
-                failed = False
-                used_ids_in_this_txn = []
-
-                for x in transaction_obj.inputs:
-                    if x.id not in unspent_ids:
-                        if isinstance(x, ExternalInput):
-                            txn2 = self.config.BU.get_transaction_by_id(x.id, instance=True)
-                            address2 = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn2.public_key)))
-                            res = self.config.BU.get_wallet_unspent_transactions(address2)
-                            unspent_ids2 = [y['id'] for y in res]
-                            if x.id not in unspent_ids2:
-                                failed = True
-                    if x.id in used_ids_in_this_txn:
-                        failed = True
-                    used_ids_in_this_txn.append(x.id)
-                if not failed:
+                try:
+                    self.config.TU.apply_transaction_rules(self.config, transaction_obj, self.index)
                     transaction_objs.append(transaction_obj)
                     fee_sum += float(transaction_obj.fee)
-            block_reward = CHAIN.get_block_reward()
+                except:
+                    if self.config.debug:
+                        raise
+                    else:
+                        continue
+
+            block_reward = CHAIN.get_block_reward(self.index)
             coinbase_txn_fctry = TransactionFactory(
                 self.index,
                 public_key=self.public_key,
@@ -251,7 +260,7 @@ class BlockFactory(object):
                 target = max_target
             else:
                 block_to_check = block
-                if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time:
+                if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time and block.special_min:
                     target_factor = (int(block.time) - int(last_block.time)) / max_block_time
                     target = int(block.target * (target_factor * 4))
                     if target > max_target:
@@ -264,6 +273,8 @@ class BlockFactory(object):
                 else:
                     start_index = last_block.index
                 while 1:
+                    if start_index == 0:
+                        return block_to_check.target
                     if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
                         block_to_check = blockchain.blocks[start_index]
                         start_index -= 1
@@ -373,7 +384,11 @@ class Block(object):
         self.target = target
         if target==0:
             # Same call as in new block check - but there's a circular reference here.
-            self.target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
+            latest_block = self.config.BU.get_latest_block()
+            if not latest_block:
+                self.target = CHAIN.MAX_TARGET
+            else:
+                self.target = BlockFactory.get_target(self.index, Block.from_dict(latest_block), self,
                                                   self.config.consensus.existing_blockchain)
         self.header = header
 

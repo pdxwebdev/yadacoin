@@ -27,7 +27,9 @@ class Blockchain(object):
             self.blocks.append(block)
             last_index = block.index
         self.partial = partial
-        if self.blocks[0].index != 0 and not self.partial:
+        if not self.blocks:
+            return # allow nothing
+        if self.blocks and self.blocks[0].index != 0 and not self.partial:
             raise Exception('Blocks do not start with zero index. Either incomplete blockchain or unordered.')
 
     def verify(self, progress=None):

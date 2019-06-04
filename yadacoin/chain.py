@@ -24,6 +24,7 @@ class CHAIN(object):
 
     TIME_TOLERANCE = 10  # MAX # of seconds in the future we allow a bloc or TX to be. NTP Sync required for nodes.
     CHECK_TIME_FROM = 59710  # Begin checks there
+    MINING_AND_TXN_REFORM_FORK = 60000
 
     # TODO: add block time depending on network + escape hatch
 
