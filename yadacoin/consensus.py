@@ -34,7 +34,7 @@ class Consensus(object):
 
     lowest = CHAIN.MAX_TARGET
 
-    def __init__(self, debug=False, peers=None):
+    def __init__(self, debug=False, peers=None, prevent_genesis=False):
         self.app_log = logging.getLogger("tornado.application")
         self.debug = debug
         self.config = get_config()
@@ -47,8 +47,9 @@ class Consensus(object):
         if latest_block:
             self.latest_block = Block.from_dict(latest_block)
         else:
-            self.insert_genesis()
-        
+            if not prevent_genesis:
+                self.insert_genesis()
+
         self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
         # print("len", len(self.existing_blockchain.blocks))
 

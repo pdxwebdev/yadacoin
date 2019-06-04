@@ -1,6 +1,18 @@
-from .block import Block, BlockFactory
+from .block import (
+    Block,
+    BlockFactory,
+    CoinbaseRule1,
+    CoinbaseRule2,
+    CoinbaseRule3,
+    CoinbaseRule4,
+    RelationshipRule1,
+    RelationshipRule2,
+    FastGraphRule1,
+    FastGraphRule2
+)
 from .blockchain import Blockchain, BlockChainException
 from .blockchainutils import BU
+from .chain import CHAIN
 from .config import Config
 from .consensus import Consensus
 from .crypt import Crypt

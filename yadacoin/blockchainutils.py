@@ -54,7 +54,7 @@ class BlockChainUtils(object):
         if not self.latest_block is None:
             return self.latest_block
         self.latest_block = self.mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-        print("last block", self.latest_block)
+        self.app_log.debug("last block " + str(self.latest_block))
         return self.latest_block
 
     def set_latest_block(self, block: dict):
@@ -65,7 +65,7 @@ class BlockChainUtils(object):
         if not self.latest_block is None:
             return self.latest_block
         self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-        print("last block async", self.latest_block)
+        self.app_log.debug("last block async " + self.latest_block)
         return self.latest_block
 
     def get_block_by_index(self, index):
@@ -120,7 +120,7 @@ class BlockChainUtils(object):
         received_query = [
             {
                 "$match": {
-                    "index": {"$gt": block_height}
+                    "index": {'$gte': block_height}
                 }
             },
             {
@@ -218,7 +218,7 @@ class BlockChainUtils(object):
         spent = self.mongo.db.blocks.aggregate([
             {
                 "$match": {
-                    "index": {"$gt": block_height}
+                    "index": {'$gte': block_height}
                 }
             },
             {
@@ -505,7 +505,10 @@ class BlockChainUtils(object):
                 for txn in block['transactions']:
                     if txn['id'] == id:
                         if instance:
-                            return Transaction.from_dict(block['index'], txn)
+                            try:
+                                return FastGraph.from_dict(block['index'], txn)
+                            except:
+                                return Transaction.from_dict(block['index'], txn)
                         else:
                             return txn
         elif res2.count() and include_fastgraph:

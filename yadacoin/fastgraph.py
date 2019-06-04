@@ -168,17 +168,17 @@ class FastGraph(Transaction):
                 txns_for_rids.append(txn_for_rid)
 
         for signature in self.signatures:
+            signature.passed = False
             for txn_for_rid in txns_for_rids:
-                signature.passed = False
                 signed = verify_signature(
                     base64.b64decode(signature.signature),
                     self.hash.encode('utf-8'),
                     bytes.fromhex(txn_for_rid['public_key'])
                 )
-                print(signed)
-                print(signature.signature)
-                print(self.hash.encode('utf-8'))
-                print(txn_for_rid['public_key'])
+                self.app_log.debug(signed)
+                self.app_log.debug(signature.signature)
+                self.app_log.debug(self.hash.encode('utf-8'))
+                self.app_log.debug(txn_for_rid['public_key'])
                 if signed:
                     signature.passed = True
                     break

@@ -33,7 +33,7 @@ class Peers(object):
         my_peer = self.mongo.db.config.find_one({'mypeer': {"$ne": ""}})
         if my_peer:
             self.my_peer = my_peer.get('mypeer')  # str
-        print(self.my_peer)
+        self.app_log.debug(self.my_peer)
 
     def init_local(self):
         raise RuntimeError("Peers, init_local is deprecated")

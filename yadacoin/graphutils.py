@@ -1,6 +1,6 @@
 import json
 import base64
-
+from logging import getLogger
 from binascii import unhexlify
 from eccsnacks.curve25519 import scalarmult
 from yadacoin.transactionutils import TU
@@ -23,6 +23,7 @@ class GraphUtils(object):
     def __init__(self):
         self.config = get_config()
         self.mongo = self.config.mongo
+        self.app_log = getLogger('tornado.application')
 
     def get_all_usernames(self):
         return self.config.BU.get_transactions(
@@ -138,7 +139,7 @@ class GraphUtils(object):
                         x['txn']['relationship'] = data
                         if 'postText' in data:
                             had_txns = True
-                            print('caching posts at height:', x.get('height', 0))
+                            self.app_log.debug('caching posts at height: {}'.format(x.get('height', 0)))
                             for rid in rids:
                                 self.mongo.db.posts_cache.update({
                                     'rid': rid,
@@ -172,7 +173,7 @@ class GraphUtils(object):
                                     'success': False
                                 },
                                 upsert=True)
-                        print(e)
+                        self.app_log.debug(e)
         if not had_txns:
             for rid in rids:
                 self.mongo.db.posts_cache.insert({
@@ -286,7 +287,7 @@ class GraphUtils(object):
                         x['txn']['relationship'] = data
                         if 'react' in data:
                             had_txns = True
-                            print('caching reacts at height:', x.get('height', 0))
+                            self.app_log.debug('caching reacts at height: {}'.format(x.get('height', 0)))
                             for rid in rids:
                                 self.mongo.db.reacts_cache.update({
                                     'rid': rid,
@@ -422,7 +423,7 @@ class GraphUtils(object):
                         x['txn']['relationship'] = data
                         if 'comment' in data:
                             had_txns = True
-                            print('caching comments at height:', x.get('height', 0))
+                            self.app_log.debug('caching comments at height: {}'.format(x.get('height', 0)))
                             for rid in rids:
                                 self.mongo.db.comments_cache.update({
                                     'rid': rid,
@@ -592,7 +593,7 @@ class GraphUtils(object):
                         except:
                             continue
                     for selector in selectors:
-                        print('caching transactions_by_rid at height:', block['index'])
+                        self.app_log.debug('caching transactions_by_rid at height: {}'.format(block['index']))
                         self.mongo.db.transactions_by_rid_cache.insert(
                             {
                                 'raw': raw,
@@ -686,7 +687,7 @@ class GraphUtils(object):
         had_txns = False
         for x in transactions:
             had_txns = True
-            print('caching friend requests at height:', x['height'])
+            self.app_log.debug('caching friend requests at height: {}'.format(x['height']))
             self.mongo.db.friend_requests_cache.update({
                 'requested_rid': x['txn']['requested_rid'],
                 'height': x['height'],
@@ -761,7 +762,7 @@ class GraphUtils(object):
         ])
 
         for x in transactions:
-            print('caching sent friend requests at height:', x['height'])
+            self.app_log.debug('caching sent friend requests at height: {}'.format(x['height']))
             self.mongo.db.sent_friend_requests_cache.update({
                 'requester_rid': x['txn']['requester_rid'],
                 'height': x['height'],
@@ -831,7 +832,7 @@ class GraphUtils(object):
         ])
 
         for x in transactions:
-            print('caching messages at height:', x['height'])
+            self.app_log.debug('caching messages at height: {}'.format(x['height']))
             self.mongo.db.messages_cache.update({
                 'rid': x['txn']['rid'],
                 'height': x['height'],

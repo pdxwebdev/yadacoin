@@ -14,7 +14,7 @@ from logging import getLogger
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.fastgraph import FastGraph
-from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, ExternalInput
+from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, ExternalInput, MissingInputTransactionException
 
 
 def quantize_eight(value):
@@ -23,11 +23,40 @@ def quantize_eight(value):
     return value
 
 
+class CoinbaseRule1(Exception):
+    pass
+
+class CoinbaseRule2(Exception):
+    pass
+
+class CoinbaseRule3(Exception):
+    pass
+
+class CoinbaseRule4(Exception):
+    pass
+
+class RelationshipRule1(Exception):
+    pass
+
+class RelationshipRule2(Exception):
+    pass
+
+class FastGraphRule1(Exception):
+    pass
+
+class FastGraphRule2(Exception):
+    pass
+
+class ExternalInputSpentException(Exception):
+    pass
+
+
 class BlockFactory(object):
     def __init__(self, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
         try:
             self.config = get_config()
             self.mongo = self.config.mongo
+            self.app_log = getLogger("tornado.application")
             if force_version is None:
                 self.version = CHAIN.get_version_for_height(index)
             else:
@@ -36,8 +65,7 @@ class BlockFactory(object):
                 self.time = str(int(force_time))
             else:
                 self.time = str(int(time.time()))
-            blocks = self.config.BU.get_blocks()
-            self.index = index
+            self.index = int(index)
             if self.index == 0:
                 self.prev_hash = ''
             else:
@@ -47,74 +75,49 @@ class BlockFactory(object):
 
             transaction_objs = []
             fee_sum = 0.0
-            unspent_indexed = {}
-            unspent_fastgraph_indexed = {}
             used_sigs = []
             for txn in transactions:
                 try:
-                    if isinstance(txn, Transaction):
+                    if isinstance(txn, FastGraph):
                         transaction_obj = txn
                     else:
-                        transaction_obj = Transaction.from_dict(self.index, txn)
+                        transaction_obj = FastGraph.from_dict(self.index, txn)
 
                     if transaction_obj.transaction_signature in used_sigs:
                         print('duplicate transaction found and removed')
                         continue
 
-                    used_sigs.append(transaction_obj.transaction_signature)
-                    transaction_obj.verify()
+                    if not transaction_obj.verify():
+                        raise InvalidTransactionException("invalid transactions")
 
-                    if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
-                        for input_id in transaction_obj.inputs:
-                            input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
-                            if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
-                                continue
+                    used_sigs.append(transaction_obj.transaction_signature)
 
                 except:
                     try:
-                        if isinstance(txn, FastGraph):
+                        if isinstance(txn, Transaction):
                             transaction_obj = txn
                         else:
-                            transaction_obj = FastGraph.from_dict(self.index, txn)
+                            transaction_obj = Transaction.from_dict(self.index, txn)
 
-                        if transaction_obj.transaction.transaction_signature in used_sigs:
+                        if transaction_obj.transaction_signature in used_sigs:
                             print('duplicate transaction found and removed')
                             continue
-                        used_sigs.append(transaction_obj.transaction.transaction_signature)
-                        if not transaction_obj.verify():
-                            raise InvalidTransactionException("invalid transactions")
-                        transaction_obj = transaction_obj.transaction
+
+                        transaction_obj.verify()
+                        used_sigs.append(transaction_obj.transaction_signature)
                     except:
                         raise InvalidTransactionException("invalid transactions")
-
-                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
-                #check double spend
-                if address in unspent_indexed:
-                    unspent_ids = unspent_indexed[address]
-                else:
-                    res = self.config.BU.get_wallet_unspent_transactions(address)
-                    unspent_ids = [x['id'] for x in res]
-                    unspent_indexed[address] = unspent_ids
-
-                failed = False
-                used_ids_in_this_txn = []
-
-                for x in transaction_obj.inputs:
-                    if x.id not in unspent_ids:
-                        if isinstance(x, ExternalInput):
-                            txn2 = self.config.BU.get_transaction_by_id(x.id, instance=True)
-                            address2 = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn2.public_key)))
-                            res = self.config.BU.get_wallet_unspent_transactions(address2)
-                            unspent_ids2 = [y['id'] for y in res]
-                            if x.id not in unspent_ids2:
-                                failed = True
-                    if x.id in used_ids_in_this_txn:
-                        failed = True
-                    used_ids_in_this_txn.append(x.id)
-                if not failed:
+                try:
+                    self.apply_transaction_rules(transaction_obj)
                     transaction_objs.append(transaction_obj)
                     fee_sum += float(transaction_obj.fee)
-            block_reward = CHAIN.get_block_reward()
+                except:
+                    if self.config.debug:
+                        raise
+                    else:
+                        continue
+
+            block_reward = CHAIN.get_block_reward(self.index)
             coinbase_txn_fctry = TransactionFactory(
                 self.index,
                 public_key=self.public_key,
@@ -147,6 +150,127 @@ class BlockFactory(object):
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
             raise
+    
+    def apply_transaction_rules(self, transaction_obj):
+
+        unspent_indexed = {}
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
+        #check double spend
+        if address in unspent_indexed:
+            unspent_ids = unspent_indexed[address].keys()
+        else:
+            res = [x for x in self.config.BU.get_wallet_unspent_transactions(address)]
+            upspent_txns = {x['id']:x for x in res}
+            unspent_indexed[address] = upspent_txns
+            unspent_ids = unspent_indexed[address].keys()
+
+        used_ids_in_this_txn = []
+
+        for x in transaction_obj.inputs:
+            x = self.config.BU.get_transaction_by_id(x.id, instance=True)
+            if x.transaction_signature not in unspent_ids:
+                if isinstance(x, ExternalInput):
+                    txn2 = self.config.BU.get_transaction_by_id(x.id, instance=True)
+                    address2 = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn2.public_key)))
+                    res = self.config.BU.get_wallet_unspent_transactions(address2)
+                    unspent_ids2 = [y['id'] for y in res]
+                    if x.id not in unspent_ids2:
+                        # The external input has already been spent
+                        raise ExternalInputSpentException('The external input has already been spent')
+
+            if self.index >= CHAIN.MINING_AND_TXN_REFORM_FORK: # restrictions begin on transactions at this fork
+                if not x:
+                    raise MissingInputTransactionException('The external input has already been spent')
+                if not unspent_indexed[address][x.transaction_signature]['inputs'] and len(unspent_indexed[address][x.transaction_signature]['inputs']) == 0: # input is a coinbase txn 
+                    # Coinbase Rule 1.
+                    # Coinbase transactions must only be used as inputs for relationship creation
+                    if not transaction_obj.rid or not transaction_obj.relationship or not transaction_obj.dh_public_key:
+                        raise CoinbaseRule1('Transaction rejected: Input was a coinbase and this transaction does contain required relationship information')
+
+                    # Coinbase Rule 2. 
+                    # No dups are allowed for an rid until the dup rid txn is spent entirely.
+                    rid_txns = self.config.GU.get_transactions_by_rid(transaction_obj.rid, '', rid=True)
+                    for rid_txn in rid_txns: # now we have to figure out if all of these are spent fully
+                        for output in rid_txn['outputs']:
+                            if output['to'] == address and output['value'] == 0:
+                                break # now we can create a duplicate relationship
+
+                        for rid_txn_input in rid_txn['inputs']:
+                            # if it's in the unspent list then we know it has a remaining balance 
+                            # and therefor should be used instead of creating a new relataionship.
+                            # This prevents someone from generating the same relationship repeatedly in order spent their coins more quickly.
+                            if rid_txn_input['id'] in unspent_ids: 
+                                raise CoinbaseRule2('Transaction rejected: No duplicte relationships are allowed for an rid until the duplicate rid txn is spent entirely.')
+
+                        result = self.check_rid_txn_fully_spent(rid_txn, address)
+                        if not result:
+                            raise CoinbaseRule2('Transaction rejected: No duplicte relationships are allowed for an rid until the duplicate rid txn is spent entirely.')
+
+                    # Coinbase Rule 3.
+                    # Origin transacation must already be on the blockchain, not in fastgraph collection
+                    # we are checking if the transaction is on the blockchain in the above logic as well
+                    res = self.config.mongo.db.fastgraph_transactions.find_one({
+                        'dh_public_key': {'$exists': True, '$ne': ''},
+                        'rid': transaction_obj.rid,
+                        'relationship': {'$exists': True, '$ne': ''}
+                    })
+                    if res:
+                        raise CoinbaseRule3('Transaction rejected: Origin transacation must already be on the blockchain, not in fastgraph collection')
+
+                    # Coinbase Rule 4.
+                    # Cannot be used as input for fastgraph
+                    if isinstance(transaction_obj, FastGraph):
+                        raise CoinbaseRule4('Transaction rejected: Cannot be used as input for fastgraph. Must be used for relationship creation')
+
+                elif (x.rid and x.dh_public_key and x.relationship): # input is a relationship creation transaction
+                    # Relationship Rule 1.
+                    # Can only be used as inputs for fastgraph or relationship transactions
+                    if (not isinstance(transaction_obj, FastGraph) and
+                        (not transaction_obj.rid or not transaction_obj.dh_public_key or not transaction_obj.relationship)
+                    ):
+                        raise RelationshipRule1('Transaction rejected: Cannot be used as input for fastgraph. Must be used for relationship creation')
+
+                    # Relationship Rule 2.
+                    # Remainer or "change" transactions cannot be used
+                    # any transaction input created by the same public_key is giving itself change
+                    if x.public_key == transaction_obj.public_key:
+                        raise RelationshipRule2('Transaction rejected: Remainer or "change" transactions cannot be used for relationship creation. Only funds sent from the other relationship party can be used.')
+
+                elif isinstance(x, FastGraph):
+                    # FastGraph Rule 1.
+                    # Can only be used as inputs for fastgraph transactions
+                    if not isinstance(transaction_obj, FastGraph):
+                        raise FastGraphRule1('Transaction rejected: Can only be used as inputs for fastgraph transactions.')
+
+                    # FastGraph Rule 2.
+                    # Remainer or "change" transactions cannot be used
+                    # any transaction input created by me is giving myself change
+                    if x.public_key == transaction_obj.public_key:
+                        raise FastGraphRule2('Transaction rejected: Remainer or "change" transactions cannot be used as inputs for fastgraph.')
+                else:
+                    # The trasnaction is none of these types. So it's invalid.
+                    raise InvalidTransactionException('Transaction rejected: This transaction is not a coinbase, relationship, or fastgraph.')
+                        
+
+            if x.transaction_signature in used_ids_in_this_txn:
+                # The trasnaction is none of these types. So it's invalid.
+                raise InvalidTransactionException('Transaction rejected: Transaction is a duplicate')
+            used_ids_in_this_txn.append(x.transaction_signature)
+    
+    def check_rid_txn_fully_spent(self, rid_txn, address):
+        rid_txn = Transaction.from_dict(self.index, rid_txn)
+        spending_txn = rid_txn.used_as_input(rid_txn.transaction_signature)
+        if spending_txn:
+            for output in spending_txn['outputs']:
+                if output['to'] == address and output['value'] == 0:
+                    return True # now we can create a duplicate relationship
+            x = self.config.BU.get_transaction_by_id(spending_txn['id'], instance=True)
+            result = self.check_rid_txn_fully_spent(x.to_dict(), address)
+            if result:
+                return True
+            return False
+        else:
+            return False # hasn't been spent to zero yet
 
     @classmethod
     def generate_header(cls, block):
@@ -251,7 +375,7 @@ class BlockFactory(object):
                 target = max_target
             else:
                 block_to_check = block
-                if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time:
+                if block.index >= 38600 and (int(block.time) - int(last_block.time)) > max_block_time and block.special_min:
                     target_factor = (int(block.time) - int(last_block.time)) / max_block_time
                     target = int(block.target * (target_factor * 4))
                     if target > max_target:
@@ -264,6 +388,8 @@ class BlockFactory(object):
                 else:
                     start_index = last_block.index
                 while 1:
+                    if start_index == 0:
+                        return block_to_check.target
                     if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
                         block_to_check = blockchain.blocks[start_index]
                         start_index -= 1
@@ -373,7 +499,11 @@ class Block(object):
         self.target = target
         if target==0:
             # Same call as in new block check - but there's a circular reference here.
-            self.target = BlockFactory.get_target(self.index, Block.from_dict(self.config.BU.get_latest_block()), self,
+            latest_block = self.config.BU.get_latest_block()
+            if not latest_block:
+                self.target = CHAIN.MAX_TARGET
+            else:
+                self.target = BlockFactory.get_target(self.index, Block.from_dict(latest_block), self,
                                                   self.config.consensus.existing_blockchain)
         self.header = header
 
