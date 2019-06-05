@@ -351,7 +351,7 @@ class Block(object):
     # Memory optimization
     __slots__ = ('config', 'mongo', 'version', 'time', 'index', 'prev_hash', 'nonce', 'transactions', 'txn_hashes',
                  'merkle_root', 'verify_merkle_root','hash', 'public_key', 'signature', 'special_min', 'target',
-                 'header')
+                 'special_target', 'header')
     
     def __init__(
         self,
@@ -367,7 +367,8 @@ class Block(object):
         signature='',
         special_min: bool=False,
         header= '',
-        target: int=0
+        target: int=0,
+        special_target: int=0
     ):
         self.config = get_config()
         self.mongo = self.config.mongo
@@ -386,6 +387,7 @@ class Block(object):
         self.signature = signature
         self.special_min = special_min
         self.target = target
+        self.special_target = special_target
         if target==0:
             # Same call as in new block check - but there's a circular reference here.
             latest_block = self.config.BU.get_latest_block()
@@ -394,6 +396,8 @@ class Block(object):
             else:
                 self.target = BlockFactory.get_target(self.index, Block.from_dict(latest_block), self,
                                                   self.config.consensus.existing_blockchain)
+            self.special_target = self.target
+            # TODO: do we need recalc special target here if special min?
         self.header = header
 
     def copy(self):
@@ -415,6 +419,9 @@ class Block(object):
             else:
                 transactions.append(Transaction.from_dict(block.get('index'), txn))
 
+        if block.get('special_target', 0) == 0:
+            block['special_target'] = block.get('target')
+
         return cls(
             version=block.get('version'),
             block_time=block.get('time'),
@@ -428,7 +435,9 @@ class Block(object):
             signature=block.get('id'),
             special_min=block.get('special_min'),
             header=block.get('header', ''),
-            target=int(block.get('target'), 16)
+            target=int(block.get('target'), 16),
+
+            special_target=int(block.get('special_target', 0), 16)
         )
     
     def get_coinbase(self):
@@ -556,6 +565,7 @@ class Block(object):
             'merkleRoot': self.merkle_root,
             'special_min': self.special_min,
             'target': hex(self.target)[2:].rjust(64, '0'),
+            'special_target': hex(self.special_target)[2:].rjust(64, '0'),
             'header': self.header,
             'id': self.signature
         }

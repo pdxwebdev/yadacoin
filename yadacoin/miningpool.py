@@ -164,6 +164,12 @@ class MiningPool(object):
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok')
             self.app_log.error('^^ ^^ ^^')
+        elif matching_block.special_min and (int(matching_block.special_target) > int(matching_block.hash, 16)):
+            # broadcast winning block
+            await self.broadcast_block(matching_block.to_dict())
+            # Conversion to dict is important, or the object may change
+            self.app_log.debug('block ok - special_min')
+            self.app_log.error('^^ ^^ ^^')
         else:
             self.app_log.debug('share ok')
         # submit share only now, not to slow down if we had a block
@@ -248,6 +254,7 @@ class MiningPool(object):
         """Returns info for current block to mine"""
         res = {
             'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0'),  # target is now in hex format
+            'special_target': hex(int(self.block_factory.block.special_target))[2:].rjust(64, '0'),  # target is now in hex format
             # TODO this is the network target, maybe also send some pool target?
             'special_min': self.block_factory.block.special_min,
             'header': self.block_factory.block.header,
@@ -271,12 +278,13 @@ class MiningPool(object):
                     > CHAIN.special_min_trigger(self.config.network, self.block_factory.block.index):
                 # TODO: adjust depending on block height
                 target_factor = (int(to_time) - self.last_block_time) / self.target_block_time
-                # print("mp", self.block_factory.block.target, target_factor)
+                print("mp", self.block_factory.block.target, target_factor)
                 # print(self.block_factory.block.to_dict())
                 target = int(self.block_factory.block.target * (target_factor * 4))
                 if target > self.max_target:
-                    self.block_factory.block.target = self.max_target
+                    target = self.max_target
                 self.block_factory.block.special_min = True
+                self.block_factory.block.special_target = target
             else:
                 self.block_factory.block.special_min = False
         elif self.block_factory.block.index < 38600:  # TODO: use a CHAIN constant
