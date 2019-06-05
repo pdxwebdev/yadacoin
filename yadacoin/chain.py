@@ -26,6 +26,12 @@ class CHAIN(object):
     CHECK_TIME_FROM = 59710  # Begin checks there
     MINING_AND_TXN_REFORM_FORK = 60000
 
+    ONE_DAY_IN_SECONDS = 1440 * 60
+    RETARGET_PERIOD_V2 = 144  # blocks = 1 day at 10 min per block
+    MAX_SECONDS_V2 = ONE_DAY_IN_SECONDS * 7  # seconds - avoid to drop to fast.
+    MIN_SECONDS_V2 = 3600  # seconds = 1h - avoid too high a raise.
+
+
     # TODO: add block time depending on network + escape hatch
 
     @classmethod

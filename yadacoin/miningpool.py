@@ -253,6 +253,7 @@ class MiningPool(object):
             'header': self.block_factory.block.header,
             'version': self.block_factory.block.version,
             'height': self.block_factory.block.index,  # This is the height of the one we are mining
+            'previous_time': self.config.BU.get_latest_block()['time'],  # needed for miner to recompute the real diff
         }
         return res
 

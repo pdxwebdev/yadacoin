@@ -55,7 +55,7 @@ class Config(object):
         self.peer_port = config['peer_port']
         self.serve_host = config['serve_host']
         self.serve_port = config['serve_port']
-        self.public_ip = config.get('public_ip', self.peer_host)
+        self.public_ip = config.get('public_ip', self.serve_host)
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
@@ -66,7 +66,6 @@ class Config(object):
         self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
-        self.outgoing_blacklist.append(self.peer_host)
         self.outgoing_blacklist.append(self.public_ip)
         self.protocol_version = 1
         # Config also serves as backbone storage for all singleton helpers used by the components.
@@ -79,6 +78,7 @@ class Config(object):
         self.debug = False
         self.mp = None
 
+
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event
         This is called with a block object when we insert a new one in the chain."""
@@ -90,20 +90,18 @@ class Config(object):
 
     def debug_log(self, string: str):
         # Helper to write temp string to a debug file
-        with open("debug.log", "a") as fp:
+        with open("debug.trace", "a") as fp:
             fp.write(str(int(time())) + ' - ' + string + "\n")
 
     def get_status(self):
         pool_status = 'N/A'
         if self.mp:
             pool_status = self.mp.get_status()
-        m, s = divmod(int(time() - self.start_time), 60)
-        h, m = divmod(m, 60)
         status = {'version': self.protocol_version, 'network': self.network,
                   # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
                   'peers': self.peers.get_status(),
                   'pool': pool_status, 'height': self.BU.get_latest_block()['index'],
-                  'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s)}
+                  'uptime': int(time() - self.start_time)}
         # TODO: add uptime in human readable format
         return status
 

@@ -211,8 +211,12 @@ class BlockFactory(object):
             max_target = CHAIN.MAX_TARGET
             max_block_time = CHAIN.target_block_time(get_config().network)
             retarget_period = CHAIN.RETARGET_PERIOD  # blocks
-            two_weeks = CHAIN.TWO_WEEKS  # seconds
-            half_week = CHAIN.HALF_WEEK  # seconds
+            max_seconds = CHAIN.TWO_WEEKS  # seconds
+            min_seconds = CHAIN.HALF_WEEK  # seconds
+            if height >= CHAIN.POW_FORK_V2:
+                retarget_period = CHAIN.RETARGET_PERIOD_V2
+                max_seconds = CHAIN.MAX_SECONDS_V2  # seconds
+                min_seconds = CHAIN.MIN_SECONDS_V2  # seconds
             if height > 0 and height % retarget_period == 0:
                 get_config().debug_log(
                     "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
@@ -223,12 +227,12 @@ class BlockFactory(object):
                 elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
                 get_config().debug_log("elapsed_time_from_2016_ago {} s {} days".format(int(elapsed_time_from_2016_ago), elapsed_time_from_2016_ago/(60*60*24)))
                 # greater than two weeks?
-                if elapsed_time_from_2016_ago > two_weeks:
-                    time_for_target = two_weeks
-                    get_config().debug_log("gt 2 weeks")
-                elif elapsed_time_from_2016_ago < half_week:
-                    time_for_target = half_week
-                    get_config().debug_log("lt half week")
+                if elapsed_time_from_2016_ago > max_seconds:
+                    time_for_target = max_seconds
+                    get_config().debug_log("gt max")
+                elif elapsed_time_from_2016_ago < min_seconds:
+                    time_for_target = min_seconds
+                    get_config().debug_log("lt min")
                 else:
                     time_for_target = int(elapsed_time_from_2016_ago)
 
@@ -248,7 +252,7 @@ class BlockFactory(object):
                         break
                 get_config().debug_log("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
 
-                new_target = int((time_for_target * target) / two_weeks)
+                new_target = int((time_for_target * target) / max_seconds)
                 get_config().debug_log("new_target {}".format(hex(int(new_target))[2:].rjust(64, '0')))
 
                 if new_target > max_target:
