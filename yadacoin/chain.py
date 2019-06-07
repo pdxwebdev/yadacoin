@@ -70,6 +70,16 @@ class CHAIN(object):
             print(exc_type, fname, exc_tb.tb_lineno)
 
     @classmethod
+    def special_target(cls, block_height: int, target:int, delta_t:int, network: str='mainnet') -> int:
+        """Given the regular target and time since last block, gives the current target
+        This is supposed to be the only place where this is computed, to ease maintenance"""
+        target_factor = delta_t / cls.target_block_time(network)
+        target = int(target * (target_factor * 4))
+        if target > cls.MAX_TARGET:
+            target = cls.MAX_TARGET
+        return target
+
+    @classmethod
     def get_version_for_height(cls, height: int):
         if int(height) <= 14484:
             return 1

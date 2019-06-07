@@ -72,7 +72,6 @@ class MiningPool(object):
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
 
-
     async def refresh_and_signal_miners(self):
         self.refresh()
         # Update the miners (websockets)
@@ -146,6 +145,7 @@ class MiningPool(object):
             matching_hash = hash1
             matching_block.hash = hash1
             matching_block.nonce = nonce
+            # target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
             self.app_log.warning("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
         # TODO: store share and send block if enough
         # No need to re-verify block, should be good since we forged it and nonce passes
@@ -157,6 +157,12 @@ class MiningPool(object):
             self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(e, matching_block.hash, matching_block.header, matching_block.nonce))
             # print(matching_block.hash)
 
+        if matching_block.special_min:
+            delta_t = int(matching_block.time) - int(self.last_block_time)
+            special_target = CHAIN.special_target(matching_block.index, matching_block.target,
+                                                  delta_t, self.config.network)
+            matching_block.special_target = special_target
+        print("matching", matching_block.to_dict())  # temp
         # todo: fork pow compare to reduced diff if special_min
         if int(matching_block.target) > int(matching_block.hash, 16):
             # broadcast winning block
@@ -274,17 +280,12 @@ class MiningPool(object):
                 # If the node is started when the current block is special_min, then we have a 0 target
                 self.set_target_as_previous_non_special_min()
                 # print('target set to', self.block_factory.block.target)
-            if (int(to_time) - self.last_block_time) \
+            delta_t = int(to_time) - self.last_block_time
+            if delta_t \
                     > CHAIN.special_min_trigger(self.config.network, self.block_factory.block.index):
-                # TODO: adjust depending on block height
-                target_factor = (int(to_time) - self.last_block_time) / self.target_block_time
-                print("mp", self.block_factory.block.target, target_factor)
-                # print(self.block_factory.block.to_dict())
-                target = int(self.block_factory.block.target * (target_factor * 4))
-                if target > self.max_target:
-                    target = self.max_target
+                special_target = CHAIN.special_target(self.block_factory.block.index, self.block_factory.block.target, delta_t, self.config.network)
                 self.block_factory.block.special_min = True
-                self.block_factory.block.special_target = target
+                self.block_factory.block.special_target = special_target
             else:
                 self.block_factory.block.special_min = False
         elif self.block_factory.block.index < 38600:  # TODO: use a CHAIN constant
