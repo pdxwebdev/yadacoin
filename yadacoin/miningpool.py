@@ -313,7 +313,7 @@ class MiningPool(object):
             res = self.mongo.db.blocks.find_one({
                 'index': self.index - i,
                 'special_min': False,
-                'target': {'$ne': CHAIN.MAX_TARGET_HEX}
+                'target': {'$ne': CHAIN.MAX_TARGET_HEX}  # This condition may be extraneous
             })
             if res:
                 chain = [x for x in self.mongo.db.blocks.find({

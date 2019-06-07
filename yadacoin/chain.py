@@ -36,6 +36,10 @@ class CHAIN(object):
     # Could be raised later on depending on the net hash rate. calibrating for very low hash
     MAX_TARGET_AFTER_V2 = 600 * 6 * 8 # after 8 hours, diff will hit absolute min.
 
+    # Max possible target for a block, v2 : reasonable target for a single cpu miner.
+    MAX_TARGET_V2 = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    MAX_TARGET_HEX_V2 = '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+
 
     # TODO: add block time depending on network + escape hatch
 
@@ -84,15 +88,15 @@ class CHAIN(object):
         else:
             # from 60k, POW_FORK_V2, we aim to reach max target after
             if delta_t >= cls.MAX_TARGET_AFTER_V2:
-                special_target = cls.MAX_TARGET
+                special_target = cls.MAX_TARGET_V2
             elif delta_t <= 600 * 2:
                 special_target = target
             else:
-                delta_target = abs(cls.MAX_TARGET - target)  # abs to make sure, should not happen
+                delta_target = abs(cls.MAX_TARGET_V2 - target)  # abs to make sure, should not happen
                 special_target = target + delta_target * ( (delta_t - 2 * 600) / (cls.MAX_TARGET_AFTER_V2 - 2 * 600 ) )
 
-        if special_target > cls.MAX_TARGET:
-            special_target = cls.MAX_TARGET
+        if special_target > cls.MAX_TARGET_V2:
+            special_target = cls.MAX_TARGET_V2
         return special_target
 
     @classmethod
