@@ -47,7 +47,7 @@ class MiningPool(object):
         # second case would be new transactions received in the mean time
         # TODO - event on tx
         # or enough time passed by
-        if self.last_refresh + 60 < time():
+        if int(self.last_refresh + 60) < int(time()):
             self.app_log.info("Refresh 60")
             # Note that a refresh changes the block time, therefore it's header.
             await self.refresh_and_signal_miners()
@@ -210,7 +210,7 @@ class MiningPool(object):
         else:
             current_index = 0
             backup_block = None
-        self.last_refresh = time()
+        self.last_refresh = int(time())
         if block is None:
             block = self.config.BU.get_latest_block()
         if block:
