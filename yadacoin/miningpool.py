@@ -162,8 +162,7 @@ class MiningPool(object):
             special_target = CHAIN.special_target(matching_block.index, matching_block.target,
                                                   delta_t, self.config.network)
             matching_block.special_target = special_target
-        print("matching", matching_block.to_dict())  # temp
-        # todo: fork pow compare to reduced diff if special_min
+        # print("matching", matching_block.to_dict())  # temp
         if int(matching_block.target) > int(matching_block.hash, 16):
             # broadcast winning block
             await self.broadcast_block(matching_block.to_dict())
