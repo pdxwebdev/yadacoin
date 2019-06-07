@@ -34,14 +34,11 @@ class CHAIN(object):
     # special_min triggers after 2 * block time
     # we want max target (= min diff) is reached after long enough it does not drop too fast.
     # Could be raised later on depending on the net hash rate. calibrating for very low hash
-    MAX_TARGET_AFTER_V2 = 600 * 6 * 8 # after 8 hours, diff will hit absolute min.
+    MAX_TARGET_AFTER_V2 = 600 * 6 * 8 # after 8 hours, target will hit  MAX_TARGET_V2. after twice that time, absolute max.
 
-    # Max possible target for a block, v2 : reasonable target for a single cpu miner.
+    # Max possible target for a block, v2 after MAX_TARGET_AFTER_V2: reasonable target for a single cpu miner.
     MAX_TARGET_V2 = 0x000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff
     MAX_TARGET_HEX_V2 = '000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-
-
-    # TODO: add block time depending on network + escape hatch
 
     @classmethod
     def target_block_time(cls, network:str):
@@ -82,21 +79,22 @@ class CHAIN(object):
     def special_target(cls, block_height: int, target:int, delta_t:int, network: str='mainnet') -> int:
         """Given the regular target and time since last block, gives the current target
         This is supposed to be the only place where this is computed, to ease maintenance"""
-        if int(block_height) <= cls.POW_FORK_V2:
+        if int(block_height) < cls.POW_FORK_V2:
             target_factor = delta_t / cls.target_block_time(network)
             special_target = int(target * (target_factor * 4))
         else:
-            # from 60k, POW_FORK_V2, we aim to reach max target after
-            if delta_t >= cls.MAX_TARGET_AFTER_V2:
-                special_target = cls.MAX_TARGET_V2
+            # from 60k, POW_FORK_V2, we aim to reach MAX_TARGET_V2 after MAX_TARGET_AFTER_V2
+            if delta_t >= 2 * cls.MAX_TARGET_AFTER_V2:
+                # but after twice that time, if still stuck - hard block - allow anything (MAX_TARGET)
+                special_target = cls.MAX_TARGET
             elif delta_t <= 600 * 2:
                 special_target = target
             else:
                 delta_target = abs(cls.MAX_TARGET_V2 - target)  # abs to make sure, should not happen
                 special_target = target + delta_target * ( (delta_t - 2 * 600) / (cls.MAX_TARGET_AFTER_V2 - 2 * 600 ) )
 
-        if special_target > cls.MAX_TARGET_V2:
-            special_target = cls.MAX_TARGET_V2
+        if special_target > cls.MAX_TARGET:
+            special_target = cls.MAX_TARGET
         return special_target
 
     @classmethod
