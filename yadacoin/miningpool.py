@@ -73,9 +73,15 @@ class MiningPool(object):
             print(exc_type, fname, exc_tb.tb_lineno)
 
     async def refresh_and_signal_miners(self):
-        self.refresh()
+        try:
+            self.refresh()
+        except Exception as e:
+            print("refresh_and_signal_miners: {}".format(e))
         # Update the miners (websockets)
-        await self.config.SIO.emit('header', data=self.block_to_mine_info(), namespace='/pool')
+        try:
+            await self.config.SIO.emit('header', data=self.block_to_mine_info(), namespace='/pool')
+        except Exception as e:
+            print("refresh_and_signal_miners2: {}".format(e))
 
     def get_status(self):
         """Returns pool status as explicit dict"""
@@ -203,30 +209,38 @@ class MiningPool(object):
         the transactions at the time of the refresh. Since tx hash is in the header, a refresh here means we have to
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
-        if self.block_factory:
-            current_index = self.block_factory.block.index
-            backup_block = self.block_factory.block.to_dict()
-            # print("backup_block header", backup_block['header'])
-        else:
-            current_index = 0
-            backup_block = None
-        self.last_refresh = int(time())
-        if block is None:
-            block = self.config.BU.get_latest_block()
-        if block:
-            block = Block.from_dict(block)
-        else:
-            genesis_block = BlockFactory.get_genesis_block()
-            genesis_block.save()
-            self.mongo.db.consensus.insert({
-                'block': genesis_block.to_dict(),
-                'peer': 'me',
-                'id': genesis_block.signature,
-                'index': 0
-                })
-            block = Block.from_dict(self.config.BU().get_latest_block())
-        self.index = block.index + 1
-        self.last_block_time = int(block.time)
+        try:
+            if self.block_factory:
+                current_index = self.block_factory.block.index
+                backup_block = self.block_factory.block.to_dict()
+                # print("backup_block header", backup_block['header'])
+            else:
+                current_index = 0
+                backup_block = None
+            self.last_refresh = int(time())
+            if block is None:
+                block = self.config.BU.get_latest_block()
+            if block:
+                block = Block.from_dict(block)
+            else:
+                genesis_block = BlockFactory.get_genesis_block()
+                genesis_block.save()
+                self.mongo.db.consensus.insert({
+                    'block': genesis_block.to_dict(),
+                    'peer': 'me',
+                    'id': genesis_block.signature,
+                    'index': 0
+                    })
+                block = Block.from_dict(self.config.BU().get_latest_block())
+            self.index = block.index + 1
+            self.last_block_time = int(block.time)
+        except Exception as e:
+            import sys, os
+            self.app_log.error("Exception {} mp.refresh0".format(e))
+            exc_type, exc_obj, exc_tb = sys.exc_info()
+            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
+            print(exc_type, fname, exc_tb.tb_lineno)
+            raise
         try:
             self.app_log.debug('Refreshing mp block Factory')
             self.block_factory = BlockFactory(
