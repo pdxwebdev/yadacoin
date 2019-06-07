@@ -37,8 +37,8 @@ class CHAIN(object):
     MAX_TARGET_AFTER_V2 = 600 * 6 * 8 # after 8 hours, diff will hit absolute min.
 
     # Max possible target for a block, v2 : reasonable target for a single cpu miner.
-    MAX_TARGET_V2 = 0x00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff
-    MAX_TARGET_HEX_V2 = '00000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+    MAX_TARGET_V2 = 0x000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    MAX_TARGET_HEX_V2 = '000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
 
     # TODO: add block time depending on network + escape hatch
