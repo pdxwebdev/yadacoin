@@ -552,22 +552,26 @@ class Block(object):
         self.mongo.db.blocks.remove({"index": self.index})
 
     def to_dict(self):
-        return {
-            'version': self.version,
-            'time': self.time,
-            'index': self.index,
-            'public_key': self.public_key,
-            'prevHash': self.prev_hash,
-            'nonce': self.nonce,
-            'transactions': [x.to_dict() for x in self.transactions],
-            'hash': self.hash,
-            'merkleRoot': self.merkle_root,
-            'special_min': self.special_min,
-            'target': hex(self.target)[2:].rjust(64, '0'),
-            'special_target': hex(self.special_target)[2:].rjust(64, '0'),
-            'header': self.header,
-            'id': self.signature
-        }
+        try:
+            return {
+                'version': self.version,
+                'time': self.time,
+                'index': self.index,
+                'public_key': self.public_key,
+                'prevHash': self.prev_hash,
+                'nonce': self.nonce,
+                'transactions': [x.to_dict() for x in self.transactions],
+                'hash': self.hash,
+                'merkleRoot': self.merkle_root,
+                'special_min': self.special_min,
+                'target': hex(self.target)[2:].rjust(64, '0'),
+                'special_target': hex(self.special_target)[2:].rjust(64, '0'),
+                'header': self.header,
+                'id': self.signature
+            }
+        except Exception as e:
+            print(e)
+            print("target", self.target, "spec", self.special_target)
 
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
