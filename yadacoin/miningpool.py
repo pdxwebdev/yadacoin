@@ -257,7 +257,10 @@ class MiningPool(object):
             # print('block header', self.block_factory.block.header)
             if self.block_factory.block.index == current_index:
                 # If we just refreshed the same block, keep the previous one so we can validate the nonces.
-                self.previous_block_to_mine = Block.from_dict(backup_block)
+                if backup_block:
+                    self.previous_block_to_mine = Block.from_dict(backup_block)
+                else:
+                    self.previous_block_to_mine = None
                 # print("previous_block header", self.previous_block_to_mine.header)
             else:
                 self.previous_block_to_mine = None

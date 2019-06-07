@@ -91,7 +91,7 @@ class CHAIN(object):
                 special_target = target
             else:
                 delta_target = abs(cls.MAX_TARGET_V2 - target)  # abs to make sure, should not happen
-                special_target = target + delta_target * ( (delta_t - 2 * 600) / (cls.MAX_TARGET_AFTER_V2 - 2 * 600 ) )
+                special_target = int(target + delta_target *  (delta_t - 2 * 600) // (cls.MAX_TARGET_AFTER_V2 - 2 * 600 ) )
 
         if special_target > cls.MAX_TARGET:
             special_target = cls.MAX_TARGET
