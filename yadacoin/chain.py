@@ -30,6 +30,11 @@ class CHAIN(object):
     RETARGET_PERIOD_V2 = 144  # blocks = 1 day at 10 min per block
     MAX_SECONDS_V2 = ONE_DAY_IN_SECONDS * 7  # seconds - avoid to drop to fast.
     MIN_SECONDS_V2 = 3600  # seconds = 1h - avoid too high a raise.
+    # target block time is now 600 sec
+    # special_min triggers after 2 * block time
+    # we want max target (= min diff) is reached after long enough it does not drop too fast.
+    # Could be raised later on depending on the net hash rate. calibrating for very low hash
+    MAX_TARGET_AFTER_V2 = 600 * 6 * 8 # after 8 hours, diff will hit absolute min.
 
 
     # TODO: add block time depending on network + escape hatch
@@ -73,11 +78,22 @@ class CHAIN(object):
     def special_target(cls, block_height: int, target:int, delta_t:int, network: str='mainnet') -> int:
         """Given the regular target and time since last block, gives the current target
         This is supposed to be the only place where this is computed, to ease maintenance"""
-        target_factor = delta_t / cls.target_block_time(network)
-        target = int(target * (target_factor * 4))
-        if target > cls.MAX_TARGET:
-            target = cls.MAX_TARGET
-        return target
+        if int(block_height) <= cls.POW_FORK_V2:
+            target_factor = delta_t / cls.target_block_time(network)
+            special_target = int(target * (target_factor * 4))
+        else:
+            # from 60k, POW_FORK_V2, we aim to reach max target after
+            if delta_t >= cls.MAX_TARGET_AFTER_V2:
+                special_target = cls.MAX_TARGET
+            elif delta_t <= 600 * 2:
+                special_target = target
+            else:
+                delta_target = abs(cls.MAX_TARGET - target)  # abs to make sure, should not happen
+                special_target = target + delta_target * ( (delta_t - 2 * 600) / (cls.MAX_TARGET_AFTER_V2 - 2 * 600 ) )
+
+        if special_target > cls.MAX_TARGET:
+            special_target = cls.MAX_TARGET
+        return special_target
 
     @classmethod
     def get_version_for_height(cls, height: int):
