@@ -1,4 +1,5 @@
 tornado>=6.0.2
+python-engineio>=3.8.0
 base58
 coincurve
 bip32utils
