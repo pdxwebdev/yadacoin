@@ -402,7 +402,7 @@ class Block(object):
     def copy(self):
         return Block(self.version, self.time, self.index, self.prev_hash, self.nonce, self.transactions,
                      self.hash, self.merkle_root, self.public_key, self.signature, self.special_min,
-                     self.header, self.target)
+                     self.header, self.target, self.special_target)
 
     @classmethod
     def from_dict(cls, block):
