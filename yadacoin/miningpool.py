@@ -462,13 +462,13 @@ class MiningPool(object):
                 pass
         return transaction_objs
 
-    def pool_mine(self, pool_peer, address, header, target, nonces, special_min):
-        self.app_log.error("pool_mine is deprecated")
-        nonce, lhash = BlockFactory.mine(header, target, nonces, special_min)
+    @classmethod
+    def pool_mine(cls, pool_peer, address, header, target, nonces, special_min, special_target):
+        nonce, lhash = BlockFactory.mine(header, target, nonces, special_min, special_target)
         if nonce and lhash:
             try:
-                requests.post("http://{pool}/pool-submit".format(pool=pool_peer), json={
-                    'nonce': nonce,
+                requests.post("{pool}/pool-submit".format(pool=pool_peer), json={
+                    'nonce': '{:02x}'.format(nonce),
                     'hash': lhash,
                     'address': address
                 }, headers={'Connection':'close'})

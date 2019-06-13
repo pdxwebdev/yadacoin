@@ -294,15 +294,15 @@ class BlockFactory(object):
             raise
 
     @classmethod
-    def mine(cls, header, target, nonces, special_min=False):
+    def mine(cls, header, target, nonces, special_min=False, special_target=''):
 
         lowest = (CHAIN.MAX_TARGET, 0, '')
         nonce = nonces[0]
         while nonce < nonces[1]:
-            hash_test = cls.generate_hash_from_header(header, str(nonce))
+            hash_test = cls.generate_hash_from_header(header, '{:02x}'.format(nonce))
 
             text_int = int(hash_test, 16)
-            if text_int < target or special_min:
+            if text_int < target or (special_min and text_int < int(special_target, 16)):
                 return nonce, hash_test
 
             if text_int < lowest[0]:
