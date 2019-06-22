@@ -36,6 +36,7 @@ class Graph(object):
             self.wallet_mode = False
             self.registered = False
             self.pending_registration = False
+            self.invited = False
             bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
             rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
             self.rid = rid
@@ -44,7 +45,7 @@ class Graph(object):
             if res.count():
                 self.username = res[0]['username']
             else:
-                self.username = '[none]'
+                self.username = ''
             start_height = 0
             # this will get any transactions between the client and server
             nodes = GU().get_transactions_by_rid(bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
@@ -89,11 +90,14 @@ class Graph(object):
                             upsert=True)
             else:
                 # not regisered, let's check for a pending transaction
-                res = self.mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': {'$ne': self.config.public_key}})
-                res2 = self.mongo.db.miner_transactions.find({'rid': self.rid, 'public_key': self.config.public_key})
+                res = self.mongo.db.miner_transactions.find_one({'rid': self.rid, 'public_key': {'$ne': self.config.public_key}})
+                res2 = self.mongo.db.miner_transactions.find_one({'rid': self.rid, 'public_key': self.config.public_key})
 
-                if res.count() and res2.count():
+                if res and res2:
                     self.pending_registration = True
+                
+                elif res2:
+                    self.invited = res2
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
@@ -296,6 +300,7 @@ class Graph(object):
                 'username': self.username,
                 'registered': self.registered,
                 'pending_registration': self.pending_registration,
+                'invited': self.invited,
                 'new_messages': self.new_messages,
                 'reacts': self.reacts,
                 'comments': self.comments,
