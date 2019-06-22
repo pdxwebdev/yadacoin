@@ -105,6 +105,8 @@ class Graph(object):
                     self.pending_registration = True
                 
                 elif res2:
+                    res2['bulletin_secret'] = self.config.bulletin_secret
+                    res2['username'] = self.config.username
                     self.invited = res2
 
     def get_lookup_rids(self):
@@ -135,7 +137,7 @@ class Graph(object):
             friend_requests = [x for x in GU().get_friend_requests(self.rid)] # include fastgraph
 
         for i, friend_request in enumerate(friend_requests):
-            # attach bulletin_secets
+            # attach bulletin_secrets
             username_txns = [x for x in GU().search_rid(friend_request.get('requester_rid'))]
             if username_txns:
                 friend_requests[i]['username'] = username_txns[0]['relationship']['their_username']
