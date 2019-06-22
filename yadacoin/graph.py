@@ -90,8 +90,16 @@ class Graph(object):
                             upsert=True)
             else:
                 # not regisered, let's check for a pending transaction
-                res = self.mongo.db.miner_transactions.find_one({'rid': self.rid, 'public_key': {'$ne': self.config.public_key}})
-                res2 = self.mongo.db.miner_transactions.find_one({'rid': self.rid, 'public_key': self.config.public_key})
+                res = self.mongo.db.miner_transactions.find_one({
+                    'rid': self.rid, 
+                    'public_key': {
+                        '$ne': self.config.public_key
+                    }
+                }, {'_id': 0})
+                res2 = self.mongo.db.miner_transactions.find_one({
+                    'rid': self.rid,
+                    'public_key': self.config.public_key
+                }, {'_id': 0})
 
                 if res and res2:
                     self.pending_registration = True
