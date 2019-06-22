@@ -117,9 +117,9 @@ class BlockFactory(object):
                     self.config.TU.apply_transaction_rules(self.config, transaction_obj, self.index)
                     transaction_objs.append(transaction_obj)
                     fee_sum += float(transaction_obj.fee)
-                except:
+                except Exception as e:
                     if self.config.debug:
-                        raise
+                        self.app_log.debug('Exception {}'.format(e))
                     else:
                         continue
 
