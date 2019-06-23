@@ -159,15 +159,15 @@ class Peers(object):
         self.on_new_ip(peer.host)
         client = None
         try:
-            client = YadaWebSocketClient(peer)
+            peer.client = YadaWebSocketClient(peer)
             # This will run until disconnect
-            await client.start()
+            await peer.client.start()
         except Exception as e:
             self.app_log.warning("Error: {} on background_peer {}".format(e, peer.host))
         finally:
             # If we get here with no outbound record, then it was an old node.
             #if peer.host not in self.outbound:
-            if client and client.probable_old:
+            if peer.client and peer.client.probable_old:
                 # add it to a temp "do not try ws soon" list
                 self.app_log.debug("Peer {} added to probable_old_nodes".format(peer.host))
                 self.probable_old_nodes[peer.host] = int(time()) + 3600  # try again in 1 hour
@@ -179,9 +179,9 @@ class Peers(object):
         self.app_log.debug("Block Insert event index {}".format(block_data['index']))
         # Update the miners (/pool http route) is done via latest_block => move to event to MiningPool stored by config
         if self.config.mp:
-            self.config.mp.refresh(block_data)
+            await self.config.mp.refresh(block_data)
             # Update the miners (websockets)
-            await self.config.SIO.emit('header', data=self.config.mp.block_to_mine_info(), namespace='/pool')
+            await self.config.SIO.emit('header', data=await self.config.mp.block_to_mine_info(), namespace='/pool')
         # TODO: start all async at once then await gather to spare some delay
         for ip, outgoing in self.outbound.items():
             try:
@@ -328,11 +328,12 @@ class Peer(object):
     """An individual Peer object"""
 
     # slots allow to lower ram usage for objects with many instances
-    __slots__ = ('config', 'mongo', 'host', 'port', 'bulletin_secret', 'is_me', 'app_log', 'stream', 'inbound', 'sid')
+    __slots__ = ('config', 'mongo', 'host', 'port', 'bulletin_secret', 'is_me', 'app_log', 'stream', 'inbound', 'sid', 'client')
 
     def __init__(self, host, port, bulletin_secret=None, is_me=False, stream=None, inbound=False, sid=None):
         self.config = get_config()
         self.mongo = self.config.mongo
+        self.client = None
         self.host = host
         self.port = port
         self.bulletin_secret = bulletin_secret

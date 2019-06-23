@@ -4,6 +4,7 @@ Handlers required by the pool operations
 import json
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.miningpool import MiningPool
+from yadacoin.miningpoolpayout import PoolPayer
 from yadacoin.chain import CHAIN
 from tornado import escape
 
@@ -14,7 +15,7 @@ class PoolHandler(BaseHandler):
         if self.config.mp is None:
             self.mp = MiningPool()
             self.config.mp = self.mp
-            self.mp.refresh()
+            await self.mp.refresh()
         """
         if not self.mp.block_factory:
             # first init
@@ -29,7 +30,7 @@ class PoolHandler(BaseHandler):
             self.mp.refresh()
         """
         # Since self.mp is updated by the inner events as soon as possible, no need to refresh anything, it always has the latest block.
-        self.render_as_json(self.mp.block_to_mine_info())
+        self.render_as_json(await self.mp.block_to_mine_info())
 
 
 class PoolSubmitHandler(BaseHandler):

@@ -478,16 +478,13 @@ class CreateRelationshipView(View):
         return json.dumps({"success": True})
 
 class MiningPoolView(View):
-    def dispatch_request(self):
-        config = app.config['yada_config']
-        mongo = app.config['yada_mongo']
-
+    async def dispatch_request(self):
         if 'mining_pool' not in app.config:
             app.config['mining_pool'] = MiningPool()
         mp = app.config['mining_pool']
 
         if not mp.block_factory:
-            mp.refresh()
+            await mp.refresh()
 
         if not hasattr(mp, 'gen'):
             mp.gen = mp.nonce_generator()

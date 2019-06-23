@@ -19,7 +19,7 @@ class PoolNamespace(AsyncNamespace):
             self.config = get_config()  # Will be done once at first request
             self.app_log = getLogger("tornado.application")
             self.mp = MiningPool()
-            self.mp.refresh()  # This will create the block factory
+            await self.mp.refresh()  # This will create the block factory
             self.config.mp = self.mp
         IP = environ['REMOTE_ADDR']
         if self.mp.free_inbound_slots <= 0:
@@ -61,7 +61,7 @@ class PoolNamespace(AsyncNamespace):
             await self.mp.on_new_inbound(session['IP'], data['version'], data['worker'], data['address'], data['type'], sid)
         # TODO: check extra data to filter and close?
         # TODO: send current header to mine
-        await self.emit('header', data=self.mp.block_to_mine_info(), room=sid)
+        await self.emit('header', data=await self.mp.block_to_mine_info(), room=sid)
 
     async def on_status(self, sid, data):
         """Miner sends status data"""

@@ -35,6 +35,7 @@ from yadacoin.mongo import Mongo
 from yadacoin.nodehandlers import NODE_HANDLERS
 from yadacoin.peers import Peer, Peers
 from yadacoin.poolhandlers import POOL_HANDLERS
+from yadacoin.miningpoolpayout import PoolPayer
 from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
@@ -150,6 +151,23 @@ async def background_pool():
             app_log.error("{} in background_pool".format(e))
 
 
+async def background_pool_payer():
+    """Responsible for paying miners"""
+    while True:
+        """
+        New blocks will directly trigger the correct event.
+        This co-routine checks if new transactions have been received, or if special_min is triggered,
+        So we can update the miners.
+        """
+        try:
+            await async_sleep(10)
+            if config.pp:
+                await config.pp.do_payout()
+
+        except Exception as e:
+            app_log.error("{} in background_pool_payer".format(e))
+
+
 def configure_logging():
     global app_log, access_log
     ch = logging.StreamHandler(stdout)
@@ -247,6 +265,11 @@ async def main():
     tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
     tornado.ioloop.IOLoop.instance().add_callback(background_status)
     tornado.ioloop.IOLoop.instance().add_callback(background_pool)
+    if config.pool_payout:
+        app_log.info("PoolPayout activated")
+        pp = PoolPayer()
+        config.pp = pp
+        tornado.ioloop.IOLoop.instance().add_callback(background_pool_payer)
 
     my_peer = Peer.init_my_peer(config.network)
     app_log.info("API: http://{}".format(my_peer.to_string()))

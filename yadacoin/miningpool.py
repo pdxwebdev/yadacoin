@@ -27,11 +27,10 @@ class MiningPool(object):
         self.previous_block_to_mine = None  # todo
         self.last_refresh = 0
 
-    @property
-    def block_to_mine(self):
+    async def block_to_mine(self):
         """Returns the block to mine"""
         if self.block_factory is None:
-            self.refresh()
+            await self.refresh()
         return self.block_factory.block
 
     async def check_block_evolved(self):
@@ -39,7 +38,7 @@ class MiningPool(object):
         Checks if special min triggered, or if new transactions were received, for the current block.
         If so, refresh the block and triggers miners update
         """
-        if self.special_min_triggered():
+        if await self.special_min_triggered():
             self.app_log.info("Special_min triggered")
             await self.refresh_and_signal_miners()
             # This will also refresh transactions, so we can early exit
@@ -53,15 +52,14 @@ class MiningPool(object):
             await self.refresh_and_signal_miners()
         pass
 
-    def special_min_triggered(self):
+    async def special_min_triggered(self):
         """Tells if we went past the special min trigger since our last call"""
         try:
-            if self.block_to_mine.special_min:
+            block_to_mine = await self.block_to_mine()
+            if block_to_mine.special_min:
                 # We already are special_min
                 return False
-            # print(self.last_block_time, self.block_to_mine.index)
-            # print(CHAIN.special_min_trigger(self.config.network, self.block_to_mine.index))
-            if (self.last_block_time + CHAIN.special_min_trigger(self.config.network, self.block_to_mine.index)) < time():
+            if (self.last_block_time + CHAIN.special_min_trigger(self.config.network, block_to_mine.index)) < time():
                 return True
             return False
         except Exception as e:
@@ -74,7 +72,7 @@ class MiningPool(object):
 
     async def refresh_and_signal_miners(self):
         try:
-            self.refresh()
+            await self.refresh()
         except Exception as e:
             print("refresh_and_signal_miners: {}".format(e))
         # Update the miners (websockets)
@@ -127,7 +125,7 @@ class MiningPool(object):
                 address = self.inbound[sid]['address']
             except Exception as e:
                 self.app_log.warning("error {} getting address sid {}".format(e, sid))
-        block_to_mine = self.block_to_mine.copy()
+        block_to_mine = await self.block_to_mine().copy()
         previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
         hash1 = BlockFactory.generate_hash_from_header(block_to_mine.header, nonce)
         if int(hash1, 16) > block_to_mine.target and self.config.network != 'regnet' and (block_to_mine.special_min and int(hash1, 16) > block_to_mine.special_target):
@@ -204,7 +202,7 @@ class MiningPool(object):
             print(e)
             pass
 
-    def refresh(self, block=None):
+    async def refresh(self, block=None):
         """Refresh computes a new bloc to mine. The block is stored in self.block_factory.block and contains
         the transactions at the time of the refresh. Since tx hash is in the header, a refresh here means we have to
         trigger the events for the pools, even if the block index did not change."""
@@ -244,7 +242,7 @@ class MiningPool(object):
         try:
             self.app_log.debug('Refreshing mp block Factory')
             self.block_factory = BlockFactory(
-                transactions=self.get_pending_transactions(),
+                transactions=await self.get_pending_transactions(),
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,
                 index=self.index)
@@ -272,7 +270,7 @@ class MiningPool(object):
             print(exc_type, fname, exc_tb.tb_lineno)
             raise
 
-    def block_to_mine_info(self):
+    async def block_to_mine_info(self):
         """Returns info for current block to mine"""
         res = {
             'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0'),  # target is now in hex format
@@ -348,31 +346,6 @@ class MiningPool(object):
                 partial=True
             )
         )
-    
-    def nonce_generator(self):
-        self.app_log.error("nonce_generator is deprecated")
-        latest_block_index = self.config.BU.get_latest_block()['index']
-        start_nonce = 0
-        while 1:
-            next_latest_block = self.config.BU.get_latest_block()
-            next_latest_block_index = next_latest_block['index']
-            if latest_block_index < next_latest_block_index:
-                latest_block_index = next_latest_block_index
-                start_nonce = 0
-                self.refresh()
-            else:
-                try:
-                    start_nonce += 10000000
-                except:
-                    start_nonce = 0
-            self.index = latest_block_index
-            to_time = int(time())
-            self.set_target(to_time)
-            if self.block_factory.block.special_min:
-                self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
-                self.block_factory.block.time = str(int(time()))
-            self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
-            yield [start_nonce, start_nonce + 10000000]
 
     def combine_transaction_lists(self):
         transactions = self.mongo.db.fastgraph_transactions.find({'$or': [{'ignore': False}, {'ignore': {'$exists': False}}]})
@@ -384,7 +357,7 @@ class MiningPool(object):
         for transaction in transactions:
             yield transaction
 
-    def get_pending_transactions(self):
+    async def get_pending_transactions(self):
         transaction_objs = []
         unspent_indexed = {}
         used_sigs = []

@@ -31,6 +31,7 @@ class Config(object):
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
         self.max_miners = config.get('max_miners', -1)
+        self.pool_payout = config.get('pool_payout', False)
         self.polling = config.get('polling', 30)
         if 0 < self.polling < 30:
             getLogger("tornado.application").error("Using too small a polling value ({}), use 0 or > 30"
@@ -78,6 +79,7 @@ class Config(object):
         self.SIO = None
         self.debug = False
         self.mp = None
+        self.pp = None
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event

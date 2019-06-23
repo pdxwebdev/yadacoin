@@ -89,7 +89,7 @@ class TU(object):  # Transaction Utilities
                         # The external input has already been spent
                         raise ExternalInputSpentException('The external input has already been spent')
 
-            if index >= CHAIN.MINING_AND_TXN_REFORM_FORK: # restrictions begin on transactions at this fork
+            if index >= CHAIN.MINING_AND_TXN_REFORM_FORK: # restrictions begin on input transactions at this fork
                 if not x:
                     raise MissingInputTransactionException('The external input has already been spent')
                 if not unspent_indexed[address][x.transaction_signature]['inputs'] and len(unspent_indexed[address][x.transaction_signature]['inputs']) == 0: # input is a coinbase txn 
