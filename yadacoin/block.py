@@ -58,26 +58,24 @@ class ExternalInputSpentException(Exception):
 
 
 class BlockFactory(object):
-    def __init__(self, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
+    @classmethod
+    async def generate(cls, config, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
         try:
-            self.config = get_config()
-            self.mongo = self.config.mongo
-            self.app_log = getLogger("tornado.application")
+            mongo = config.mongo
+            app_log = getLogger("tornado.application")
             if force_version is None:
-                self.version = CHAIN.get_version_for_height(index)
+                version = CHAIN.get_version_for_height(index)
             else:
-                self.version = force_version
+                version = force_version
             if force_time:
-                self.time = str(int(force_time))
+                xtime = str(int(force_time))
             else:
-                self.time = str(int(time.time()))
-            self.index = int(index)
-            if self.index == 0:
-                self.prev_hash = ''
+                xtime = str(int(time.time()))
+            index = int(index)
+            if index == 0:
+                prev_hash = ''
             else:
-                self.prev_hash = self.config.BU.get_latest_block()['hash']
-            self.public_key = public_key
-            self.private_key = private_key
+                prev_hash = config.BU.get_latest_block()['hash']
 
             transaction_objs = []
             fee_sum = 0.0
@@ -87,7 +85,7 @@ class BlockFactory(object):
                     if isinstance(txn, FastGraph):
                         transaction_obj = txn
                     else:
-                        transaction_obj = FastGraph.from_dict(self.index, txn)
+                        transaction_obj = FastGraph.from_dict(index, txn)
 
                     if transaction_obj.transaction_signature in used_sigs:
                         print('duplicate transaction found and removed')
@@ -103,7 +101,7 @@ class BlockFactory(object):
                         if isinstance(txn, Transaction):
                             transaction_obj = txn
                         else:
-                            transaction_obj = Transaction.from_dict(self.index, txn)
+                            transaction_obj = Transaction.from_dict(index, txn)
 
                         if transaction_obj.transaction_signature in used_sigs:
                             print('duplicate transaction found and removed')
@@ -114,41 +112,44 @@ class BlockFactory(object):
                     except:
                         raise InvalidTransactionException("invalid transactions")
                 try:
-                    self.config.TU.apply_transaction_rules(self.config, transaction_obj, self.index)
+                    await config.TU.apply_transaction_rules(config, transaction_obj, index)
                     transaction_objs.append(transaction_obj)
                     fee_sum += float(transaction_obj.fee)
                 except Exception as e:
-                    if self.config.debug:
-                        self.app_log.debug('Exception {}'.format(e))
+                    await mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
+                    if config.debug:
+                        app_log.debug('Exception {}'.format(e))
                     else:
                         continue
 
-            block_reward = CHAIN.get_block_reward(self.index)
+            block_reward = CHAIN.get_block_reward(index)
             coinbase_txn_fctry = TransactionFactory(
-                self.index,
-                public_key=self.public_key,
-                private_key=self.private_key,
+                index,
+                public_key=public_key,
+                private_key=private_key,
                 outputs=[{
                     'value': block_reward + float(fee_sum),
-                    'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+                    'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
                 }],
                 coinbase=True
             )
             coinbase_txn = coinbase_txn_fctry.generate_transaction()
             transaction_objs.append(coinbase_txn)
 
-            self.transactions = transaction_objs
-            txn_hashes = self.get_transaction_hashes()
-            self.set_merkle_root(txn_hashes)
-            self.block = Block(
-                version=self.version,
-                block_time=self.time,
-                block_index=self.index,
-                prev_hash=self.prev_hash,
-                transactions=self.transactions,
-                merkle_root=self.merkle_root,
-                public_key=self.public_key
+            transactions = transaction_objs
+            block_factory = cls()
+            block = Block(
+                version=version,
+                block_time=xtime,
+                block_index=index,
+                prev_hash=prev_hash,
+                transactions=transactions,
+                public_key=public_key
             )
+            txn_hashes = block.get_transaction_hashes()
+            block.set_merkle_root(txn_hashes)
+            block_factory.block = block
+            return block_factory
         except Exception as e:
             import sys, os
             print("Exception {} BlockFactory".format(e))
@@ -188,7 +189,7 @@ class BlockFactory(object):
         return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
 
     def get_transaction_hashes(self):
-        return sorted([str(x.hash) for x in self.transactions], key=str.lower)
+        return sorted([str(x.hash) for x in transactions], key=str.lower)
 
     def set_merkle_root(self, txn_hashes):
         hashes = []

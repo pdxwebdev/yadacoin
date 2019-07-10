@@ -125,7 +125,8 @@ class MiningPool(object):
                 address = self.inbound[sid]['address']
             except Exception as e:
                 self.app_log.warning("error {} getting address sid {}".format(e, sid))
-        block_to_mine = await self.block_to_mine().copy()
+        block_to_mine = await self.block_to_mine()
+        block_to_mine = block_to_mine.copy()
         previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
         hash1 = BlockFactory.generate_hash_from_header(block_to_mine.header, nonce)
         if int(hash1, 16) > block_to_mine.target and self.config.network != 'regnet' and (block_to_mine.special_min and int(hash1, 16) > block_to_mine.special_target):
@@ -240,13 +241,14 @@ class MiningPool(object):
             print(exc_type, fname, exc_tb.tb_lineno)
             raise
         try:
-            self.app_log.debug('Refreshing mp block Factory')
-            self.block_factory = BlockFactory(
-                transactions=await self.get_pending_transactions(),
-                public_key=self.config.public_key,
-                private_key=self.config.private_key,
-                index=self.index)
-
+            self.app_log.debug('Refreshing mp block Factory {}'.format(time()))
+            self.block_factory = await self.create_block(
+                await self.get_pending_transactions(),
+                self.config.public_key,
+                self.config.private_key,
+                index=self.index
+            )
+            self.app_log.debug('End refreshing mp block Factory {}'.format(time()))
             # TODO: centralize handling of min target
             self.set_target(int(self.block_factory.block.time))
             if not self.block_factory.block.special_min:
@@ -269,6 +271,16 @@ class MiningPool(object):
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             print(exc_type, fname, exc_tb.tb_lineno)
             raise
+
+    async def create_block(self, transactions, public_key, private_key, index):
+        return await BlockFactory.generate(
+            self.config,
+            transactions,
+            public_key,
+            private_key,
+            index=index
+        )
+
 
     async def block_to_mine_info(self):
         """Returns info for current block to mine"""

@@ -45,7 +45,7 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
     
     @classmethod
-    def apply_transaction_rules(cls, config, transaction_obj, index):
+    async def apply_transaction_rules(cls, config, transaction_obj, index):
         from yadacoin.transaction import (
             ExternalInput,
             MissingInputTransactionException,
