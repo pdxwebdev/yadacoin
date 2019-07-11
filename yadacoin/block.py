@@ -148,6 +148,7 @@ class BlockFactory(object):
             )
             txn_hashes = block.get_transaction_hashes()
             block.set_merkle_root(txn_hashes)
+            block.merkle_root = block.verify_merkle_root
             block_factory.block = block
             return block_factory
         except Exception as e:
@@ -349,7 +350,7 @@ class BlockFactory(object):
 class Block(object):
 
     # Memory optimization
-    __slots__ = ('config', 'mongo', 'version', 'time', 'index', 'prev_hash', 'nonce', 'transactions', 'txn_hashes',
+    __slots__ = ('app_log', 'config', 'mongo', 'version', 'time', 'index', 'prev_hash', 'nonce', 'transactions', 'txn_hashes',
                  'merkle_root', 'verify_merkle_root','hash', 'public_key', 'signature', 'special_min', 'target',
                  'special_target', 'header')
     
@@ -370,6 +371,7 @@ class Block(object):
         target: int=0,
         special_target: int=0
     ):
+        self.app_log = getLogger('tornado.application')
         self.config = get_config()
         self.mongo = self.config.mongo
         self.version = version
