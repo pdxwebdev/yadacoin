@@ -46,8 +46,8 @@ class MiningPool(object):
         # second case would be new transactions received in the mean time
         # TODO - event on tx
         # or enough time passed by
-        if int(self.last_refresh + 240) < int(time()):
-            self.app_log.info("Refresh 240")
+        if int(self.last_refresh + 60) < int(time()):
+            self.app_log.info("Refresh 60")
             # Note that a refresh changes the block time, therefore it's header.
             await self.refresh_and_signal_miners()
         pass
@@ -242,12 +242,13 @@ class MiningPool(object):
             raise
         try:
             self.app_log.debug('Refreshing mp block Factory {}'.format(time()))
-            self.block_factory = await self.create_block(
-                await self.get_pending_transactions(),
-                self.config.public_key,
-                self.config.private_key,
-                index=self.index
-            )
+            if current_index != self.index:
+                self.block_factory = await self.create_block(
+                    await self.get_pending_transactions(),
+                    self.config.public_key,
+                    self.config.private_key,
+                    index=self.index
+                )
             self.app_log.debug('End refreshing mp block Factory {}'.format(time()))
             # TODO: centralize handling of min target
             self.set_target(int(self.block_factory.block.time))
