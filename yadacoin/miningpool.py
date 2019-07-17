@@ -251,7 +251,7 @@ class MiningPool(object):
                 )
             self.app_log.debug('End refreshing mp block Factory {}'.format(time()))
             # TODO: centralize handling of min target
-            self.set_target(int(self.block_factory.block.time))
+            self.set_target(int(time()))
             if not self.block_factory.block.special_min:
                 self.set_target_from_last_non_special_min(block)
             self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
