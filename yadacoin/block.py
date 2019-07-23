@@ -112,8 +112,14 @@ class BlockFactory(object):
                     except:
                         raise InvalidTransactionException("invalid transactions")
                 try:
+                    if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
+                        app_log.debug("Block embeds txn too far in the future")
+                        continue
+
                     await config.TU.apply_transaction_rules(config, transaction_obj, index)
+                    
                     transaction_objs.append(transaction_obj)
+                    
                     fee_sum += float(transaction_obj.fee)
                 except Exception as e:
                     await mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
@@ -121,7 +127,7 @@ class BlockFactory(object):
                         app_log.debug('Exception {}'.format(e))
                     else:
                         continue
-
+            
             block_reward = CHAIN.get_block_reward(index)
             coinbase_txn_fctry = TransactionFactory(
                 index,
