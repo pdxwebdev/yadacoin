@@ -22,7 +22,7 @@ class ClientChatNamespace(AsyncClientNamespace):
         self.mongo = self.config.mongo
         _, ip_port = self.client.connection_url.split('//')  # extract ip:port
         self.ip, self.port = ip_port.split(':')
-        self.app_log.debug('ws client /Chat connected to {}:{} - {}'.format(self.ip, self.port, self.client.__dict__))
+        self.app_log.debug('ws client /Chat connected to {}:{} - {}'.format(self.ip, self.port, self.client))
         self.client.manager.connected = True
         await self.emit('hello', data={"version": 2, "ip": self.config.public_ip, "port": self.config.peer_port}, namespace="/chat")
         # ask the peer active list
@@ -128,7 +128,9 @@ class YadaWebSocketClient(object):
         try:
             self.client.manager = self
             self.client.register_namespace(ClientChatNamespace('/chat'))
-            await self.client.connect("http://{}:{}".format(self.peer.host, self.peer.port), namespaces=['/chat'])
+            url = "http://{}:{}".format(self.peer.host, self.peer.port)
+            self.app_log.info("ws client connecting to {}".format(url))
+            await self.client.connect(url, namespaces=['/chat'])
             # self.connected = True
             await async_sleep(self.WAIT_FOR_PEERS)  # wait for an answer
             if not self.connected:

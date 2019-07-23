@@ -1,3 +1,4 @@
+import os
 from pymongo import MongoClient, IndexModel, ASCENDING, DESCENDING
 from motor.motor_tornado import MotorClient
 
@@ -11,6 +12,14 @@ class Mongo(object):
         self.client = MongoClient(self.config.mongodb_host)
         self.db = self.client[self.config.database]
         self.site_db = self.client[self.config.site_database]
+        try:
+            # test connection
+            self.db.yadacoin.find_one()
+        except:
+            if hasattr(self.config, 'mongod_path'):
+                os.system('sudo {} --syslog --fork'.format(self.config.mongod_path))
+            else:
+                os.system('sudo mongod --syslog --fork')
 
         __id = IndexModel([("id", ASCENDING)], name="__id", unique=True)
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")

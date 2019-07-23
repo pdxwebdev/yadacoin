@@ -1,0 +1,24 @@
+{% include header.html %}
+<h1>Profile</h1>
+{% if remote_ip in ['127.0.0.1', 'localhost'] %}
+    <a href="/profile/edit">Edit</a>
+{% end if %}
+<div class="row">
+    <div class="col-md-12">
+        {{profile['avatar']}}
+    </div>
+</div>
+<h2 class="about-header">About me</h2>
+<div class="row">
+    <div class="col-md-12">
+        {% raw profile['about_me'] %}
+    </div>
+</div>
+{% for post in posts %}
+<div class="row">
+    <div class="col-md-12">
+        {{post['postText']}}
+    </div>
+</div>
+{% end for %}
+{% include footer.html %}

@@ -1,0 +1,229 @@
+{% include header.html %}
+<h1>Welcome</h1>
+<div class="row">
+    <div class="col-md-2">
+        <h2>Profile</h2>
+        <table class="table">
+            <tr>
+                <td>Matt</td>
+                <td>
+                    {% if remote_ip in ['127.0.0.1', 'localhost'] %}
+                        <a href="/profile">View</a>
+                    {% end if %}
+                </td>
+                <td>
+                    {% if remote_ip in ['127.0.0.1', 'localhost'] %}
+                        <a href="/profile/edit">Edit</a>
+                    {% end if %}
+                </td>
+            </tr>
+        </table>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        <h2>Groups</h2>
+        <a href="#" onClick="prompt('Group name?'); return false;">Create group +</a>
+        {% for group in ["Blockchain Portland", "Cars n Coffee"] %}
+        <div class="row">
+            <div class="col-md-1"></div>
+            <div class="col-md-1">
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Chat
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Text</a>
+                        <a class="dropdown-item" href="#">Voice</a>
+                        <a class="dropdown-item" href="#">Video</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Content
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Blog posts</a>
+                        <a class="dropdown-item" href="#">Images</a>
+                        <a class="dropdown-item" href="#">Videos</a>
+                        <a class="dropdown-item" href="#">Broadcast</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Things
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Inventory</a>
+                        <a class="dropdown-item" href="#">Track</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <form autocomplete="off" action="/action_page.php">
+                    <div class="autocomplete" style="width:300px;">
+                        <input class="myInput" type="text" name="{{group}}myFriend" placeholder="Invite friend">
+                    </div>
+                    <input type="submit" value="Invite">
+                </form>
+            </div>
+            <div class="col-md-2">
+                {{group}}
+            </div>
+        </div>
+        {% end for %}
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        <h2>Friends</h2>
+        <a href="#">Add friend +</a>
+        {% for peer in peers.peers %}
+        <div class="row">
+            <div class="col-md-1">
+                <div class="dots">
+                    {% if peer.host in peers.outbound or peer.host in peers.inbound %}
+                        <span class="dot dot-success"></span> Online
+                    {% else %}
+                        <span class="dot dot-danger"></span> Offline
+                    {% end if %}
+                </div>
+            </div>
+            <div class="col-md-1">
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Chat
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Text</a>
+                        <a class="dropdown-item" href="#">Voice</a>
+                        <a class="dropdown-item" href="#">Video</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Content
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Blog posts</a>
+                        <a class="dropdown-item" href="#">Images</a>
+                        <a class="dropdown-item" href="#">Videos</a>
+                        <a class="dropdown-item" href="#">Broadcast</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <form autocomplete="off" action="/action_page.php">
+                    <div class="autocomplete" style="width:300px;">
+                        <input class="myInput" type="text" name="{{group}}myFriend" placeholder="Refer friend">
+                    </div>
+                    <input type="submit" value="Refer">
+                </form>
+            </div>
+            <div class="col-md-2">
+                {{peer.host}}
+            </div>
+        </div>
+        {% end for %}
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-12">
+        <h2>Processes</h2>
+        <a href="/edit-process">Add process +</a>
+        {% for process in ['get mail', 'get groceries'] %}
+        <div class="row">
+            <div class="col-md-1">
+                <div class="dots">
+                    {% if 'get' in process %}
+                        <span class="dot dot-success"></span> Done
+                    {% else %}
+                        <span class="dot dot-danger"></span> Incomplete
+                    {% end if %}
+                </div>
+            </div>
+            <div class="col-md-1">
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Chat
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Text</a>
+                        <a class="dropdown-item" href="#">Voice</a>
+                        <a class="dropdown-item" href="#">Video</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-2">
+                <div class="dropdown">
+                    <button class="btn btn-secondary dropdown-toggle" type="button" id="dropdownMenuButton" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
+                        Content
+                    </button>
+                    <div class="dropdown-menu" aria-labelledby="dropdownMenuButton">
+                        <a class="dropdown-item" href="#">Blog posts</a>
+                        <a class="dropdown-item" href="#">Images</a>
+                        <a class="dropdown-item" href="#">Videos</a>
+                        <a class="dropdown-item" href="#">Broadcast</a>
+                    </div>
+                </div>
+            </div>
+            <div class="col-md-4">
+                <form autocomplete="off" action="/action_page.php">
+                    <div class="autocomplete" style="width:300px;">
+                        <input class="myInput" type="text" name="{{group}}myFriend" placeholder="Refer friend">
+                    </div>
+                    <input type="submit" value="Refer">
+                </form>
+            </div>
+            <div class="col-md-2">
+                {{process}}
+            </div>
+        </div>
+        {% end for %}
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-5">
+        <h2>Timeline</h2>(postText)
+        <table>
+            <tr>
+                <th>Post</th>
+            </tr>
+            <tr>
+                <td>Ok</td>
+            </tr>
+            <tr>
+                <td>Ok</td>
+            </tr>
+            <tr>
+                <td>Ok</td>
+            </tr>
+            <tr>
+                <td>Ok</td>
+            </tr>
+        </table>
+    </div>
+</div>
+<div class="row">
+    <div class="col-md-5">
+        <h2>Messages</h2> (chatText)
+        <table>
+            <tr>
+                <th>Eve</th>
+            </tr>
+            <tr>
+                <td>Alice</td>
+            </tr>
+            <tr>
+                <td>Bob</td>
+            </tr>
+        </table>
+    </div>
+</div>
+{% include footer.html %}

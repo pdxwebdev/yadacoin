@@ -212,6 +212,7 @@ async def main():
     define("config", default='config/config.json', help="Config file location, default is 'config/config.json'",
            type=str)
     define("verify", default=True, help="Verify chain, default True", type=bool)
+    define("webonly", default=False, help="Web only (ignores node processes for faster init when restarting server frequently), default False", type=bool)
 
     options.parse_command_line(final=False)
     configure_logging()
@@ -237,44 +238,46 @@ async def main():
 
     mongo = Mongo()
     config.mongo = mongo
-
     peers = Peers()
     config.peers = peers
-    config.BU = yadacoin.blockchainutils.BlockChainUtils()
-    config.TU = yadacoin.transactionutils.TU
-    yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
-    config.GU = GraphUtils()
 
-    consensus = Consensus(options.debug, peers)
-    if options.verify:
-        app_log.info("Verifying existing blockchain")
-        consensus.verify_existing_blockchain(reset=options.reset)
-    else:
-        app_log.info("Verification of existing blockchain skipped by config")
-    config.consensus = consensus
+    if not options.webonly:
+        config.BU = yadacoin.blockchainutils.BlockChainUtils()
+        config.TU = yadacoin.transactionutils.TU
+        yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
+        config.GU = GraphUtils()
 
-    if config.max_miners > 0:
-        app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
-    else:
-        app_log.info("MiningPool disabled by config")
+        consensus = Consensus(options.debug, peers)
+        if options.verify:
+            app_log.info("Verifying existing blockchain")
+            consensus.verify_existing_blockchain(reset=options.reset)
+        else:
+            app_log.info("Verification of existing blockchain skipped by config")
+        config.consensus = consensus
 
-    ws_init()
-    config.SIO = get_sio()
+        if config.max_miners > 0:
+            app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
+        else:
+            app_log.info("MiningPool disabled by config")
 
-    tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
-    tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
-    tornado.ioloop.IOLoop.instance().add_callback(background_status)
-    tornado.ioloop.IOLoop.instance().add_callback(background_pool)
-    if config.pool_payout:
-        app_log.info("PoolPayout activated")
-        pp = PoolPayer()
-        config.pp = pp
-        tornado.ioloop.IOLoop.instance().add_callback(background_pool_payer)
+        ws_init()
+        config.SIO = get_sio()
+
+        tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
+        tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
+        tornado.ioloop.IOLoop.instance().add_callback(background_status)
+        tornado.ioloop.IOLoop.instance().add_callback(background_pool)
+        if config.pool_payout:
+            app_log.info("PoolPayout activated")
+            pp = PoolPayer()
+            config.pp = pp
+            tornado.ioloop.IOLoop.instance().add_callback(background_pool_payer)
 
     my_peer = Peer.init_my_peer(config.network)
     app_log.info("API: http://{}".format(my_peer.to_string()))
 
     app = NodeApplication(config, mongo, peers)
+
     app_log.info("Starting server on {}:{}".format(config.serve_host, config.serve_port))
     app.listen(config.serve_port, config.serve_host)
     if config.ssl:
