@@ -27,11 +27,9 @@ class GraphConfigHandler(BaseHandler):
 
     async def get(self):
         if int(self.config.web_server_port) == 443:
-            peer = "https://{}".format(self.config.web_server_host, self.config.web_server_port)
-        elif int(self.config.web_server_port) == 80:
-            peer = "http://{}".format(self.config.web_server_host, self.config.web_server_port)
+            peer = "https://{}:{}".format(self.config.web_server_host, self.config.web_server_port)
         else:
-            peer = "{}:{}".format(self.config.web_server_host, self.config.web_server_port)
+            peer = "http://{}:{}".format(self.config.web_server_host, self.config.web_server_port)
         yada_config = {
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
