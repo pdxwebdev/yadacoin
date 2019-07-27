@@ -106,9 +106,16 @@ class ProfileAuthHandler(BaseWebHandler):
         )
     
     async def post(self):
-        if self.get_body_argument('key_or_wif') in [self.config.wif, self.config.private_key]:
-            self.set_secure_cookie("key_or_wif", self.get_body_argument('key_or_wif'))
-            return self.redirect('/admin')
+        try:
+            key_or_wif = self.get_body_argument('key_or_wif')
+        except:
+            key_or_wif = json.loads(self.request.body.decode()).get('key_or_wif')
+        if key_or_wif in [self.config.wif, self.config.private_key]:
+            self.set_secure_cookie("key_or_wif", key_or_wif)
+            
+            self.write({'status': 'ok'})
+            self.set_header('Content-Type', 'application/json')
+            return self.finish()
         return self.redirect('/auth')
 
 class LogoutHandler(BaseWebHandler):

@@ -8,7 +8,7 @@ from yadacoin.graphutils import GraphUtils as GU
 
 class Graph(object):
 
-    def __init__(self, config, mongo, bulletin_secret, ids, wallet=None):
+    def __init__(self, config, mongo, bulletin_secret, ids, key_or_wif=None):
         self.config = config
         self.mongo = mongo
         self.friend_requests = []
@@ -24,14 +24,16 @@ class Graph(object):
         self.already_added_messages = []
         self.bulletin_secret = str(bulletin_secret)
         self.ids = ids
+        self.all_relationships = [x for x in GU().get_all_usernames()]
+        self.all_groups = [x for x in self.config.GU.get_all_groups()]
 
-        all_relationships = [x for x in GU().get_all_usernames()]
-        self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in all_relationships])
-        if wallet: # disabling for now
+        
+        self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
+        if key_or_wif in [config.private_key, config.wif]: # disabling for now
             self.wallet_mode = True
 
-            rids = [x['rid'] for x in all_relationships]
-            self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=wallet.bulletin_secret, rid=True, raw=True, returnheight=True)
+            rids = [x['rid'] for x in self.all_relationships]
+            self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=config.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
             self.wallet_mode = False
             self.registered = False
@@ -170,7 +172,10 @@ class Graph(object):
                         messages.append(x)
                 self.messages = messages
             for i, x in enumerate(self.messages):
-                self.messages[i]['username'] = self.rid_usernames[self.messages[i]['rid']]
+                try:
+                    self.messages[i]['username'] = self.rid_usernames[self.messages[i]['rid']]
+                except:
+                    pass
             return
         else:
             lookup_rids = self.get_request_rids_for_rid()
@@ -200,23 +205,30 @@ class Graph(object):
                 self.new_messages.append(message)
                 used_rids.append(message['rid'])
 
-    def get_posts(self):
+    def get_group_messages(self):
         if self.wallet_mode:
-            self.posts = []
-            return
-
-        my_bulletin_secret = self.config.bulletin_secret
-        posts = []
-        blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
-        flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
-        for x in GU().get_posts(self.rid):
-            rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
-            rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
-            if rid in self.rid_usernames:
-                x['username'] = self.rid_usernames[rid]
-                if x['username'] not in blocked and x['id'] not in flagged:
-                    posts.append(x)
-        self.posts = posts
+            rids = []
+            for x in self.all_groups:
+                if 'rid' in x:
+                    rids.append(x['rid'])
+                if 'requested_rid' in x:
+                    rids.append(x['requested_rid'])
+                if 'requester_rid' in x:
+                    rids.append(x['requester_rid'])
+            self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=self.config.bulletin_secret, rid=True, raw=True, returnheight=True)
+        else:
+            my_bulletin_secret = self.config.bulletin_secret
+            posts = []
+            blocked = [x['username'] for x in self.mongo.db.blocked_users.find({'bulletin_secret': self.bulletin_secret})]
+            flagged = [x['id'] for x in self.mongo.db.flagged_content.find({'bulletin_secret': self.bulletin_secret})]
+            for x in GU().get_posts(self.rid):
+                rids = sorted([str(my_bulletin_secret), str(x.get('bulletin_secret'))], key=str.lower)
+                rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
+                if rid in self.rid_usernames:
+                    x['username'] = self.rid_usernames[rid]
+                    if x['username'] not in blocked and x['id'] not in flagged:
+                        posts.append(x)
+            self.posts = posts
 
     def get_comments(self):
         if self.wallet_mode:

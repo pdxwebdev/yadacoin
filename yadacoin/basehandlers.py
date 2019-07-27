@@ -14,6 +14,9 @@ class BaseHandler(RequestHandler):
 
     def initialize(self):
         """Common init for every request"""
+        origin = self.get_query_argument('origin', '*')
+        if origin[-1] == '/':
+            origin = origin[:-1]
         self.app_log = logging.getLogger("tornado.application")
         self.config = self.settings['yadacoin_config']
         self.mongo = self.settings['mongo']
@@ -21,7 +24,7 @@ class BaseHandler(RequestHandler):
         self.peers = self.settings['peers']
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]
-        self.set_header("Access-Control-Allow-Origin", '*')
+        self.set_header("Access-Control-Allow-Origin", origin)
         self.set_header('Access-Control-Allow-Credentials', "true")
         self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
         self.set_header('Access-Control-Expose-Headers', "Content-Type")

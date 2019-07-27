@@ -51,7 +51,11 @@ class BaseGraphHandler(BaseHandler):
             ids = json.loads(self.request.body.decode('utf-8')).get('ids')
         else:
             ids = []
-        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids)
+        try:
+            key_or_wif = self.get_secure_cookie('key_or_wif').decode()
+        except:
+            key_or_wif = None
+        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, key_or_wif)
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
 
@@ -61,9 +65,10 @@ class GraphInfoHandler(BaseGraphHandler):
         graph = self.get_base_graph()
         self.render_as_json(graph.to_dict())
 
-class GraphRIDWalletHandler(BaseHandler):
+class GraphRIDWalletHandler(BaseGraphHandler):
 
     async def get(self):
+        graph = self.get_base_graph()
         config = self.config
         address = self.get_query_argument('address')
         bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', "+")
@@ -156,7 +161,7 @@ class GraphTransactionHandler(BaseGraphHandler):
             try:
                 transaction.verify()
             except InvalidTransactionException:
-                await self.config.mongo.async_db.failed_transactions.insert({
+                await self.config.mongo.async_db.failed_transactions.insert_one({
                     'exception': 'InvalidTransactionException',
                     'txn': txn
                 })
@@ -164,7 +169,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                 return 'InvalidTransactionException', 400
             except InvalidTransactionSignatureException:
                 print('InvalidTransactionSignatureException')
-                await self.config.mongo.async_db.failed_transactions.insert({
+                await self.config.mongo.async_db.failed_transactions.insert_one({
                     'exception': 'InvalidTransactionSignatureException',
                     'txn': txn
                 })
@@ -190,7 +195,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction,))
         job.start()
         """
-        self.render_as_json(items)
+        return self.render_as_json(items)
 
 
 class CreateRelationshipHandler(BaseHandler):
@@ -297,6 +302,13 @@ class GraphMessagesHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
         graph.get_messages()
+        self.render_as_json(graph.to_dict())
+
+
+class GraphGroupMessagesHandler(BaseGraphHandler):
+    async def get(self):
+        graph = self.get_base_graph()
+        graph.get_group_messages()
         self.render_as_json(graph.to_dict())
 
 

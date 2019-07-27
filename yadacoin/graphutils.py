@@ -33,6 +33,14 @@ class GraphUtils(object):
             queryType='allUsernames'
         )
 
+    def get_all_groups(self):
+        return self.config.BU.get_transactions(
+            wif=self.config.wif,
+            both=False,
+            query={'txn.relationship.group': {'$exists': True}},
+            queryType='allUsernames'
+        )
+
     def search_username(self, username):
         return self.config.BU.get_transactions(
             wif=self.config.wif,
