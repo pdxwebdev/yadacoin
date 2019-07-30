@@ -77,7 +77,7 @@ class MiningPool(object):
             print("refresh_and_signal_miners: {}".format(e))
         # Update the miners (websockets)
         try:
-            await self.config.SIO.emit('header', data=self.block_to_mine_info(), namespace='/pool')
+            await self.config.SIO.emit('header', data=await self.block_to_mine_info(), namespace='/pool')
         except Exception as e:
             print("refresh_and_signal_miners2: {}".format(e))
 

@@ -631,9 +631,11 @@ class GraphUtils(object):
             if 'txn' in ftxn:
                 yield ftxn['txn']
 
+        last_id = ''
         for x in self.mongo.db.transactions_by_rid_cache.find(
-                {'raw': raw, 'rid': rid, 'returnheight': returnheight, 'selector': {'$in': selectors}}):
-            if 'txn' in x:
+                {'raw': raw, 'rid': rid, 'returnheight': returnheight, 'selector': {'$in': selectors}}).sort([('txn.id', 1)]):
+            if 'txn' in x and x['txn']['id'] != last_id:
+                last_id = x['txn']['id']
                 yield x['txn']
 
     def get_second_degree_transactions_by_rids(self, rids, start_height):

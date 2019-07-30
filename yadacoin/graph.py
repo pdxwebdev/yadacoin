@@ -29,10 +29,10 @@ class Graph(object):
 
         
         self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
-        if key_or_wif in [config.private_key, config.wif]: # disabling for now
+        if key_or_wif in [config.private_key, config.wif]:
             self.wallet_mode = True
 
-            rids = [x['rid'] for x in self.all_relationships]
+            rids = list(set([x['rid'] for x in self.all_relationships]))
             self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=config.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
             self.wallet_mode = False
