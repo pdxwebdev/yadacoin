@@ -55,6 +55,12 @@ class Mongo(object):
         except:
             pass
 
+        __txn_id = IndexModel([("txn.id", ASCENDING)], name="__txn_id")
+        try:
+            self.db.transactions_by_rid_cache.create_indexes([__txn_id])
+        except:
+            pass
+
         # TODO: add indexes for peers
 
         # See https://motor.readthedocs.io/en/stable/tutorial-tornado.html

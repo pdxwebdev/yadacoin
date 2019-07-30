@@ -217,7 +217,7 @@ class BlockFactory(object):
         try:
             # change target
             max_target = CHAIN.MAX_TARGET
-            if get_config().network == 'regnet':
+            if get_config().network in ['regnet', 'testnet']:
                 return int(max_target)
             max_block_time = CHAIN.target_block_time(get_config().network)
             retarget_period = CHAIN.RETARGET_PERIOD  # blocks
