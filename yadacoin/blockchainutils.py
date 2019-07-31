@@ -361,6 +361,7 @@ class BlockChainUtils(object):
         else:
             block_height = 0
 
+        cipher = Crypt(wif)
         transactions = []
         for block in self.mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}}):
             for transaction in block.get('transactions'):
@@ -372,7 +373,6 @@ class BlockChainUtils(object):
                     if not transaction['relationship']:
                         continue
                     if not raw:
-                        cipher = Crypt(wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
@@ -399,6 +399,7 @@ class BlockChainUtils(object):
                         }
                     , upsert=True)
                 except:
+                    self.app_log.debug('failed decrypt. block: {}'.format(block['index']))
                     if both:
                         transaction['height'] = block['index']
                         self.mongo.db.get_transactions_cache.update(
@@ -455,6 +456,7 @@ class BlockChainUtils(object):
 
     def get_fastgraph_transactions(self, secret, query, queryType, raw=False, both=True, skip=None):
         from yadacoin.crypt import Crypt
+        cipher = Crypt(secret)
         for transaction in self.mongo.db.fastgraph_transactions.find(query):
             if 'txn' in transaction:
                 try:
@@ -470,7 +472,6 @@ class BlockChainUtils(object):
                     if res:
                         continue
                     if not raw:
-                        cipher = Crypt(secret)
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship

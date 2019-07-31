@@ -164,7 +164,9 @@ class Graph(object):
 
     def get_messages(self, not_mine=False):
         if self.wallet_mode:
-            self.messages = [x for x in self.rid_transactions if x['rid'] and x['relationship']]
+            rids = list(set([x['rid'] for x in self.all_relationships] + [x['requested_rid'] for x in self.all_relationships]))
+            rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=self.config.bulletin_secret, rid=True, raw=True, returnheight=True)
+            self.messages = [x for x in rid_transactions if x['rid'] and x['relationship']]
             if not_mine:
                 messages = []
                 for x in self.messages:
