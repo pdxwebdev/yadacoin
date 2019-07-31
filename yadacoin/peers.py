@@ -210,7 +210,7 @@ class Peers(object):
             return
         url = 'https://yadacoin.io/peers'  # Default value
         if self.network == 'testnet':
-            url = 'http://yadacoin.io:8888/peers'
+            url = 'https://yadacoin.io:444/peers'
 
         res = await self.mongo.async_db.peers.find({'active': True, 'net':self.network}, {'_id': 0}).to_list(length=100)
         if len(res) <= 0:
@@ -361,7 +361,7 @@ class Peer(object):
             if self.config.network == 'mainnet':
                 url = 'https://yadacoin.io/peers'
             elif self.config.network == 'testnet':
-                url = 'http://yadacoin.io:8888/peers'
+                url = 'https://yadacoin.io:444/peers'
             requests.post(
                 url,
                 json={'host': self.host, 'port': str(self.port), 'failed_v1': True},
@@ -436,7 +436,7 @@ class Peer(object):
             return
         url = 'https://yadacoin.io/peers'  # default url
         if network == 'testnet':
-            url = 'http://yadacoin.io:8888/peers'
+            url = 'https://yadacoin.io:444/peers'
         try:
             requests.post(
                 url,

@@ -234,7 +234,7 @@ async def main():
     if config.network == 'mainnet':
         seed_filename = 'seed.json'
     elif config.network == 'testnet':
-        seed_filename = 'testnet_seed.json'
+        seed_filename = 'seed_testnet.json'
     peers_seed_filename = options.config.replace(ntpath.basename(options.config), seed_filename)
     if path.isfile(peers_seed_filename):
         with open(peers_seed_filename) as f:
