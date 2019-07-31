@@ -543,7 +543,7 @@ class GraphUtils(object):
                     return transaction
 
     def get_transactions_by_rid(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
-                                returnheight=True, lt_block_height=None):
+                                returnheight=True, lt_block_height=None, requested_rid=False):
         # selectors is old code before we got an RID by sorting the bulletin secrets
         # from block import Block
         # from transaction import Transaction
@@ -567,26 +567,72 @@ class GraphUtils(object):
                 'rid': rid,
                 'bulletin_secret': bulletin_secret,
                 'returnheight': returnheight,
-                'selector': {'$in': selectors}
+                'selector': {'$in': selectors},
+                'requested_rid': requested_rid
             }
         ).sort([('height', -1)])
         latest_block = self.config.BU.get_latest_block()
 
         transactions = []
         if lt_block_height:
-            blocks = self.mongo.db.blocks.find(
-                {"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
-                 'index': {'$lte': lt_block_height}})
+            query = {"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                 'index': {'$lte': lt_block_height}}
+            if requested_rid:
+                query["transactions.requested_rid"] = {"$in": selectors}
+            blocks = self.mongo.db.blocks.find(query)
         else:
             if transactions_by_rid_cache.count():
                 transactions_by_rid_cache = transactions_by_rid_cache[0]
                 block_height = transactions_by_rid_cache['height']
             else:
                 block_height = 0
-            blocks = self.mongo.db.blocks.find(
-                {"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
-                 'index': {'$gt': block_height}})
+                
+            query = {"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                 'index': {'$gt': block_height}}
+            if requested_rid:
+                query = {
+                    "$or": [
+                        {
+                            "transactions.rid": {
+                                "$in": selectors
+                            }
+                        },
+                        {
+                            "transactions.requested_rid": {
+                                "$in": selectors
+                            }
+                        }
+                    ],
+                    "transactions": {
+                        "$elemMatch": {
+                            "relationship": {
+                                "$ne": ""
+                            }
+                        }
+                    },
+                    'index': {
+                        '$gt': block_height
+                    }
+                }
+            else:
+                query = {
+                    "transactions.rid": {
+                        "$in": selectors
+                    },
+                    "transactions": {
+                        "$elemMatch": {
+                            "relationship": {
+                                "$ne": ""
+                            }
+                        }
+                    },
+                    'index': {
+                        '$gt': block_height
+                    }
+                }
+            blocks = self.mongo.db.blocks.find(query)
 
+        cipher = Crypt(self.config.wif)
         for block in blocks:
             for transaction in block.get('transactions'):
                 if 'relationship' in transaction and transaction['relationship']:
@@ -594,7 +640,6 @@ class GraphUtils(object):
                         transaction['height'] = block['index']
                     if not raw:
                         try:
-                            cipher = Crypt(self.config.wif)
                             decrypted = cipher.decrypt(transaction['relationship'])
                             relationship = json.loads(decrypted.decode('latin1'))
                             transaction['relationship'] = relationship
@@ -610,7 +655,8 @@ class GraphUtils(object):
                                 'returnheight': returnheight,
                                 'selector': selector,
                                 'txn': transaction,
-                                'height': block['index']
+                                'height': block['index'],
+                                'requested_rid': requested_rid
                             }
                         )
                     transactions.append(transaction)
@@ -623,7 +669,8 @@ class GraphUtils(object):
                         'bulletin_secret': bulletin_secret,
                         'returnheight': returnheight,
                         'selector': selector,
-                        'height': latest_block['index']
+                        'height': latest_block['index'],
+                        'requested_rid': requested_rid
                     }
                 )
 
@@ -632,8 +679,13 @@ class GraphUtils(object):
                 yield ftxn['txn']
 
         last_id = ''
-        for x in self.mongo.db.transactions_by_rid_cache.find(
-                {'raw': raw, 'rid': rid, 'returnheight': returnheight, 'selector': {'$in': selectors}}).sort([('txn.id', 1)]):
+        for x in self.mongo.db.transactions_by_rid_cache.find({
+            'raw': raw,
+            'rid': rid,
+            'returnheight': returnheight,
+            'selector': {'$in': selectors},
+            'requested_rid': requested_rid
+        }).sort([('txn.id', 1)]):
             if 'txn' in x and x['txn']['id'] != last_id:
                 last_id = x['txn']['id']
                 yield x['txn']
