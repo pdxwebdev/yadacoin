@@ -512,9 +512,12 @@ class Consensus(object):
                 raise ForkException()
 
             target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
+            delta_t = int(block.time) - int(last_block.time)
+            special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
             target_block_time = CHAIN.target_block_time(self.config.network)
             # TODO: use a CHAIN constant for pow blocks limits
             if ((int(block.hash, 16) < target) or
+                (block.special_min and int(block.hash, 16) < special_target) or
                 (block.special_min and block.index < 35200) or
                 (block.index >= 35200 and block.index < 38600 and block.special_min and
                 (int(block.time) - int(last_block.time)) > target_block_time)):
