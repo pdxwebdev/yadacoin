@@ -484,7 +484,7 @@ class Consensus(object):
                     if extra_blocks:
                         transaction.extra_blocks = extra_blocks
                     transaction.verify()
-                    self.config.TU.apply_transaction_rules(self.config, transaction, block.index)
+                    await self.config.TU.apply_transaction_rules(self.config, transaction, block.index)
                 except InvalidTransactionException as e:
                     print(e)
                     return False

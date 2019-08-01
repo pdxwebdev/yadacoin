@@ -29,7 +29,7 @@ class CHAIN(object):
 
     ONE_DAY_IN_SECONDS = 1440 * 60
     RETARGET_PERIOD_V2 = 144  # blocks = 1 day at 10 min per block
-    RETARGET_PERIOD_V3 = 144  # blocks = 1 day at 10 min per block
+    RETARGET_PERIOD_V3 = 1  # blocks = 1 day at 10 min per block
     MAX_SECONDS_V2 = ONE_DAY_IN_SECONDS * 7  # seconds - avoid to drop to fast.
     MIN_SECONDS_V2 = 3600  # seconds = 1h - avoid too high a raise.
     MAX_SECONDS_V3 = ONE_DAY_IN_SECONDS * 7  # seconds - avoid to drop to fast.
@@ -39,13 +39,13 @@ class CHAIN(object):
     # we want max target (= min diff) is reached after long enough it does not drop too fast.
     # Could be raised later on depending on the net hash rate. calibrating for very low hash
     MAX_TARGET_AFTER_V2 = 600 * 6 * 8 # after 8 hours, target will hit  MAX_TARGET_V2. after twice that time, absolute max.
-    MAX_TARGET_AFTER_V3 = 300 # after 8 hours, target will hit  MAX_TARGET_V2. after twice that time, absolute max.
+    MAX_TARGET_AFTER_V3 = 600 * 3 # after 8 hours, target will hit  MAX_TARGET_V2. after twice that time, absolute max.
 
     # Max possible target for a block, v2 after MAX_TARGET_AFTER_V2: reasonable target for a single cpu miner.
     MAX_TARGET_V2 = 0x000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff
     MAX_TARGET_HEX_V2 = '000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff'
-    MAX_TARGET_V3 = 0x000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff
-    MAX_TARGET_HEX_V3 = '000000000fffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+    MAX_TARGET_V3 = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    MAX_TARGET_HEX_V3 = '000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
     @classmethod
     def target_block_time(cls, network:str):

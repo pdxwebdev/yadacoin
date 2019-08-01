@@ -35,7 +35,7 @@ class PoolNamespace(AsyncNamespace):
         if self.config.debug:
             self.app_log.info('Miner connected: {} {}'.format(IP, sid))
 
-    async def on_disconnect_request(sid):
+    async def on_disconnect_request(self, sid):
         from yadacoin.yadawebsockethandler import SIO
         # print('Disconnect request')
         await SIO.disconnect(sid, namespace='/pool')

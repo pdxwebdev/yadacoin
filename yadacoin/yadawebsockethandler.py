@@ -40,7 +40,7 @@ class ChatNamespace(AsyncNamespace):
         if self.config.debug:
             self.app_log.info('Client connected: {}'.format(sid))
 
-    async def on_disconnect_request(sid):
+    async def on_disconnect_request(self, sid):
         # print('Disconnect request')
         await SIO.disconnect(sid, namespace='/chat')
 
