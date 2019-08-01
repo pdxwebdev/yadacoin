@@ -122,7 +122,7 @@ class CHAIN(object):
             return 1
         elif int(height) >= cls.POW_FORK_V3:
             return 4
-        elif int(height) >= cls.POW_FORK_V2 and int(height) < cls.POW_FORK_V3:
+        elif int(height) > cls.POW_FORK_V2 and int(height) < cls.POW_FORK_V3:
             return 3
         else:
             return 2

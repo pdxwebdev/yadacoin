@@ -223,14 +223,14 @@ class BlockFactory(object):
             retarget_period = CHAIN.RETARGET_PERIOD  # blocks
             max_seconds = CHAIN.TWO_WEEKS  # seconds
             min_seconds = CHAIN.HALF_WEEK  # seconds
-            if height >= CHAIN.POW_FORK_V2:
-                retarget_period = CHAIN.RETARGET_PERIOD_V2
-                max_seconds = CHAIN.MAX_SECONDS_V2  # seconds
-                min_seconds = CHAIN.MIN_SECONDS_V2  # seconds
-            elif height >= CHAIN.POW_FORK_V3:
+            if height >= CHAIN.POW_FORK_V3:
                 retarget_period = CHAIN.RETARGET_PERIOD_V3
                 max_seconds = CHAIN.MAX_SECONDS_V3  # seconds
                 min_seconds = CHAIN.MIN_SECONDS_V3  # seconds
+            elif height >= CHAIN.POW_FORK_V2:
+                retarget_period = CHAIN.RETARGET_PERIOD_V2
+                max_seconds = CHAIN.MAX_SECONDS_V2  # seconds
+                min_seconds = CHAIN.MIN_SECONDS_V2  # seconds
             if height > 0 and height % retarget_period == 0:
                 get_config().debug_log(
                     "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
