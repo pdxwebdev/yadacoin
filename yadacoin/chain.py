@@ -73,7 +73,7 @@ class CHAIN(object):
                     # return 120  # temp debug
                     return 600
                 elif int(block_height) <= cls.POW_FORK_V3:
-                    return 60
+                    return 600
                 else:
                     return 600 * 2
             raise ValueError("Unknown network")

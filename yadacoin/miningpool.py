@@ -163,7 +163,7 @@ class MiningPool(object):
             # print(matching_block.hash)
 
         if matching_block.special_min:
-            delta_t = int(matching_block.time) - int(self.last_block_time)
+            delta_t = int(time()) - int(self.last_block_time)
             special_target = CHAIN.special_target(matching_block.index, matching_block.target,
                                                   delta_t, self.config.network)
             matching_block.special_target = special_target

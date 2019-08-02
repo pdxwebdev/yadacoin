@@ -5,6 +5,7 @@ import json
 import logging
 import requests
 import datetime
+from time import time
 from asyncio import sleep as async_sleep
 from pymongo.errors import DuplicateKeyError
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
@@ -384,7 +385,7 @@ class Consensus(object):
                 extra_blocks = None
             self.app_log.debug("Latest block was {} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
             if int(block.index) > CHAIN.CHECK_TIME_FROM and block.time < self.latest_block.time:
-                self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index - 1))
+                self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index))
                 return False
             try:
                 result = await self.integrate_block_with_existing_chain(block, extra_blocks)
@@ -512,7 +513,7 @@ class Consensus(object):
                 raise ForkException()
 
             target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
-            delta_t = int(block.time) - int(last_block.time)
+            delta_t = int(time()) - int(last_block.time)
             special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
             target_block_time = CHAIN.target_block_time(self.config.network)
             # TODO: use a CHAIN constant for pow blocks limits
