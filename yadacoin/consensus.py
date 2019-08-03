@@ -515,13 +515,16 @@ class Consensus(object):
             delta_t = int(time()) - int(last_block.time)
             special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
             target_block_time = CHAIN.target_block_time(self.config.network)
+
+            if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:
+                raise Exception('Special min block too soon')
+
             # TODO: use a CHAIN constant for pow blocks limits
             if ((int(block.hash, 16) < target) or
                 (block.special_min and int(block.hash, 16) < special_target) or
                 (block.special_min and block.index < 35200) or
                 (block.index >= 35200 and block.index < 38600 and block.special_min and
-                (int(block.time) - int(last_block.time)) > target_block_time) or
-                (block.index >= 35200 and (int(block.time) - int(last_block.time)) >= 600 and block.special_min)):
+                (int(block.time) - int(last_block.time)) > target_block_time)):
 
                 if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                     # self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
