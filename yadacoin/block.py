@@ -115,8 +115,6 @@ class BlockFactory(object):
                     if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
                         app_log.debug("Block embeds txn too far in the future")
                         continue
-
-                    await config.TU.apply_transaction_rules(config, transaction_obj, index)
                     
                     transaction_objs.append(transaction_obj)
                     

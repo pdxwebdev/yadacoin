@@ -485,7 +485,6 @@ class Consensus(object):
                     if extra_blocks:
                         transaction.extra_blocks = extra_blocks
                     transaction.verify()
-                    await self.config.TU.apply_transaction_rules(self.config, transaction, block.index)
                 except InvalidTransactionException as e:
                     print(e)
                     return False
@@ -521,7 +520,8 @@ class Consensus(object):
                 (block.special_min and int(block.hash, 16) < special_target) or
                 (block.special_min and block.index < 35200) or
                 (block.index >= 35200 and block.index < 38600 and block.special_min and
-                (int(block.time) - int(last_block.time)) > target_block_time)):
+                (int(block.time) - int(last_block.time)) > target_block_time) or
+                (block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min)):
 
                 if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                     # self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)

@@ -259,6 +259,10 @@ class NotEnoughMoneyException(Exception):
     pass
 
 
+class MaxRelationshipSizeExceeded(Exception):
+    pass
+
+
 class Transaction(object):
 
     def __init__(
@@ -355,6 +359,9 @@ class Transaction(object):
             except:
                 print("t verify3")
                 raise InvalidTransactionSignatureException("transaction signature did not verify")
+
+        if len(self.relationship) > 2048:
+            raise MaxRelationshipSizeExceeded('Relationship field cannot be greater than 2048 bytes')
 
         # verify spend
         total_input = 0

@@ -161,12 +161,16 @@ class MiningPool(object):
         except Exception as e:
             self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(e, matching_block.hash, matching_block.header, matching_block.nonce))
             # print(matching_block.hash)
-
+            
         if matching_block.special_min:
             delta_t = int(time()) - int(self.last_block_time)
             special_target = CHAIN.special_target(matching_block.index, matching_block.target,
                                                   delta_t, self.config.network)
             matching_block.special_target = special_target
+
+        if matching_block.index >= 35200 and (int(matching_block.time) - int(self.last_block_time)) < 600 and matching_block.special_min:
+            self.app_log.warning("Special min block too soon {} - hash {} header {} nonce {}".format(e, matching_block.hash, matching_block.header, matching_block.nonce))
+
         # print("matching", matching_block.to_dict())  # temp
         if int(matching_block.target) > int(matching_block.hash, 16):
             # broadcast winning block
