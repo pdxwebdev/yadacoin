@@ -40,6 +40,7 @@ class Consensus(object):
         self.debug = debug
         self.config = get_config()
         self.mongo = self.config.mongo
+        self.prevent_genesis = prevent_genesis
         if peers:
             self.peers = peers
         else:
@@ -48,7 +49,7 @@ class Consensus(object):
         if latest_block:
             self.latest_block = Block.from_dict(latest_block)
         else:
-            if not prevent_genesis:
+            if not self.prevent_genesis:
                 self.insert_genesis()
 
         self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
@@ -87,6 +88,7 @@ class Consensus(object):
         result = self.existing_blockchain.verify(self.output)
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            return True
         else:
             self.app_log.debug(result)
             if 'last_good_block' in result:
@@ -94,6 +96,14 @@ class Consensus(object):
             else:
                 self.mongo.db.blocks.remove({"index": {"$gt": 0}}, multi=True)
             self.app_log.debug("{} {}".format(result['message'], '...truncating'))
+
+            latest_block = self.config.BU.get_latest_block()
+            if latest_block:
+                self.latest_block = Block.from_dict(latest_block)
+            else:
+                if not self.prevent_genesis:
+                    self.insert_genesis()
+            self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
 
     def remove_pending_transactions_now_in_chain(self):
         #remove transactions from miner_transactions collection in the blockchain
