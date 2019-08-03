@@ -14,7 +14,7 @@ class CHAIN(object):
 
     # The fork checkpoints, so we have a single reference for all the codebase and can use explicit names for forks.
     POW_FORK_V2 = 60000
-    POW_FORK_V3 = 61125
+    POW_FORK_V3 = 61110
 
     RETARGET_PERIOD = 2016  # blocks
     TWO_WEEKS = 1209600  # seconds
