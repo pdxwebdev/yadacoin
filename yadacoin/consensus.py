@@ -394,7 +394,7 @@ class Consensus(object):
             else:
                 extra_blocks = None
             self.app_log.debug("Latest block was {} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
-            if int(block.index) > CHAIN.CHECK_TIME_FROM and time() < self.latest_block.time:
+            if int(block.index) > CHAIN.CHECK_TIME_FROM and int(time()) < int(self.latest_block.time):
                 self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index))
                 await self.mongo.async_db.consensus.update_one(
                     {
