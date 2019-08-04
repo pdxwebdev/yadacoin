@@ -534,7 +534,7 @@ class Consensus(object):
             special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
             target_block_time = CHAIN.target_block_time(self.config.network)
 
-            if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:
+            if block.index >= 35200 and delta_t < 600 and block.special_min:
                 raise Exception('Special min block too soon')
 
             # TODO: use a CHAIN constant for pow blocks limits
