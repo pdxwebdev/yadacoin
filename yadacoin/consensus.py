@@ -96,7 +96,7 @@ class Consensus(object):
             else:
                 self.mongo.db.blocks.remove({"index": {"$gt": 0}}, multi=True)
             self.app_log.debug("{} {}".format(result['message'], '...truncating'))
-
+            self.config.BU.latest_block = None
             latest_block = self.config.BU.get_latest_block()
             if latest_block:
                 self.latest_block = Block.from_dict(latest_block)
@@ -394,8 +394,16 @@ class Consensus(object):
             else:
                 extra_blocks = None
             self.app_log.debug("Latest block was {} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
-            if int(block.index) > CHAIN.CHECK_TIME_FROM and block.time < self.latest_block.time:
+            if int(block.index) > CHAIN.CHECK_TIME_FROM and time() < self.latest_block.time:
                 self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index))
+                await self.mongo.async_db.consensus.update_one(
+                    {
+                        'peer': peer.to_string(),
+                        'index': block.index,
+                        'id': block.signature
+                    },
+                    {'$set': {'ignore': True}}
+                )
                 return False
             try:
                 result = await self.integrate_block_with_existing_chain(block, extra_blocks)
