@@ -290,6 +290,8 @@ class MiningPool(object):
 
     async def block_to_mine_info(self):
         """Returns info for current block to mine"""
+        if self.block_factory is None:
+            await self.refresh()
         res = {
             'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0'),  # target is now in hex format
             'special_target': hex(int(self.block_factory.block.special_target))[2:].rjust(64, '0'),  # target is now in hex format
