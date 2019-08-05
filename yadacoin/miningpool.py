@@ -379,7 +379,7 @@ class MiningPool(object):
         transaction_objs = []
         unspent_indexed = {}
         used_sigs = []
-        for txn in self.combine_transaction_lists():
+        for txn in sorted(self.combine_transaction_lists(), key=lambda i: int(i['fee']), reverse=True)[:1000]:
             try:
                 if isinstance(txn, FastGraph) and hasattr(txn, 'signatures'):
                     transaction_obj = txn

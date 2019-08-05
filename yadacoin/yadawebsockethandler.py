@@ -13,6 +13,7 @@ from yadacoin.poolnamespace import PoolNamespace
 from yadacoin.common import ts_to_utc
 from yadacoin.chain import CHAIN
 from yadacoin.peers import Peer
+from yadacoin.transactionbroadcaster import TxnBroadcaster
 
 SIO = None
 
@@ -74,6 +75,8 @@ class ChatNamespace(AsyncNamespace):
                 self.app_log.warning('found duplicate tx {}'.format(incoming_txn.transaction_signature))
                 raise Exception("duplicate tx {}".format(incoming_txn.transaction_signature))
             await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
+            tb = TxnBroadcaster(self.config)
+            await tb.txn_broadcast_job(incoming_txn)
         except Exception as e:
             self.app_log.warning("Bad transaction: {}".format(e))
             await self.force_close(sid)
