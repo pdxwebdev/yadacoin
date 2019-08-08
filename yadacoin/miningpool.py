@@ -163,12 +163,12 @@ class MiningPool(object):
             # print(matching_block.hash)
             
         if matching_block.special_min:
-            delta_t = int(time()) - int(self.last_block_time)
+            delta_t = int(matching_block.time) - int(self.last_block_time)
             special_target = CHAIN.special_target(matching_block.index, matching_block.target,
                                                   delta_t, self.config.network)
             matching_block.special_target = special_target
 
-        if matching_block.index >= 35200 and (int(time()) - int(self.last_block_time)) < 600 and matching_block.special_min:
+        if matching_block.index >= 35200 and (int(matching_block.time) - int(self.last_block_time)) < 600 and matching_block.special_min:
             self.app_log.warning("Special min block too soon: hash {} header {} nonce {}".format(matching_block.hash, matching_block.header, matching_block.nonce))
             return False
 
@@ -320,12 +320,14 @@ class MiningPool(object):
                 special_target = CHAIN.special_target(self.block_factory.block.index, self.block_factory.block.target, delta_t, self.config.network)
                 self.block_factory.block.special_min = True
                 self.block_factory.block.special_target = special_target
+                self.block_factory.time = int(to_time)
             else:
                 self.block_factory.block.special_min = False
         elif self.block_factory.block.index < 38600:  # TODO: use a CHAIN constant
             if (int(to_time) - self.last_block_time) > self.target_block_time:
                 self.block_factory.block.target = self.max_target
                 self.block_factory.block.special_min = True
+                self.block_factory.time = int(to_time)
             else:
                 self.block_factory.block.special_min = False
 

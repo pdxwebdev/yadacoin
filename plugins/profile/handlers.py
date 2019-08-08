@@ -116,7 +116,10 @@ class ProfileAuthHandler(BaseWebHandler):
             self.write({'status': 'ok'})
             self.set_header('Content-Type', 'application/json')
             return self.finish()
-        return self.redirect('/auth')
+        else:
+            self.write({'status': 'error', 'message': 'Wrong private key or WIF. You must provide the private key or WIF of the currently running server.'})
+            self.set_header('Content-Type', 'application/json')
+            return self.finish()
 
 class LogoutHandler(BaseWebHandler):
 

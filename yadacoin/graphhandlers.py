@@ -302,7 +302,7 @@ class GraphPostsHandler(BaseGraphHandler):
 class GraphMessagesHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
-        graph.get_messages()
+        await graph.get_messages()
         self.render_as_json(graph.to_dict())
 
 

@@ -162,7 +162,7 @@ class Graph(object):
                 sent_friend_requests[i]['username'] = '[None]'
         self.sent_friend_requests = sent_friend_requests
 
-    def get_messages(self, not_mine=False):
+    async def get_messages(self, not_mine=False):
         if self.wallet_mode:
             rids = list(set([x['rid'] for x in self.all_relationships if 'rid' in x] + [x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x]))
             rid_transactions = GU().get_transactions_by_rid(
@@ -185,6 +185,18 @@ class Graph(object):
                     self.messages[i]['username'] = self.rid_usernames[self.messages[i]['rid']]
                 except:
                     pass
+            res = self.config.mongo.async_db.miner_transactions.find({
+                'public_key': self.config.public_key,
+                'relationship': {'$ne': ''},
+                '$or': [
+                    {'rid': {'$in': rids}},
+                    {'requester_rid': {'$in': rids}},
+                    {'requested_rid': {'$in': rids}}
+                ]
+            }, {
+                '_id': 0
+            })
+            self.messages.extend([txn for txn in res.to_list(length=1000)])
             return
         else:
             lookup_rids = self.get_request_rids_for_rid()
