@@ -8,6 +8,7 @@ import logging
 import os
 import ssl
 import ntpath
+import webbrowser
 from asyncio import sleep as async_sleep
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
@@ -289,6 +290,7 @@ async def main():
         ssl_ctx.load_cert_chain(config.ssl.get('certfile'), keyfile=config.ssl.get('keyfile'))
         http_server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
         http_server.listen(config.ssl['port'])
+    webbrowser.open("http://{}/app".format(my_peer.to_string()))
     # The server will simply run until interrupted
     # with Ctrl-C, but if you want to shut down more gracefully,
     # call shutdown_event.set().

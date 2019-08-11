@@ -4,6 +4,7 @@ import hashlib
 from yadacoin.blockchainutils import BU
 from yadacoin.transactionutils import TU
 from yadacoin.graphutils import GraphUtils as GU
+from yadacoin.crypt import Crypt
 
 
 class Graph(object):
@@ -30,6 +31,7 @@ class Graph(object):
         
         self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
         if key_or_wif in [config.private_key, config.wif]:
+            self.cipher = Crypt(config.wif)
             self.wallet_mode = True
 
             rids = list(set([x['rid'] for x in self.all_relationships]))
@@ -131,7 +133,7 @@ class Graph(object):
 
         return lookup_rids
 
-    def get_friend_requests(self):
+    async def get_friend_requests(self):
         if self.wallet_mode:
             self.friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
             return
@@ -146,9 +148,19 @@ class Graph(object):
 
         self.friend_requests = friend_requests
 
-    def get_sent_friend_requests(self):
+    async def get_sent_friend_requests(self):
         if self.wallet_mode:
             self.sent_friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
+            res = await self.config.mongo.async_db.miner_transactions.find({
+                'public_key': self.config.public_key,
+                'relationship': {'$ne': ''},
+                'requested_rid': {'$ne': ''}
+            }, {
+                '_id': 0
+            }).to_list(length=1000)
+            for txn in res:
+                txn['pending'] = True
+                self.sent_friend_requests.append(txn)
             return
         else:
             sent_friend_requests = [x for x in GU().get_sent_friend_requests(self.rid)]
@@ -164,7 +176,20 @@ class Graph(object):
 
     async def get_messages(self, not_mine=False):
         if self.wallet_mode:
-            rids = list(set([x['rid'] for x in self.all_relationships if 'rid' in x] + [x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x]))
+            rids = list(set([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']] + [x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']]))
+            
+            for transaction in self.mongo.db.miner_transactions.find({"relationship": {"$ne": ""}}):
+                try:
+                    decrypted = self.cipher.decrypt(transaction['relationship'])
+                    relationship = json.loads(decrypted.decode('latin1'))
+                    transaction['relationship'] = relationship
+                    rids.append(transaction['rid'])
+                    if transaction.get('reqeuster_rid'):
+                        rids.append(transaction.get('reqeuster_rid'))
+                    if transaction.get('reqeusted_rid'):
+                        rids.append(transaction.get('reqeusted_rid'))
+                except:
+                    pass
             rid_transactions = GU().get_transactions_by_rid(
                 rids,
                 bulletin_secret=self.config.bulletin_secret,
@@ -185,7 +210,7 @@ class Graph(object):
                     self.messages[i]['username'] = self.rid_usernames[self.messages[i]['rid']]
                 except:
                     pass
-            res = self.config.mongo.async_db.miner_transactions.find({
+            res = await self.config.mongo.async_db.miner_transactions.find({
                 'public_key': self.config.public_key,
                 'relationship': {'$ne': ''},
                 '$or': [
@@ -195,8 +220,10 @@ class Graph(object):
                 ]
             }, {
                 '_id': 0
-            })
-            self.messages.extend([txn for txn in res.to_list(length=1000)])
+            }).to_list(length=1000)
+            for txn in res:
+                txn['pending'] = True
+                self.messages.append(txn)
             return
         else:
             lookup_rids = self.get_request_rids_for_rid()
@@ -217,7 +244,7 @@ class Graph(object):
                 out_messages.append(message)
         self.messages = out_messages
 
-    def get_new_messages(self):
+    async def get_new_messages(self):
         self.get_messages(not_mine=True)
         self.messages = sorted(self.messages, key=lambda x: int(x['height']), reverse=True)
         used_rids = []
@@ -251,7 +278,7 @@ class Graph(object):
                         posts.append(x)
             self.posts = posts
 
-    def get_comments(self):
+    async def get_comments(self):
         if self.wallet_mode:
             self.comments = []
             return
@@ -283,7 +310,7 @@ class Graph(object):
                 out[x['relationship'].get('id')].append(x)
         self.comments = out
 
-    def get_reacts(self):
+    async def get_reacts(self):
         if self.wallet_mode:
             self.reacts = []
             return

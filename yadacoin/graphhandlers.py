@@ -31,9 +31,9 @@ class GraphConfigHandler(BaseHandler):
 
     async def get(self):
         if int(self.config.web_server_port) == 443:
-            peer = "https://{}:{}".format(self.config.web_server_host, self.config.web_server_port)
+            peer = "https://{}:{}".format(self.config.peer_host, self.config.peer_port)
         else:
-            peer = "http://{}:{}".format(self.config.web_server_host, self.config.web_server_port)
+            peer = "http://{}:{}".format(self.config.peer_host, self.config.peer_port)
         yada_config = {
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
@@ -275,27 +275,20 @@ class CreateRelationshipHandler(BaseHandler):
 class GraphSentFriendRequestsHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
-        graph.get_sent_friend_requests()
+        await graph.get_sent_friend_requests()
         self.render_as_json(graph.to_dict())
 
 
 class GraphFriendRequestsHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
-        graph.get_friend_requests()
+        await graph.get_friend_requests()
         self.render_as_json(graph.to_dict())
 
 
 class GraphFriendsHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
-        self.render_as_json(graph.to_dict())
-
-
-class GraphPostsHandler(BaseGraphHandler):
-    async def get(self):
-        graph = self.get_base_graph()
-        graph.get_posts()
         self.render_as_json(graph.to_dict())
 
 
@@ -316,21 +309,21 @@ class GraphGroupMessagesHandler(BaseGraphHandler):
 class GraphNewMessagesHandler(BaseGraphHandler):
     async def get(self):
         graph = self.get_base_graph()
-        graph.get_new_messages()
+        await graph.get_new_messages()
         self.render_as_json(graph.to_dict())
 
 
 class GraphCommentsHandler(BaseGraphHandler):
     async def post(self):
         graph = self.get_base_graph()
-        graph.get_comments()
+        await graph.get_comments()
         self.render_as_json(graph.to_dict())
 
 
 class GraphReactsHandler(BaseGraphHandler):
     async def post(self):
         graph = self.get_base_graph()
-        graph.get_reacts()
+        await graph.get_reacts()
         self.render_as_json(graph.to_dict())
 
 
@@ -515,7 +508,6 @@ GRAPH_HANDLERS = [
     (r'/get-graph-sent-friend-requests', GraphSentFriendRequestsHandler), # get all friend requests I've sent
     (r'/get-graph-friend-requests', GraphFriendRequestsHandler), # get all friend requests sent to me
     (r'/get-graph-friends', GraphFriendsHandler), # get client/server relationship. Same as get-graph-info, but here for symantic purposes
-    (r'/get-graph-posts', GraphPostsHandler), # get posts from friends that are mutual friends of client/server
     (r'/get-graph-messages', GraphMessagesHandler), # get messages from friends
     (r'/get-graph-new-messages', GraphNewMessagesHandler), # get new messages that are newer than a given timestamp
     (r'/get-graph-reacts', GraphReactsHandler), # get reacts for posts and comments
