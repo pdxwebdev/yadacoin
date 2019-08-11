@@ -1,4 +1,4 @@
-"""
+﻿"""
 Async Yadacoin node poc
 """
 import importlib
@@ -40,6 +40,8 @@ from yadacoin.miningpoolpayout import PoolPayer
 from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
+from plugins.yadacoinweb.handlers import HANDLERS as YCW_HANDLERS
+from plugins.profile.handlers import HANDLERS as PROFILE_HANDLERS
 
 __version__ = '0.0.13'
 
@@ -66,12 +68,9 @@ class NodeApplication(Application):
             self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)
 
-        for finder, name, ispkg in pkgutil.iter_modules([path.join(path.dirname(__file__), 'plugins')]):
-            handlers = importlib.import_module('plugins.' + name + '.handlers')
-            self.default_handlers.extend(handlers.HANDLERS)
-
         self.default_handlers.extend(WEB_HANDLERS)
-
+        self.default_handlers.extend(YCW_HANDLERS)
+        self.default_handlers.extend(PROFILE_HANDLERS)
         settings = dict(
             app_title=u"Yadacoin Node",
             template_path=path.join(path.dirname(__file__), 'templates'),
