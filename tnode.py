@@ -221,6 +221,10 @@ async def main():
     if not path.isfile(options.config):
         app_log.error("no config file found at '{}'. Generating new...".format(options.config))
         config = yadacoin.config.Config.generate()
+        try:
+            os.makedirs(os.path.dirname(options.config))
+        except:
+            pass
         with open(options.config, 'w') as f:
             f.write(config.to_json())
 
