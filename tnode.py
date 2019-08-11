@@ -219,8 +219,10 @@ async def main():
     configure_logging()
 
     if not path.isfile(options.config):
-        app_log.error("no config file found at '{}'".format(options.config))
-        exit()
+        app_log.error("no config file found at '{}'. Generating new...".format(options.config))
+        config = yadacoin.config.Config.generate()
+        with open(options.config, 'w') as f:
+            f.write(config.to_json())
 
     with open(options.config) as f:
         config = yadacoin.config.Config(json.loads(f.read()))
