@@ -68,6 +68,30 @@ class ClientChatNamespace(AsyncClientNamespace):
         # TODO: if index match and enough blocks, Set syncing and do it
         await self.client.manager.on_blocks(data)
 
+    async def on_newtransaction(self, data):
+        from yadacoin.transaction import Transaction
+        from yadacoin.transactionbroadcaster import TxnBroadcaster
+        from yadacoin.blockchainutils import BU
+        # TODO: generic test, is the peer known and has rights for this command? Decorator?
+        if self.config.debug:
+            self.app_log.info('WS newtransaction: {}'.format(json.dumps(data)))
+        try:
+            incoming_txn = Transaction.from_dict(BU().get_latest_block()['index'], data)
+            if incoming_txn.in_the_future():
+                # Most important
+                raise ValueError('In the future {}'.format(incoming_txn.transaction_signature))
+            # print(incoming_txn.transaction_signature)
+            dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({'id': incoming_txn.transaction_signature})
+            if dup_check_count:
+                self.app_log.warning('found duplicate tx {}'.format(incoming_txn.transaction_signature))
+            else:
+                await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
+
+            tb = TxnBroadcaster(self.config)
+            await tb.txn_broadcast_job(incoming_txn)
+        except Exception as e:
+            self.app_log.warning("on_newtransaction: {}".format(e))
+
     async def on_get_latest_block(self, data):
         """Peer sent us its latest block, store it and consider it a valid peer."""
         self.app_log.error("ws client got {} on_get_latest_block from {}:{}, IGNORED".format(data, self.ip, self.port))

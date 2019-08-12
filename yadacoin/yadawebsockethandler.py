@@ -73,15 +73,13 @@ class ChatNamespace(AsyncNamespace):
             dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({'id': incoming_txn.transaction_signature})
             if dup_check_count:
                 self.app_log.warning('found duplicate tx {}'.format(incoming_txn.transaction_signature))
-                raise Exception("duplicate tx {}".format(incoming_txn.transaction_signature))
-            await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
+            else:
+                await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
             
-            inbound_peers = []
             tb = TxnBroadcaster(self.config, self)
             await tb.txn_broadcast_job(incoming_txn)
         except Exception as e:
-            self.app_log.warning("Bad transaction: {}".format(e))
-            await self.force_close(sid)
+            self.app_log.warning("on_newtransaction: {}".format(e))
 
     async def on_hello(self, sid, data):
         self.app_log.info('WS hello: {} {}'.format(sid, json.dumps(data)))
