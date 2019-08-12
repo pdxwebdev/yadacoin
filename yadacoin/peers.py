@@ -82,7 +82,8 @@ class Peers(object):
         return [peer for peer in self.peers
                 if peer.host not in self.connected_ips
                 and peer.host not in self.probable_old_nodes
-                and peer.host not in self.config.outgoing_blacklist]
+                and peer.host not in self.config.outgoing_blacklist
+                and (peer.host != self.config.peer_host and peer.port != self.config.peer_port)]
 
     def allow_ip(self, IP):
         """Returns True if that ip can connect - inbound or outbound"""
@@ -157,7 +158,6 @@ class Peers(object):
         self.app_log.debug("Peers background_peer {}".format(peer.to_dict()))
         # lock that ip
         self.on_new_ip(peer.host)
-        client = None
         try:
             peer.client = YadaWebSocketClient(peer)
             # This will run until disconnect

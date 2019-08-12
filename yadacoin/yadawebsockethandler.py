@@ -88,10 +88,12 @@ class ChatNamespace(AsyncNamespace):
                 if session['ip'] != data['ip'] and session['ip'] not in self.config.igd:
                     await self.config.peers.on_close_inbound(sid, ip=session['ip'])
                     raise Exception("IP mismatch")
+                if session['ip'] in self.config.igd:
+                    data['ip'] = self.config.peer_host
                 # TODO: test version also (ie: protocol version)
                 # If peer data seem correct, add to our pool of inbound peers
             await self.save_session(sid, {'ip': data['ip'], 'port': data['port']})
-            await self.config.peers.on_new_inbound(session['ip'], data['port'], data['version'], sid)
+            await self.config.peers.on_new_inbound(data['ip'], data['port'], data['version'], sid)
         except Exception as e:
             self.app_log.warning("bad hello: {}".format(e))
             await self.force_close(sid)
