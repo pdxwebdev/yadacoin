@@ -251,6 +251,9 @@ async def main():
         if options.network != '':
             config.network = options.network
         config.protocol_version = PROTOCOL_VERSION
+    if not config.peer_host:
+        app_log.error("peer_host cannot be blank in config. Set it to you public ip address")
+        return exit()
     # get seed.json from same dir as config.
     if config.network == 'mainnet':
         seed_filename = 'seed.json'

@@ -56,7 +56,6 @@ class Config(object):
         self.peer_port = config['peer_port']
         self.serve_host = config['serve_host']
         self.serve_port = config['serve_port']
-        self.public_ip = config.get('public_ip', self.peer_host)
         self.callbackurl = config['callbackurl']
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
@@ -110,6 +109,7 @@ class Config(object):
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None):
+        from miniupnpc import UPnP
         mnemonic = Mnemonic('english')
         # generate 12 word mnemonic seed
         if not seed and not xprv and not prv:
@@ -139,6 +139,18 @@ class Config(object):
 
         if not private_key:
             raise Exception('No key')
+        
+        try:
+            u = UPnP(None, None, 200, 0)
+            u.discover()
+            u.selectigd()
+            peer_host = u.externalipaddress()
+        except:
+            try:
+                import urllib.request
+                peer_host = urllib.request.urlopen('https://ident.me').read().decode('utf8')
+            except:
+                peer_host = ''
 
         return cls({
             "seed": seed or '',
@@ -154,8 +166,7 @@ class Config(object):
             "origin": '',
             "polling": 0,
             "post_peer": False,
-            # "public_ip": "",  # TODO
-            "peer_host": "",
+            "peer_host": peer_host,
             "peer_port": 8000,
             "web_server_host": "0.0.0.0",
             "web_server_port": 5000,
