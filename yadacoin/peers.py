@@ -89,7 +89,7 @@ class Peers(object):
         # TODO - add blacklist
         # TODO: if verbose, say why
         print(self.connected_ips)
-        return IP not in self.connected_ips  # Allows if we're not connected already.
+        return True  # Allowing all since multiple nodes can run under the same IP
 
     def on_new_ip(self, ip):
         """We got an inbound or initiate an outbound connection from/to an ip, but do not have the result yet.
