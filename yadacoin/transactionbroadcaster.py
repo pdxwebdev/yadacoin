@@ -4,9 +4,10 @@ from yadacoin.transaction import Transaction
 
 
 class TxnBroadcaster(object):
-    def __init__(self, config):
+    def __init__(self, config, inbound_peers=None):
         self.config = config
         self.app_log = getLogger('tornado.application')
+        self.inbound_peers = inbound_peers or []
 
     async def txn_broadcast_job(self, txn, sent_to=None):
         if isinstance(txn, Transaction):
@@ -14,7 +15,7 @@ class TxnBroadcaster(object):
         else:
             transaction = Transaction.from_dict(0, txn)
         if self.config.network != 'regnet':
-            for peer in self.config.peers.peers:
+            for peer in self.config.peers.peers + self.inbound_peers:
                 if not isinstance(peer, Peer):
                     peer = Peer(peer['host'], peer['port'])
                 if sent_to and peer.to_string() in sent_to:
