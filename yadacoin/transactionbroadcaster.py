@@ -19,7 +19,7 @@ class TxnBroadcaster(object):
                     peer = Peer(peer['host'], peer['port'])
                 if sent_to and peer.to_string() in sent_to:
                     continue
-                if peer.host in self.config.outgoing_blacklist or not (peer.client and peer.client.connected):
+                if peer.to_string() in self.config.outgoing_blacklist or not (peer.client and peer.client.connected):
                     continue
                 if peer.host == self.config.peer_host and peer.port == self.config.peer_port:
                     continue

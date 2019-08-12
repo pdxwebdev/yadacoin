@@ -387,10 +387,16 @@ class Peer(object):
 
     @classmethod
     def init_my_peer(cls, network):
+        from miniupnpc import UPnP
         config = get_config()
+        try:
+            u = UPnP(None, None, 200, 0)
+            u.discover()
+            config.igd = u.selectigd()
+        except:
+            pass
         if config.use_pnp:
             import socket
-            from miniupnpc import UPnP
             # deploy as an eventlet WSGI server
             try:
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
@@ -398,9 +404,6 @@ class Peer(object):
                 server_port = sock.getsockname()[1]
                 sock.close()
                 eport = server_port
-                u = UPnP(None, None, 200, 0)
-                u.discover()
-                u.selectigd()
                 r = u.getspecificportmapping(eport, 'TCP')
                 while r is not None and eport < 65536:
                     eport = eport + 1

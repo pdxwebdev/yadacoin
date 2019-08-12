@@ -67,8 +67,7 @@ class Config(object):
         self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
-        self.outgoing_blacklist.append(self.peer_host)
-        self.outgoing_blacklist.append(self.public_ip)
+        self.outgoing_blacklist.append("{}:{}".format(self.peer_host, self.peer_port))
         self.protocol_version = 1
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None

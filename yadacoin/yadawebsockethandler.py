@@ -85,7 +85,7 @@ class ChatNamespace(AsyncNamespace):
         self.app_log.info('WS hello: {} {}'.format(sid, json.dumps(data)))
         try:
             async with self.session(sid) as session:
-                if session['ip'] != data['ip']:
+                if session['ip'] != data['ip'] and session['ip'] not in self.config.igd:
                     await self.config.peers.on_close_inbound(sid, ip=session['ip'])
                     raise Exception("IP mismatch")
                 # TODO: test version also (ie: protocol version)

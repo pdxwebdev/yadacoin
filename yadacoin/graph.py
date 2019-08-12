@@ -184,10 +184,10 @@ class Graph(object):
                     relationship = json.loads(decrypted.decode('latin1'))
                     transaction['relationship'] = relationship
                     rids.append(transaction['rid'])
-                    if transaction.get('reqeuster_rid'):
-                        rids.append(transaction.get('reqeuster_rid'))
-                    if transaction.get('reqeusted_rid'):
-                        rids.append(transaction.get('reqeusted_rid'))
+                    if transaction.get('requester_rid'):
+                        rids.append(transaction.get('requester_rid'))
+                    if transaction.get('requested_rid'):
+                        rids.append(transaction.get('requested_rid'))
                 except:
                     pass
             rid_transactions = GU().get_transactions_by_rid(
