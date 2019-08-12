@@ -394,7 +394,7 @@ class Peer(object):
             u.discover()
             config.igd = u.selectigd()
         except:
-            pass
+            config.igd = ""
         if config.use_pnp:
             import socket
             # deploy as an eventlet WSGI server
