@@ -40,6 +40,7 @@ from yadacoin.miningpoolpayout import PoolPayer
 from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
+from yadacoin.transactionbroadcaster import TxnBroadcaster
 from plugins.yadacoinweb.handlers import HANDLERS as YCW_HANDLERS
 from plugins.profile.handlers import HANDLERS as PROFILE_HANDLERS
 
@@ -132,6 +133,20 @@ async def background_status():
             app_log.info(json.dumps(status))
         except Exception as e:
             app_log.error("{} in Background_status".format(e))
+
+
+async def background_transaction_broadcast():
+    """This background co-routine is responsible for status collection and display"""
+    while True:
+        try:
+            await async_sleep(30)
+            # status = {"peers": config.peers.get_status()}
+            tb = TxnBroadcaster(config)
+
+            async for txn in config.mongo.async_db.miner_transactions.find({}):
+                await tb.txn_broadcast_job(txn, txn.get('sent_to'))
+        except Exception as e:
+            app_log.error("{} in background_transaction_broadcast".format(e))
 
 
 async def background_pool():
@@ -277,6 +292,7 @@ async def main():
         tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
         tornado.ioloop.IOLoop.instance().add_callback(background_status)
         tornado.ioloop.IOLoop.instance().add_callback(background_pool)
+        tornado.ioloop.IOLoop.instance().add_callback(background_transaction_broadcast)
         if config.pool_payout:
             app_log.info("PoolPayout activated")
             pp = PoolPayer()

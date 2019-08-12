@@ -245,7 +245,7 @@ class Graph(object):
         self.messages = out_messages
 
     async def get_new_messages(self):
-        self.get_messages(not_mine=True)
+        await self.get_messages(not_mine=True)
         self.messages = sorted(self.messages, key=lambda x: int(x['height']), reverse=True)
         used_rids = []
         for message in self.messages:
