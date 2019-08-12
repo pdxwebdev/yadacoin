@@ -4,10 +4,10 @@ from yadacoin.transaction import Transaction
 
 
 class TxnBroadcaster(object):
-    def __init__(self, config, inbound_peers=None):
+    def __init__(self, config, server=None):
         self.config = config
         self.app_log = getLogger('tornado.application')
-        self.inbound_peers = inbound_peers or []
+        self.server = server
 
     async def txn_broadcast_job(self, txn, sent_to=None):
         if isinstance(txn, Transaction):
@@ -15,7 +15,7 @@ class TxnBroadcaster(object):
         else:
             transaction = Transaction.from_dict(0, txn)
         if self.config.network != 'regnet':
-            for peer in self.config.peers.peers + self.inbound_peers:
+            for peer in self.config.peers.peers:
                 if not isinstance(peer, Peer):
                     peer = Peer(peer['host'], peer['port'])
                 if sent_to and peer.to_string() in sent_to:
@@ -36,6 +36,22 @@ class TxnBroadcaster(object):
                     })
                 except Exception as e:
                     print("Error ", e)
+            
+            if self.server:
+                try:
+                    if self.config.debug:
+                        self.app_log.debug('Transmitting transaction to inbound peers')
+                    await self.server.emit('newtransaction', data=transaction.to_dict(), namespace='/chat')
+                    await self.config.mongo.async_db.miner_transactions.update_one({
+                        'id': transaction.transaction_signature
+                    }, {
+                        '$addToSet': {
+                            'sent_to': peer.to_string()
+                        }
+                    })
+                except Exception as e:
+                    if self.config.debug:
+                        self.app_log.debug(e)
 
     async def send_it(self, txn_dict: dict, peer: Peer):
         try:

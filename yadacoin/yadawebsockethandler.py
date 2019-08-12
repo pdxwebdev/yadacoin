@@ -77,12 +77,7 @@ class ChatNamespace(AsyncNamespace):
             await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
             
             inbound_peers = []
-            for sid in self.config.peers.inbound.keys():
-                async with self.session(sid) as session:
-                    peer = Peer(session['ip'], session['port'])
-                    peer.client = session
-                    inbound_peers.append(peer)
-            tb = TxnBroadcaster(self.config, inbound_peers)
+            tb = TxnBroadcaster(self.config, self)
             await tb.txn_broadcast_job(incoming_txn)
         except Exception as e:
             self.app_log.warning("Bad transaction: {}".format(e))
