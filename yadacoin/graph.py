@@ -246,7 +246,7 @@ class Graph(object):
 
     async def get_new_messages(self):
         await self.get_messages(not_mine=True)
-        self.messages = sorted(self.messages, key=lambda x: int(x['height']), reverse=True)
+        self.messages = sorted(self.messages, key=lambda x: int(x.get('time', 0)), reverse=True)
         used_rids = []
         for message in self.messages:
             if message['rid'] not in used_rids:
