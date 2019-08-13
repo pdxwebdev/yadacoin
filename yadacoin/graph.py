@@ -211,7 +211,6 @@ class Graph(object):
                 except:
                     pass
             res = await self.config.mongo.async_db.miner_transactions.find({
-                'public_key': self.config.public_key,
                 'relationship': {'$ne': ''},
                 '$or': [
                     {'rid': {'$in': rids}},
