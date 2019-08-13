@@ -18,19 +18,19 @@ class PoolNamespace(AsyncNamespace):
             # PoolNamespace is a singleton, same instance for everyone
             self.config = get_config()  # Will be done once at first request
             self.app_log = getLogger("tornado.application")
-            self.mp = MiningPool()
-            await self.mp.refresh()  # This will create the block factory
-            self.config.mp = self.mp
+            self.config.mp = MiningPool()
+            await self.config.mp.refresh()  # This will create the block factory
+            self.config.mp = self.config.mp
         IP = environ['REMOTE_ADDR']
-        if self.mp.free_inbound_slots <= 0:
+        if self.config.mp.free_inbound_slots <= 0:
             self.app_log.warning('No free slot, Miner rejected: {}'.format(IP))
             return False  # This will close the socket
-        """if not self.mp.allow_ip(IP):
+        """if not self.config.mp.allow_ip(IP):
             self.app_log.info('Miner rejected: {}'.format(IP))
             return False  # This will close the socket            
         """
         # TODO: we could also limit the sid per IP
-        self.mp.on_new_ip(IP)  # Store the ip to avoid duplicate connections
+        self.config.mp.on_new_ip(IP)  # Store the ip to avoid duplicate connections
         await self.save_session(sid, {'IP': IP})
         if self.config.debug:
             self.app_log.info('Miner connected: {} {}'.format(IP, sid))
@@ -44,7 +44,7 @@ class PoolNamespace(AsyncNamespace):
         if self.config.debug:
             self.app_log.info('Miner disconnected: {}'.format(sid))
         try:
-            await self.mp.on_close_inbound(sid)
+            await self.config.mp.on_close_inbound(sid)
         except Exception as e:
             self.app_log.warning("Error on_disconnect: {}".format(e))
 
@@ -58,15 +58,15 @@ class PoolNamespace(AsyncNamespace):
         """Miner connects and sends his info"""
         self.app_log.debug('WS pool register: {} {}'.format(sid, json.dumps(data)))
         async with self.session(sid) as session:
-            await self.mp.on_new_inbound(session['IP'], data['version'], data['worker'], data['address'], data['type'], sid)
+            await self.config.mp.on_new_inbound(session['IP'], data['version'], data['worker'], data['address'], data['type'], sid)
         # TODO: check extra data to filter and close?
         # TODO: send current header to mine
-        await self.emit('header', data=await self.mp.block_to_mine_info(), room=sid)
+        await self.emit('header', data=await self.config.mp.block_to_mine_info(), room=sid)
 
     async def on_status(self, sid, data):
         """Miner sends status data"""
         self.app_log.debug('WS pool status: {} {}'.format(sid, json.dumps(data)))
-        await self.mp.on_miner_status(sid, data['hash'], data['uptime'])
+        await self.config.mp.on_miner_status(sid, data['hash'], data['uptime'])
 
     async def on_nonce(self, sid, data):
         """Miner sends a solution at pool diff"""
@@ -80,7 +80,7 @@ class PoolNamespace(AsyncNamespace):
         if len(data) > CHAIN.MAX_NONCE_LEN:
             await self.emit('n', data='Ko', room=sid)
             return
-        result = await self.mp.on_miner_nonce(data, sid=sid)
+        result = await self.config.mp.on_miner_nonce(data, sid=sid)
         if result:
             await self.emit('n', data='ok', room=sid)
         else:

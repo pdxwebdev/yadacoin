@@ -145,6 +145,9 @@ async def background_transaction_broadcast():
 
             async for txn in config.mongo.async_db.miner_transactions.find({}):
                 await tb.txn_broadcast_job(txn, txn.get('sent_to'))
+
+            tb = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
+            await tb.txn_broadcast_job(txn, txn.get('sent_to'))
         except Exception as e:
             app_log.error("{} in background_transaction_broadcast".format(e))
 

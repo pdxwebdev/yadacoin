@@ -76,7 +76,7 @@ class Config(object):
         self.GU = None
         self.SIO = None
         self.debug = False
-        self.mp = None
+        self.config.mp = None
 
 
     async def on_new_block(self, block):
@@ -95,8 +95,8 @@ class Config(object):
 
     def get_status(self):
         pool_status = 'N/A'
-        if self.mp:
-            pool_status = self.mp.get_status()
+        if self.config.mp:
+            pool_status = self.config.mp.get_status()
         status = {'version': self.protocol_version, 'network': self.network,
                   # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
                   'peers': self.peers.get_status(),

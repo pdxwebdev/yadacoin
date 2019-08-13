@@ -13,24 +13,23 @@ class PoolHandler(BaseHandler):
 
     async def get(self):
         if self.config.mp is None:
-            self.mp = MiningPool()
-            self.config.mp = self.mp
-            await self.mp.refresh()
+            self.config.mp = MiningPool()
+            await self.config.mp.refresh()
         """
-        if not self.mp.block_factory:
+        if not self.config.mp.block_factory:
             # first init
-            self.mp.refresh()
-        self.mining_index = self.mp.block_factory.block.index
+            self.config.mp.refresh()
+        self.mining_index = self.config.mp.block_factory.block.index
         
         block = await self.config.mongo.async_db.blocks.find_one(sort=[('index',-1)])
         # No need to run a query, this is cached in config object:
         # self.config.BU.get_latest_block()['index']:
-        if self.mp.block_factory.block.index <= block['index']:
+        if self.config.mp.block_factory.block.index <= block['index']:
             # We're behind
-            self.mp.refresh()
+            self.config.mp.refresh()
         """
-        # Since self.mp is updated by the inner events as soon as possible, no need to refresh anything, it always has the latest block.
-        self.render_as_json(await self.mp.block_to_mine_info())
+        # Since self.config.mp is updated by the inner events as soon as possible, no need to refresh anything, it always has the latest block.
+        self.render_as_json(await self.config.mp.block_to_mine_info())
 
 
 class PoolSubmitHandler(BaseHandler):
@@ -45,7 +44,7 @@ class PoolSubmitHandler(BaseHandler):
         if len(data) > CHAIN.MAX_NONCE_LEN:
             self.render_as_json({'n': 'Ko'})
             return
-        result = await self.mp.on_miner_nonce(data, address=address)
+        result = await self.config.mp.on_miner_nonce(data, address=address)
         if result:
             self.render_as_json({'n': 'ok'})
         else:

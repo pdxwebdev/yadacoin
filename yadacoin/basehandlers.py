@@ -20,7 +20,7 @@ class BaseHandler(RequestHandler):
         self.app_log = logging.getLogger("tornado.application")
         self.config = self.settings['yadacoin_config']
         self.mongo = self.settings['mongo']
-        self.mp = self.config.mp
+        self.config.mp = self.config.mp
         self.peers = self.settings['peers']
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]
