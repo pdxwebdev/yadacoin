@@ -72,6 +72,7 @@ class ClientChatNamespace(AsyncClientNamespace):
         from yadacoin.transaction import Transaction
         from yadacoin.transactionbroadcaster import TxnBroadcaster
         from yadacoin.blockchainutils import BU
+
         # TODO: generic test, is the peer known and has rights for this command? Decorator?
         if self.config.debug:
             self.app_log.info('WS newtransaction: {}'.format(json.dumps(data)))
@@ -88,7 +89,7 @@ class ClientChatNamespace(AsyncClientNamespace):
                 await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
 
             tb = TxnBroadcaster(self.config)
-            await tb.txn_broadcast_job(incoming_txn)
+            await tb.txn_broadcast_job(incoming_txn, ["{}:{}".format(self.ip, self.port)])
         except Exception as e:
             self.app_log.warning("on_newtransaction: {}".format(e))
 
