@@ -547,7 +547,6 @@ class GraphUtils(object):
         # selectors is old code before we got an RID by sorting the bulletin secrets
         # from block import Block
         # from transaction import Transaction
-        from yadacoin.crypt import Crypt
 
         if not rid:
             ds = bulletin_secret
@@ -560,6 +559,15 @@ class GraphUtils(object):
                 selectors = [selector, ]
             else:
                 selectors = selector
+        
+        for selector in selectors:
+            for txn in self.get_transactions_by_rid_worker(selector, bulletin_secret, wif, rid, raw,
+                                returnheight, lt_block_height, requested_rid):
+                yield txn
+    
+    def get_transactions_by_rid_worker(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
+                                returnheight=True, lt_block_height=None, requested_rid=False):
+        from yadacoin.crypt import Crypt
 
         transactions_by_rid_cache = self.mongo.db.transactions_by_rid_cache.find(
             {
@@ -567,7 +575,7 @@ class GraphUtils(object):
                 'rid': rid,
                 'bulletin_secret': bulletin_secret,
                 'returnheight': returnheight,
-                'selector': {'$in': selectors},
+                'selector': selector,
                 'requested_rid': requested_rid
             }
         ).sort([('height', -1)])
@@ -575,10 +583,10 @@ class GraphUtils(object):
 
         transactions = []
         if lt_block_height:
-            query = {"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+            query = {"transactions.rid": selector, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
                  'index': {'$lte': lt_block_height}}
             if requested_rid:
-                query["transactions.requested_rid"] = {"$in": selectors}
+                query["transactions.requested_rid"] = selector
             blocks = self.mongo.db.blocks.find(query)
         else:
             if transactions_by_rid_cache.count():
@@ -587,20 +595,16 @@ class GraphUtils(object):
             else:
                 block_height = 0
                 
-            query = {"transactions.rid": {"$in": selectors}, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+            query = {"transactions.rid": selector, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
                  'index': {'$gt': block_height}}
             if requested_rid:
                 query = {
                     "$or": [
                         {
-                            "transactions.rid": {
-                                "$in": selectors
-                            }
+                            "transactions.rid": selector
                         },
                         {
-                            "transactions.requested_rid": {
-                                "$in": selectors
-                            }
+                            "transactions.requested_rid": selector
                         }
                     ],
                     "transactions": {
@@ -616,9 +620,7 @@ class GraphUtils(object):
                 }
             else:
                 query = {
-                    "transactions.rid": {
-                        "$in": selectors
-                    },
+                    "transactions.rid": selector,
                     "transactions": {
                         "$elemMatch": {
                             "relationship": {
@@ -645,36 +647,34 @@ class GraphUtils(object):
                             transaction['relationship'] = relationship
                         except:
                             continue
-                    for selector in selectors:
-                        self.app_log.debug('caching transactions_by_rid at height: {}'.format(block['index']))
-                        self.mongo.db.transactions_by_rid_cache.insert(
-                            {
-                                'raw': raw,
-                                'rid': rid,
-                                'bulletin_secret': bulletin_secret,
-                                'returnheight': returnheight,
-                                'selector': selector,
-                                'txn': transaction,
-                                'height': block['index'],
-                                'requested_rid': requested_rid
-                            }
-                        )
+                    self.app_log.debug('caching transactions_by_rid at height: {}'.format(block['index']))
+                    self.mongo.db.transactions_by_rid_cache.insert(
+                        {
+                            'raw': raw,
+                            'rid': rid,
+                            'bulletin_secret': bulletin_secret,
+                            'returnheight': returnheight,
+                            'selector': selector,
+                            'txn': transaction,
+                            'height': block['index'],
+                            'requested_rid': requested_rid
+                        }
+                    )
                     transactions.append(transaction)
         if not transactions:
-            for selector in selectors:
-                self.mongo.db.transactions_by_rid_cache.insert(
-                    {
-                        'raw': raw,
-                        'rid': rid,
-                        'bulletin_secret': bulletin_secret,
-                        'returnheight': returnheight,
-                        'selector': selector,
-                        'height': latest_block['index'],
-                        'requested_rid': requested_rid
-                    }
-                )
+            self.mongo.db.transactions_by_rid_cache.insert(
+                {
+                    'raw': raw,
+                    'rid': rid,
+                    'bulletin_secret': bulletin_secret,
+                    'returnheight': returnheight,
+                    'selector': selector,
+                    'height': latest_block['index'],
+                    'requested_rid': requested_rid
+                }
+            )
 
-        for ftxn in self.mongo.db.fastgraph_transactions.find({'txn.rid': {'$in': selectors}}):
+        for ftxn in self.mongo.db.fastgraph_transactions.find({'txn.rid': selector}):
             if 'txn' in ftxn:
                 yield ftxn['txn']
 
@@ -683,7 +683,7 @@ class GraphUtils(object):
             'raw': raw,
             'rid': rid,
             'returnheight': returnheight,
-            'selector': {'$in': selectors},
+            'selector': selector,
             'requested_rid': requested_rid
         }).sort([('txn.id', 1)]):
             if 'txn' in x and x['txn']['id'] != last_id:

@@ -33,8 +33,12 @@ class Graph(object):
         if key_or_wif in [config.private_key, config.wif]:
             self.cipher = Crypt(config.wif)
             self.wallet_mode = True
-
-            rids = list(set([x['rid'] for x in self.all_relationships]))
+            
+            rids = []
+            rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
+            rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
+            rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
+            rids = list(set(rids))
             self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=config.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
             self.wallet_mode = False
@@ -198,7 +202,12 @@ class Graph(object):
                 returnheight=True,
                 requested_rid=True
             )
-            self.messages = [x for x in rid_transactions if x['rid'] and x['relationship']]
+            self.messages = []
+            used_ids = []
+            for x in rid_transactions:
+                if x.get('id') not in used_ids and x['rid'] and x['relationship']:
+                    self.messages.append(x)
+                    used_ids.append(x.get('id'))
             if not_mine:
                 messages = []
                 for x in self.messages:
