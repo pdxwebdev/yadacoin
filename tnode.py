@@ -267,6 +267,10 @@ async def main():
         with open(peers_seed_filename) as f:
             config.peers_seed = json.loads(f.read())
     else:
+        try:
+            os.makedirs(os.path.dirname(peers_seed_filename))
+        except:
+            pass
         with open(peers_seed_filename, 'w') as f:
             f.write(json.dumps([
                 {"host": "34.237.46.10","port": 80 },
