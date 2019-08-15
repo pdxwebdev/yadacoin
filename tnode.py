@@ -266,6 +266,17 @@ async def main():
     if path.isfile(peers_seed_filename):
         with open(peers_seed_filename) as f:
             config.peers_seed = json.loads(f.read())
+    else:
+        with open(peers_seed_filename, 'w') as f:
+            f.write(json.dumps([
+                {"host": "34.237.46.10","port": 80 },
+                {"host": "51.15.86.249","port": 8000 },
+                {"host": "178.32.96.27","port": 8000 },
+                {"host": "188.165.250.78","port": 8000 },
+                {"host": "116.203.24.126","port": 8000 }
+            ], indent=4))
+        with open(peers_seed_filename) as f:
+            config.peers_seed = json.loads(f.read())
 
     mongo = Mongo()
     config.mongo = mongo
