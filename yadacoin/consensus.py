@@ -404,6 +404,9 @@ class Consensus(object):
                     },
                     {'$set': {'ignore': True}}
                 )
+                await self.retrace(block, peer)
+                if trigger_event:
+                    await self.trigger_update_event()
                 return False
             if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(self.latest_block.time) + 600)) and block.special_min:
                 self.app_log.warning("New special min block {} too soon. Rejecting".format(block.index))
