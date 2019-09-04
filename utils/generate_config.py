@@ -41,68 +41,69 @@ def to_wif(private_key_static):
     return wif
 
 
-parser = argparse.ArgumentParser(
-    formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+if __name__ == "__main__":
 
-subparsers = parser.add_subparsers()
-new_parser = subparsers.add_parser('new')
-new_parser.set_defaults(which='new')
-new_parser.add_argument('username', help='Specify username')
-new_parser.add_argument('-p', '--password', type=Wif, help='Specify wif/Secret key [Enter to auto-generate]',
-                        default=Wif.DEFAULT)
+    parser = argparse.ArgumentParser(
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-update_parser = subparsers.add_parser('update')
-update_parser.set_defaults(which='update')
-update_parser.add_argument('config', help='config file')
-update_parser.add_argument('username', help='Specify username')
+    subparsers = parser.add_subparsers()
+    new_parser = subparsers.add_parser('new')
+    new_parser.set_defaults(which='new')
+    new_parser.add_argument('username', help='Specify username')
+    new_parser.add_argument('-p', '--password', type=Wif, help='Specify wif/Secret key [Enter to auto-generate]',
+                            default=Wif.DEFAULT)
 
-auto_parser = subparsers.add_parser('auto')
-auto_parser.set_defaults(which='auto')
-auto_parser.add_argument('-f', '--force', help='Forcefully create file, possibly overwriting existing, use with caution!')
-auto_parser.add_argument('-c', '--create', help='Create a new config file if one does not already exist')
-auto_parser.add_argument('-m', '--mongo-host', help='Specify a mongodb host')
+    update_parser = subparsers.add_parser('update')
+    update_parser.set_defaults(which='update')
+    update_parser.add_argument('config', help='config file')
+    update_parser.add_argument('username', help='Specify username')
 
-args = parser.parse_args()
+    auto_parser = subparsers.add_parser('auto')
+    auto_parser.set_defaults(which='auto')
+    auto_parser.add_argument('-f', '--force', help='Forcefully create file, possibly overwriting existing, use with caution!')
+    auto_parser.add_argument('-c', '--create', help='Create a new config file if one does not already exist')
+    auto_parser.add_argument('-m', '--mongodb-host', help='Specify a mongodb host')
 
-"""
-TODO: add other apis in case this one is down. Allow to override from optional command line param
-"""
-public_ip = requests.get('https://api.ipify.org').text
+    args = parser.parse_args()
 
-if args.which == 'new': 
-    if args.password.value:
-        num = from_wif(args.password.value)
-    else:
-        num = os.urandom(32).hex()
-    pk = PrivateKey.from_hex(num)
-    config = Config.generate(pk.to_hex())
-    config.username = args.username
-elif args.which == 'update':
-    with open(args.config) as f:
-        identity = json.loads(f.read())
-        config = Config.generate(xprv=identity['xprv'])
-        if 'username' in identity and identity['username']:
-            username = identity['username']
+    """
+    TODO: add other apis in case this one is down. Allow to override from optional command line param
+    """
+    public_ip = requests.get('https://api.ipify.org').text
+
+    if args.which == 'new': 
+        if args.password.value:
+            num = from_wif(args.password.value)
         else:
-            username = args.username
-        config.username = username
-        config.bulletin_secret = config.get_bulletin_secret()
-        print(config.to_json())
-elif args.which == 'auto':
-    config = Config.generate()
-    config.username = ''
-    filename = 'config.json'
-    kwargs = {}
-    out = Config.generate().to_json()
-    if args.force:
-        with open(args.force, 'w') as f:
-            f.write(out)
-    elif args.create:
-        if not os.path.isfile(args.create):
-            with open(args.create, 'w') as f:
-                f.write(out)
-    else:
-        print(out)
+            num = os.urandom(32).hex()
+        pk = PrivateKey.from_hex(num)
+        config = Config.generate(pk.to_hex())
+        config.username = args.username
+    elif args.which == 'update':
+        with open(args.config) as f:
+            identity = json.loads(f.read())
+            config = Config.generate(xprv=identity['xprv'])
+            if 'username' in identity and identity['username']:
+                username = identity['username']
+            else:
+                username = args.username
+            config.username = username
+            config.bulletin_secret = config.get_bulletin_secret()
+            print(config.to_json())
+    elif args.which == 'auto':
+        config = Config.generate(mongodb_host=args.mongodb_host)
+        config.username = ''
+        filename = 'config.json'
+        kwargs = {}
+        if args.force:
+            with open(args.force, 'w') as f:
+                f.write(config.to_json())
+        elif args.create:
+            if not os.path.isfile(args.create):
+                with open(args.create, 'w') as f:
+                    f.write(config.to_json())
+        else:
+            print(config.to_json())
 
 
 
