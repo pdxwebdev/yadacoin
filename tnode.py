@@ -78,8 +78,16 @@ class NodeApplication(Application):
         self.default_handlers.extend(WALLET_HANDLERS)
 
         self.default_handlers.extend(WEB_HANDLERS)
-        self.default_handlers.extend(YCW_HANDLERS)
-        self.default_handlers.extend(PROFILE_HANDLERS)
+        
+        try:
+            self.default_handlers.extend(YCW_HANDLERS)
+        except:
+            pass
+        
+        try:
+            self.default_handlers.extend(PROFILE_HANDLERS)
+        except:
+            pass
         settings = dict(
             app_title=u"Yadacoin Node",
             template_path=path.join(path.dirname(__file__), 'templates'),
