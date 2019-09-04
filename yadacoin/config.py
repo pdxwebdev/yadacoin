@@ -109,7 +109,6 @@ class Config(object):
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None, mongodb_host=None):
-        print(mongodb_host)
         from miniupnpc import UPnP
         mnemonic = Mnemonic('english')
         # generate 12 word mnemonic seed
