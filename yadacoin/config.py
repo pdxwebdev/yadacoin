@@ -108,7 +108,8 @@ class Config(object):
         return status
 
     @classmethod
-    def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None):
+    def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None, mongodb_host=None):
+        print(mongodb_host)
         from miniupnpc import UPnP
         mnemonic = Mnemonic('english')
         # generate 12 word mnemonic seed
@@ -175,7 +176,7 @@ class Config(object):
             "fcm_key": "",
             "database": "yadacoin",
             "site_database": "yadacoinsite",
-            "mongodb_host": "localhost",
+            "mongodb_host": mongodb_host or "localhost",
             "mixpanel": "",
             "username": username or '',
             "network": "mainnet"
