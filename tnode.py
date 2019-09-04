@@ -41,8 +41,16 @@ from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
 from yadacoin.transactionbroadcaster import TxnBroadcaster
-from plugins.yadacoinweb.handlers import HANDLERS as YCW_HANDLERS
-from plugins.profile.handlers import HANDLERS as PROFILE_HANDLERS
+
+try:
+    from plugins.yadacoinweb.handlers import HANDLERS as YCW_HANDLERS
+except:
+    pass
+
+try:
+    from plugins.profile.handlers import HANDLERS as PROFILE_HANDLERS
+except:
+    pass
 
 __version__ = '0.0.13'
 
