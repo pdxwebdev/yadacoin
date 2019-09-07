@@ -21,7 +21,7 @@ class GenerateWalletHandler(BaseHandler):
 class GenerateChildWalletHandler(BaseHandler):
 
     async def get(self):
-        return self.render_as_json('{"address": "qlkwerjqlwekrjqwlerkjlwekrj"}')
+        return self.render_as_json({"address": "qlkwerjqlwekrjqwlerkjlwekrj"})
 
 
 WALLET_HANDLERS = [(r'/wallet', WalletHandler), (r'/generate-wallet', GenerateWalletHandler),
