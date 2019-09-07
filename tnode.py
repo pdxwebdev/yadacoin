@@ -153,17 +153,16 @@ async def background_status():
 
 async def background_transaction_broadcast():
     """This background co-routine is responsible for status collection and display"""
+    tb = TxnBroadcaster(config)
+    tb2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
     while True:
         try:
             await async_sleep(30)
             # status = {"peers": config.peers.get_status()}
-            tb = TxnBroadcaster(config)
 
             async for txn in config.mongo.async_db.miner_transactions.find({}):
                 await tb.txn_broadcast_job(txn, txn.get('sent_to'))
-
-            tb = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
-            await tb.txn_broadcast_job(txn, txn.get('sent_to'))
+                await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
         except Exception as e:
             app_log.error("{} in background_transaction_broadcast".format(e))
 
