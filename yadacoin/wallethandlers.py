@@ -5,6 +5,7 @@ Handlers required by the wallet operations
 from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.basehandlers import BaseHandler
+from yadacoin.blockchainutils import BU
 
 
 class WalletHandler(BaseHandler):
@@ -43,5 +44,42 @@ class GenerateChildWalletHandler(BaseHandler):
         return self.render_as_json({"address": address})
 
 
-WALLET_HANDLERS = [(r'/wallet', WalletHandler), (r'/generate-wallet', GenerateWalletHandler),
-                   (r'/generate-child-wallet', GenerateChildWalletHandler)]
+class GetAddressesHandler(BaseHandler):
+
+    async def get(self):
+        addresses = [x['address'] async for x in await self.config.mongo.async_db.child_keys.find()]
+        addresses.append(self.config.address)
+
+        return self.render_as_json({'addresses': addresses})
+
+
+class GetAddressesHandler(BaseHandler):
+
+    async def get(self):
+        addresses = [x['address'] async for x in await self.config.mongo.async_db.child_keys.find()]
+        addresses.append(self.config.address)
+
+        return self.render_as_json({'addresses': addresses})
+
+
+class GetBalanceSum(BaseHandler):
+
+    async def get(self):
+        addresses = self.get_body_argument("addresses", False)
+        if not addresses:
+            self.render_as_json({})
+            return
+        balance = 0.0
+        for address in addresses:
+            balance += BU().get_wallet_balance(address)
+        return self.render_as_json({
+            'balance': "{0:.8f}".format(balance)
+        })
+
+
+WALLET_HANDLERS = [
+    (r'/wallet', WalletHandler),
+    (r'/generate-wallet', GenerateWalletHandler),
+    (r'/generate-child-wallet', GenerateChildWalletHandler),
+    (r'/get-addresses', GetAddressesHandler),
+]

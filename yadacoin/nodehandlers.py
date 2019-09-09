@@ -57,8 +57,25 @@ class GetBlockHandler(BaseHandler):
         """
         :return:
         """
-        hash = self.get_argument("hash", 0)
-        self.render_as_json(await self.mongo.async_db.blocks.find_one({'hash': hash}, {'_id': 0}))
+        try:
+            block_hash = self.get_argument("hash")
+            return self.render_as_json(await self.mongo.async_db.blocks.find_one({'hash': block_hash}, {'_id': 0}))
+        except:
+            pass
+        
+        try:
+            block_index = self.get_argument("index")
+            return self.render_as_json(await self.mongo.async_db.blocks.find_one({'index': block_index}, {'_id': 0}))
+        except:
+            pass
+        
+        return self.render_as_json({})
+
+
+class GetBlockHeightHandler(BaseHandler):
+
+    async def get(self):
+        self.render_as_json({'height': self.config.BU.get_latest_block()['index']})
 
 
 class GetPeersHandler(BaseHandler):
@@ -129,6 +146,7 @@ class NewBlockHandler(BaseHandler):
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
                  (r'/get-blocks', GetBlocksHandler),
                  (r'/get-block', GetBlockHandler),
+                 (r'/get-height', GetBlockHeightHandler),
                  (r'/get-peers', GetPeersHandler),
                  (r'/newblock', NewBlockHandler),
                  (r'/get-status', GetStatusHandler)]

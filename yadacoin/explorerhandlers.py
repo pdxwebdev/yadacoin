@@ -116,6 +116,19 @@ class ExplorerSearchHandler(BaseHandler):
         return self.render_as_json({})
 
 
+class ExplorerGetBalance(BaseHandler):
+
+    async def get(self):
+        address = self.get_argument("address", False)
+        if not address:
+            self.render_as_json({})
+            return
+        balance = BU().get_wallet_balance(address)
+        return self.render_as_json({
+            'balance': "{0:.8f}".format(balance)
+        })
+
+
 class ExplorerLatestHandler(BaseHandler):
 
     async def get(self):
@@ -182,5 +195,6 @@ class ExplorerLast50(BaseHandler):
 
 
 EXPLORER_HANDLERS = [(r'/explorer-search', ExplorerSearchHandler),
+                     (r'/explorer-get-balance', ExplorerGetBalance),
                      (r'/explorer-latest', ExplorerLatestHandler),
-                     (r'/explorer-last50', ExplorerLast50)]
+                     (r'/explorer-last50', ExplorerLast50),]
