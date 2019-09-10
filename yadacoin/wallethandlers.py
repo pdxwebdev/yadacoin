@@ -28,8 +28,9 @@ class GenerateWalletHandler(BaseHandler):
 class GenerateChildWalletHandler(BaseHandler):
 
     async def post(self):
+        args = json.loads(self.request.body)
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
-        last_child_key = await self.config.mongo.async_db.child_keys.find_one({'account': self.get_body_argument('uid')}, sort=[('inc', -1)])
+        last_child_key = await self.config.mongo.async_db.child_keys.find_one({'account': args.get('uid')}, sort=[('inc', -1)])
         if last_child_key:
             inc = last_child_key['inc'] + 1
         else:
@@ -42,7 +43,7 @@ class GenerateChildWalletHandler(BaseHandler):
         wif = self.to_wif(private_key)
 
         await self.config.mongo.async_db.child_keys.insert_one({
-            'account': self.get_body_argument('uid'),
+            'account': args.get('uid'),
             'inc': inc,
             'extended': child_key.ExtendedKey(),
             'public_key': private_key,

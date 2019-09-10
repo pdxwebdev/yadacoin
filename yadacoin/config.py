@@ -116,13 +116,12 @@ class Config(object):
             seed = mnemonic.generate(256)
         private_key = None
         if seed:
-            # create bitcoin wallet
+            # create new wallet
             entropy = mnemonic.to_entropy(seed)
             key = BIP32Key.fromEntropy(entropy)
             private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
-        else:
-            raise Exception('No Seed')
+
         if prv:
             private_key = PrivateKey.from_hex(bytes.fromhex(prv)).to_hex()
             extended_key = ''
