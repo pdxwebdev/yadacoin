@@ -2,6 +2,9 @@
 Handlers required by the wallet operations
 """
 
+import hashlib
+import binascii
+import base58
 import json
 from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
@@ -33,17 +36,31 @@ class GenerateChildWalletHandler(BaseHandler):
             inc = 0
         key = exkey.ChildKey(inc)
         child_key = BIP32Key.fromExtendedKey(key.ExtendedKey())
-        private_key = child_key.PrivateKey().hex()
         public_key = child_key.PublicKey().hex()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        private_key = child_key.PrivateKey().hex()
+        wif = self.to_wif(private_key)
+
         await self.config.mongo.async_db.child_keys.insert_one({
             'account': self.get_body_argument('uid'),
             'inc': inc,
             'extended': child_key.ExtendedKey(),
             'public_key': private_key,
-            'address': address
+            'address': address,
+            'private_key': private_key,
+            'wif': wif
         })
         return self.render_as_json({"address": address})
+    
+    def to_wif(self, private_key):
+
+        #to wif
+        private_key_static = private_key
+        extended_key = "80"+private_key_static+"01"
+        first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
+        second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
+        final_key = extended_key+second_sha256[:8]
+        return base58.b58encode(binascii.unhexlify(final_key)).decode('utf-8')
 
 
 class GetAddressesHandler(BaseHandler):
