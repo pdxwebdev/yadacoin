@@ -273,29 +273,30 @@ async def main():
         app_log.error("peer_host cannot be blank in config. Set it to you public ip address")
         return exit()
     # get seed.json from same dir as config.
-    if config.network == 'mainnet':
-        seed_filename = 'seed.json'
-    elif config.network == 'testnet':
-        seed_filename = 'seed_testnet.json'
-    peers_seed_filename = options.config.replace(ntpath.basename(options.config), seed_filename)
-    if path.isfile(peers_seed_filename):
-        with open(peers_seed_filename) as f:
-            config.peers_seed = json.loads(f.read())
-    else:
-        try:
-            os.makedirs(os.path.dirname(peers_seed_filename))
-        except:
-            pass
-        with open(peers_seed_filename, 'w') as f:
-            f.write(json.dumps([
-                {"host": "34.237.46.10","port": 80 },
-                {"host": "51.15.86.249","port": 8000 },
-                {"host": "178.32.96.27","port": 8000 },
-                {"host": "188.165.250.78","port": 8000 },
-                {"host": "116.203.24.126","port": 8000 }
-            ], indent=4))
-        with open(peers_seed_filename) as f:
-            config.peers_seed = json.loads(f.read())
+    if config.network != 'regnet':
+        if config.network == 'mainnet':
+            seed_filename = 'seed.json'
+        elif config.network == 'testnet':
+            seed_filename = 'seed_testnet.json'
+        peers_seed_filename = options.config.replace(ntpath.basename(options.config), seed_filename)
+        if path.isfile(peers_seed_filename):
+            with open(peers_seed_filename) as f:
+                config.peers_seed = json.loads(f.read())
+        else:
+            try:
+                os.makedirs(os.path.dirname(peers_seed_filename))
+            except:
+                pass
+            with open(peers_seed_filename, 'w') as f:
+                f.write(json.dumps([
+                    {"host": "34.237.46.10","port": 80 },
+                    {"host": "51.15.86.249","port": 8000 },
+                    {"host": "178.32.96.27","port": 8000 },
+                    {"host": "188.165.250.78","port": 8000 },
+                    {"host": "116.203.24.126","port": 8000 }
+                ], indent=4))
+            with open(peers_seed_filename) as f:
+                config.peers_seed = json.loads(f.read())
 
     mongo = Mongo()
     config.mongo = mongo
