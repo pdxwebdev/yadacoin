@@ -528,8 +528,8 @@ class ExternalInput(Input):
 
     def __init__(self, config, mongo, public_key, address, txn_id, signature):
         # TODO: error, superclass init missing
-        self.config = config
-        self.mongo = mongo
+        self.config = get_config()
+        self.mongo = self.config.mongo
         self.public_key = public_key
         self.id = txn_id
         self.signature = signature

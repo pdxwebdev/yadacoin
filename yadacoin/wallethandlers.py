@@ -2,10 +2,12 @@
 Handlers required by the wallet operations
 """
 
+import json
 from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
+from yadacoin.transaction import Transaction, TransactionFactory
 
 
 class WalletHandler(BaseHandler):
@@ -77,9 +79,72 @@ class GetBalanceSum(BaseHandler):
         })
 
 
+class CreateTransactionView(BaseHandler):
+    async def post(self):
+        config = self.config
+
+        args = json.loads(self.request.body)
+        address = args.get('address')
+        if not address:
+            return self.render_as_json({})
+
+        fee = args.get('fee', 0.0)
+        outputs = args.get('outputs')
+        if not outputs:
+            return self.render_as_json({})
+        from_addresses = args.get('from', [])
+
+        inputs = []
+        for from_address in from_addresses:
+            unspent = BU().get_wallet_unspent_transactions(from_address)
+            inputs.extend(unspent)
+
+        txn = TransactionFactory(
+            block_height=BU().get_latest_block()['index'],
+            private_key=config.private_key,
+            public_key=config.public_key,
+            fee=float(fee),
+            inputs=inputs,
+            outputs=outputs
+        )
+        return self.render_as_json(txn.transaction.to_dict())
+
+
+class CreateRawTransactionView(BaseHandler):
+    async def post(self):
+        config = self.config
+
+        args = json.loads(self.request.body)
+        address = args.get('address')
+        if not address:
+            return self.render_as_json({})
+
+        fee = args.get('fee', 0.0)
+        outputs = args.get('outputs')
+        if not outputs:
+            return self.render_as_json({})
+        from_addresses = args.get('from', [])
+
+        inputs = []
+        for from_address in from_addresses:
+            unspent = BU().get_wallet_unspent_transactions(from_address)
+            inputs.extend(unspent)
+
+        txn = TransactionFactory(
+            block_height=BU().get_latest_block()['index'],
+            public_key=config.public_key,
+            fee=float(fee),
+            inputs=inputs,
+            outputs=outputs
+        )
+        return self.render_as_json(txn.transaction.to_dict())
+
+
 WALLET_HANDLERS = [
     (r'/wallet', WalletHandler),
     (r'/generate-wallet', GenerateWalletHandler),
     (r'/generate-child-wallet', GenerateChildWalletHandler),
     (r'/get-addresses', GetAddressesHandler),
+    (r'/create-transaction', CreateTransactionView),
+    (r'/create-raw-transaction', CreateRawTransactionView),
 ]
