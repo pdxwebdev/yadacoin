@@ -70,7 +70,7 @@ class GetAddressesHandler(BaseHandler):
         addresses = [x['address'] async for x in self.config.mongo.async_db.child_keys.find()]
         addresses.append(self.config.address)
 
-        return self.render_as_json({'addresses': addresses})
+        return self.render_as_json({'addresses': list(set(addresses))})
 
 
 class GetBalanceSum(BaseHandler):
