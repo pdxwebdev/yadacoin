@@ -46,7 +46,7 @@ class GenerateChildWalletHandler(BaseHandler):
             'account': args.get('uid'),
             'inc': inc,
             'extended': child_key.ExtendedKey(),
-            'public_key': private_key,
+            'public_key': public_key,
             'address': address,
             'private_key': private_key,
             'wif': wif
