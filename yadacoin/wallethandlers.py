@@ -67,16 +67,7 @@ class GenerateChildWalletHandler(BaseHandler):
 class GetAddressesHandler(BaseHandler):
 
     async def get(self):
-        addresses = [x['address'] async for x in await self.config.mongo.async_db.child_keys.find()]
-        addresses.append(self.config.address)
-
-        return self.render_as_json({'addresses': addresses})
-
-
-class GetAddressesHandler(BaseHandler):
-
-    async def get(self):
-        addresses = [x['address'] async for x in await self.config.mongo.async_db.child_keys.find()]
+        addresses = [x['address'] async for x in self.config.mongo.async_db.child_keys.find()]
         addresses.append(self.config.address)
 
         return self.render_as_json({'addresses': addresses})
