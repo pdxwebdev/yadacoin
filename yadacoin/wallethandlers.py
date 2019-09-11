@@ -76,7 +76,8 @@ class GetAddressesHandler(BaseHandler):
 class GetBalanceSum(BaseHandler):
 
     async def get(self):
-        addresses = self.get_body_argument("addresses", False)
+        args = json.loads(self.request.body)
+        addresses = args.get("addresses", None)
         if not addresses:
             self.render_as_json({})
             return
@@ -156,4 +157,5 @@ WALLET_HANDLERS = [
     (r'/get-addresses', GetAddressesHandler),
     (r'/create-transaction', CreateTransactionView),
     (r'/create-raw-transaction', CreateRawTransactionView),
+    (r'/get-balance-sum', GetBalanceSum),
 ]
