@@ -57,17 +57,14 @@ class GetBlockHandler(BaseHandler):
         """
         :return:
         """
-        try:
-            block_hash = self.get_argument("hash")
+        block_hash = self.get_argument("hash", None)
+        block_index = self.get_argument("index", None)
+
+        if block_hash:
             return self.render_as_json(await self.mongo.async_db.blocks.find_one({'hash': block_hash}, {'_id': 0}))
-        except:
-            pass
         
-        try:
-            block_index = self.get_argument("index")
+        if block_index:
             return self.render_as_json(await self.mongo.async_db.blocks.find_one({'index': block_index}, {'_id': 0}))
-        except:
-            pass
         
         return self.render_as_json({})
 
