@@ -526,7 +526,7 @@ class Input(object):
 
 class ExternalInput(Input):
 
-    def __init__(self, config, mongo, public_key, address, txn_id, signature):
+    def __init__(self, public_key, address, txn_id, signature):
         # TODO: error, superclass init missing
         self.config = get_config()
         self.mongo = self.config.mongo
@@ -542,11 +542,9 @@ class ExternalInput(Input):
             raise Exception('Invalid external input')
 
     @classmethod
-    def from_dict(cls, config, mongo, txn):
+    def from_dict(cls, txn):
         # TODO: sig doees not match
         return cls(
-            config=config,
-            mongo=mongo,
             public_key=txn.get('public_key', ''),
             address=txn.get('address', ''),
             txn_id=txn.get('id', ''),

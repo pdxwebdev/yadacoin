@@ -10,7 +10,8 @@ from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
-from yadacoin.transaction import Transaction, TransactionFactory
+from yadacoin.transaction import Transaction, TransactionFactory, NotEnoughMoneyException
+from yadacoin.transactionbroadcaster import TxnBroadcaster
 
 
 class WalletHandler(BaseHandler):
@@ -149,6 +150,49 @@ class CreateRawTransactionView(BaseHandler):
         )
         return self.render_as_json(txn.transaction.to_dict())
 
+class SendTransactionView(BaseHandler):
+    async def post(self):
+        args = json.loads(self.request.body)
+        to = args.get('address')
+        value = args.get('value')
+        from_address = args.get('from')
+
+        if from_address == self.config.address:
+            private_key = self.config.private_key
+        else:
+            child_key = await self.config.mongo.async_db.child_keys.find_one({'address': from_address})
+            if child_key:
+                public_key = child_key['public_key']
+                private_key = child_key['private_key']
+            else:
+                return self.render_as_json({'status': 'error', 'message': 'no wallet matching from address'})
+
+        try:
+            transaction = TransactionFactory(
+                block_height=config.BU.get_latest_block()['index'],
+                fee=0.00,
+                public_key=public_key,
+                private_key=private_key,
+                outputs=[
+                    {'to': to, 'value': value}
+                ]
+            )
+        except NotEnoughMoneyException:
+            return self.render_as_json({'status': "error", 'message': "not enough money"})
+        except:
+            raise
+        try:
+            transaction.transaction.verify()
+        except:
+            return self.render_as_json({"error": "invalid transaction"})
+
+        await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
+        txn_b = TxnBroadcaster(self.config)
+        await txn_b.txn_broadcast_job(transaction)
+
+        return self.render_as_json({'status': 'success', 'message': 'Transaction generated and transmitted successfully.'})
+ 
+
 
 WALLET_HANDLERS = [
     (r'/wallet', WalletHandler),
@@ -158,4 +202,5 @@ WALLET_HANDLERS = [
     (r'/create-transaction', CreateTransactionView),
     (r'/create-raw-transaction', CreateRawTransactionView),
     (r'/get-balance-sum', GetBalanceSum),
+    (r'/send-transaction', SendTransactionView),
 ]
