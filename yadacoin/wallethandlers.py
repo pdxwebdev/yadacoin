@@ -191,7 +191,7 @@ class SendTransactionView(BaseHandler):
         txn_b = TxnBroadcaster(config)
         await txn_b.txn_broadcast_job(transaction.transaction)
 
-        return self.render_as_json({'status': 'success', 'message': 'Transaction generated and transmitted successfully.'})
+        return self.render_as_json(transaction.transaction.to_dict())
  
 
 
