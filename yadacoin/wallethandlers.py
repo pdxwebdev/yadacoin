@@ -152,15 +152,16 @@ class CreateRawTransactionView(BaseHandler):
 
 class SendTransactionView(BaseHandler):
     async def post(self):
+        config = self.config
         args = json.loads(self.request.body)
         to = args.get('address')
         value = args.get('value')
         from_address = args.get('from')
 
-        if from_address == self.config.address:
-            private_key = self.config.private_key
+        if from_address == config.address:
+            private_key = config.private_key
         else:
-            child_key = await self.config.mongo.async_db.child_keys.find_one({'address': from_address})
+            child_key = await config.mongo.async_db.child_keys.find_one({'address': from_address})
             if child_key:
                 public_key = child_key['public_key']
                 private_key = child_key['private_key']
@@ -186,8 +187,8 @@ class SendTransactionView(BaseHandler):
         except:
             return self.render_as_json({"error": "invalid transaction"})
 
-        await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
-        txn_b = TxnBroadcaster(self.config)
+        await config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
+        txn_b = TxnBroadcaster(config)
         await txn_b.txn_broadcast_job(transaction)
 
         return self.render_as_json({'status': 'success', 'message': 'Transaction generated and transmitted successfully.'})
