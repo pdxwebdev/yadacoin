@@ -189,7 +189,7 @@ class SendTransactionView(BaseHandler):
 
         await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
         txn_b = TxnBroadcaster(config)
-        await txn_b.txn_broadcast_job(transaction)
+        await txn_b.txn_broadcast_job(transaction.transaction)
 
         return self.render_as_json({'status': 'success', 'message': 'Transaction generated and transmitted successfully.'})
  
