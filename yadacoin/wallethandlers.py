@@ -187,7 +187,7 @@ class SendTransactionView(BaseHandler):
         except:
             return self.render_as_json({"error": "invalid transaction"})
 
-        await config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
+        await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
         txn_b = TxnBroadcaster(config)
         await txn_b.txn_broadcast_job(transaction)
 
