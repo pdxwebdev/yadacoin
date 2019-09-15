@@ -155,7 +155,7 @@ class SendTransactionView(BaseHandler):
         config = self.config
         args = json.loads(self.request.body)
         to = args.get('address')
-        value = args.get('value')
+        value = float(args.get('value'))
         from_address = args.get('from')
 
         if from_address == config.address:
