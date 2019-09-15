@@ -140,10 +140,26 @@ class NewBlockHandler(BaseHandler):
             print('ERROR: failed to get peers, exiting...')
 
 
+class GetPendingTransactionHandler(BaseHandler):
+    async def get(self):
+        txn_id = self.get_query_argument('id', None).replace(' ', '+')
+        if not txn_id:
+            return self.render_as_json({})
+        return self.render_as_json(self.config.mongo.async_db.miner_transactions.find_one({'id': txn_id}))
+
+
+class GetPendingTransactionIdsHandler(BaseHandler):
+    async def get(self):
+        txns = await self.config.mongo.async_db.miner_transactions.find({}).to_list(length=100)
+        return self.render_as_json({'txn_ids': [x['id'] for x in txns]})
+
+
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
                  (r'/get-blocks', GetBlocksHandler),
                  (r'/get-block', GetBlockHandler),
                  (r'/get-height', GetBlockHeightHandler),
                  (r'/get-peers', GetPeersHandler),
                  (r'/newblock', NewBlockHandler),
-                 (r'/get-status', GetStatusHandler)]
+                 (r'/get-status', GetStatusHandler),
+                 (r'/get-pending-transaction', GetPendingTransactionHandler),
+                 (r'/get-pending-transaction-ids', GetPendingTransactionIdsHandler),]
