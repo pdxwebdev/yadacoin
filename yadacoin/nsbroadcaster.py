@@ -3,40 +3,29 @@ from yadacoin.peers import Peer
 from yadacoin.transaction import Transaction
 
 
-class TxnBroadcaster(object):
+class NSBroadcaster(object):
     def __init__(self, config, server=None):
         self.config = config
         self.app_log = getLogger('tornado.application')
         self.server = server
 
-    async def txn_broadcast_job(self, txn, sent_to=None):
-        if isinstance(txn, Transaction):
-            transaction = txn
+    async def ns_broadcast_job(self, nstxn, sent_to=None):
+        if isinstance(nstxn['txn'], Transaction):
+            transaction = nstxn['txn']
         else:
-            transaction = Transaction.from_dict(0, txn)
-        if self.config.network != 'regnet':
-            ns_records = await self.config.mongo.async_db.name_server.find({
-                '$or': [
-                    {'rid': transaction.rid},
-                    {'requested_rid': transaction.requested_rid},
-                    {'requester_rid': transaction.requester_rid}
-                ]
-            }).to_list(100)
+            transaction = Transaction.from_dict(self.config.BU.get_latest_block()['index'], nstxn['txn'])
 
-            if ns_records:
-                for ns in ns_records:
-                    await self.prepare_peer(ns['peer'], transaction, sent_to)
-            else:
-                for peer in self.config.peers.peers:
-                    await self.prepare_peer(peer, transaction, sent_to)
+        if self.config.network != 'regnet':
+            for peer in self.config.peers.peers:
+                await self.prepare_peer(peer, transaction, sent_to)
             
             if self.server:
                 try:
                     if self.config.debug:
-                        self.app_log.debug('Transmitting transaction to inbound peers')
-                    await self.server.emit('newtransaction', data=transaction.to_dict(), namespace='/chat')
+                        self.app_log.debug('Transmitting ns to inbound peers')
+                    await self.server.emit('newns', data=transaction.to_dict(), namespace='/chat')
                     await self.config.mongo.async_db.miner_transactions.update_one({
-                        'id': transaction.transaction_signature
+                        'id': nstxn
                     }, {
                         '$addToSet': {
                             'sent_to': peer.to_string()

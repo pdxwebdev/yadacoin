@@ -24,16 +24,14 @@ from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransac
     InvalidTransactionSignatureException, MissingInputTransactionException
 from yadacoin.transactionutils import TU
 from yadacoin.transactionbroadcaster import TxnBroadcaster
+from yadacoin.nsbroadcaster import NSBroadcaster
 from yadacoin.peers import Peer
 
 
 class GraphConfigHandler(BaseHandler):
 
     async def get(self):
-        if int(self.config.web_server_port) == 443:
-            peer = "https://{}:{}".format(self.config.peer_host, self.config.peer_port)
-        else:
-            peer = "http://{}:{}".format(self.config.peer_host, self.config.peer_port)
+        peer = "http://{}:{}".format(self.config.peer_host, self.config.peer_port)
         yada_config = {
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),
@@ -51,6 +49,9 @@ class GraphConfigHandler(BaseHandler):
 class BaseGraphHandler(BaseHandler):
     def get_base_graph(self):
         self.bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
+        self.to = self.get_query_argument('to', None)
+        self.username = self.get_query_argument('username', None)
+        self.rid = self.generate_rid(self.config.bulletin_secret, self.bulletin_secret)
         if self.request.body:
             ids = json.loads(self.request.body.decode('utf-8')).get('ids')
         else:
@@ -61,6 +62,12 @@ class BaseGraphHandler(BaseHandler):
             key_or_wif = None
         return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, key_or_wif)
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
+
+    def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
+        if first_bulletin_secret == second_bulletin_secret:
+            raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
+        bulletin_secrets = sorted([str(first_bulletin_secret), str(second_bulletin_secret)], key=str.lower)
+        return hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
 
 
 class GraphInfoHandler(BaseGraphHandler):
@@ -187,27 +194,44 @@ class GraphTransactionHandler(BaseGraphHandler):
             transactions.append(transaction)
 
         for x in transactions:
+            if x.rid == self.rid:
+                me_pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
+                    'public_key': self.config.public_key, 
+                    'rid': self.rid, 
+                    'dh_public_key': {'$exists': True}
+                })
+                me_blockchain_exists = await self.config.mongo.async_db.blocks.find_one({
+                    'public_key': self.config.public_key, 
+                    'rid': self.rid, 
+                    'dh_public_key': {'$exists': True}
+                })
+                if not me_pending_exists and not me_blockchain_exists:
+                    created_relationship = await self.create_relationship(self.bulletin_secret, self.username, self.to)
+                    await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.to_dict())
+                    tb = NSBroadcaster(self.config)
+                    await tb.ns_broadcast_job(created_relationship)
+                
+                pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
+                    'public_key': x.public_key, 
+                    'rid': self.rid, 
+                    'dh_public_key': {'$exists': True}
+                })
+                blockchain_exists = await self.config.mongo.async_db.blocks.find_one({
+                    'public_key': x.public_key, 
+                    'rid': self.rid, 
+                    'dh_public_key': {'$exists': True}
+                })
+                if pending_exists or blockchain_exists:
+                    continue
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
-            try:
-                self.config.push_service.do_push(x.to_dict(), self.bulletin_secret, self.app_log)
-            except Exception as e:
-                print(e)
-                print('do_push failed')
-        txn_b = TxnBroadcaster(self.config)
-        await txn_b.txn_broadcast_job(transaction)
+            txn_b = TxnBroadcaster(self.config)
+            await txn_b.txn_broadcast_job(x)
 
         return self.render_as_json(items)
 
-
-class CreateRelationshipHandler(BaseHandler):
-
-    async def post(self):
+    async def create_relationship(self, bulletin_secret, username, to):
         config = self.config
         mongo = self.config.mongo
-        kwargs = json.loads(self.request.body.decode('utf-8'))
-        bulletin_secret = kwargs.get('bulletin_secret', '')
-        username = kwargs.get('username', '')
-        to = kwargs.get('to', '')
 
         if not bulletin_secret:
             return 'error: "bulletin_secret" missing', 400
@@ -261,15 +285,7 @@ class CreateRelationshipHandler(BaseHandler):
             ]
         )
 
-        mongo.db.miner_transactions.insert(transaction.transaction.to_dict())
-        """
-        # TODO: integrate new socket/peer framework for transmitting txns
-
-        job = Process(target=TxnBroadcaster.txn_broadcast_job, args=(transaction.transaction,))
-        job.start()
-        """
-
-        self.render_as_json({"success": True})
+        return transaction.transaction
 
 
 class GraphSentFriendRequestsHandler(BaseGraphHandler):
@@ -497,6 +513,42 @@ class FastGraphHandler(BaseGraphHandler):
             self.app_log.error(e)
 
 
+class NSHandler(BaseGraphHandler):
+    async def get(self):
+        pass
+
+    async def post(self):
+        try:
+            ns = json.loads(self.request.body.decode('utf-8'))
+        except:
+            return self.render_as_json({'status': 'error', 'message': 'invalid request body'})
+        try:
+            nstxn = Transaction.from_dict(self.config.BU().get_latest_block()['index'], ns['txn'])
+        except:
+            return self.render_as_json({'status': 'error', 'message': 'invalid transaction'})
+        try:
+            peer = Peer(ns['peer']['host'], ns['peer']['port'])
+        except:
+            return self.render_as_json({'status': 'error', 'message': 'invalid peer'})
+
+        existing = await self.config.mongo.async_db.name_server.find_one({
+            'rid': nstxn.rid,
+            'requester_rid': nstxn.requester_rid,
+            'requested_rid': nstxn.requested_rid,
+            'peer_str': peer.to_string(),
+        })
+        if not existing:
+            await self.config.mongo.async_db.name_server.insert_one({
+                'rid': nstxn.rid,
+                'requester_rid': nstxn.requester_rid,
+                'requested_rid': nstxn.requested_rid,
+                'peer_str': peer.to_string(), 
+                'peer': peer.to_dict(),
+                'txn': nstxn.to_dict()
+            })
+        return self.render_as_json({'status': 'success'})
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r'/yada_config.json', GraphConfigHandler), # first the config is requested
@@ -504,7 +556,6 @@ GRAPH_HANDLERS = [
     (r'/get-graph-wallet', GraphRIDWalletHandler), # request balance and UTXOs
     (r'/register', RegistrationHandler), # if a relationship is not present, we "register." client requests information necessary to generate a friend request transaction
     (r'/transaction', GraphTransactionHandler), # first the client submits their friend request transaction.
-    (r'/create-relationship', CreateRelationshipHandler), # this generates and submits an friend accept transaction. You're done registering once these are on the blockchain.
     (r'/get-graph-sent-friend-requests', GraphSentFriendRequestsHandler), # get all friend requests I've sent
     (r'/get-graph-friend-requests', GraphFriendRequestsHandler), # get all friend requests sent to me
     (r'/get-graph-friends', GraphFriendsHandler), # get client/server relationship. Same as get-graph-info, but here for symantic purposes
@@ -515,4 +566,5 @@ GRAPH_HANDLERS = [
     (r'/search', SearchHandler), # search by username for friend of server. Server provides necessary information to generate friend request transaction, just like /register for the server.
     (r'/sign-raw-transaction', SignRawTransactionHandler), # server signs the client transaction
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client
+    (r'/ns', NSHandler), # name server endpoints
 ]
