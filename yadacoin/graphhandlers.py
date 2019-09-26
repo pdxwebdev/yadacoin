@@ -207,9 +207,10 @@ class GraphTransactionHandler(BaseGraphHandler):
                 })
                 if not me_pending_exists and not me_blockchain_exists:
                     created_relationship = await self.create_relationship(self.bulletin_secret, self.username, self.to)
-                    await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.to_dict())
+                    await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.transaction.to_dict())
+                    created_relationship.transaction.relationship = created_relationship.relationship
                     tb = NSBroadcaster(self.config)
-                    await tb.ns_broadcast_job(created_relationship)
+                    await tb.ns_broadcast_job(created_relationship.transaction)
                 
                 pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
                     'public_key': x.public_key, 
@@ -284,8 +285,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                 }
             ]
         )
-
-        return transaction.transaction
+        return transaction
 
 
 class GraphSentFriendRequestsHandler(BaseGraphHandler):
@@ -546,6 +546,8 @@ class NSHandler(BaseGraphHandler):
                 'peer': peer.to_dict(),
                 'txn': nstxn.to_dict()
             })
+        tb = NSBroadcaster(self.config)
+        await tb.ns_broadcast_job(nstxn)
         return self.render_as_json({'status': 'success'})
 
 

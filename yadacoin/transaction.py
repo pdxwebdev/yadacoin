@@ -484,11 +484,14 @@ class Transaction(object):
                     return output_txn
 
     def to_dict(self):
+        relationship = self.relationship
+        if hasattr(relationship, 'to_dict'):
+            relationship = relationship.to_dict()
         ret = {
             'time': self.time,
             'rid': self.rid,
             'id': self.transaction_signature,  # Beware: changing name between object/dict view is very error prone
-            'relationship': self.relationship,
+            'relationship': relationship,
             'public_key': self.public_key,
             'dh_public_key': self.dh_public_key,
             'fee': float(self.fee),

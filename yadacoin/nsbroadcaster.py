@@ -60,8 +60,8 @@ class NSBroadcaster(object):
     async def send_it(self, txn_dict: dict, peer: Peer):
         try:
             if self.config.debug:
-                self.app_log.debug('Transmitting transaction to: {}'.format(peer.to_string()))
-            await peer.client.client.emit('newtransaction', data=txn_dict, namespace='/chat')
+                self.app_log.debug('Transmitting ns to: {}'.format(peer.to_string()))
+            await peer.client.client.emit('newns', data=txn_dict, namespace='/chat')
         except Exception as e:
             if self.config.debug:
                 self.app_log.debug(e)
