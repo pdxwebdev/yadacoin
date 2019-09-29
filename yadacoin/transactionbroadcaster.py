@@ -15,15 +15,15 @@ class TxnBroadcaster(object):
         else:
             transaction = Transaction.from_dict(0, txn)
         if self.config.network != 'regnet':
-            ns_records = await self.config.mongo.async_db.name_server.find({
-                '$or': [
-                    {'rid': transaction.rid},
-                    {'requested_rid': transaction.requested_rid},
-                    {'requester_rid': transaction.requester_rid}
-                ]
-            }).to_list(100)
 
-            if ns_records:
+            if sum([float(x['value']) for x in transaction.outputs]) + float(transaction.fee) == 0:
+                ns_records = await self.config.mongo.async_db.name_server.find({
+                    '$or': [
+                        {'rid': transaction.rid},
+                        {'requested_rid': transaction.requested_rid},
+                        {'requester_rid': transaction.requester_rid}
+                    ]
+                }).to_list(100)
                 for ns in ns_records:
                     await self.prepare_peer(ns['peer'], transaction, sent_to)
             else:

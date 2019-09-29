@@ -379,6 +379,12 @@ class SearchHandler(BaseHandler):
         })
 
 
+class NSLookupHandler(BaseGraphHandler):
+    async def get(self):
+        ns_username = self.get_query_argument('username', None)
+        return self.render_as_json(self.config.GU.search_ns_username(ns_username))
+
+
 class SignRawTransactionHandler(BaseHandler):
     async def post(self):
         config = self.config
@@ -566,6 +572,7 @@ GRAPH_HANDLERS = [
     (r'/get-graph-reacts', GraphReactsHandler), # get reacts for posts and comments
     (r'/get-graph-comments', GraphCommentsHandler), # get comments for posts
     (r'/search', SearchHandler), # search by username for friend of server. Server provides necessary information to generate friend request transaction, just like /register for the server.
+    (r'/ns-lookup', NSLookupHandler), # search by username for ns name server.
     (r'/sign-raw-transaction', SignRawTransactionHandler), # server signs the client transaction
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client
     (r'/ns', NSHandler), # name server endpoints

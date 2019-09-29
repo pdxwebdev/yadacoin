@@ -49,6 +49,9 @@ class GraphUtils(object):
             queryType='searchUsername'
         )
 
+    def search_ns_username(self, ns_username):
+        return self.config.mongo.async_db.name_server.find('txn.relationship.their_username', ns_username).to_list(100)
+
     def search_rid(self, rids):
         if not isinstance(rids, (list, tuple)):
             rids = [rids]
