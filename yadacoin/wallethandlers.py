@@ -29,6 +29,9 @@ class GenerateWalletHandler(BaseHandler):
 class GenerateChildWalletHandler(BaseHandler):
 
     async def post(self):
+        key_or_wif = self.get_secure_cookie("key_or_wif")
+        if not key_or_wif:
+            return self.render_as_json({'error': 'not authorized'})
         args = json.loads(self.request.body)
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
         last_child_key = await self.config.mongo.async_db.child_keys.find_one({'account': args.get('uid')}, sort=[('inc', -1)])
@@ -94,6 +97,9 @@ class GetBalanceSum(BaseHandler):
 
 class CreateTransactionView(BaseHandler):
     async def post(self):
+        key_or_wif = self.get_secure_cookie("key_or_wif")
+        if not key_or_wif:
+            return self.render_as_json({'error': 'not authorized'})
         config = self.config
 
         args = json.loads(self.request.body)
@@ -125,6 +131,9 @@ class CreateTransactionView(BaseHandler):
 
 class CreateRawTransactionView(BaseHandler):
     async def post(self):
+        key_or_wif = self.get_secure_cookie("key_or_wif")
+        if not key_or_wif:
+            return self.render_as_json({'error': 'not authorized'})
         config = self.config
 
         args = json.loads(self.request.body)
@@ -154,6 +163,9 @@ class CreateRawTransactionView(BaseHandler):
 
 class SendTransactionView(BaseHandler):
     async def post(self):
+        key_or_wif = self.get_secure_cookie("key_or_wif")
+        if not key_or_wif:
+            return self.render_as_json({'error': 'not authorized'})
         config = self.config
         args = json.loads(self.request.body)
         to = args.get('address')

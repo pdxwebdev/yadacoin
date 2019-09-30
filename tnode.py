@@ -76,8 +76,6 @@ class NodeApplication(Application):
         if config.max_miners > 0:
             self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)
-
-        self.default_handlers.extend(WEB_HANDLERS)
         
         try:
             self.default_handlers.extend(YCW_HANDLERS)
@@ -88,6 +86,8 @@ class NodeApplication(Application):
             self.default_handlers.extend(PROFILE_HANDLERS)
         except:
             pass
+
+        self.default_handlers.extend(WEB_HANDLERS)
         settings = dict(
             app_title=u"Yadacoin Node",
             template_path=path.join(path.dirname(__file__), 'templates'),

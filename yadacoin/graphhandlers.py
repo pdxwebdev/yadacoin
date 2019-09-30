@@ -387,6 +387,9 @@ class NSLookupHandler(BaseGraphHandler):
 
 class SignRawTransactionHandler(BaseHandler):
     async def post(self):
+        key_or_wif = self.get_secure_cookie("key_or_wif")
+        if not key_or_wif:
+            return self.render_as_json({'error': 'not authorized'})
         config = self.config
         mongo = self.config.mongo
         body = json.loads(self.request.body.decode('utf-8'))
