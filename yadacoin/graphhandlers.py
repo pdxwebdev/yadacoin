@@ -76,6 +76,7 @@ class GraphInfoHandler(BaseGraphHandler):
         graph = self.get_base_graph()
         self.render_as_json(graph.to_dict())
 
+
 class GraphRIDWalletHandler(BaseGraphHandler):
 
     async def get(self):
@@ -210,7 +211,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                     await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.transaction.to_dict())
                     created_relationship.transaction.relationship = created_relationship.relationship
                     tb = NSBroadcaster(self.config)
-                    await tb.ns_broadcast_job(created_relationship.transaction)
+                    await tb.ns_broadcast_job({'txn': created_relationship.transaction})
                 
                 pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
                     'public_key': x.public_key, 

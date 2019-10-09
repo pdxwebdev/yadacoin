@@ -16,3 +16,7 @@ websockets
 miniupnpc
 pyfcm
 pycryptodome
+jws
+pyasn1
+PyJWT
+python-jwt

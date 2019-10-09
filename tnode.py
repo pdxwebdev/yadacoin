@@ -47,11 +47,6 @@ try:
 except:
     pass
 
-try:
-    from plugins.profile.handlers import HANDLERS as PROFILE_HANDLERS
-except:
-    pass
-
 __version__ = '0.0.13'
 
 PROTOCOL_VERSION = 2
@@ -79,11 +74,6 @@ class NodeApplication(Application):
         
         try:
             self.default_handlers.extend(YCW_HANDLERS)
-        except:
-            pass
-        
-        try:
-            self.default_handlers.extend(PROFILE_HANDLERS)
         except:
             pass
 
@@ -272,6 +262,16 @@ async def main():
     if not config.peer_host:
         app_log.error("peer_host cannot be blank in config. Set it to you public ip address")
         return exit()
+
+    config.jwt_secret_key = "my_secret_key"
+    config.jwt_options = {
+        'verify_signature': True,
+        'verify_exp': True,
+        'verify_nbf': False,
+        'verify_iat': True,
+        'verify_aud': False
+    }
+
     # get seed.json from same dir as config.
     if config.network != 'regnet':
         if config.network == 'mainnet':

@@ -6,12 +6,15 @@ import hashlib
 import binascii
 import base58
 import json
+import datetime
+import jwt
 from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
 from yadacoin.transaction import Transaction, TransactionFactory, NotEnoughMoneyException
 from yadacoin.transactionbroadcaster import TxnBroadcaster
+from yadacoin.auth import jwtauth
 
 
 class WalletHandler(BaseHandler):
@@ -206,7 +209,70 @@ class SendTransactionView(BaseHandler):
         await txn_b.txn_broadcast_job(transaction.transaction)
 
         return self.render_as_json(transaction.transaction.to_dict())
- 
+
+@jwtauth
+class UnlockedHandler(BaseHandler):
+
+    async def prepare(self):
+
+        origin = self.get_query_argument('origin', '*')
+        if origin[-1] == '/':
+            origin = origin[:-1]
+        self.set_header("Access-Control-Allow-Origin", origin)
+        self.set_header('Access-Control-Allow-Credentials', "true")
+        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
+        self.set_header('Access-Control-Expose-Headers', "Content-Type")
+        self.set_header('Access-Control-Allow-Headers', "Authorization, Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
+        self.set_header('Access-Control-Max-Age', 600)
+
+    async def get(self):
+
+        if self.get_secure_cookie('key_or_wif') == 'true':
+            return self.render_as_json({
+                'unlocked': True
+            })
+
+        if hasattr(self, 'jwt') and self.jwt.get('key_or_wif') == 'true':
+            return self.render_as_json({
+                'unlocked': True
+            })
+        
+        return self.render_as_json({
+            'unlocked': False
+        })
+
+
+class UnlockHandler(BaseHandler):
+
+    def prepare(self):
+        self.encoded = jwt.encode({
+            'key_or_wif': 'true',
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=960)},
+            self.config.jwt_secret_key,
+            algorithm='HS256'
+        )
+
+    async def get(self):
+        """
+        :return:
+        """
+        self.render(
+            "auth.html"
+        )
+    
+    async def post(self):
+        try:
+            key_or_wif = self.get_body_argument('key_or_wif')
+        except:
+            key_or_wif = json.loads(self.request.body.decode()).get('key_or_wif')
+        if key_or_wif in [self.config.wif, self.config.private_key, self.config.seed]:
+            self.set_secure_cookie("key_or_wif", 'true')
+            
+            return self.render_as_json({'token': self.encoded.decode()})
+        else:
+            self.write({'status': 'error', 'message': 'Wrong private key or WIF. You must provide the private key or WIF of the currently running server.'})
+            self.set_header('Content-Type', 'application/json')
+            return self.finish()
 
 
 WALLET_HANDLERS = [
@@ -218,4 +284,6 @@ WALLET_HANDLERS = [
     (r'/create-raw-transaction', CreateRawTransactionView),
     (r'/get-balance-sum', GetBalanceSum),
     (r'/send-transaction', SendTransactionView),
+    (r'/unlocked', UnlockedHandler),
+    (r'/unlock', UnlockHandler),
 ]
