@@ -26,6 +26,7 @@ from yadacoin.transactionutils import TU
 from yadacoin.transactionbroadcaster import TxnBroadcaster
 from yadacoin.nsbroadcaster import NSBroadcaster
 from yadacoin.peers import Peer
+from yadacoin.auth import jwtauth
 
 
 class GraphConfigHandler(BaseHandler):
@@ -45,7 +46,7 @@ class GraphConfigHandler(BaseHandler):
         }
         return self.render_as_json(yada_config)
 
-
+@jwtauth
 class BaseGraphHandler(BaseHandler):
     def get_base_graph(self):
         self.bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
@@ -60,7 +61,11 @@ class BaseGraphHandler(BaseHandler):
             key_or_wif = self.get_secure_cookie('key_or_wif').decode()
         except:
             key_or_wif = None
-        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, key_or_wif)
+        try:
+            jwt = self.jwt.get('key_or_wif')
+        except:
+            jwt = None
+        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, key_or_wif, jwt)
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
@@ -210,6 +215,14 @@ class GraphTransactionHandler(BaseGraphHandler):
                     created_relationship = await self.create_relationship(self.bulletin_secret, self.username, self.to)
                     await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.transaction.to_dict())
                     created_relationship.transaction.relationship = created_relationship.relationship
+                    await self.config.mongo.async_db.name_server.insert_one({
+                        'rid': created_relationship.transaction.rid,
+                        'requester_rid': created_relationship.transaction.requester_rid,
+                        'requested_rid': created_relationship.transaction.requested_rid,
+                        'peer_str': 'me', 
+                        'peer': {'host': 'me', 'port': 0},
+                        'txn': created_relationship.transaction.to_dict()
+                    })
                     tb = NSBroadcaster(self.config)
                     await tb.ns_broadcast_job({'txn': created_relationship.transaction})
                 
@@ -344,42 +357,6 @@ class GraphReactsHandler(BaseGraphHandler):
         self.render_as_json(graph.to_dict())
 
 
-class SearchHandler(BaseHandler):
-    async def get(self):
-        config = self.config
-        phrase = self.get_query_argument('phrase', None)
-        requester_rid = self.get_query_argument('requester_rid', None)
-        if not phrase and not requester_rid:
-            return 'phrase required', 400
-        bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
-        if not bulletin_secret:
-            return 'bulletin_secret required', 400
-        my_bulletin_secret = config.get_bulletin_secret()
-
-        if requester_rid:
-            friend = [x for x in GU().search_rid(requester_rid)][0]
-            requester_rid = friend['rid']
-            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-            requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
-        else:
-            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-            requester_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
-            friend = [x for x in GU().search_username(phrase)][0]
-            requested_rid = friend['rid']
-        
-        if friend:
-            to = [x['to'] for x in friend['outputs'] if x['to'] != config.address][0]
-        else:
-            return '{}', 404
-        self.render_as_json({
-            'bulletin_secret': friend['relationship']['their_bulletin_secret'],
-            'requested_rid': requested_rid,
-            'requester_rid': requester_rid,
-            'to': to,
-            'username': friend['relationship']['their_username']
-        })
-
-
 class NSLookupHandler(BaseGraphHandler):
     async def get(self):
         ns_username = self.get_query_argument('username', None)
@@ -389,7 +366,7 @@ class NSLookupHandler(BaseGraphHandler):
 class SignRawTransactionHandler(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif:
+        if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         config = self.config
         mongo = self.config.mongo
@@ -525,7 +502,41 @@ class FastGraphHandler(BaseGraphHandler):
 
 class NSHandler(BaseGraphHandler):
     async def get(self):
-        pass
+        config = self.config
+        phrase = self.get_query_argument('searchTerm', None)
+        requester_rid = self.get_query_argument('requester_rid', None)
+        if not phrase and not requester_rid:
+            return 'phrase required', 400
+        bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
+        if not bulletin_secret:
+            return 'bulletin_secret required', 400
+        my_bulletin_secret = config.get_bulletin_secret()
+
+        if requester_rid:
+            friend = [x for x in GU().search_rid(requester_rid)][0]
+            requester_rid = friend['rid']
+            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+            requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
+        
+            if friend:
+                to = [x['to'] for x in friend['outputs'] if x['to'] != config.address][0]
+            else:
+                return '{}', 404
+            return self.render_as_json({
+                'bulletin_secret': friend['relationship']['their_bulletin_secret'],
+                'requested_rid': requested_rid,
+                'requester_rid': requester_rid,
+                'to': to,
+                'username': friend['relationship']['their_username']
+            })
+
+        rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+        requester_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
+        friends = [x for x in GU().search_username(phrase)]
+        ns_records = await self.config.mongo.async_db.name_server.find({
+            'txn.relationship.their_username': phrase,
+        }).to_list(10)
+        return self.render_as_json([x['txn'] for x in ns_records] + [x for x in friends])
 
     async def post(self):
         try:
@@ -561,6 +572,58 @@ class NSHandler(BaseGraphHandler):
         return self.render_as_json({'status': 'success'})
 
 
+class SiaFileHandler(BaseGraphHandler):
+    async def get(self):
+        from requests.auth import HTTPBasicAuth
+        headers = {
+            'User-Agent': 'Sia-Agent'
+        }
+        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        fileData = json.loads(res.content.decode())
+        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath'], 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath']} for x in fileData.get('files', [])]})
+
+
+class SiaUploadHandler(BaseGraphHandler):
+    async def get(self):
+        from requests.auth import HTTPBasicAuth
+        headers = {
+            'User-Agent': 'Sia-Agent'
+        }
+        filepath = self.get_query_argument('filepath')
+        res = requests.post('http://0.0.0.0:9980/renter/upload/{}'.format(filepath.split('/')[-1]), data={'source': filepath}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        fileData = json.loads(res.content.decode())
+        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath']} for x in fileData.get('files', [])]})
+
+
+class ShareFileHandler(BaseGraphHandler):
+    async def get(self):
+        from requests.auth import HTTPBasicAuth
+        headers = {
+            'User-Agent': 'Sia-Agent'
+        }
+        dst='/home/mvogel/'
+        siapath = self.get_query_argument('siapath')
+        res = requests.get('http://0.0.0.0:9980/renter/share/send?dst={}&siapath={}'.format(dst + siapath + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        with open(dst + siapath + '.sia', 'rb') as f:
+            data = f.read()
+        bdata = base64.b64encode(data)
+        return self.render_as_json({'filedata': bdata.decode()}) # this data will go in the relationship of the yada transaction
+
+
+    async def post(self):
+        from requests.auth import HTTPBasicAuth
+        headers = {
+            'User-Agent': 'Sia-Agent'
+        }
+        src='/home/mvogel/'
+        relationship = json.loads(self.request.body.decode('utf-8'))
+        siafiledata = base64.b64decode(relationship['groupChatFile'])
+        with open(src + relationship['groupChatFileName'] + '.sia', 'wb') as f:
+            f.write(bytearray(siafiledata))
+        res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': relationship['groupChatFileName']}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        return self.render_as_json({'status': 'success', 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + relationship['groupChatFileName']})
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r'/yada_config.json', GraphConfigHandler), # first the config is requested
@@ -575,9 +638,11 @@ GRAPH_HANDLERS = [
     (r'/get-graph-new-messages', GraphNewMessagesHandler), # get new messages that are newer than a given timestamp
     (r'/get-graph-reacts', GraphReactsHandler), # get reacts for posts and comments
     (r'/get-graph-comments', GraphCommentsHandler), # get comments for posts
-    (r'/search', SearchHandler), # search by username for friend of server. Server provides necessary information to generate friend request transaction, just like /register for the server.
     (r'/ns-lookup', NSLookupHandler), # search by username for ns name server.
     (r'/sign-raw-transaction', SignRawTransactionHandler), # server signs the client transaction
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client
+    (r'/sia-upload', SiaUploadHandler), # upload a file to your local sia renter
+    (r'/sia-files', SiaFileHandler), # list files from the local sia renter
+    (r'/share-file', ShareFileHandler), # share a file or list files from the local sia renter and return the .sia data base 64 encoded
     (r'/ns', NSHandler), # name server endpoints
 ]

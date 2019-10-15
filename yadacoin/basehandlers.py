@@ -30,6 +30,7 @@ class BaseHandler(RequestHandler):
         self.set_header('Access-Control-Expose-Headers', "Content-Type")
         self.set_header('Access-Control-Allow-Headers', "Authorization, Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
+        self.jwt = {}
         if not hasattr(self.config, 'push_service') and self.config.fcm_key:
             self.config.push_service = PushNotification(self.config)
 

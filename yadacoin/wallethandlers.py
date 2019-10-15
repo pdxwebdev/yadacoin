@@ -29,11 +29,12 @@ class GenerateWalletHandler(BaseHandler):
         return self.render_as_json("TODO: Implement")
 
 
+@jwtauth
 class GenerateChildWalletHandler(BaseHandler):
 
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif:
+        if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         args = json.loads(self.request.body)
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
@@ -101,7 +102,7 @@ class GetBalanceSum(BaseHandler):
 class CreateTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif:
+        if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         config = self.config
 
@@ -135,7 +136,7 @@ class CreateTransactionView(BaseHandler):
 class CreateRawTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif:
+        if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         config = self.config
 
@@ -167,7 +168,7 @@ class CreateRawTransactionView(BaseHandler):
 class SendTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif:
+        if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         config = self.config
         args = json.loads(self.request.body)
@@ -232,7 +233,7 @@ class UnlockedHandler(BaseHandler):
                 'unlocked': True
             })
 
-        if hasattr(self, 'jwt') and self.jwt.get('key_or_wif') == 'true':
+        if self.jwt.get('key_or_wif') == 'true':
             return self.render_as_json({
                 'unlocked': True
             })

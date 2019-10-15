@@ -9,7 +9,7 @@ from yadacoin.crypt import Crypt
 
 class Graph(object):
 
-    def __init__(self, config, mongo, bulletin_secret, ids, key_or_wif=None):
+    def __init__(self, config, mongo, bulletin_secret, ids, key_or_wif=None, jwt=None):
         self.config = config
         self.mongo = mongo
         self.friend_requests = []
@@ -30,7 +30,7 @@ class Graph(object):
 
         
         self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
-        if key_or_wif in [config.private_key, config.wif]:
+        if key_or_wif in [config.private_key, config.wif] or jwt:
             self.cipher = Crypt(config.wif)
             self.wallet_mode = True
             

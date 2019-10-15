@@ -97,7 +97,7 @@ class TransactionFactory(object):
                 if not private_key:
                     raise Exception('missing private key')
                 self.cipher = Crypt(self.config.wif)
-                self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json())
+                self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json().encode())
         else:
             self.rid = ''
             self.encrypted_relationship = ''
@@ -360,7 +360,7 @@ class Transaction(object):
                 print("t verify3")
                 raise InvalidTransactionSignatureException("transaction signature did not verify")
 
-        if len(self.relationship) > 2048:
+        if len(self.relationship) > 10240:
             raise MaxRelationshipSizeExceeded('Relationship field cannot be greater than 2048 bytes')
 
         # verify spend
