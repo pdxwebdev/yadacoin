@@ -580,7 +580,16 @@ class SiaFileHandler(BaseGraphHandler):
         }
         res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
         fileData = json.loads(res.content.decode())
-        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath'], 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath']} for x in fileData.get('files', [])]})
+        return self.render_as_json({
+            'status': 'success',
+            'files': [
+                {
+                    'siapath': x['siapath'],
+                    'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath'],
+                    'available': x['available']
+                } for x in fileData.get('files', [])
+            ]
+        })
 
 
 class SiaUploadHandler(BaseGraphHandler):
@@ -591,11 +600,12 @@ class SiaUploadHandler(BaseGraphHandler):
         }
         filepath = self.get_query_argument('filepath')
         res = requests.post('http://0.0.0.0:9980/renter/upload/{}'.format(filepath.split('/')[-1]), data={'source': filepath}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
         fileData = json.loads(res.content.decode())
-        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath']} for x in fileData.get('files', [])]})
+        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath'], 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath']} for x in fileData.get('files', [])]})
 
 
-class ShareFileHandler(BaseGraphHandler):
+class SiaShareFileHandler(BaseGraphHandler):
     async def get(self):
         from requests.auth import HTTPBasicAuth
         headers = {
@@ -603,8 +613,8 @@ class ShareFileHandler(BaseGraphHandler):
         }
         dst='/home/mvogel/'
         siapath = self.get_query_argument('siapath')
-        res = requests.get('http://0.0.0.0:9980/renter/share/send?dst={}&siapath={}'.format(dst + siapath + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
-        with open(dst + siapath + '.sia', 'rb') as f:
+        res = requests.get('http://0.0.0.0:9980/renter/share/send?dst={}&siapath={}'.format(dst + siapath.split('/')[-1] + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        with open(dst + siapath.split('/')[-1] + '.sia', 'rb') as f:
             data = f.read()
         bdata = base64.b64encode(data)
         return self.render_as_json({'filedata': bdata.decode()}) # this data will go in the relationship of the yada transaction
@@ -618,10 +628,32 @@ class ShareFileHandler(BaseGraphHandler):
         src='/home/mvogel/'
         relationship = json.loads(self.request.body.decode('utf-8'))
         siafiledata = base64.b64decode(relationship['groupChatFile'])
-        with open(src + relationship['groupChatFileName'] + '.sia', 'wb') as f:
+        with open(src + relationship['groupChatFileName'].split('/')[-1] + '.sia', 'wb') as f:
             f.write(bytearray(siafiledata))
         res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': relationship['groupChatFileName']}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
         return self.render_as_json({'status': 'success', 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + relationship['groupChatFileName']})
+
+
+class SiaDeleteHandler(BaseGraphHandler):
+    async def get(self):
+        from requests.auth import HTTPBasicAuth
+        headers = {
+            'User-Agent': 'Sia-Agent'
+        }
+        siapath = self.get_query_argument('siapath')
+        res = requests.post('http://0.0.0.0:9980/renter/delete/{}'.format(siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        fileData = json.loads(res.content.decode())
+        return self.render_as_json({
+            'status': 'success',
+            'files': [
+                {
+                    'siapath': x['siapath'],
+                    'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath'],
+                    'available': x['available']
+                } for x in fileData.get('files', [])
+            ]
+        })
 
 
 # these routes are placed in the order of operations for getting started.
@@ -643,6 +675,7 @@ GRAPH_HANDLERS = [
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client
     (r'/sia-upload', SiaUploadHandler), # upload a file to your local sia renter
     (r'/sia-files', SiaFileHandler), # list files from the local sia renter
-    (r'/share-file', ShareFileHandler), # share a file or list files from the local sia renter and return the .sia data base 64 encoded
+    (r'/sia-share-file', SiaShareFileHandler), # share a file or list files from the local sia renter and return the .sia data base 64 encoded
+    (r'/sia-delete', SiaDeleteHandler),
     (r'/ns', NSHandler), # name server endpoints
 ]
