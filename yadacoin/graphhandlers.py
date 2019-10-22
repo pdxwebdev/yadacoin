@@ -14,6 +14,7 @@ from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
 from logging import getLogger
 from threading import Thread
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
@@ -55,8 +56,10 @@ class BaseGraphHandler(BaseHandler):
         self.rid = self.generate_rid(self.config.bulletin_secret, self.bulletin_secret)
         if self.request.body:
             ids = json.loads(self.request.body.decode('utf-8')).get('ids')
+            rids = json.loads(self.request.body.decode('utf-8')).get('rids')
         else:
             ids = []
+            rids = []
         try:
             key_or_wif = self.get_secure_cookie('key_or_wif').decode()
         except:
@@ -65,7 +68,7 @@ class BaseGraphHandler(BaseHandler):
             jwt = self.jwt.get('key_or_wif')
         except:
             jwt = None
-        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, key_or_wif, jwt)
+        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, rids, key_or_wif, jwt)
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
@@ -323,14 +326,14 @@ class GraphFriendsHandler(BaseGraphHandler):
 
 
 class GraphMessagesHandler(BaseGraphHandler):
-    async def get(self):
+    async def post(self):
         graph = self.get_base_graph()
         await graph.get_messages()
         self.render_as_json(graph.to_dict())
 
 
 class GraphGroupMessagesHandler(BaseGraphHandler):
-    async def get(self):
+    async def post(self):
         graph = self.get_base_graph()
         graph.get_group_messages()
         self.render_as_json(graph.to_dict())
@@ -592,6 +595,25 @@ class SiaFileHandler(BaseGraphHandler):
         })
 
 
+class SiaStreamFileHandler(BaseGraphHandler):
+    def prepare(self):
+        header = "Content-Type"
+        body = "video/mp4"
+        self.set_header(header, body)
+
+    async def get(self):
+        siapath = self.get_query_argument('siapath')
+        http_client = AsyncHTTPClient()
+        url = 'http://0.0.0.0:9980/renter/stream/' + siapath.replace(' ', '%20')
+        request = HTTPRequest(url=url, streaming_callback=self.on_chunk, request_timeout=20000)
+        await http_client.fetch(request)
+        self.finish()
+
+    def on_chunk(self, chunk):
+        self.write(chunk)
+        self.flush()
+
+
 class SiaUploadHandler(BaseGraphHandler):
     async def get(self):
         from requests.auth import HTTPBasicAuth
@@ -630,7 +652,7 @@ class SiaShareFileHandler(BaseGraphHandler):
         siafiledata = base64.b64decode(relationship['groupChatFile'])
         with open(src + relationship['groupChatFileName'].split('/')[-1] + '.sia', 'wb') as f:
             f.write(bytearray(siafiledata))
-        res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': relationship['groupChatFileName']}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': './'}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
         return self.render_as_json({'status': 'success', 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + relationship['groupChatFileName']})
 
 
@@ -675,6 +697,7 @@ GRAPH_HANDLERS = [
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client
     (r'/sia-upload', SiaUploadHandler), # upload a file to your local sia renter
     (r'/sia-files', SiaFileHandler), # list files from the local sia renter
+    (r'/sia-files-stream', SiaStreamFileHandler), #stream the file from the sia network, we need this because of cross origin
     (r'/sia-share-file', SiaShareFileHandler), # share a file or list files from the local sia renter and return the .sia data base 64 encoded
     (r'/sia-delete', SiaDeleteHandler),
     (r'/ns', NSHandler), # name server endpoints

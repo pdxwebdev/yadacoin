@@ -41,11 +41,7 @@ from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
 from yadacoin.transactionbroadcaster import TxnBroadcaster
-
-try:
-    from plugins.yadacoinweb.handlers import HANDLERS as YCW_HANDLERS
-except:
-    pass
+from plugins.yadacoinweb.handlers import HANDLERS as YCW_HANDLERS
 
 __version__ = '0.0.13'
 

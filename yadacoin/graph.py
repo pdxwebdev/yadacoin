@@ -9,7 +9,7 @@ from yadacoin.crypt import Crypt
 
 class Graph(object):
 
-    def __init__(self, config, mongo, bulletin_secret, ids, key_or_wif=None, jwt=None):
+    def __init__(self, config, mongo, bulletin_secret, ids, rids, key_or_wif=None, jwt=None):
         self.config = config
         self.mongo = mongo
         self.friend_requests = []
@@ -25,22 +25,14 @@ class Graph(object):
         self.already_added_messages = []
         self.bulletin_secret = str(bulletin_secret)
         self.ids = ids
-        self.all_relationships = [x for x in GU().get_all_usernames()]
-        self.all_groups = [x for x in self.config.GU.get_all_groups()]
+        self.rids = rids
 
-        
-        self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
         if key_or_wif in [config.private_key, config.wif] or jwt:
             self.cipher = Crypt(config.wif)
             self.wallet_mode = True
-            
-            rids = []
-            rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
-            rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
-            rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
-            rids = list(set(rids))
-            self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=config.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
+            self.all_relationships = [x for x in GU().get_all_usernames()]
+            self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
             self.wallet_mode = False
             self.registered = False
             self.pending_registration = False
@@ -154,6 +146,13 @@ class Graph(object):
 
     async def get_sent_friend_requests(self):
         if self.wallet_mode:
+            self.all_relationships = [x for x in GU().get_all_usernames()]
+            rids = []
+            rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
+            rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
+            rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
+            rids = list(set(rids))
+            self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=self.config.bulletin_secret, rid=True, raw=True, returnheight=True)
             self.sent_friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
             res = await self.config.mongo.async_db.miner_transactions.find({
                 'public_key': self.config.public_key,
@@ -180,22 +179,15 @@ class Graph(object):
 
     async def get_messages(self, not_mine=False):
         if self.wallet_mode:
-            rids = list(set([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']] + [x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']]))
-            
             for transaction in self.mongo.db.miner_transactions.find({"relationship": {"$ne": ""}}):
                 try:
                     decrypted = self.cipher.decrypt(transaction['relationship'])
                     relationship = json.loads(decrypted.decode('latin1'))
                     transaction['relationship'] = relationship
-                    rids.append(transaction['rid'])
-                    if transaction.get('requester_rid'):
-                        rids.append(transaction.get('requester_rid'))
-                    if transaction.get('requested_rid'):
-                        rids.append(transaction.get('requested_rid'))
                 except:
                     pass
             rid_transactions = GU().get_transactions_by_rid(
-                rids,
+                self.rids,
                 bulletin_secret=self.config.bulletin_secret,
                 rid=True,
                 raw=True,
@@ -222,9 +214,9 @@ class Graph(object):
             res = await self.config.mongo.async_db.miner_transactions.find({
                 'relationship': {'$ne': ''},
                 '$or': [
-                    {'rid': {'$in': rids}},
-                    {'requester_rid': {'$in': rids}},
-                    {'requested_rid': {'$in': rids}}
+                    {'rid': {'$in': self.rids}},
+                    {'requester_rid': {'$in': self.rids}},
+                    {'requested_rid': {'$in': self.rids}}
                 ]
             }, {
                 '_id': 0
@@ -263,15 +255,7 @@ class Graph(object):
 
     def get_group_messages(self):
         if self.wallet_mode:
-            rids = []
-            for x in self.all_groups:
-                if 'rid' in x:
-                    rids.append(x['rid'])
-                if 'requested_rid' in x:
-                    rids.append(x['requested_rid'])
-                if 'requester_rid' in x:
-                    rids.append(x['requester_rid'])
-            self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=self.config.bulletin_secret, rid=True, raw=True, returnheight=True)
+            self.rid_transactions = GU().get_transactions_by_rid(self.rids, bulletin_secret=self.config.bulletin_secret, rid=True, raw=True, returnheight=True)
         else:
             my_bulletin_secret = self.config.bulletin_secret
             posts = []
