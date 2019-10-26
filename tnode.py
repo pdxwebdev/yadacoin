@@ -27,6 +27,7 @@ from tornado.web import Application, StaticFileHandler
 import yadacoin.blockchainutils
 import yadacoin.transactionutils
 import yadacoin.config
+from yadacoin.crypt import Crypt
 from yadacoin.consensus import Consensus
 from yadacoin.chain import CHAIN
 from yadacoin.explorerhandlers import EXPLORER_HANDLERS
@@ -186,6 +187,48 @@ async def background_pool_payer():
         except Exception as e:
             app_log.error("{} in background_pool_payer".format(e))
 
+async def background_cache_validator():
+    """Responsible for validating the cache and clearing it when necessary"""
+    try:
+        cache_collections = [x for x in await config.mongo.async_db.list_collection_names({}) if x.endswith('_cache')]
+        last_times = {}
+        async for x in config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
+            config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
+        for cache_collection in cache_collections:
+            await config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
+
+    except Exception as e:
+        app_log.error("{} in background_cache_validator init".format(e))
+
+    while True:
+        """
+        We check for cache items that are not currently in the blockchain
+        If not, we delete the cached item.
+        """
+        try:
+            for cache_collection in cache_collections:
+                if not last_times.get(cache_collection):
+                    last_times[cache_collection] = 0
+                async for txn in config.mongo.async_db[cache_collection].find({
+                    'cache_time': {'$gt': last_times[cache_collection]}
+                }).sort([('height', -1)]):
+                    if not await config.mongo.async_db.blocks.find_one({
+                        'index': txn.get('height'),
+                        'hash': txn.get('block_hash')
+                    }):
+                        await config.mongo.async_db[cache_collection].delete_many({
+                            'height': txn.get('height')
+                        })
+                        break
+                    else:
+                        if txn['cache_time'] > last_times[cache_collection]:
+                            last_times[cache_collection] = txn['cache_time']
+                        
+            #await async_sleep(10)
+
+        except Exception as e:
+            app_log.error("{} in background_cache_validator".format(e))
+
 
 def configure_logging():
     global app_log, access_log
@@ -268,6 +311,8 @@ async def main():
         'verify_aud': False
     }
 
+    config.cipher = Crypt(config.wif)
+
     # get seed.json from same dir as config.
     if config.network != 'regnet':
         if config.network == 'mainnet':
@@ -326,6 +371,7 @@ async def main():
         tornado.ioloop.IOLoop.instance().add_callback(background_status)
         tornado.ioloop.IOLoop.instance().add_callback(background_pool)
         tornado.ioloop.IOLoop.instance().add_callback(background_transaction_broadcast)
+        tornado.ioloop.IOLoop.instance().add_callback(background_cache_validator)
         if config.pool_payout:
             app_log.info("PoolPayout activated")
             pp = PoolPayer()

@@ -360,7 +360,7 @@ class Transaction(object):
                 print("t verify3")
                 raise InvalidTransactionSignatureException("transaction signature did not verify")
 
-        if len(self.relationship) > 10240:
+        if len(self.relationship) > 20480:
             raise MaxRelationshipSizeExceeded('Relationship field cannot be greater than 2048 bytes')
 
         # verify spend

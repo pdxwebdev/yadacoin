@@ -140,7 +140,7 @@ class GraphRIDWalletHandler(BaseGraphHandler):
             'chain_balance': chain_balance,
             'fastgraph_balance': fastgraph_balance,
             'balance': fastgraph_balance + chain_balance,
-            'unspent_transactions': regular_txns,
+            'unspent_transactions': regular_txns if amount_needed else [],
             'txns_for_fastgraph': txns_for_fastgraph
         }
         self.render_as_json(wallet, indent=4)
@@ -602,11 +602,21 @@ class SiaStreamFileHandler(BaseGraphHandler):
         self.set_header(header, body)
 
     async def get(self):
+        from requests.auth import HTTPBasicAuth
+        headers = {
+            'User-Agent': 'Sia-Agent'
+        }
         siapath = self.get_query_argument('siapath')
-        http_client = AsyncHTTPClient()
-        url = 'http://0.0.0.0:9980/renter/stream/' + siapath.replace(' ', '%20')
-        request = HTTPRequest(url=url, streaming_callback=self.on_chunk, request_timeout=20000)
-        await http_client.fetch(request)
+        res = requests.get('http://0.0.0.0:9980/renter/file/{}'.format(siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        fileData = json.loads(res.content.decode())
+        if fileData.get('file', {}).get('available'):
+            http_client = AsyncHTTPClient()
+            url = 'http://0.0.0.0:9980/renter/stream/' + siapath.replace(' ', '%20')
+            request = HTTPRequest(url=url, streaming_callback=self.on_chunk, request_timeout=2000000)
+            await http_client.fetch(request)
+        else:
+            self.set_status(400)
+            self.write('{"status": "error", "message": "file not available"}')
         self.finish()
 
     def on_chunk(self, chunk):
@@ -652,7 +662,10 @@ class SiaShareFileHandler(BaseGraphHandler):
         siafiledata = base64.b64decode(relationship['groupChatFile'])
         with open(src + relationship['groupChatFileName'].split('/')[-1] + '.sia', 'wb') as f:
             f.write(bytearray(siafiledata))
-        res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': './'}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.get('http://0.0.0.0:9980/renter/file/{}'.format(relationship['groupChatFileName']), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        fileData = json.loads(res.content.decode())
+        if not fileData.get('file', None):
+            res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': ''}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
         return self.render_as_json({'status': 'success', 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + relationship['groupChatFileName']})
 
 

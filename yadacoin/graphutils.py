@@ -1,5 +1,6 @@
 import json
 import base64
+from time import time
 from logging import getLogger
 from binascii import unhexlify
 from eccsnacks.curve25519 import scalarmult
@@ -158,15 +159,16 @@ class GraphUtils(object):
                                     'id': x['txn']['id'],
                                     'bulletin_secret': bs
                                 },
-                                    {
-                                        'rid': rid,
-                                        'height': x.get('height', 0),
-                                        'id': x['txn']['id'],
-                                        'txn': x['txn'],
-                                        'bulletin_secret': bs,
-                                        'success': True
-                                    },
-                                    upsert=True)
+                                {
+                                    'rid': rid,
+                                    'height': x.get('height', 0),
+                                    'id': x['txn']['id'],
+                                    'txn': x['txn'],
+                                    'bulletin_secret': bs,
+                                    'success': True,
+                                    'cache_time': time()
+                                },
+                                upsert=True)
                     except Exception as e:
                         for rid in rids:
                             self.mongo.db.posts_cache.update({
@@ -175,22 +177,24 @@ class GraphUtils(object):
                                 'id': x['txn']['id'],
                                 'bulletin_secret': bs
                             },
-                                {
-                                    'rid': rid,
-                                    'height': x.get('height', 0),
-                                    'id': x['txn']['id'],
-                                    'txn': x['txn'],
-                                    'bulletin_secret': bs,
-                                    'success': False
-                                },
-                                upsert=True)
+                            {
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'txn': x['txn'],
+                                'bulletin_secret': bs,
+                                'success': False,
+                                'cache_time': time()
+                            },
+                            upsert=True)
                         self.app_log.debug(e)
         if not had_txns:
             for rid in rids:
                 self.mongo.db.posts_cache.insert({
                     'rid': rid,
                     'height': latest_block['index'],
-                    'success': False
+                    'success': False,
+                    'cache_time': time()
                 })
 
         i = 1
@@ -306,15 +310,16 @@ class GraphUtils(object):
                                     'id': x['txn']['id'],
                                     'bulletin_secret': bs
                                 },
-                                    {
-                                        'rid': rid,
-                                        'height': x.get('height', 0),
-                                        'id': x['txn']['id'],
-                                        'txn': x['txn'],
-                                        'bulletin_secret': bs,
-                                        'success': True
-                                    },
-                                    upsert=True)
+                                {
+                                    'rid': rid,
+                                    'height': x.get('height', 0),
+                                    'id': x['txn']['id'],
+                                    'txn': x['txn'],
+                                    'bulletin_secret': bs,
+                                    'success': True,
+                                    'cache_time': time()
+                                },
+                                upsert=True)
                     except:
                         for rid in rids:
                             self.mongo.db.reacts_cache.update({
@@ -323,21 +328,23 @@ class GraphUtils(object):
                                 'id': x['txn']['id'],
                                 'bulletin_secret': bs
                             },
-                                {
-                                    'rid': rid,
-                                    'height': x.get('height', 0),
-                                    'id': x['txn']['id'],
-                                    'txn': x['txn'],
-                                    'bulletin_secret': bs,
-                                    'success': False
-                                },
-                                upsert=True)
+                            {
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'txn': x['txn'],
+                                'bulletin_secret': bs,
+                                'success': False,
+                                'cache_time': time()
+                            },
+                            upsert=True)
         if not had_txns:
             for rid in rids:
                 self.mongo.db.reacts_cache.insert({
                     'rid': rid,
                     'height': latest_block['index'],
-                    'success': False
+                    'success': False,
+                    'cache_time': time()
                 })
 
         for x in self.mongo.db.reacts_cache.find({'txn.relationship.id': {'$in': ids}, 'success': True}):
@@ -442,15 +449,16 @@ class GraphUtils(object):
                                     'id': x['txn']['id'],
                                     'bulletin_secret': bs
                                 },
-                                    {
-                                        'rid': rid,
-                                        'height': x.get('height', 0),
-                                        'id': x['txn']['id'],
-                                        'txn': x['txn'],
-                                        'bulletin_secret': bs,
-                                        'success': True
-                                    },
-                                    upsert=True)
+                                {
+                                    'rid': rid,
+                                    'height': x.get('height', 0),
+                                    'id': x['txn']['id'],
+                                    'txn': x['txn'],
+                                    'bulletin_secret': bs,
+                                    'success': True,
+                                    'cache_time': time()
+                                },
+                                upsert=True)
                     except:
                         for rid in rids:
                             self.mongo.db.comments_cache.update({
@@ -459,21 +467,23 @@ class GraphUtils(object):
                                 'id': x['txn']['id'],
                                 'bulletin_secret': bs
                             },
-                                {
-                                    'rid': rid,
-                                    'height': x.get('height', 0),
-                                    'id': x['txn']['id'],
-                                    'txn': x['txn'],
-                                    'bulletin_secret': bs,
-                                    'success': False
-                                },
-                                upsert=True)
+                            {
+                                'rid': rid,
+                                'height': x.get('height', 0),
+                                'id': x['txn']['id'],
+                                'txn': x['txn'],
+                                'bulletin_secret': bs,
+                                'success': False,
+                                'cache_time': time()
+                            },
+                            upsert=True)
         if not had_txns:
             for rid in rids:
                 self.mongo.db.comments_cache.insert({
                     'rid': rid,
                     'height': latest_block['index'],
-                    'success': False
+                    'success': False,
+                    'cache_time': time()
                 })
 
         for x in self.mongo.db.comments_cache.find({'txn.relationship.id': {'$in': ids}, 'success': True}):
@@ -487,10 +497,12 @@ class GraphUtils(object):
         # from transaction import Transaction
         from yadacoin.crypt import Crypt
         relationships = []
+        cipher = None
         for block in self.config.BU.get_blocks():
             for transaction in block.get('transactions'):
                 try:
-                    cipher = Crypt(wif)
+                    if not cipher:
+                        cipher = Crypt(wif)
                     decrypted = cipher.decrypt(transaction['relationship'])
                     relationship = json.loads(decrypted.decode('latin1'))
                     relationships.append(relationship)
@@ -527,7 +539,7 @@ class GraphUtils(object):
                 {"txn": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}})
             for x in res:
                 yield x
-        
+        cipher = None
         for block in txn_gen():
             for transaction in block.get('transactions'):
                 if theirs and public_key == transaction['public_key']:
@@ -536,7 +548,8 @@ class GraphUtils(object):
                     continue
                 if not raw:
                     try:
-                        cipher = Crypt(wif)
+                        if not cipher:
+                            cipher = Crypt(wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
@@ -637,7 +650,7 @@ class GraphUtils(object):
                 }
             blocks = self.mongo.db.blocks.find(query)
 
-        cipher = Crypt(self.config.wif)
+        cipher = None
         for block in blocks:
             for transaction in block.get('transactions'):
                 if 'relationship' in transaction and transaction['relationship']:
@@ -645,6 +658,8 @@ class GraphUtils(object):
                         transaction['height'] = block['index']
                     if not raw:
                         try:
+                            if not cipher:
+                                cipher = Crypt(self.config.wif)
                             decrypted = cipher.decrypt(transaction['relationship'])
                             relationship = json.loads(decrypted.decode('latin1'))
                             transaction['relationship'] = relationship
@@ -660,7 +675,9 @@ class GraphUtils(object):
                             'selector': selector,
                             'txn': transaction,
                             'height': block['index'],
-                            'requested_rid': requested_rid
+                            'block_hash': block['hash'],
+                            'requested_rid': requested_rid,
+                            'cache_time': time()
                         }
                     )
                     transactions.append(transaction)
@@ -673,7 +690,9 @@ class GraphUtils(object):
                     'returnheight': returnheight,
                     'selector': selector,
                     'height': latest_block['index'],
-                    'requested_rid': requested_rid
+                    'block_hash': latest_block['hash'],
+                    'requested_rid': requested_rid,
+                    'cache_time': time()
                 }
             )
 
@@ -736,7 +755,8 @@ class GraphUtils(object):
                 "$project": {
                     "_id": 0,
                     "txn": "$transactions",
-                    "height": "$index"
+                    "height": "$index",
+                    "block_hash": "$hash",
                 }
             },
             {
@@ -758,17 +778,24 @@ class GraphUtils(object):
                 'height': x['height'],
                 'id': x['txn']['id']
             },
-                {
-                    'requested_rid': x['txn']['requested_rid'],
-                    'height': x['height'],
-                    'id': x['txn']['id'],
-                    'txn': x['txn']
-                },
-                upsert=True)
+            {
+                'requested_rid': x['txn']['requested_rid'],
+                'height': x['height'],
+                'block_hash': x['block_hash'],
+                'id': x['txn']['id'],
+                'txn': x['txn'],
+                'cache_time': time()
+            },
+            upsert=True)
 
         if not had_txns:
             for rid in rids:
-                self.mongo.db.friend_requests_cache.insert({'height': latest_block['index'], 'requested_rid': rid})
+                self.mongo.db.friend_requests_cache.insert({
+                    'height': latest_block['index'],
+                    'block_hash': latest_block['hash'],
+                    'requested_rid': rid,
+                    'cache_time': time()
+                })
 
         for x in self.mongo.db.fastgraph_transactions.find({
             'txn.dh_public_key': {'$ne': ''},
@@ -812,7 +839,8 @@ class GraphUtils(object):
                 "$project": {
                     "_id": 0,
                     "txn": "$transactions",
-                    "height": "$index"
+                    "height": "$index",
+                    "block_hash": "$hash"
                 }
             },
             {
@@ -833,13 +861,15 @@ class GraphUtils(object):
                 'height': x['height'],
                 'id': x['txn']['id']
             },
-                {
-                    'requester_rid': x['txn']['requester_rid'],
-                    'height': x['height'],
-                    'id': x['txn']['id'],
-                    'txn': x['txn']
-                },
-                upsert=True)
+            {
+                'requester_rid': x['txn']['requester_rid'],
+                'height': x['height'],
+                'block_hash': x['block_hash'],
+                'id': x['txn']['id'],
+                'txn': x['txn'],
+                'cache_time': time()
+            },
+            upsert=True)
 
         for x in self.mongo.db.fastgraph_transactions.find({
             'txn.dh_public_key': {'$ne': ''},
@@ -881,7 +911,8 @@ class GraphUtils(object):
                 "$project": {
                     "_id": 0,
                     "txn": "$transactions",
-                    "height": "$index"
+                    "height": "$index",
+                    "block_hash": "$hash"
                 }
             },
             {
@@ -903,13 +934,15 @@ class GraphUtils(object):
                 'height': x['height'],
                 'id': x['txn']['id']
             },
-                {
-                    'rid': x['txn']['rid'],
-                    'height': x['height'],
-                    'id': x['txn']['id'],
-                    'txn': x['txn']
-                },
-                upsert=True)
+            {
+                'rid': x['txn']['rid'],
+                'height': x['height'],
+                'block_hash': x['block_hash'],
+                'id': x['txn']['id'],
+                'txn': x['txn'],
+                'cache_time': time()
+            },
+            upsert=True)
 
         i = 1
         for x in self.mongo.db.fastgraph_transactions.find({
@@ -982,7 +1015,7 @@ class GraphUtils(object):
                 fastgraph_transactions = self.mongo.db.fastgraph_transactions.find({"txn.rid": rid})
                 if fastgraph_transactions.count() > 0:
                     txns.extend([x['txn'] for x in fastgraph_transactions])
-
+            cipher = None
             for txn in txns:
                 for shared_secret in list(set(shared_secrets)):
                     res = self.mongo.db.verify_message_cache.find_one({
@@ -997,7 +1030,8 @@ class GraphUtils(object):
                         elif res and not res['success']:
                             continue
                         else:
-                            cipher = Crypt(shared_secret.hex(), shared=True)
+                            if not cipher:
+                                cipher = Crypt(shared_secret.hex(), shared=True)
                             try:
                                 decrypted = cipher.shared_decrypt(txn['relationship'])
                                 signin = json.loads(decrypted.decode('utf-8'))
@@ -1011,7 +1045,8 @@ class GraphUtils(object):
                                     'shared_secret': shared_secret.hex(),
                                     'id': txn['id'],
                                     'message': signin,
-                                    'success': True
+                                    'success': True,
+                                    'cache_time': time()
                                 }
                                 , upsert=True)
                             except:
@@ -1032,7 +1067,8 @@ class GraphUtils(object):
                             'shared_secret': shared_secret.hex(),
                             'id': txn['id'],
                             'message': '',
-                            'success': False
+                            'success': False,
+                            'cache_time': time()
                         }
                         , upsert=True)
         return sent, received

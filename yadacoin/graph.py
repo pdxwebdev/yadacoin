@@ -28,7 +28,7 @@ class Graph(object):
         self.rids = rids
 
         if key_or_wif in [config.private_key, config.wif] or jwt:
-            self.cipher = Crypt(config.wif)
+            self.cipher = self.config.cipher
             self.wallet_mode = True
         else:
             self.all_relationships = [x for x in GU().get_all_usernames()]

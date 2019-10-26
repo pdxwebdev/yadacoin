@@ -563,7 +563,9 @@ class Consensus(object):
                     # self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
                     # todo: is this useful? can we have more blocks above? No because if we had, we would have raised just above
                     await self.mongo.async_db.block.delete_many({'index': {"$gte": block.index}})
-                    await self.mongo.async_db.blocks.replace_one({'index': block.index}, block.to_dict(), upsert=True)
+                    db_block = block.to_dict()
+                    db_block['updated_at'] = time()
+                    await self.mongo.async_db.blocks.replace_one({'index': block.index}, db_block, upsert=True)
                     # TODO: why do we need to keep that one in memory?
                     try:
                         self.existing_blockchain.blocks[block.index] = block

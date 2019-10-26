@@ -11,7 +11,7 @@ from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 # Circular reference
 #from yadacoin.block import Block
-from time import sleep
+from time import sleep, time
 
 GLOBAL_BU = None
 
@@ -133,7 +133,8 @@ class BlockChainUtils(object):
                 "$project": {
                     "_id": 0,
                     "txn": "$transactions",
-                    "height": "$index"
+                    "height": "$index",
+                    "block_hash": "$hash"
                 }
             },
             {
@@ -146,7 +147,8 @@ class BlockChainUtils(object):
                     "_id": 0,
                     "public_key": "$txn.public_key",
                     "txn": "$txn",
-                    "height": "$height"
+                    "height": "$height",
+                    "block_hash": "$block_hash"
                 }
             },
             {
@@ -164,13 +166,16 @@ class BlockChainUtils(object):
                 'address': address,
                 'id': x['txn']['id'],
                 'height': x['height'],
+                'block_hash': x['block_hash']
             },
             {
                 'address': address,
                 'id': x['txn']['id'],
                 'height': x['height'],
+                'block_hash': x['block_hash'],
                 'spent': False,
-                'txn': x['txn']
+                'txn': x['txn'],
+                'cache_time': time()
             },
             upsert=True)
             
@@ -178,6 +183,7 @@ class BlockChainUtils(object):
 
             if xaddress == address:
                 reverse_public_key = x['public_key']
+                break
         
         if reverse_public_key == '':
             received_query = [
@@ -191,7 +197,8 @@ class BlockChainUtils(object):
                     "$project": {
                         "_id": 0,
                         "txn": "$transactions",
-                        "height": "$index"
+                        "height": "$index",
+                        "block_hash": "$hash"
                     }
                 },
                 {
@@ -204,7 +211,8 @@ class BlockChainUtils(object):
                         "_id": 0,
                         "public_key": "$txn.public_key",
                         "txn": "$txn",
-                        "height": "$height"
+                        "height": "$height",
+                        "block_hash": "$block_hash"
                     }
                 }
             ]
@@ -283,7 +291,8 @@ class BlockChainUtils(object):
                 },
                 {
                     '$set': {
-                        'spent': True
+                        'spent': True,
+                        'cache_time': time()
                     }
                 },
                 multi=True) # TODO: using multi because there is a bug currently that allows double spends on-chain
@@ -296,7 +305,8 @@ class BlockChainUtils(object):
                 },
                 {
                     '$set': {
-                        'spent': True
+                        'spent': True,
+                        'cache_time': time()
                     }
                 },
                 multi=True) # TODO: using multi because there is a bug currently that allows double spends on-chain
@@ -361,7 +371,7 @@ class BlockChainUtils(object):
         else:
             block_height = 0
 
-        cipher = Crypt(wif)
+        cipher = None
         transactions = []
         for block in self.mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}}):
             for transaction in block.get('transactions'):
@@ -373,6 +383,8 @@ class BlockChainUtils(object):
                     if not transaction['relationship']:
                         continue
                     if not raw:
+                        if not cipher:
+                            cipher = Crypt(wif)
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
@@ -384,6 +396,7 @@ class BlockChainUtils(object):
                             'both': both,
                             'skip': skip,
                             'height': latest_block['index'],
+                            'block_hash': latest_block['hash'],
                             'queryType': queryType,
                             'id': transaction['id']
                         },
@@ -393,9 +406,11 @@ class BlockChainUtils(object):
                             'both': both,
                             'skip': skip,
                             'height': latest_block['index'],
+                            'block_hash': latest_block['hash'],
                             'txn': transaction,
                             'queryType': queryType,
-                            'id': transaction['id']
+                            'id': transaction['id'],
+                            'cache_time': time()
                         }
                     , upsert=True)
                 except:
@@ -409,6 +424,7 @@ class BlockChainUtils(object):
                                 'both': both,
                                 'skip': skip,
                                 'height': latest_block['index'],
+                                'block_hash': latest_block['hash'],
                                 'queryType': queryType
                             },
                             {
@@ -417,8 +433,10 @@ class BlockChainUtils(object):
                                 'both': both,
                                 'skip': skip,
                                 'height': latest_block['index'],
+                                'block_hash': latest_block['hash'],
                                 'txn': transaction,
-                                'queryType': queryType
+                                'queryType': queryType,
+                                'cache_time': time()
                             }
                         , upsert=True)
                     continue
@@ -430,7 +448,9 @@ class BlockChainUtils(object):
                 'both': both,
                 'skip': skip,
                 'queryType': queryType,
-                'height': latest_block['index']
+                'height': latest_block['index'],
+                'block_hash': latest_block['hash'],
+                'cache_time': time()
             })
 
         fastgraph_transactions = self.get_fastgraph_transactions(wif, query, queryType, raw=False, both=True, skip=None)
@@ -456,7 +476,7 @@ class BlockChainUtils(object):
 
     def get_fastgraph_transactions(self, secret, query, queryType, raw=False, both=True, skip=None):
         from yadacoin.crypt import Crypt
-        cipher = Crypt(secret)
+        cipher = None
         for transaction in self.mongo.db.fastgraph_transactions.find(query):
             if 'txn' in transaction:
                 try:
@@ -472,12 +492,15 @@ class BlockChainUtils(object):
                     if res:
                         continue
                     if not raw:
+                        if not cipher:
+                            cipher = Crypt(secret)
                         decrypted = cipher.decrypt(transaction['relationship'])
                         relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     self.mongo.db.fastgraph_transaction_cache.update(
                         {
                             'txn': transaction,
+                            'cache_time': time()
                         }
                     , upsert=True)
                 except:
