@@ -508,7 +508,8 @@ class NSHandler(BaseGraphHandler):
         config = self.config
         phrase = self.get_query_argument('searchTerm', None)
         requester_rid = self.get_query_argument('requester_rid', None)
-        if not phrase and not requester_rid:
+        requested_rid = self.get_query_argument('requested_rid', None)
+        if not phrase and not requester_rid and not requested_rid:
             return 'phrase required', 400
         bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
         if not bulletin_secret:
@@ -516,30 +517,47 @@ class NSHandler(BaseGraphHandler):
         my_bulletin_secret = config.get_bulletin_secret()
 
         if requester_rid:
-            friend = [x for x in GU().search_rid(requester_rid)][0]
-            requester_rid = friend['rid']
+            ns_record = await self.config.mongo.async_db.name_server.find_one({
+                'rid': requester_rid,
+            })
+            requester_rid = ns_record['rid']
             rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
             requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
-        
-            if friend:
-                to = [x['to'] for x in friend['outputs'] if x['to'] != config.address][0]
+            
+            if ns_record:
+                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ns_record['txn']['public_key'])))
+                filter_address = [x['to'] for x in ns_record['txn']['outputs'] if x['to'] != address]
+                to = address if not filter_address else filter_address
             else:
                 return '{}', 404
             return self.render_as_json({
-                'bulletin_secret': friend['relationship']['their_bulletin_secret'],
+                'bulletin_secret': ns_record['txn']['relationship']['their_bulletin_secret'],
                 'requested_rid': requested_rid,
                 'requester_rid': requester_rid,
                 'to': to,
-                'username': friend['relationship']['their_username']
+                'username': ns_record['txn']['relationship']['their_username']
             })
 
         rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
         requester_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
-        friends = [x for x in GU().search_username(phrase)]
-        ns_records = await self.config.mongo.async_db.name_server.find({
-            'txn.relationship.their_username': phrase,
-        }).to_list(10)
-        return self.render_as_json([x['txn'] for x in ns_records] + [x for x in friends])
+        if requested_rid:
+            friends = [x for x in GU().search_rid(requested_rid)]
+            ns_record = await self.config.mongo.async_db.name_server.find_one({
+                'rid': requested_rid,
+            })
+            if ns_record:
+                result = ns_record['txn']
+            elif friends:
+                result = friends[0]
+            result['relationship']['requested_rid'] = requested_rid
+            result['relationship']['requester_rid'] = requester_rid
+            return self.render_as_json(result['relationship'])
+        else:
+            friends = [x for x in GU().search_username(phrase)]
+            ns_records = await self.config.mongo.async_db.name_server.find({
+                'txn.relationship.their_username': phrase,
+            }).to_list(10)
+            return self.render_as_json([x['txn'] for x in ns_records] + [x for x in friends])
 
     async def post(self):
         try:

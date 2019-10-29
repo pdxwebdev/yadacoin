@@ -66,7 +66,7 @@ class Graph(object):
                         already_done.append(test)
 
             self.registered = False
-            shared_secrets = GU().get_shared_secrets_by_rid(rid)
+            shared_secrets = GU().get_first_shared_secret_by_rid(rid)
 
             if shared_secrets:
                 self.registered = True
@@ -130,22 +130,48 @@ class Graph(object):
         return lookup_rids
 
     async def get_friend_requests(self):
+        self.friend_requests = []
         if self.wallet_mode:
-            self.friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
-            return
+            res = await self.config.mongo.async_db.miner_transactions.find({
+                'public_key': self.config.public_key,
+                'relationship': {'$ne': ''},
+                'rid': {'$ne': ''}
+            }, {
+                '_id': 0
+            }).to_list(length=1000)
+            for txn in res:
+                txn['pending'] = True
+                self.friend_requests.append(txn)
+            self.friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
         else:
-            friend_requests = [x for x in GU().get_friend_requests(self.rid)] # include fastgraph
+            res = await self.config.mongo.async_db.miner_transactions.find({
+                'relationship': {'$ne': ''},
+                'requested_rid': self.rid
+            }, {
+                '_id': 0
+            }).to_list(length=1000)
+            for txn in res:
+                txn['pending'] = True
+                self.friend_requests.append(txn)
+            self.friend_requests += [x for x in GU().get_friend_requests(self.rid)] # include fastgraph
+            for i, friend_request in enumerate(self.friend_requests):
+                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': friend_request['requester_rid']})
+                self.friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
 
-        for i, friend_request in enumerate(friend_requests):
-            # attach bulletin_secrets
-            username_txns = [x for x in GU().search_rid(friend_request.get('requester_rid'))]
-            if username_txns:
-                friend_requests[i]['username'] = username_txns[0]['relationship']['their_username']
-
-        self.friend_requests = friend_requests
 
     async def get_sent_friend_requests(self):
+        self.sent_friend_requests = []
         if self.wallet_mode:
+            res = await self.config.mongo.async_db.miner_transactions.find({
+                'public_key': self.config.public_key,
+                'relationship': {'$ne': ''},
+                'rid': {'$ne': ''}
+            }, {
+                '_id': 0
+            }).to_list(length=1000)
+            for txn in res:
+                txn['pending'] = True
+                self.sent_friend_requests.append(txn)
             self.all_relationships = [x for x in GU().get_all_usernames()]
             rids = []
             rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
@@ -153,29 +179,23 @@ class Graph(object):
             rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
             rids = list(set(rids))
             self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=self.config.bulletin_secret, rid=True, raw=True, returnheight=True)
-            self.sent_friend_requests = [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
+            self.sent_friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
+
+        else:
             res = await self.config.mongo.async_db.miner_transactions.find({
-                'public_key': self.config.public_key,
                 'relationship': {'$ne': ''},
-                'requested_rid': {'$ne': ''}
+                'requester_rid': self.rid
             }, {
                 '_id': 0
             }).to_list(length=1000)
             for txn in res:
                 txn['pending'] = True
                 self.sent_friend_requests.append(txn)
-            return
-        else:
-            sent_friend_requests = [x for x in GU().get_sent_friend_requests(self.rid)]
+            self.sent_friend_requests += [x for x in GU().get_sent_friend_requests(self.rid)]
+            for i, sent_friend_request in enumerate(self.sent_friend_requests):
+                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': sent_friend_request['requester_rid']})
+                self.sent_friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
 
-        for i, sent_friend_request in enumerate(sent_friend_requests):
-            # attach usernames
-            res = self.mongo.site_db.usernames.find({'rid': sent_friend_request.get('requested_rid')}, {'_id': 0})
-            if res.count():
-                sent_friend_requests[i]['username'] = res[0]['username']
-            else:
-                sent_friend_requests[i]['username'] = '[None]'
-        self.sent_friend_requests = sent_friend_requests
 
     async def get_messages(self, not_mine=False):
         if self.wallet_mode:
@@ -206,11 +226,6 @@ class Graph(object):
                     if x['public_key'] != self.config.public_key:
                         messages.append(x)
                 self.messages = messages
-            for i, x in enumerate(self.messages):
-                try:
-                    self.messages[i]['username'] = self.rid_usernames[self.messages[i]['rid']]
-                except:
-                    pass
             res = await self.config.mongo.async_db.miner_transactions.find({
                 'relationship': {'$ne': ''},
                 '$or': [
@@ -224,25 +239,32 @@ class Graph(object):
             for txn in res:
                 txn['pending'] = True
                 self.messages.append(txn)
+            for i, message in enumerate(self.messages):
+                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': message.get('rid')})
+                self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
+            
             return
         else:
-            lookup_rids = self.get_request_rids_for_rid()
-            lookup_rids[self.rid] = [self.rid]
-            messages = [x for x in GU().get_messages(self.get_lookup_rids())]
+            rids = self.get_lookup_rids() + self.rids
+            self.messages = [x for x in GU().get_messages(rids)]
+            res = await self.config.mongo.async_db.miner_transactions.find({
+                'relationship': {'$ne': ''},
+                '$or': [
+                    {'rid': {'$in': self.rids}},
+                    {'requester_rid': {'$in': self.rids}},
+                    {'requested_rid': {'$in': self.rids}}
+                ]
+            }, {
+                '_id': 0
+            }).to_list(length=1000)
+            for txn in res:
+                txn['pending'] = True
+                self.messages.append(txn)
+            for i, message in enumerate(self.messages):
+                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': message.get('requested_rid', message.get('rid', None))})
+                if ns_record:
+                    self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
 
-            out_messages = []
-            for i, message in enumerate(messages):
-                # attach usernames
-                res = self.mongo.site_db.usernames.find({'rid': {'$in': lookup_rids.get(message['rid'])}}, {'_id': 0})
-                if res.count():
-                    messages[i]['username'] = res[0]['username']
-                else:
-                    messages[i]['username'] = '[None]'
-                exclude = self.mongo.db.exclude_messages.find({'id': message.get('id')})
-                if exclude.count() > 0:
-                    continue
-                out_messages.append(message)
-        self.messages = out_messages
 
     async def get_new_messages(self):
         await self.get_messages(not_mine=True)
