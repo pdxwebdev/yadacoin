@@ -527,7 +527,7 @@ class NSHandler(BaseGraphHandler):
             if ns_record:
                 address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ns_record['txn']['public_key'])))
                 filter_address = [x['to'] for x in ns_record['txn']['outputs'] if x['to'] != address]
-                to = address if not filter_address else filter_address
+                to = address if not filter_address else filter_address[0]
             else:
                 return '{}', 404
             return self.render_as_json({
