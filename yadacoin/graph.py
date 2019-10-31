@@ -155,7 +155,8 @@ class Graph(object):
                 self.friend_requests.append(txn)
             self.friend_requests += [x for x in GU().get_friend_requests(self.rid)] # include fastgraph
             for i, friend_request in enumerate(self.friend_requests):
-                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': friend_request['requester_rid']})
+                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': friend_request.get('requester_rid') or friend_request.get('rid')})
+                if not ns_record: continue
                 self.friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
 
 
@@ -381,6 +382,7 @@ class Graph(object):
                 'logins': self.logins,
                 'messages': self.messages,
                 'rid': self.rid,
+                'bulletin_secret': self.bulletin_secret,
                 'username': self.username,
                 'registered': self.registered,
                 'pending_registration': self.pending_registration,

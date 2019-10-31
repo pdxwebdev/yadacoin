@@ -599,7 +599,7 @@ class SiaFileHandler(BaseGraphHandler):
         headers = {
             'User-Agent': 'Sia-Agent'
         }
-        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         fileData = json.loads(res.content.decode())
         return self.render_as_json({
             'status': 'success',
@@ -625,7 +625,7 @@ class SiaStreamFileHandler(BaseGraphHandler):
             'User-Agent': 'Sia-Agent'
         }
         siapath = self.get_query_argument('siapath')
-        res = requests.get('http://0.0.0.0:9980/renter/file/{}'.format(siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.get('http://0.0.0.0:9980/renter/file/{}'.format(siapath), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         fileData = json.loads(res.content.decode())
         if fileData.get('file', {}).get('available'):
             http_client = AsyncHTTPClient()
@@ -649,8 +649,8 @@ class SiaUploadHandler(BaseGraphHandler):
             'User-Agent': 'Sia-Agent'
         }
         filepath = self.get_query_argument('filepath')
-        res = requests.post('http://0.0.0.0:9980/renter/upload/{}'.format(filepath.split('/')[-1]), data={'source': filepath}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
-        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.post('http://0.0.0.0:9980/renter/upload/{}'.format(filepath.split('/')[-1]), data={'source': filepath}, headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
+        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         fileData = json.loads(res.content.decode())
         return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath'], 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath']} for x in fileData.get('files', [])]})
 
@@ -663,7 +663,7 @@ class SiaShareFileHandler(BaseGraphHandler):
         }
         dst='/home/mvogel/'
         siapath = self.get_query_argument('siapath')
-        res = requests.get('http://0.0.0.0:9980/renter/share/send?dst={}&siapath={}'.format(dst + siapath.split('/')[-1] + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.get('http://0.0.0.0:9980/renter/share/send?dst={}&siapath={}'.format(dst + siapath.split('/')[-1] + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         with open(dst + siapath.split('/')[-1] + '.sia', 'rb') as f:
             data = f.read()
         bdata = base64.b64encode(data)
@@ -680,10 +680,10 @@ class SiaShareFileHandler(BaseGraphHandler):
         siafiledata = base64.b64decode(relationship['groupChatFile'])
         with open(src + relationship['groupChatFileName'].split('/')[-1] + '.sia', 'wb') as f:
             f.write(bytearray(siafiledata))
-        res = requests.get('http://0.0.0.0:9980/renter/file/{}'.format(relationship['groupChatFileName']), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.get('http://0.0.0.0:9980/renter/file/{}'.format(relationship['groupChatFileName']), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         fileData = json.loads(res.content.decode())
         if not fileData.get('file', None):
-            res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': ''}, headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+            res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': ''}, headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         return self.render_as_json({'status': 'success', 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + relationship['groupChatFileName']})
 
 
@@ -694,8 +694,8 @@ class SiaDeleteHandler(BaseGraphHandler):
             'User-Agent': 'Sia-Agent'
         }
         siapath = self.get_query_argument('siapath')
-        res = requests.post('http://0.0.0.0:9980/renter/delete/{}'.format(siapath), headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
-        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', '88236ff35f652194e5599736d6346b25'))
+        res = requests.post('http://0.0.0.0:9980/renter/delete/{}'.format(siapath), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
+        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         fileData = json.loads(res.content.decode())
         return self.render_as_json({
             'status': 'success',

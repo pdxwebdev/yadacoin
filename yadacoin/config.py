@@ -57,6 +57,7 @@ class Config(object):
         self.serve_host = config['serve_host']
         self.serve_port = config['serve_port']
         self.callbackurl = config['callbackurl']
+        self.sia_api_key = config.get('sia_api_key')
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
         self.extended_status = config.get('extended_status', False)
@@ -164,6 +165,7 @@ class Config(object):
             "ssl": False,
             "origin": '',
             "polling": 30,
+            "sia_api_key": '',
             "post_peer": False,
             "peer_host": peer_host,
             "peer_port": 8000,
@@ -214,6 +216,7 @@ class Config(object):
         cls.serve_port = config['serve_port']
         cls.callbackurl = config['callbackurl']
         cls.fcm_key = config['fcm_key']
+        cls.sia_api_key = config.get('sia_api_key')
 
     def get_bulletin_secret(self):
         from yadacoin.transactionutils import TU
@@ -263,6 +266,7 @@ class Config(object):
             'origin': self.origin,
             'fcm_key': self.fcm_key,
             'polling': self.polling,
+            'sia_api_key': self.sia_api_key,
             'callbackurl': self.callbackurl
         }
 
