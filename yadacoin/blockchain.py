@@ -32,7 +32,7 @@ class Blockchain(object):
         if self.blocks and self.blocks[0].index != 0 and not self.partial:
             raise Exception('Blocks do not start with zero index. Either incomplete blockchain or unordered.')
 
-    def verify(self, progress=None):
+    async def verify(self, progress=None):
         last_block = None
         for block in self.blocks:
             try:

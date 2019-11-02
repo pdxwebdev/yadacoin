@@ -3,9 +3,18 @@ Handlers required by the web operations
 """
 
 import uuid
+import os
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.graphutils import GraphUtils as GU
 from yadacoin.blockchainutils import BU
+
+
+class BaseWebHandler(BaseHandler):
+
+    def prepare(self):
+
+        if self.request.protocol == 'http' and self.config.ssl:
+            self.redirect('https://' + self.request.host + self.request.uri, permanent=False)
 
 
 class HomeHandler(BaseHandler):
@@ -151,10 +160,24 @@ class HashrateAPIHandler(BaseHandler):
         })
 
 
+class AppHandler(BaseWebHandler):
+
+    def prepare(self):
+        if self.request.protocol == 'https':
+            self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
+
+    async def get(self):
+        """
+        :return:
+        """
+        self.render("app.html")
+
+
 WEB_HANDLERS = [
     (r'/', HomeHandler),
     (r'/authenticated', AuthenticatedHandler),
     (r'/login', LoginHandler),
     (r'/logout', LogoutHandler),
     (r'/api-stats', HashrateAPIHandler),
+    (r'/app', AppHandler),
 ]

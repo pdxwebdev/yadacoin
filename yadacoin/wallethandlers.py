@@ -86,7 +86,7 @@ class GetAddressesHandler(BaseHandler):
 class GetBalanceSum(BaseHandler):
 
     async def get(self):
-        args = json.loads(self.request.body)
+        args = json.loads(self.request.body.decode())
         addresses = args.get("addresses", None)
         if not addresses:
             self.render_as_json({})

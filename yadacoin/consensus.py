@@ -51,9 +51,9 @@ class Consensus(object):
         else:
             if not self.prevent_genesis:
                 self.insert_genesis()
-
+    
+    async def build_existing(self):
         self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
-        # print("len", len(self.existing_blockchain.blocks))
 
     def output(self, string):
         sys.stdout.write(string)  # write the next character
@@ -83,9 +83,9 @@ class Consensus(object):
         upsert=True)
         self.latest_block = genesis_block
 
-    def verify_existing_blockchain(self, reset=False):
+    async def verify_existing_blockchain(self, reset=False):
         self.app_log.info('verifying existing blockchain')
-        result = self.existing_blockchain.verify(self.output)
+        result = await self.existing_blockchain.verify(self.output)
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             return True

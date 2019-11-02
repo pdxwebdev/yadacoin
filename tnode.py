@@ -42,7 +42,6 @@ from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
 from yadacoin.transactionbroadcaster import TxnBroadcaster
-from plugins.yadacoinweb.handlers import HANDLERS as YCW_HANDLERS
 
 __version__ = '0.0.13'
 
@@ -58,6 +57,7 @@ class NodeApplication(Application):
     def __init__(self, config, mongo, peers):
         static_path = path.join(path.dirname(__file__), 'static')
         self.default_handlers = [
+            (r"/static/app/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app')}),
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
             (r"/socket.io/", socketio.get_tornado_handler(get_sio()))
         ]
@@ -68,11 +68,10 @@ class NodeApplication(Application):
         if config.max_miners > 0:
             self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)
-        
-        try:
-            self.default_handlers.extend(YCW_HANDLERS)
-        except:
-            pass
+
+        for finder, name, ispkg in pkgutil.iter_modules([path.join(path.dirname(__file__), 'plugins')]):
+            handlers = importlib.import_module('plugins.' + name + '.handlers')
+            self.default_handlers.extend(handlers.HANDLERS)
 
         self.default_handlers.extend(WEB_HANDLERS)
         settings = dict(
@@ -97,14 +96,23 @@ class NodeApplication(Application):
         super().__init__(handlers, **settings)
 
 
-async def background_consensus(consensus):
+async def background_consensus(options, peers):
+    if not config.consensus:
+        config.consensus = Consensus(options.debug, peers)
+        await config.consensus.build_existing()
+        if options.verify:
+            app_log.info("Verifying existing blockchain")
+            await config.consensus.verify_existing_blockchain(reset=options.reset)
+        else:
+            app_log.info("Verification of existing blockchain skipped by config")
+
     if config.polling <= 0:
         app_log.error("No consensus polling")
         return
     await async_sleep(5)
     while True:
         try:
-            wait = await consensus.sync_bottom_up()
+            wait = await config.consensus.sync_bottom_up()
             if wait:
                 await async_sleep(config.polling)
         except Exception as e:
@@ -350,13 +358,7 @@ async def main():
         yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
         config.GU = GraphUtils()
 
-        consensus = Consensus(options.debug, peers)
-        if options.verify:
-            app_log.info("Verifying existing blockchain")
-            consensus.verify_existing_blockchain(reset=options.reset)
-        else:
-            app_log.info("Verification of existing blockchain skipped by config")
-        config.consensus = consensus
+        config.consensus = None
 
         if config.max_miners > 0:
             app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
@@ -366,7 +368,7 @@ async def main():
         ws_init()
         config.SIO = get_sio()
 
-        tornado.ioloop.IOLoop.instance().add_callback(background_consensus, consensus)
+        tornado.ioloop.IOLoop.instance().add_callback(background_consensus, options, peers)
         tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
         tornado.ioloop.IOLoop.instance().add_callback(background_status)
         tornado.ioloop.IOLoop.instance().add_callback(background_pool)
