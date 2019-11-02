@@ -20,3 +20,5 @@ jws
 pyasn1
 PyJWT
 python-jwt
+-e git+https://github.com/pdxwebdev/pyrx#egg=pyrx
+pbkdf2
