@@ -99,6 +99,7 @@ class GetBalanceSum(BaseHandler):
         })
 
 
+@jwtauth
 class CreateTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
@@ -133,6 +134,7 @@ class CreateTransactionView(BaseHandler):
         return self.render_as_json(txn.transaction.to_dict())
 
 
+@jwtauth
 class CreateRawTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
@@ -165,13 +167,14 @@ class CreateRawTransactionView(BaseHandler):
         )
         return self.render_as_json(txn.transaction.to_dict())
 
+@jwtauth
 class SendTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
         if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         config = self.config
-        args = json.loads(self.request.body)
+        args = json.loads(self.request.body.decode())
         to = args.get('address')
         value = float(args.get('value'))
         from_address = args.get('from')

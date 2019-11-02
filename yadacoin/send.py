@@ -16,7 +16,6 @@ class ChatNamespace(BaseNamespace):
 class Send(object):
     @classmethod
     def run(cls, config, mongo, to, value):
-        Peers.init(config, mongo, config.network)
 
         try:
             transaction = TransactionFactory(
@@ -39,7 +38,7 @@ class Send(object):
             print('transaction failed')
         TU.save(config, mongo, transaction.transaction)
         print('Transaction generated successfully. Sending:', value, 'To:', to)
-        for peer in Peers.peers:
+        for peer in self.config.peers.peers:
             try:
                 with SocketIO(peer.host, peer.port, ChatNamespace, wait_for_connection=False) as socketIO:
                     chat_namespace = socketIO.define(ChatNamespace, '/chat')

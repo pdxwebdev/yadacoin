@@ -224,7 +224,7 @@ async def background_cache_validator():
                         if txn['cache_time'] > last_times[cache_collection]:
                             last_times[cache_collection] = txn['cache_time']
                         
-            #await async_sleep(10)
+            await async_sleep(10)
 
         except Exception as e:
             app_log.error("{} in background_cache_validator".format(e))

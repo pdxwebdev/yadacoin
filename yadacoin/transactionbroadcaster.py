@@ -14,37 +14,31 @@ class TxnBroadcaster(object):
             transaction = txn
         else:
             transaction = Transaction.from_dict(0, txn)
-        if self.config.network != 'regnet':
+        if self.config.network == 'regnet':
+            return
 
-            if sum([float(x.value) for x in transaction.outputs]) + float(transaction.fee) == 0:
-                ns_records = await self.config.mongo.async_db.name_server.find({
-                    '$or': [
-                        {'rid': transaction.rid},
-                        {'requested_rid': transaction.requested_rid},
-                        {'requester_rid': transaction.requester_rid}
-                    ]
-                }).to_list(100)
-                for ns in ns_records:
-                    await self.prepare_peer(ns['peer'], transaction, sent_to)
-            else:
-                for peer in self.config.peers.peers:
-                    await self.prepare_peer(peer, transaction, sent_to)
-            
-            if self.server:
-                try:
-                    if self.config.debug:
-                        self.app_log.debug('Transmitting transaction to inbound peers')
-                    await self.server.emit('newtransaction', data=transaction.to_dict(), namespace='/chat')
-                    await self.config.mongo.async_db.miner_transactions.update_one({
-                        'id': transaction.transaction_signature
-                    }, {
-                        '$addToSet': {
-                            'sent_to': peer.to_string()
-                        }
-                    })
-                except Exception as e:
-                    if self.config.debug:
-                        self.app_log.debug(e)
+        if sum([float(x.value) for x in transaction.outputs]) + float(transaction.fee) == 0:
+            ns_records = await self.config.mongo.async_db.name_server.find({
+                '$or': [
+                    {'rid': transaction.rid},
+                    {'requested_rid': transaction.requested_rid},
+                    {'requester_rid': transaction.requester_rid}
+                ]
+            }).to_list(100)
+            for ns in ns_records:
+                await self.prepare_peer(ns['peer'], transaction, sent_to)
+        else:
+            for peer in self.config.peers.peers:
+                await self.prepare_peer(peer, transaction, sent_to)
+        
+        if self.server:
+            try:
+                if self.config.debug:
+                    self.app_log.debug('Transmitting transaction to inbound peers')
+                await self.server.emit('newtransaction', data=transaction.to_dict(), namespace='/chat')
+            except Exception as e:
+                if self.config.debug:
+                    self.app_log.debug(e)
     
     async def prepare_peer(self, peer, transaction, sent_to):
         if not isinstance(peer, Peer):
