@@ -183,7 +183,6 @@ class BlockChainUtils(object):
 
             if xaddress == address:
                 reverse_public_key = x['public_key']
-                break
         
         if reverse_public_key == '':
             received_query = [
