@@ -2,6 +2,8 @@ import json
 import hashlib
 import base64
 import time
+import binascii
+import pyrx
 
 from sys import exc_info
 from os import path
@@ -189,9 +191,16 @@ class BlockFactory(object):
                    block.merkle_root
 
     @classmethod
-    def generate_hash_from_header(cls, header, nonce):
+    def generate_hash_from_header(cls, height, header, nonce):
+        seed_hash = binascii.unhexlify('63eceef7919087068ac5d1b7faffa23fc90a58ad0ca89ecb224a2ef7ba282d48')
         header = header.format(nonce=nonce)
-        return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
+        if height >= CHAIN.RANDOMX_FORK:
+            h = 1 + nonce
+            bh = pyrx.get_rx_hash(header, seed_hash, h)
+            hh = binascii.hexlify(bh).decode()
+            return hh
+        else:
+            return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
 
     def get_transaction_hashes(self):
         return sorted([str(x.hash) for x in transactions], key=str.lower)
@@ -306,12 +315,13 @@ class BlockFactory(object):
             raise
 
     @classmethod
-    def mine(cls, header, target, nonces, special_min=False, special_target=''):
+    def mine(cls, height, header, target, nonces, special_min=False, special_target=''):
 
         lowest = (CHAIN.MAX_TARGET, 0, '')
         nonce = nonces[0]
         while nonce < nonces[1]:
-            hash_test = cls.generate_hash_from_header(header, '{:02x}'.format(nonce))
+
+            hash_test = cls.generate_hash_from_header(height, header, nonce)
 
             text_int = int(hash_test, 16)
             if text_int < target or (special_min and text_int < int(special_target, 16)):
@@ -469,7 +479,7 @@ class Block(object):
                 raise Exception("Invalid block merkle root")
 
             header = BlockFactory.generate_header(self)
-            hashtest = BlockFactory.generate_hash_from_header(header, str(self.nonce))
+            hashtest = BlockFactory.generate_hash_from_header(self.index, header, str(self.nonce))
             # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
             if self.hash != hashtest:
                 getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))

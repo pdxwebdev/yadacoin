@@ -26,6 +26,7 @@ class CHAIN(object):
     TIME_TOLERANCE = 10  # MAX # of seconds in the future we allow a bloc or TX to be. NTP Sync required for nodes.
     CHECK_TIME_FROM = 59710  # Begin checks there
     MINING_AND_TXN_REFORM_FORK = 60000
+    RANDOMX_FORK = 65000
 
     ONE_DAY_IN_SECONDS = 1440 * 60
     RETARGET_PERIOD_V2 = 144  # blocks = 1 day at 10 min per block

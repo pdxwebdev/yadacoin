@@ -128,12 +128,12 @@ class MiningPool(object):
         block_to_mine = await self.block_to_mine()
         block_to_mine = block_to_mine.copy()
         previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
-        hash1 = BlockFactory.generate_hash_from_header(block_to_mine.header, nonce)
+        hash1 = BlockFactory.generate_hash_from_header(block_to_mine.index, block_to_mine.header, nonce)
         if int(hash1, 16) > block_to_mine.target and self.config.network != 'regnet' and (block_to_mine.special_min and int(hash1, 16) > block_to_mine.special_target):
             # TODO If not, does it match previous block of same height?
             self.app_log.warning("nonce {} did not match pool diff block, hash1 was {}".format(nonce, hash1))
             if self.previous_block_to_mine is not None:
-                hash2 = BlockFactory.generate_hash_from_header(previous_block_to_mine.header, nonce)
+                hash2 = BlockFactory.generate_hash_from_header(previous_block_to_mine.index, previous_block_to_mine.header, nonce)
                 if not hash2[:8] == '00000000':
                     self.app_log.warning("nonce {} did not match pool diff block, hash2 was {}".format(nonce, hash2))
                     return False
@@ -458,8 +458,8 @@ class MiningPool(object):
         return transaction_objs
 
     @classmethod
-    def pool_mine(cls, pool_peer, address, header, target, nonces, special_min, special_target):
-        nonce, lhash = BlockFactory.mine(header, target, nonces, special_min, special_target)
+    def pool_mine(cls, pool_peer, address, height, header, target, nonces, special_min, special_target):
+        nonce, lhash = BlockFactory.mine(height, header, target, nonces, special_min, special_target)
         if nonce and lhash:
             try:
                 requests.post("{pool}/pool-submit".format(pool=pool_peer), json={
