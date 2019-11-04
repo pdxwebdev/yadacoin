@@ -9,6 +9,7 @@ import os
 import ssl
 import ntpath
 import webbrowser
+import pyrx
 from asyncio import sleep as async_sleep
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
@@ -320,6 +321,8 @@ async def main():
     }
 
     config.cipher = Crypt(config.wif)
+
+    config.pyrx = pyrx.PyRX()
 
     # get seed.json from same dir as config.
     if config.network != 'regnet':

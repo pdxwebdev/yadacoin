@@ -192,11 +192,12 @@ class BlockFactory(object):
 
     @classmethod
     def generate_hash_from_header(cls, height, header, nonce):
-        seed_hash = binascii.unhexlify('63eceef7919087068ac5d1b7faffa23fc90a58ad0ca89ecb224a2ef7ba282d48')
         header = header.format(nonce=nonce)
         if height >= CHAIN.RANDOMX_FORK:
-            h = 1 + nonce
-            bh = pyrx.get_rx_hash(header, seed_hash, h)
+            seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
+            if not isinstance(nonce, int):
+                nonce = int(nonce, 16)
+            bh = pyrx.get_rx_hash(header, seed_hash, height)
             hh = binascii.hexlify(bh).decode()
             return hh
         else:
@@ -467,6 +468,18 @@ class Block(object):
             if str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship and len(txn.inputs) == 0:
                 return txn
 
+    def generate_hash_from_header(self, height, header, nonce):
+        header = header.format(nonce=nonce)
+        if height >= CHAIN.RANDOMX_FORK:
+            seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
+            if not isinstance(nonce, int):
+                nonce = int(nonce, 16)
+            bh = self.config.pyrx.get_rx_hash(header, seed_hash, height)
+            hh = binascii.hexlify(bh).decode()
+            return hh
+        else:
+            return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
+
     def verify(self):
         try:
             getcontext().prec = 8
@@ -479,7 +492,7 @@ class Block(object):
                 raise Exception("Invalid block merkle root")
 
             header = BlockFactory.generate_header(self)
-            hashtest = BlockFactory.generate_hash_from_header(self.index, header, str(self.nonce))
+            hashtest = self.generate_hash_from_header(self.index, header, str(self.nonce))
             # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
             if self.hash != hashtest:
                 getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
