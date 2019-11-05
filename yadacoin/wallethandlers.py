@@ -180,6 +180,7 @@ class SendTransactionView(BaseHandler):
         from_address = args.get('from')
 
         if from_address == config.address:
+            public_key = config.public_key
             private_key = config.private_key
         else:
             child_key = await config.mongo.async_db.child_keys.find_one({'address': from_address})

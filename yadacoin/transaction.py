@@ -262,6 +262,9 @@ class NotEnoughMoneyException(Exception):
 class MaxRelationshipSizeExceeded(Exception):
     pass
 
+class TransactionInputOutputMismatchException(Exception):
+    pass
+
 
 class Transaction(object):
 

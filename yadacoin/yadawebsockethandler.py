@@ -73,7 +73,7 @@ class ChatNamespace(AsyncNamespace):
             # print(incoming_txn.transaction_signature)
             dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({'id': incoming_txn.transaction_signature})
             if dup_check_count:
-                self.app_log.warning('found duplicate tx {}'.format(incoming_txn.transaction_signature))
+                self.app_log.debug('found duplicate tx {}'.format(incoming_txn.transaction_signature))
             else:
                 await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
             

@@ -105,20 +105,12 @@ class Consensus(object):
                     self.insert_genesis()
             self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
 
-    def remove_pending_transactions_now_in_chain(self):
+    def remove_pending_transactions_now_in_chain(self, block):
         #remove transactions from miner_transactions collection in the blockchain
-        data = self.mongo.db.miner_transactions.find({}, {'_id': 0})
-        for txn in data:
-            res = self.mongo.db.blocks.find({"transactions.id": txn['id']})
-            if res.count():
-                self.mongo.db.miner_transactions.remove({'id': txn['id']})
+        self.mongo.db.miner_transactions.remove({'id': {'$in': [x['id'] for x in block['block']['transactions']]}}, {'_id': 0})
 
-    def remove_fastgraph_transactions_now_in_chain(self):
-        data = self.mongo.db.fastgraph_transactions.find({}, {'_id': 0})
-        for txn in data:
-            res = self.mongo.db.blocks.find({"transactions.id": txn['id']})
-            if res.count():
-                self.mongo.db.fastgraph_transactions.remove({'id': txn['id']})
+    def remove_fastgraph_transactions_now_in_chain(self, block):
+        self.mongo.db.fastgraph_transactions.remove({'id': {'$in': [x['id'] for x in block['block']['transactions']]}}, {'_id': 0})
 
     def get_latest_consensus_blocks(self):
         for x in self.mongo.db.consensus.find({}, {'_id': 0}).sort([('index', -1)]):
@@ -234,8 +226,6 @@ class Consensus(object):
             self.latest_block = Block.from_dict(await self.config.BU.get_latest_block_async())
             if self.latest_block.index > last_latest.index:
                 self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-            self.remove_pending_transactions_now_in_chain()
-            self.remove_fastgraph_transactions_now_in_chain()
 
             latest_consensus = await self.mongo.async_db.consensus.find_one({
                 'index': self.latest_block.index + 1,
@@ -243,6 +233,8 @@ class Consensus(object):
                 'ignore': {'$ne': True}
             })
             if latest_consensus:
+                self.remove_pending_transactions_now_in_chain(latest_consensus)
+                self.remove_fastgraph_transactions_now_in_chain(latest_consensus)
                 latest_consensus = Block.from_dict( latest_consensus['block'])
                 if self.debug:
                     self.app_log.info("Latest consensus_block {}".format(latest_consensus.index))
@@ -463,7 +455,6 @@ class Consensus(object):
                     await self.trigger_update_event()
                 return False
             except Exception as e:
-                print("348", e)
                 exc_type, exc_obj, exc_tb = exc_info()
                 fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
                 self.app_log.warning("{} {} {}".format(exc_type, fname, exc_tb.tb_lineno))

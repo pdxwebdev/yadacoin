@@ -8,8 +8,13 @@ from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.block import Block, BlockFactory
 from yadacoin.blockchain import Blockchain
-from yadacoin.transaction import Transaction, MissingInputTransactionException, InvalidTransactionException, \
-    InvalidTransactionSignatureException
+from yadacoin.transaction import (
+    Transaction,
+    MissingInputTransactionException, 
+    InvalidTransactionException,
+    InvalidTransactionSignatureException,
+    TransactionInputOutputMismatchException
+)
 from yadacoin.fastgraph import FastGraph, MissingFastGraphInputTransactionException
 
 
@@ -451,6 +456,10 @@ class MiningPool(object):
                 print('InvalidTransactionException: transaction removed')
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
                 self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
+            except TransactionInputOutputMismatchException as e:
+                print('TransactionInputOutputMismatchException: transaction removed')
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'TransactionInputOutputMismatchException', 'txn': transaction_obj.to_dict()})
             except Exception as e:
                 print(e)
                 #print 'rejected transaction', txn['id']
