@@ -90,12 +90,14 @@ class Consensus(object):
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             return True
         else:
-            self.app_log.debug(result)
-            if 'last_good_block' in result:
-                self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
-            else:
-                self.mongo.db.blocks.remove({"index": {"$gt": 0}}, multi=True)
-            self.app_log.debug("{} {}".format(result['message'], '...truncating'))
+            self.app_log.critical("{} - reset False, not truncating - DID NOT VERIFY".format(result['message']))
+            self.app_log.critical(result)
+            if reset:
+                if 'last_good_block' in result:
+                    self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
+                else:
+                    self.mongo.db.blocks.remove({"index": {"$gt": 0}}, multi=True)
+                self.app_log.debug("{} {}".format(result['message'], '...truncating'))
             self.config.BU.latest_block = None
             latest_block = self.config.BU.get_latest_block()
             if latest_block:
