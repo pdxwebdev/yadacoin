@@ -467,7 +467,8 @@ class MiningPool(object):
         return transaction_objs
 
     @classmethod
-    def pool_mine(cls, pool_peer, address, height, header, target, nonces, special_min, special_target):
+    def pool_mine(cls, pool_peer, mining_cores, address, height, header, target, nonces, special_min, special_target):
+        Block.cores = mining_cores
         nonce, lhash = BlockFactory.mine(height, header, target, nonces, special_min, special_target)
         if nonce and lhash:
             try:

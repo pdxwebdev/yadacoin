@@ -60,6 +60,8 @@ class ExternalInputSpentException(Exception):
 
 
 class BlockFactory(object):
+    pyrx = None
+    cores = 1
     @classmethod
     async def generate(cls, config, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
         try:
@@ -192,12 +194,14 @@ class BlockFactory(object):
 
     @classmethod
     def generate_hash_from_header(cls, height, header, nonce):
+        if not cls.pyrx:
+            cls.pyrx = pyrx.PyRX()
         header = header.format(nonce=nonce)
         if height >= CHAIN.RANDOMX_FORK:
             seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
             if not isinstance(nonce, int):
                 nonce = int(nonce, 16)
-            bh = pyrx.get_rx_hash(header, seed_hash, height)
+            bh = cls.pyrx.get_rx_hash(header, seed_hash, height, cls.cores)
             hh = binascii.hexlify(bh).decode()
             return hh
         else:
@@ -322,8 +326,7 @@ class BlockFactory(object):
         nonce = nonces[0]
         while nonce < nonces[1]:
 
-            hash_test = cls.generate_hash_from_header(height, header, nonce)
-
+            hash_test = cls.generate_hash_from_header(height, header, str(nonce))
             text_int = int(hash_test, 16)
             if text_int < target or (special_min and text_int < int(special_target, 16)):
                 return nonce, hash_test
@@ -469,12 +472,14 @@ class Block(object):
                 return txn
 
     def generate_hash_from_header(self, height, header, nonce):
+        if not BlockFactory.pyrx:
+            BlockFactory.pyrx = pyrx.PyRX()
         header = header.format(nonce=nonce)
         if height >= CHAIN.RANDOMX_FORK:
             seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
             if not isinstance(nonce, int):
                 nonce = int(nonce, 16)
-            bh = self.config.pyrx.get_rx_hash(header, seed_hash, height)
+            bh = BlockFactory.pyrx.get_rx_hash(header, seed_hash, height, BlockFactory.cores)
             hh = binascii.hexlify(bh).decode()
             return hh
         else:
