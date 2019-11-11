@@ -138,7 +138,7 @@ class ExplorerLatestHandler(BaseHandler):
         print(res[0])
         return self.render_as_json({
             'resultType': 'blocks',
-            'result': [abstract_block(x) for x in res]
+            'result': [changetime(x) for x in res]
         })
 
 
