@@ -197,6 +197,7 @@ class Config(object):
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cls.public_key)))
 
+        cls.pool_payout = config.get('pool_payout', False)
         cls.private_key = config['private_key']
         cls.wif = cls.generate_wif(cls.private_key)
         cls.bulletin_secret = TU.generate_deterministic_signature(config, config['username'], config['private_key'])
