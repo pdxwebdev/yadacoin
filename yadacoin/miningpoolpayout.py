@@ -37,16 +37,14 @@ class PoolPayer(object):
             raw_shares.append(x)
         if not raw_shares:
             raise Exception('no shares')
-        total_difficulty = self.get_difficulty([x['block'] for x in raw_shares])
-
+        total_difficulty = self.get_difficulty([x for x in raw_shares])
         shares = {}
         for share in raw_shares:
             if share['address'] not in shares:
                 shares[share['address']] = {
                     'blocks': [],
-                    'bulletin_secret': share['bulletin_secret'],
                 }
-            shares[share['address']]['blocks'].append(share['block'])
+            shares[share['address']]['blocks'].append(share)
 
         add_up = 0
         for address, item in shares.items():
@@ -83,7 +81,6 @@ class PoolPayer(object):
         if already_used:
             await self.config.mongo.async_db.shares.delete_many({'index': block.index})
             return
-
         existing = await self.config.mongo.async_db.share_payout.find_one({'index': block.index})
         if existing:
             pending = await self.config.mongo.async_db.miner_transactions.find_one({'inputs.id': block.get_coinbase().transaction_signature})
@@ -96,25 +93,20 @@ class PoolPayer(object):
                 await self.config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
                 await self.broadcast_transaction(transaction)
                 return
-
         try:
             shares = await self.get_share_list_for_height(block.index)
         except KeyError as e:
-            if self.config.debug:
-                self.app_log.debug(e)
+            self.app_log.warning(e)
             return
         except Exception as e:
-            if self.config.debug:
-                self.app_log.debug(e)
+            self.app_log.warning(e)
             return
-
         total_reward = block.get_coinbase()
         if total_reward.outputs[0].to != self.config.address:
             return
         pool_take = 0.01
         total_pool_take = total_reward.outputs[0].value * pool_take
         total_payout = total_reward.outputs[0].value - total_pool_take
-
         transactions_to_transmit = []
         outputs = []
         for address, x in shares.items():
@@ -133,7 +125,6 @@ class PoolPayer(object):
                     private_key=self.config.private_key,
                     inputs=[{'id': total_reward.transaction_signature}],
                     outputs=outputs,
-                    bulletin_secret=x['bulletin_secret']
                 )
             except NotEnoughMoneyException as e:
                 if self.config.debug:
