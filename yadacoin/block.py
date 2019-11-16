@@ -84,6 +84,7 @@ class BlockFactory(object):
             transaction_objs = []
             fee_sum = 0.0
             used_sigs = []
+            used_inputs = []
             for txn in transactions:
                 try:
                     if isinstance(txn, FastGraph):
@@ -119,6 +120,13 @@ class BlockFactory(object):
                     if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
                         app_log.debug("Block embeds txn too far in the future")
                         continue
+                    
+                    for xi in transaction_obj.inputs:
+                        if xi.id in used_inputs:
+                            continue
+                    
+                    for xi in transaction_obj.inputs:
+                        used_inputs.append(xi.id)
                     
                     transaction_objs.append(transaction_obj)
                     
