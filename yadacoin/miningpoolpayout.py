@@ -107,7 +107,7 @@ class PoolPayer(object):
         pool_take = 0.01
         total_pool_take = total_reward.outputs[0].value * pool_take
         total_payout = total_reward.outputs[0].value - total_pool_take
-        transactions_to_transmit = []
+
         outputs = []
         for address, x in shares.items():
             exists = await self.config.mongo.async_db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
@@ -117,37 +117,36 @@ class PoolPayer(object):
             payout = total_payout * x['payout_share']
             outputs.append({'to': address, 'value': payout})
 
-            try:
-                transaction = TransactionFactory(
-                    block_height=block.index,
-                    fee=0.0001,
-                    public_key=self.config.public_key,
-                    private_key=self.config.private_key,
-                    inputs=[{'id': total_reward.transaction_signature}],
-                    outputs=outputs,
-                )
-            except NotEnoughMoneyException as e:
-                if self.config.debug:
-                    self.app_log.debug("not enough money yet")
-                    self.app_log.debug(e)
-                return
-            except Exception as e:
-                if self.config.debug:
-                    self.app_log.debug(e)
+        try:
+            transaction = TransactionFactory(
+                block_height=block.index,
+                fee=0.0001,
+                public_key=self.config.public_key,
+                private_key=self.config.private_key,
+                inputs=[{'id': total_reward.transaction_signature}],
+                outputs=outputs,
+            )
+        except NotEnoughMoneyException as e:
+            if self.config.debug:
+                self.app_log.debug("not enough money yet")
+                self.app_log.debug(e)
+            return
+        except Exception as e:
+            if self.config.debug:
+                self.app_log.debug(e)
 
-            try:
-                transaction.transaction.verify()
-            except Exception as e:
-                if self.config.debug:
-                    self.app_log.debug(e)
-                raise
-            transactions_to_transmit.append(transaction.transaction)
+        try:
+            transaction.transaction.verify()
+        except Exception as e:
+            if self.config.debug:
+                self.app_log.debug(e)
+            raise
 
-        for txn in transactions_to_transmit:
-            if self.config.peers.peers:
-                await self.config.mongo.async_db.miner_transactions.insert_one(txn.to_dict())
-                await self.config.mongo.async_db.share_payout.insert_one({'index': block.index, 'txn': txn.to_dict()})
-                await self.broadcast_transaction(txn)
+        txn = transaction.transaction
+        if self.config.peers.peers:
+            await self.config.mongo.async_db.miner_transactions.insert_one(txn.to_dict())
+            await self.config.mongo.async_db.share_payout.insert_one({'index': block.index, 'txn': txn.to_dict()})
+            await self.broadcast_transaction(txn)
         
     async def broadcast_transaction(self, transaction):
         for peer in self.config.peers.peers:
