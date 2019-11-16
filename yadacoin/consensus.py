@@ -5,6 +5,7 @@ import json
 import logging
 import requests
 import datetime
+from bitcoin.wallet import P2PKHBitcoinAddress
 from time import time
 from asyncio import sleep as async_sleep
 from pymongo.errors import DuplicateKeyError
@@ -525,6 +526,22 @@ class Consensus(object):
                 except Exception as e:
                     print(e)
                     return False
+
+                if transaction.inputs:
+                    address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction.public_key)))
+                    unspent = self.config.BU.get_wallet_unspent_transactions(address, [x.id for x in transaction.inputs])
+                    unspent_ids = [x['id'] for x in unspent]
+                    failed = False
+                    used_ids_in_this_txn = []
+                    for x in transaction.inputs:
+                        if x.id not in unspent_ids:
+                            failed = True
+                        if x.id in used_ids_in_this_txn:
+                            failed = True
+                        used_ids_in_this_txn.append(x.id)
+                    if failed:
+                        continue
+
             if block.index == 0:
                 return True
             height = block.index
