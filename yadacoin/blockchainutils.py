@@ -65,7 +65,6 @@ class BlockChainUtils(object):
         if not self.latest_block is None:
             return self.latest_block
         self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-        self.app_log.debug("last block async " + self.latest_block)
         return self.latest_block
 
     def get_block_by_index(self, index):

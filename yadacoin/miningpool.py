@@ -130,6 +130,7 @@ class MiningPool(object):
                 address = self.inbound[sid]['address']
             except Exception as e:
                 self.app_log.warning("error {} getting address sid {}".format(e, sid))
+        nonce = str(int(nonce, 16))
         block_to_mine = await self.block_to_mine()
         block_to_mine = block_to_mine.copy()
         previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
@@ -196,7 +197,8 @@ class MiningPool(object):
         await self.mongo.async_db.shares.insert_one({
             'address': address,
             'index': matching_block.index,
-            'hash': matching_hash
+            'hash': matching_hash,
+            'nonce': nonce,
         })
         return True
 
