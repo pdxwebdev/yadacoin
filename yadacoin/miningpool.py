@@ -137,18 +137,18 @@ class MiningPool(object):
         hash1 = block_to_mine.generate_hash_from_header(block_to_mine.index, block_to_mine.header, nonce)
         if int(hash1, 16) > block_to_mine.target and self.config.network != 'regnet' and (block_to_mine.special_min and int(hash1, 16) > block_to_mine.special_target):
             # TODO If not, does it match previous block of same height?
-            self.app_log.warning("nonce {} did not match pool diff block, hash1 was {}".format(nonce, hash1))
+            self.app_log.debug("nonce {} did not match pool diff block, hash1 was {}".format(nonce, hash1))
             if self.previous_block_to_mine is not None:
                 hash2 = previous_block_to_mine.generate_hash_from_header(previous_block_to_mine.index, previous_block_to_mine.header, nonce)
                 if not hash2[:8] == '00000000':
-                    self.app_log.warning("nonce {} did not match pool diff block, hash2 was {}".format(nonce, hash2))
+                    self.app_log.debug("nonce {} did not match pool diff block, hash2 was {}".format(nonce, hash2))
                     return False
                 # a shallow copy is required, or the block_to_mine can have changed until we verify it.
                 matching_block = previous_block_to_mine
                 matching_hash = hash2
                 matching_block.hash = hash2
                 matching_block.nonce = nonce
-                self.app_log.warning("nonce {} matches pool diff, hash2 is {} header {}".format(nonce, hash2, matching_block.header))
+                self.app_log.debug("nonce {} matches pool diff, hash2 is {} header {}".format(nonce, hash2, matching_block.header))
             else:
                 return False
         else:
