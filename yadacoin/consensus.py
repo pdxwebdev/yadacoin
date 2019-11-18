@@ -580,7 +580,7 @@ class Consensus(object):
                     try:
                         self.existing_blockchain.blocks[block.index] = block
                         del self.existing_blockchain.blocks[block.index+1:]
-                        await self.mongo.async_db.miner_transactions.remove_many({'id': {'$in': [x.id for x in block.transactions]}})
+                        await self.mongo.async_db.miner_transactions.remove_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
                     except:
                         self.existing_blockchain.blocks.append(block)
                     if self.debug:
