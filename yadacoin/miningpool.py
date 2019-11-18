@@ -157,7 +157,7 @@ class MiningPool(object):
             matching_block.hash = hash1
             matching_block.nonce = nonce
             # target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
-            self.app_log.warning("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
+            self.app_log.debug("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
         # TODO: store share and send block if enough
         # No need to re-verify block, should be good since we forged it and nonce passes
         # TODO: Gain time by only signing (and no need to verify after debug) if block passes net diff.
