@@ -332,7 +332,8 @@ var HomePage = /** @class */ (function () {
         console.log(this.myForm.value.searchTerm);
     };
     HomePage.prototype.sendTokenToServer = function (token) {
-        var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+        var headers = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["a" /* Headers */]({ 'Content-Type': 'application/json' });
+        var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
         this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/fcm-token?origin=' + window.location.origin, {
             rid: this.graphService.graph.rid,
             token: token,
