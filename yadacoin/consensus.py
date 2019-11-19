@@ -580,9 +580,9 @@ class Consensus(object):
                     try:
                         self.existing_blockchain.blocks[block.index] = block
                         del self.existing_blockchain.blocks[block.index+1:]
-                        await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
                     except:
                         self.existing_blockchain.blocks.append(block)
+                    await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
                     if self.debug:
                         self.app_log.info("New block inserted for height: {}".format(block.index))
                     await self.config.on_new_block(block)  # This will propagate to BU
