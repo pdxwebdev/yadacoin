@@ -269,7 +269,9 @@ var HomePage = /** @class */ (function () {
                 var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
                 _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/fcm-token?origin=' + window.location.origin, {
                     rid: _this.graphService.graph.rid,
-                }, options).subscribe(function () { });
+                }, options).subscribe(function () {
+                    resolve();
+                });
             });
         })
             .then(function () {
@@ -332,12 +334,17 @@ var HomePage = /** @class */ (function () {
         console.log(this.myForm.value.searchTerm);
     };
     HomePage.prototype.sendTokenToServer = function (token) {
-        var headers = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["a" /* Headers */]({ 'Content-Type': 'application/json' });
-        var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
-        this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/fcm-token?origin=' + window.location.origin, {
-            rid: this.graphService.graph.rid,
-            token: token,
-        }, options).subscribe(function () { });
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var headers = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["a" /* Headers */]({ 'Content-Type': 'application/json' });
+            var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
+            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/fcm-token?origin=' + window.location.origin, {
+                rid: _this.graphService.graph.rid,
+                token: token,
+            }, options).subscribe(function () {
+                resolve();
+            });
+        });
     };
     HomePage.prototype.updateUIForPushEnabled = function (token) {
     };
