@@ -262,6 +262,9 @@ var HomePage = /** @class */ (function () {
         this.prefix = 'usernames-';
         this.refresh(null)
             .then(function () {
+            return _this.graphService.getInfo();
+        })
+            .then(function () {
             if (!document.URL.startsWith('http') || document.URL.startsWith('http://localhost:8080')) {
                 return _this.firebaseService.initFirebase();
             }
@@ -321,10 +324,11 @@ var HomePage = /** @class */ (function () {
         console.log(this.myForm.value.searchTerm);
     };
     HomePage.prototype.sendTokenToServer = function (token) {
-        this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/fcm-token', {
+        var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+        this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/fcm-token?origin=' + window.location.origin, {
             rid: this.graphService.graph.rid,
             token: token,
-        }).subscribe(function () { });
+        }, options).subscribe(function () { });
     };
     HomePage.prototype.updateUIForPushEnabled = function (token) {
     };
