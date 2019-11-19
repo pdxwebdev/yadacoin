@@ -265,6 +265,14 @@ var HomePage = /** @class */ (function () {
             return _this.graphService.getInfo();
         })
             .then(function () {
+            return new Promise(function (resolve, reject) {
+                var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+                _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/fcm-token?origin=' + window.location.origin, {
+                    rid: _this.graphService.graph.rid,
+                }, options).subscribe(function () { });
+            });
+        })
+            .then(function () {
             if (!document.URL.startsWith('http') || document.URL.startsWith('http://localhost:8080')) {
                 return _this.firebaseService.initFirebase();
             }
