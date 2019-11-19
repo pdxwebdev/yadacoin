@@ -244,6 +244,10 @@ class GraphTransactionHandler(BaseGraphHandler):
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
             txn_b = TxnBroadcaster(self.config)
             await txn_b.txn_broadcast_job(x)
+            try:
+                await self.config.push_service.do_push(x.to_dict(), self.bulletin_secret, self.app_log)
+            except Exception as e:
+                self.app_log.error(e)
 
         return self.render_as_json(items)
 
