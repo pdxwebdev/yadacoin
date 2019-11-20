@@ -1633,6 +1633,8 @@ var ChatPage = /** @class */ (function () {
         this.ahttp = ahttp;
         this.toastCtrl = toastCtrl;
         this.rid = navParams.data.item.transaction.rid;
+        this.requester_rid = navParams.data.item.transaction.requester_rid || '';
+        this.requested_rid = navParams.data.item.transaction.requested_rid || '';
         var key = 'last_message_height-' + navParams.data.item.transaction.rid;
         if (navParams.data.item.transaction.height)
             this.storage.set(key, navParams.data.item.transaction.time);
@@ -1772,7 +1774,9 @@ var ChatPage = /** @class */ (function () {
                                 chatText: _this.chatText
                             },
                             shared_secret: shared_secret,
-                            rid: _this.rid
+                            rid: _this.rid,
+                            requester_rid: _this.requester_rid,
+                            requested_rid: _this.requested_rid,
                         });
                     }
                     else {
