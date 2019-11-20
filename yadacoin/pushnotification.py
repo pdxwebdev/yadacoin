@@ -48,7 +48,7 @@ class PushNotification(object):
             rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
             rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
             logger.error(rids)
-            username_txn = self.config.async_db.name_server.find_one({
+            username_txn = await self.config.mongo.async_db.name_server.find_one({
                 '$or': [
                     {'rid': {'$in': rids}},
                     {'requested_rid': {'$in': rids}},
