@@ -35,27 +35,6 @@ class PushNotification(object):
                     extra_kwargs={'priority': 'high'}
                 )
 
-        elif txn.get('relationship') and not txn.get('dh_public_key') and not txn.get('rid'):
-            #post
-            #we find all mutual friends of rid and send new post notifications to them
-            rids = []
-            rids.extend([x['requested_rid'] for x in self.config.BU.get_sent_friend_requests(rid)])
-            rids.extend([x['requester_rid'] for x in self.config.BU.get_friend_requests(rid)])
-            for friend_rid in rids:
-                res = await mongo.async_mongo.site_db.fcmtokens.find({"rid": friend_rid})
-                used_tokens = []
-                for token in res:
-                    if token['token'] in used_tokens:
-                        continue
-                    used_tokens.append(token['token'])
-
-                    result = self.push_service.notify_single_device(
-                        registration_id=token['token'],
-                        message_title='%s has posted something!' % username,
-                        message_body='Check out what your friend posted!',
-                        extra_kwargs={'priority': 'high'}
-                    )
-
         elif txn.get('relationship') and not txn.get('dh_public_key') and txn.get('rid'):
             #message
             #we find the relationship of the transaction rid and send a new message notification to the rid
@@ -69,12 +48,15 @@ class PushNotification(object):
             rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
             rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
             logger.error(rids)
-            username_txns = [x for x in self.config.GU.search_rid(rid)]
+            username_txn = self.config.async_db.name_server.find_one({
+                '$or': [
+                    {'rid': {'$in': rids}},
+                    {'requested_rid': {'$in': rids}},
+                    {'requester_rid': {'$in': rids}},
+                ]
+            })
             username = ''
-            for username_txn in username_txns:
-                logger.error(username_txn['relationship']['their_username'])
-                if username_txn['rid'] == rid:
-                    username = username_txn['relationship']['their_username']
+            username = username_txn.get('relationship', {}).get('their_username', '')
             for friend_rid in rids:
                 res = mongo.site_db.fcmtokens.find({"rid": friend_rid})
                 used_tokens = []
