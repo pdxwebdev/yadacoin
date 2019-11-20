@@ -43,10 +43,7 @@ class PushNotification(object):
             rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
             rid = hashlib.sha256((str(rids[0]) + str(rids[1])).encode('utf-8')).digest().hex()
             logger.error(rid)
-            rids = []
-            txns = [x for x in self.config.GU.get_transactions_by_rid(txn['rid'], self.config.bulletin_secret, rid=True, raw=True)]
-            rids.extend([x['requested_rid'] for x in txns if 'requested_rid' in x and rid != x['requested_rid']])
-            rids.extend([x['requester_rid'] for x in txns if 'requester_rid' in x and rid != x['requester_rid']])
+            rids = [txn.get('rid'), txn.get('requested_rid'), txn.get('requester_rid')]
             logger.error(rids)
             username_txn = await self.config.mongo.async_db.name_server.find_one({
                 '$or': [
