@@ -142,6 +142,19 @@ class Graph(object):
             for txn in res:
                 txn['pending'] = True
                 self.friend_requests.append(txn)
+            self.all_relationships = [x for x in GU().get_all_usernames()]
+            rids = []
+            rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
+            rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
+            rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
+            rids = list(set(rids))
+            self.rid_transactions = GU().get_transactions_by_rid(
+                rids,
+                bulletin_secret=self.config.bulletin_secret,
+                rid=True,
+                raw=True,
+                returnheight=True
+            )
             self.friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
         else:
             res = await self.config.mongo.async_db.miner_transactions.find({
@@ -179,7 +192,13 @@ class Graph(object):
             rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
             rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
             rids = list(set(rids))
-            self.rid_transactions = GU().get_transactions_by_rid(rids, bulletin_secret=self.config.bulletin_secret, rid=True, raw=True, returnheight=True)
+            self.rid_transactions = GU().get_transactions_by_rid(
+                rids,
+                bulletin_secret=self.config.bulletin_secret,
+                rid=True,
+                raw=True,
+                returnheight=True
+            )
             self.sent_friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
 
         else:
@@ -242,7 +261,8 @@ class Graph(object):
                 self.messages.append(txn)
             for i, message in enumerate(self.messages):
                 ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': message.get('rid')})
-                self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
+                if ns_record:
+                    self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
             
             return
         else:
