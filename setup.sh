@@ -16,7 +16,7 @@ cd ~
 git clone https://github.com/pdxwebdev/yadacoin.git
 cd yadacoin
 # Install prerequisites
-sudo apt install -y python3-pip
+sudo apt install -y cmake python3-pip
 pip3 install -r requirements-python3.txt
 
 python3 utils/generate_config.py auto > config/config.json
@@ -25,4 +25,4 @@ python3 utils/generate_services.py
 sudo cp services/* /lib/systemd/system/.
 sudo systemctl daemon-reload
 sudo systemctl enable yadacoin-node
-# sudo service yadacoin-node start
+sudo service yadacoin-node start

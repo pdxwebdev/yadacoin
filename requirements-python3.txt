@@ -5,7 +5,7 @@ coincurve
 bip32utils
 python-bitcoinlib
 mnemonic
-eccsnacks
+-e git+https://github.com/pdxwebdev/eccsnacks#egg=eccsnacks
 python-socketio[asyncio_client]
 pymongo
 socketIO-client
