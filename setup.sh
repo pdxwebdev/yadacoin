@@ -16,8 +16,9 @@ cd ~
 git clone https://github.com/pdxwebdev/yadacoin.git
 cd yadacoin
 # Install prerequisites
+sudo apt update
 sudo apt install -y cmake python3-pip
-pip3 install -r requirements-python3.txt
+sudo pip3 install -r requirements-python3.txt
 
 python3 utils/generate_config.py auto > config/config.json
 # TODO: config needs more editing (ip?)
