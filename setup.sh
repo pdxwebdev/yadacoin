@@ -23,6 +23,7 @@ sudo pip3 install -r requirements-python3.txt
 python3 utils/generate_config.py auto > config/config.json
 # TODO: config needs more editing (ip?)
 python3 utils/generate_services.py
+sudo chmod +x scripts/start_node.sh
 sudo cp services/* /lib/systemd/system/.
 sudo systemctl daemon-reload
 sudo systemctl enable yadacoin-node
