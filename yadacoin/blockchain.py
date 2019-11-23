@@ -65,8 +65,8 @@ class Blockchain(object):
                     else:
                         return {'verified': False, 'message': e}
             if last_block:
-                if block.index >= CHAIN.FORK_5_MIN_BLOCK:
-                    target = BlockFactory.get_target_5min(block.index, last_block, block, self)
+                if block.index >= CHAIN.FORK_10_MIN_BLOCK:
+                    target = BlockFactory.get_target_10min(block.index, last_block, block, self)
                 else:
                     target = BlockFactory.get_target(block.index, last_block, block, self)
                 if int(block.hash, 16) > target and not block.special_min:

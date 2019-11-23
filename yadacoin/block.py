@@ -240,7 +240,7 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
     
     @classmethod
-    def get_target_5min(
+    def get_target_10min(
         self,
         height,
         last_block,  # This is the latest on chain block we have in db
@@ -249,21 +249,21 @@ class BlockFactory(object):
     ):
         # Aim at 5 min average block time, with escape hatch
         max_target = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  # A single cpu does that under a minute.
-        retarget_period = 12 * 4  # 4 hours at 5 min per block - needs to be high enough to account for organic variance of the miners
-        retarget_period2 = 12 * 1  # 1 hour at 5 min per block - Faster reaction to drops in blocktime, we want to make "instamine" harder
-        target_time = 5 * 60  # 5 min
+        retarget_period = 6 * 5  # 5 hours at 10 min per block - needs to be high enough to account for organic variance of the miners
+        retarget_period2 = int(6 * 1.5)  # 1 hour and 30 min at 10 min per block - Faster reaction to drops in blocktime, we want to make "instamine" harder
+        target_time = 10 * 60  # 10 min
         # That should not happen
-        if block["time"] - last_block["time"] > 3600:
-            print("Should not happen - Often")
+        if int(block.time) - int(last_block.time) > 3600:
+            get_config().debug_log("Block time over max. Max target set.")
             return int(max_target)
         # decrease after 2x target - can be 3 as well
-        current_block_time = block["time"] - last_block["time"]
+        current_block_time = int(block.time) - int(last_block.time)
         adjusted = False
         if current_block_time > 2 * target_time:
-            latest_target = last_block["target"]
-            delta = max_target - int(latest_target, 16)
+            latest_target = last_block.target
+            delta = max_target - latest_target
             # Linear decrease to reach max target after one hour block time.
-            new_target = int(int(latest_target, 16) + delta * current_block_time / 3600)
+            new_target = int(latest_target + delta * current_block_time / 3600)
             # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
             adjusted = new_target
             # To be used later on, once the rest is calc'd
@@ -283,13 +283,13 @@ class BlockFactory(object):
         if average_block_time2 < target_time:
             hash_sum2 = 0
             for i in range(start_index, start_index - retarget_period2, -1):
-                hash_sum2 += int(blockchain.blocks[i].target, 16)
+                hash_sum2 += blockchain.blocks[i].target
             average_target = hash_sum2 / retarget_period2
             target = int(average_target * average_block_time2 / target_time)
         else:
             hash_sum = 0
             for i in range(start_index, start_index - retarget_period, -1):
-                hash_sum += int(blockchain.blocks[i].target, 16)
+                hash_sum += blockchain.blocks[i].target
             average_target = hash_sum / retarget_period
             # This adjusts both ways
             target = int(average_target * average_block_time / target_time)
@@ -299,7 +299,7 @@ class BlockFactory(object):
                 target = adjusted
 
         get_config().debug_log("average block time {}".format(average_block_time))
-        get_config().debug_log("average target {:02x} target {:02x}", int(average_target), int(target))
+        get_config().debug_log("average target {:02x} target {:02x}".format(int(average_target), int(target)))
         if target < 1:
             target = 1
             block.special_min = False
@@ -504,8 +504,8 @@ class Block(object):
             if not latest_block:
                 self.target = CHAIN.MAX_TARGET
             else:
-                if self.index >= CHAIN.FORK_5_MIN_BLOCK:
-                    self.target = BlockFactory.get_target_5min(self.index, Block.from_dict(latest_block), self,
+                if self.index >= CHAIN.FORK_10_MIN_BLOCK:
+                    self.target = BlockFactory.get_target_10min(self.index, Block.from_dict(latest_block), self,
                                                 self.config.consensus.existing_blockchain)
                 else:
                     self.target = BlockFactory.get_target(self.index, Block.from_dict(latest_block), self,

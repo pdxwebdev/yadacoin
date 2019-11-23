@@ -367,8 +367,8 @@ class MiningPool(object):
             else:
                 i += 1
 
-        if self.index >= CHAIN.FORK_5_MIN_BLOCK:
-            self.block_factory.block.target = BlockFactory.get_target_5min(
+        if self.index >= CHAIN.FORK_10_MIN_BLOCK:
+            self.block_factory.block.target = BlockFactory.get_target_10min(
                 self.index,
                 latest_block,
                 self.block_factory.block,
