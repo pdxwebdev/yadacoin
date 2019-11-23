@@ -3749,30 +3749,6 @@ var SendReceive = /** @class */ (function () {
                 _this.transactionService.generateTransaction({
                     to: _this.address,
                     value: value
-                }).then(function (hash) {
-                    return new Promise(function (resolve, reject) {
-                        _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
-                            hash: hash,
-                            bulletin_secret: _this.bulletinSecretService.bulletin_secret,
-                            input: _this.transactionService.transaction.inputs[0].id,
-                            id: _this.transactionService.transaction.id,
-                            txn: _this.transactionService.transaction
-                        })
-                            .subscribe(function (res) {
-                            //this.loadingModal2.dismiss();
-                            try {
-                                var data_1 = res.json();
-                                _this.transactionService.transaction.signatures = [data_1.signature];
-                                resolve();
-                            }
-                            catch (err) {
-                                reject();
-                                _this.loadingModal.dismiss().catch(function () { });
-                            }
-                        }, function (err) {
-                            //this.loadingModal2.dismiss();
-                        });
-                    });
                 }).then(function () {
                     return _this.transactionService.sendTransaction();
                 }).then(function (txn) {
