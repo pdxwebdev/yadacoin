@@ -13,8 +13,12 @@ class CHAIN(object):
     MAX_NONCE_LEN = 64
 
     # The fork checkpoints, so we have a single reference for all the codebase and can use explicit names for forks.
+    CHECK_TIME_FROM = 59710  # Begin checks there
     POW_FORK_V2 = 60000
+    MINING_AND_TXN_REFORM_FORK = 60000
     POW_FORK_V3 = 61110
+    RANDOMX_FORK = 65000
+    FORK_10_MIN_BLOCK = 65500
 
     RETARGET_PERIOD = 2016  # blocks
     TWO_WEEKS = 1209600  # seconds
@@ -24,9 +28,6 @@ class CHAIN(object):
     MAX_RETRACE_DEPTH = 20  # Max allowed retrace. Deeper retrace would need manual chain truncating
 
     TIME_TOLERANCE = 10  # MAX # of seconds in the future we allow a bloc or TX to be. NTP Sync required for nodes.
-    CHECK_TIME_FROM = 59710  # Begin checks there
-    MINING_AND_TXN_REFORM_FORK = 60000
-    RANDOMX_FORK = 65000
 
     ONE_DAY_IN_SECONDS = 1440 * 60
     RETARGET_PERIOD_V2 = 144  # blocks = 1 day at 10 min per block
