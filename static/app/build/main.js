@@ -2704,15 +2704,15 @@ var WalletService = /** @class */ (function () {
         this.walletError = false;
         this.wallet = {};
     }
-    WalletService.prototype.get = function (fastgraph) {
+    WalletService.prototype.get = function (amount_needed) {
         var _this = this;
-        if (fastgraph === void 0) { fastgraph = true; }
+        if (amount_needed === void 0) { amount_needed = 0; }
         return new Promise(function (resolve, reject) {
             if (!_this.settingsService.remoteSettings['walletUrl'])
                 return resolve();
             _this.bulletinSecretService.get()
                 .then(function () {
-                return _this.walletPromise();
+                return _this.walletPromise(amount_needed);
             })
                 .then(function () {
                 return resolve();
