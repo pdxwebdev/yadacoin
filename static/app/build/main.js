@@ -3959,26 +3959,7 @@ var TransactionService = /** @class */ (function () {
                 }
                 else {
                     _this.info.relationship = _this.info.relationship || {};
-                    if (_this.info.requester_rid ||
-                        _this.info.requested_rid || // is friend request/accept or group message
-                        _this.info.relationship.postText || // is post
-                        _this.info.relationship.comment || // is comment
-                        _this.info.relationship.react || // is react
-                        _this.info.relationship.chatText || // is chat
-                        _this.info.relationship.signIn || // is signin
-                        (!_this.info.requester_rid && !_this.info.requested_rid && _this.rid) || // is register, we now only allow registration and friend request/accept from non-fastgraph inputs
-                        Object.keys(_this.info.relationship).length == 0 // is transfer
-                    ) {
-                        unspent_transactions = _this.walletService.wallet.txns_for_fastgraph;
-                    }
-                    else {
-                        return reject('either no unspent outputs or wrong transaction type for unspent outputs');
-                    }
-                    if (unspent_transactions.length == 0 &&
-                        _this.info.requester_rid && _this.info.requested_rid &&
-                        _this.info.dh_public_key && _this.info.relationship.dh_private_key) { //creating a new relationship is the only txn we allow to come from non-fastgraph
-                        unspent_transactions = _this.walletService.wallet.unspent_transactions;
-                    }
+                    unspent_transactions = _this.walletService.wallet.unspent_transactions;
                     unspent_transactions.sort(function (a, b) {
                         if (a.height < b.height)
                             return -1;
@@ -4194,12 +4175,7 @@ var TransactionService = /** @class */ (function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
             var url = '';
-            if (_this.transaction.signatures && _this.transaction.signatures.length > 0) {
-                url = _this.settingsService.remoteSettings['fastgraphUrl'] + '?bulletin_secret=' + _this.bulletin_secret + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
-            }
-            else {
-                url = _this.settingsService.remoteSettings['transactionUrl'] + '?bulletin_secret=' + _this.bulletin_secret + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
-            }
+            url = _this.settingsService.remoteSettings['transactionUrl'] + '?bulletin_secret=' + _this.bulletin_secret + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
             _this.ahttp.post(url, _this.transaction)
                 .subscribe(function (data) {
                 try {
