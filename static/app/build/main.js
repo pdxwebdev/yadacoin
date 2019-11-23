@@ -3747,7 +3747,7 @@ var SendReceive = /** @class */ (function () {
             text: 'Confirm',
             handler: function (data) {
                 _this.loadingModal.present();
-                _this.refresh(null)
+                _this.refresh(_this.value)
                     .then(function () {
                     return _this.transactionService.generateTransaction({
                         to: _this.address,
