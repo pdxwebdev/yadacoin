@@ -2733,7 +2733,7 @@ var WalletService = /** @class */ (function () {
                 var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
                 headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
                 var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
-                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options).
+                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed=' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options).
                     subscribe(function (data) {
                     if (data['_body']) {
                         _this.walletError = false;
