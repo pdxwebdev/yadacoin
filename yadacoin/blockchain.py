@@ -65,7 +65,10 @@ class Blockchain(object):
                     else:
                         return {'verified': False, 'message': e}
             if last_block:
-                target = BlockFactory.get_target(block.index, last_block, block, self)
+                if block.index >= CHAIN.FORK_5_MIN_BLOCK:
+                    target = BlockFactory.get_target_5min(block.index, last_block, block, self)
+                else:
+                    target = BlockFactory.get_target(block.index, last_block, block, self)
                 if int(block.hash, 16) > target and not block.special_min:
                     return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
                 if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:

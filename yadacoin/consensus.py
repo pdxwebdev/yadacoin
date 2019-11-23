@@ -553,7 +553,10 @@ class Consensus(object):
                 print("Integrate block error 3")
                 raise ForkException()
 
-            target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
+            if height >= CHAIN.FORK_5_MIN_BLOCK:
+                target = BlockFactory.get_target_5min(height, last_block, block, self.existing_blockchain)
+            else:
+                target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
             delta_t = int(time()) - int(last_block.time)
             special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
             target_block_time = CHAIN.target_block_time(self.config.network)

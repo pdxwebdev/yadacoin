@@ -366,15 +366,27 @@ class MiningPool(object):
                 break
             else:
                 i += 1
-        self.block_factory.block.target = BlockFactory.get_target(
-            self.index,
-            latest_block,
-            self.block_factory.block,
-            Blockchain(
-                blocks=chain,
-                partial=True
+
+        if self.index >= CHAIN.FORK_5_MIN_BLOCK:
+            self.block_factory.block.target = BlockFactory.get_target_5min(
+                self.index,
+                latest_block,
+                self.block_factory.block,
+                Blockchain(
+                    blocks=chain,
+                    partial=True
+                )
             )
-        )
+        else:
+            self.block_factory.block.target = BlockFactory.get_target(
+                self.index,
+                latest_block,
+                self.block_factory.block,
+                Blockchain(
+                    blocks=chain,
+                    partial=True
+                )
+            )
 
     def combine_transaction_lists(self):
         transactions = self.mongo.db.fastgraph_transactions.find({'$or': [{'ignore': False}, {'ignore': {'$exists': False}}]})
