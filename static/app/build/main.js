@@ -2712,7 +2712,7 @@ var WalletService = /** @class */ (function () {
                 return resolve();
             _this.bulletinSecretService.get()
                 .then(function () {
-                return _this.walletPromise(fastgraph);
+                return _this.walletPromise();
             })
                 .then(function () {
                 return resolve();
@@ -2722,9 +2722,9 @@ var WalletService = /** @class */ (function () {
             });
         });
     };
-    WalletService.prototype.walletPromise = function (fastgraph) {
+    WalletService.prototype.walletPromise = function (amount_needed) {
         var _this = this;
-        if (fastgraph === void 0) { fastgraph = true; }
+        if (amount_needed === void 0) { amount_needed = 0; }
         return new Promise(function (resolve, reject) {
             if (!_this.settingsService.remoteSettings['walletUrl']) {
                 return reject();
@@ -2733,7 +2733,7 @@ var WalletService = /** @class */ (function () {
                 var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
                 headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
                 var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
-                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?fastgraph=' + fastgraph + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options).
+                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options).
                     subscribe(function (data) {
                     if (data['_body']) {
                         _this.walletError = false;
@@ -3691,6 +3691,7 @@ var SendReceive = /** @class */ (function () {
         this.loadingModal = this.loadingCtrl.create({
             content: 'Please wait...'
         });
+        this.value = 0;
         this.bulletinSecretService.get().then(function () {
             _this.createdCode = bulletinSecretService.key.getAddress();
             _this.refresh(null);
@@ -3746,9 +3747,12 @@ var SendReceive = /** @class */ (function () {
             text: 'Confirm',
             handler: function (data) {
                 _this.loadingModal.present();
-                _this.transactionService.generateTransaction({
-                    to: _this.address,
-                    value: value
+                _this.refresh(null)
+                    .then(function () {
+                    return _this.transactionService.generateTransaction({
+                        to: _this.address,
+                        value: value
+                    });
                 }).then(function () {
                     return _this.transactionService.sendTransaction();
                 }).then(function (txn) {
@@ -3779,7 +3783,7 @@ var SendReceive = /** @class */ (function () {
     SendReceive.prototype.refresh = function (refresher) {
         var _this = this;
         this.loadingBalance = true;
-        this.walletService.get(false)
+        return this.walletService.get(this.value)
             .then(function () {
             _this.loadingBalance = false;
             _this.balance = _this.walletService.wallet.balance;
