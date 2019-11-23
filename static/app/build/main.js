@@ -3767,8 +3767,8 @@ var SendReceive = /** @class */ (function () {
                     alert.setSubTitle(message);
                     alert.addButton('Ok');
                     alert.present();
-                    _this.value = null;
-                    _this.address = null;
+                    _this.value = '0';
+                    _this.address = '';
                     _this.refresh();
                     _this.loadingModal.dismiss().catch(function () { });
                 })
