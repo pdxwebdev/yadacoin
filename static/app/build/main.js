@@ -3694,7 +3694,7 @@ var SendReceive = /** @class */ (function () {
         this.value = 0;
         this.bulletinSecretService.get().then(function () {
             _this.createdCode = bulletinSecretService.key.getAddress();
-            _this.refresh(null);
+            _this.refresh();
         });
     }
     SendReceive.prototype.scan = function () {
@@ -3747,7 +3747,7 @@ var SendReceive = /** @class */ (function () {
             text: 'Confirm',
             handler: function (data) {
                 _this.loadingModal.present();
-                _this.refresh(_this.value)
+                _this.walletService.get(_this.value)
                     .then(function () {
                     return _this.transactionService.generateTransaction({
                         to: _this.address,
@@ -3769,7 +3769,7 @@ var SendReceive = /** @class */ (function () {
                     alert.present();
                     _this.value = null;
                     _this.address = null;
-                    _this.refresh(null);
+                    _this.refresh();
                     _this.loadingModal.dismiss().catch(function () { });
                 })
                     .catch(function (err) {
@@ -3780,15 +3780,13 @@ var SendReceive = /** @class */ (function () {
         });
         alert.present();
     };
-    SendReceive.prototype.refresh = function (refresher) {
+    SendReceive.prototype.refresh = function () {
         var _this = this;
         this.loadingBalance = true;
         return this.walletService.get(this.value)
             .then(function () {
             _this.loadingBalance = false;
             _this.balance = _this.walletService.wallet.balance;
-            if (refresher)
-                refresher.complete();
         }).catch(function (err) {
             console.log(err);
         });
