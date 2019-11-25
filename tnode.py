@@ -82,6 +82,7 @@ class NodeApplication(Application):
             cookie_secret=sha256(config.private_key.encode('utf-8')).hexdigest(),
             compress_response=True,
             debug=options.debug,  # Also activates auto reload
+            autoreload=False,
             serve_traceback=options.debug,
             yadacoin_vars={'node_version': __version__},
             yadacoin_config=config,

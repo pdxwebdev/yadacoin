@@ -686,7 +686,7 @@ class Consensus(object):
                                 start_index=block_for_next.index + 1,
                                 end_index=block_for_next.index + 100
                             ), timeout=1)
-                            remote_blocks = [Block.from_dict( x) for x in json.loads(result.content)]
+                            remote_blocks = [Block.from_dict( x) for x in json.loads(result.content.decode())]
                             break_out = False
                             for remote_block in remote_blocks:
                                 if remote_block.prev_hash == block_for_next.hash:

@@ -94,7 +94,7 @@ class CHAIN(object):
             target_factor = delta_t / cls.target_block_time(network)
             special_target = int(target * (target_factor * 4))
         elif int(block_height) >= cls.FORK_10_MIN_BLOCK:
-            special_target = int(target)
+            special_target = int(target) # we handle the adjustment in get_target now.
         elif int(block_height) >= cls.POW_FORK_V3:
             # from 60k, POW_FORK_V3, we aim to reach MAX_TARGET_V3 after MAX_TARGET_AFTER_V3
             if delta_t >= 2 * cls.MAX_TARGET_AFTER_V3:
