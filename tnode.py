@@ -312,7 +312,7 @@ async def main():
         app_log.error("peer_host cannot be blank in config. Set it to you public ip address")
         return exit()
 
-    config.jwt_secret_key = "my_secret_key"
+    config.jwt_secret_key = sha256(sha256(config.private_key.encode()).hexdigest().encode()).hexdigest()
     config.jwt_options = {
         'verify_signature': True,
         'verify_exp': True,

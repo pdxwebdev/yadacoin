@@ -252,7 +252,7 @@ class UnlockHandler(BaseHandler):
     def prepare(self):
         self.encoded = jwt.encode({
             'key_or_wif': 'true',
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=960)},
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=23040)},
             self.config.jwt_secret_key,
             algorithm='HS256'
         )

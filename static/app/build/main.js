@@ -6,7 +6,7 @@ webpackJsonp([0],{
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return OpenGraphParserService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -121,7 +121,7 @@ var OpenGraphParserService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 16:
+/***/ 17:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -179,9 +179,9 @@ var SettingsService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__postmodal__ = __webpack_require__(302);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__app_opengraphparser_service__ = __webpack_require__(109);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__ionic_native_social_sharing__ = __webpack_require__(85);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__app_firebase_service__ = __webpack_require__(185);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_autocomplete_provider__ = __webpack_require__(304);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -965,52 +965,6 @@ var HomePage = /** @class */ (function () {
             _this.events.publish('pages');
         });
     };
-    HomePage.prototype.unlockWallet = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            var alert = _this.alertCtrl.create({
-                title: 'Paste the private key or WIF of the server.',
-                inputs: [
-                    {
-                        name: 'key_or_wif',
-                        placeholder: 'Private key or WIF',
-                        type: 'password'
-                    }
-                ],
-                buttons: [
-                    {
-                        text: 'Cancel',
-                        role: 'cancel',
-                        handler: function (data) {
-                            console.log('Cancel clicked');
-                            reject();
-                        }
-                    },
-                    {
-                        text: 'Unlock',
-                        handler: function (data) {
-                            var options = new __WEBPACK_IMPORTED_MODULE_16__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
-                            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/unlock?origin=' + encodeURIComponent(window.location.origin), { key_or_wif: data.key_or_wif }, options)
-                                .subscribe(function (res) {
-                                _this.settingsService.tokens[_this.bulletinSecretService.keyname] = res.json()['token'];
-                                var toast = _this.toastCtrl.create({
-                                    message: 'Wallet unlocked',
-                                    duration: 2000
-                                });
-                                toast.present();
-                                resolve(res);
-                            }, function (err) {
-                                reject(data.key_or_wif);
-                            });
-                        }
-                    }
-                ]
-            });
-            alert.present();
-        }).catch(function () {
-            console.log('canceled unlock');
-        });
-    };
     HomePage.prototype.pasteFriend = function (phrase) {
         var _this = this;
         //this.loadingModal2 = this.loadingCtrl.create({
@@ -1341,7 +1295,7 @@ var HomePage = /** @class */ (function () {
     };
     HomePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <form [formGroup]="myForm" (ngSubmit)="submit()">\n      <ion-auto-complete [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n      <button icon-left ion-button type="submit" block [disabled]="!myForm.valid">\n        <ion-icon name="eye"></ion-icon>\n        View profile\n      </button>\n    </form>\n    <ion-col col-lg-12 col-md-12 col-sm-12>\n      <button ion-button large secondary (click)="unlockWallet()" *ngIf="peerService.mode">\n        Unlock wallet&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n    </ion-col>\n  </ion-row>\n  <ion-list col-lg-7>\n    <ion-item *ngFor="let item of items">\n      <ion-card>\n        <a href="{{item.url}}" *ngIf="item.url" height="400">\n          <img src="{{item.image}}" *ngIf="item.image">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <p *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </p>\n          </ion-card-content>\n        </a>\n        <div *ngIf="!item.url">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <h1 *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </h1>\n            <span *ngIf="item.fileName">Files:</span><br>\n            <a *ngIf="item.fileName" style="text-overflow:ellipsis; margin-top:50px;" text-wrap (click)="download(item)">\n              <strong>{{item.fileName}}</strong>\n            </a>\n          </ion-card-content>\n        </div>\n        <ion-row no-padding text-wrap (click)="reactsDetail(item)">\n            <ion-item><span *ngFor="let react of graphService.graph.reacts[item.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n        </ion-row>\n        <ion-row no-padding>\n          <ion-col>\n            <button ion-button clear small icon-start (click)="toggled[item.id] = !toggled[item.id]" [(emojiPickerIf)]="toggled[item.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="react($event, item)">\n              <ion-icon name=\'sunny\'></ion-icon>\n              React\n            </button>\n          </ion-col>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="share(item)">\n              <ion-icon name=\'share-alt\'></ion-icon>\n              Share\n            </button>\n          </ion-col>\n          <ion-item>\n            <ion-input type="text" placeholder="Comment text..." [(ngModel)]="commentInputs[item.id]" (keyup.enter)="comment(item)">\n            </ion-input>\n          </ion-item>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="comment(item)">\n              <ion-icon name=\'text\'></ion-icon>\n              Post comment\n            </button>\n          </ion-col>\n        </ion-row>\n        <ion-row>\n          <ion-list col-lg-7>\n            <ion-item *ngFor="let comment of graphService.graph.comments[item.id]">\n              <button style="z-index:1000;"ion-button clear small icon-start (click)="toggled[comment.id] = !toggled[comment.id]" [(emojiPickerIf)]="toggled[comment.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="commentReact($event, comment)">\n                <ion-icon name=\'sunny\'></ion-icon>\n                React\n              </button>\n              <strong [innerHTML]="comment.username"></strong>\n              <ion-item [innerHTML]="comment.relationship.comment" text-wrap></ion-item>\n              <ion-row *ngIf="graphService.graph.commentReacts[comment.id] && graphService.graph.commentReacts[comment.id].length > 0" no-padding text-wrap (click)="commentReactsDetail(comment)">\n                  <ion-item><span *ngFor="let react of graphService.graph.commentReacts[comment.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n              </ion-row>\n            </ion-item>\n          </ion-list>\n        </ion-row>\n      </ion-card>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
+            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <form [formGroup]="myForm" (ngSubmit)="submit()">\n      <ion-auto-complete [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n      <button icon-left ion-button type="submit" block [disabled]="!myForm.valid">\n        <ion-icon name="eye"></ion-icon>\n        View profile\n      </button>\n    </form>\n    <ion-col col-lg-12 col-md-12 col-sm-12>\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n    </ion-col>\n  </ion-row>\n  <ion-list col-lg-7>\n    <ion-item *ngFor="let item of items">\n      <ion-card>\n        <a href="{{item.url}}" *ngIf="item.url" height="400">\n          <img src="{{item.image}}" *ngIf="item.image">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <p *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </p>\n          </ion-card-content>\n        </a>\n        <div *ngIf="!item.url">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <h1 *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </h1>\n            <span *ngIf="item.fileName">Files:</span><br>\n            <a *ngIf="item.fileName" style="text-overflow:ellipsis; margin-top:50px;" text-wrap (click)="download(item)">\n              <strong>{{item.fileName}}</strong>\n            </a>\n          </ion-card-content>\n        </div>\n        <ion-row no-padding text-wrap (click)="reactsDetail(item)">\n            <ion-item><span *ngFor="let react of graphService.graph.reacts[item.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n        </ion-row>\n        <ion-row no-padding>\n          <ion-col>\n            <button ion-button clear small icon-start (click)="toggled[item.id] = !toggled[item.id]" [(emojiPickerIf)]="toggled[item.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="react($event, item)">\n              <ion-icon name=\'sunny\'></ion-icon>\n              React\n            </button>\n          </ion-col>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="share(item)">\n              <ion-icon name=\'share-alt\'></ion-icon>\n              Share\n            </button>\n          </ion-col>\n          <ion-item>\n            <ion-input type="text" placeholder="Comment text..." [(ngModel)]="commentInputs[item.id]" (keyup.enter)="comment(item)">\n            </ion-input>\n          </ion-item>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="comment(item)">\n              <ion-icon name=\'text\'></ion-icon>\n              Post comment\n            </button>\n          </ion-col>\n        </ion-row>\n        <ion-row>\n          <ion-list col-lg-7>\n            <ion-item *ngFor="let comment of graphService.graph.comments[item.id]">\n              <button style="z-index:1000;"ion-button clear small icon-start (click)="toggled[comment.id] = !toggled[comment.id]" [(emojiPickerIf)]="toggled[comment.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="commentReact($event, comment)">\n                <ion-icon name=\'sunny\'></ion-icon>\n                React\n              </button>\n              <strong [innerHTML]="comment.username"></strong>\n              <ion-item [innerHTML]="comment.relationship.comment" text-wrap></ion-item>\n              <ion-row *ngIf="graphService.graph.commentReacts[comment.id] && graphService.graph.commentReacts[comment.id].length > 0" no-padding text-wrap (click)="commentReactsDetail(comment)">\n                  <ion-item><span *ngFor="let react of graphService.graph.commentReacts[comment.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n              </ion-row>\n            </ion-item>\n          </ion-list>\n        </ion-row>\n      </ion-card>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["j" /* NavParams */],
@@ -1377,12 +1331,12 @@ var HomePage = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PeerService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(42);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__settings_service__ = __webpack_require__(17);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -1622,10 +1576,10 @@ var PeerService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -1890,11 +1844,11 @@ var ChatPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(184);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -2252,9 +2206,9 @@ var GroupPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(109);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -2436,8 +2390,8 @@ var SiaFiles = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(303);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(40);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -2711,8 +2665,8 @@ webpackEmptyAsyncContext.id = 217;
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WalletService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(42);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -2831,8 +2785,8 @@ webpackEmptyAsyncContext.id = 258;
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(109);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -2991,9 +2945,9 @@ var PostModal = /** @class */ (function () {
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CompleteTestService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(490);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -3048,7 +3002,7 @@ var CompleteTestService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(181);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(185);
@@ -3057,6 +3011,7 @@ var CompleteTestService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__ionic_native_social_sharing__ = __webpack_require__(85);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__home_home__ = __webpack_require__(180);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3080,8 +3035,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 
 
+
 var Settings = /** @class */ (function () {
-    function Settings(navCtrl, navParams, settingsService, bulletinSecretService, firebaseService, loadingCtrl, alertCtrl, storage, graphService, socialSharing, walletService, events, toastCtrl, peerService) {
+    function Settings(navCtrl, navParams, settingsService, bulletinSecretService, firebaseService, loadingCtrl, alertCtrl, storage, graphService, socialSharing, walletService, events, toastCtrl, peerService, ahttp) {
         this.navCtrl = navCtrl;
         this.navParams = navParams;
         this.settingsService = settingsService;
@@ -3096,6 +3052,7 @@ var Settings = /** @class */ (function () {
         this.events = events;
         this.toastCtrl = toastCtrl;
         this.peerService = peerService;
+        this.ahttp = ahttp;
         this.baseUrl = null;
         this.blockchainAddress = null;
         this.graphproviderAddress = null;
@@ -3366,6 +3323,12 @@ var Settings = /** @class */ (function () {
             return _this.set(key);
         })
             .then(function () {
+            return _this.refresh(null);
+        })
+            .then(function () {
+            return _this.unlockWallet();
+        })
+            .then(function () {
             _this.loadingModal.dismiss();
         })
             .then(function () {
@@ -3373,6 +3336,26 @@ var Settings = /** @class */ (function () {
         })
             .catch(function (err) {
             _this.loadingModal.dismiss();
+        });
+    };
+    Settings.prototype.unlockWallet = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var options = new __WEBPACK_IMPORTED_MODULE_12__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/unlock?origin=' + encodeURIComponent(window.location.origin), { key_or_wif: _this.activeKey }, options)
+                .subscribe(function (res) {
+                _this.settingsService.tokens[_this.bulletinSecretService.keyname] = res.json()['token'];
+                if (!_this.settingsService.tokens[_this.bulletinSecretService.keyname])
+                    return resolve(res);
+                var toast = _this.toastCtrl.create({
+                    message: 'Wallet unlocked!',
+                    duration: 2000
+                });
+                toast.present();
+                resolve(res);
+            }, function (err) {
+                return reject('cannot unlock wallet');
+            });
         });
     };
     Settings.prototype.set = function (key) {
@@ -3436,7 +3419,8 @@ var Settings = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__["a" /* WalletService */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
-            __WEBPACK_IMPORTED_MODULE_4__app_peer_service__["a" /* PeerService */]])
+            __WEBPACK_IMPORTED_MODULE_4__app_peer_service__["a" /* PeerService */],
+            __WEBPACK_IMPORTED_MODULE_12__angular_http__["b" /* Http */]])
     ], Settings);
     return Settings;
 }());
@@ -3457,8 +3441,8 @@ var Settings = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(47);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -3683,10 +3667,10 @@ var StreamPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(308);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(85);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3883,8 +3867,8 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4340,9 +4324,9 @@ var TransactionService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(33);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__ionic_native_badge__ = __webpack_require__(301);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6_ionic_angular__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_rxjs_operators__ = __webpack_require__(42);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -5295,7 +5279,7 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(47);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(43);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(479);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(180);
@@ -5315,7 +5299,7 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__graph_service__ = __webpack_require__(40);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__peer_service__ = __webpack_require__(181);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__opengraphparser_service__ = __webpack_require__(109);
@@ -5463,7 +5447,7 @@ var AppModule = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(298);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(300);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(40);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(180);
@@ -5604,12 +5588,12 @@ var MyApp = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(85);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(182);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__group_group__ = __webpack_require__(183);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__profile_profile__ = __webpack_require__(86);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6111,8 +6095,8 @@ var ListPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(182);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__group_group__ = __webpack_require__(183);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_settings_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_settings_service__ = __webpack_require__(17);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
