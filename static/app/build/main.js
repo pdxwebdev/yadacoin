@@ -3293,10 +3293,18 @@ var Settings = /** @class */ (function () {
             alert.present();
         })
             .then(function (username) {
-            return _this.bulletinSecretService.create(username);
+            return new Promise(function (resolve, reject) {
+                _this.bulletinSecretService.create(username)
+                    .then(function () {
+                    resolve(username);
+                });
+            });
         })
-            .then(function () {
-            return _this.doSet(_this.bulletinSecretService.keyname);
+            .then(function (key) {
+            _this.set(key)
+                .then(function () {
+                _this.save();
+            });
         })
             .then(function () {
             if (_this.settingsService.remoteSettings['walletUrl']) {
@@ -3315,11 +3323,6 @@ var Settings = /** @class */ (function () {
     };
     Settings.prototype.selectIdentity = function (key) {
         var _this = this;
-        var toast = this.toastCtrl.create({
-            message: 'Now click the "go" button',
-            duration: 2000
-        });
-        toast.present();
         this.set(key)
             .then(function () {
             _this.save();
