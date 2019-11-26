@@ -174,7 +174,7 @@ var SettingsService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(40);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(181);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(86);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__postmodal__ = __webpack_require__(302);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__app_opengraphparser_service__ = __webpack_require__(109);
@@ -1378,7 +1378,7 @@ var HomePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(33);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(55);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(42);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(34);
@@ -1411,33 +1411,31 @@ var PeerService = /** @class */ (function () {
         this.seeds = null;
         this.loading = false;
         this.seeds = [
-            //{"host": "0.0.0.0","port": 8001 },
+            { "host": "0.0.0.0", "port": 8000 },
             { "host": "34.237.46.10", "port": 80 },
+            { "host": "51.15.86.249", "port": 8000 },
+            { "host": "178.32.96.27", "port": 8000 },
+            { "host": "188.165.250.78", "port": 8000 },
+            { "host": "116.203.24.126", "port": 8000 }
         ];
         this.mode = true;
-        this.failed_peers = [];
+        this.failedSeedPeers = new Set();
+        this.failedConfigPeers = new Set();
     }
     PeerService.prototype.go = function () {
+        return new Promise(this.peerRoutine.bind(this));
+    };
+    PeerService.prototype.peerRoutine = function (resolve, reject) {
         var _this = this;
+        this.peerLocked = false;
         if (this.loading)
             return;
         this.loading = true;
-        return this.storage.get('static-node')
+        return this.storage.get('node')
             .then(function (node) {
-            if (node) {
-                _this.mode = true;
-                return new Promise(function (resolve, reject) {
-                    return resolve(node);
-                });
-            }
-            else {
-                return _this.storage.get('node');
-            }
-        })
-            .then(function (node) {
-            return new Promise(function (resolve, reject) {
+            return new Promise(function (resolve2, reject2) {
                 var seedPeer = '';
-                if (node) {
+                if (node && !_this.failedSeedPeers.has(node)) {
                     _this.settingsService.remoteSettingsUrl = node;
                 }
                 else {
@@ -1447,8 +1445,14 @@ var PeerService = /** @class */ (function () {
                     if (!_this.seeds[number])
                         return reject(false);
                     seedPeer = 'http://' + _this.seeds[number]['host'] + ':' + _this.seeds[number]['port'];
+                    while (_this.failedSeedPeers.has(seedPeer)) {
+                        number = Math.floor(Math.random() * (+max - +min)) + +min;
+                        if (!_this.seeds[number])
+                            return reject(false);
+                        seedPeer = 'http://' + _this.seeds[number]['host'] + ':' + _this.seeds[number]['port'];
+                    }
                 }
-                return resolve(seedPeer);
+                return resolve2(seedPeer);
             });
         })
             .then(function (seedPeer) {
@@ -1463,23 +1467,40 @@ var PeerService = /** @class */ (function () {
             if (step === 'config') {
                 return _this.getConfig();
             }
-            return new Promise(function (resolve, reject) {
-                return resolve();
+            return new Promise(function (resolve2, reject2) {
+                return resolve2();
             });
         })
             .then(function () {
-            return _this.walletService.get();
+            return new Promise(function (resolve2, reject2) {
+                return _this.walletService.get()
+                    .then(function () {
+                    return resolve2();
+                })
+                    .catch(function (err) {
+                    _this.failedConfigPeers.add(_this.settingsService.remoteSettingsUrl);
+                    return reject2('config');
+                });
+            });
         })
             .then(function () {
             return _this.setupRelationship();
+        })
+            .then(function () {
+            _this.peerLocked = true;
+            return _this.storage.set('node', _this.settingsService.remoteSettingsUrl);
+        })
+            .then(function () {
+            return resolve(true);
         })
             .catch(function (e) {
             _this.settingsService.remoteSettings = {};
             _this.settingsService.remoteSettingsUrl = null;
             _this.loading = false;
-            console.log('faled getting peers' + e);
-            _this.storage.remove(_this.mode ? 'static-node' : 'node');
-            setTimeout(function () { return _this.go(); }, 1000);
+            _this.storage.remove('node');
+            setTimeout(function () {
+                _this.peerRoutine(resolve, reject);
+            }, 100);
         });
     };
     PeerService.prototype.getPeers = function (seedPeer) {
@@ -1493,11 +1514,18 @@ var PeerService = /** @class */ (function () {
                 if (!peers[number])
                     return reject(false);
                 _this.settingsService.remoteSettingsUrl = 'http://' + peers[number]['host'] + ':' + peers[number]['port'];
+                while (_this.failedConfigPeers.has(_this.settingsService.remoteSettingsUrl)) {
+                    number = Math.floor(Math.random() * (+max - +min)) + +min;
+                    if (!peers[number])
+                        return reject(false);
+                    _this.settingsService.remoteSettingsUrl = 'http://' + peers[number]['host'] + ':' + peers[number]['port'];
+                }
                 _this.storage.set('node', _this.settingsService.remoteSettingsUrl);
                 resolve('config');
             }, function (err) {
+                _this.failedSeedPeers.add(seedPeer);
                 _this.loading = false;
-                return reject(err);
+                return reject('seed');
             });
         });
     };
@@ -1509,9 +1537,9 @@ var PeerService = /** @class */ (function () {
                 _this.settingsService.remoteSettings = res.json();
                 resolve();
             }, function (err) {
-                _this.failed_peers.push(_this.settingsService.remoteSettingsUrl);
+                _this.failedConfigPeers.add(_this.settingsService.remoteSettingsUrl);
                 _this.loading = false;
-                return reject(err);
+                return reject('config');
             });
         });
     };
@@ -1595,7 +1623,7 @@ var PeerService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -1863,7 +1891,7 @@ var ChatPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(184);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(18);
@@ -2685,6 +2713,7 @@ webpackEmptyAsyncContext.id = 217;
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(42);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -2694,6 +2723,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -2735,8 +2765,9 @@ var WalletService = /** @class */ (function () {
                 var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
                 headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
                 var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
-                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed=' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options).
-                    subscribe(function (data) {
+                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed=' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options)
+                    .pipe(Object(__WEBPACK_IMPORTED_MODULE_4_rxjs_operators__["timeout"])(30000))
+                    .subscribe(function (data) {
                     if (data['_body']) {
                         _this.walletError = false;
                         _this.wallet = JSON.parse(data['_body']);
@@ -3021,7 +3052,7 @@ var CompleteTestService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(181);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(185);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(40);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__ionic_native_social_sharing__ = __webpack_require__(85);
@@ -3307,6 +3338,9 @@ var Settings = /** @class */ (function () {
             });
         })
             .then(function () {
+            _this.selectIdentity(_this.bulletinSecretService.keyname.substr(_this.prefix.length));
+        })
+            .then(function () {
             if (_this.settingsService.remoteSettings['walletUrl']) {
                 return _this.graphService.getInfo();
             }
@@ -3323,9 +3357,22 @@ var Settings = /** @class */ (function () {
     };
     Settings.prototype.selectIdentity = function (key) {
         var _this = this;
-        this.set(key)
+        this.loadingModal = this.loadingCtrl.create({
+            content: 'Finding node...'
+        });
+        this.loadingModal.present();
+        return this.peerService.go()
             .then(function () {
-            _this.save();
+            return _this.set(key);
+        })
+            .then(function () {
+            _this.loadingModal.dismiss();
+        })
+            .then(function () {
+            _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_11__home_home__["a" /* HomePage */]);
+        })
+            .catch(function (err) {
+            _this.loadingModal.dismiss();
         });
     };
     Settings.prototype.set = function (key) {
@@ -3357,29 +3404,12 @@ var Settings = /** @class */ (function () {
         });
     };
     Settings.prototype.save = function () {
-        var _this = this;
-        this.loadingModal = this.loadingCtrl.create({
-            content: 'Please wait...'
-        });
-        this.loadingModal.present();
         this.graphService.graph = {
             comments: "",
             reacts: "",
             commentReacts: ""
         };
-        this.peerService.go()
-            .then(function () {
-            return _this.set(_this.bulletinSecretService.keyname.substr(_this.prefix.length));
-        })
-            .then(function () {
-            _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_11__home_home__["a" /* HomePage */]);
-        })
-            .then(function () {
-            _this.loadingModal.dismiss();
-        })
-            .catch(function (err) {
-            _this.loadingModal.dismiss();
-        });
+        return this.set(this.bulletinSecretService.keyname.substr(this.prefix.length));
     };
     Settings.prototype.showChat = function () {
         var item = { pageTitle: { title: "Chat" } };
@@ -3429,7 +3459,7 @@ var Settings = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(46);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(47);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3655,7 +3685,7 @@ var StreamPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(308);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(85);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -4314,6 +4344,7 @@ var TransactionService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__ionic_native_badge__ = __webpack_require__(301);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6_ionic_angular__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_rxjs_operators__ = __webpack_require__(42);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4323,6 +4354,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -4387,6 +4419,7 @@ var GraphService = /** @class */ (function () {
                 promise = _this.ahttp.get(_this.settingsService.remoteSettings['graphUrl'] + '/' + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret, options);
             }
             promise
+                .pipe(Object(__WEBPACK_IMPORTED_MODULE_7_rxjs_operators__["timeout"])(30000))
                 .subscribe(function (data) {
                 try {
                     var info = JSON.parse(data['_body']);
@@ -5259,15 +5292,15 @@ var GraphService = /** @class */ (function () {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return AppModule; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(46);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(47);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(42);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(43);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(479);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(180);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(302);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(305);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(182);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(86);
@@ -5434,7 +5467,7 @@ var AppModule = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(180);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_settings_settings__ = __webpack_require__(305);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_siafiles_siafiles__ = __webpack_require__(184);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_stream_stream__ = __webpack_require__(306);
@@ -5559,7 +5592,7 @@ var MyApp = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 51:
+/***/ 52:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6075,7 +6108,7 @@ var ListPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(182);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__group_group__ = __webpack_require__(183);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(18);
