@@ -8,8 +8,9 @@ button:hover {
 
 .logo {
   display: block;
-  margin: auto auto;
-  width: 10%;
+  margin: 50px auto;
+  width: 25%;
+  opacity: .15;
 }
 
 .scroll-content::-webkit-scrollbar-track {
