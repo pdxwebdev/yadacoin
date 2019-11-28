@@ -268,12 +268,17 @@ class BlockFactory(object):
             adjusted = new_target
             # To be used later on, once the rest is calc'd
 
-        block_from_retarget_period_ago = blockchain.blocks[-retarget_period]
+        if blockchain.partial:
+            start_index = len(blockchain.blocks) - 1
+        else:
+            start_index = block.index
+
+        block_from_retarget_period_ago = blockchain.blocks[start_index-retarget_period]
         retarget_period_ago_time = block_from_retarget_period_ago.time
         elapsed_time_from_retarget_period_ago = int(block.time) - int(retarget_period_ago_time)
         average_block_time = elapsed_time_from_retarget_period_ago / retarget_period
 
-        block_from_retarget_period2_ago = blockchain.blocks[-retarget_period2]
+        block_from_retarget_period2_ago = blockchain.blocks[start_index-retarget_period2]
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
         elapsed_time_from_retarget_period2_ago = int(block.time) - int(retarget_period2_ago_time)
         average_block_time2 = elapsed_time_from_retarget_period2_ago / retarget_period2
