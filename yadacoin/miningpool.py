@@ -361,7 +361,7 @@ class MiningPool(object):
             })
             if res:
                 chain = [x for x in self.mongo.db.blocks.find({
-                    'index': {'$gte': res['index']}
+                    'index': {'$gte': res['index']-30}
                 })]
                 break
             else:
