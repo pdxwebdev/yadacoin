@@ -278,7 +278,10 @@ class BlockFactory(object):
         elapsed_time_from_retarget_period2_ago = int(block.time) - int(retarget_period2_ago_time)
         average_block_time2 = elapsed_time_from_retarget_period2_ago / retarget_period2
 
-        start_index = last_block.index  # .index
+        if blockchain.partial:
+            start_index = len(blockchain.blocks) - 1
+        else:
+            start_index = last_block.index
         # React faster to a drop in block time than to a raise. short block times are more a threat than large ones.
         if average_block_time2 < target_time:
             hash_sum2 = 0
