@@ -76,6 +76,10 @@ class CHAIN(object):
                     return 600
                 elif int(block_height) <= cls.POW_FORK_V3:
                     return 600
+                elif int(block_height) <= cls.POW_FORK_V3:
+                    return 600
+                elif int(block_height) >= cls.FORK_10_MIN_BLOCK:
+                    return 3600
                 else:
                     return 600 * 2
             raise ValueError("Unknown network")
