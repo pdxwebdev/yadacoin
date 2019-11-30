@@ -21,14 +21,18 @@ class NSBroadcaster(object):
             
             if self.server:
                 try:
+                    if not sent_to:
+                        sent_to = []
+                    if '*' in sent_to:
+                        return
                     if self.config.debug:
                         self.app_log.debug('Transmitting ns to inbound peers')
                     await self.server.emit('newns', data=transaction.to_dict(), namespace='/chat')
-                    await self.config.mongo.async_db.miner_transactions.update_one({
+                    await self.config.mongo.async_db.name_server.update_one({
                         'id': nstxn
                     }, {
                         '$addToSet': {
-                            'sent_to': peer.to_string()
+                            'sent_to': '*'
                         }
                     })
                 except Exception as e:
@@ -47,7 +51,7 @@ class NSBroadcaster(object):
         try:
             # peer = self.config.peers.my_peer
             await self.send_it(transaction.to_dict(), peer)
-            await self.config.mongo.async_db.miner_transactions.update_one({
+            await self.config.mongo.async_db.name_server.update_one({
                 'id': transaction.transaction_signature
             }, {
                 '$addToSet': {

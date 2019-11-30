@@ -61,7 +61,7 @@ class ExternalInputSpentException(Exception):
 
 class BlockFactory(object):
     pyrx = None
-    cores = 1
+    cores = 10
     @classmethod
     async def generate(cls, config, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
         try:
