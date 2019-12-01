@@ -38,9 +38,10 @@ class TxnBroadcaster(object):
                 if '*' in sent_to:
                     return
                 if self.config.debug:
+                    self.app_log.debug('sent_to {}'.format(sent_to))
                     self.app_log.debug('Transmitting transaction to inbound peers')
                 await self.server.emit('newtransaction', data=transaction.to_dict(), namespace='/chat')
-                await self.config.mongo.async_db.miner_transactions.update_one({
+                await self.config.mongo.async_db.miner_transactions.update_many({
                     'id': transaction.transaction_signature
                 }, {
                     '$addToSet': {

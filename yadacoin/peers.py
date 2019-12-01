@@ -454,7 +454,6 @@ class Peer(object):
             )
         except:  # TODO: catch specific exception
             print('ERROR: failed to get peers, exiting...')
-            exit()
 
     def to_dict(self):
         return {

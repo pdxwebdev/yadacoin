@@ -34,7 +34,7 @@ class NSBroadcaster(object):
                     to_send.update(transaction.to_dict())
                     await self.server.emit('newns', data=to_send, namespace='/chat')
                     await self.config.mongo.async_db.name_server.update_many({
-                        'id': nstxn.transaction_signature
+                        'id': transaction.transaction_signature
                     }, {
                         '$addToSet': {
                             'sent_to': '*'
