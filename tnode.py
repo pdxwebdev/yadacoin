@@ -43,6 +43,7 @@ from yadacoin.wallethandlers import WALLET_HANDLERS
 from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
 from yadacoin.transactionbroadcaster import TxnBroadcaster
+from yadacoin.nsbroadcaster import NSBroadcaster
 
 __version__ = '0.0.13'
 
@@ -149,7 +150,7 @@ async def background_status():
 
 
 async def background_transaction_broadcast():
-    """This background co-routine is responsible for status collection and display"""
+    """This background co-routine is responsible for disseminating transactions to the network"""
     tb = TxnBroadcaster(config)
     tb2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
     while True:
@@ -162,6 +163,22 @@ async def background_transaction_broadcast():
                 await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
         except Exception as e:
             app_log.error("{} in background_transaction_broadcast".format(e))
+
+
+async def background_ns_broadcast():
+    """This background co-routine is responsible for disseminating name server records to the network"""
+    nb = NSBroadcaster(config)
+    nb2 = NSBroadcaster(config, config.SIO.namespace_handlers['/chat'])
+    while True:
+        try:
+            await async_sleep(30)
+            # status = {"peers": config.peers.get_status()}
+
+            async for ns in config.mongo.async_db.name_server.find({}):
+                await nb.ns_broadcast_job(ns, ns.get('sent_to'))
+                await nb2.ns_broadcast_job(ns, ns.get('sent_to'))
+        except Exception as e:
+            app_log.error("{} in background_ns_broadcast".format(e))
 
 
 async def background_pool():
@@ -377,6 +394,7 @@ async def main():
         tornado.ioloop.IOLoop.instance().add_callback(background_status)
         tornado.ioloop.IOLoop.instance().add_callback(background_pool)
         tornado.ioloop.IOLoop.instance().add_callback(background_transaction_broadcast)
+        tornado.ioloop.IOLoop.instance().add_callback(background_ns_broadcast)
         tornado.ioloop.IOLoop.instance().add_callback(background_cache_validator)
         if config.pool_payout:
             app_log.info("PoolPayout activated")
