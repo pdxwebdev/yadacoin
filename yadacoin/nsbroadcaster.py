@@ -33,8 +33,8 @@ class NSBroadcaster(object):
                     }
                     to_send.update(transaction.to_dict())
                     await self.server.emit('newns', data=to_send, namespace='/chat')
-                    await self.config.mongo.async_db.name_server.update_one({
-                        'id': nstxn
+                    await self.config.mongo.async_db.name_server.update_many({
+                        'id': nstxn.transaction_signature
                     }, {
                         '$addToSet': {
                             'sent_to': '*'
@@ -56,7 +56,7 @@ class NSBroadcaster(object):
         try:
             # peer = self.config.peers.my_peer
             await self.send_it(transaction.to_dict(), peer)
-            await self.config.mongo.async_db.name_server.update_one({
+            await self.config.mongo.async_db.name_server.update_many({
                 'id': transaction.transaction_signature
             }, {
                 '$addToSet': {
