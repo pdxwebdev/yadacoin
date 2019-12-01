@@ -10,8 +10,8 @@ class NSBroadcaster(object):
         self.server = server
 
     async def ns_broadcast_job(self, nstxn, sent_to=None):
-        if isinstance(nstxn['txn'], Transaction):
-            transaction = nstxn['txn']
+        if isinstance(nstxn, Transaction):
+            transaction = nstxn
         else:
             transaction = Transaction.from_dict(self.config.BU.get_latest_block()['index'], nstxn['txn'])
 

@@ -227,7 +227,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                         'txn': created_relationship.transaction.to_dict()
                     })
                     tb = NSBroadcaster(self.config)
-                    await tb.ns_broadcast_job({'txn': created_relationship.transaction})
+                    await tb.ns_broadcast_job(created_relationship.transaction)
                 
                 pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
                     'public_key': x.public_key, 

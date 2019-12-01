@@ -175,8 +175,8 @@ async def background_ns_broadcast():
             # status = {"peers": config.peers.get_status()}
 
             async for ns in config.mongo.async_db.name_server.find({}):
-                await nb.ns_broadcast_job(ns, ns.get('sent_to'))
-                await nb2.ns_broadcast_job(ns, ns.get('sent_to'))
+                await nb.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
+                await nb2.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
         except Exception as e:
             app_log.error("{} in background_ns_broadcast".format(e))
 
