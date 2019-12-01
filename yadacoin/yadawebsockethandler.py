@@ -83,33 +83,25 @@ class ChatNamespace(AsyncNamespace):
             self.app_log.warning("on_newtransaction: {}".format(e))
     
     async def on_newns(self, sid, data):
+        # TODO: generic test, is the peer known and has rights for this command? Decorator?
+        if self.config.debug:
+            self.app_log.info('WS newns: {} {}'.format(sid, json.dumps(data)))
         try:
-            nstxn = Transaction.from_dict(self.config.BU().get_latest_block()['index'], data['txn'])
-        except:
-            return self.render_as_json({'status': 'error', 'message': 'invalid transaction'})
-        try:
-            peer = Peer(data['peer']['host'], data['peer']['port'])
-        except:
-            return self.render_as_json({'status': 'error', 'message': 'invalid peer'})
-
-        existing = await self.config.mongo.async_db.name_server.find_one({
-            'rid': nstxn.rid,
-            'requester_rid': nstxn.requester_rid,
-            'requested_rid': nstxn.requested_rid,
-            'peer_str': peer.to_string(),
-        })
-        if not existing:
-            await self.config.mongo.async_db.name_server.insert_one({
-                'rid': nstxn.rid,
-                'requester_rid': nstxn.requester_rid,
-                'requested_rid': nstxn.requested_rid,
-                'peer_str': peer.to_string(), 
-                'peer': peer.to_dict(),
-                'txn': nstxn.to_dict()
-            })
-        tb = NSBroadcaster(self.config, self)
-        await tb.ns_broadcast_job(nstxn)
-        return self.render_as_json({'status': 'success'})
+            incoming_txn = Transaction.from_dict(BU().get_latest_block()['index'], data)
+            if incoming_txn.in_the_future():
+                # Most important
+                raise ValueError('In the future {}'.format(incoming_txn.transaction_signature))
+            # print(incoming_txn.transaction_signature)
+            dup_check_count = await get_config().mongo.async_db.name_server.count_documents({'id': incoming_txn.transaction_signature})
+            if dup_check_count:
+                self.app_log.debug('found duplicate tx {}'.format(incoming_txn.transaction_signature))
+            else:
+                await get_config().mongo.async_db.name_server.insert_one(incoming_txn.to_dict())
+            
+            nb = NSBroadcaster(self.config, self)
+            await nb.ns_broadcast_job(incoming_txn)
+        except Exception as e:
+            self.app_log.warning("on_newns: {}".format(e))
 
     async def on_hello(self, sid, data):
         self.app_log.info('WS hello: {} {}'.format(sid, json.dumps(data)))
