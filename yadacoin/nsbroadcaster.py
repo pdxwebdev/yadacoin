@@ -13,7 +13,7 @@ class NSBroadcaster(object):
         if isinstance(nstxn, Transaction):
             transaction = nstxn
         else:
-            transaction = Transaction.from_dict(self.config.BU.get_latest_block()['index'], nstxn['txn'])
+            transaction = Transaction.from_dict(self.config.BU.get_latest_block()['index'], nstxn)
 
         if self.config.network != 'regnet':
             for peer in self.config.peers.peers:
@@ -27,7 +27,12 @@ class NSBroadcaster(object):
                         return
                     if self.config.debug:
                         self.app_log.debug('Transmitting ns to inbound peers')
-                    await self.server.emit('newns', data=transaction.to_dict(), namespace='/chat')
+                    to_send = {
+                        'host': self.config.peer_host,
+                        'port': self.config.peer_port
+                    }
+                    to_send.update(transaction.to_dict())
+                    await self.server.emit('newns', data=to_send, namespace='/chat')
                     await self.config.mongo.async_db.name_server.update_one({
                         'id': nstxn
                     }, {
@@ -65,7 +70,12 @@ class NSBroadcaster(object):
         try:
             if self.config.debug:
                 self.app_log.debug('Transmitting ns to: {}'.format(peer.to_string()))
-            await peer.client.client.emit('newns', data=txn_dict, namespace='/chat')
+            to_send = {
+                'host': self.config.peer_host,
+                'port': self.config.peer_port
+            }
+            to_send.update(txn_dict)
+            await peer.client.client.emit('newns', data=to_send, namespace='/chat')
         except Exception as e:
             if self.config.debug:
                 self.app_log.debug(e)
