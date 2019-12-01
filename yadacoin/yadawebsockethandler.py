@@ -97,13 +97,14 @@ class ChatNamespace(AsyncNamespace):
             if dup_check_count:
                 self.app_log.debug('found duplicate tx {}'.format(incoming_txn.transaction_signature))
             else:
-                await get_config().mongo.async_db.name_server.insert_one(
-                'rid': incoming_txn.rid,
-                'requester_rid': incoming_txn.requester_rid,
-                'requested_rid': incoming_txn.requested_rid,
-                'peer_str': peer.to_string(), 
-                'peer': peer.to_dict(),
-                'txn': incoming_txn.to_dict())
+                await get_config().mongo.async_db.name_server.insert_one({
+                    'rid': incoming_txn.rid,
+                    'requester_rid': incoming_txn.requester_rid,
+                    'requested_rid': incoming_txn.requested_rid,
+                    'peer_str': peer.to_string(), 
+                    'peer': peer.to_dict(),
+                    'txn': incoming_txn.to_dict()
+                })
             
             nb = NSBroadcaster(self.config, self)
             await nb.ns_broadcast_job(incoming_txn)
