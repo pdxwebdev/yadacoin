@@ -152,7 +152,7 @@ class Graph(object):
                 returnheight=True,
                 requested_rid=True,
             )
-            self.friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
+            self.friend_requests += [x for x in self.rid_transactions if x['rid'] and x['public_key'] != self.config.public_key]
         else:
             self.friend_requests += [x for x in GU().get_friend_requests(self.rid)] # include fastgraph
         
@@ -198,12 +198,13 @@ class Graph(object):
                 raw=True,
                 returnheight=True
             )
-            self.sent_friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
+            self.sent_friend_requests += [x for x in self.rid_transactions if x['rid'] and x['public_key'] == self.config.public_key]
 
         else:
             self.sent_friend_requests += [x for x in GU().get_sent_friend_requests(self.rid)]
         
         res = await self.config.mongo.async_db.miner_transactions.find({
+            'dh_public_key': {'$ne': ''},
             'relationship': {'$ne': ''},
             'requester_rid': self.rid
         }, {
@@ -213,7 +214,7 @@ class Graph(object):
             txn['pending'] = True
             self.sent_friend_requests.append(txn)
         for i, sent_friend_request in enumerate(self.sent_friend_requests):
-            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': sent_friend_request['requester_rid']})
+            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': sent_friend_request.get('requester_rid') or sent_friend_request.get('rid')})
             if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
                 self.sent_friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
 
