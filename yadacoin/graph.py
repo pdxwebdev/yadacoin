@@ -155,6 +155,7 @@ class Graph(object):
             self.friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
         else:
             self.friend_requests += [x for x in GU().get_friend_requests(self.rid)] # include fastgraph
+        
         res = await self.config.mongo.async_db.miner_transactions.find({
             'dh_public_key': {'$ne': ''},
             'relationship': {'$ne': ''},
@@ -167,8 +168,8 @@ class Graph(object):
             self.friend_requests.append(txn)
         for i, friend_request in enumerate(self.friend_requests):
             ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': friend_request.get('requester_rid') or friend_request.get('rid')})
-            if not ns_record: continue
-            self.friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
+            if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
+                self.friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
 
     async def get_sent_friend_requests(self):
         self.sent_friend_requests = []
@@ -200,18 +201,20 @@ class Graph(object):
             self.sent_friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] == self.config.public_key]
 
         else:
-            res = await self.config.mongo.async_db.miner_transactions.find({
-                'relationship': {'$ne': ''},
-                'requester_rid': self.rid
-            }, {
-                '_id': 0
-            }).to_list(length=1000)
-            for txn in res:
-                txn['pending'] = True
-                self.sent_friend_requests.append(txn)
             self.sent_friend_requests += [x for x in GU().get_sent_friend_requests(self.rid)]
-            for i, sent_friend_request in enumerate(self.sent_friend_requests):
-                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': sent_friend_request['requester_rid']})
+        
+        res = await self.config.mongo.async_db.miner_transactions.find({
+            'relationship': {'$ne': ''},
+            'requester_rid': self.rid
+        }, {
+            '_id': 0
+        }).to_list(length=1000)
+        for txn in res:
+            txn['pending'] = True
+            self.sent_friend_requests.append(txn)
+        for i, sent_friend_request in enumerate(self.sent_friend_requests):
+            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': sent_friend_request['requester_rid']})
+            if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
                 self.sent_friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
 
 
@@ -244,45 +247,26 @@ class Graph(object):
                     if x['public_key'] != self.config.public_key:
                         messages.append(x)
                 self.messages = messages
-            res = await self.config.mongo.async_db.miner_transactions.find({
-                'relationship': {'$ne': ''},
-                '$or': [
-                    {'rid': {'$in': self.rids}},
-                    {'requester_rid': {'$in': self.rids}},
-                    {'requested_rid': {'$in': self.rids}}
-                ]
-            }, {
-                '_id': 0
-            }).to_list(length=1000)
-            for txn in res:
-                txn['pending'] = True
-                self.messages.append(txn)
-            for i, message in enumerate(self.messages):
-                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': message.get('rid')})
-                if ns_record:
-                    self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
-            
-            return
         else:
             rids = self.get_lookup_rids() + self.rids
             self.messages = [x for x in GU().get_messages(rids)]
-            res = await self.config.mongo.async_db.miner_transactions.find({
-                'relationship': {'$ne': ''},
-                '$or': [
-                    {'rid': {'$in': self.rids}},
-                    {'requester_rid': {'$in': self.rids}},
-                    {'requested_rid': {'$in': self.rids}}
-                ]
-            }, {
-                '_id': 0
-            }).to_list(length=1000)
-            for txn in res:
-                txn['pending'] = True
-                self.messages.append(txn)
-            for i, message in enumerate(self.messages):
-                ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': message.get('requested_rid', message.get('rid', None))})
-                if ns_record:
-                    self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
+        res = await self.config.mongo.async_db.miner_transactions.find({
+            'relationship': {'$ne': ''},
+            '$or': [
+                {'rid': {'$in': self.rids}},
+                {'requester_rid': {'$in': self.rids}},
+                {'requested_rid': {'$in': self.rids}}
+            ]
+        }, {
+            '_id': 0
+        }).to_list(length=1000)
+        for txn in res:
+            txn['pending'] = True
+            self.messages.append(txn)
+        for i, message in enumerate(self.messages):
+            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': message.get('requested_rid', message.get('rid', None))})
+            if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
+                self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
 
 
     async def get_new_messages(self):
