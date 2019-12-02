@@ -145,7 +145,7 @@ class Graph(object):
             try:
                 ns_record = json.loads(
                     requests.get(
-                        'http://{}/ns?requester_rid={}&username=1'.format(
+                        'http://{}/ns?requester_rid={}&username=1&complete=1'.format(
                             peer.to_string(),
                             rid
                         )
