@@ -26,6 +26,9 @@ class Graph(object):
         self.bulletin_secret = str(bulletin_secret)
         self.ids = ids
         self.rids = rids
+        bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
+        rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
+        self.rid = rid
 
         if key_or_wif in [config.private_key, config.wif] or jwt:
             self.cipher = self.config.cipher
@@ -37,9 +40,6 @@ class Graph(object):
             self.registered = False
             self.pending_registration = False
             self.invited = False
-            bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
-            rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
-            self.rid = rid
 
             res = self.mongo.site_db.usernames.find({"rid": self.rid})
             if res.count():
