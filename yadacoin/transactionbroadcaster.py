@@ -18,11 +18,12 @@ class TxnBroadcaster(object):
             return
 
         if sum([float(x.value) for x in transaction.outputs]) + float(transaction.fee) == 0:
+            rids = [transaction.rid, transaction.requested_rid, transaction.requester_rid]
             ns_records = await self.config.mongo.async_db.name_server.find({
                 '$or': [
-                    {'rid': transaction.rid},
-                    {'requested_rid': transaction.requested_rid},
-                    {'requester_rid': transaction.requester_rid}
+                    {'rid': {'$in': rids}},
+                    {'requested_rid': {'$in': rids}},
+                    {'requester_rid': {'$in': rids}}
                 ]
             }).to_list(100)
             for ns in ns_records:
