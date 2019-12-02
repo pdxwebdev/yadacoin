@@ -3967,7 +3967,7 @@ var TransactionService = /** @class */ (function () {
             else {
                 transaction_total = _this.transaction.fee;
             }
-            if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < (_this.transaction.outputs[0].value + _this.transaction.fee)) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
+            if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < transaction_total) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
                 reject("not enough money");
                 return;
             }
