@@ -154,21 +154,21 @@ class Graph(object):
             )
             self.friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
         else:
-            res = await self.config.mongo.async_db.miner_transactions.find({
-                'relationship': {'$ne': ''},
-                'requested_rid': self.rid
-            }, {
-                '_id': 0
-            }).to_list(length=1000)
-            for txn in res:
-                txn['pending'] = True
-                self.friend_requests.append(txn)
             self.friend_requests += [x for x in GU().get_friend_requests(self.rid)] # include fastgraph
             for i, friend_request in enumerate(self.friend_requests):
                 ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': friend_request.get('requester_rid') or friend_request.get('rid')})
                 if not ns_record: continue
                 self.friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
-
+        res = await self.config.mongo.async_db.miner_transactions.find({
+            'dh_public_key': {'$ne': ''},
+            'relationship': {'$ne': ''},
+            'requested_rid': self.rid
+        }, {
+            '_id': 0
+        }).to_list(length=1000)
+        for txn in res:
+            txn['pending'] = True
+            self.friend_requests.append(txn)
 
     async def get_sent_friend_requests(self):
         self.sent_friend_requests = []
