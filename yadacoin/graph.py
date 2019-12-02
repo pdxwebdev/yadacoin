@@ -29,6 +29,10 @@ class Graph(object):
         bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
         self.rid = rid
+        self.registered = False
+        self.pending_registration = False
+        self.invited = False
+        self.username = ''
 
         if key_or_wif in [config.private_key, config.wif] or jwt:
             self.cipher = self.config.cipher
@@ -37,15 +41,6 @@ class Graph(object):
             self.all_relationships = [x for x in GU().get_all_usernames()]
             self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
             self.wallet_mode = False
-            self.registered = False
-            self.pending_registration = False
-            self.invited = False
-
-            res = self.mongo.site_db.usernames.find({"rid": self.rid})
-            if res.count():
-                self.username = res[0]['username']
-            else:
-                self.username = ''
             start_height = 0
             # this will get any transactions between the client and server
             nodes = GU().get_transactions_by_rid(bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
