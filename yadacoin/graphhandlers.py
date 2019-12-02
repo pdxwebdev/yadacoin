@@ -242,7 +242,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                 if pending_exists or blockchain_exists:
                     continue
                 
-            ns_exists = self.config.mongo.async_db.name_server.find_one({
+            ns_exists = await self.config.mongo.async_db.name_server.find_one({
                     'rid': x.rid,
                     'requester_rid': x.requester_rid,
                     'requested_rid': x.requested_rid
