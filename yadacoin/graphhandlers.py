@@ -229,23 +229,6 @@ class GraphTransactionHandler(BaseGraphHandler):
                     tb = NSBroadcaster(self.config)
                     await tb.ns_broadcast_job(created_relationship.transaction)
                 
-                ns_exists = self.config.mongo.async_db.name_server.find_one({
-                        'rid': x.rid,
-                        'requester_rid': x.requester_rid,
-                        'requested_rid': x.requested_rid
-                })
-                if not ns_exists:
-                    await self.config.mongo.async_db.name_server.insert_one({
-                        'rid': x.rid,
-                        'requester_rid': x.requester_rid,
-                        'requested_rid': x.requested_rid,
-                        'peer_str': 'me', 
-                        'peer': {'host': 'me', 'port': 0},
-                        'txn': x.to_dict()
-                    })
-                    tb = NSBroadcaster(self.config)
-                    await tb.ns_broadcast_job(x)
-                
                 pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
                     'public_key': x.public_key, 
                     'rid': self.rid, 
@@ -258,6 +241,23 @@ class GraphTransactionHandler(BaseGraphHandler):
                 })
                 if pending_exists or blockchain_exists:
                     continue
+                
+            ns_exists = self.config.mongo.async_db.name_server.find_one({
+                    'rid': x.rid,
+                    'requester_rid': x.requester_rid,
+                    'requested_rid': x.requested_rid
+            })
+            if not ns_exists:
+                await self.config.mongo.async_db.name_server.insert_one({
+                    'rid': x.rid,
+                    'requester_rid': x.requester_rid,
+                    'requested_rid': x.requested_rid,
+                    'peer_str': 'me', 
+                    'peer': {'host': 'me', 'port': 0},
+                    'txn': x.to_dict()
+                })
+                tb = NSBroadcaster(self.config)
+                await tb.ns_broadcast_job(x)
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
             txn_b = TxnBroadcaster(self.config)
             await txn_b.txn_broadcast_job(x)
