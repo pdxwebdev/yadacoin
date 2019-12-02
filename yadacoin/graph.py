@@ -149,7 +149,8 @@ class Graph(object):
                 bulletin_secret=self.config.bulletin_secret,
                 rid=True,
                 raw=True,
-                returnheight=True
+                returnheight=True,
+                requested_rid=True,
             )
             self.friend_requests += [x for x in self.rid_transactions if x['relationship'] and x['rid'] and x['public_key'] != self.config.public_key]
         else:
