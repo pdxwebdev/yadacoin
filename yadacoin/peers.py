@@ -83,7 +83,7 @@ class Peers(object):
                 if peer.host not in self.connected_ips
                 and peer.host not in self.probable_old_nodes
                 and peer.host not in self.config.outgoing_blacklist
-                and (peer.host != self.config.peer_host and peer.port != self.config.peer_port)]
+                and not (peer.host == self.config.peer_host and peer.port == self.config.peer_port)]
 
     def allow_ip(self, IP):
         """Returns True if that ip can connect - inbound or outbound"""
@@ -143,7 +143,7 @@ class Peers(object):
     async def check_outgoing(self):
         """Called by a background task.
         Counts the current active outgoing connections, and tries to connect to more if needed"""
-        if len(self.peers) < 2:
+        if len(self.peers) < 1:
             await self.refresh()
         if self.free_outbound_slots <= 0:
             return
