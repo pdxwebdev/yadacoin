@@ -142,6 +142,7 @@ class Graph(object):
             rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
             rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
             rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
+            rids.append(self.rid)
             rids = list(set(rids))
             self.rid_transactions = GU().get_transactions_by_rid(
                 rids,
@@ -186,6 +187,7 @@ class Graph(object):
             rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
             rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
             rids.extend([x['requester_rid'] for x in self.all_relationships if 'requester_rid' in x and x['requester_rid']])
+            rids.append(self.rid)
             rids = list(set(rids))
             self.rid_transactions = GU().get_transactions_by_rid(
                 rids,
