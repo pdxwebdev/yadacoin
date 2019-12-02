@@ -384,34 +384,24 @@ class Graph(object):
         self.username = obj['username']
 
     def to_dict(self):
-        if self.wallet_mode:
-            return {
-                'friends': self.friends,
-                'sent_friend_requests': self.sent_friend_requests,
-                'friend_requests': self.friend_requests,
-                'posts': self.posts,
-                'messages': self.messages,
-                'new_messages': self.new_messages
-            }
-        else:
-            return {
-                'friends': self.friends,
-                'sent_friend_requests': self.sent_friend_requests,
-                'friend_requests': self.friend_requests,
-                'posts': self.posts,
-                'logins': self.logins,
-                'messages': self.messages,
-                'rid': self.rid,
-                'bulletin_secret': self.bulletin_secret,
-                'username': self.username,
-                'registered': self.registered,
-                'pending_registration': self.pending_registration,
-                'invited': self.invited,
-                'new_messages': self.new_messages,
-                'reacts': self.reacts,
-                'comments': self.comments,
-                'comment_reacts': self.comment_reacts
-            }
+        return {
+            'friends': self.friends,
+            'sent_friend_requests': self.sent_friend_requests,
+            'friend_requests': self.friend_requests,
+            'posts': self.posts,
+            'logins': self.logins,
+            'messages': self.messages,
+            'rid': self.rid,
+            'bulletin_secret': self.bulletin_secret,
+            'username': self.username,
+            'registered': self.registered,
+            'pending_registration': self.pending_registration,
+            'invited': self.invited,
+            'new_messages': self.new_messages,
+            'reacts': self.reacts,
+            'comments': self.comments,
+            'comment_reacts': self.comment_reacts
+        }
 
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
