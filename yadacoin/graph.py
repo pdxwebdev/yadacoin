@@ -1,5 +1,6 @@
 import json
 import hashlib
+import requests
 
 from yadacoin.blockchainutils import BU
 from yadacoin.transactionutils import TU
@@ -123,6 +124,39 @@ class Graph(object):
             lookup_rids[x['rid']].append(x['requested_rid'])
 
         return lookup_rids
+    
+    async def assign_usernames(self, txns, lam=lambda x: x.get('requester_rid')):
+        if not isinstance(txns, list):
+            txns = [txns]
+            
+        for i, txn in enumerate(txns):
+            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': lam(txn)})
+            if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
+                txns[i]['username'] = ns_record['txn']['relationship']['their_username']
+            else:
+                ns_record = await self.resolve_ns(
+                    rid=lam(txn)
+                )
+                if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
+                    txns[i]['username'] = ns_record['txn']['relationship']['their_username']
+    
+    async def resolve_ns(self, rid, username=True):
+        for peer in self.config.peers.peers:
+            try:
+                ns_record = json.loads(
+                    requests.get(
+                        'http://{}/ns?requester_rid={}&username=1'.format(
+                            peer.to_string(),
+                            rid
+                        )
+                    ).content
+                )
+                if ns_record.get('relationship', {}).get('their_username'):
+                    return ns_record
+
+            except Exception as e:
+                pass
+
 
     async def get_friend_requests(self):
         self.friend_requests = []
@@ -166,10 +200,8 @@ class Graph(object):
         for txn in res:
             txn['pending'] = True
             self.friend_requests.append(txn)
-        for i, friend_request in enumerate(self.friend_requests):
-            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': friend_request.get('requester_rid') or friend_request.get('rid')})
-            if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
-                self.friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
+
+        self.assign_usernames(self.friend_requests, lam=lambda x: x.get('requester_rid') or x.get('rid'))
 
     async def get_sent_friend_requests(self):
         self.sent_friend_requests = []
@@ -213,11 +245,8 @@ class Graph(object):
         for txn in res:
             txn['pending'] = True
             self.sent_friend_requests.append(txn)
-        for i, sent_friend_request in enumerate(self.sent_friend_requests):
-            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': sent_friend_request.get('requester_rid') or sent_friend_request.get('rid')})
-            if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
-                self.sent_friend_requests[i]['username'] = ns_record['txn']['relationship']['their_username']
-
+        
+        self.assign_usernames(self.sent_friend_requests, lam=lambda x: x.get('requested_rid') or x.get('rid'))
 
     async def get_messages(self, not_mine=False):
         if self.wallet_mode:
@@ -264,10 +293,8 @@ class Graph(object):
         for txn in res:
             txn['pending'] = True
             self.messages.append(txn)
-        for i, message in enumerate(self.messages):
-            ns_record = await self.config.mongo.async_db.name_server.find_one({'rid': message.get('requested_rid', message.get('rid', None))})
-            if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
-                self.messages[i]['username'] = ns_record['txn']['relationship']['their_username']
+        
+        self.assign_usernames(self.messages, lam=lambda x: x.get('requested_rid') or x.get('requester_rid') or x.get('rid'))
 
 
     async def get_new_messages(self):
