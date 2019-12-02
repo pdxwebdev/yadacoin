@@ -530,6 +530,8 @@ class NSHandler(BaseGraphHandler):
         phrase = self.get_query_argument('searchTerm', None)
         requester_rid = self.get_query_argument('requester_rid', None)
         requested_rid = self.get_query_argument('requested_rid', None)
+        username = bool(self.get_query_argument('username', True))
+        complete = bool(self.get_query_argument('complete', False))
         if not phrase and not requester_rid and not requested_rid:
             return 'phrase required', 400
         bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
@@ -538,9 +540,16 @@ class NSHandler(BaseGraphHandler):
         my_bulletin_secret = config.get_bulletin_secret()
 
         if requester_rid:
-            ns_record = await self.config.mongo.async_db.name_server.find_one({
+            query = {
                 'rid': requester_rid,
-            })
+            }
+            if username:
+                query['username'] = {
+                    'txn.relationship.their_username': {
+                        '$exists': True
+                    }
+                }
+            ns_record = await self.config.mongo.async_db.name_server.find_one(query, {'_id': 0})
             requester_rid = ns_record['rid']
             rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
             requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
@@ -551,28 +560,38 @@ class NSHandler(BaseGraphHandler):
                 to = address if not filter_address else filter_address[0]
             else:
                 return '{}', 404
-            return self.render_as_json({
-                'bulletin_secret': ns_record['txn']['relationship']['their_bulletin_secret'],
-                'requested_rid': requested_rid,
-                'requester_rid': requester_rid,
-                'to': to,
-                'username': ns_record['txn']['relationship']['their_username']
-            })
+            
+            if complete:
+                return self.render_as_json(ns_record['txn'])
+            else:
+                return self.render_as_json({
+                    'bulletin_secret': ns_record['txn']['relationship']['their_bulletin_secret'],
+                    'requested_rid': requested_rid,
+                    'requester_rid': requester_rid,
+                    'to': to,
+                    'username': ns_record['txn']['relationship']['their_username']
+                })
 
         rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
         requester_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
         if requested_rid:
-            friends = [x for x in GU().search_rid(requested_rid)]
-            ns_record = await self.config.mongo.async_db.name_server.find_one({
+            query = {
                 'rid': requested_rid,
-            })
+            }
+            if username:
+                query['username'] = {
+                    'txn.relationship.their_username': {
+                        '$exists': True
+                    }
+                }
+            ns_record = await self.config.mongo.async_db.name_server.find_one(query)
             if ns_record:
-                result = ns_record['txn']
-            elif friends:
-                result = friends[0]
-            result['relationship']['requested_rid'] = requested_rid
-            result['relationship']['requester_rid'] = requester_rid
-            return self.render_as_json(result['relationship'])
+                if complete:
+                    return self.render_as_json(ns_record['txn'])
+                else:
+                    ns_record['txn']['relationship']['requested_rid'] = requested_rid
+                    ns_record['txn']['relationship']['requester_rid'] = requester_rid
+                    return self.render_as_json(ns_record['txn']['relationship'])
         else:
             friends = [x for x in GU().search_username(phrase)]
             ns_records = await self.config.mongo.async_db.name_server.find({
