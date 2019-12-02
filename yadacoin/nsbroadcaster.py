@@ -34,7 +34,7 @@ class NSBroadcaster(object):
                     to_send.update(transaction.to_dict())
                     await self.server.emit('newns', data=to_send, namespace='/chat')
                     await self.config.mongo.async_db.name_server.update_many({
-                        'id': transaction.transaction_signature
+                        'txn.id': transaction.transaction_signature
                     }, {
                         '$addToSet': {
                             'sent_to': '*'
@@ -55,9 +55,14 @@ class NSBroadcaster(object):
             return
         try:
             # peer = self.config.peers.my_peer
-            await self.send_it(transaction.to_dict(), peer)
+            to_send = {                            
+                'host': self.config.peer_host,
+                'port': self.config.peer_port
+            }
+            to_send.update(transaction.to_dict())
+            await self.send_it(to_send, peer)
             await self.config.mongo.async_db.name_server.update_many({
-                'id': transaction.transaction_signature
+                'txn.id': transaction.transaction_signature
             }, {
                 '$addToSet': {
                     'sent_to': peer.to_string()
@@ -70,12 +75,7 @@ class NSBroadcaster(object):
         try:
             if self.config.debug:
                 self.app_log.debug('Transmitting ns to: {}'.format(peer.to_string()))
-            to_send = {
-                'host': self.config.peer_host,
-                'port': self.config.peer_port
-            }
-            to_send.update(txn_dict)
-            await peer.client.client.emit('newns', data=to_send, namespace='/chat')
+            await peer.client.client.emit('newns', data=txn_dict, namespace='/chat')
         except Exception as e:
             if self.config.debug:
                 self.app_log.debug(e)
