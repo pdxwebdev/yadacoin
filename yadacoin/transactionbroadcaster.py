@@ -26,8 +26,13 @@ class TxnBroadcaster(object):
                     {'requester_rid': {'$in': rids}}
                 ]
             }).to_list(100)
+            peers_indexed = {}
+            for peer in self.config.peers.peers:
+                peers_indexed[peer.to_string()] = peer
             for ns in ns_records:
-                await self.prepare_peer(ns['peer'], transaction, sent_to)
+                peer = peers_indexed.get('{}:{}'.format(ns['peer']['host'], ns['peer']['port']))
+                if peer:
+                    await self.prepare_peer(peer, transaction, sent_to)
         else:
             for peer in self.config.peers.peers:
                 await self.prepare_peer(peer, transaction, sent_to)

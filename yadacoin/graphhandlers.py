@@ -541,13 +541,14 @@ class NSHandler(BaseGraphHandler):
 
         if requester_rid:
             query = {
-                'rid': requester_rid,
+                '$or': [
+                    {'rid': requester_rid},
+                    {'requester_rid': requester_rid}
+                ]
             }
             if username:
-                query['username'] = {
-                    'txn.relationship.their_username': {
-                        '$exists': True
-                    }
+                query['txn.relationship.their_username'] = {
+                    '$exists': True
                 }
             ns_record = await self.config.mongo.async_db.name_server.find_one(query, {'_id': 0})
             requester_rid = ns_record['rid']
