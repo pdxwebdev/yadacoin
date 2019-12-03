@@ -1,6 +1,7 @@
 import json
 import hashlib
 import requests
+import logging
 
 from yadacoin.blockchainutils import BU
 from yadacoin.transactionutils import TU
@@ -13,6 +14,7 @@ class Graph(object):
     def __init__(self, config, mongo, bulletin_secret, ids, rids, key_or_wif=None, jwt=None):
         self.config = config
         self.mongo = mongo
+        self.app_log = logging.getLogger('tornado.application')
         self.friend_requests = []
         self.sent_friend_requests = []
         self.friends = []
@@ -143,19 +145,22 @@ class Graph(object):
     async def resolve_ns(self, rid, username=True):
         for peer in self.config.peers.peers:
             try:
-                ns_record = json.loads(
-                    requests.get(
-                        'http://{}/ns?requester_rid={}&username=1&complete=1'.format(
-                            peer.to_string(),
-                            rid
-                        )
-                    ).content
-                )
+                res = requests.get(
+                    'http://{}/ns?requester_rid={}&username=1&complete=1&bulletin_secret={}'.format(
+                        peer.to_string(),
+                        rid,
+                        self.config.bulletin_secret
+                    ),
+                    timeout=3,
+                    headers={'Connection': 'close'}
+                ).content
+                ns_record = json.loads(res)
                 if ns_record.get('relationship', {}).get('their_username'):
                     return ns_record
 
             except Exception as e:
-                pass
+                self.app_log.debug(e)
+
 
 
     async def get_friend_requests(self):
@@ -201,7 +206,7 @@ class Graph(object):
             txn['pending'] = True
             self.friend_requests.append(txn)
 
-        self.assign_usernames(self.friend_requests, lam=lambda x: x.get('requester_rid') or x.get('rid'))
+        await self.assign_usernames(self.friend_requests, lam=lambda x: x.get('requester_rid') or x.get('rid'))
 
     async def get_sent_friend_requests(self):
         self.sent_friend_requests = []
@@ -246,7 +251,7 @@ class Graph(object):
             txn['pending'] = True
             self.sent_friend_requests.append(txn)
         
-        self.assign_usernames(self.sent_friend_requests, lam=lambda x: x.get('requested_rid') or x.get('rid'))
+        await self.assign_usernames(self.sent_friend_requests, lam=lambda x: x.get('requested_rid') or x.get('rid'))
 
     async def get_messages(self, not_mine=False):
         if self.wallet_mode:
@@ -294,7 +299,7 @@ class Graph(object):
             txn['pending'] = True
             self.messages.append(txn)
         
-        self.assign_usernames(self.messages, lam=lambda x: x.get('requested_rid') or x.get('requester_rid') or x.get('rid'))
+        await self.assign_usernames(self.messages, lam=lambda x: x.get('requested_rid') or x.get('requester_rid') or x.get('rid'))
 
 
     async def get_new_messages(self):

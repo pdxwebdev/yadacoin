@@ -72,8 +72,6 @@ class BaseGraphHandler(BaseHandler):
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
-        if first_bulletin_secret == second_bulletin_secret:
-            raise Exception('bulletin secrets are identical. do you love yourself so much that you want a relationship on the blockchain?')
         bulletin_secrets = sorted([str(first_bulletin_secret), str(second_bulletin_secret)], key=str.lower)
         return hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
 
@@ -526,6 +524,7 @@ class FastGraphHandler(BaseGraphHandler):
 
 class NSHandler(BaseGraphHandler):
     async def get(self):
+        graph = self.get_base_graph()
         config = self.config
         phrase = self.get_query_argument('searchTerm', None)
         requester_rid = self.get_query_argument('requester_rid', None)
@@ -551,6 +550,8 @@ class NSHandler(BaseGraphHandler):
                     '$exists': True
                 }
             ns_record = await self.config.mongo.async_db.name_server.find_one(query, {'_id': 0})
+            if not ns_record:
+                ns_record = await graph.resolve_ns(requester_rid, username=True)
             requester_rid = ns_record['rid']
             rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
             requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
