@@ -139,8 +139,8 @@ class Graph(object):
                 ns_record = await self.resolve_ns(
                     rid=lam(txn)
                 )
-                if ns_record and isinstance(ns_record.get('txn', {}).get('relationship'), dict):
-                    txns[i]['username'] = ns_record['txn']['relationship']['their_username']
+                if ns_record and isinstance(ns_record.get('relationship'), dict):
+                    txns[i]['username'] = ns_record['relationship']['their_username']
     
     async def resolve_ns(self, rid, username=True):
         for peer in self.config.peers.peers:
@@ -154,7 +154,7 @@ class Graph(object):
                     timeout=3,
                     headers={'Connection': 'close'}
                 ).content
-                ns_record = json.loads(res)
+                ns_record = json.loads(res.decode())
                 if ns_record.get('relationship', {}).get('their_username'):
                     return ns_record
 

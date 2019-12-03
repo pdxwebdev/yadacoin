@@ -550,28 +550,31 @@ class NSHandler(BaseGraphHandler):
                     '$exists': True
                 }
             ns_record = await self.config.mongo.async_db.name_server.find_one(query, {'_id': 0})
-            if not ns_record:
-                ns_record = await graph.resolve_ns(requester_rid, username=True)
-            requester_rid = ns_record['rid']
-            rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
-            requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
-            
             if ns_record:
-                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ns_record['txn']['public_key'])))
-                filter_address = [x['to'] for x in ns_record['txn']['outputs'] if x['to'] != address]
+                ns_record = ns_record['txn']
+            else:
+                ns_record = await graph.resolve_ns(requester_rid, username=True)
+                
+            if ns_record:
+                requester_rid = ns_record['rid']
+                rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+                requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
+            
+                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ns_record['public_key'])))
+                filter_address = [x['to'] for x in ns_record['outputs'] if x['to'] != address]
                 to = address if not filter_address else filter_address[0]
             else:
                 return '{}', 404
             
             if complete:
-                return self.render_as_json(ns_record['txn'])
+                return self.render_as_json(ns_record)
             else:
                 return self.render_as_json({
-                    'bulletin_secret': ns_record['txn']['relationship']['their_bulletin_secret'],
+                    'bulletin_secret': ns_record['relationship']['their_bulletin_secret'],
                     'requested_rid': requested_rid,
                     'requester_rid': requester_rid,
                     'to': to,
-                    'username': ns_record['txn']['relationship']['their_username']
+                    'username': ns_record['relationship']['their_username']
                 })
 
         rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)

@@ -16,9 +16,7 @@ class TxnBroadcaster(object):
             transaction = Transaction.from_dict(0, txn)
         if self.config.network == 'regnet':
             return
-        self.app_log.debug('here')
         if sum([float(x.value) for x in transaction.outputs]) + float(transaction.fee) == 0:
-            self.app_log.debug('here1')
             rids = [transaction.rid, transaction.requested_rid, transaction.requester_rid]
             ns_records = await self.config.mongo.async_db.name_server.find({
                 '$or': [
