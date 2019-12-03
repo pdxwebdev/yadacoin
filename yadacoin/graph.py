@@ -143,24 +143,37 @@ class Graph(object):
                     txns[i]['username'] = ns_record['relationship']['their_username']
     
     async def resolve_ns(self, rid, username=True):
+        used_peers = []
         for peer in self.config.peers.peers:
+            if peer.to_string() in used_peers: continue
+            if peer.to_string() == "{}:{}".format(self.config.peer_host, self.config.peer_port): continue
             try:
-                res = requests.get(
-                    'http://{}/ns?requester_rid={}&username=1&complete=1&bulletin_secret={}'.format(
-                        peer.to_string(),
-                        rid,
-                        self.config.bulletin_secret
-                    ),
-                    timeout=3,
-                    headers={'Connection': 'close'}
-                ).content
-                ns_record = json.loads(res.decode())
-                if ns_record.get('relationship', {}).get('their_username'):
-                    return ns_record
+                if peer.client and peer.client.connected:
+                    await peer.client.client.emit(
+                        'getns', 
+                        data={
+                            'requester_rid': rid,
+                            'bulletin_secret': self.config.bulletin_secret
+                        },
+                        namespace='/chat'
+                    )
+                else:
+                    res = requests.get(
+                        'http://{}/ns?requester_rid={}&username=1&complete=1&bulletin_secret={}'.format(
+                            peer.to_string(),
+                            rid,
+                            self.config.bulletin_secret
+                        ),
+                        timeout=3,
+                        headers={'Connection': 'close'}
+                    ).content
+                    ns_record = json.loads(res.decode())
+                    if ns_record.get('relationship', {}).get('their_username'):
+                        return ns_record
 
             except Exception as e:
                 self.app_log.debug(e)
-
+            used_peers.append(peer.to_string())
 
 
     async def get_friend_requests(self):
