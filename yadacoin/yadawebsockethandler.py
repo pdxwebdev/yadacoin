@@ -111,6 +111,24 @@ class ChatNamespace(AsyncNamespace):
         except Exception as e:
             self.app_log.warning("on_newns: {}".format(e))
 
+    async def on_getns(self, sid, data):
+        self.app_log.debug('on_getns')
+        try:
+            res = await get_config().mongo.async_db.name_server.find_one({
+                '$or': [
+                    {
+                        'rid': data['requester_rid']
+                    },
+                    {
+                        'requester_rid': data['requester_rid']
+                    }
+                ]
+            }, {'_id': 0})
+            await self.emit('newns', data=res['txn'], room=sid)
+        except Exception as e:
+            self.app_log.warning("on_getns: {}".format(e))
+
+
     async def on_hello(self, sid, data):
         self.app_log.info('WS hello: {} {}'.format(sid, json.dumps(data)))
         try:
