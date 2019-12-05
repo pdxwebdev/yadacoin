@@ -201,7 +201,7 @@ class GraphTransactionHandler(BaseGraphHandler):
             transactions.append(transaction)
 
         for x in transactions:
-            if x.rid == self.rid:
+            if x.rid == self.rid and x.dh_public_key:
                 me_pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
                     'public_key': self.config.public_key, 
                     'rid': self.rid, 
@@ -239,7 +239,19 @@ class GraphTransactionHandler(BaseGraphHandler):
                 })
                 if pending_exists or blockchain_exists:
                     continue
-                
+            
+            if x.dh_public_key:
+                dup_check_count = await self.config.mongo.async_db.miner_transactions.count_documents({
+                    'dh_public_key': {'$exists': True},
+                    'rid': x.rid,
+                    'requester_rid': x.requester_rid,
+                    'requested_rid': x.requested_rid,
+                    'public_key': x.public_key
+                })
+                if dup_check_count:
+                    self.app_log.debug('found duplicate tx for rid set {}'.format(x.transaction_signature))
+                    return
+
             ns_exists = await self.config.mongo.async_db.name_server.find_one({
                     'rid': x.rid,
                     'requester_rid': x.requester_rid,

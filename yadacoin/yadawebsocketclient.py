@@ -85,8 +85,20 @@ class ClientChatNamespace(AsyncClientNamespace):
             dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({'id': incoming_txn.transaction_signature})
             if dup_check_count:
                 self.app_log.debug('found duplicate tx {}'.format(incoming_txn.transaction_signature))
-            else:
-                await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
+                return
+
+            if incoming_txn.dh_public_key:
+                dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({
+                    'dh_public_key': {'$exists': True},
+                    'rid': incoming_txn.rid,
+                    'requester_rid': incoming_txn.requester_rid,
+                    'requested_rid': incoming_txn.requested_rid,
+                    'public_key': incoming_txn.public_key
+                })
+                if dup_check_count:
+                    self.app_log.debug('found duplicate tx for rid set {}'.format(incoming_txn.transaction_signature))
+                    return
+            await get_config().mongo.async_db.miner_transactions.insert_one(incoming_txn.to_dict())
 
             tb = TxnBroadcaster(self.config)
             await tb.txn_broadcast_job(incoming_txn, ["{}:{}".format(self.ip, self.port)])

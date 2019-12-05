@@ -5,6 +5,7 @@ from logging import getLogger
 from binascii import unhexlify
 from eccsnacks.curve25519 import scalarmult
 from yadacoin.transactionutils import TU
+from yadacoin.crypt import Crypt
 # from bitcoin.wallet import P2PKHBitcoinAddress
 # from bson.son import SON
 # from coincurve import PrivateKey
@@ -559,7 +560,7 @@ class GraphUtils(object):
                     return transaction
 
     def get_transactions_by_rid(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
-                                returnheight=True, lt_block_height=None, requested_rid=False):
+                                returnheight=True, lt_block_height=None, requested_rid=False, inc_mempool=False):
         # selectors is old code before we got an RID by sorting the bulletin secrets
         # from block import Block
         # from transaction import Transaction
@@ -576,10 +577,29 @@ class GraphUtils(object):
             else:
                 selectors = selector
         
+        cipher = None
         for selector in selectors:
             for txn in self.get_transactions_by_rid_worker(selector, bulletin_secret, wif, rid, raw,
                                 returnheight, lt_block_height, requested_rid):
                 yield txn
+            if inc_mempool:
+                res = self.config.mongo.db.miner_transactions.find({
+                    'relationship': {'$ne': ''},
+                    'rid': selector
+                }, {
+                    '_id': 0
+                })
+                for txn in res:
+                    if not raw:
+                        try:
+                            if not cipher:
+                                cipher = Crypt(self.config.wif)
+                            decrypted = cipher.decrypt(txn['relationship'])
+                            relationship = json.loads(decrypted.decode('latin1'))
+                            txn['relationship'] = relationship
+                        except:
+                            continue
+                    yield txn
     
     def get_transactions_by_rid_worker(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
                                 returnheight=True, lt_block_height=None, requested_rid=False):
@@ -979,11 +999,11 @@ class GraphUtils(object):
     def get_first_shared_secret_by_rid(self, rid):
         dh_public_keys = []
         dh_private_keys = []
-        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True)
+        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, inc_mempool=True)
         for txn in txns:
             if str(txn['public_key']) == str(self.config.public_key) and txn['relationship']['dh_private_key']:
                 dh_private_keys.append(txn['relationship']['dh_private_key'])
-        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)
+        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True, inc_mempool=True)
         for txn in txns:
             if str(txn['public_key']) != str(self.config.public_key) and txn['dh_public_key']:
                 dh_public_keys.append(txn['dh_public_key'])
@@ -996,11 +1016,11 @@ class GraphUtils(object):
         shared_secrets = []
         dh_public_keys = []
         dh_private_keys = []
-        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True)
+        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, inc_mempool=True)
         for txn in txns:
             if str(txn['public_key']) == str(self.config.public_key) and txn['relationship']['dh_private_key']:
                 dh_private_keys.append(txn['relationship']['dh_private_key'])
-        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)
+        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True, inc_mempool=True)
         for txn in txns:
             if str(txn['public_key']) != str(self.config.public_key) and txn['dh_public_key']:
                 dh_public_keys.append(txn['dh_public_key'])
@@ -1009,82 +1029,72 @@ class GraphUtils(object):
                 shared_secrets.append(scalarmult(unhexlify(dh_private_key).decode('latin1'), unhexlify(dh_public_key).decode('latin1')).encode('latin1'))
         return shared_secrets
 
-    def verify_message(self, rid, message, public_key, txn_id=None):
+    def verify_message(self, rid, message, public_key, txn_id):
         from yadacoin.crypt import Crypt
         sent = False
         received = False
         res = self.mongo.db.verify_message_cache.find_one({
             'rid': rid,
-            'message.signIn': message.decode('utf-8')
+            'message.signIn': message
         })
         if res:
             received = True
         else:
             shared_secrets = self.get_shared_secrets_by_rid(rid)
-            if txn_id:
-                txns = []
-                txn = [self.config.BU.get_transaction_by_id(txn_id, include_fastgraph=True)]
-                if txn:
-                    txns.append(txn)
-            else:
-                txns = [x for x in self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)]
-                fastgraph_transactions = self.mongo.db.fastgraph_transactions.find({"txn.rid": rid})
-                if fastgraph_transactions.count() > 0:
-                    txns.extend([x['txn'] for x in fastgraph_transactions])
+            txn = self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
             cipher = None
-            for txn in txns:
-                for shared_secret in list(set(shared_secrets)):
-                    res = self.mongo.db.verify_message_cache.find_one({
+            for shared_secret in list(set(shared_secrets)):
+                res = self.mongo.db.verify_message_cache.find_one({
+                    'rid': rid,
+                    'shared_secret': shared_secret.hex(),
+                    'message': message,
+                    'id': txn['id']
+                })
+                try:
+                    if res and res['success']:
+                        signin = res['message']
+                    elif res and not res['success']:
+                        continue
+                    else:
+                        if not cipher:
+                            cipher = Crypt(shared_secret.hex(), shared=True)
+                        try:
+                            decrypted = cipher.shared_decrypt(txn['relationship'])
+                            signin = json.loads(decrypted.decode('utf-8'))
+                            self.mongo.db.verify_message_cache.update({
+                                'rid': rid,
+                                'shared_secret': shared_secret.hex(),
+                                'id': txn['id']
+                            },
+                            {
+                                'rid': rid,
+                                'shared_secret': shared_secret.hex(),
+                                'id': txn['id'],
+                                'message': signin,
+                                'success': True,
+                                'cache_time': time()
+                            }
+                            , upsert=True)
+                        except:
+                            continue
+                    if u'signIn' in signin and message == signin['signIn']:
+                        if public_key != txn['public_key']:
+                            received = True
+                        else:
+                            sent = True
+                except:
+                    self.mongo.db.verify_message_cache.update({
                         'rid': rid,
                         'shared_secret': shared_secret.hex(),
-                        'message': message.decode('utf-8'),
                         'id': txn['id']
-                    })
-                    try:
-                        if res and res['success']:
-                            signin = res['message']
-                        elif res and not res['success']:
-                            continue
-                        else:
-                            if not cipher:
-                                cipher = Crypt(shared_secret.hex(), shared=True)
-                            try:
-                                decrypted = cipher.shared_decrypt(txn['relationship'])
-                                signin = json.loads(decrypted.decode('utf-8'))
-                                self.mongo.db.verify_message_cache.update({
-                                    'rid': rid,
-                                    'shared_secret': shared_secret.hex(),
-                                    'id': txn['id']
-                                },
-                                {
-                                    'rid': rid,
-                                    'shared_secret': shared_secret.hex(),
-                                    'id': txn['id'],
-                                    'message': signin,
-                                    'success': True,
-                                    'cache_time': time()
-                                }
-                                , upsert=True)
-                            except:
-                                continue
-                        if u'signIn' in signin and message.decode('utf-8') == signin['signIn']:
-                            if public_key != txn['public_key']:
-                                received = True
-                            else:
-                                sent = True
-                    except:
-                        self.mongo.db.verify_message_cache.update({
-                            'rid': rid,
-                            'shared_secret': shared_secret.hex(),
-                            'id': txn['id']
-                        },
-                        {
-                            'rid': rid,
-                            'shared_secret': shared_secret.hex(),
-                            'id': txn['id'],
-                            'message': '',
-                            'success': False,
-                            'cache_time': time()
-                        }
-                        , upsert=True)
+                    },
+                    {
+                        'rid': rid,
+                        'shared_secret': shared_secret.hex(),
+                        'id': txn['id'],
+                        'message': '',
+                        'success': False,
+                        'cache_time': time()
+                    }
+                    , upsert=True)
         return sent, received

@@ -514,12 +514,11 @@ class BlockChainUtils(object):
         signature = key.sign(message.encode("utf-8"))
         return base64.b64encode(signature).decode("utf-8")
 
-    def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False):
+    def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
         from yadacoin.transaction import Transaction
         # from yadacoin.crypt import Crypt
         from yadacoin.fastgraph import FastGraph
         res = self.mongo.db.blocks.find({"transactions.id": id})
-        res2 = self.mongo.db.fastgraph_transactions.find({"txn.id": id})
         if res.count():
             for block in res:
                 if give_block:
@@ -533,13 +532,16 @@ class BlockChainUtils(object):
                                 return Transaction.from_dict(block['index'], txn)
                         else:
                             return txn
-        elif res2.count() and include_fastgraph:
-            if give_block:
-                return None
-            if instance:
-                return FastGraph.from_dict(0, res2[0]['txn'])
-            else:
-                return res2[0]['txn']
+        if inc_mempool:
+            res2 = self.mongo.db.miner_transactions.find_one({"id": id})
+            if res2:
+                if give_block:
+                    raise Exception('Cannot give block for mempool transaction')
+                if instance:
+                    return Transaction.from_dict(0, res2)
+                else:
+                    return res2
+            return None
         else:
             # fix for bug when unspent cache returns an input 
             # that has been removed from the chain

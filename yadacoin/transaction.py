@@ -81,7 +81,7 @@ class TransactionFactory(object):
                 self.cipher = Crypt(self.config.wif)
                 self.encrypted_relationship = self.cipher.encrypt(self.relationship)
             elif self.signin:
-                for shared_secret in TU.get_shared_secrets_by_rid(self.rid):
+                for shared_secret in self.config.GU.get_shared_secrets_by_rid(self.rid):
                     self.relationship = SignIn(self.signin)
                     self.cipher = Crypt(shared_secret.hex(), shared=True)
                     self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())

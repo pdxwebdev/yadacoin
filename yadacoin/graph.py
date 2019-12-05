@@ -46,7 +46,7 @@ class Graph(object):
             self.wallet_mode = False
             start_height = 0
             # this will get any transactions between the client and server
-            nodes = GU().get_transactions_by_rid(bulletin_secret, config.bulletin_secret, raw=True, returnheight=True)
+            nodes = GU().get_transactions_by_rid(bulletin_secret, config.bulletin_secret, raw=True, returnheight=True, inc_mempool=True)
             already_done = []
             for node in nodes:
                 if node.get('dh_public_key'):
