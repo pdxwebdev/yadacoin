@@ -259,6 +259,7 @@ var HomePage = /** @class */ (function () {
             searchTerm: new __WEBPACK_IMPORTED_MODULE_1__angular_forms__["a" /* FormControl */]('', [__WEBPACK_IMPORTED_MODULE_1__angular_forms__["g" /* Validators */].required])
         });
         this.location = window.location;
+        this.origin = encodeURIComponent(this.location.origin);
         this.prefix = 'usernames-';
         this.refresh(null)
             .then(function () {
@@ -319,7 +320,6 @@ var HomePage = /** @class */ (function () {
             }
         });
     }
-    ;
     HomePage.prototype.go = function () {
         var _this = this;
         return this.peerService.go()
@@ -1177,6 +1177,10 @@ var HomePage = /** @class */ (function () {
     };
     HomePage.prototype.signIn = function () {
         var _this = this;
+        this.loadingModal = this.loadingCtrl.create({
+            content: 'Preparing session...'
+        });
+        this.loadingModal.present();
         this.walletService.get().then(function (signin_code) {
             return _this.graphService.getSharedSecretForRid(_this.graphService.graph.rid);
         }).then(function (args) {
@@ -1189,7 +1193,7 @@ var HomePage = /** @class */ (function () {
                             dh_public_key: args['dh_public_key'],
                             dh_private_key: args['dh_private_key'],
                             relationship: {
-                                signIn: JSON.parse(res['_body']).signin_code
+                                signIn: res.json().signin_code
                             },
                             shared_secret: args['shared_secret'],
                             rid: _this.graphService.graph.rid
@@ -1205,34 +1209,16 @@ var HomePage = /** @class */ (function () {
                 }, function (err) {
                 });
             });
-        }).then(function (hash) {
-            return new Promise(function (resolve, reject) {
-                _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
-                    hash: hash,
-                    bulletin_secret: _this.bulletinSecretService.bulletin_secret,
-                    input: _this.transactionService.transaction.inputs[0].id,
-                    id: _this.transactionService.transaction.id,
-                    txn: _this.transactionService.transaction
-                })
-                    .subscribe(function (res) {
-                    try {
-                        var data = res.json();
-                        _this.transactionService.transaction.signatures = [data.signature];
-                        resolve();
-                    }
-                    catch (err) {
-                        reject();
-                    }
-                }, function (err) {
-                });
-            });
         }).then(function () {
             return _this.transactionService.sendTransaction();
         }).then(function () {
             _this.signedIn = true;
             _this.refresh(null);
+        }).then(function () {
+            _this.loadingModal.dismiss().catch(function () { });
         }).catch(function (err) {
             alert(err);
+            _this.loadingModal.dismiss().catch(function () { });
         });
     };
     HomePage.prototype.itemTapped = function (event, item) {
@@ -1295,7 +1281,7 @@ var HomePage = /** @class */ (function () {
     };
     HomePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <form [formGroup]="myForm" (ngSubmit)="submit()">\n      <ion-auto-complete [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n      <button icon-left ion-button type="submit" block [disabled]="!myForm.valid">\n        <ion-icon name="eye"></ion-icon>\n        View profile\n      </button>\n    </form>\n    <ion-col col-lg-12 col-md-12 col-sm-12>\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n    </ion-col>\n  </ion-row>\n  <ion-list col-lg-7>\n    <ion-item *ngFor="let item of items">\n      <ion-card>\n        <a href="{{item.url}}" *ngIf="item.url" height="400">\n          <img src="{{item.image}}" *ngIf="item.image">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <p *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </p>\n          </ion-card-content>\n        </a>\n        <div *ngIf="!item.url">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <h1 *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </h1>\n            <span *ngIf="item.fileName">Files:</span><br>\n            <a *ngIf="item.fileName" style="text-overflow:ellipsis; margin-top:50px;" text-wrap (click)="download(item)">\n              <strong>{{item.fileName}}</strong>\n            </a>\n          </ion-card-content>\n        </div>\n        <ion-row no-padding text-wrap (click)="reactsDetail(item)">\n            <ion-item><span *ngFor="let react of graphService.graph.reacts[item.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n        </ion-row>\n        <ion-row no-padding>\n          <ion-col>\n            <button ion-button clear small icon-start (click)="toggled[item.id] = !toggled[item.id]" [(emojiPickerIf)]="toggled[item.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="react($event, item)">\n              <ion-icon name=\'sunny\'></ion-icon>\n              React\n            </button>\n          </ion-col>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="share(item)">\n              <ion-icon name=\'share-alt\'></ion-icon>\n              Share\n            </button>\n          </ion-col>\n          <ion-item>\n            <ion-input type="text" placeholder="Comment text..." [(ngModel)]="commentInputs[item.id]" (keyup.enter)="comment(item)">\n            </ion-input>\n          </ion-item>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="comment(item)">\n              <ion-icon name=\'text\'></ion-icon>\n              Post comment\n            </button>\n          </ion-col>\n        </ion-row>\n        <ion-row>\n          <ion-list col-lg-7>\n            <ion-item *ngFor="let comment of graphService.graph.comments[item.id]">\n              <button style="z-index:1000;"ion-button clear small icon-start (click)="toggled[comment.id] = !toggled[comment.id]" [(emojiPickerIf)]="toggled[comment.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="commentReact($event, comment)">\n                <ion-icon name=\'sunny\'></ion-icon>\n                React\n              </button>\n              <strong [innerHTML]="comment.username"></strong>\n              <ion-item [innerHTML]="comment.relationship.comment" text-wrap></ion-item>\n              <ion-row *ngIf="graphService.graph.commentReacts[comment.id] && graphService.graph.commentReacts[comment.id].length > 0" no-padding text-wrap (click)="commentReactsDetail(comment)">\n                  <ion-item><span *ngFor="let react of graphService.graph.commentReacts[comment.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n              </ion-row>\n            </ion-item>\n          </ion-list>\n        </ion-row>\n      </ion-card>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
+            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <form [formGroup]="myForm" (ngSubmit)="submit()">\n      <ion-auto-complete [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n      <button icon-left ion-button type="submit" block [disabled]="!myForm.valid">\n        <ion-icon name="eye"></ion-icon>\n        View profile\n      </button>\n    </form>\n    <ion-col col-lg-12 col-md-12 col-sm-12>\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button large ion-button title="Sign in" (click)="signIn()" *ngIf="!settingsService.tokens[bulletinSecretService.keyname]">\n        Sign in&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <a ion-button large secondary href="{{settingsService.remoteSettings[\'baseUrl\']}}/mfa?origin={{location.origin}}&rid={{graphService.graph.rid}}&id={{txnId}}&redirect=/" *ngIf="graphService.graph.rid && txnId" target="_blank">\n        Visit&nbsp;<ion-icon name="arrow-dropright"></ion-icon>\n      </a>\n    </ion-col>\n  </ion-row>\n  <ion-list col-lg-7>\n    <ion-item *ngFor="let item of items">\n      <ion-card>\n        <a href="{{item.url}}" *ngIf="item.url" height="400">\n          <img src="{{item.image}}" *ngIf="item.image">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <p *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </p>\n          </ion-card-content>\n        </a>\n        <div *ngIf="!item.url">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <h1 *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </h1>\n            <span *ngIf="item.fileName">Files:</span><br>\n            <a *ngIf="item.fileName" style="text-overflow:ellipsis; margin-top:50px;" text-wrap (click)="download(item)">\n              <strong>{{item.fileName}}</strong>\n            </a>\n          </ion-card-content>\n        </div>\n        <ion-row no-padding text-wrap (click)="reactsDetail(item)">\n            <ion-item><span *ngFor="let react of graphService.graph.reacts[item.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n        </ion-row>\n        <ion-row no-padding>\n          <ion-col>\n            <button ion-button clear small icon-start (click)="toggled[item.id] = !toggled[item.id]" [(emojiPickerIf)]="toggled[item.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="react($event, item)">\n              <ion-icon name=\'sunny\'></ion-icon>\n              React\n            </button>\n          </ion-col>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="share(item)">\n              <ion-icon name=\'share-alt\'></ion-icon>\n              Share\n            </button>\n          </ion-col>\n          <ion-item>\n            <ion-input type="text" placeholder="Comment text..." [(ngModel)]="commentInputs[item.id]" (keyup.enter)="comment(item)">\n            </ion-input>\n          </ion-item>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="comment(item)">\n              <ion-icon name=\'text\'></ion-icon>\n              Post comment\n            </button>\n          </ion-col>\n        </ion-row>\n        <ion-row>\n          <ion-list col-lg-7>\n            <ion-item *ngFor="let comment of graphService.graph.comments[item.id]">\n              <button style="z-index:1000;"ion-button clear small icon-start (click)="toggled[comment.id] = !toggled[comment.id]" [(emojiPickerIf)]="toggled[comment.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="commentReact($event, comment)">\n                <ion-icon name=\'sunny\'></ion-icon>\n                React\n              </button>\n              <strong [innerHTML]="comment.username"></strong>\n              <ion-item [innerHTML]="comment.relationship.comment" text-wrap></ion-item>\n              <ion-row *ngIf="graphService.graph.commentReacts[comment.id] && graphService.graph.commentReacts[comment.id].length > 0" no-padding text-wrap (click)="commentReactsDetail(comment)">\n                  <ion-item><span *ngFor="let react of graphService.graph.commentReacts[comment.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n              </ion-row>\n            </ion-item>\n          </ion-list>\n        </ion-row>\n      </ion-card>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["j" /* NavParams */],
@@ -5558,7 +5544,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note style="font-size: 20px">\n            YadaCoin\n          </ion-note>\n          <ion-note style="font-size: 12px">\n             v3.3.0\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content>\n      <ion-list *ngIf="bulletinSecretService.key">\n        <ng-container *ngFor="let p of pages">\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Friend Requests\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.new_messages_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Messages\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            *ngIf="[\'Messages\', \'Friend Requests\'].indexOf(p.title) < 0"\n          >\n            {{p.label}}\n          </button>\n        </ng-container>\n      </ion-list>\n      <img src="assets/img/yadacoinlogosmall.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note style="font-size: 20px">\n            YadaCoin\n          </ion-note>\n          <ion-note style="font-size: 12px">\n             v3.3.1\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content>\n      <ion-list *ngIf="bulletinSecretService.key">\n        <ng-container *ngFor="let p of pages">\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Friend Requests\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.new_messages_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Messages\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            *ngIf="[\'Messages\', \'Friend Requests\'].indexOf(p.title) < 0"\n          >\n            {{p.label}}\n          </button>\n        </ng-container>\n      </ion-list>\n      <img src="assets/img/yadacoinlogosmall.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
