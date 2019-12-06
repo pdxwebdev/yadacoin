@@ -268,6 +268,15 @@ class GraphTransactionHandler(BaseGraphHandler):
                 })
                 tb = NSBroadcaster(self.config)
                 await tb.ns_broadcast_job(x)
+            if x.rid == self.rid and x.relationship:
+                self.config.GU.verify_message(
+                    x.rid,
+                    '',
+                    self.config.public_key,
+                    x.transaction_signature,
+                    x
+                )
+
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
             txn_b = TxnBroadcaster(self.config)
             await txn_b.txn_broadcast_job(x)

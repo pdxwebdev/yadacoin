@@ -50,12 +50,12 @@ class MultifactorAuthHandler(BaseHandler):
 
         txn_id = self.get_query_argument('id')
 
-        cookie = self.get_secure_cookie("siginin_code")
+        cookie = self.get_secure_cookie("signin_code")
         if cookie:
             cookie = cookie.decode('utf-8')
         else:
             cookie = str(uuid.uuid4())
-            self.set_secure_cookie("siginin_code", cookie)
+            self.set_secure_cookie("signin_code", cookie)
 
         result = GU().verify_message(
             rid,
@@ -95,15 +95,56 @@ class LoginHandler(BaseHandler):
         self.set_header('Access-Control-Expose-Headers', "Content-Type")
         self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
-        cookie = self.get_secure_cookie("siginin_code")
+
+        cookie = self.get_secure_cookie("signin_code")
         if cookie:
             cookie = cookie.decode('utf-8')
         else:
             cookie = str(uuid.uuid4())
-            self.set_secure_cookie("siginin_code", cookie)
+            self.set_secure_cookie("signin_code", cookie)
 
         self.render_as_json({
             'signin_code': cookie
+        })
+
+class RemoteMultifactorAuthHandler(BaseHandler):
+    async def get(self):
+        redirect = self.get_query_argument('redirect', None)
+        origin = self.get_query_argument('origin')
+        if not origin:
+            return '{"error": "origin not in query params"}', 400
+        self.set_header("Access-Control-Allow-Origin", origin)
+        self.set_header('Access-Control-Allow-Credentials', "true")
+        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
+        self.set_header('Access-Control-Expose-Headers', "Content-Type")
+        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
+        self.set_header('Access-Control-Max-Age', 600)
+        config = self.config
+
+        signin_code = self.get_query_argument('signin_code')
+
+        result = await self.config.mongo.async_db.verify_message_cache.find_one({
+            'message.signIn': signin_code
+        })
+
+        if result:
+            self.set_secure_cookie("rid", result['rid'])
+
+            username = await self.config.mongo.async_db.name_server.find_one({'rid': result['rid']})
+            self.set_secure_cookie("username", username['txn']['relationship']['their_username'])
+
+            result = await self.config.mongo.async_db.verify_message_cache.delete_one({
+                'message.signIn': signin_code
+            })
+            if redirect:
+                return self.redirect(redirect)
+            else:
+                return self.render_as_json({
+                    'authenticated': True
+                })
+        
+        return self.render_as_json({
+            'authenticated': False
         })
 
 
@@ -112,8 +153,8 @@ class LogoutHandler(BaseHandler):
     def get(self):
         redirect = self.get_query_argument('redirect', None)
 
-        if self.get_secure_cookie("siginin_code"):
-            self.set_secure_cookie("siginin_code", '')
+        if self.get_secure_cookie("signin_code"):
+            self.set_secure_cookie("signin_code", '')
 
         if self.get_secure_cookie("rid"):
             self.set_secure_cookie("rid", '')
@@ -180,6 +221,7 @@ WEB_HANDLERS = [
     (r'/', HomeHandler),
     (r'/mfa', MultifactorAuthHandler),
     (r'/login', LoginHandler),
+    (r'/rmfa', RemoteMultifactorAuthHandler),
     (r'/logout', LogoutHandler),
     (r'/api-stats', HashrateAPIHandler),
     (r'/app', AppHandler),

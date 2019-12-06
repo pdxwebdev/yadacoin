@@ -242,6 +242,8 @@ async def background_cache_validator():
                     if not await config.mongo.async_db.blocks.find_one({
                         'index': txn.get('height'),
                         'hash': txn.get('block_hash')
+                    }) and not await config.mongo.async_db.miner_transactions.find_one({
+                        'id': txn.get('id'),
                     }):
                         await config.mongo.async_db[cache_collection].delete_many({
                             'height': txn.get('height')

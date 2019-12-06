@@ -11,6 +11,7 @@ from yadacoin.crypt import Crypt
 # from coincurve import PrivateKey
 
 from yadacoin.config import get_config
+from yadacoin.transaction import Transaction
 
 # Circular reference
 # from yadacoin.block import Block
@@ -1029,7 +1030,7 @@ class GraphUtils(object):
                 shared_secrets.append(scalarmult(unhexlify(dh_private_key).decode('latin1'), unhexlify(dh_public_key).decode('latin1')).encode('latin1'))
         return shared_secrets
 
-    def verify_message(self, rid, message, public_key, txn_id):
+    def verify_message(self, rid, message, public_key, txn_id, txn=None):
         from yadacoin.crypt import Crypt
         sent = False
         received = False
@@ -1041,14 +1042,23 @@ class GraphUtils(object):
             received = True
         else:
             shared_secrets = self.get_shared_secrets_by_rid(rid)
-            txn = self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
+            if txn:
+                if isinstance(txn, Transaction):
+                    txn.verify()
+                else:
+                    txn = Transaction.from_dict(self.config.BU().get_latest_block()['index'], txn)
+                    txn.verify()
+            else:
+                txn = self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
+                txn = Transaction.from_dict(self.config.BU().get_latest_block()['index'], txn)
+                txn.verify()
             cipher = None
             for shared_secret in list(set(shared_secrets)):
                 res = self.mongo.db.verify_message_cache.find_one({
                     'rid': rid,
                     'shared_secret': shared_secret.hex(),
                     'message': message,
-                    'id': txn['id']
+                    'id': txn.transaction_signature
                 })
                 try:
                     if res and res['success']:
@@ -1059,17 +1069,17 @@ class GraphUtils(object):
                         if not cipher:
                             cipher = Crypt(shared_secret.hex(), shared=True)
                         try:
-                            decrypted = cipher.shared_decrypt(txn['relationship'])
+                            decrypted = cipher.shared_decrypt(txn.relationship)
                             signin = json.loads(decrypted.decode('utf-8'))
                             self.mongo.db.verify_message_cache.update({
                                 'rid': rid,
                                 'shared_secret': shared_secret.hex(),
-                                'id': txn['id']
+                                'id': txn.transaction_signature
                             },
                             {
                                 'rid': rid,
                                 'shared_secret': shared_secret.hex(),
-                                'id': txn['id'],
+                                'id': txn.transaction_signature,
                                 'message': signin,
                                 'success': True,
                                 'cache_time': time()
@@ -1078,7 +1088,7 @@ class GraphUtils(object):
                         except:
                             continue
                     if u'signIn' in signin and message == signin['signIn']:
-                        if public_key != txn['public_key']:
+                        if public_key != txn.public_key:
                             received = True
                         else:
                             sent = True
@@ -1086,12 +1096,12 @@ class GraphUtils(object):
                     self.mongo.db.verify_message_cache.update({
                         'rid': rid,
                         'shared_secret': shared_secret.hex(),
-                        'id': txn['id']
+                        'id': txn.transaction_signature
                     },
                     {
                         'rid': rid,
                         'shared_secret': shared_secret.hex(),
-                        'id': txn['id'],
+                        'id': txn.transaction_signature,
                         'message': '',
                         'success': False,
                         'cache_time': time()
