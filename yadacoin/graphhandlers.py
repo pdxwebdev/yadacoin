@@ -631,7 +631,7 @@ class NSHandler(BaseGraphHandler):
         except:
             return self.render_as_json({'status': 'error', 'message': 'invalid request body'})
         try:
-            nstxn = Transaction.from_dict(self.config.BU().get_latest_block()['index'], ns['txn'])
+            nstxn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], ns['txn'])
         except:
             return self.render_as_json({'status': 'error', 'message': 'invalid transaction'})
         try:

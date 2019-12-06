@@ -242,7 +242,7 @@ class MiningPool(object):
                     'id': genesis_block.signature,
                     'index': 0
                     })
-                block = Block.from_dict(self.config.BU().get_latest_block())
+                block = Block.from_dict(self.config.BU.get_latest_block())
             self.index = block.index + 1
             self.last_block_time = int(block.time)
         except Exception as e:

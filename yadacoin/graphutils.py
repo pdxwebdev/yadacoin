@@ -1046,11 +1046,11 @@ class GraphUtils(object):
                 if isinstance(txn, Transaction):
                     txn.verify()
                 else:
-                    txn = Transaction.from_dict(self.config.BU().get_latest_block()['index'], txn)
+                    txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
                     txn.verify()
             else:
                 txn = self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
-                txn = Transaction.from_dict(self.config.BU().get_latest_block()['index'], txn)
+                txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
                 txn.verify()
             cipher = None
             for shared_secret in list(set(shared_secrets)):
