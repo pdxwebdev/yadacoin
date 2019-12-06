@@ -110,7 +110,7 @@ class LoginHandler(BaseHandler):
 
 class RemoteMultifactorAuthHandler(BaseHandler):
     async def post(self):
-        args = json.loads(self.request.body)
+        args = json.loads(self.request.body.decode('utf-8'))
         origin = args.get('origin', '*')
         redirect = args.get('redirect')
         signin_code = args.get('signin_code')
