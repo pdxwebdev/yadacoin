@@ -4,6 +4,7 @@ Handlers required by the web operations
 
 import uuid
 import os
+import json
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.graphutils import GraphUtils as GU
 from yadacoin.blockchainutils import BU
@@ -108,11 +109,14 @@ class LoginHandler(BaseHandler):
         })
 
 class RemoteMultifactorAuthHandler(BaseHandler):
-    async def get(self):
-        redirect = self.get_query_argument('redirect', None)
-        origin = self.get_query_argument('origin')
-        if not origin:
-            return '{"error": "origin not in query params"}', 400
+    async def post(self):
+        args = json.loads(self.request.body)
+        origin = args.get('origin', '*')
+        redirect = args.get('redirect')
+        signin_code = args.get('signin_code')
+
+        if not signin_code:
+            return self.render_as_json({'error': 'missing params'}), 400
         self.set_header("Access-Control-Allow-Origin", origin)
         self.set_header('Access-Control-Allow-Credentials', "true")
         self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
@@ -120,8 +124,6 @@ class RemoteMultifactorAuthHandler(BaseHandler):
         self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
         config = self.config
-
-        signin_code = self.get_query_argument('signin_code')
 
         result = await self.config.mongo.async_db.verify_message_cache.find_one({
             'message.signIn': signin_code
