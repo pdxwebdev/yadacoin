@@ -1066,8 +1066,7 @@ class GraphUtils(object):
                     elif res and not res['success']:
                         continue
                     else:
-                        if not cipher:
-                            cipher = Crypt(shared_secret.hex(), shared=True)
+                        cipher = Crypt(shared_secret.hex(), shared=True)
                         try:
                             decrypted = cipher.shared_decrypt(txn.relationship)
                             signin = json.loads(decrypted.decode('utf-8'))
