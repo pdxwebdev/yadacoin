@@ -11,7 +11,7 @@ from yadacoin.crypt import Crypt
 
 class Graph(object):
 
-    def __init__(self, config, mongo, bulletin_secret, ids, rids, key_or_wif=None, jwt=None):
+    def __init__(self, config, mongo, bulletin_secret, ids, rids, key_or_wif=None):
         self.config = config
         self.mongo = mongo
         self.app_log = logging.getLogger('tornado.application')
@@ -37,7 +37,7 @@ class Graph(object):
         self.invited = False
         self.username = ''
 
-        if key_or_wif in [config.private_key, config.wif] or jwt:
+        if key_or_wif in [config.private_key, config.wif]:
             self.cipher = self.config.cipher
             self.wallet_mode = True
         else:

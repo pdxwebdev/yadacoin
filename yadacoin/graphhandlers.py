@@ -64,11 +64,12 @@ class BaseGraphHandler(BaseHandler):
             key_or_wif = self.get_secure_cookie('key_or_wif').decode()
         except:
             key_or_wif = None
-        try:
-            jwt = self.jwt.get('key_or_wif')
-        except:
-            jwt = None
-        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, rids, key_or_wif, jwt)
+        if not key_or_wif:
+            try:
+                key_or_wif = self.jwt.get('key_or_wif')
+            except:
+                key_or_wif = None
+        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, rids, key_or_wif)
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
     def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
