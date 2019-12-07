@@ -254,7 +254,7 @@ class UnlockHandler(BaseHandler):
             'key_or_wif': 'true',
             'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=23040)},
             self.config.jwt_secret_key,
-            algorithm='HS256'
+            algorithm='ES256'
         )
 
     async def get(self):

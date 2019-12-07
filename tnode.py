@@ -16,6 +16,7 @@ from logging.handlers import RotatingFileHandler
 from os import path
 from sys import exit, stdout
 from time import time
+from Crypto.PublicKey.ECC import EccKey
 
 import socketio
 import tornado.ioloop
@@ -330,8 +331,10 @@ async def main():
     if not config.peer_host:
         app_log.error("peer_host cannot be blank in config. Set it to you public ip address")
         return exit()
-
-    config.jwt_secret_key = sha256(sha256(config.private_key.encode()).hexdigest().encode()).hexdigest()
+    
+    jwt_key = EccKey(curve='p256', d=int(config.private_key, 16))
+    config.jwt_secret_key = jwt_key.export_key(format='PEM')
+    config.jwt_public_key = jwt_key.public_key().export_key(format='PEM')
     config.jwt_options = {
         'verify_signature': True,
         'verify_exp': True,

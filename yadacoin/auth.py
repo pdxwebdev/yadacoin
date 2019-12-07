@@ -1,4 +1,5 @@
 import jwt
+from coincurve import PublicKey
 
 secret_key = "my_secret_key"
 options = {
@@ -28,9 +29,12 @@ def jwtauth(handler_class):
 
                 token = parts[1]
                 try:
+                    from Crypto.PublicKey import ECC
                     handler.jwt = jwt.decode(
                         token,
-                        handler.config.jwt_secret_key,
+                        handler.config.jwt_public_key,
+                        verify=True,
+                        algorithms=['ES256'],
                         options=handler.config.jwt_options
                     )
 
