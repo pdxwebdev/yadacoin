@@ -290,7 +290,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         dh_public_key = scalarmult_base(a).encode('latin1').hex()
         dh_private_key = a.encode('latin1').hex()
 
-        transaction = TransactionFactory(
+        transaction = TransactionFactory.construct(
             block_height=BU().get_latest_block()['index'],
             bulletin_secret=bulletin_secret,
             username=username,
@@ -405,7 +405,7 @@ class SignRawTransactionHandler(BaseHandler):
             )
             address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(their_entry_for_relationship['public_key'])))
             found = False
-            for x in BU().get_wallet_unspent_transactions(address, [body.get('input')]):
+            async for x in BU().get_wallet_unspent_transactions(address, [body.get('input')]):
                 if body.get('input') == x['id']:
                     found = True
             
@@ -504,7 +504,7 @@ class FastGraphHandler(BaseGraphHandler):
         try:
             await self.config.push_service.do_push(fastgraph.to_dict(), self.bulletin_secret, self.app_log)
         except Exception as e:
-            self.app_log.error(e)
+            self.app_log.debug(e)
 
 
 class NSHandler(BaseGraphHandler):

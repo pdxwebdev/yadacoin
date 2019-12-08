@@ -30,7 +30,7 @@ class Faucet(object):
                 continue
 
             try:
-                transaction = TransactionFactory(
+                transaction = TransactionFactory.construct(
                     block_height=BU.get_latest_block(config, mongo)['index'],
                     fee=0.01,
                     public_key=config.public_key,

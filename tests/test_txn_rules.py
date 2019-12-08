@@ -103,7 +103,7 @@ class TestTxnRuls(object):
         else:
             dh_public_key, dh_private_key = '', ''
             bulletin_secret = ''
-        return TransactionFactory(
+        return TransactionFactory.construct(
             block_height=1,
             bulletin_secret=bulletin_secret,
             username=self.configs[from_config].username,

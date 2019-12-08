@@ -118,7 +118,7 @@ class PoolPayer(object):
             outputs.append({'to': address, 'value': payout})
 
         try:
-            transaction = TransactionFactory(
+            transaction = TransactionFactory.construct(
                 block_height=block.index,
                 fee=0.0001,
                 public_key=self.config.public_key,

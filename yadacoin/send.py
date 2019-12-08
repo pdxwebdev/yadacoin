@@ -18,7 +18,7 @@ class Send(object):
     def run(cls, config, mongo, to, value):
 
         try:
-            transaction = TransactionFactory(
+            transaction = TransactionFactory.construct(
                 block_height=config.BU.get_latest_block()['index'],
                 fee=0.01,
                 public_key=config.public_key,

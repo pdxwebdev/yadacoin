@@ -122,8 +122,7 @@ class BlockFactory(object):
                     
                     if transaction_obj.inputs:
                         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
-                        unspent = config.BU.get_wallet_unspent_transactions(address, [x.id for x in transaction_obj.inputs])
-                        unspent_ids = [x['id'] for x in unspent]
+                        unspent_ids = [x['id'] async for x in config.BU.get_wallet_unspent_transactions(address, [x.id for x in transaction_obj.inputs])]
                         failed = False
                         used_ids_in_this_txn = []
                         for x in transaction_obj.inputs:
@@ -146,7 +145,7 @@ class BlockFactory(object):
                         continue
             
             block_reward = CHAIN.get_block_reward(index)
-            coinbase_txn_fctry = TransactionFactory(
+            coinbase_txn_fctry = TransactionFactory.construct(
                 index,
                 public_key=public_key,
                 private_key=private_key,
@@ -662,13 +661,12 @@ class Block(object):
         else:
             self.verify_merkle_root = hashes[0]
 
-    def save(self):
+    async def save(self):
         self.verify()
         for txn in self.transactions:
             if txn.inputs:
                 address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
-                unspent = self.config.BU.get_wallet_unspent_transactions(address, [x.id for x in txn.inputs])
-                unspent_ids = [x['id'] for x in unspent]
+                unspent_ids = [x['id'] async for x in self.config.BU.get_wallet_unspent_transactions(address, [x.id for x in txn.inputs])]
                 failed = False
                 used_ids_in_this_txn = []
                 for x in txn.inputs:

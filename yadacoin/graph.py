@@ -38,6 +38,35 @@ class Graph(object):
             self.wallet_mode = True
         else:
             self.wallet_mode = False
+            nodes = GU().get_transactions_by_rid(bulletin_secret, config.bulletin_secret, raw=True, returnheight=True, inc_mempool=True)
+            me = None
+            them = None
+            for node in nodes:
+                if node.get('dh_public_key'):
+                    if node.get('public_key') != self.config.public_key:
+                        them = node
+                        self.friends.append(node)
+                    elif node.get('public_key') == self.config.public_key:
+                        me = node
+                        self.friends.append(node)
+
+            if them and me:
+                for x in self.friends:
+                    for y in x['outputs']:
+                        if y['to'] != config.address:
+                            self.mongo.site_db.usernames.update({
+                                'rid': self.rid,
+                                'username': self.username,
+                                },
+                                {
+                                'rid': self.rid,
+                                'username': self.username,
+                                'to': y['to'],
+                                'relationship': {
+                                    'bulletin_secret': bulletin_secret
+                                }
+                            },
+                            upsert=True)
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]

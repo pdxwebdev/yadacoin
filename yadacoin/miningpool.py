@@ -435,8 +435,7 @@ class MiningPool(object):
                     unspent_ids = unspent_indexed[address]
                 else:
                     needed_value = sum([float(x.value) for x in transaction_obj.outputs]) + float(transaction_obj.fee)
-                    res = self.config.BU.get_wallet_unspent_transactions(address, needed_value=needed_value)
-                    unspent_ids = [x['id'] for x in res]
+                    unspent_ids = [x['id'] async for x in self.config.BU.get_wallet_unspent_transactions(address, needed_value=needed_value)]
                     unspent_indexed[address] = unspent_ids
 
                 failed1 = False

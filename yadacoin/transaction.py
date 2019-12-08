@@ -18,9 +18,9 @@ from yadacoin.chain import CHAIN
 
 
 class TransactionFactory(object):
-    
-    def __init__(
-        self,
+    @classmethod
+    async def construct(
+        cls,
         block_height,
         bulletin_secret='',
         username='',
@@ -40,86 +40,88 @@ class TransactionFactory(object):
         signin=None,
         no_relationship=False
     ):
-        self.config = get_config()
-        self.mongo = self.config.mongo
-        self.app_log = getLogger('tornado.application')
-        self.block_height = block_height
-        self.bulletin_secret = bulletin_secret
-        self.username = username
-        self.requester_rid = requester_rid
-        self.requested_rid = requested_rid
-        self.public_key = public_key
-        self.dh_public_key = dh_public_key
-        self.private_key = private_key
-        self.value = value
-        self.fee = float(fee)
-        self.dh_private_key = dh_private_key
-        self.to = to
-        self.time = str(int(time.time()))
-        self.outputs = []
-        self.no_relationship = no_relationship
+        cls_inst = cls()
+        cls_inst.config = get_config()
+        cls_inst.mongo = cls_inst.config.mongo
+        cls_inst.app_log = getLogger('tornado.application')
+        cls_inst.block_height = block_height
+        cls_inst.bulletin_secret = bulletin_secret
+        cls_inst.username = username
+        cls_inst.requester_rid = requester_rid
+        cls_inst.requested_rid = requested_rid
+        cls_inst.public_key = public_key
+        cls_inst.dh_public_key = dh_public_key
+        cls_inst.private_key = private_key
+        cls_inst.value = value
+        cls_inst.fee = float(fee)
+        cls_inst.dh_private_key = dh_private_key
+        cls_inst.to = to
+        cls_inst.time = str(int(time.time()))
+        cls_inst.outputs = []
+        cls_inst.no_relationship = no_relationship
         for x in outputs:
-            self.outputs.append(Output.from_dict(x))
-        self.inputs = []
+            cls_inst.outputs.append(Output.from_dict(x))
+        cls_inst.inputs = []
         for x in inputs:
             if 'signature' in x and 'public_key' in x and 'address' in x:
-                self.inputs.append(ExternalInput.from_dict(x))
+                cls_inst.inputs.append(ExternalInput.from_dict(x))
             else:
-                self.inputs.append(Input.from_dict(x))
-        self.coinbase = coinbase
-        self.chattext = chattext
-        self.signin = signin
-        self.do_money()
-        inputs_concat = self.get_input_hashes()
-        outputs_concat = self.get_output_hashes()
+                cls_inst.inputs.append(Input.from_dict(x))
+        cls_inst.coinbase = coinbase
+        cls_inst.chattext = chattext
+        cls_inst.signin = signin
+        await cls_inst.do_money()
+        inputs_concat = cls_inst.get_input_hashes()
+        outputs_concat = cls_inst.get_output_hashes()
         if bulletin_secret:
-            self.rid = self.generate_rid()
-            if self.chattext:
-                self.relationship = json.dumps({
-                    "chatText": self.chattext
+            cls_inst.rid = cls_inst.generate_rid()
+            if cls_inst.chattext:
+                cls_inst.relationship = json.dumps({
+                    "chatText": cls_inst.chattext
                 })
-                self.encrypted_relationship = self.config.cipher.encrypt(self.relationship)
-            elif self.signin:
-                for shared_secret in self.config.GU.get_shared_secrets_by_rid(self.rid):
-                    self.relationship = SignIn(self.signin)
-                    self.cipher = Crypt(shared_secret.hex(), shared=True)
-                    self.encrypted_relationship = self.cipher.shared_encrypt(self.relationship.to_json())
+                cls_inst.encrypted_relationship = cls_inst.config.cipher.encrypt(cls_inst.relationship)
+            elif cls_inst.signin:
+                for shared_secret in cls_inst.config.GU.get_shared_secrets_by_rid(cls_inst.rid):
+                    cls_inst.relationship = SignIn(cls_inst.signin)
+                    cls_inst.cipher = Crypt(shared_secret.hex(), shared=True)
+                    cls_inst.encrypted_relationship = cls_inst.cipher.shared_encrypt(cls_inst.relationship.to_json())
                     break
-            elif self.no_relationship:
-                self.encrypted_relationship = ''
+            elif cls_inst.no_relationship:
+                cls_inst.encrypted_relationship = ''
             else:
-                if not self.dh_public_key or not self.dh_private_key:
+                if not cls_inst.dh_public_key or not cls_inst.dh_private_key:
                     a = os.urandom(32).decode('latin1')
-                    self.dh_public_key = scalarmult_base(a).encode('latin1').hex()
-                    self.dh_private_key = a.encode().hex()
-                self.relationship = self.generate_relationship()
+                    cls_inst.dh_public_key = scalarmult_base(a).encode('latin1').hex()
+                    cls_inst.dh_private_key = a.encode().hex()
+                cls_inst.relationship = cls_inst.generate_relationship()
                 if not private_key:
                     raise Exception('missing private key')
-                self.encrypted_relationship = self.config.cipher.encrypt(self.relationship.to_json().encode())
+                cls_inst.encrypted_relationship = cls_inst.config.cipher.encrypt(cls_inst.relationship.to_json().encode())
         else:
-            self.rid = ''
-            self.encrypted_relationship = ''
+            cls_inst.rid = ''
+            cls_inst.encrypted_relationship = ''
         
-        self.header = (
-            self.public_key +
-            self.time +
-            self.dh_public_key +
-            self.rid +
-            self.encrypted_relationship +
-            "{0:.8f}".format(self.fee) +
-            self.requester_rid +
-            self.requested_rid +
+        cls_inst.header = (
+            cls_inst.public_key +
+            cls_inst.time +
+            cls_inst.dh_public_key +
+            cls_inst.rid +
+            cls_inst.encrypted_relationship +
+            "{0:.8f}".format(cls_inst.fee) +
+            cls_inst.requester_rid +
+            cls_inst.requested_rid +
             inputs_concat +
             outputs_concat
         )
-        self.hash = hashlib.sha256(self.header.encode('utf-8')).digest().hex()
-        if self.private_key:
-            self.transaction_signature = TU.generate_signature_with_private_key(private_key, self.hash)
+        cls_inst.hash = hashlib.sha256(cls_inst.header.encode('utf-8')).digest().hex()
+        if cls_inst.private_key:
+            cls_inst.transaction_signature = TU.generate_signature_with_private_key(private_key, cls_inst.hash)
         else:
-            self.transaction_signature = ''
-        self.transaction = self.generate_transaction()
+            cls_inst.transaction_signature = ''
+        cls_inst.transaction = cls_inst.generate_transaction()
+        return cls_inst
 
-    def do_money(self):
+    async def do_money(self):
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         miner_transactions = self.mongo.db.miner_transactions.find()
         mtxn_ids = []
@@ -132,9 +134,8 @@ class TransactionFactory(object):
         elif self.coinbase:
             inputs = []
         else:
-            input_txns = self.config.BU.get_wallet_unspent_transactions(my_address)
             inputs = []
-            for input_txn in input_txns:
+            async for input_txn in self.config.BU.get_wallet_unspent_transactions(my_address):
                 if input_txn['id'] not in mtxn_ids:
                     if 'signature' in input_txn and 'public_key' in input_txn and 'address' in input_txn:
                         inputs.append(ExternalInput.from_dict(input_txn))

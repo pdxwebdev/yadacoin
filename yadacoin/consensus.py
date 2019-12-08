@@ -65,7 +65,7 @@ class Consensus(object):
         # TODO: deprecate, use app_log
         print(message)
 
-    def insert_genesis(self):
+    async def insert_genesis(self):
         #insert genesis if it doesn't exist
         genesis_block = BlockFactory.get_genesis_block()
         genesis_block.save()
@@ -106,7 +106,7 @@ class Consensus(object):
                 self.latest_block = Block.from_dict(latest_block)
             else:
                 if not self.prevent_genesis:
-                    self.insert_genesis()
+                    await self.insert_genesis()
             self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
 
     def remove_pending_transactions_now_in_chain(self, block):
