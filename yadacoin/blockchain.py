@@ -33,8 +33,14 @@ class Blockchain(object):
             raise Exception('Blocks do not start with zero index. Either incomplete blockchain or unordered.')
 
     async def verify(self, progress=None):
+        async def get_blocks():
+            for block in self.blocks:
+                yield block
+        async def get_transactions(txns):
+            for txn in txns:
+                yield txn
         last_block = None
-        for block in self.blocks:
+        async for block in get_blocks():
             try:
                 block.verify()
             except Exception as e:
@@ -43,7 +49,7 @@ class Blockchain(object):
                     return {'verified': False, 'last_good_block': last_block, 'message': e}
                 else:
                     return {'verified': False, 'message': e}
-            for txn in block.transactions:
+            async for txn in get_transactions(block.transactions):
                 try:
                     txn.verify()
                 except InvalidTransactionException as e:

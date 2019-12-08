@@ -79,39 +79,26 @@ class BlockChainUtils(object):
         block_objs = [Block.from_dict(block) for block in blocks]
         return block_objs
 
-    def get_wallet_balance(self, address):
+    async def get_wallet_balance(self, address):
         # TODO: factorize in an async mongo.method?
-        unspent_transactions = self.get_wallet_unspent_transactions(address)
-        unspent_fastgraph_transactions = self.get_wallet_unspent_fastgraph_transactions(address)
         balance = 0
         used_ids = []
-        for txn in unspent_transactions:
+        async for txn in self.get_wallet_unspent_transactions(address):
             for output in txn['outputs']:
                 if address == output['to']:
                     used_ids.append(txn['id'])
                     balance += float(output['value'])
-        for txn in unspent_fastgraph_transactions:
-            if txn['id'] in used_ids:
-                continue
-            for output in txn['outputs']:
-                if address == output['to']:
-                    balance += float(output['value'])
-        if balance:
-            return balance
-        else:
-            return 0
+        yield balance
 
-    def get_wallet_unspent_transactions(self, address, ids=None, needed_value=None):
-        res = self.wallet_unspent_worker(address, ids, needed_value)
-        for x in res:
+    async def get_wallet_unspent_transactions(self, address, ids=None, needed_value=None):
+        async for x in self.wallet_unspent_worker(address, ids, needed_value):
             x['txn']['height'] = x['height']
             yield x['txn']
 
-    def wallet_unspent_worker(self, address, ids=None, needed_value=None):
-        unspent_cache = self.mongo.db.unspent_cache.find({'address': address}).sort([('height', -1)])
+    async def wallet_unspent_worker(self, address, ids=None, needed_value=None):
+        unspent_cache = await self.mongo.async_db.unspent_cache.find_one({'address': address}, sort=[('height', -1)])
 
-        if unspent_cache.count():
-            unspent_cache = unspent_cache[0]
+        if unspent_cache:
             block_height = unspent_cache['height']
         else:
             block_height = 0
@@ -155,26 +142,28 @@ class BlockChainUtils(object):
             }
         ]
 
-        received = self.mongo.db.blocks.aggregate(received_query, allowDiskUse=True)
+        received = self.mongo.async_db.blocks.aggregate(received_query, allowDiskUse=True)
 
         reverse_public_key = ''
-        for x in received:
+        async for x in received:
             # we ALWAYS put our own address in the outputs even if the value is zero.
             # txn is invalid if it isn't present
-            self.mongo.db.unspent_cache.update({
+            await self.mongo.async_db.unspent_cache.update_many({
                 'address': address,
                 'id': x['txn']['id'],
                 'height': x['height'],
                 'block_hash': x['block_hash']
             },
             {
-                'address': address,
-                'id': x['txn']['id'],
-                'height': x['height'],
-                'block_hash': x['block_hash'],
-                'spent': False,
-                'txn': x['txn'],
-                'cache_time': time()
+                '$set': {
+                    'address': address,
+                    'id': x['txn']['id'],
+                    'height': x['height'],
+                    'block_hash': x['block_hash'],
+                    'spent': False,
+                    'txn': x['txn'],
+                    'cache_time': time()
+                }
             },
             upsert=True)
             
@@ -214,14 +203,14 @@ class BlockChainUtils(object):
                     }
                 }
             ]
-            for x in self.mongo.db.blocks.aggregate(received_query, allowDiskUse=True):
+            async for x in self.mongo.async_db.blocks.aggregate(received_query, allowDiskUse=True):
                 xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
 
                 if xaddress == address:
                     reverse_public_key = x['public_key']
                     break
 
-        spent = self.mongo.db.blocks.aggregate([
+        spent = self.mongo.async_db.blocks.aggregate([
             {
                 "$match": {
                     "index": {'$gte': block_height}
@@ -261,43 +250,10 @@ class BlockChainUtils(object):
             }
         ])
 
-        spent_fastgraph = self.mongo.db.fastgraph_transactions.aggregate([
-            {
-                "$match": {
-                    "$or": [
-                        {"txn.public_key": reverse_public_key},
-                        {"txn.inputs.public_key": reverse_public_key},
-                        {"txn.inputs.address": address}
-                    ]
-                }
-            },
-            {
-                "$project": {
-                    "_id": 0,
-                    "public_key": "$txn.public_key",
-                    "txn": "$txn"
-                }
-            }
-        ])
-
         # here we're assuming block/transaction validation ensures the inputs used are valid for this address
-        for x in spent:
+        async for x in spent:
             for i in x['txn']['inputs']:
-                self.mongo.db.unspent_cache.update({
-                    'address': address,
-                    'id': i['id']
-                },
-                {
-                    '$set': {
-                        'spent': True,
-                        'cache_time': time()
-                    }
-                },
-                multi=True) # TODO: using multi because there is a bug currently that allows double spends on-chain
-
-        for x in spent_fastgraph:
-            for i in x['txn']['inputs']:
-                self.mongo.db.unspent_cache.update({
+                await self.mongo.async_db.unspent_cache.update_many({
                     'address': address,
                     'id': i['id']
                 },
@@ -310,10 +266,12 @@ class BlockChainUtils(object):
                 multi=True) # TODO: using multi because there is a bug currently that allows double spends on-chain
 
         if ids:
-            res = self.mongo.db.unspent_cache.find({'address': address, 'spent': False, 'id': {'$in': ids}})
+            query = {'address': address, 'spent': False, 'id': {'$in': ids}}
         else:
-            res = self.mongo.db.unspent_cache.find({'address': address, 'spent': False})
-        return res
+            query = {'address': address, 'spent': False}
+        async for txn in self.mongo.async_db.unspent_cache.find(query):
+            if 'txn' in txn:
+                yield txn
 
     def get_wallet_unspent_fastgraph_transactions(self, address):
         result = [x for x in self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})]

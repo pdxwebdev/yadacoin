@@ -87,60 +87,23 @@ class GraphInfoHandler(BaseGraphHandler):
 class GraphRIDWalletHandler(BaseGraphHandler):
 
     async def get(self):
-        graph = self.get_base_graph()
-        config = self.config
         address = self.get_query_argument('address')
-        bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', "+")
         amount_needed = self.get_query_argument('amount_needed', None)
         if amount_needed:
             amount_needed = int(amount_needed)
-        rid = TU.generate_rid(config, bulletin_secret)
         
-        unspent_transactions = [x for x in BU().get_wallet_unspent_transactions(address)]
-        spent_txn_ids = []
-        
-        for x in unspent_transactions:
-            spent_txn_ids.extend([y['id'] for y in x['inputs']])
-
-        unspent_fastgraph_transactions = [x for x in BU().get_wallet_unspent_fastgraph_transactions(address) if x['id'] not in spent_txn_ids]
-        spent_fastgraph_ids = []
-        for x in unspent_fastgraph_transactions:
-            spent_fastgraph_ids.extend([y['id'] for y in x['inputs']])
         regular_txns = []
-        txns_for_fastgraph = []
         chain_balance = 0
-        fastgraph_balance = 0
-        for txn in unspent_transactions + unspent_fastgraph_transactions:
-            if 'signatures' in txn and txn['signatures']:
-                fastgraph = FastGraph.from_dict(0, txn)
-                origin_fasttrack = fastgraph.get_origin_relationship(rid)
-                if origin_fasttrack or (('rid' in txn and txn['rid'] == rid) or txn.get('requester_rid') == rid or txn.get('requested_rid') == rid):
-                    txns_for_fastgraph.append(txn)
-                    for output in txn['outputs']:
-                        if output['to'] == address:
-                            fastgraph_balance += int(output['value'])
-                else:
-                    regular_txns.append(txn)
-                    for output in txn['outputs']:
-                        if output['to'] == address:    
-                            chain_balance += int(output['value'])
-            elif 'dh_public_key' in txn and txn['dh_public_key'] and (('rid' in txn and txn['rid'] == rid) or txn.get('requester_rid') == rid or txn.get('requested_rid') == rid):
-                txns_for_fastgraph.append(txn)
-                for output in txn['outputs']:
-                    if output['to'] == address:
-                        fastgraph_balance += int(output['value'])
-            else:
-                regular_txns.append(txn)
-                for output in txn['outputs']:
-                    if output['to'] == address:
-                        chain_balance += int(output['value'])
+        async for txn in BU().get_wallet_unspent_transactions(address):
+            regular_txns.append(txn)
+            for output in txn['outputs']:
+                if output['to'] == address:
+                    chain_balance += int(output['value'])
     
         wallet = {
             'chain_balance': chain_balance,
-            'fastgraph_balance': fastgraph_balance,
-            'balance': fastgraph_balance + chain_balance,
-            'unspent_transactions': regular_txns if amount_needed else [],
-            'txns_for_fastgraph': txns_for_fastgraph
+            'balance': chain_balance,
+            'unspent_transactions': regular_txns if amount_needed else []
         }
         self.render_as_json(wallet, indent=4)
 

@@ -19,7 +19,7 @@ class Faucet(object):
         used_inputs = []
         new_inputs = []
         for x in mongo.site_db.faucet.find({'active': True}):
-            balance = BU.get_wallet_balance(config, mongo, x['address'])
+            balance = await BU.get_wallet_balance(config, mongo, x['address'])
             if balance >= 25:
                 mongo.site_db.faucet.update({'_id': x['_id']}, {'active': False, 'address': x['address']})
 

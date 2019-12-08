@@ -577,8 +577,7 @@ class GraphUtils(object):
                 selectors = [selector, ]
             else:
                 selectors = selector
-        
-        cipher = None
+
         for selector in selectors:
             for txn in self.get_transactions_by_rid_worker(selector, bulletin_secret, wif, rid, raw,
                                 returnheight, lt_block_height, requested_rid):
@@ -593,9 +592,7 @@ class GraphUtils(object):
                 for txn in res:
                     if not raw:
                         try:
-                            if not cipher:
-                                cipher = Crypt(self.config.wif)
-                            decrypted = cipher.decrypt(txn['relationship'])
+                            decrypted = self.config.cipher.decrypt(txn['relationship'])
                             relationship = json.loads(decrypted.decode('latin1'))
                             txn['relationship'] = relationship
                         except:
@@ -671,7 +668,6 @@ class GraphUtils(object):
                 }
             blocks = self.mongo.db.blocks.find(query)
 
-        cipher = None
         for block in blocks:
             for transaction in block.get('transactions'):
                 if transaction.get('relationship') and (transaction.get('rid') == selector or transaction.get('requested_rid') == selector):
@@ -679,9 +675,7 @@ class GraphUtils(object):
                         transaction['height'] = block['index']
                     if not raw:
                         try:
-                            if not cipher:
-                                cipher = Crypt(self.config.wif)
-                            decrypted = cipher.decrypt(transaction['relationship'])
+                            decrypted = self.config.cipher.decrypt(transaction['relationship'])
                             relationship = json.loads(decrypted.decode('latin1'))
                             transaction['relationship'] = relationship
                         except:
@@ -996,22 +990,6 @@ class GraphUtils(object):
             if 'their_bulletin_secret' in transaction['relationship']:
                 mutual_bulletin_secrets.add(transaction['relationship']['their_bulletin_secret'])
         return list(mutual_bulletin_secrets)
-
-    def get_first_shared_secret_by_rid(self, rid):
-        dh_public_keys = []
-        dh_private_keys = []
-        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, inc_mempool=True)
-        for txn in txns:
-            if str(txn['public_key']) == str(self.config.public_key) and txn['relationship']['dh_private_key']:
-                dh_private_keys.append(txn['relationship']['dh_private_key'])
-        txns = self.get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True, inc_mempool=True)
-        for txn in txns:
-            if str(txn['public_key']) != str(self.config.public_key) and txn['dh_public_key']:
-                dh_public_keys.append(txn['dh_public_key'])
-        for dh_public_key in dh_public_keys:
-            for dh_private_key in dh_private_keys:
-                return scalarmult(unhexlify(dh_private_key).decode('latin1'), unhexlify(dh_public_key).decode('latin1')).encode('latin1')
-        return None
 
     def get_shared_secrets_by_rid(self, rid):
         shared_secrets = []

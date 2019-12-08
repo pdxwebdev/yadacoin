@@ -78,8 +78,7 @@ class TransactionFactory(object):
                 self.relationship = json.dumps({
                     "chatText": self.chattext
                 })
-                self.cipher = Crypt(self.config.wif)
-                self.encrypted_relationship = self.cipher.encrypt(self.relationship)
+                self.encrypted_relationship = self.config.cipher.encrypt(self.relationship)
             elif self.signin:
                 for shared_secret in self.config.GU.get_shared_secrets_by_rid(self.rid):
                     self.relationship = SignIn(self.signin)
@@ -96,8 +95,7 @@ class TransactionFactory(object):
                 self.relationship = self.generate_relationship()
                 if not private_key:
                     raise Exception('missing private key')
-                self.cipher = Crypt(self.config.wif)
-                self.encrypted_relationship = self.cipher.encrypt(self.relationship.to_json().encode())
+                self.encrypted_relationship = self.config.cipher.encrypt(self.relationship.to_json().encode())
         else:
             self.rid = ''
             self.encrypted_relationship = ''

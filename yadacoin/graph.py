@@ -32,80 +32,12 @@ class Graph(object):
         bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
         self.rid = rid
-        self.registered = False
-        self.pending_registration = False
-        self.invited = False
         self.username = ''
 
         if key_or_wif in [config.private_key, config.wif]:
-            self.cipher = self.config.cipher
             self.wallet_mode = True
         else:
-            self.all_relationships = [x for x in GU().get_all_usernames()]
-            self.rid_usernames = dict([(x['rid'], x['relationship']['their_username']) for x in self.all_relationships])
             self.wallet_mode = False
-            start_height = 0
-            # this will get any transactions between the client and server
-            nodes = GU().get_transactions_by_rid(bulletin_secret, config.bulletin_secret, raw=True, returnheight=True, inc_mempool=True)
-            already_done = []
-            for node in nodes:
-                if node.get('dh_public_key'):
-                    test = {
-                        'rid': node.get('rid'),
-                        'requester_rid': node.get('requester_id'),
-                        'requested_rid': node.get('requested_id'),
-                        'id': node.get('id')
-                    }
-                    node['username'] = 'YadaCoin'
-                    if test in already_done:
-                        continue
-                    else:
-                        self.friends.append(node)
-                        already_done.append(test)
-
-            self.registered = False
-            shared_secrets = GU().get_first_shared_secret_by_rid(rid)
-
-            if shared_secrets:
-                self.registered = True
-
-            if self.registered:
-                for x in self.friends:
-                    for y in x['outputs']:
-                        if y['to'] != config.address:
-                            self.mongo.site_db.usernames.update({
-                                'rid': self.rid,
-                                'username': self.username,
-                                },
-                                {
-                                'rid': self.rid,
-                                'username': self.username,
-                                'to': y['to'],
-                                'relationship': {
-                                    'bulletin_secret': bulletin_secret
-                                }
-                            },
-                            upsert=True)
-            else:
-                # not regisered, let's check for a pending transaction
-                res = self.mongo.db.miner_transactions.find_one({
-                    'rid': self.rid, 
-                    'public_key': {
-                        '$ne': self.config.public_key
-                    }
-                }, {'_id': 0})
-                res2 = self.mongo.db.miner_transactions.find_one({
-                    'rid': self.rid,
-                    'public_key': self.config.public_key
-                }, {'_id': 0})
-
-                if res and res2:
-                    self.pending_registration = True
-                
-                elif res2:
-                    res2['bulletin_secret'] = self.config.bulletin_secret
-                    res2['username'] = self.config.username
-                    self.invited = res2
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
@@ -146,7 +78,7 @@ class Graph(object):
         used_peers = []
         for peer in self.config.peers.peers:
             if peer.to_string() in used_peers: continue
-            if peer.to_string() == "{}:{}".format(self.config.peer_host, self.config.peer_port): continue
+            if peer.to_string() in ['localhost:{}'.format(self.config.peer_port), '0.0.0.0:{}'.format(self.config.peer_port), "{}:{}".format(self.config.peer_host, self.config.peer_port)]: continue
             try:
                 if peer.client and peer.client.connected:
                     await peer.client.client.emit(
@@ -270,7 +202,7 @@ class Graph(object):
         if self.wallet_mode:
             for transaction in self.mongo.db.miner_transactions.find({"relationship": {"$ne": ""}}):
                 try:
-                    decrypted = self.cipher.decrypt(transaction['relationship'])
+                    decrypted = self.config.cipher.decrypt(transaction['relationship'])
                     relationship = json.loads(decrypted.decode('latin1'))
                     transaction['relationship'] = relationship
                 except:
@@ -417,14 +349,10 @@ class Graph(object):
             'sent_friend_requests': self.sent_friend_requests,
             'friend_requests': self.friend_requests,
             'posts': self.posts,
-            'logins': self.logins,
             'messages': self.messages,
             'rid': self.rid,
             'bulletin_secret': self.bulletin_secret,
             'username': self.username,
-            'registered': self.registered,
-            'pending_registration': self.pending_registration,
-            'invited': self.invited,
             'new_messages': self.new_messages,
             'reacts': self.reacts,
             'comments': self.comments,
