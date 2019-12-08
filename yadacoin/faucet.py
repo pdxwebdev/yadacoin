@@ -15,7 +15,7 @@ class ChatNamespace(BaseNamespace):
 
 class Faucet(object):
     @classmethod
-    def run(cls, config, mongo):
+    async def run(cls, config, mongo):
         used_inputs = []
         new_inputs = []
         for x in mongo.site_db.faucet.find({'active': True}):
@@ -30,7 +30,7 @@ class Faucet(object):
                 continue
 
             try:
-                transaction = TransactionFactory.construct(
+                transaction = await TransactionFactory.construct(
                     block_height=BU.get_latest_block(config, mongo)['index'],
                     fee=0.01,
                     public_key=config.public_key,

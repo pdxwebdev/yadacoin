@@ -291,7 +291,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         dh_public_key = scalarmult_base(a).encode('latin1').hex()
         dh_private_key = a.encode('latin1').hex()
 
-        transaction = TransactionFactory.construct(
+        transaction = await TransactionFactory.construct(
             block_height=BU().get_latest_block()['index'],
             bulletin_secret=bulletin_secret,
             username=username,

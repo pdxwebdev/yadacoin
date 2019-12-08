@@ -122,7 +122,7 @@ class CreateTransactionView(BaseHandler):
         for from_address in from_addresses:
             inputs.extend([x async for x in BU().get_wallet_unspent_transactions(from_address)])
 
-        txn = TransactionFactory.construct(
+        txn = await TransactionFactory.construct(
             block_height=BU().get_latest_block()['index'],
             private_key=config.private_key,
             public_key=config.public_key,

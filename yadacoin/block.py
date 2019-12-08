@@ -145,7 +145,7 @@ class BlockFactory(object):
                         continue
             
             block_reward = CHAIN.get_block_reward(index)
-            coinbase_txn_fctry = TransactionFactory.construct(
+            coinbase_txn_fctry = await TransactionFactory.construct(
                 index,
                 public_key=public_key,
                 private_key=private_key,

@@ -15,10 +15,10 @@ class ChatNamespace(BaseNamespace):
 
 class Send(object):
     @classmethod
-    def run(cls, config, mongo, to, value):
+    async def run(cls, config, mongo, to, value):
 
         try:
-            transaction = TransactionFactory.construct(
+            transaction = await TransactionFactory.construct(
                 block_height=config.BU.get_latest_block()['index'],
                 fee=0.01,
                 public_key=config.public_key,
