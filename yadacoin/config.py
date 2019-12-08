@@ -58,6 +58,7 @@ class Config(object):
         self.serve_port = config['serve_port']
         self.callbackurl = config['callbackurl']
         self.sia_api_key = config.get('sia_api_key')
+        self.jwt_public_key = config.get('jwt_public_key')
         self.fcm_key = config['fcm_key']
         self.post_peer = config.get('post_peer', True)
         self.extended_status = config.get('extended_status', False)
@@ -173,6 +174,7 @@ class Config(object):
             "web_server_port": 8000,
             "peer": "http://localhost:8000",
             "callbackurl": "http://0.0.0.0:8000/create-relationship",
+            "jwt_public_key": None,
             "fcm_key": "",
             "database": "yadacoin",
             "site_database": "yadacoinsite",
@@ -217,6 +219,7 @@ class Config(object):
         cls.serve_port = config['serve_port']
         cls.callbackurl = config['callbackurl']
         cls.fcm_key = config['fcm_key']
+        cls.jwt_public_key = config.get('jwt_public_key')
         cls.sia_api_key = config.get('sia_api_key')
 
     def get_bulletin_secret(self):
@@ -268,6 +271,7 @@ class Config(object):
             'fcm_key': self.fcm_key,
             'polling': self.polling,
             'sia_api_key': self.sia_api_key,
+            'jwt_public_key': self.jwt_public_key,
             'callbackurl': self.callbackurl
         }
 
