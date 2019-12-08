@@ -13,7 +13,8 @@ from yadacoin.transaction import (
     MissingInputTransactionException, 
     InvalidTransactionException,
     InvalidTransactionSignatureException,
-    TransactionInputOutputMismatchException
+    TransactionInputOutputMismatchException,
+    TotalValueMismatchException
 )
 from yadacoin.fastgraph import FastGraph, MissingFastGraphInputTransactionException
 
@@ -473,6 +474,10 @@ class MiningPool(object):
                 print('TransactionInputOutputMismatchException: transaction removed')
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
                 self.mongo.db.failed_transactions.insert({'reason': 'TransactionInputOutputMismatchException', 'txn': transaction_obj.to_dict()})
+            except TotalValueMismatchException as e:
+                print('TotalValueMismatchException: transaction removed')
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'TotalValueMismatchException', 'txn': transaction_obj.to_dict()})
             except Exception as e:
                 print(e)
                 #print 'rejected transaction', txn['id']

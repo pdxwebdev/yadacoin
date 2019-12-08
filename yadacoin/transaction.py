@@ -264,6 +264,9 @@ class MaxRelationshipSizeExceeded(Exception):
 class TransactionInputOutputMismatchException(Exception):
     pass
 
+class TotalValueMismatchException(Exception):
+    pass
+
 
 class Transaction(object):
 
@@ -414,7 +417,7 @@ class Transaction(object):
             total_output += float(txn.value)
         total = float(total_output) + float(self.fee)
         if "{0:.8f}".format(total_input) != "{0:.8f}".format(total):
-            raise Exception("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
+            raise TotalValueMismatchException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     def generate_hash(self):
         inputs_concat = self.get_input_hashes()

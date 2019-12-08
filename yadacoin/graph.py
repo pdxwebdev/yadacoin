@@ -49,6 +49,8 @@ class Graph(object):
                     elif node.get('public_key') == self.config.public_key:
                         me = node
                         self.friends.append(node)
+                if them and me:
+                    break
 
             if them and me:
                 for x in self.friends:
