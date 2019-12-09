@@ -2,6 +2,7 @@ import json
 import hashlib
 import requests
 import logging
+import time
 
 from yadacoin.blockchainutils import BU
 from yadacoin.transactionutils import TU
@@ -107,7 +108,7 @@ class Graph(object):
     
     async def resolve_ns(self, rid, username=True):
         used_peers = []
-        for peer in self.config.peers.peers:
+        for peer in [x for x in self.config.peers.peers[:5] if x.host not in self.config.outgoing_blacklist]: # shot in the dark
             if peer.to_string() in used_peers: continue
             if peer.to_string() in ['localhost:{}'.format(self.config.peer_port), '0.0.0.0:{}'.format(self.config.peer_port), "{}:{}".format(self.config.peer_host, self.config.peer_port)]: continue
             try:
@@ -127,7 +128,7 @@ class Graph(object):
                             rid,
                             self.config.bulletin_secret
                         ),
-                        timeout=3,
+                        timeout=1,
                         headers={'Connection': 'close'}
                     ).content
                     ns_record = json.loads(res.decode())
@@ -135,6 +136,14 @@ class Graph(object):
                         return ns_record
 
             except Exception as e:
+                await self.config.mongo.async_db.peers.update_many({
+                    'host': peer.host,
+                    'port': peer.port,
+                    '$inc': {
+                        'failed': 1
+                    }
+                })
+                self.config.outgoing_blacklist.append(peer.host)
                 self.app_log.debug(e)
             used_peers.append(peer.to_string())
 
