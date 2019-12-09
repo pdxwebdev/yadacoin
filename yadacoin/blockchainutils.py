@@ -262,8 +262,7 @@ class BlockChainUtils(object):
                         'spent': True,
                         'cache_time': time()
                     }
-                },
-                multi=True) # TODO: using multi because there is a bug currently that allows double spends on-chain
+                })
 
         if ids:
             query = {'address': address, 'spent': False, 'id': {'$in': ids}}

@@ -460,8 +460,9 @@ class MiningPool(object):
                 else:
                     transaction_objs.append(transaction_obj)
             except MissingInputTransactionException as e:
-                #print 'missing this input transaction, will try again later'
-                pass
+                print('MissingInputTransactionException: transaction removed')
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'MissingInputTransactionException', 'txn': transaction_obj.to_dict()})
             except InvalidTransactionSignatureException as e:
                 print('InvalidTransactionSignatureException: transaction removed')
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})

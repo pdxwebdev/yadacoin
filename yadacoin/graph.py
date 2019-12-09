@@ -138,6 +138,10 @@ class Graph(object):
             except Exception as e:
                 await self.config.mongo.async_db.peers.update_many({
                     'host': peer.host,
+                    'port': peer.port
+                    },
+                    {
+                    'host': peer.host,
                     'port': peer.port,
                     '$inc': {
                         'failed': 1
