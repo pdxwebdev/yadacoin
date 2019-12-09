@@ -42,7 +42,7 @@ class Graph(object):
             me = None
             them = None
             for node in nodes:
-                if node.get('dh_public_key'):
+                if node.get('dh_public_key') and self.rid == node.get('rid'):
                     if node.get('public_key') != self.config.public_key:
                         them = node
                         self.friends.append(node)
