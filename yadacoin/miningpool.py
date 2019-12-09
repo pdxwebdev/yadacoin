@@ -299,7 +299,8 @@ class MiningPool(object):
     async def block_to_mine_info(self):
         """Returns info for current block to mine"""
         if self.block_factory is None:
-            await self.refresh()
+            #await self.refresh()
+            return {}
         res = {
             'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0'),  # target is now in hex format
             'special_target': hex(int(self.block_factory.block.special_target))[2:].rjust(64, '0'),  # target is now in hex format
@@ -389,21 +390,12 @@ class MiningPool(object):
                 )
             )
 
-    def combine_transaction_lists(self):
-        transactions = self.mongo.db.fastgraph_transactions.find({'$or': [{'ignore': False}, {'ignore': {'$exists': False}}]})
-        for transaction in transactions:
-            if 'txn' in transaction:
-                yield transaction['txn']
-
-        transactions = self.mongo.db.miner_transactions.find()
-        for transaction in transactions:
-            yield transaction
 
     async def get_pending_transactions(self):
         transaction_objs = []
         unspent_indexed = {}
         used_sigs = []
-        for txn in sorted(self.combine_transaction_lists(), key=lambda i: int(i['fee']), reverse=True)[:1000]:
+        for txn in sorted([x for x in self.mongo.db.miner_transactions.find()], key=lambda i: int(i['fee']), reverse=True)[:1000]:
             try:
                 if isinstance(txn, FastGraph) and hasattr(txn, 'signatures'):
                     transaction_obj = txn
@@ -460,6 +452,8 @@ class MiningPool(object):
                 else:
                     transaction_objs.append(transaction_obj)
             except MissingInputTransactionException as e:
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'MissingInputTransactionException', 'txn': transaction_obj.to_dict()})
                 print('MissingInputTransactionException: transaction removed')
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
                 self.mongo.db.failed_transactions.insert({'reason': 'MissingInputTransactionException', 'txn': transaction_obj.to_dict()})

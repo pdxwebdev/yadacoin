@@ -14,7 +14,7 @@ class PoolHandler(BaseHandler):
     async def get(self):
         if self.config.mp is None:
             self.config.mp = MiningPool()
-            await self.config.mp.refresh()
+            #await self.config.mp.refresh()
         """
         if not self.config.mp.block_factory:
             # first init
