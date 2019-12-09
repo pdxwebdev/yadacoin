@@ -158,7 +158,7 @@ class MiningPool(object):
             matching_block.hash = hash1
             matching_block.nonce = nonce
             # target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
-            self.app_log.debug("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
+            #self.app_log.debug("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
         # TODO: store share and send block if enough
         # No need to re-verify block, should be good since we forged it and nonce passes
         # TODO: Gain time by only signing (and no need to verify after debug) if block passes net diff.
@@ -193,7 +193,8 @@ class MiningPool(object):
             self.app_log.debug('block ok - special_min')
             self.app_log.error('^^ ^^ ^^')
         else:
-            self.app_log.debug('share ok')
+            #self.app_log.debug('share ok')
+            pass
         # submit share only now, not to slow down if we had a block
         await self.mongo.async_db.shares.insert_one({
             'address': address,
