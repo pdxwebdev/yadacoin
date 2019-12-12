@@ -29,7 +29,7 @@ class Crypt(object):  # Relationship Utilities
         from Crypto import Random
         BS = AES.block_size
         iv = Random.new().read(BS)
-        s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS)
+        s = s + (BS - len(s) % BS) * chr(BS - len(s) % BS).encode()
         cipher = AES.new(self.key, AES.MODE_CBC, iv)
         return (iv + cipher.encrypt(s)).hex()
 

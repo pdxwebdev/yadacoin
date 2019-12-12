@@ -5,6 +5,8 @@ Handlers required by the web operations
 import uuid
 import os
 import json
+import time
+import hashlib
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.graphutils import GraphUtils as GU
 from yadacoin.blockchainutils import BU
@@ -150,6 +152,47 @@ class RemoteMultifactorAuthHandler(BaseHandler):
         })
 
 
+class TwoFactorAuthHandler(BaseWebHandler):
+
+    async def post(self):
+        """
+        :return:
+        """
+        args = json.loads(self.request.body.decode('utf-8'))
+        origin = args.get('origin', '*')
+        redirect = args.get('redirect')
+        auth_code = args.get('signin_code')
+
+
+        if not auth_code:
+            return self.render_as_json({'error': 'missing params'}), 400
+        self.set_header("Access-Control-Allow-Origin", origin)
+        self.set_header('Access-Control-Allow-Credentials', "true")
+        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
+        self.set_header('Access-Control-Expose-Headers', "Content-Type")
+        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
+        self.set_header('Access-Control-Max-Age', 600)
+
+        shared_secrets = self.config.GU.get_shared_secrets_by_rid(self.get_secure_cookie('rid').decode())
+        authenticated = False
+        for shared_secret in shared_secrets:
+            hashed_shared_secret = hashlib.sha256(shared_secret).hexdigest()
+            thirty_rounded_time = str(int(time.time()//30 * 30))
+            result = int(hashlib.sha256((thirty_rounded_time + hashed_shared_secret).encode()).hexdigest(), 16) % (10 ** 6)
+            if '000000{}'.format(result)[-6:] == auth_code:
+                authenticated = True
+                self.set_secure_cookie('2fa', 'true')
+                break
+            
+        
+        if redirect:
+            return self.redirect(redirect)
+        else:
+            return self.render_as_json({
+                'authenticated': authenticated
+            })
+
+
 class LogoutHandler(BaseHandler):
 
     def get(self):
@@ -224,6 +267,7 @@ WEB_HANDLERS = [
     (r'/mfa', MultifactorAuthHandler),
     (r'/login', LoginHandler),
     (r'/rmfa', RemoteMultifactorAuthHandler),
+    (r'/2fa', TwoFactorAuthHandler),
     (r'/logout', LogoutHandler),
     (r'/api-stats', HashrateAPIHandler),
     (r'/app', AppHandler),

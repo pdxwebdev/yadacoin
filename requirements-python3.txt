@@ -16,10 +16,12 @@ websockets
 miniupnpc
 pyfcm
 pycryptodome
+Pillow==6.2.1
 jws
 pyasn1
 PyJWT
 python-jwt
+qrcode==6.1
 cmake
 -e git+https://github.com/pdxwebdev/pyrx#egg=pyrx
 pbkdf2
