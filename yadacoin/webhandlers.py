@@ -262,6 +262,19 @@ class AppHandler(BaseWebHandler):
         self.render("app.html")
 
 
+class App2FAHandler(BaseWebHandler):
+
+    def prepare(self):
+        if self.request.protocol == 'https':
+            self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
+
+    async def get(self):
+        """
+        :return:
+        """
+        self.render("app2fa.html")
+
+
 WEB_HANDLERS = [
     (r'/', HomeHandler),
     (r'/mfa', MultifactorAuthHandler),
@@ -271,4 +284,5 @@ WEB_HANDLERS = [
     (r'/logout', LogoutHandler),
     (r'/api-stats', HashrateAPIHandler),
     (r'/app', AppHandler),
+    (r'/app2fa', App2FAHandler),
 ]

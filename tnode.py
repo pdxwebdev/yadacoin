@@ -60,7 +60,8 @@ class NodeApplication(Application):
     def __init__(self, config, mongo, peers):
         static_path = path.join(path.dirname(__file__), 'static')
         self.default_handlers = [
-            (r"/static/app/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app')}),
+            (r"/app/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app')}),
+            (r"/app2fa/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app2fa')}),
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
             (r"/socket.io/", socketio.get_tornado_handler(get_sio()))
         ]
