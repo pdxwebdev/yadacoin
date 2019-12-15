@@ -141,12 +141,11 @@ class Graph(object):
                     'port': peer.port
                     },
                     {
-                    'host': peer.host,
-                    'port': peer.port,
-                    '$inc': {
-                        'failed': 1
+                        '$inc': {
+                                'failed': 1
+                        }
                     }
-                })
+                )
                 self.config.outgoing_blacklist.append(peer.host)
                 self.app_log.debug(e)
             used_peers.append(peer.to_string())

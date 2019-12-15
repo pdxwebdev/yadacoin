@@ -209,7 +209,7 @@ async def background_pool_payer():
         So we can update the miners.
         """
         try:
-            await async_sleep(10)
+            await async_sleep(60)
             if config.pp:
                 await config.pp.do_payout()
 
