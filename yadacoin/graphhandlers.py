@@ -368,7 +368,16 @@ class GraphReactsHandler(BaseGraphHandler):
 class NSLookupHandler(BaseGraphHandler):
     async def get(self):
         ns_username = self.get_query_argument('username', None)
-        return self.render_as_json(self.config.GU.search_ns_username(ns_username))
+        ns_requested_rid = self.get_query_argument('requested_rid', None)
+        ns_requester_rid = self.get_query_argument('requester_rid', None)
+        id_type = self.get_query_argument('id_type', None)
+        if ns_username:
+            return self.render_as_json(await self.config.GU.search_ns_username(ns_username, ns_requested_rid, id_type))
+        if ns_requested_rid:
+            return self.render_as_json(await self.config.GU.search_ns_requested_rid(ns_requested_rid, ns_username, id_type))
+        if ns_requester_rid:
+            return self.render_as_json(await self.config.GU.search_ns_requester_rid(ns_requester_rid, ns_username, id_type))
+        return self.render_as_json({"status": "error"}, 400)
 
 
 class SignRawTransactionHandler(BaseHandler):

@@ -30,10 +30,11 @@ class Graph(object):
         self.bulletin_secret = str(bulletin_secret)
         self.ids = ids
         self.rids = rids
+        self.server_bulletin_secret = str(config.bulletin_secret)
         bulletin_secrets = sorted([str(config.bulletin_secret), str(bulletin_secret)], key=str.lower)
         rid = hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
         self.rid = rid
-        self.username = ''
+        self.username = self.config.username
 
         if key_or_wif in [config.private_key, config.wif]:
             self.wallet_mode = True
@@ -395,6 +396,7 @@ class Graph(object):
             'messages': self.messages,
             'rid': self.rid,
             'bulletin_secret': self.bulletin_secret,
+            'server_bulletin_secret': self.server_bulletin_secret,
             'username': self.username,
             'new_messages': self.new_messages,
             'reacts': self.reacts,

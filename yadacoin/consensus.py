@@ -298,6 +298,7 @@ class Consensus(object):
 
         # for peer in self.peers.peers:
         for peer_string in polling_peers:
+            if '0.0.0.0' in peer_string: continue
             self.peers.syncing = True
             try:
                 self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer_string))

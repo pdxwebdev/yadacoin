@@ -397,11 +397,12 @@ async def main():
         config.SIO = get_sio()
 
         tornado.ioloop.IOLoop.instance().add_callback(background_consensus, options, peers)
-        tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
+        if config.network != 'regnet':
+            tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
+            tornado.ioloop.IOLoop.instance().add_callback(background_transaction_broadcast)
+            tornado.ioloop.IOLoop.instance().add_callback(background_ns_broadcast)
         tornado.ioloop.IOLoop.instance().add_callback(background_status)
         tornado.ioloop.IOLoop.instance().add_callback(background_pool)
-        tornado.ioloop.IOLoop.instance().add_callback(background_transaction_broadcast)
-        tornado.ioloop.IOLoop.instance().add_callback(background_ns_broadcast)
         tornado.ioloop.IOLoop.instance().add_callback(background_cache_validator)
         if config.pool_payout:
             app_log.info("PoolPayout activated")

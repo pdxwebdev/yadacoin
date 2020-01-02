@@ -30,6 +30,8 @@ class ChatNamespace(AsyncNamespace):
             self.app_log = getLogger("tornado.application")
             self.peers = self.config.peers
             self.consensus = self.config.consensus
+        if self.config.network == 'regnet':
+            return False
         IP = environ['tornado.handler'].request.remote_ip
         if self.peers.free_inbound_slots <= 0:
             self.app_log.warning('No free slot, client rejected: {}'.format(IP))

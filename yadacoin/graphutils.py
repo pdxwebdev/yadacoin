@@ -1,5 +1,6 @@
 import json
 import base64
+import bson
 from time import time
 from logging import getLogger
 from binascii import unhexlify
@@ -52,8 +53,44 @@ class GraphUtils(object):
             queryType='searchUsername'
         )
 
-    def search_ns_username(self, ns_username):
-        return self.config.mongo.async_db.name_server.find('txn.relationship.their_username', ns_username).to_list(100)
+    async def search_ns_username(self, ns_username, ns_requested_rid=None, id_type=None):
+        
+        regx = bson.regex.Regex('^{}'.format(ns_username), 'i')
+        query = {
+            '$or': [
+                {'txn.relationship.their_username': regx},
+                {'txn.relationship.my_username': regx}
+            ]
+        }
+        if ns_requested_rid:
+            query['txn.requested_rid'] = ns_requested_rid
+        if id_type:
+            query['txn.relationship.{}'.format(id_type)] = True
+        return await self.config.mongo.async_db.name_server.find(query, {'_id': 0}).to_list(100)
+
+    async def search_ns_requested_rid(self, ns_requested_rid, ns_username=None, id_type=None):
+        
+        query = {
+            'txn.requested_rid': ns_requested_rid
+        }
+        if ns_username:
+            regx = bson.regex.Regex('^{}'.format(ns_username), 'i')
+            query['txn.relationship.their_username'] = regx
+        if id_type:
+            query['txn.relationship.{}'.format(id_type)] = True
+        return await self.config.mongo.async_db.name_server.find(query, {'_id': 0}).to_list(100)
+
+    async def search_ns_requester_rid(self, ns_requester_rid, ns_username=None, id_type=None):
+        
+        query = {
+            'txn.requester_rid': ns_requester_rid
+        }
+        if ns_username:
+            regx = bson.regex.Regex('^{}'.format(ns_username), 'i')
+            query['txn.relationship.their_username'] = regx
+        if id_type:
+            query['txn.relationship.{}'.format(id_type)] = True
+        return await self.config.mongo.async_db.name_server.find(query, {'_id': 0}).to_list(100)
 
     def search_rid(self, rids):
         if not isinstance(rids, (list, tuple)):
@@ -561,7 +598,7 @@ class GraphUtils(object):
                     return transaction
 
     def get_transactions_by_rid(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
-                                returnheight=True, lt_block_height=None, requested_rid=False, inc_mempool=False):
+                                returnheight=True, lt_block_height=None, requested_rid=False, inc_mempool=False, shared_decrypt=False):
         # selectors is old code before we got an RID by sorting the bulletin secrets
         # from block import Block
         # from transaction import Transaction
@@ -578,29 +615,72 @@ class GraphUtils(object):
             else:
                 selectors = selector
 
+        cipher = None
         for selector in selectors:
             for txn in self.get_transactions_by_rid_worker(selector, bulletin_secret, wif, rid, raw,
                                 returnheight, lt_block_height, requested_rid):
                 yield txn
             if inc_mempool:
-                res = self.config.mongo.db.miner_transactions.find({
-                    'relationship': {'$ne': ''},
-                    'rid': selector
-                }, {
+                if requested_rid:
+                    query = {
+                        'relationship': {'$ne': ''},
+                        'requested_rid': requested_rid
+                    }
+                else:
+                    query = {
+                        'relationship': {'$ne': ''},
+                        'rid': selector
+                    }
+                res = self.config.mongo.db.miner_transactions.find(query, {
                     '_id': 0
                 })
                 for txn in res:
+                    res1 = self.config.mongo.db.miner_transactions_cache.find_one({
+                        'id': txn['id'],
+                        'bulletin_secret': bulletin_secret,
+                        'selector': selector
+                    }, {
+                        '_id': 0
+                    })
+                    if res1:
+                        if res1.get('success'):
+                            yield res1
+                        continue
                     if not raw:
                         try:
-                            decrypted = self.config.cipher.decrypt(txn['relationship'])
+                            if not cipher:
+                                if wif and wif != self.config.wif:
+                                    cipher = Crypt(wif)
+                                else:
+                                    cipher = self.config.cipher
+                            txn['bulletin_secret'] = bulletin_secret
+                            txn['selector'] = selector
+                            if shared_decrypt:
+                                decrypted = cipher.shared_decrypt(txn['relationship'])
+                            else:
+                                decrypted = cipher.decrypt(txn['relationship'])
                             relationship = json.loads(decrypted.decode('latin1'))
                             txn['relationship'] = relationship
+                            txn['success'] = True
+                            self.mongo.db.miner_transactions_cache.update({
+                                'id': txn['id']
+                            },
+                            {
+                                '$set': txn
+                            }, upsert=True)
                         except:
+                            txn['success'] = False
+                            self.mongo.db.miner_transactions_cache.update({
+                                'id': txn['id']
+                            },
+                            {
+                                '$set': txn
+                            }, upsert=True)
                             continue
                     yield txn
     
     def get_transactions_by_rid_worker(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
-                                returnheight=True, lt_block_height=None, requested_rid=False):
+                                returnheight=True, lt_block_height=None, requested_rid=False, shared_decrypt=False):
         from yadacoin.crypt import Crypt
 
         transactions_by_rid_cache = self.mongo.db.transactions_by_rid_cache.find(
@@ -668,6 +748,7 @@ class GraphUtils(object):
                 }
             blocks = self.mongo.db.blocks.find(query)
 
+        cipher = None
         for block in blocks:
             for transaction in block.get('transactions'):
                 if transaction.get('relationship') and (transaction.get('rid') == selector or transaction.get('requested_rid') == selector):
@@ -675,7 +756,15 @@ class GraphUtils(object):
                         transaction['height'] = block['index']
                     if not raw:
                         try:
-                            decrypted = self.config.cipher.decrypt(transaction['relationship'])
+                            if not cipher:
+                                if wif and wif != self.config.wif:
+                                    cipher = Crypt(wif)
+                                else:
+                                    cipher = self.config.wif
+                            if shared_decrypt:
+                                decrypted = cipher.shared_decrypt(transaction['relationship'])
+                            else:
+                                decrypted = cipher.decrypt(transaction['relationship'])
                             relationship = json.loads(decrypted.decode('latin1'))
                             transaction['relationship'] = relationship
                         except:
