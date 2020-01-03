@@ -237,7 +237,7 @@ class MiningPool(object):
                 block = Block.from_dict(block)
             else:
                 genesis_block = BlockFactory.get_genesis_block()
-                genesis_block.save()
+                await genesis_block.save()
                 self.mongo.db.consensus.insert({
                     'block': genesis_block.to_dict(),
                     'peer': 'me',

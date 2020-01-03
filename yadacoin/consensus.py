@@ -70,7 +70,7 @@ class Consensus(object):
     async def insert_genesis(self):
         #insert genesis if it doesn't exist
         genesis_block = BlockFactory.get_genesis_block()
-        genesis_block.save()
+        await genesis_block.save()
         self.mongo.db.consensus.update({
             'block': genesis_block.to_dict(),
             'peer': 'me',
