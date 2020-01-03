@@ -46,12 +46,14 @@ class Consensus(object):
             self.peers = peers
         else:
             self.peers = Peers()
+    
+    async def async_init(self):
         latest_block = self.config.BU.get_latest_block()
         if latest_block:
             self.latest_block = Block.from_dict(latest_block)
         else:
             if not self.prevent_genesis:
-                self.insert_genesis()
+                await self.insert_genesis()
     
     async def build_existing(self):
         self.existing_blockchain = Blockchain(self.config.BU.get_blocks())

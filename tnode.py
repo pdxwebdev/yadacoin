@@ -104,6 +104,7 @@ class NodeApplication(Application):
 async def background_consensus(options, peers):
     if not config.consensus:
         config.consensus = Consensus(options.debug, peers)
+        await config.consensus.async_init()
         await config.consensus.build_existing()
         if options.verify:
             app_log.info("Verifying existing blockchain")
