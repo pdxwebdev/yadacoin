@@ -62,6 +62,7 @@ class NodeApplication(Application):
         self.default_handlers = [
             (r"/app/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app')}),
             (r"/app2fa/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app2fa')}),
+            (r"/appvote/(.*)", StaticFileHandler, {"path": path.join(static_path, 'appvote')}),
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
             (r"/socket.io/", socketio.get_tornado_handler(get_sio()))
         ]
