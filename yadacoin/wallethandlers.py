@@ -156,7 +156,7 @@ class CreateRawTransactionView(BaseHandler):
         for from_address in from_addresses:
             inputs.extend([x async for x in BU().get_wallet_unspent_transactions(from_address)])
 
-        txn = TransactionFactory.construct(
+        txn = await TransactionFactory.construct(
             block_height=BU().get_latest_block()['index'],
             public_key=config.public_key,
             fee=float(fee),
@@ -189,7 +189,7 @@ class SendTransactionView(BaseHandler):
                 return self.render_as_json({'status': 'error', 'message': 'no wallet matching from address'})
 
         try:
-            transaction = TransactionFactory.construct(
+            transaction = await TransactionFactory.construct(
                 block_height=config.BU.get_latest_block()['index'],
                 fee=0.00,
                 public_key=public_key,
