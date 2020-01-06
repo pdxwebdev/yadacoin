@@ -14,10 +14,12 @@ from yadacoin.blockchainutils import BU
 
 class BaseWebHandler(BaseHandler):
 
-    def prepare(self):
+    async def prepare(self):
 
         if self.request.protocol == 'http' and self.config.ssl:
             self.redirect('https://' + self.request.host + self.request.uri, permanent=False)
+        
+        await super(BaseWebHandler, self).prepare()
 
 
 class HomeHandler(BaseHandler):
@@ -251,9 +253,10 @@ class HashrateAPIHandler(BaseHandler):
 
 class AppHandler(BaseWebHandler):
 
-    def prepare(self):
+    async def prepare(self):
         if self.request.protocol == 'https':
             self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
+        await super(AppHandler, self).prepare()
 
     async def get(self):
         """
@@ -264,9 +267,10 @@ class AppHandler(BaseWebHandler):
 
 class App2FAHandler(BaseWebHandler):
 
-    def prepare(self):
+    async def prepare(self):
         if self.request.protocol == 'https':
             self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
+        await super(App2FAHandler, self).prepare()
 
     async def get(self):
         """

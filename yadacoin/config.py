@@ -63,6 +63,7 @@ class Config(object):
         self.post_peer = config.get('post_peer', True)
         self.extended_status = config.get('extended_status', False)
         self.peers_seed = config.get('peers_seed', [])  # not used, superceeded by config/seed.json
+        self.api_whitelist = config.get('api_whitelist', [])
         self.force_broadcast_to = config.get('force_broadcast_to', [])
         self.force_polling = config.get('force_polling', [])
         self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
@@ -160,6 +161,7 @@ class Config(object):
             "wif": cls.generate_wif(private_key),
             "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex(),
             "address": str(key.Address()),
+            "api_whitelist": [],
             "serve_host": "0.0.0.0",
             "serve_port": 8000,
             "use_pnp": True,
@@ -204,6 +206,7 @@ class Config(object):
         cls.wif = cls.generate_wif(cls.private_key)
         cls.bulletin_secret = TU.generate_deterministic_signature(config, config['username'], config['private_key'])
 
+        cls.api_whitelist = config.get('api_whitelist', [])
         cls.mongodb_host = config['mongodb_host']
         cls.database = config['database']
         cls.site_database = config['site_database']
@@ -255,6 +258,7 @@ class Config(object):
             'wif': self.wif,
             'bulletin_secret': self.bulletin_secret,
             'mongodb_host': self.mongodb_host,
+            'api_whitelist': self.api_whitelist,
             'username': self.username,
             'network': self.network,
             'database': self.database,

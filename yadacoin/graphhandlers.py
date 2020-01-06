@@ -661,7 +661,8 @@ class SiaFileHandler(BaseGraphHandler):
 
 
 class SiaStreamFileHandler(BaseGraphHandler):
-    def prepare(self):
+    async def prepare(self):
+        await super(SiaStreamFileHandler, self).prepare()
         header = "Content-Type"
         body = "video/mp4"
         self.set_header(header, body)

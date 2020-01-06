@@ -33,6 +33,11 @@ class BaseHandler(RequestHandler):
         self.jwt = {}
         if not hasattr(self.config, 'push_service') and self.config.fcm_key:
             self.config.push_service = PushNotification(self.config)
+    
+    async def prepare(self):
+        if self.config.api_whitelist and self.request.remote_ip not in self.config.api_whitelist:
+            self.status_code = 400
+            self.render_as_json({'status': 'error', 'message': 'Not on the whitelist.'})
 
     # This could be static, but its easier to let it there so the template have direct access.
     def bool2str(self, a_boolean, iftrue, iffalse):

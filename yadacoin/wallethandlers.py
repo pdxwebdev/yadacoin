@@ -227,6 +227,7 @@ class UnlockedHandler(BaseHandler):
         self.set_header('Access-Control-Expose-Headers', "Content-Type")
         self.set_header('Access-Control-Allow-Headers', "Authorization, Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
+        await super(UnlockedHandler, self).prepare()
 
     async def get(self):
 
@@ -247,13 +248,14 @@ class UnlockedHandler(BaseHandler):
 
 class UnlockHandler(BaseHandler):
 
-    def prepare(self):
+    async def prepare(self):
         self.encoded = jwt.encode({
             'key_or_wif': 'true',
             'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=23040)},
             self.config.jwt_secret_key,
             algorithm='ES256'
         )
+        await super(UnlockHandler, self).prepare()
 
     async def get(self):
         """

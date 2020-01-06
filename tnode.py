@@ -351,6 +351,12 @@ async def main():
 
     config.pyrx = pyrx.PyRX()
 
+
+    api_whitelist = 'api_whitelist.json'
+    api_whitelist_filename = options.config.replace(ntpath.basename(options.config), api_whitelist)
+    if path.isfile(api_whitelist_filename):
+        with open(api_whitelist_filename) as f:
+            config.api_whitelist = [x['host'] for x in json.loads(f.read())]
     # get seed.json from same dir as config.
     if config.network != 'regnet':
         if config.network == 'mainnet':
