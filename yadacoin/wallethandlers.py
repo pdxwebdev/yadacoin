@@ -8,6 +8,7 @@ import base58
 import json
 import datetime
 import jwt
+import time
 from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.basehandlers import BaseHandler
@@ -248,15 +249,6 @@ class UnlockedHandler(BaseHandler):
 
 class UnlockHandler(BaseHandler):
 
-    async def prepare(self):
-        self.encoded = jwt.encode({
-            'key_or_wif': 'true',
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=23040)},
-            self.config.jwt_secret_key,
-            algorithm='ES256'
-        )
-        await super(UnlockHandler, self).prepare()
-
     async def get(self):
         """
         :return:
@@ -268,11 +260,39 @@ class UnlockHandler(BaseHandler):
     async def post(self):
         try:
             key_or_wif = self.get_body_argument('key_or_wif')
+            expires = self.get_body_argument('expires', 23040)
         except:
-            key_or_wif = json.loads(self.request.body.decode()).get('key_or_wif')
+            json_body = json.loads(self.request.body.decode())
+            key_or_wif = json_body.get('key_or_wif')
+            expires = json_body.get('expires', 23040)
         if key_or_wif in [self.config.wif, self.config.private_key, self.config.seed]:
             self.set_secure_cookie("key_or_wif", 'true')
-            
+
+            payload = {
+                'timestamp': time.time(),
+                'key_or_wif': 'true',
+                'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=int(expires))
+            }
+
+            self.encoded = jwt.encode(
+                payload,
+                self.config.jwt_secret_key,
+                algorithm='ES256'
+            )
+            await self.config.mongo.async_db.config.update_one(
+                {
+                    'key': 'jwt'
+                },
+                {
+                    '$set': {
+                        'key':'jwt',
+                        'value': {
+                            'timestamp': payload['timestamp']
+                        }
+                    }
+                }, 
+                upsert=True
+            )
             return self.render_as_json({'token': self.encoded.decode()})
         else:
             self.write({'status': 'error', 'message': 'Wrong private key or WIF. You must provide the private key or WIF of the currently running server.'})

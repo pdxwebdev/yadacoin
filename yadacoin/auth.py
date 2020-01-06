@@ -37,6 +37,13 @@ def jwtauth(handler_class):
                         algorithms=['ES256'],
                         options=handler.config.jwt_options
                     )
+                    mongo_jwt = handler.config.mongo.db.config.find_one(
+                        {
+                            'key': 'jwt'
+                        }
+                    )
+                    if not mongo_jwt or handler.jwt['timestamp'] < mongo_jwt.get('value', {}).get('timestamp', 0):
+                        return False
 
                 except:
                     return False
