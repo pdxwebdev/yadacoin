@@ -174,6 +174,8 @@ class TransactionFactory(object):
                 if not done:
                     raise NotEnoughMoneyException('not enough money')
                 self.inputs = needed_inputs
+            elif outputs_and_fee_total > 0:
+                raise NotEnoughMoneyException('No inputs, not a coinbase, and transaction amount is greater than zero')
             else:
                 self.inputs = []
 
