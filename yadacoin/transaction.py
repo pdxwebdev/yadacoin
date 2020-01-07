@@ -162,7 +162,7 @@ class TransactionFactory(object):
                     else:
                         address = my_address
                     for txn_output in txn.outputs:
-                        if txn_output.to == address:
+                        if txn_output.to == address and float(txn_output.value) > 0.0:
                             input_sum += txn_output.value
                             needed_inputs.append(y)
                             if input_sum >= (outputs_and_fee_total):
