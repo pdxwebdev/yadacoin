@@ -117,6 +117,7 @@ class BlockFactory(object):
                         raise InvalidTransactionException("invalid transactions")
                 try:
                     if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
+                        config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
                         app_log.debug("Block embeds txn too far in the future")
                         continue
                     
@@ -616,6 +617,7 @@ class Block(object):
             coinbase_sum = 0
             for txn in self.transactions:
                 if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
+                    self.config.mongo.db.miner_transactions.remove({'id': txn.transaction_signature}, multi=True)
                     raise Exception("Block embeds txn too far in the future")
 
                 if txn.coinbase:
