@@ -281,6 +281,8 @@ class Peers(object):
 
     async def increment_failed(self, peer):
         res = await self.mongo.async_db.peers.find_one({'host': peer.host, 'port': int(peer.port)})
+        if not res:
+            res = {}
         failed = res.get('failed', 0) + 1
         factor = failed
         if failed > 20:
@@ -292,7 +294,7 @@ class Peers(object):
         test_after = int(time()) + factor * 60  #
         await self.mongo.async_db.peers.update_one({'host': peer.host, 'port': int(peer.port)},
                                                    {'$set': {'active': False, "test_after": test_after,
-                                                             "failed": failed}})
+                                                             "failed": failed}}, upsert=True)
         # remove from in memory list
         self.peers = [apeer for apeer in self.peers if apeer.host != peer.host]
 
