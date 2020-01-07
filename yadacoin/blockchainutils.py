@@ -80,7 +80,6 @@ class BlockChainUtils(object):
         return block_objs
 
     async def get_wallet_balance(self, address):
-        # TODO: factorize in an async mongo.method?
         balance = 0
         used_ids = []
         async for txn in self.get_wallet_unspent_transactions(address):

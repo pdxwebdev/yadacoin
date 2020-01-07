@@ -99,7 +99,7 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                 regular_txns.append(txn)
             for output in txn['outputs']:
                 if output['to'] == address:
-                    chain_balance += int(output['value'])
+                    chain_balance += float(output['value'])
     
         wallet = {
             'chain_balance': chain_balance,
