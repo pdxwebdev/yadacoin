@@ -256,7 +256,6 @@ class AppHandler(BaseWebHandler):
     async def prepare(self):
         if self.request.protocol == 'https':
             self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
-        await super(AppHandler, self).prepare()
 
     async def get(self):
         """
@@ -270,7 +269,6 @@ class App2FAHandler(BaseWebHandler):
     async def prepare(self):
         if self.request.protocol == 'https':
             self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
-        await super(App2FAHandler, self).prepare()
 
     async def get(self):
         """
