@@ -90,7 +90,7 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         address = self.get_query_argument('address')
         amount_needed = self.get_query_argument('amount_needed', None)
         if amount_needed:
-            amount_needed = int(amount_needed)
+            amount_needed = float(amount_needed)
         
         regular_txns = []
         chain_balance = 0
