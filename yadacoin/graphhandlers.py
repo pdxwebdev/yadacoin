@@ -96,7 +96,9 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         chain_balance = 0
         async for txn in BU().get_wallet_unspent_transactions(address):
             if amount_needed:
-                regular_txns.append(txn)
+                for output in txn['outputs']:
+                    if output['to'] == address and float(output['value']) > 0.0:
+                        regular_txns.append(txn)
             for output in txn['outputs']:
                 if output['to'] == address:
                     chain_balance += float(output['value'])
