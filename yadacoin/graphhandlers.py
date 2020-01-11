@@ -8,6 +8,7 @@ import json
 import os
 import time
 import requests
+import uuid
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
@@ -644,6 +645,8 @@ class SiaFileHandler(BaseGraphHandler):
         try:
             res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
             fileData = json.loads(res.content.decode())
+            files = fileData.get('files') or []
+            
             return self.render_as_json({
                 'status': 'success',
                 'files': [
@@ -651,7 +654,7 @@ class SiaFileHandler(BaseGraphHandler):
                         'siapath': x['siapath'],
                         'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath'],
                         'available': x['available']
-                    } for x in fileData.get('files', [])
+                    } for x in files
                 ]
             })
         except:
@@ -700,14 +703,17 @@ class SiaStreamFileHandler(BaseGraphHandler):
 
 
 class SiaUploadHandler(BaseGraphHandler):
-    async def get(self):
+    async def post(self):
         from requests.auth import HTTPBasicAuth
         headers = {
             'User-Agent': 'Sia-Agent'
         }
-        filepath = self.get_query_argument('filepath')
+        uploaded_file = self.request.files['file'][0]
+        local_filename = '/tmp/uploadedfile-{}-{}'.format(str(uuid.uuid4()), uploaded_file['filename'])
+        with open(local_filename, 'wb') as f:
+            f.write(uploaded_file['body'])
         try:
-            res = requests.post('http://0.0.0.0:9980/renter/upload/{}'.format(filepath.split('/')[-1]), data={'source': filepath}, headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
+            res = requests.post('http://0.0.0.0:9980/renter/upload/{}'.format(uploaded_file['filename']), data={'source': local_filename}, headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         except:
             self.set_status(400)
             return self.render_as_json({
