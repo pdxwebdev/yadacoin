@@ -722,7 +722,8 @@ class SiaUploadHandler(BaseGraphHandler):
             })
         res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         fileData = json.loads(res.content.decode())
-        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath'], 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath']} for x in fileData.get('files', [])]})
+        files = fileData.get('files') or []
+        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath'], 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath']} for x in files]})
 
 
 class SiaShareFileHandler(BaseGraphHandler):
