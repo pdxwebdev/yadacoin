@@ -788,6 +788,7 @@ class SiaDeleteHandler(BaseGraphHandler):
             })
         res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         fileData = json.loads(res.content.decode())
+        files = fileData.get('files') or []
         return self.render_as_json({
             'status': 'success',
             'files': [
@@ -795,7 +796,7 @@ class SiaDeleteHandler(BaseGraphHandler):
                     'siapath': x['siapath'],
                     'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath'],
                     'available': x['available']
-                } for x in fileData.get('files', [])
+                } for x in files
             ]
         })
 
