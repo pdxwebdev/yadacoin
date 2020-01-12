@@ -715,6 +715,8 @@ class SiaUploadHandler(BaseGraphHandler):
             'User-Agent': 'Sia-Agent'
         }
         uploaded_file = self.request.files['file'][0]
+        if len(uploaded_file['body']) > 2000000:
+            return self.render_as_json({'status': 'error', 'message': 'file too large', 'files': []})
         local_filename = '/tmp/{}'.format(self.get_query_argument('filename'))
         with open(local_filename, 'wb') as f:
             f.write(uploaded_file['body'])
