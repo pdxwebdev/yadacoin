@@ -669,7 +669,7 @@ class SiaStreamFileHandler(BaseGraphHandler):
     async def prepare(self):
         await super(SiaStreamFileHandler, self).prepare()
         header = "Content-Type"
-        body = "video/mp4"
+        body = self.get_query_argument('mimetype')
         self.set_header(header, body)
 
     async def get(self):
@@ -693,8 +693,14 @@ class SiaStreamFileHandler(BaseGraphHandler):
             request = HTTPRequest(url=url, streaming_callback=self.on_chunk, request_timeout=2000000)
             await http_client.fetch(request)
         else:
-            self.set_status(400)
-            self.write('{"status": "error", "message": "file not available"}')
+            path = '/tmp/{}'.format(siapath)
+            if os.path.isfile(path):
+                with open(path, 'rb') as f:
+                    data = f.read()
+                    self.write(data)
+            else:
+                self.set_status(400)
+                self.write('{"status": "error", "message": "file not available"}')
         self.finish()
 
     def on_chunk(self, chunk):
@@ -709,7 +715,7 @@ class SiaUploadHandler(BaseGraphHandler):
             'User-Agent': 'Sia-Agent'
         }
         uploaded_file = self.request.files['file'][0]
-        local_filename = '/tmp/uploadedfile-{}-{}'.format(str(uuid.uuid4()), uploaded_file['filename'])
+        local_filename = '/tmp/{}'.format(self.get_query_argument('filename'))
         with open(local_filename, 'wb') as f:
             f.write(uploaded_file['body'])
         try:
