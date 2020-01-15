@@ -152,7 +152,7 @@ class Peers(object):
             return
         peer = choice(targets)  # random peer from the available - and tested - pool
         # Try to connect. We create a background co-routine that will handle the client side.
-        ioloop.IOLoop.instance().add_callback(self.background_peer, peer)
+        await self.background_peer(peer)
 
     async def background_peer(self, peer):
         self.app_log.debug("Peers background_peer {}".format(peer.to_dict()))
