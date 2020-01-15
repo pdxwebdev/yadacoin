@@ -43,6 +43,7 @@ class Consensus(object):
         self.config = get_config()
         self.mongo = self.config.mongo
         self.prevent_genesis = prevent_genesis
+        self.existing_blockchain = None
         if peers:
             self.peers = peers
         else:
@@ -57,7 +58,7 @@ class Consensus(object):
                 await self.insert_genesis()
     
     async def build_existing(self):
-        self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
+        self.existing_blockchain = await Blockchain.init_async(await self.config.BU.get_blocks_async())
 
     def output(self, string):
         sys.stdout.write(string)  # write the next character
@@ -110,7 +111,7 @@ class Consensus(object):
             else:
                 if not self.prevent_genesis:
                     await self.insert_genesis()
-            self.existing_blockchain = Blockchain(self.config.BU.get_blocks())
+            self.existing_blockchain = await Blockchain.init_async(await self.config.BU.get_blocks_async())
 
     def remove_pending_transactions_now_in_chain(self, block):
         #remove transactions from miner_transactions collection in the blockchain
@@ -510,7 +511,7 @@ class Consensus(object):
             try:
                 block.verify()
             except Exception as e:
-                print("Integrate block error 1", e)
+                self.app_log.warning("Integrate block error 1: {}".format(e))
                 return False
 
             for transaction in block.transactions:
@@ -553,10 +554,10 @@ class Consensus(object):
             height = block.index
             last_block = self.existing_blockchain.blocks[block.index - 1]
             if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
-                print("Integrate block error 2")
+                self.app_log.warning("Integrate block error 2")
                 raise ForkException()
             if not last_block:
-                print("Integrate block error 3")
+                self.app_log.warning("Integrate block error 3")
                 raise ForkException()
 
             if height >= CHAIN.FORK_10_MIN_BLOCK:
@@ -597,10 +598,10 @@ class Consensus(object):
                     await self.config.on_new_block(block)  # This will propagate to BU
                     return True
                 else:
-                    print("Integrate block error 4")
+                    self.app_log.warning("Integrate block error 4")
                     raise ForkException()
             else:
-                print("Integrate block error 5")
+                self.app_log.warning("Integrate block error 5")
                 raise AboveTargetException()
             return False  # unreachable code
         except Exception as e:

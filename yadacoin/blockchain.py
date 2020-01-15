@@ -9,13 +9,14 @@ class BlockChainException(Exception):
 
 
 class Blockchain(object):
-
-    def __init__(self, blocks=None, partial=False):
+    @classmethod
+    async def init_async(cls, blocks=None, partial=False):
+        self = cls()
         self.config = get_config()
         self.mongo = self.config.mongo
         self.blocks = []
         last_index = None
-        for block in blocks:
+        async for block in blocks:
             if not isinstance(block, Block):
                 block = Block.from_dict(block)
             
@@ -31,6 +32,7 @@ class Blockchain(object):
             return # allow nothing
         if self.blocks and self.blocks[0].index != 0 and not self.partial:
             raise Exception('Blocks do not start with zero index. Either incomplete blockchain or unordered.')
+        return self
 
     async def verify(self, progress=None):
         async def get_blocks():

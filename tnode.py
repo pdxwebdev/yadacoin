@@ -103,8 +103,7 @@ class NodeApplication(Application):
 
 
 async def background_consensus():
-    if not config.consensus:
-        config.consensus = Consensus(config.debug, config.peers)
+    if not config.consensus.existing_blockchain:
         await config.consensus.async_init()
         await config.consensus.build_existing()
         if options.verify:
@@ -378,7 +377,7 @@ def main():
         yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
         config.GU = GraphUtils()
 
-        config.consensus = None
+        config.consensus = Consensus(config.debug, config.peers)
 
         if config.max_miners > 0:
             app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
@@ -388,19 +387,19 @@ def main():
         ws_init()
         config.SIO = get_sio()
 
-        tornado.ioloop.PeriodicCallback(background_consensus, 30000).start()
+        tornado.ioloop.PeriodicCallback(background_consensus, 120000).start()
         if config.network != 'regnet':
-            tornado.ioloop.PeriodicCallback(background_peers, 10000).start()
-            tornado.ioloop.PeriodicCallback(background_transaction_broadcast, 30000).start()
-            tornado.ioloop.PeriodicCallback(background_ns_broadcast, 30000).start()
-        tornado.ioloop.PeriodicCallback(background_status, 5000).start()
-        tornado.ioloop.PeriodicCallback(background_pool, 10000).start()
-        tornado.ioloop.PeriodicCallback(background_cache_validator, 10000).start()
+            tornado.ioloop.PeriodicCallback(background_peers, 120000).start()
+            tornado.ioloop.PeriodicCallback(background_transaction_broadcast, 120000).start()
+            tornado.ioloop.PeriodicCallback(background_ns_broadcast, 120000).start()
+        tornado.ioloop.PeriodicCallback(background_status, 120000).start()
+        tornado.ioloop.PeriodicCallback(background_pool, 120000).start()
+        tornado.ioloop.PeriodicCallback(background_cache_validator, 120000).start()
         if config.pool_payout:
             app_log.info("PoolPayout activated")
             pp = PoolPayer()
             config.pp = pp
-        tornado.ioloop.PeriodicCallback(background_pool_payer, 60000).start()
+            tornado.ioloop.PeriodicCallback(background_pool_payer, 120000).start()
 
     my_peer = Peer.init_my_peer(config.network)
     app_log.info("API: http://{}".format(my_peer.to_string()))

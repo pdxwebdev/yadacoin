@@ -653,10 +653,10 @@ class Block(object):
         hashes = []
         for i in range(0, len(txn_hashes), 2):
             txn1 = txn_hashes[i]
-            try:
-                txn2 = txn_hashes[i+1]
-            except:
+            if len(txn_hashes)-1 < i+1:
                 txn2 = ''
+            else:
+                txn2 = txn_hashes[i+1]
             hashes.append(hashlib.sha256((txn1+txn2).encode('utf-8')).digest().hex())
         if len(hashes) > 1:
             self.set_merkle_root(hashes)

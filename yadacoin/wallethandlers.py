@@ -155,7 +155,7 @@ class CreateRawTransactionView(BaseHandler):
 
         inputs = []
         for from_address in from_addresses:
-            inputs.extend([x async for x in BU().get_wallet_unspent_transactions(from_address)])
+            inputs.extend([x async for x in await BU().get_wallet_unspent_transactions(from_address)])
 
         txn = await TransactionFactory.construct(
             block_height=BU().get_latest_block()['index'],

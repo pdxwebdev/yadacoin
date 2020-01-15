@@ -317,9 +317,9 @@ class Transaction(object):
 
     @classmethod
     def from_dict(cls, block_height, txn):
-        try:
-            relationship = Relationship(**txn.get('relationship', ''))
-        except:
+        if isinstance(txn.get('relationship'), dict):
+            relationship = Relationship(**txn.get('relationship'))
+        else:
             relationship = txn.get('relationship', '')
         
         return cls(

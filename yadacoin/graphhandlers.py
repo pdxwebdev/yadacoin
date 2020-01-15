@@ -688,10 +688,9 @@ class SiaStreamFileHandler(BaseGraphHandler):
             })
         fileData = json.loads(res.content.decode())
         if fileData.get('file', {}).get('available'):
-            http_client = AsyncHTTPClient()
             url = 'http://0.0.0.0:9980/renter/stream/' + siapath.replace(' ', '%20')
             request = HTTPRequest(url=url, streaming_callback=self.on_chunk, request_timeout=2000000)
-            await http_client.fetch(request)
+            await self.config.http_client.fetch(request)
         else:
             path = '/tmp/{}'.format(siapath)
             if os.path.isfile(path):

@@ -233,9 +233,8 @@ class Peers(object):
             else:
                 self.app_log.warning("No seed.json with config?")
                 # or from central yadacoin.io if none
-                http_client = AsyncHTTPClient()
                 try:
-                    response = await http_client.fetch(url)
+                    response = await self.config.http_client.fetch(url)
                     seeds = json.loads(response.body.decode('utf-8'))['get-peers']
                     if len(seeds['peers']) <= 0:
                         self.app_log.warning("No peers on main yadacoin.io node")
@@ -476,24 +475,22 @@ class Peer(object):
     async def test(self):
         hp = self.to_string()
         print('test', hp)
-        http_client = AsyncHTTPClient()
         url = "http://{}/get-latest-block".format(hp)
         request = HTTPRequest(url, connect_timeout=10, request_timeout=12)
         # TODO: move to get-status
         try:
-            response = await http_client.fetch(request)
+            response = await self.config.http_client.fetch(request)
             if response.code != 200:
                 raise RuntimeWarning('code {}'.format(response.code))
             # TODO: we got the status, we could run more logic here (depending on peer count, version, uptime, height)
             await self.mongo.async_db.peers.update_one({'host': self.host, 'port': int(self.port)}, {'$set': {'active': True, "failed":0}})
             #  get peers from that node and merge.
-            http_client = AsyncHTTPClient()
             test_after = int(time()) + 30  # 2nd layer peers will be tested after 1st layer
             # This "get peers from url" is used twice, could be factorized.
             # But could be deprecated soon with websockets.
             url = "http://{}/get-peers".format(hp)
             try:
-                response = await http_client.fetch(url)
+                response = await self.config.http_client.fetch(url)
                 if response.code != 200:
                     # Not available or too old a version, just ignore.
                     return

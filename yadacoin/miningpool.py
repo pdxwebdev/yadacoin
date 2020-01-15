@@ -267,7 +267,7 @@ class MiningPool(object):
             # TODO: centralize handling of min target
             self.set_target(int(time()))
             if not self.block_factory.block.special_min:
-                self.set_target_from_last_non_special_min(block)
+                await self.set_target_from_last_non_special_min(block)
             self.block_factory.block.header = BlockFactory.generate_header(self.block_factory.block)
             # print('block header', self.block_factory.block.header)
             if self.block_factory.block.index == current_index:
@@ -354,7 +354,7 @@ class MiningPool(object):
         if res:
             self.block_factory.block.target = int(res['target'], 16)
 
-    def set_target_from_last_non_special_min(self, latest_block):
+    async def set_target_from_last_non_special_min(self, latest_block):
         i = 1
         while 1:
             res = self.mongo.db.blocks.find_one({
@@ -363,9 +363,9 @@ class MiningPool(object):
                 'target': {'$ne': CHAIN.MAX_TARGET_HEX}  # This condition may be extraneous
             })
             if res:
-                chain = [x for x in self.mongo.db.blocks.find({
+                chain = self.mongo.async_db.blocks.find({
                     'index': {'$gte': res['index']-30}
-                })]
+                })
                 break
             else:
                 i += 1
@@ -375,7 +375,7 @@ class MiningPool(object):
                 self.index,
                 latest_block,
                 self.block_factory.block,
-                Blockchain(
+                await Blockchain.init_async(
                     blocks=chain,
                     partial=True
                 )
@@ -385,7 +385,7 @@ class MiningPool(object):
                 self.index,
                 latest_block,
                 self.block_factory.block,
-                Blockchain(
+                await Blockchain.init_async(
                     blocks=chain,
                     partial=True
                 )

@@ -46,6 +46,12 @@ class BlockChainUtils(object):
         else:
             return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
 
+    async def get_blocks_async(self, reverse=False):
+        if reverse:
+            return self.mongo.async_db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
+        else:
+            return self.mongo.async_db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
+
     def get_latest_blocks(self):
         return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
@@ -90,11 +96,6 @@ class BlockChainUtils(object):
         yield balance
 
     async def get_wallet_unspent_transactions(self, address, ids=None, needed_value=None):
-        async for x in self.wallet_unspent_worker(address, ids, needed_value):
-            x['txn']['height'] = x['height']
-            yield x['txn']
-
-    async def wallet_unspent_worker(self, address, ids=None, needed_value=None):
         unspent_cache = await self.mongo.async_db.unspent_cache.find_one({'address': address}, sort=[('height', -1)])
 
         if unspent_cache:
@@ -269,7 +270,8 @@ class BlockChainUtils(object):
             query = {'address': address, 'spent': False}
         async for txn in self.mongo.async_db.unspent_cache.find(query):
             if 'txn' in txn:
-                yield txn
+                txn['txn']['height'] = txn['height']
+                yield txn['txn']
 
     def get_wallet_unspent_fastgraph_transactions(self, address):
         result = [x for x in self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})]

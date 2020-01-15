@@ -88,9 +88,9 @@ class FastGraph(Transaction):
     
     @classmethod
     def from_dict(cls, block_height, txn, raw=False):
-        try:
+        if isinstance(txn.get('relationship'), dict):
             relationship = Relationship(**txn.get('relationship', ''))
-        except:
+        else:
             relationship = txn.get('relationship', '')
 
         return cls(
