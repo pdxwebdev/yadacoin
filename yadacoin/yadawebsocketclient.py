@@ -168,8 +168,7 @@ class YadaWebSocketClient(object):
             url = "http://{}:{}".format(self.peer.host, self.peer.port)
             self.app_log.info("ws client connecting to {}".format(url))
             await self.client.connect(url, namespaces=['/chat'])
-            # self.connected = True
-            await async_sleep(self.WAIT_FOR_PEERS)  # wait for an answer
+            await self.client.sleep(self.WAIT_FOR_PEERS)
             if not self.connected:
                 self.app_log.warning("{} was not connected after {} sec, incrementing fails"
                                      .format(self.peer.to_string(), self.WAIT_FOR_PEERS))
@@ -183,18 +182,13 @@ class YadaWebSocketClient(object):
                 self.probable_old = True
                 await self.client.disconnect()
                 return
-            while self.connected:
-                self.app_log.debug("{} loop, state:{}".format(self.peer.to_string(), self.client.eio.state))
-                # This is a mess, surely we can do better.
-                if self.client.eio.state == 'disconnected':
-                    self.connected = False
-                    return
-                await async_sleep(30)
-                # TODO: poll here after some time without activity?
+            
+            self.app_log.debug("{}, state:{}".format(self.peer.to_string(), self.client.eio.state))
+            await self.client.wait()
         except Exception as e:
             self.app_log.warning("Exception {} connecting to {}".format(e, self.peer.to_string()))
         finally:
-            pass
+            await self.client.disconnect()
 
     async def on_latest_block(self, data):
         from yadacoin.block import Block  # Circular reference. Not good! - Do we need the object here?

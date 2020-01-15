@@ -171,6 +171,7 @@ class Peers(object):
                 # add it to a temp "do not try ws soon" list
                 self.app_log.debug("Peer {} added to probable_old_nodes".format(peer.host))
                 self.probable_old_nodes[peer.host] = int(time()) + 3600  # try again in 1 hour
+                await peer.client.client.disconnect()
             self.on_close_outbound(peer.host)
 
     async def on_block_insert(self, block_data: dict):
@@ -450,6 +451,7 @@ class Peer(object):
                     'port': config.peer_port,
                     'bulletin_secret': config.get_bulletin_secret()
                 }),
+                timeout=3,
                 headers={
                     "Content-Type": "application/json"
                 }

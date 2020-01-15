@@ -10,6 +10,7 @@ from time import time
 from asyncio import sleep as async_sleep
 from pymongo.errors import DuplicateKeyError
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from tornado.httputil import HTTPHeaders
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.peers import Peers, Peer
@@ -288,15 +289,13 @@ class Consensus(object):
         else:
             if len(self.peers.peers) < 2:
                 await self.peers.refresh()
-                await async_sleep(20)
             if len(self.peers.peers) < 1:
                 self.app_log.info("No peer to connect to yet")
-                await async_sleep(10)
                 return
             polling_peers = [peer.to_string() for peer in self.peers.peers]
         # TODO: use an aio lock
         self.app_log.debug('requesting {} ...'.format(self.latest_block.index + 1))
-        http_client = AsyncHTTPClient()
+
 
         # for peer in self.peers.peers:
         for peer_string in polling_peers:
@@ -310,8 +309,9 @@ class Consensus(object):
                         .format(peer=peer_string,
                                 start_index=int(self.latest_block.index) +1,
                                 end_index=int(self.latest_block.index) + 100)
-                    request = HTTPRequest(url, connect_timeout=3,request_timeout=5)
-                    response = await http_client.fetch(request)
+                    h = HTTPHeaders({"Connection": "close"})
+                    request = HTTPRequest(url, headers=h, connect_timeout=3,request_timeout=5)
+                    response = await self.config.http_client.fetch(request)
                     if response.code != 200:
                         continue
                     # result = requests.get(url, timeout=2)
@@ -331,6 +331,8 @@ class Consensus(object):
                     continue
                 try:
                     blocks = json.loads(response.body.decode('utf-8'))
+                    if not isinstance(blocks, list):
+                        raise ValueError("wrong get-blocks response, probably not whitelisted")
                     # blocks = json.loads(result.content)
                 except ValueError:
                     continue
@@ -371,6 +373,7 @@ class Consensus(object):
                     self.app_log.warning(e)
             finally:
                 self.peers.syncing = False
+        
 
     async def trigger_update_event(self, block: dict=None):
         """Update BU latest block info if unknown, then trigger the event to all connected peers"""

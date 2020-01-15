@@ -69,7 +69,7 @@ class NSBroadcaster(object):
                 }
             })
         except Exception as e:
-            print("Error ", e)
+            self.app_log.debug(e)
 
     async def send_it(self, txn_dict: dict, peer: Peer):
         try:

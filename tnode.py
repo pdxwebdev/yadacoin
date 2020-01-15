@@ -17,7 +17,7 @@ from os import path
 from sys import exit, stdout
 from time import time
 from Crypto.PublicKey.ECC import EccKey
-
+from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 import socketio
 import tornado.ioloop
 import tornado.locks
@@ -102,165 +102,147 @@ class NodeApplication(Application):
         super().__init__(handlers, **settings)
 
 
-async def background_consensus(options, peers):
+async def background_consensus():
     if not config.consensus:
-        config.consensus = Consensus(options.debug, peers)
+        config.consensus = Consensus(config.debug, config.peers)
         await config.consensus.async_init()
         await config.consensus.build_existing()
         if options.verify:
             app_log.info("Verifying existing blockchain")
-            await config.consensus.verify_existing_blockchain(reset=options.reset)
+            await config.consensus.verify_existing_blockchain(reset=config.reset)
         else:
             app_log.info("Verification of existing blockchain skipped by config")
-
     if config.polling <= 0:
         app_log.error("No consensus polling")
         return
-    await async_sleep(5)
-    while True:
-        try:
-            wait = await config.consensus.sync_bottom_up()
-            if wait:
-                await async_sleep(config.polling)
-        except Exception as e:
-            app_log.error("{} in Background_consensus".format(e))
+    try:
+        wait = await config.consensus.sync_bottom_up()
+        app_log.error("{} in Background_consensus".format(wait))
+    except Exception as e:
+        app_log.error("{} in Background_consensus".format(e))
 
 
-async def background_peers(peers: Peers):
+async def background_peers():
     """Peers management coroutine. responsible for peers testing and outgoing connections"""
-    while True:
-        try:
-            await async_sleep(10)  # Could be a config item
-            if len(peers.peers) <= 50:
-                # no need to waste resources if we have enough peers
-                # log.info('Should test peers')
-                await peers.test_some(count=2)
-            await peers.check_outgoing()
-        except Exception as e:
-            app_log.error("{} in Background_peers".format(e))
+    try:
+        if len(config.peers.peers) <= 50:
+            # no need to waste resources if we have enough peers
+            # log.info('Should test peers')
+            await config.peers.test_some(count=2)
+        await config.peers.check_outgoing()
+    except Exception as e:
+        app_log.error("{} in Background_peers".format(e))
 
 
 async def background_status():
     """This background co-routine is responsible for status collection and display"""
-    while True:
-        try:
-            await async_sleep(30)
-            # status = {"peers": config.peers.get_status()}
-            status = config.get_status()
-            # print(status)
-            app_log.info(json.dumps(status))
-        except Exception as e:
-            app_log.error("{} in Background_status".format(e))
+    try:
+        # status = {"peers": config.peers.get_status()}
+        status = config.get_status()
+        # print(status)
+        app_log.info(json.dumps(status))
+    except Exception as e:
+        app_log.error("{} in Background_status".format(e))
 
 
 async def background_transaction_broadcast():
     """This background co-routine is responsible for disseminating transactions to the network"""
     tb = TxnBroadcaster(config)
     tb2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
-    while True:
-        try:
-            await async_sleep(30)
-            # status = {"peers": config.peers.get_status()}
+    try:
+        # status = {"peers": config.peers.get_status()}
 
-            async for txn in config.mongo.async_db.miner_transactions.find({}):
-                await tb.txn_broadcast_job(txn, txn.get('sent_to'))
-                await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
-        except Exception as e:
-            app_log.error("{} in background_transaction_broadcast".format(e))
+        async for txn in config.mongo.async_db.miner_transactions.find({}):
+            await tb.txn_broadcast_job(txn, txn.get('sent_to'))
+            await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
+    except Exception as e:
+        app_log.error("{} in background_transaction_broadcast".format(e))
 
 
 async def background_ns_broadcast():
     """This background co-routine is responsible for disseminating name server records to the network"""
     nb = NSBroadcaster(config)
     nb2 = NSBroadcaster(config, config.SIO.namespace_handlers['/chat'])
-    while True:
-        try:
-            await async_sleep(30)
-            # status = {"peers": config.peers.get_status()}
+    try:
+        # status = {"peers": config.peers.get_status()}
 
-            async for ns in config.mongo.async_db.name_server.find({}):
-                await nb.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
-                await nb2.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
-        except Exception as e:
-            app_log.error("{} in background_ns_broadcast".format(e))
+        async for ns in config.mongo.async_db.name_server.find({}):
+            await nb.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
+            await nb2.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
+    except Exception as e:
+        app_log.error("{} in background_ns_broadcast".format(e))
 
 
 async def background_pool():
     """Responsible for miner updates"""
-    while True:
-        """
-        New blocks will directly trigger the correct event.
-        This co-routine checks if new transactions have been received, or if special_min is triggered,
-        So we can update the miners.
-        """
-        try:
-            await async_sleep(10)
-            if config.mp:
-                await config.mp.check_block_evolved()
+    """
+    New blocks will directly trigger the correct event.
+    This co-routine checks if new transactions have been received, or if special_min is triggered,
+    So we can update the miners.
+    """
+    try:
+        if config.mp:
+            await config.mp.check_block_evolved()
 
-        except Exception as e:
-            app_log.error("{} in background_pool".format(e))
+    except Exception as e:
+        app_log.error("{} in background_pool".format(e))
 
 
 async def background_pool_payer():
     """Responsible for paying miners"""
-    while True:
-        """
-        New blocks will directly trigger the correct event.
-        This co-routine checks if new transactions have been received, or if special_min is triggered,
-        So we can update the miners.
-        """
-        try:
-            await async_sleep(60)
-            if config.pp:
-                await config.pp.do_payout()
+    """
+    New blocks will directly trigger the correct event.
+    This co-routine checks if new transactions have been received, or if special_min is triggered,
+    So we can update the miners.
+    """
+    try:
+        if config.pp:
+            await config.pp.do_payout()
 
-        except Exception as e:
-            app_log.error("{} in background_pool_payer".format(e))
+    except Exception as e:
+        app_log.error("{} in background_pool_payer".format(e))
 
 async def background_cache_validator():
     """Responsible for validating the cache and clearing it when necessary"""
+    if not hasattr(config, 'cache_inited'):
+        config.cache_collections = [x for x in await config.mongo.async_db.list_collection_names({}) if x.endswith('_cache')]
+        config.cache_last_times = {}
+        try:
+            async for x in config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
+                config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
+            for cache_collection in config.cache_collections:
+                await config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
+            config.cache_inited = True
+        except Exception as e:
+            app_log.error("{} in background_cache_validator init".format(e))
+
+    """
+    We check for cache items that are not currently in the blockchain
+    If not, we delete the cached item.
+    """
     try:
-        cache_collections = [x for x in await config.mongo.async_db.list_collection_names({}) if x.endswith('_cache')]
-        last_times = {}
-        async for x in config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
-            config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
-        for cache_collection in cache_collections:
-            await config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
+        for cache_collection in config.cache_collections:
+            if not config.cache_last_times.get(cache_collection):
+                config.cache_last_times[cache_collection] = 0
+            async for txn in config.mongo.async_db[cache_collection].find({
+                'cache_time': {'$gt': config.cache_last_times[cache_collection]}
+            }).sort([('height', -1)]):
+                if not await config.mongo.async_db.blocks.find_one({
+                    'index': txn.get('height'),
+                    'hash': txn.get('block_hash')
+                }) and not await config.mongo.async_db.miner_transactions.find_one({
+                    'id': txn.get('id'),
+                }):
+                    await config.mongo.async_db[cache_collection].delete_many({
+                        'height': txn.get('height')
+                    })
+                    break
+                else:
+                    if txn['cache_time'] > config.cache_last_times[cache_collection]:
+                        config.cache_last_times[cache_collection] = txn['cache_time']
 
     except Exception as e:
-        app_log.error("{} in background_cache_validator init".format(e))
-
-    while True:
-        """
-        We check for cache items that are not currently in the blockchain
-        If not, we delete the cached item.
-        """
-        try:
-            for cache_collection in cache_collections:
-                if not last_times.get(cache_collection):
-                    last_times[cache_collection] = 0
-                async for txn in config.mongo.async_db[cache_collection].find({
-                    'cache_time': {'$gt': last_times[cache_collection]}
-                }).sort([('height', -1)]):
-                    if not await config.mongo.async_db.blocks.find_one({
-                        'index': txn.get('height'),
-                        'hash': txn.get('block_hash')
-                    }) and not await config.mongo.async_db.miner_transactions.find_one({
-                        'id': txn.get('id'),
-                    }):
-                        await config.mongo.async_db[cache_collection].delete_many({
-                            'height': txn.get('height')
-                        })
-                        break
-                    else:
-                        if txn['cache_time'] > last_times[cache_collection]:
-                            last_times[cache_collection] = txn['cache_time']
-                        
-            await async_sleep(10)
-
-        except Exception as e:
-            app_log.error("{} in background_cache_validator".format(e))
+        app_log.error("{} in background_cache_validator".format(e))
 
 
 def configure_logging():
@@ -297,7 +279,7 @@ def configure_logging():
     logging.getLogger("socketio").propagate = False
 
 
-async def main():
+def main():
     global config
 
     define("debug", default=False, help="debug mode", type=bool)
@@ -350,7 +332,7 @@ async def main():
     config.cipher = Crypt(config.wif)
 
     config.pyrx = pyrx.PyRX()
-
+    config.reset = options.reset
 
     api_whitelist = 'api_whitelist.json'
     api_whitelist_filename = options.config.replace(ntpath.basename(options.config), api_whitelist)
@@ -388,6 +370,8 @@ async def main():
     peers = Peers()
     config.peers = peers
 
+    config.http_client = AsyncHTTPClient()
+
     if not options.webonly:
         config.BU = yadacoin.blockchainutils.BlockChainUtils()
         config.TU = yadacoin.transactionutils.TU
@@ -404,19 +388,19 @@ async def main():
         ws_init()
         config.SIO = get_sio()
 
-        tornado.ioloop.IOLoop.instance().add_callback(background_consensus, options, peers)
+        tornado.ioloop.PeriodicCallback(background_consensus, 30000).start()
         if config.network != 'regnet':
-            tornado.ioloop.IOLoop.instance().add_callback(background_peers, peers)
-            tornado.ioloop.IOLoop.instance().add_callback(background_transaction_broadcast)
-            tornado.ioloop.IOLoop.instance().add_callback(background_ns_broadcast)
-        tornado.ioloop.IOLoop.instance().add_callback(background_status)
-        tornado.ioloop.IOLoop.instance().add_callback(background_pool)
-        tornado.ioloop.IOLoop.instance().add_callback(background_cache_validator)
+            tornado.ioloop.PeriodicCallback(background_peers, 10000).start()
+            tornado.ioloop.PeriodicCallback(background_transaction_broadcast, 30000).start()
+            tornado.ioloop.PeriodicCallback(background_ns_broadcast, 30000).start()
+        tornado.ioloop.PeriodicCallback(background_status, 5000).start()
+        tornado.ioloop.PeriodicCallback(background_pool, 10000).start()
+        tornado.ioloop.PeriodicCallback(background_cache_validator, 10000).start()
         if config.pool_payout:
             app_log.info("PoolPayout activated")
             pp = PoolPayer()
             config.pp = pp
-            tornado.ioloop.IOLoop.instance().add_callback(background_pool_payer)
+        tornado.ioloop.PeriodicCallback(background_pool_payer, 60000).start()
 
     my_peer = Peer.init_my_peer(config.network)
     app_log.info("API: http://{}".format(my_peer.to_string()))
@@ -434,9 +418,11 @@ async def main():
     # The server will simply run until interrupted
     # with Ctrl-C, but if you want to shut down more gracefully,
     # call shutdown_event.set().
-    shutdown_event = tornado.locks.Event()
-    await shutdown_event.wait()
+
+    tornado.ioloop.IOLoop.current().start()
+    # shutdown_event = tornado.locks.Event()
+    # await shutdown_event.wait()
 
 
 if __name__ == "__main__":
-        tornado.ioloop.IOLoop.current().run_sync(main)
+    main()

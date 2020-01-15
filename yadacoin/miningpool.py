@@ -494,10 +494,10 @@ class MiningPool(object):
             except Exception as e:
                 print(e)
 
-    def send_it(self, block_dict: dict, peer: str):
+    async def send_it(self, block_dict: dict, peer: str):
         """Quick hack for // send. TODO: To be converted to real async"""
         try:
-            requests.post('http://{peer}/newblock'.format(peer=peer), json=block_dict, timeout=10, headers={'Connection':'close'})
+            requests.post('http://{peer}/newblock'.format(peer=peer), json=block_dict, timeout=1, headers={'Connection':'close'})
             self.app_log.info("Sent to peer {}".format(peer))
         except Exception as e:
             self.app_log.info("Error {} sending to peer {}".format(e, peer))
@@ -521,9 +521,7 @@ class MiningPool(object):
             for peer in self.config.force_broadcast_to:
                 try:
                     # peer = self.config.peers.my_peer
-                    t = Thread(target=self.send_it, args=(block_data, "{}:{}".format(peer['host'],peer['port'])))
-                    t.setDaemon(True)
-                    t.start()
+                    await self.send_it(block_data, "{}:{}".format(peer['host'],peer['port']))
                 except Exception as e:
                     print("Error ", e)
         # TODO: why do we only insert to consensus? Why not try to insert right away?
