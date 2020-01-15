@@ -152,7 +152,7 @@ async def background_transaction_broadcast():
     try:
         # status = {"peers": config.peers.get_status()}
 
-        async for txn in config.mongo.async_db.miner_transactions.find({}):
+        async for txn in config.mongo.async_db.miner_transactions.find({}).limit(20):
             await tb.txn_broadcast_job(txn, txn.get('sent_to'))
             await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
     except Exception as e:
@@ -166,7 +166,7 @@ async def background_ns_broadcast():
     try:
         # status = {"peers": config.peers.get_status()}
 
-        async for ns in config.mongo.async_db.name_server.find({}):
+        async for ns in config.mongo.async_db.name_server.find({}).limit(20):
             await nb.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
             await nb2.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
     except Exception as e:
