@@ -132,9 +132,9 @@ class BlockFactory(object):
                                 failed = True
                             if x.id in used_ids_in_this_txn:
                                 failed = True
-                            if {'id': x.id, 'public_key': transaction_obj.public_key} in used_inputs:
+                            if (x.id, transaction_obj.public_key) in used_inputs:
                                 failed = True
-                            used_inputs[{'id': x.id, 'public_key': transaction_obj.public_key}]
+                            used_inputs[(x.id, transaction_obj.public_key)]
                             used_ids_in_this_txn.append(x.id)
                         if failed:
                             continue
