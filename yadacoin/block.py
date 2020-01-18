@@ -84,6 +84,7 @@ class BlockFactory(object):
             transaction_objs = []
             fee_sum = 0.0
             used_sigs = []
+            used_inputs = {}
             for txn in transactions:
                 try:
                     if isinstance(txn, FastGraph):
@@ -131,6 +132,9 @@ class BlockFactory(object):
                                 failed = True
                             if x.id in used_ids_in_this_txn:
                                 failed = True
+                            if {'id': x.id, 'public_key': transaction_obj.public_key} in used_inputs:
+                                failed = True
+                            used_inputs[{'id': x.id, 'public_key': transaction_obj.public_key}]
                             used_ids_in_this_txn.append(x.id)
                         if failed:
                             continue
