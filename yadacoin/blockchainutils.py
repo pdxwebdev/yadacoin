@@ -611,8 +611,8 @@ class BlockChainUtils(object):
         for block in blocks:
             hash_sum += int(block.hash, 16)
             if prev_time > 0:
-                sum_time += block.time - prev_time
-            prev_time = block.time
+                sum_time += int(block.time) - prev_time
+            prev_time = int(block.time)
         block_time_avg = sum_time / len(blocks) or 1
         hsh_str = hex(int(hash_sum / len(blocks)))[2:]
         hsh_str = '0000000000000000000000{}'.format(hsh_str)[-64:]
