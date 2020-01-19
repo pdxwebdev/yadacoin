@@ -611,7 +611,7 @@ class BlockChainUtils(object):
         for block in blocks:
             hash_sum += int(block.hash, 16)
             if prev_time > 0:
-                sum_time += int(block.time) - prev_time
+                sum_time += prev_time - int(block.time)
             prev_time = int(block.time)
         block_time_avg = sum_time / len(blocks) or 1
         hsh_str = hex(int(hash_sum / len(blocks)))[2:]
@@ -632,6 +632,6 @@ class BlockChainUtils(object):
         num_hashes = int(2**zeros + (remainder_resolution * prob_quot))
 
         # that number of hashes in a given time period gives us the rate
-        return int(num_hashes / block_time_avg)
+        return int(num_hashes / block_time_avg), num_hashes
 
 
