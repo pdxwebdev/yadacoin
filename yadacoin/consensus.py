@@ -514,6 +514,7 @@ class Consensus(object):
                 self.app_log.warning("Integrate block error 1: {}".format(e))
                 return False
 
+            used_inputs = {}
             for transaction in block.transactions:
                 try:
                     if extra_blocks:
@@ -545,6 +546,9 @@ class Consensus(object):
                             failed = True
                         if x.id in used_ids_in_this_txn:
                             failed = True
+                        if (x.id, transaction.public_key) in used_inputs:
+                            failed = True
+                        used_inputs[(x.id, transaction.public_key)] = transaction
                         used_ids_in_this_txn.append(x.id)
                     if failed:
                         continue
