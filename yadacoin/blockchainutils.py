@@ -618,7 +618,10 @@ class BlockChainUtils(object):
         hsh_str = '0000000000000000000000{}'.format(hsh_str)[-64:]
         hsh = int(hsh_str, 16)
         m = re.search(r'^[0]+', hsh_str)
-        zeros = len(m.group(0)) * 4 # get number of zeros and convert to bits
+        try:
+            zeros = len(m.group(0)) * 4 # get number of zeros and convert to bits
+        except:
+            return 0, 0
 
         remainder_resolution = 2**(zeros+4) - 2**zeros # get max probability 8 bytes
 
