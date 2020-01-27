@@ -435,20 +435,20 @@ def main():
         config.SIO = get_sio()
 
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
-        tornado.ioloop.PeriodicCallback(background_consensus, 5000).start()
+        tornado.ioloop.PeriodicCallback(background_consensus, 30000).start()
         config.consensus_busy = False
         if config.network != 'regnet':
-            tornado.ioloop.PeriodicCallback(background_peers, 3000).start()
+            tornado.ioloop.PeriodicCallback(background_peers, 30000).start()
             config.peers_busy = False
             tornado.ioloop.PeriodicCallback(background_transaction_broadcast, 120000).start()
             config.txn_broadcast_busy = False
             tornado.ioloop.PeriodicCallback(background_ns_broadcast, 120000).start()
             config.ns_broadcast_busy = False
-        tornado.ioloop.PeriodicCallback(background_status, 5000).start()
+        tornado.ioloop.PeriodicCallback(background_status, 30000).start()
         config.status_busy = False
         tornado.ioloop.PeriodicCallback(background_pool, 30000).start()
         config.pool_busy = False
-        tornado.ioloop.PeriodicCallback(background_cache_validator, 10000).start()
+        tornado.ioloop.PeriodicCallback(background_cache_validator, 30000).start()
         config.cache_busy = False
         if config.pool_payout:
             app_log.info("PoolPayout activated")
