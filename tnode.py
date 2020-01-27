@@ -10,6 +10,7 @@ import ssl
 import ntpath
 import webbrowser
 import pyrx
+from traceback import format_exc
 from asyncio import sleep as async_sleep
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
@@ -25,6 +26,7 @@ import tornado.log
 # from tornado.log import LogFormatter
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
+from concurrent.futures import ThreadPoolExecutor
 
 import yadacoin.blockchainutils
 import yadacoin.transactionutils
@@ -62,7 +64,7 @@ class NodeApplication(Application):
         self.default_handlers = [
             (r"/app/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app')}),
             (r"/app2fa/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app2fa')}),
-            (r"/appvote/(.*)", StaticFileHandler, {"path": path.join(static_path, 'appvote')}),
+            (r"/appvotestatic/(.*)", StaticFileHandler, {"path": path.join(static_path, 'appvotestatic')}),
             (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
             (r"/socket.io/", socketio.get_tornado_handler(get_sio()))
         ]
@@ -103,20 +105,26 @@ class NodeApplication(Application):
 
 
 async def background_consensus():
-    if not config.consensus.existing_blockchain:
+    if not config.consensus:
+        config.consensus = Consensus(config.debug, config.peers)
         await config.consensus.async_init()
-        await config.consensus.build_existing()
         if options.verify:
             app_log.info("Verifying existing blockchain")
             await config.consensus.verify_existing_blockchain(reset=config.reset)
         else:
             app_log.info("Verification of existing blockchain skipped by config")
     if config.polling <= 0:
-        app_log.error("No consensus polling")
+        app_log.warning("No consensus polling")
         return
     try:
-        wait = await config.consensus.sync_bottom_up()
-        app_log.error("{} in Background_consensus".format(wait))
+        if config.consensus_busy:
+            return
+        config.consensus_busy = True
+        again = True
+        while again:
+            again = await config.consensus.sync_bottom_up()
+        config.consensus_busy = False
+        app_log.warning("{} in Background_consensus".format(again))
     except Exception as e:
         app_log.error("{} in Background_consensus".format(e))
 
@@ -124,11 +132,15 @@ async def background_consensus():
 async def background_peers():
     """Peers management coroutine. responsible for peers testing and outgoing connections"""
     try:
+        if config.peers_busy:
+            return
+        config.peers_busy = True
         if len(config.peers.peers) <= 50:
             # no need to waste resources if we have enough peers
             # log.info('Should test peers')
             await config.peers.test_some(count=2)
         await config.peers.check_outgoing()
+        config.peers_busy = False
     except Exception as e:
         app_log.error("{} in Background_peers".format(e))
 
@@ -137,15 +149,22 @@ async def background_status():
     """This background co-routine is responsible for status collection and display"""
     try:
         # status = {"peers": config.peers.get_status()}
+        if config.status_busy:
+            return
+        config.status_busy = True
         status = config.get_status()
         # print(status)
         app_log.info(json.dumps(status))
+        config.status_busy = False
     except Exception as e:
         app_log.error("{} in Background_status".format(e))
 
 
 async def background_transaction_broadcast():
     """This background co-routine is responsible for disseminating transactions to the network"""
+    if config.txn_broadcast_busy:
+        return
+    config.txn_broadcast_busy = True
     tb = TxnBroadcaster(config)
     tb2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
     try:
@@ -154,12 +173,16 @@ async def background_transaction_broadcast():
         async for txn in config.mongo.async_db.miner_transactions.find({}).limit(20):
             await tb.txn_broadcast_job(txn, txn.get('sent_to'))
             await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
+        config.txn_broadcast_busy = False
     except Exception as e:
         app_log.error("{} in background_transaction_broadcast".format(e))
 
 
 async def background_ns_broadcast():
     """This background co-routine is responsible for disseminating name server records to the network"""
+    if config.ns_broadcast_busy:
+        return
+    config.ns_broadcast_busy = True
     nb = NSBroadcaster(config)
     nb2 = NSBroadcaster(config, config.SIO.namespace_handlers['/chat'])
     try:
@@ -168,6 +191,7 @@ async def background_ns_broadcast():
         async for ns in config.mongo.async_db.name_server.find({}).limit(20):
             await nb.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
             await nb2.ns_broadcast_job(ns.get('txn'), ns.get('sent_to'))
+        config.ns_broadcast_busy = False
     except Exception as e:
         app_log.error("{} in background_ns_broadcast".format(e))
 
@@ -180,9 +204,13 @@ async def background_pool():
     So we can update the miners.
     """
     try:
+        if config.pool_busy:
+            return
+        config.pool_busy = True
         if config.mp:
             await config.mp.check_block_evolved()
 
+        config.pool_busy = False
     except Exception as e:
         app_log.error("{} in background_pool".format(e))
 
@@ -195,14 +223,21 @@ async def background_pool_payer():
     So we can update the miners.
     """
     try:
+        if config.pool_payer_busy:
+            return
+        config.pool_payer_busy = True
         if config.pp:
             await config.pp.do_payout()
 
+        config.pool_payer_busy = False
     except Exception as e:
         app_log.error("{} in background_pool_payer".format(e))
 
 async def background_cache_validator():
     """Responsible for validating the cache and clearing it when necessary"""
+    if config.cache_busy:
+        return
+    config.cache_busy = True
     if not hasattr(config, 'cache_inited'):
         config.cache_collections = [x for x in await config.mongo.async_db.list_collection_names({}) if x.endswith('_cache')]
         config.cache_last_times = {}
@@ -210,6 +245,7 @@ async def background_cache_validator():
             async for x in config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
                 config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
             for cache_collection in config.cache_collections:
+                config.cache_last_times[cache_collection] = 0
                 await config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
             config.cache_inited = True
         except Exception as e:
@@ -222,7 +258,13 @@ async def background_cache_validator():
     try:
         for cache_collection in config.cache_collections:
             if not config.cache_last_times.get(cache_collection):
-                config.cache_last_times[cache_collection] = 0
+                latest = await config.mongo.async_db[cache_collection].find_one({
+                    'cache_time': {'$gt': config.cache_last_times[cache_collection]}
+                }, sort=[('height', -1)])
+                if latest:
+                    config.cache_last_times[cache_collection] = latest['cache_time']
+                else:
+                    config.cache_last_times[cache_collection] = 0
             async for txn in config.mongo.async_db[cache_collection].find({
                 'cache_time': {'$gt': config.cache_last_times[cache_collection]}
             }).sort([('height', -1)]):
@@ -240,8 +282,10 @@ async def background_cache_validator():
                     if txn['cache_time'] > config.cache_last_times[cache_collection]:
                         config.cache_last_times[cache_collection] = txn['cache_time']
 
+        config.cache_busy = False
     except Exception as e:
-        app_log.error("{} in background_cache_validator".format(e))
+        app_log.error("error in background_cache_validator")
+        app_log.error(format_exc())
 
 
 def configure_logging():
@@ -289,6 +333,7 @@ def main():
            type=str)
     define("verify", default=True, help="Verify chain, default True", type=bool)
     define("webonly", default=False, help="Web only (ignores node processes for faster init when restarting server frequently), default False", type=bool)
+    define("disable-web", default=False, help="Disable web server", type=bool)
 
     options.parse_command_line(final=False)
     configure_logging()
@@ -332,6 +377,8 @@ def main():
 
     config.pyrx = pyrx.PyRX()
     config.reset = options.reset
+
+    config.disable_web = options.disable_web
 
     api_whitelist = 'api_whitelist.json'
     api_whitelist_filename = options.config.replace(ntpath.basename(options.config), api_whitelist)
@@ -377,7 +424,7 @@ def main():
         yadacoin.blockchainutils.set_BU(config.BU)  # To be removed
         config.GU = GraphUtils()
 
-        config.consensus = Consensus(config.debug, config.peers)
+        config.consensus = None
 
         if config.max_miners > 0:
             app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
@@ -387,37 +434,44 @@ def main():
         ws_init()
         config.SIO = get_sio()
 
-        tornado.ioloop.PeriodicCallback(background_consensus, 120000).start()
+        tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
+        tornado.ioloop.PeriodicCallback(background_consensus, 5000).start()
+        config.consensus_busy = False
         if config.network != 'regnet':
-            tornado.ioloop.PeriodicCallback(background_peers, 120000).start()
+            tornado.ioloop.PeriodicCallback(background_peers, 3000).start()
+            config.peers_busy = False
             tornado.ioloop.PeriodicCallback(background_transaction_broadcast, 120000).start()
+            config.txn_broadcast_busy = False
             tornado.ioloop.PeriodicCallback(background_ns_broadcast, 120000).start()
-        tornado.ioloop.PeriodicCallback(background_status, 120000).start()
-        tornado.ioloop.PeriodicCallback(background_pool, 120000).start()
-        tornado.ioloop.PeriodicCallback(background_cache_validator, 120000).start()
+            config.ns_broadcast_busy = False
+        tornado.ioloop.PeriodicCallback(background_status, 5000).start()
+        config.status_busy = False
+        tornado.ioloop.PeriodicCallback(background_pool, 30000).start()
+        config.pool_busy = False
+        tornado.ioloop.PeriodicCallback(background_cache_validator, 10000).start()
+        config.cache_busy = False
         if config.pool_payout:
             app_log.info("PoolPayout activated")
             pp = PoolPayer()
             config.pp = pp
             tornado.ioloop.PeriodicCallback(background_pool_payer, 120000).start()
+            config.pool_payer_busy = False
 
     my_peer = Peer.init_my_peer(config.network)
-    app_log.info("API: http://{}".format(my_peer.to_string()))
-
-    app = NodeApplication(config, mongo, peers)
-
-    app_log.info("Starting server on {}:{}".format(config.serve_host, config.serve_port))
-    app.listen(config.serve_port, config.serve_host)
-    if config.ssl:
-        ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=config.ssl.get('cafile'))
-        ssl_ctx.load_cert_chain(config.ssl.get('certfile'), keyfile=config.ssl.get('keyfile'))
-        http_server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
-        http_server.listen(config.ssl['port'])
-    webbrowser.open("http://{}/app".format(my_peer.to_string()))
+    if not config.disable_web:
+        app_log.info("API: http://{}".format(my_peer.to_string()))
+        app = NodeApplication(config, mongo, peers)
+        app_log.info("Starting server on {}:{}".format(config.serve_host, config.serve_port))
+        app.listen(config.serve_port, config.serve_host)
+        if config.ssl:
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=config.ssl.get('cafile'))
+            ssl_ctx.load_cert_chain(config.ssl.get('certfile'), keyfile=config.ssl.get('keyfile'))
+            http_server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
+            http_server.listen(config.ssl['port'])
+            webbrowser.open("http://{}/appvote/identity".format(my_peer.to_string()))
     # The server will simply run until interrupted
     # with Ctrl-C, but if you want to shut down more gracefully,
     # call shutdown_event.set().
-
     tornado.ioloop.IOLoop.current().start()
     # shutdown_event = tornado.locks.Event()
     # await shutdown_event.wait()

@@ -67,9 +67,9 @@ class BlockChainUtils(object):
     def set_latest_block(self, block: dict):
         self.latest_block = block
 
-    async def get_latest_block_async(self) -> dict:
+    async def get_latest_block_async(self, use_cache=True) -> dict:
         # cached, async version
-        if not self.latest_block is None:
+        if self.latest_block is not None and use_cache:
             return self.latest_block
         self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
         return self.latest_block
@@ -78,13 +78,6 @@ class BlockChainUtils(object):
         res = self.mongo.db.blocks.find({'index': index}, {'_id': 0})
         if res.count():
             return res[0]
-
-    def get_block_objs(self):
-        from yadacoin.block import Block
-        # from yadacoin.transaction import Transaction, Input, Crypt
-        blocks = self.get_blocks()
-        block_objs = [Block.from_dict(block) for block in blocks]
-        return block_objs
 
     async def get_wallet_balance(self, address):
         balance = 0
@@ -99,124 +92,79 @@ class BlockChainUtils(object):
     async def get_wallet_unspent_transactions(self, address, ids=None, needed_value=None):
         unspent_cache = await self.mongo.async_db.unspent_cache.find_one({'address': address}, sort=[('height', -1)])
 
-        if unspent_cache:
+        if unspent_cache and (ids or needed_value):
             block_height = unspent_cache['height']
         else:
             block_height = 0
+        
+        #### fine above ####
 
-        received_query = [
+
+        ### find public key fast first ###
+
+
+        public_key_address_pairs = self.mongo.async_db.blocks.aggregate([
             {
-                "$match": {
-                    "index": {'$gte': block_height}
-                }
-            },
-            {
-                "$match": {
+                '$match': {
                     "transactions.outputs.to": address
                 }
             },
-            {"$unwind": "$transactions" },
             {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$transactions",
-                    "height": "$index",
-                    "block_hash": "$hash"
+                '$unwind': "$transactions"
+            },
+            {
+                '$match': {
+                    "transactions.outputs.to": address
                 }
             },
             {
-                "$match": {
-                    "txn.outputs.to": address
+                '$project': {
+                        "transaction": "$transactions",
+                        "public_key": "$public_key"
+                }
+                
+            },
+            {
+                '$unwind': "$transaction.outputs"
+            },
+            {
+                '$match': {
+                    "transaction.outputs.to": address
                 }
             },
             {
-                "$project": {
-                    "_id": 0,
-                    "public_key": "$txn.public_key",
-                    "txn": "$txn",
-                    "height": "$height",
-                    "block_hash": "$block_hash"
+                '$project': {
+                        "address": "$transaction.outputs.to",
+                        "public_key": "$public_key"
                 }
+                
             },
-            {
-                "$sort": {"height": 1}
-            }
-        ]
-
-        received = self.mongo.async_db.blocks.aggregate(received_query, allowDiskUse=True)
+        ])
 
         reverse_public_key = ''
-        async for x in received:
-            # we ALWAYS put our own address in the outputs even if the value is zero.
-            # txn is invalid if it isn't present
-            await self.mongo.async_db.unspent_cache.update_many({
-                'address': address,
-                'id': x['txn']['id'],
-                'height': x['height'],
-                'block_hash': x['block_hash']
-            },
-            {
-                '$set': {
-                    'address': address,
-                    'id': x['txn']['id'],
-                    'height': x['height'],
-                    'block_hash': x['block_hash'],
-                    'spent': False,
-                    'txn': x['txn'],
-                    'cache_time': time()
-                }
-            },
-            upsert=True)
-            
-            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
+        async for public_key_address_pair in public_key_address_pairs:
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key_address_pair['public_key'])))
 
             if xaddress == address:
-                reverse_public_key = x['public_key']
-        
-        if reverse_public_key == '':
-            received_query = [
-                {
-                    "$match": {
-                        "transactions.outputs.to": address
-                    }
-                },
-                {"$unwind": "$transactions" },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "txn": "$transactions",
-                        "height": "$index",
-                        "block_hash": "$hash"
-                    }
-                },
-                {
-                    "$match": {
-                        "txn.outputs.to": address
-                    }
-                },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "public_key": "$txn.public_key",
-                        "txn": "$txn",
-                        "height": "$height",
-                        "block_hash": "$block_hash"
-                    }
-                }
-            ]
-            async for x in self.mongo.async_db.blocks.aggregate(received_query, allowDiskUse=True):
-                xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
+                reverse_public_key = public_key_address_pair['public_key']
+                break
 
-                if xaddress == address:
-                    reverse_public_key = x['public_key']
-                    break
-
-        spent = self.mongo.async_db.blocks.aggregate([
+        spent_txns_query = [
             {
                 "$match": {
                     "index": {'$gte': block_height}
                 }
-            },
+            }
+        ]
+
+        if ids:
+            spent_txns_query.append({
+                '$match': {
+                    "transactions.id": {'$in': ids}
+                }
+            })
+        ### end find public key fast first ###
+        spent_txns_query.extend([
             {
                 "$match": {
                     "$or": [
@@ -230,7 +178,8 @@ class BlockChainUtils(object):
             {
                 "$project": {
                     "_id": 0,
-                    "txn": "$transactions"
+                    "txn": "$transactions",
+                    "height": "$index"
                 }
             },
             {
@@ -246,33 +195,42 @@ class BlockChainUtils(object):
                 "$project": {
                     "_id": 0,
                     "public_key": "$txn.public_key",
-                    "txn": "$txn"
+                    "txn": "$txn",
+                    "height": "$height"
                 }
             }
         ])
 
-        # here we're assuming block/transaction validation ensures the inputs used are valid for this address
-        async for x in spent:
-            for i in x['txn']['inputs']:
-                await self.mongo.async_db.unspent_cache.update_many({
-                    'address': address,
-                    'id': i['id']
-                },
-                {
-                    '$set': {
-                        'spent': True,
-                        'cache_time': time()
-                    }
-                })
+        spent = self.mongo.async_db.blocks.aggregate(spent_txns_query)
 
+        # here we're assuming block/transaction validation ensures the inputs used are valid for this address
+        spent_ids = set()
+        async for x in spent:
+            spent_ids.update([i['id'] for i in x['txn']['inputs']])
         if ids:
-            query = {'address': address, 'spent': False, 'id': {'$in': ids}}
-        else:
-            query = {'address': address, 'spent': False}
-        async for txn in self.mongo.async_db.unspent_cache.find(query):
-            if 'txn' in txn:
-                txn['txn']['height'] = txn['height']
-                yield txn['txn']
+            for x in list(spent_ids ^ set(ids)):
+                yield {'id': x}
+            return
+
+        unspent_txns_query = [
+            {
+                '$match': {
+                    "transactions.outputs.to": address
+                }
+            },
+            {
+                '$unwind': "$transactions"
+            },
+            {
+                '$match': {
+                    'transactions.id': {'$nin' : list(spent_ids)}
+                }
+            }
+        ]
+
+        async for unspent_txn in self.config.mongo.async_db.blocks.aggregate(unspent_txns_query):
+            unspent_txn['transactions']['height'] = unspent_txn['index']
+            yield unspent_txn['transactions']
 
     def get_wallet_unspent_fastgraph_transactions(self, address):
         result = [x for x in self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})]

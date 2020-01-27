@@ -133,8 +133,8 @@ class MiningPool(object):
                 self.app_log.warning("error {} getting address sid {}".format(e, sid))
         nonce = str(int(nonce, 16))
         block_to_mine = await self.block_to_mine()
-        block_to_mine = block_to_mine.copy()
-        previous_block_to_mine = self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
+        block_to_mine = await block_to_mine.copy()
+        previous_block_to_mine = await self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
         hash1 = block_to_mine.generate_hash_from_header(block_to_mine.index, block_to_mine.header, nonce)
         if int(hash1, 16) > block_to_mine.target and self.config.network != 'regnet' and (block_to_mine.special_min and int(hash1, 16) > block_to_mine.special_target):
             # TODO If not, does it match previous block of same height?
@@ -157,7 +157,6 @@ class MiningPool(object):
             matching_hash = hash1
             matching_block.hash = hash1
             matching_block.nonce = nonce
-            # target = BlockFactory.get_target(height, last_block, block, self.existing_blockchain)
             #self.app_log.debug("nonce {} matches pool diff, hash1 is {} header {}".format(nonce, hash1, matching_block.header))
         # TODO: store share and send block if enough
         # No need to re-verify block, should be good since we forged it and nonce passes
@@ -234,9 +233,9 @@ class MiningPool(object):
             if block is None:
                 block = self.config.BU.get_latest_block()
             if block:
-                block = Block.from_dict(block)
+                block = await Block.from_dict(block)
             else:
-                genesis_block = BlockFactory.get_genesis_block()
+                genesis_block = await BlockFactory.get_genesis_block()
                 await genesis_block.save()
                 self.mongo.db.consensus.insert({
                     'block': genesis_block.to_dict(),
@@ -244,7 +243,7 @@ class MiningPool(object):
                     'id': genesis_block.signature,
                     'index': 0
                     })
-                block = Block.from_dict(self.config.BU.get_latest_block())
+                block = await Block.from_dict(self.config.BU.get_latest_block())
             self.index = block.index + 1
             self.last_block_time = int(block.time)
         except Exception as e:
@@ -273,7 +272,7 @@ class MiningPool(object):
             if self.block_factory.block.index == current_index:
                 # If we just refreshed the same block, keep the previous one so we can validate the nonces.
                 if backup_block:
-                    self.previous_block_to_mine = Block.from_dict(backup_block)
+                    self.previous_block_to_mine = await Block.from_dict(backup_block)
                 else:
                     self.previous_block_to_mine = None
                 # print("previous_block header", self.previous_block_to_mine.header)
@@ -355,40 +354,17 @@ class MiningPool(object):
             self.block_factory.block.target = int(res['target'], 16)
 
     async def set_target_from_last_non_special_min(self, latest_block):
-        i = 1
-        while 1:
-            res = self.mongo.db.blocks.find_one({
-                'index': self.index - i,
-                'special_min': False,
-                'target': {'$ne': CHAIN.MAX_TARGET_HEX}  # This condition may be extraneous
-            })
-            if res:
-                chain = self.mongo.async_db.blocks.find({
-                    'index': {'$gte': res['index']-30}
-                })
-                break
-            else:
-                i += 1
-
         if self.index >= CHAIN.FORK_10_MIN_BLOCK:
-            self.block_factory.block.target = BlockFactory.get_target_10min(
+            self.block_factory.block.target = await BlockFactory.get_target_10min(
                 self.index,
                 latest_block,
-                self.block_factory.block,
-                await Blockchain.init_async(
-                    blocks=chain,
-                    partial=True
-                )
+                self.block_factory.block
             )
         else:
-            self.block_factory.block.target = BlockFactory.get_target(
+            self.block_factory.block.target = await BlockFactory.get_target(
                 self.index,
                 latest_block,
-                self.block_factory.block,
-                await Blockchain.init_async(
-                    blocks=chain,
-                    partial=True
-                )
+                self.block_factory.block
             )
 
 

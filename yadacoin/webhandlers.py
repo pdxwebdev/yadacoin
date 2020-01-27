@@ -277,6 +277,19 @@ class App2FAHandler(BaseWebHandler):
         self.render("app2fa.html")
 
 
+class GetRecoveryTransaction(BaseWebHandler):
+
+    async def get(self):
+        """
+        :return:
+        """
+        rid = self.get_query_argument('rid')
+        txn = await self.config.mongo.async_db.blocks.find_one({'transactions.rid': rid}, {'_id': 0})
+        if not txn:
+            txn = await self.config.mongo.async_db.miner_transactions.find_one({'rid': rid}, {'_id': 0})
+        return self.render_as_json(txn)
+
+
 WEB_HANDLERS = [
     (r'/', HomeHandler),
     (r'/mfa', MultifactorAuthHandler),
@@ -287,4 +300,5 @@ WEB_HANDLERS = [
     (r'/api-stats', HashrateAPIHandler),
     (r'/app', AppHandler),
     (r'/app2fa', App2FAHandler),
+    (r'/get-recovery-transaction', GetRecoveryTransaction),
 ]

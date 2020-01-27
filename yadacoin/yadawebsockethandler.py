@@ -147,7 +147,7 @@ class ChatNamespace(AsyncNamespace):
         self.app_log.info('WS hello: {} {}'.format(sid, json.dumps(data)))
         try:
             async with self.session(sid) as session:
-                if session['ip'] != data['ip'] and session['ip'] not in self.config.igd:
+                if session['ip'] != data['ip'] and session['ip'] not in self.config.igd and int(data['version']) < 3:
                     await self.config.peers.on_close_inbound(sid, ip=session['ip'])
                     raise Exception("IP mismatch")
                 if session['ip'] in self.config.igd:
@@ -212,7 +212,6 @@ class ChatNamespace(AsyncNamespace):
         # from yadacoin.block import Block  # Circular reference. Not good! - Do we need the object here?
         self.app_log.info('WS latest-block: {} {}'.format(sid, json.dumps(data)))
         # TODO: handle a dict here to store the consensus state
-        # self.latest_peer_block = Block.from_dict(data)
         if not self.peers.syncing:
             async with self.session(sid) as session:
                 peer = Peer(session['ip'], session['port'])
@@ -249,7 +248,6 @@ class ChatNamespace(AsyncNamespace):
             inserted = False
             block = None  # Avoid linter warning
             for block in data:
-                # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                 if block['index'] == my_index + 1:
                     if await self.consensus.process_next_block(block, peer, trigger_event=False):
                         inserted = True
@@ -261,7 +259,6 @@ class ChatNamespace(AsyncNamespace):
                     break
             if inserted:
                 # If import was successful, inform out peers once the batch is processed
-                await self.peers.on_block_insert(block)
                 # then ask for the potential next batch
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
                 await self.emit('get_blocks', data=data, room=sid)
@@ -295,38 +292,3 @@ def ws_init():
     if get_config().max_miners > 0:
         # Only register pool namespace if we want to run a pool
         SIO.register_namespace(PoolNamespace('/pool'))
-
-
-
-
-# no newblock websocket event seems used
-"""
-@SIO.on('newblock', namespace='/chat')
-async def on_newblock(self, data):
-    # print("new block ", data)
-    try:
-        peer = Peer.from_string(WS_CONFIG, WS_MONGO, request.json.get('peer'))
-        block = Block.from_dict(WS_CONFIG, WS_MONGO, data)
-        if block.index == 0:
-            return
-        if int(block.version) != CHAIN.get_version_for_height(block.index):
-            print('rejected old version %s from %s' % (block.version, peer))
-            return
-        WS_MONGO.db.consensus.update({
-            'index': block.to_dict().get('index'),
-            'id': block.to_dict().get('id'),
-            'peer': peer.to_string()
-        },
-            {
-                'block': block.to_dict(),
-                'index': block.to_dict().get('index'),
-                'id': block.to_dict().get('id'),
-                'peer': peer.to_string()
-            }, upsert=True)
-
-    except Exception as e:
-        print("block is bad")
-        raise e
-"""
-
-

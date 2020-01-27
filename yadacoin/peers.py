@@ -4,6 +4,7 @@ from time import time
 from random import choice
 from tornado import ioloop
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
+from tornado.httputil import HTTPHeaders
 from asyncio import sleep as async_sleep, gather
 from pymongo import ASCENDING, DESCENDING
 from logging import getLogger
@@ -280,6 +281,8 @@ class Peers(object):
         # to_list(length=100)
 
     async def increment_failed(self, peer):
+        if peer.host in [x['host'] for x in self.config.peers_seed]:
+            return
         res = await self.mongo.async_db.peers.find_one({'host': peer.host, 'port': int(peer.port)})
         if not res:
             res = {}
@@ -476,7 +479,8 @@ class Peer(object):
         hp = self.to_string()
         print('test', hp)
         url = "http://{}/get-latest-block".format(hp)
-        request = HTTPRequest(url, connect_timeout=10, request_timeout=12)
+        h = HTTPHeaders({"Connection": "close"})
+        request = HTTPRequest(url, headers=h, connect_timeout=3, request_timeout=3)
         # TODO: move to get-status
         try:
             response = await self.config.http_client.fetch(request)

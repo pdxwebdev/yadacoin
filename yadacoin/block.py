@@ -165,7 +165,7 @@ class BlockFactory(object):
 
             transactions = transaction_objs
             block_factory = cls()
-            block = Block(
+            block = await Block.init_async(
                 version=version,
                 block_time=xtime,
                 block_index=index,
@@ -227,7 +227,7 @@ class BlockFactory(object):
             return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
 
     def get_transaction_hashes(self):
-        return sorted([str(x.hash) for x in transactions], key=str.lower)
+        return sorted([str(x.hash) for x in self.block.transactions], key=str.lower)
 
     def set_merkle_root(self, txn_hashes):
         hashes = []
@@ -244,12 +244,11 @@ class BlockFactory(object):
             self.merkle_root = hashes[0]
     
     @classmethod
-    def get_target_10min(
+    async def get_target_10min(
         self,
         height,
         last_block,  # This is the latest on chain block we have in db
-        block,  # This is the block we are currently mining, not on chain yet, with current time in it.
-        blockchain
+        block  # This is the block we are currently mining, not on chain yet, with current time in it.
     ):
         # Aim at 5 min average block time, with escape hatch
         max_target = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  # A single cpu does that under a minute.
@@ -271,37 +270,32 @@ class BlockFactory(object):
             # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
             adjusted = new_target
             # To be used later on, once the rest is calc'd
+        latest_block = await get_config().BU.get_latest_block_async()
+        start_index = latest_block['index']
 
-        if blockchain.partial:
-            start_index = len(blockchain.blocks) - 1
-        else:
-            start_index = block.index
-
-        block_from_retarget_period_ago = blockchain.blocks[start_index-retarget_period]
+        block_from_retarget_period_ago = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period}))
         retarget_period_ago_time = block_from_retarget_period_ago.time
         elapsed_time_from_retarget_period_ago = int(block.time) - int(retarget_period_ago_time)
         average_block_time = elapsed_time_from_retarget_period_ago / retarget_period
 
-        block_from_retarget_period2_ago = blockchain.blocks[start_index-retarget_period2]
+        block_from_retarget_period2_ago = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period2}))
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
         elapsed_time_from_retarget_period2_ago = int(block.time) - int(retarget_period2_ago_time)
         average_block_time2 = elapsed_time_from_retarget_period2_ago / retarget_period2
 
-        if blockchain.partial:
-            start_index = len(blockchain.blocks) - 1
-        else:
-            start_index = last_block.index
         # React faster to a drop in block time than to a raise. short block times are more a threat than large ones.
         if average_block_time2 < target_time:
             hash_sum2 = 0
             for i in range(start_index, start_index - retarget_period2, -1):
-                hash_sum2 += blockchain.blocks[i].target
+                block_tmp = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': i}))
+                hash_sum2 += block_tmp.target
             average_target = hash_sum2 / retarget_period2
             target = int(average_target * average_block_time2 / target_time)
         else:
             hash_sum = 0
             for i in range(start_index, start_index - retarget_period, -1):
-                hash_sum += blockchain.blocks[i].target
+                block_tmp = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': i}))
+                hash_sum += block_tmp.target
             average_target = hash_sum / retarget_period
             # This adjusts both ways
             target = int(average_target * average_block_time / target_time)
@@ -321,12 +315,14 @@ class BlockFactory(object):
         return int(target)
 
     @classmethod
-    def get_target(cls, height, last_block, block, blockchain) -> int:
+    async def get_target(cls, height, last_block, block) -> int:
         try:
             # change target
             max_target = CHAIN.MAX_TARGET
             if get_config().network in ['regnet', 'testnet']:
                 return int(max_target)
+
+            latest_block = await get_config().BU.get_latest_block_async()
             max_block_time = CHAIN.target_block_time(get_config().network)
             retarget_period = CHAIN.RETARGET_PERIOD  # blocks
             max_seconds = CHAIN.TWO_WEEKS  # seconds
@@ -342,7 +338,7 @@ class BlockFactory(object):
             if height > 0 and height % retarget_period == 0:
                 get_config().debug_log(
                     "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
-                block_from_2016_ago = Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
+                block_from_2016_ago = await Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
                 get_config().debug_log(
                     "Block_from_2016_ago - block {}/time {}".format(block_from_2016_ago.index, block_from_2016_ago.time))
                 two_weeks_ago_time = block_from_2016_ago.time
@@ -360,18 +356,24 @@ class BlockFactory(object):
 
                 block_to_check = last_block
 
-                if blockchain.partial:
-                    start_index = len(blockchain.blocks) - 1
-                else:
-                    start_index = last_block.index
+                start_index = latest_block['index']
+
                 get_config().debug_log("start_index {}".format(start_index))
-                while 1:
-                    if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                        block_to_check = blockchain.blocks[start_index]
-                        start_index -= 1
-                    else:
-                        target = block_to_check.target
-                        break
+                if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
+                    block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({
+                        '$and': [
+                            {
+                                'index': {'$lte': start_index}
+                            },
+                            {
+                                'special_min': False
+                            },
+                            {
+                                'target': { '$ne': hex(max_target)[2:]}
+                            }
+                        ]
+                    }, sort=[('index', -1)]))
+                target = block_to_check.target
                 get_config().debug_log("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
 
                 new_target = int((time_for_target * target) / max_seconds)
@@ -393,15 +395,13 @@ class BlockFactory(object):
 
                 block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
-                if blockchain.partial:
-                    start_index = len(blockchain.blocks) - 1
-                else:
-                    start_index = last_block.index
+                start_index = latest_block['index']
+
                 while 1:
                     if start_index == 0:
                         return block_to_check.target
                     if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                        block_to_check = blockchain.blocks[start_index]
+                        block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index}))
                         start_index -= 1
                     else:
                         target = block_to_check.target
@@ -433,8 +433,8 @@ class BlockFactory(object):
         return lowest[1], lowest[2]
 
     @classmethod
-    def get_genesis_block(cls):
-        return Block.from_dict({
+    async def get_genesis_block(cls):
+        return await Block.from_dict({
             "nonce" : 0,
             "hash" : "0dd0ec9ab91e9defe535841a4c70225e3f97b7447e5358250c2dc898b8bd3139",
             "public_key" : "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570",
@@ -474,8 +474,9 @@ class Block(object):
                  'merkle_root', 'verify_merkle_root','hash', 'public_key', 'signature', 'special_min', 'target',
                  'special_target', 'header')
     
-    def __init__(
-        self,
+    @classmethod
+    async def init_async(
+        cls,
         version=0,
         block_time=0,
         block_index=-1,
@@ -491,6 +492,7 @@ class Block(object):
         target: int=0,
         special_target: int=0
     ):
+        self = cls()
         self.app_log = getLogger('tornado.application')
         self.config = get_config()
         self.mongo = self.config.mongo
@@ -517,22 +519,21 @@ class Block(object):
                 self.target = CHAIN.MAX_TARGET
             else:
                 if self.index >= CHAIN.FORK_10_MIN_BLOCK:
-                    self.target = BlockFactory.get_target_10min(self.index, Block.from_dict(latest_block), self,
-                                                self.config.consensus.existing_blockchain)
+                    self.target = await BlockFactory.get_target_10min(self.index, await Block.from_dict(latest_block), self)
                 else:
-                    self.target = BlockFactory.get_target(self.index, Block.from_dict(latest_block), self,
-                                                self.config.consensus.existing_blockchain)
+                    self.target = await BlockFactory.get_target(self.index, await Block.from_dict(latest_block), self)
             self.special_target = self.target
             # TODO: do we need recalc special target here if special min?
         self.header = header
+        return self
 
-    def copy(self):
-        return Block(self.version, self.time, self.index, self.prev_hash, self.nonce, self.transactions,
+    async def copy(self):
+        return await Block.init_async(self.version, self.time, self.index, self.prev_hash, self.nonce, self.transactions,
                      self.hash, self.merkle_root, self.public_key, self.signature, self.special_min,
                      self.header, self.target, self.special_target)
 
     @classmethod
-    def from_dict(cls, block):
+    async def from_dict(cls, block):
         transactions = []
         for txn in block.get('transactions'):
             # TODO: do validity checking for coinbase transactions
@@ -548,7 +549,7 @@ class Block(object):
         if block.get('special_target', 0) == 0:
             block['special_target'] = block.get('target')
 
-        return cls(
+        return await cls.init_async(
             version=block.get('version'),
             block_time=block.get('time'),
             block_index=block.get('index'),
@@ -562,7 +563,6 @@ class Block(object):
             special_min=block.get('special_min'),
             header=block.get('header', ''),
             target=int(block.get('target'), 16),
-
             special_target=int(block.get('special_target', 0), 16)
         )
     

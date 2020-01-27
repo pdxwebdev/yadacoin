@@ -24,7 +24,7 @@ class ClientChatNamespace(AsyncClientNamespace):
         self.ip, self.port = ip_port.split(':')
         self.app_log.debug('ws client /Chat connected to {}:{} - {}'.format(self.ip, self.port, self.client))
         self.client.manager.connected = True
-        await self.emit('hello', data={"version": 2, "ip": self.config.peer_host, "port": self.config.peer_port}, namespace="/chat")
+        await self.emit('hello', data={"version": 3, "ip": self.config.peer_host, "port": self.config.peer_port}, namespace="/chat")
         # ask the peer active list
         await self.emit('get_peers', data={}, namespace="/chat")
 
@@ -193,13 +193,13 @@ class YadaWebSocketClient(object):
     async def on_latest_block(self, data):
         from yadacoin.block import Block  # Circular reference. Not good! - Do we need the object here?
         # processing in this object rather than ClientChatNamespace so consensus data is available from peers
-        self.latest_peer_block = Block.from_dict(data)
+        self.latest_peer_block = await Block.from_dict(data)
         if not self.peers.syncing:
             self.app_log.debug("Trying to sync on latest block from {}".format(self.peer.to_string()))
             my_index = self.config.BU.get_latest_block()['index']
             if data['index'] == my_index + 1:
                 self.app_log.debug("Next index, trying to merge from {}".format(self.peer.to_string()))
-                if await self.consensus.process_next_block(data, self.peer):
+                if await self.config.consensus.process_next_block(data, self.peer):
                     pass
                     # if ok, block was inserted and event triggered by import block
                     # await self.peers.on_block_insert(data)
@@ -225,7 +225,6 @@ class YadaWebSocketClient(object):
             inserted = False
             block = None  # Avoid linter warning
             for block in data:
-                # print("looking for ", self.existing_blockchain.blocks[-1].index + 1)
                 if block['index'] == my_index + 1:
                     if await self.consensus.process_next_block(block, self.peer, trigger_event=False):
                         inserted = True
@@ -237,7 +236,6 @@ class YadaWebSocketClient(object):
                     break
             if inserted:
                 # If import was successful, inform out peers once the batch is processed
-                await self.peers.on_block_insert(block)
                 # then ask for the potential next batch
                 data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
                 await self.client.emit('get_blocks', data=data, namespace="/chat")

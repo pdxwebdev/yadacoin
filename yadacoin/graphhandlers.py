@@ -15,7 +15,6 @@ from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
 from logging import getLogger
 from threading import Thread
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.blockchainutils import BU
@@ -105,8 +104,8 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                     chain_balance += float(output['value'])
     
         wallet = {
-            'chain_balance': chain_balance,
-            'balance': chain_balance,
+            'chain_balance': "{0:.8f}".format(chain_balance),
+            'balance': "{0:.8f}".format(chain_balance),
             'unspent_transactions': regular_txns if amount_needed else []
         }
         self.render_as_json(wallet, indent=4)
