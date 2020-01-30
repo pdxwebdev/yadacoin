@@ -7,6 +7,7 @@ services:
           - 8000:8000
         environment:
           - PYTHONUNBUFFERED=0
+          - MOTOR_MAX_WORKERS=1
         volumes:
           - ./config:/config
         depends_on:
