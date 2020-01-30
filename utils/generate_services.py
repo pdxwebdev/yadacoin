@@ -10,6 +10,7 @@ Description=Yada Coin Node service
 Type=simple
 WorkingDirectory={cwd}
 ExecStart={cwd}/scripts/start_node.sh
+Environment=MOTOR_MAX_WORKERS=1
 
 [Install]
 WantedBy=multi-user.target
