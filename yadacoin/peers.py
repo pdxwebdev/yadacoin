@@ -44,7 +44,14 @@ class Peers(object):
         res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
         try:
             # Do not include ourselve in the list
-            self.peers = [Peer(peer['host'], peer['port']) for peer in res if peer['host'] not in self.config.outgoing_blacklist]
+            self.peers = []
+            for peer in res:
+                if peer['host'] in self.config.outgoing_blacklist:
+                    continue
+
+                if peer['host'] in self.peers:
+                    continue
+                self.peers.append(Peer(peer['host'], peer['port']))
         except:
             pass
         return self.to_json()
@@ -246,14 +253,22 @@ class Peers(object):
             # self.mongo.db.config.update({'last_seeded': {"$ne": ""}}, {'last_seeded': str(test_after)}, upsert=True)
 
         # todo: probly more efficient not to rebuild the objects every time
-        self.peers = [Peer(peer['host'], peer['port']) for peer in res]
+        self.peers = []
+        for peer in res:
+            if peer['host'] in self.peers:
+                continue
+            self.peers.append(Peer(peer['host'], peer['port']))
         self.app_log.debug("Peers count {}".format(len(self.peers)))
 
     async def on_new_peer_list(self, peer_list: list, test_after=None):
         """Process an external peer list, and saves the new ones"""
         if test_after is None:
             test_after = int(time())  # new peers will be tested asap.
+        already_used = []
         for peer in peer_list:
+            if peer['host'] in already_used:
+                continue
+            already_used.append(peer['host'])
             res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
             if res > 0:
                 # We know him already, so it will be tested.
