@@ -705,6 +705,8 @@ class Consensus(object):
                             try:
                                 if block.index == 0:
                                     continue
+                                await self.config.mongo.async_db.blocks.delete_many({'index': {'$gte': block.index}})
+                                self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async(False))
                                 await self.integrate_block_with_existing_chain(block)
                                 if self.debug:
                                     self.app_log.debug('inserted {}'.format(block.index))
