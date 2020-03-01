@@ -250,7 +250,7 @@ class GraphTransactionHandler(BaseGraphHandler):
             try:
                 await self.config.push_service.do_push(x.to_dict(), self.bulletin_secret, self.app_log)
             except Exception as e:
-                self.app_log.error(e)
+                self.app_log.warning(e)
 
         return self.render_as_json(items)
 
@@ -709,9 +709,7 @@ class SiaStreamFileHandler(BaseGraphHandler):
 class SiaUploadHandler(BaseGraphHandler):
     async def post(self):
         from requests.auth import HTTPBasicAuth
-        headers = {
-            'User-Agent': 'Sia-Agent'
-        }
+        from siaskynet import Skynet
         uploaded_file = self.request.files['file'][0]
         if len(uploaded_file['body']) > 2000000:
             return self.render_as_json({'status': 'error', 'message': 'file too large', 'files': []})
@@ -719,17 +717,14 @@ class SiaUploadHandler(BaseGraphHandler):
         with open(local_filename, 'wb') as f:
             f.write(uploaded_file['body'])
         try:
-            res = requests.post('http://0.0.0.0:9980/renter/upload/{}'.format(uploaded_file['filename']), data={'source': local_filename}, headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
+            skylink = Skynet.UploadFile(local_filename)
         except:
             self.set_status(400)
             return self.render_as_json({
                 'status': 'error',
                 'message': 'sia node not responding'
             })
-        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
-        fileData = json.loads(res.content.decode())
-        files = fileData.get('files') or []
-        return self.render_as_json({'status': 'success', 'files': [{'siapath': x['siapath'], 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath']} for x in files]})
+        return self.render_as_json({'status': 'success', 'skylink': skylink})
 
 
 class SiaShareFileHandler(BaseGraphHandler):

@@ -7,7 +7,7 @@ class PushNotification(object):
         self.config = config
         self.push_service = FCMNotification(self.config.fcm_key)
 
-    async def do_push(self, txn, bulletin_secret, logger):
+    async def do_push(self, txn, bulletin_secret, logger, rid=None, username=None):
         logger.error(bulletin_secret)
         mongo = self.config.mongo
 

@@ -370,7 +370,6 @@ class MiningPool(object):
 
     async def get_pending_transactions(self):
         transaction_objs = []
-        unspent_indexed = {}
         used_sigs = []
         for txn in sorted([x for x in self.mongo.db.miner_transactions.find()], key=lambda i: int(i['fee']), reverse=True)[:1000]:
             try:
@@ -399,21 +398,12 @@ class MiningPool(object):
                         if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
                             continue
 
-                #check double spend
-                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
-                if address in unspent_indexed:
-                    unspent_ids = unspent_indexed[address]
-                else:
-                    needed_value = sum([float(x.value) for x in transaction_obj.outputs]) + float(transaction_obj.fee)
-                    unspent_ids = [x['id'] async for x in self.config.BU.get_wallet_unspent_transactions(address, needed_value=needed_value)]
-                    unspent_indexed[address] = unspent_ids
-
                 failed1 = False
                 failed2 = False
                 used_ids_in_this_txn = []
 
                 for x in transaction_obj.inputs:
-                    if x.id not in unspent_ids:
+                    if self.config.BU.is_input_spent(x.id, transaction_obj.public_key):
                         failed1 = True
                     if x.id in used_ids_in_this_txn:
                         failed2 = True

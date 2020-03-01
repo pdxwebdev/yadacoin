@@ -123,12 +123,10 @@ class BlockFactory(object):
                         continue
                     
                     if transaction_obj.inputs:
-                        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction_obj.public_key)))
-                        unspent_ids = [x['id'] async for x in config.BU.get_wallet_unspent_transactions(address, [x.id for x in transaction_obj.inputs])]
                         failed = False
                         used_ids_in_this_txn = []
                         for x in transaction_obj.inputs:
-                            if x.id not in unspent_ids:
+                            if self.config.BU.is_input_spent(x.id, transaction_obj.public_key):
                                 failed = True
                             if x.id in used_ids_in_this_txn:
                                 failed = True
@@ -671,12 +669,10 @@ class Block(object):
         self.verify()
         for txn in self.transactions:
             if txn.inputs:
-                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
-                unspent_ids = [x['id'] async for x in self.config.BU.get_wallet_unspent_transactions(address, [x.id for x in txn.inputs])]
                 failed = False
                 used_ids_in_this_txn = []
                 for x in txn.inputs:
-                    if x.id not in unspent_ids:
+                    if self.config.BU.is_input_spent(x.id, txn.public_key):
                         failed = True
                     if x.id in used_ids_in_this_txn:
                         failed = True

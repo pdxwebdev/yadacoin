@@ -465,6 +465,28 @@ class BlockChainUtils(object):
             self.mongo.db.unspent_cache.remove({})
             return None
 
+    def is_input_spent(self, input_ids, public_key, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
+        from yadacoin.transaction import Transaction
+        # from yadacoin.crypt import Crypt
+        from yadacoin.fastgraph import FastGraph
+        if not isinstance(input_ids, list):
+            input_ids = [input_ids]
+        res = self.mongo.db.blocks.find_one({
+            "transactions.inputs.id": {'$in': input_ids},
+            "transactions.public_key": public_key
+        })
+        if res:
+            return True
+        
+        if inc_mempool:
+            res2 = self.mongo.db.miner_transactions.find_one({
+                "inputs.id": {'$in': input_ids},
+                "public_key": public_key
+            })
+            if res2:
+                return True
+        return False
+
     def get_version_for_height_DEPRECATED(self, height:int):
         # TODO: move to CHAIN
         if int(height) <= 14484:

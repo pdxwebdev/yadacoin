@@ -26,6 +26,7 @@ class TransactionFactory(object):
         username='',
         value=0,
         fee=0.0,
+        rid='',
         requester_rid='',
         requested_rid='',
         public_key='',
@@ -38,6 +39,7 @@ class TransactionFactory(object):
         coinbase=False,
         chattext=None,
         signin=None,
+        relationship='',
         no_relationship=False
     ):
         cls_inst = cls()
@@ -47,6 +49,7 @@ class TransactionFactory(object):
         cls_inst.block_height = block_height
         cls_inst.bulletin_secret = bulletin_secret
         cls_inst.username = username
+        cls_inst.rid = rid
         cls_inst.requester_rid = requester_rid
         cls_inst.requested_rid = requested_rid
         cls_inst.public_key = public_key
@@ -58,6 +61,7 @@ class TransactionFactory(object):
         cls_inst.to = to
         cls_inst.time = str(int(time.time()))
         cls_inst.outputs = []
+        cls_inst.relationship = relationship
         cls_inst.no_relationship = no_relationship
         for x in outputs:
             cls_inst.outputs.append(Output.from_dict(x))
@@ -73,8 +77,9 @@ class TransactionFactory(object):
         await cls_inst.do_money()
         inputs_concat = cls_inst.get_input_hashes()
         outputs_concat = cls_inst.get_output_hashes()
-        if bulletin_secret:
-            cls_inst.rid = cls_inst.generate_rid()
+        if bulletin_secret or rid:
+            if not cls_inst.rid:
+                cls_inst.rid = cls_inst.generate_rid()
             if cls_inst.chattext:
                 cls_inst.relationship = json.dumps({
                     "chatText": cls_inst.chattext
@@ -86,6 +91,8 @@ class TransactionFactory(object):
                     cls_inst.cipher = Crypt(shared_secret.hex(), shared=True)
                     cls_inst.encrypted_relationship = cls_inst.cipher.shared_encrypt(cls_inst.relationship.to_json())
                     break
+            elif cls_inst.relationship:
+                cls_inst.encrypted_relationship = cls_inst.relationship
             elif cls_inst.no_relationship:
                 cls_inst.encrypted_relationship = ''
             else:
@@ -590,12 +597,29 @@ class Output(object):
 
 
 class Relationship(object):
-    def __init__(self, dh_private_key, their_bulletin_secret, their_username, my_bulletin_secret, my_username):
+    def __init__(
+        self,
+        dh_private_key=None,
+        their_bulletin_secret=None,
+        their_username=None,
+        my_bulletin_secret=None,
+        my_username=None,
+        their_public_key=None,
+        their_address=None,
+        group=None,
+        reply=None,
+        topic=None
+    ):
         self.dh_private_key = dh_private_key
         self.their_bulletin_secret = their_bulletin_secret
         self.their_username = their_username
         self.my_bulletin_secret = my_bulletin_secret
         self.my_username = my_username
+        self.their_public_key = their_public_key
+        self.their_address = their_address
+        self.group = group
+        self.reply = reply
+        self.topic = topic
 
     def to_dict(self):
         return {
@@ -603,7 +627,12 @@ class Relationship(object):
             'their_bulletin_secret': self.their_bulletin_secret,
             'their_username': self.their_username,
             'my_bulletin_secret': self.my_bulletin_secret,
-            'my_username': self.my_username
+            'my_username': self.my_username,
+            'their_public_key': self.their_public_key,
+            'their_address': self.their_address,
+            'group': self.group,
+            'reply': self.reply,
+            'topic': self.topic
         }
 
     def to_json(self):

@@ -517,12 +517,10 @@ class Consensus(object):
                     return False
 
                 if transaction.inputs:
-                    address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(transaction.public_key)))
-                    unspent_ids = [x['id'] async for x in self.config.BU.get_wallet_unspent_transactions(address, [x.id for x in transaction.inputs])]
                     failed = False
                     used_ids_in_this_txn = []
                     async for x in get_inputs(transaction.inputs):
-                        if x.id not in unspent_ids:
+                        if self.config.BU.is_input_spent(x.id, transaction.public_key):
                             failed = True
                         if x.id in used_ids_in_this_txn:
                             failed = True
