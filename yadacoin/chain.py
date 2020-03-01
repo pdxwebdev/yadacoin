@@ -14,7 +14,7 @@ class CHAIN(object):
 
     # The fork checkpoints, so we have a single reference for all the codebase and can use explicit names for forks.
     CHECK_TIME_FROM = 59710  # Begin checks there
-    CHECK_DOUBLE_SPEND_FROM = 76900
+    CHECK_DOUBLE_SPEND_FROM = 81871
     POW_FORK_V2 = 60000
     MINING_AND_TXN_REFORM_FORK = 60000
     POW_FORK_V3 = 61110
