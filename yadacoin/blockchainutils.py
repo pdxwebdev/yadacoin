@@ -471,11 +471,24 @@ class BlockChainUtils(object):
         from yadacoin.fastgraph import FastGraph
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
-        res = self.mongo.db.blocks.find_one({
-            "transactions.inputs.id": {'$in': input_ids},
-            "transactions.public_key": public_key
-        })
-        if res:
+        res = self.mongo.db.blocks.aggregate([
+            {
+                '$match': {
+                    "transactions.inputs.id": {'$in': input_ids},
+                    "transactions.public_key": public_key
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    "transactions.inputs.id": {'$in': input_ids},
+                    "transactions.public_key": public_key
+                }
+            }
+        ])
+        if len(list(res)):
             return True
         
         if inc_mempool:
