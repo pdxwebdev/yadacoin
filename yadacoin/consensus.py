@@ -86,7 +86,7 @@ class Consensus(object):
         self.latest_block = genesis_block
 
     async def verify_existing_blockchain(self, reset=False):
-        self.app_log.info('verifying existing blockchain - this method is currently broken')
+        self.app_log.info('verifying existing blockchain')
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             return True
