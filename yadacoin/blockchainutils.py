@@ -120,7 +120,7 @@ class BlockChainUtils(object):
             {
                 '$project': {
                         "transaction": "$transactions",
-                        "public_key": "$public_key"
+                        "public_key": "$transactions.public_key"
                 }
                 
             },
@@ -131,13 +131,6 @@ class BlockChainUtils(object):
                 '$match': {
                     "transaction.outputs.to": address
                 }
-            },
-            {
-                '$project': {
-                        "address": "$transaction.outputs.to",
-                        "public_key": "$public_key"
-                }
-                
             },
         ])
 
