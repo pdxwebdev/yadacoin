@@ -126,7 +126,7 @@ class BlockFactory(object):
                         failed = False
                         used_ids_in_this_txn = []
                         for x in transaction_obj.inputs:
-                            if self.config.BU.is_input_spent(x.id, transaction_obj.public_key):
+                            if get_config().BU.is_input_spent(x.id, transaction_obj.public_key):
                                 failed = True
                             if x.id in used_ids_in_this_txn:
                                 failed = True
