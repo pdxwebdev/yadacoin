@@ -711,20 +711,23 @@ class SiaUploadHandler(BaseGraphHandler):
         from requests.auth import HTTPBasicAuth
         from siaskynet import Skynet
         uploaded_file = self.request.files['file'][0]
+        filename = self.get_query_argument('filename')
         if len(uploaded_file['body']) > 2000000:
             return self.render_as_json({'status': 'error', 'message': 'file too large', 'files': []})
-        local_filename = '/tmp/{}'.format(self.get_query_argument('filename'))
+        local_filename = '/tmp/{}'.format(filename)
         with open(local_filename, 'wb') as f:
             f.write(uploaded_file['body'])
         try:
-            skylink = Skynet.UploadFile(local_filename)
-        except:
+            opts = Skynet.default_upload_options()
+            opts.portal_url = 'http://0.0.0.0:9980'
+            skylink = Skynet.upload_file(local_filename)
+        except Exception as e:
             self.set_status(400)
             return self.render_as_json({
                 'status': 'error',
                 'message': 'sia node not responding'
             })
-        return self.render_as_json({'status': 'success', 'skylink': skylink})
+        return self.render_as_json({'status': 'success', 'skylink': Skynet.strip_prefix(skylink)})
 
 
 class SiaShareFileHandler(BaseGraphHandler):
@@ -733,10 +736,10 @@ class SiaShareFileHandler(BaseGraphHandler):
         headers = {
             'User-Agent': 'Sia-Agent'
         }
-        dst='/home/mvogel/'
+        filename = self.get_query_argument('siapath')
         siapath = self.get_query_argument('siapath')
         try:
-            res = requests.get('http://0.0.0.0:9980/renter/share/send?dst={}&siapath={}'.format(dst + siapath.split('/')[-1] + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
+            res = requests.get('http://{}/skynet/skyfile/something?filename=?dst={}&siapath={}'.format(self.config.sia_server, dst + siapath.split('/')[-1] + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
         except:
             self.set_status(400)
             return self.render_as_json({
