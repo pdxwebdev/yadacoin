@@ -154,6 +154,22 @@ class GetPendingTransactionIdsHandler(BaseHandler):
         return self.render_as_json({'txn_ids': [x['id'] for x in txns]})
 
 
+class RebroadcastTransaction(BaseHandler):
+    async def get(self):
+        from yadacoin.transaction import Transaction
+        from yadacoin.transactionbroadcaster import TxnBroadcaster
+        tb = TxnBroadcaster(self.config)
+        tb2 = TxnBroadcaster(self.config, self.config.SIO.namespace_handlers['/chat'])
+        txn_id = self.get_query_argument('id').replace(' ', '+')
+        txn = await self.config.mongo.async_db.miner_transactions.find_one({'id': txn_id})
+        if txn:
+            txn = Transaction.from_dict(0, txn)
+            await tb.txn_broadcast_job(txn)
+            await tb2.txn_broadcast_job(txn)
+            return self.render_as_json({'status': 'success'})
+        return self.render_as_json({'status': 'failed', 'message': 'transaction not found'})
+
+
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
                  (r'/get-blocks', GetBlocksHandler),
                  (r'/get-block', GetBlockHandler),
@@ -162,4 +178,5 @@ NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
                  (r'/newblock', NewBlockHandler),
                  (r'/get-status', GetStatusHandler),
                  (r'/get-pending-transaction', GetPendingTransactionHandler),
-                 (r'/get-pending-transaction-ids', GetPendingTransactionIdsHandler),]
+                 (r'/get-pending-transaction-ids', GetPendingTransactionIdsHandler),
+                 (r'/rebroadcast-transaction', RebroadcastTransaction),]
