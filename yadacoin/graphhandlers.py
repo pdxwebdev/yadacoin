@@ -730,6 +730,31 @@ class SiaUploadHandler(BaseGraphHandler):
         return self.render_as_json({'status': 'success', 'skylink': Skynet.strip_prefix(skylink)})
 
 
+class SiaUploadDirectoryHandler(BaseGraphHandler):
+    async def post(self):
+        import zipfile
+        from requests.auth import HTTPBasicAuth
+        from siaskynet import Skynet
+        uploaded_file = self.request.files['file'][0]
+        filename = self.get_query_argument('filename')
+        local_filename = '/tmp/{}'.format(filename)
+        with open(uploaded_file['filename'], 'wb') as f:
+            f.write(uploaded_file['body'])
+        with zipfile.ZipFile(uploaded_file['filename'], 'r') as zip_ref:
+            zip_ref.extractall(local_filename + '/dir')
+        try:
+            opts = Skynet.default_upload_options()
+            opts.portal_url = 'http://0.0.0.0:9980'
+            skylink = Skynet.upload_directory(local_filename + '/dir')
+        except Exception as e:
+            self.set_status(400)
+            return self.render_as_json({
+                'status': 'error',
+                'message': 'sia node not responding'
+            })
+        return self.render_as_json({'status': 'success', 'skylink': Skynet.strip_prefix(skylink)})
+
+
 class SiaShareFileHandler(BaseGraphHandler):
     async def get(self):
         from requests.auth import HTTPBasicAuth
@@ -824,6 +849,7 @@ GRAPH_HANDLERS = [
     (r'/sign-raw-transaction', SignRawTransactionHandler), # server signs the client transaction
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client
     (r'/sia-upload', SiaUploadHandler), # upload a file to your local sia renter
+    (r'/sia-upload-dir', SiaUploadDirectoryHandler), # upload a directory to your local sia renter
     (r'/sia-files', SiaFileHandler), # list files from the local sia renter
     (r'/sia-files-stream', SiaStreamFileHandler), #stream the file from the sia network, we need this because of cross origin
     (r'/sia-share-file', SiaShareFileHandler), # share a file or list files from the local sia renter and return the .sia data base 64 encoded

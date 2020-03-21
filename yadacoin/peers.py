@@ -44,14 +44,17 @@ class Peers(object):
         res = self.mongo.db.peers.find({'active': True, 'failed': {'$lt': 300}}, {'_id': 0})
         try:
             # Do not include ourselve in the list
+            added_hosts = []
             self.peers = []
             for peer in res:
                 if peer['host'] in self.config.outgoing_blacklist:
                     continue
 
-                if peer['host'] in self.peers:
+                if peer['host'] in added_hosts:
                     continue
+
                 self.peers.append(Peer(peer['host'], peer['port']))
+                added_hosts.append(peer['host'])
         except:
             pass
         return self.to_json()
