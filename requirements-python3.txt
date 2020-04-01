@@ -25,3 +25,4 @@ qrcode==6.1
 cmake
 -e git+https://github.com/pdxwebdev/pyrx#egg=pyrx
 pbkdf2
+scikit-build

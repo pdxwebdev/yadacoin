@@ -18,6 +18,7 @@ cd yadacoin
 # Install prerequisites
 sudo apt update
 sudo apt install -y cmake python3-pip
+python -m pip install --upgrade pip
 sudo pip3 install -r requirements-python3.txt
 
 python3 utils/generate_config.py auto > config/config.json
