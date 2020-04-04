@@ -28,7 +28,7 @@ class Mongo(object):
         __txn_id = IndexModel([("transactions.id", ASCENDING)], name="__txn_id")
         __txn_inputs_id = IndexModel([("transactions.inputs.id", ASCENDING)], name="__txn_inputs_id")
         try:
-            self.db.blocks.create_indexes([__hash, __index, __id, __to, __txn_id])
+            self.db.blocks.create_indexes([__hash, __index, __id, __to, __txn_id, __txn_inputs_id])
         except:
             pass
 
