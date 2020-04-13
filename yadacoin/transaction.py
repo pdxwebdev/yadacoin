@@ -608,7 +608,8 @@ class Relationship(object):
         their_address=None,
         group=None,
         reply=None,
-        topic=None
+        topic=None,
+        my_public_key=None
     ):
         self.dh_private_key = dh_private_key
         self.their_bulletin_secret = their_bulletin_secret
@@ -620,6 +621,7 @@ class Relationship(object):
         self.group = group
         self.reply = reply
         self.topic = topic
+        self.my_public_key = my_public_key
 
     def to_dict(self):
         return {
@@ -632,7 +634,8 @@ class Relationship(object):
             'their_address': self.their_address,
             'group': self.group,
             'reply': self.reply,
-            'topic': self.topic
+            'topic': self.topic,
+            'my_public_key': self.my_public_key
         }
 
     def to_json(self):
