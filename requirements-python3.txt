@@ -1,3 +1,6 @@
+wheel
+scikit-build
+cmake
 tornado>=6.0.2
 python-engineio>=3.8.0
 base58
@@ -22,7 +25,5 @@ pyasn1
 PyJWT
 python-jwt
 qrcode==6.1
-cmake
 -e git+https://github.com/pdxwebdev/pyrx#egg=pyrx
 pbkdf2
-scikit-build

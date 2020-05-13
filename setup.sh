@@ -17,7 +17,10 @@ git clone https://github.com/pdxwebdev/yadacoin.git
 cd yadacoin
 # Install prerequisites
 sudo apt update
-sudo apt install -y cmake python3-pip
+sudo apt install -y libssl-dev cmake python3-pip libjpeg-dev
+python -m pip install wheel
+python -m pip install scikit-build
+python -m pip install cmake
 python -m pip install --upgrade pip
 sudo pip3 install -r requirements-python3.txt
 
