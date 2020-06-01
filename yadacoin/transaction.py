@@ -130,7 +130,7 @@ class TransactionFactory(object):
 
     async def do_money(self):
         outputs_and_fee_total = sum([x.value for x in self.outputs])+self.fee
-        if not outputs_and_fee_total == 0:
+        if outputs_and_fee_total == 0:
             return
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         miner_transactions = self.mongo.db.miner_transactions.find()
