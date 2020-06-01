@@ -129,6 +129,9 @@ class TransactionFactory(object):
         return cls_inst
 
     async def do_money(self):
+        outputs_and_fee_total = sum([x.value for x in self.outputs])+self.fee
+        if not outputs_and_fee_total == 0:
+            return
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         miner_transactions = self.mongo.db.miner_transactions.find()
         mtxn_ids = []
@@ -148,8 +151,6 @@ class TransactionFactory(object):
                         inputs.append(ExternalInput.from_dict(input_txn))
                     else:
                         inputs.append(Input.from_dict(input_txn))
-        
-        outputs_and_fee_total = sum([x.value for x in self.outputs])+self.fee
 
         input_sum = 0
         if self.coinbase:
