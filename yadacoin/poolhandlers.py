@@ -5,6 +5,7 @@ import json
 from yadacoin.basehandlers import BaseHandler
 from yadacoin.miningpool import MiningPool
 from yadacoin.miningpoolpayout import PoolPayer
+from yadacoin.block import Block
 from yadacoin.chain import CHAIN
 from tornado import escape
 
@@ -68,5 +69,23 @@ class PoolExplorer(BaseHandler):
                         % (self.config.address, self.config.address))
 
 
-POOL_HANDLERS = [(r'/pool', PoolHandler), (r'/pool-submit', PoolSubmitHandler),
-                 (r'/pool-explorer', PoolExplorer)]
+class JSONRPC(BaseHandler):
+    async def post(self):
+        body = json.loads(self.request.body.decode())
+        if body.get('method') == 'getblocktemplate':
+            if self.config.mp is None:
+                self.config.mp = MiningPool()
+            self.render_as_json({
+                'id': body.get('id'),
+                'method': body.get('method'),
+                'jsonrpc': body.get('jsonrpc'),
+                'result': await self.config.mp.block_template()
+            })
+
+
+POOL_HANDLERS = [
+    (r'/json_rpc', JSONRPC),
+    (r'/pool', PoolHandler),
+    (r'/pool-submit', PoolSubmitHandler),
+    (r'/pool-explorer', PoolExplorer)
+]

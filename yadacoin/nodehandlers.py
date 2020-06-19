@@ -72,7 +72,8 @@ class GetBlockHandler(BaseHandler):
 class GetBlockHeightHandler(BaseHandler):
 
     async def get(self):
-        self.render_as_json({'height': self.config.BU.get_latest_block()['index']})
+        block = self.config.BU.get_latest_block()
+        self.render_as_json({'height': block['index'], 'hash': block['hash']})
 
 
 class GetPeersHandler(BaseHandler):
@@ -173,7 +174,7 @@ class RebroadcastTransaction(BaseHandler):
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
                  (r'/get-blocks', GetBlocksHandler),
                  (r'/get-block', GetBlockHandler),
-                 (r'/get-height', GetBlockHeightHandler),
+                 (r'/get-height|/getHeight', GetBlockHeightHandler),
                  (r'/get-peers', GetPeersHandler),
                  (r'/newblock', NewBlockHandler),
                  (r'/get-status', GetStatusHandler),

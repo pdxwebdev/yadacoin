@@ -313,6 +313,25 @@ class MiningPool(object):
         }
         return res
 
+
+    async def block_template(self):
+        """Returns info for current block to mine"""
+        if self.block_factory is None:
+            await self.refresh()
+        res = {
+            'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0'),  # target is now in hex format
+            'special_target': hex(int(self.block_factory.block.special_target))[2:].rjust(64, '0'),  # target is now in hex format
+            # TODO this is the network target, maybe also send some pool target?
+            'special_min': self.block_factory.block.special_min,
+            'blocktemplate_blob': self.block_factory.block.header,
+            'blockhashing_blob': self.block_factory.block.hash,
+            'version': self.block_factory.block.version,
+            'id': self.block_factory.block.signature,
+            'height': self.block_factory.block.index,  # This is the height of the one we are mining
+            'previous_time': self.config.BU.get_latest_block()['time'],  # needed for miner to recompute the real diff
+        }
+        return res
+
     def set_target(self, to_time):
         self.app_log.debug("set_target {}".format(to_time))
         # todo: keep block target at normal target, for header and block info.
