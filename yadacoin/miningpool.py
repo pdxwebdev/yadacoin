@@ -325,7 +325,7 @@ class MiningPool(object):
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         res = {
             'difficulty': difficulty, 
-            'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0'),
+            'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0')[:16],
             'blocktemplate_blob': self.block_factory.block.header.replace('{nonce}', '{000000}'),
             'blockhashing_blob': self.block_factory.block.prev_hash,
             'seed_hash': seed_hash,
