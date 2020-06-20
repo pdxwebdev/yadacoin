@@ -81,6 +81,38 @@ class JSONRPC(BaseHandler):
                 'jsonrpc': body.get('jsonrpc'),
                 'result': await self.config.mp.block_template()
             })
+        elif body.get('method') == 'submitblock':
+            nonce = body.get('params')[0][145:153]
+            address = body.get('params')[0][145:8]
+            if type(nonce) is not str:
+                return self.render_as_json({
+                    'id': body.get('id'),
+                    'method': body.get('method'),
+                    'jsonrpc': body.get('jsonrpc'),
+                    'result': {'n':'Ko'}
+                })
+            if len(nonce) > CHAIN.MAX_NONCE_LEN:
+                return self.render_as_json({
+                    'id': body.get('id'),
+                    'method': body.get('method'),
+                    'jsonrpc': body.get('jsonrpc'),
+                    'result': {'n':'Ko'}
+                })
+            result = await self.config.mp.on_miner_nonce(nonce, address=address)
+            if result:
+                return self.render_as_json({
+                    'id': body.get('id'),
+                    'method': body.get('method'),
+                    'jsonrpc': body.get('jsonrpc'),
+                    'result': {'n':'ok'}
+                })
+            else:
+                return self.render_as_json({
+                    'id': body.get('id'),
+                    'method': body.get('method'),
+                    'jsonrpc': body.get('jsonrpc'),
+                    'result': {'n':'ko'}
+                })
 
 
 POOL_HANDLERS = [

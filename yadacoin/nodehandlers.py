@@ -174,7 +174,7 @@ class RebroadcastTransaction(BaseHandler):
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
                  (r'/get-blocks', GetBlocksHandler),
                  (r'/get-block', GetBlockHandler),
-                 (r'/get-height|/getHeight', GetBlockHeightHandler),
+                 (r'/get-height|/getheight', GetBlockHeightHandler),
                  (r'/get-peers', GetPeersHandler),
                  (r'/newblock', NewBlockHandler),
                  (r'/get-status', GetStatusHandler),
