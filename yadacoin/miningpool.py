@@ -327,7 +327,7 @@ class MiningPool(object):
             'difficulty': difficulty, 
             'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0')[:16],
             'blocktemplate_blob': self.block_factory.block.header.replace('{nonce}', '{000000}'),
-            'blockhashing_blob': self.block_factory.block.prev_hash,
+            'blockhashing_blob': self.block_factory.block.prev_hash.rjust(152, '0'),
             'seed_hash': seed_hash,
             'height': self.block_factory.block.index,  # This is the height of the one we are mining
         }
