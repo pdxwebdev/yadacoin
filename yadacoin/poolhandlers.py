@@ -83,7 +83,7 @@ class JSONRPC(BaseHandler):
             })
         elif body.get('method') == 'submitblock':
             nonce = body.get('params')[0][145:153]
-            address = body.get('params')[1]
+            address = body.get('wallet_address')
             if type(nonce) is not str:
                 return self.render_as_json({
                     'id': body.get('id'),
@@ -104,7 +104,7 @@ class JSONRPC(BaseHandler):
                     'id': body.get('id'),
                     'method': body.get('method'),
                     'jsonrpc': body.get('jsonrpc'),
-                    'result': {'n':'ok'}
+                    'result': result
                 })
             else:
                 return self.render_as_json({
