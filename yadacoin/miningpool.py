@@ -202,7 +202,7 @@ class MiningPool(object):
             'hash': matching_hash,
             'nonce': nonce,
         })
-        return True
+        return {'hash': matching_hash, 'nonce': nonce, 'height': matching_block.index, 'id': matching_block.signature}
 
     async def on_close_inbound(self, sid):
         # We only allow one in or out per ip
