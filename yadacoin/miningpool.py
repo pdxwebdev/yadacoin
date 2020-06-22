@@ -329,7 +329,7 @@ class MiningPool(object):
             'blocktemplate_blob': self.block_factory.block.header.replace('{nonce}', '{000000}'),
             'blockhashing_blob': self.block_factory.block.prev_hash.rjust(152, '0'),
             'seed_hash': seed_hash,
-            'height': self.block_factory.block.index,  # This is the height of the one we are mining
+            'height': self.config.BU.get_latest_block()['index'],  # This is the height of the one we are mining
         }
         return res
 
