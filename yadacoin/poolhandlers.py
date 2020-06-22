@@ -83,7 +83,7 @@ class JSONRPC(BaseHandler):
             })
         elif body.get('method') == 'submitblock':
             nonce = body.get('params')[0][145:153]
-            address = body.get('params')[0][145:8]
+            address = body.get('params')[1]
             if type(nonce) is not str:
                 return self.render_as_json({
                     'id': body.get('id'),
