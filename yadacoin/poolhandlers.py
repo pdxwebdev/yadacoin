@@ -82,7 +82,7 @@ class JSONRPC(BaseHandler):
                 'result': await self.config.mp.block_template()
             })
         elif body.get('method') == 'submitblock':
-            nonce = body.get('params')[0][145:153]
+            nonce = body.get('nonce')
             address = body.get('wallet_address')
             if type(nonce) is not str:
                 return self.render_as_json({

@@ -216,8 +216,6 @@ class BlockFactory(object):
         header = header.format(nonce=nonce)
         if height >= CHAIN.RANDOMX_FORK:
             seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
-            if not isinstance(nonce, int):
-                nonce = int(nonce, 16)
             bh = cls.pyrx.get_rx_hash(header, seed_hash, height, cls.cores)
             hh = binascii.hexlify(bh).decode()
             return hh
@@ -575,8 +573,6 @@ class Block(object):
         header = header.format(nonce=nonce)
         if height >= CHAIN.RANDOMX_FORK:
             seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
-            if not isinstance(nonce, int):
-                nonce = int(nonce, 16)
             bh = BlockFactory.pyrx.get_rx_hash(header, seed_hash, height, BlockFactory.cores)
             hh = binascii.hexlify(bh).decode()
             return hh

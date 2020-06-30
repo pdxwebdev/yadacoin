@@ -132,7 +132,6 @@ class MiningPool(object):
                 address = self.inbound[sid]['address']
             except Exception as e:
                 self.app_log.warning("error {} getting address sid {}".format(e, sid))
-        nonce = str(int(nonce, 16))
         block_to_mine = await self.block_to_mine()
         block_to_mine = await block_to_mine.copy()
         previous_block_to_mine = await self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
@@ -325,9 +324,9 @@ class MiningPool(object):
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         res = {
             'difficulty': difficulty, 
-            'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0')[:8][::-1],
+            'target': hex(int(self.block_factory.block.target))[2:].rjust(64, '0')[:16],
             'blocktemplate_blob': self.block_factory.block.header.replace('{nonce}', '{000000}'),
-            'blockhashing_blob': self.block_factory.block.prev_hash.rjust(152, '0'),
+            'blockhashing_blob': self.block_factory.block.header.replace('{nonce}', '{000000}'),
             'seed_hash': seed_hash,
             'height': self.config.BU.get_latest_block()['index'],  # This is the height of the one we are mining
         }
