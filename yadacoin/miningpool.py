@@ -196,12 +196,20 @@ class MiningPool(object):
             pass
         if (int(matching_block.target) + 0x000F000000000000000000000000000000000000000000000000000000000000) > int(matching_block.hash, 16):
             # submit share only now, not to slow down if we had a block
-            await self.mongo.async_db.shares.insert_one({
+            await self.mongo.async_db.shares.update_one({
                 'address': address,
                 'index': matching_block.index,
                 'hash': matching_hash,
                 'nonce': nonce,
-            })
+            },
+            {
+                '$set': {
+                    'address': address,
+                    'index': matching_block.index,
+                    'hash': matching_hash,
+                    'nonce': nonce
+                }
+            }, upsert=True)
         return {'hash': matching_hash, 'nonce': nonce, 'height': matching_block.index, 'id': matching_block.signature}
 
     async def on_close_inbound(self, sid):
