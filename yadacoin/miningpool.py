@@ -194,13 +194,14 @@ class MiningPool(object):
         else:
             #self.app_log.debug('share ok')
             pass
-        # submit share only now, not to slow down if we had a block
-        await self.mongo.async_db.shares.insert_one({
-            'address': address,
-            'index': matching_block.index,
-            'hash': matching_hash,
-            'nonce': nonce,
-        })
+        if (int(matching_block.target) + 0x000F000000000000) > int(matching_block.hash, 16):
+            # submit share only now, not to slow down if we had a block
+            await self.mongo.async_db.shares.insert_one({
+                'address': address,
+                'index': matching_block.index,
+                'hash': matching_hash,
+                'nonce': nonce,
+            })
         return {'hash': matching_hash, 'nonce': nonce, 'height': matching_block.index, 'id': matching_block.signature}
 
     async def on_close_inbound(self, sid):

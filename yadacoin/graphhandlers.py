@@ -128,7 +128,7 @@ class GraphTransactionHandler(BaseGraphHandler):
     async def get(self):
         rid = self.request.args.get('rid')
         if rid:
-            transactions = BU().get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)
+            transactions = GU().get_transactions_by_rid(rid, self.config.bulletin_secret, rid=True, raw=True)
         else:
             transactions = []
         self.render_as_json(list(transactions))
