@@ -124,20 +124,29 @@ class Config(object):
             key = BIP32Key.fromEntropy(entropy)
             private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
+            public_key = PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex()
+            address = str(key.Address())
 
         if prv:
-            private_key = PrivateKey.from_hex(bytes.fromhex(prv)).to_hex()
+            key = PrivateKey.from_hex(prv)
+            private_key = key.to_hex()
             extended_key = ''
+            public_key = key.public_key.format().hex()
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         if xprv:
             key = BIP32Key.fromExtendedKey(xprv)
             private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
+            public_key = PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex()
+            address = str(key.Address())
         
         if xprv and child:
             for x in child:
                 key = key.ChildKey(int(x))
                 private_key = key.PrivateKey().hex()
+                public_key = PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex()
+                address = str(key.Address())
 
         if not private_key:
             raise Exception('No key')
@@ -159,8 +168,8 @@ class Config(object):
             "xprv": extended_key or '',
             "private_key": private_key,
             "wif": cls.generate_wif(private_key),
-            "public_key": PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex(),
-            "address": str(key.Address()),
+            "public_key": public_key,
+            "address": address,
             "api_whitelist": [],
             "serve_host": "0.0.0.0",
             "serve_port": 8000,

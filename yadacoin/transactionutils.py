@@ -60,3 +60,43 @@ class TU(object):  # Transaction Utilities
             return False
         else:
             return False # hasn't been spent to zero yet
+
+    @classmethod
+    async def send(cls, config, to, value, from_address=True):
+        from yadacoin.transaction import NotEnoughMoneyException, TransactionFactory
+        from yadacoin.transactionbroadcaster import TxnBroadcaster
+        if from_address == config.address:
+            public_key = config.public_key
+            private_key = config.private_key
+        else:
+            child_key = await config.mongo.async_db.child_keys.find_one({'address': from_address})
+            if child_key:
+                public_key = child_key['public_key']
+                private_key = child_key['private_key']
+            else:
+                return {'status': 'error', 'message': 'no wallet matching from address'}
+
+        try:
+            transaction = await TransactionFactory.construct(
+                block_height=config.BU.get_latest_block()['index'],
+                fee=0.00,
+                public_key=public_key,
+                private_key=private_key,
+                outputs=[
+                    {'to': to, 'value': value}
+                ]
+            )
+        except NotEnoughMoneyException:
+            return {'status': "error", 'message': "not enough money"}
+        except:
+            raise
+        try:
+            transaction.transaction.verify()
+        except:
+            return {"error": "invalid transaction"}
+
+        await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
+        txn_b = TxnBroadcaster(config)
+        await txn_b.txn_broadcast_job(transaction.transaction)
+
+        return transaction.transaction.to_dict()

@@ -327,9 +327,8 @@ class MiningPool(object):
         """Returns info for current block to mine"""
         if self.block_factory is None:
             await self.refresh()
-        
-        blocks = [await Block.from_dict(x) async for x in self.config.mongo.async_db.blocks.find({}).sort([('index', -1)]).limit(48)]
-        hash_rate, difficulty = self.config.BU.get_hash_rate(blocks) 
+
+        difficulty = int(self.max_target / self.block_factory.block.target)
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         res = {
             'difficulty': difficulty, 

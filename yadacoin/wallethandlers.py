@@ -16,6 +16,7 @@ from yadacoin.blockchainutils import BU
 from yadacoin.transaction import Transaction, TransactionFactory, NotEnoughMoneyException
 from yadacoin.transactionbroadcaster import TxnBroadcaster
 from yadacoin.auth import jwtauth
+from yadacoin.transactionutils import TU
 
 
 class WalletHandler(BaseHandler):
@@ -166,6 +167,7 @@ class CreateRawTransactionView(BaseHandler):
         )
         return self.render_as_json(txn.transaction.to_dict())
 
+
 @jwtauth
 class SendTransactionView(BaseHandler):
     async def post(self):
@@ -177,42 +179,8 @@ class SendTransactionView(BaseHandler):
         to = args.get('address')
         value = float(args.get('value'))
         from_address = args.get('from')
+        return self.render_as_json(await TU.send(config, to, value, from_address))
 
-        if from_address == config.address:
-            public_key = config.public_key
-            private_key = config.private_key
-        else:
-            child_key = await config.mongo.async_db.child_keys.find_one({'address': from_address})
-            if child_key:
-                public_key = child_key['public_key']
-                private_key = child_key['private_key']
-            else:
-                return self.render_as_json({'status': 'error', 'message': 'no wallet matching from address'})
-
-        try:
-            transaction = await TransactionFactory.construct(
-                block_height=config.BU.get_latest_block()['index'],
-                fee=0.00,
-                public_key=public_key,
-                private_key=private_key,
-                outputs=[
-                    {'to': to, 'value': value}
-                ]
-            )
-        except NotEnoughMoneyException:
-            return self.render_as_json({'status': "error", 'message': "not enough money"})
-        except:
-            raise
-        try:
-            transaction.transaction.verify()
-        except:
-            return self.render_as_json({"error": "invalid transaction"})
-
-        await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
-        txn_b = TxnBroadcaster(config)
-        await txn_b.txn_broadcast_job(transaction.transaction)
-
-        return self.render_as_json(transaction.transaction.to_dict())
 
 @jwtauth
 class UnlockedHandler(BaseHandler):
