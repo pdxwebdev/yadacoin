@@ -592,35 +592,17 @@ class BlockChainUtils(object):
     
     def get_hash_rate(self, blocks):
         sum_time = 0
-        prev_time = 0
-        hash_sum = 0
+        sum_work = 0
+        max_target = (2 ** 16 - 1) * 2 ** 208
         for block in blocks:
-            hash_sum += int(block.hash, 16)
+            # calculations from https://bitcoin.stackexchange.com/questions/14086/how-can-i-calculate-network-hashrate-for-a-given-range-of-blocks-where-difficult/30225#30225
+            difficulty = max_target / block.target
+            sum_work += difficulty * 4295032833
             if prev_time > 0:
                 sum_time += prev_time - int(block.time)
             prev_time = int(block.time)
-        block_time_avg = sum_time / len(blocks) or 1
-        hsh_str = hex(int(hash_sum / len(blocks)))[2:]
-        hsh_str = '0000000000000000000000{}'.format(hsh_str)[-64:]
-        hsh = int(hsh_str, 16)
-        m = re.search(r'^[0]+', hsh_str)
-        try:
-            zeros = len(m.group(0)) * 4 # get number of zeros and convert to bits
-        except:
-            return 0, 0
 
-        remainder_resolution = 2**(zeros+4) - 2**zeros # get max probability 8 bytes
-
-        div = len(str(hsh)) # get the length of the hash as an integer
-
-        prob_quot = hsh / 10**div # get the percentage probability
-
-        # add probability of leading zeros with the probability 
-        # quotient of max probability of the following 8 bits
-        # this gives us the total number of hashes for that that probability
-        num_hashes = int(2**zeros + (remainder_resolution * prob_quot))
-
-        # that number of hashes in a given time period gives us the rate
-        return int(num_hashes / block_time_avg), num_hashes
+        # total work(number of hashes) over time gives us the hashrate
+        return int(sum_work / sum_time)
 
 
