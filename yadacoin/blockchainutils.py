@@ -594,6 +594,7 @@ class BlockChainUtils(object):
         sum_time = 0
         sum_work = 0
         max_target = (2 ** 16 - 1) * 2 ** 208
+        prev_time = 0
         for block in blocks:
             # calculations from https://bitcoin.stackexchange.com/questions/14086/how-can-i-calculate-network-hashrate-for-a-given-range-of-blocks-where-difficult/30225#30225
             difficulty = max_target / block.target
@@ -604,5 +605,3 @@ class BlockChainUtils(object):
 
         # total work(number of hashes) over time gives us the hashrate
         return int(sum_work / sum_time)
-
-
