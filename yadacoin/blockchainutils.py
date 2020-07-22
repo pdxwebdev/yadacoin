@@ -591,17 +591,21 @@ class BlockChainUtils(object):
         return double_spends
     
     def get_hash_rate(self, blocks):
-        sum_time = 0
+        start_time = 0
+        end_time = 0
         sum_work = 0
+        total_time
         max_target = (2 ** 16 - 1) * 2 ** 208
-        prev_time = 0
-        for block in blocks:
+        for i, block in enumerate(blocks):
             # calculations from https://bitcoin.stackexchange.com/questions/14086/how-can-i-calculate-network-hashrate-for-a-given-range-of-blocks-where-difficult/30225#30225
             difficulty = max_target / block.target
             sum_work += difficulty * 4295032833
-            if prev_time > 0:
-                sum_time += prev_time - int(block.time)
-            prev_time = int(block.time)
+            # check if its the last or first block and get the time so we can get the total time
+            if i == 0:
+                start_time = int(block.time)
+            elif i == len(blocks) - 1:
+                end_time = int(block.time)
+        total_time = abs(end_time - start_time)
 
         # total work(number of hashes) over time gives us the hashrate
-        return int(sum_work / sum_time)
+        return int(sum_work / total_time)
