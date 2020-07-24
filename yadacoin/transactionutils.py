@@ -96,7 +96,11 @@ class TU(object):  # Transaction Utilities
             return {"error": "invalid transaction"}
 
         await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
+        
         txn_b = TxnBroadcaster(config)
         await txn_b.txn_broadcast_job(transaction.transaction)
+
+        txn_b2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
+        await txn_b2.txn_broadcast_job(transaction.transaction)
 
         return transaction.transaction.to_dict()

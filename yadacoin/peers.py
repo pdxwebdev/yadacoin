@@ -353,10 +353,10 @@ class Peer(object):
     # slots allow to lower ram usage for objects with many instances
     __slots__ = ('config', 'mongo', 'host', 'port', 'bulletin_secret', 'is_me', 'app_log', 'stream', 'inbound', 'sid', 'client')
 
-    def __init__(self, host, port, bulletin_secret=None, is_me=False, stream=None, inbound=False, sid=None):
+    def __init__(self, host, port, bulletin_secret=None, is_me=False, stream=None, inbound=False, sid=None, client=None):
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.client = None
+        self.client = client
         self.host = host
         self.port = port
         self.bulletin_secret = bulletin_secret

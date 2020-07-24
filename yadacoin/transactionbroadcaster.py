@@ -35,16 +35,20 @@ class TxnBroadcaster(object):
         else:
             for peer in self.config.peers.peers:
                 await self.prepare_peer(peer, transaction, sent_to)
+            
+            for ip, peer in self.config.peers.outbound.items():
+                peer = Peer(peer['ip'], peer['port'], client=peer['client'])
+                await self.prepare_peer(peer, transaction, sent_to)
         
         if self.server:
             try:
                 if not sent_to:
                     sent_to = []
                 if '*' in sent_to:
-                    return
+                    raise Exception('Already sent to all connected peers.')
                 if self.config.debug:
                     self.app_log.debug('sent_to {}'.format(sent_to))
-                    self.app_log.debug('Transmitting transaction to inbound peers')
+                    self.app_log.debug('Transmitting transaction to all inbound peers')
                 await self.server.emit('newtransaction', data=transaction.to_dict(), namespace='/chat')
                 await self.config.mongo.async_db.miner_transactions.update_many({
                     'id': transaction.transaction_signature
@@ -53,6 +57,20 @@ class TxnBroadcaster(object):
                         'sent_to': '*'
                     }
                 })
+            except Exception as e:
+                if self.config.debug:
+                    self.app_log.debug(e)
+            try:
+                for sid, peer in self.config.peers.inbound.items():
+                    peer = Peer(peer['ip'], peer['port'], sid=sid)
+                    await self.server.emit('newtransaction', data=transaction.to_dict(), room=peer.sid)
+                    await self.config.mongo.async_db.miner_transactions.update_many({
+                        'id': transaction.transaction_signature
+                    }, {
+                        '$addToSet': {
+                            'sent_to': peer.to_string()
+                        }
+                    })
             except Exception as e:
                 if self.config.debug:
                     self.app_log.debug(e)
