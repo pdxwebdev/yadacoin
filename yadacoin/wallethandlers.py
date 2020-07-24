@@ -39,6 +39,8 @@ class GenerateChildWalletHandler(BaseHandler):
         if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         args = json.loads(self.request.body)
+        if not args.get('uid'):
+            return self.render_as_json({"error": True, "message": "no user account provided"})
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
         last_child_key = await self.config.mongo.async_db.child_keys.find_one({'account': args.get('uid')}, sort=[('inc', -1)])
         if last_child_key:
