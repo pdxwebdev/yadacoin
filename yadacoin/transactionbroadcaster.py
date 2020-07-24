@@ -77,10 +77,10 @@ class TxnBroadcaster(object):
     
     async def prepare_peer(self, peer, transaction, sent_to):
         if not isinstance(peer, Peer):
-            peer = Peer(peer['host'], peer['port'])
+            peer = Peer(peer['host'], peer['port'], peer['client'])
         if sent_to and peer.to_string() in sent_to:
             return
-        if peer.to_string() in self.config.outgoing_blacklist or not (peer.client and peer.client.connected):
+        if peer.to_string() in self.config.outgoing_blacklist or not (peer.client and peer.client.client and peer.client.client.connected):
             return
         if peer.host == self.config.peer_host and peer.port == self.config.peer_port:
             return

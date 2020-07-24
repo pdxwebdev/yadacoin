@@ -48,7 +48,7 @@ class ClientChatNamespace(AsyncClientNamespace):
 
     async def on_peers(self, data):
         self.app_log.debug("ws client got peers from {}:{} {}".format(self.ip, self.port, data))
-        self.config.peers.on_new_outbound(self.ip, self.port, self.client)
+        self.config.peers.on_new_outbound(self.ip, self.port, self)
         try:
             await self.config.peers.on_new_peer_list(data['peers'])
         except Exception as e:

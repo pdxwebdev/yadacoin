@@ -170,7 +170,7 @@ async def background_transaction_broadcast():
     try:
         # status = {"peers": config.peers.get_status()}
 
-        async for txn in config.mongo.async_db.miner_transactions.find({}).limit(20):
+        async for txn in config.mongo.async_db.miner_transactions.find({}).sort([('time', -1)]).limit(20):
             await tb.txn_broadcast_job(txn, txn.get('sent_to'))
             await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
         config.txn_broadcast_busy = False
