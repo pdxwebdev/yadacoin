@@ -187,7 +187,7 @@ class YadaWebSocketClient(object):
             await self.client.wait()
         except Exception as e:
             self.app_log.warning("Exception {} connecting to {}".format(e, self.peer.to_string()))
-            self.peers.increment_failed(self.peer)
+            await self.peers.increment_failed(self.peer)
         finally:
             await self.client.disconnect()
 
