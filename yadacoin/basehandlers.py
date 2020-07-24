@@ -18,6 +18,7 @@ class BaseHandler(RequestHandler):
         if origin[-1] == '/':
             origin = origin[:-1]
         self.app_log = logging.getLogger("tornado.application")
+        self.app_log.info(self._request_summary())
         self.config = self.settings['yadacoin_config']
         self.mongo = self.settings['mongo']
         self.config.mp = self.config.mp
