@@ -39,16 +39,20 @@ class GenerateChildWalletHandler(BaseHandler):
         if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         args = json.loads(self.request.body)
-        if not args.get('uid'):
+        if args.get('uid') is None or not isinstance(args.get('uid'), int):
             return self.render_as_json({"error": True, "message": "no user account provided"})
+        keyhash = hashlib.sha256(
+                TU.generate_deterministic_signature(self.config, 'child_wallet').encode()
+            ).hexdigest()
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
-        last_child_key = await self.config.mongo.async_db.child_keys.find_one({'account': args.get('uid')}, sort=[('inc', -1)])
-        if last_child_key:
-            inc = last_child_key['inc'] + 1
-        else:
-            inc = 0
+        last_child_key = self.config.mongo.db.child_keys.find({
+            'account': args.get('uid'),
+            'signature': keyhash
+        }, sort=[('inc', -1)])
+        inc = last_child_key.count() + 1
         key = exkey.ChildKey(inc)
         child_key = BIP32Key.fromExtendedKey(key.ExtendedKey())
+        child_key = child_key.ChildKey(inc)
         public_key = child_key.PublicKey().hex()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
         private_key = child_key.PrivateKey().hex()
@@ -61,7 +65,8 @@ class GenerateChildWalletHandler(BaseHandler):
             'public_key': public_key,
             'address': address,
             'private_key': private_key,
-            'wif': wif
+            'wif': wif,
+            'signature': keyhash
         })
         return self.render_as_json({"address": address})
     
