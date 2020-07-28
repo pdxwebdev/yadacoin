@@ -46,7 +46,6 @@ class GenerateChildWalletHandler(BaseHandler):
             ).hexdigest()
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
         last_child_key = self.config.mongo.db.child_keys.find({
-            'account': args.get('uid'),
             'signature': keyhash
         }, sort=[('inc', -1)])
         inc = last_child_key.count() + 1
