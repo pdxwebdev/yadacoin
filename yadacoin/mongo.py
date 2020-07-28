@@ -27,8 +27,28 @@ class Mongo(object):
         __to = IndexModel([("transactions.outputs.to", ASCENDING)], name="__to")
         __txn_id = IndexModel([("transactions.id", ASCENDING)], name="__txn_id")
         __txn_inputs_id = IndexModel([("transactions.inputs.id", ASCENDING)], name="__txn_inputs_id")
+        __txn_public_key = IndexModel([("transactions.public_key", ASCENDING)], name="__txn_public_key")
+        __txn_inputs_public_key = IndexModel([("transactions.inputs.public_key", ASCENDING)], name="__txn_inputs_public_key")
+        __txn_inputs_address = IndexModel([("transactions.inputs.address", ASCENDING)], name="__txn_inputs_address")
+        __txn_public_key_inputs_public_key_address = IndexModel([
+            ("transactions.public_key", ASCENDING),
+            ("transactions.inputs.public_key", ASCENDING),
+            ("transactions.inputs.address", ASCENDING),
+        ], name="__txn_public_key_inputs_public_key_address")
+
         try:
-            self.db.blocks.create_indexes([__hash, __index, __id, __to, __txn_id, __txn_inputs_id])
+            self.db.blocks.create_indexes([
+                __hash,
+                __index,
+                __id,
+                __to,
+                __txn_id,
+                __txn_inputs_id,
+                __txn_public_key,
+                __txn_inputs_public_key,
+                __txn_inputs_address,
+                __txn_public_key_inputs_public_key_address
+            ])
         except:
             pass
 
