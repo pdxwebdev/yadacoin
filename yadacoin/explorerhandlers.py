@@ -57,8 +57,8 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
-            base64.b64decode(term)
-            res = self.mongo.db.blocks.find({'id': term}, {'_id': 0})
+            base64.b64decode(term.replace(' ', '+'))
+            res = self.mongo.db.blocks.find({'id': term.replace(' ', '+')}, {'_id': 0})
             if res.count():
                 return self.render_as_json({
                     'resultType': 'block_id',
@@ -90,8 +90,8 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
-            base64.b64decode(term)
-            res = self.mongo.db.blocks.find({'transactions.id': term}, {'_id': 0})
+            base64.b64decode(term.replace(' ', '+'))
+            res = self.mongo.db.blocks.find({'transactions.id': term.replace(' ', '+')}, {'_id': 0})
             if res.count():
                 return self.render_as_json({
                     'resultType': 'txn_id',
@@ -114,6 +114,59 @@ class ExplorerSearchHandler(BaseHandler):
                 })
         except:
             return self.render_as_json({})
+
+        try:
+            base64.b64decode(term.replace(' ', '+'))
+            res = self.mongo.db.miner_transactions.find({'id': term.replace(' ', '+')}, {'_id': 0})
+            if res.count():
+                return self.render_as_json({
+                    'resultType': 'mempool_id',
+                    'result': [changetime(x) for x in res]
+                })
+        except:
+            return self.render_as_json({})
+
+        try:
+            re.search(r'[A-Fa-f0-9]{64}', term).group(0)
+            res = self.mongo.db.miner_transactions.find({'hash': term}, {'_id': 0})
+            if res.count():
+                return self.render_as_json({
+                    'resultType': 'mempool_hash',
+                    'result': [changetime(x) for x in res]
+                })
+        except:
+            return self.render_as_json({})
+
+        try:
+            re.search(r'[A-Fa-f0-9]+', term).group(0)
+            res = self.mongo.db.miner_transactions.find({'outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
+            if res.count():
+                return self.render_as_json({
+                    'resultType': 'mempool_outputs_to',
+                    'result': [changetime(x) for x in res]
+                })
+        except:
+            return self.render_as_json({})
+
+        try:
+            res = self.mongo.db.miner_transactions.find({'public_key': term}, {'_id': 0})
+            if res.count():
+                return self.render_as_json({
+                    'resultType': 'mempool_public_key',
+                    'result': [changetime(x) for x in res]
+                })
+        except:
+            pass
+
+        try:
+            res = self.mongo.db.miner_transactions.find({'rid': term}, {'_id': 0})
+            if res.count():
+                return self.render_as_json({
+                    'resultType': 'mempool_rid',
+                    'result': [changetime(x) for x in res]
+                })
+        except:
+            pass
 
         return self.render_as_json({})
 
