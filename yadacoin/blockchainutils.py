@@ -89,13 +89,7 @@ class BlockChainUtils(object):
                     balance += float(output['value'])
         yield balance
 
-    async def get_wallet_unspent_transactions(self, address, ids=None, needed_value=None):
-        unspent_cache = await self.mongo.async_db.unspent_cache.find_one({'address': address}, sort=[('height', -1)])
-
-        if unspent_cache and (ids or needed_value):
-            block_height = unspent_cache['height']
-        else:
-            block_height = 0
+    async def get_wallet_unspent_transactions(self, address, ids=None, no_zeros=False):
         
         #### fine above ####
 
@@ -142,13 +136,7 @@ class BlockChainUtils(object):
                 reverse_public_key = public_key_address_pair['public_key']
                 break
 
-        spent_txns_query = [
-            {
-                "$match": {
-                    "index": {'$gte': block_height}
-                }
-            }
-        ]
+        spent_txns_query = []
 
         if ids:
             spent_txns_query.append({
@@ -200,6 +188,7 @@ class BlockChainUtils(object):
         spent_ids = set()
         async for x in spent:
             spent_ids.update([i['id'] for i in x['txn']['inputs']])
+
         if ids:
             for x in list(spent_ids ^ set(ids)):
                 yield {'id': x}
@@ -215,14 +204,38 @@ class BlockChainUtils(object):
                 '$unwind': "$transactions"
             },
             {
+                '$unwind': "$transactions.outputs"
+            },
+            {
+                '$match': {
+                    "transactions.outputs.to": address
+                }
+            },
+        ]
+
+        if no_zeros:
+            unspent_txns_query.append({
+                '$match': {
+                    'transactions.outputs.value': { '$gt' : 0 }
+                }
+            })
+
+        unspent_txns_query.extend([
+            {
                 '$match': {
                     'transactions.id': {'$nin' : list(spent_ids)}
                 }
+            },
+            {
+                '$sort': {
+                    'transactions.outputs.value': 1
+                }
             }
-        ]
+        ])
 
         async for unspent_txn in self.config.mongo.async_db.blocks.aggregate(unspent_txns_query):
             unspent_txn['transactions']['height'] = unspent_txn['index']
+            unspent_txn['transactions']['outputs'] = [unspent_txn['transactions']['outputs']]
             yield unspent_txn['transactions']
 
     def get_wallet_unspent_fastgraph_transactions(self, address):

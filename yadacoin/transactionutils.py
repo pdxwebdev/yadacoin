@@ -62,7 +62,7 @@ class TU(object):  # Transaction Utilities
             return False # hasn't been spent to zero yet
 
     @classmethod
-    async def send(cls, config, to, value, from_address=True):
+    async def send(cls, config, to, value, from_address=True, dry_run=False):
         from yadacoin.transaction import NotEnoughMoneyException, TransactionFactory
         from yadacoin.transactionbroadcaster import TxnBroadcaster
         if from_address == config.address:
@@ -95,12 +95,13 @@ class TU(object):  # Transaction Utilities
         except:
             return {"error": "invalid transaction"}
 
-        await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
-        
-        txn_b = TxnBroadcaster(config)
-        await txn_b.txn_broadcast_job(transaction.transaction)
+        if not dry_run:
+            await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
 
-        txn_b2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
-        await txn_b2.txn_broadcast_job(transaction.transaction)
+            txn_b = TxnBroadcaster(config)
+            await txn_b.txn_broadcast_job(transaction.transaction)
+
+            txn_b2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
+            await txn_b2.txn_broadcast_job(transaction.transaction)
 
         return transaction.transaction.to_dict()

@@ -75,7 +75,8 @@ class TransactionFactory(object):
         cls_inst.chattext = chattext
         cls_inst.signin = signin
         await cls_inst.do_money()
-        inputs_concat = cls_inst.get_input_hashes()
+
+        inputs_concat = ''.join([x.id for x in sorted(cls_inst.inputs, key=lambda x: x.id.lower())])
         outputs_concat = cls_inst.get_output_hashes()
         if bulletin_secret or rid:
             if not cls_inst.rid:
@@ -129,77 +130,102 @@ class TransactionFactory(object):
         return cls_inst
 
     async def do_money(self):
+        if self.coinbase:
+            self.inputs = []
+            return
         outputs_and_fee_total = sum([x.value for x in self.outputs])+self.fee
         if outputs_and_fee_total == 0:
             return
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        miner_transactions = self.mongo.db.miner_transactions.find()
+        miner_transactions = self.mongo.db.miner_transactions.find({
+            '$or': [
+                {"txn.public_key": self.public_key},
+                {"txn.inputs.public_key": self.public_key},
+                {"txn.inputs.address": my_address}
+            ]
+        })
         mtxn_ids = []
         for mtxn in miner_transactions:
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
         
         if self.inputs:
-            inputs = self.inputs
-        elif self.coinbase:
             inputs = []
-        else:
-            inputs = []
-            async for input_txn in self.config.BU.get_wallet_unspent_transactions(my_address):
-                if input_txn['id'] not in mtxn_ids:
-                    if 'signature' in input_txn and 'public_key' in input_txn and 'address' in input_txn:
-                        inputs.append(ExternalInput.from_dict(input_txn))
-                    else:
-                        inputs.append(Input.from_dict(input_txn))
+            enough = False
+            for y in self.inputs:
+                txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
+                if not txn:
+                    raise MissingInputTransactionException()
 
-        input_sum = 0
-        if self.coinbase:
-            self.inputs = []
+                if isinstance(y, ExternalInput):
+                    y.verify()
+                    address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
+                else:
+                    address = my_address
+
+                input_sum = self.collect_needed_inputs(y, txn, address, input_sum, inputs, outputs_and_fee_total)
+                if input_sum >= outputs_and_fee_total:
+                    enough = True
+                    break
+
+            if not enough:
+                raise NotEnoughMoneyException('not enough money')
+            self.inputs = inputs
         else:
-            if inputs:
-                needed_inputs = []
-                done = False
-                for y in inputs:
-                    txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
-                    if not txn:
-                        raise MissingInputTransactionException()
-                        
-                    if isinstance(y, ExternalInput):
-                        y.verify()
-                        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
-                    else:
-                        address = my_address
-                    for txn_output in txn.outputs:
-                        if txn_output.to == address and float(txn_output.value) > 0.0:
-                            input_sum += txn_output.value
-                            if y not in needed_inputs:
-                                needed_inputs.append(y)
-                            if input_sum >= (outputs_and_fee_total):
-                                done = True
-                    if done:
+            inputs = []
+            input_sum = 0
+            enough = False
+            async for input_txn in self.config.BU.get_wallet_unspent_transactions(my_address, no_zeros=True):
+                input_txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], input_txn)
+                if input_txn.transaction_signature in mtxn_ids:
+                    continue
+                else:
+                    input_sum = self.collect_needed_inputs(Input.from_dict(input_txn.to_dict()), input_txn, my_address, input_sum, inputs, outputs_and_fee_total)
+                    if input_sum >= outputs_and_fee_total:
+                        enough = True
                         break
 
-                if not done:
-                    raise NotEnoughMoneyException('not enough money')
-                self.inputs = needed_inputs
-            elif outputs_and_fee_total > 0:
-                raise NotEnoughMoneyException('No inputs, not a coinbase, and transaction amount is greater than zero')
-            else:
-                self.inputs = []
+            if not enough:
+                raise NotEnoughMoneyException('not enough money')
 
-            remainder = input_sum-(sum([x.value for x in self.outputs])+self.fee)
+            self.inputs = inputs
 
-            found = False
-            for x in self.outputs:
-                if my_address == x.to:
-                    found = True
-                    x.value += remainder
-            if not found:
-                return_change_output = Output(
-                    to=my_address,
-                    value=remainder
-                )
-                self.outputs.append(return_change_output)
+        if not self.inputs and not self.coinbase and outputs_and_fee_total > 0:
+            raise NotEnoughMoneyException('No inputs, not a coinbase, and transaction amount is greater than zero')
+
+        remainder = input_sum - outputs_and_fee_total
+
+        found = False
+        for x in self.outputs:
+            if my_address == x.to:
+                found = True
+                x.value += remainder
+
+        if not found:
+            return_change_output = Output(
+                to=my_address,
+                value=remainder
+            )
+            self.outputs.append(return_change_output)
+
+    def collect_needed_inputs(self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total):
+
+        if isinstance(input_obj, ExternalInput):
+            input_txn.verify()
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(input_txn.public_key)))
+        else:
+            address = my_address
+
+        for txn_output in input_txn.outputs:
+            if txn_output.to == address and float(txn_output.value) > 0.0:
+                input_sum += txn_output.value
+
+                if input_txn not in inputs:
+                    inputs.append(input_obj)
+
+                if input_sum >= outputs_and_fee_total:
+                    return input_sum
+        return input_sum
 
     def get_input_hashes(self):
         from yadacoin.fastgraph import FastGraph
