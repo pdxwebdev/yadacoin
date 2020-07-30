@@ -521,5 +521,6 @@ class MiningPool(object):
         # TODO: this is needed until bottom-up syncing is deprecated
         self.mongo.db.consensus.insert_one({'peer': 'me', 'index': block_data['index'],
                                             'id': block_data['id'], 'block': block_data})
-        await self.config.consensus.import_block({'peer': self.config.peers.my_peer, 'block': block_data})
+        if self.config.consensus:
+            await self.config.consensus.import_block({'peer': self.config.peers.my_peer, 'block': block_data})
 
