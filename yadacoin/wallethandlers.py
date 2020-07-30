@@ -39,7 +39,7 @@ class GenerateChildWalletHandler(BaseHandler):
         if not key_or_wif and self.jwt.get('key_or_wif') != 'true':
             return self.render_as_json({'error': 'not authorized'})
         args = json.loads(self.request.body)
-        if args.get('uid') is None or not isinstance(args.get('uid'), int):
+        if not args.get('uid'):
             return self.render_as_json({"error": True, "message": "no user account provided"})
         keyhash = hashlib.sha256(
                 TU.generate_deterministic_signature(self.config, 'child_wallet').encode()
