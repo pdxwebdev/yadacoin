@@ -181,18 +181,21 @@ class GraphTransactionHandler(BaseGraphHandler):
                 })
                 if not me_pending_exists and not me_blockchain_exists:
                     created_relationship = await self.create_relationship(self.bulletin_secret, self.username, self.to)
-                    await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.transaction.to_dict())
-                    created_relationship.transaction.relationship = created_relationship.relationship
-                    await self.config.mongo.async_db.name_server.insert_one({
-                        'rid': created_relationship.transaction.rid,
-                        'requester_rid': created_relationship.transaction.requester_rid,
-                        'requested_rid': created_relationship.transaction.requested_rid,
-                        'peer_str': 'me', 
-                        'peer': {'host': 'me', 'port': 0},
-                        'txn': created_relationship.transaction.to_dict()
-                    })
-                    tb = NSBroadcaster(self.config)
-                    await tb.ns_broadcast_job(created_relationship.transaction)
+                    if isinstance(created_relationship, TransactionFactory):
+                        await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.transaction.to_dict())
+                        created_relationship.transaction.relationship = created_relationship.relationship
+                        await self.config.mongo.async_db.name_server.insert_one({
+                            'rid': created_relationship.transaction.rid,
+                            'requester_rid': created_relationship.transaction.requester_rid,
+                            'requested_rid': created_relationship.transaction.requested_rid,
+                            'peer_str': 'me',
+                            'peer': {'host': 'me', 'port': 0},
+                            'txn': created_relationship.transaction.to_dict()
+                        })
+                        tb = NSBroadcaster(self.config)
+                        await tb.ns_broadcast_job(created_relationship.transaction)
+                    else:
+                        self.app_log.debug('relationship creation failed for NS: {}'.format(created_relationship))
                 
                 pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
                     'public_key': x.public_key, 
