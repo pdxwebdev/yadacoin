@@ -64,58 +64,72 @@ class PoolPayer(object):
         latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
         already_paid_height = await self.config.mongo.async_db.share_payout.find_one({}, sort=[('index', -1)])
         won_blocks = self.config.mongo.async_db.blocks.find({'transactions.outputs.to': self.config.address, 'index': {'$gt': already_paid_height.get('index', 0)}}).sort([('index', 1)])
+        ready_blocks = []
         async for won_block in won_blocks:
             won_block = await Block.from_dict(won_block)
             if self.config.debug:
                 self.app_log.debug(won_block.index)
             if (won_block.index + 6) <= latest_block.index:
-                await self.do_payout_for_block(won_block)
-    
+                if len(ready_blocks) >= 6:
+                    await self.do_payout_for_blocks(ready_blocks)
+                else:
+                    ready_blocks.append(won_block)
+
     async def already_used(self, txn):
         return await self.config.mongo.async_db.blocks.find_one({'transactions.inputs.id': txn.transaction_signature})
 
-    async def do_payout_for_block(self, block):
+    async def do_payout_for_blocks(self, blocks):
         # check if we already paid out
-
-        already_used = await self.already_used(block.get_coinbase())
-        if already_used:
-            await self.config.mongo.async_db.shares.delete_many({'index': block.index})
-            return
-        existing = await self.config.mongo.async_db.share_payout.find_one({'index': block.index})
-        if existing:
-            pending = await self.config.mongo.async_db.miner_transactions.find_one({'inputs.id': block.get_coinbase().transaction_signature})
-            if pending:
+        outputs = {}
+        coinbases = []
+        for block in blocks:
+            already_used = await self.already_used(block.get_coinbase())
+            if already_used:
+                await self.config.mongo.async_db.shares.delete_many({'index': block.index})
                 return
-            else:
-                # rebroadcast
-                latest_block = await self.config.BU.get_latest_block_async()
-                transaction = Transaction.from_dict(latest_block['index'], existing['txn'])
-                await self.config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
-                await self.broadcast_transaction(transaction)
-                return
-        try:
-            shares = await self.get_share_list_for_height(block.index)
-        except KeyError as e:
-            self.app_log.warning(e)
-            return
-        except Exception as e:
-            self.app_log.warning(e)
-            return
-        total_reward = block.get_coinbase()
-        if total_reward.outputs[0].to != self.config.address:
-            return
-        pool_take = 0.01
-        total_pool_take = total_reward.outputs[0].value * pool_take
-        total_payout = total_reward.outputs[0].value - total_pool_take
 
-        outputs = []
-        for address, x in shares.items():
-            exists = await self.config.mongo.async_db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
-            if exists:
-                raise PartialPayoutException('this index has been partially paid out.')
-            
-            payout = total_payout * x['payout_share']
-            outputs.append({'to': address, 'value': payout})
+            existing = await self.config.mongo.async_db.share_payout.find_one({'index': block.index})
+            if existing:
+                pending = await self.config.mongo.async_db.miner_transactions.find_one({'inputs.id': block.get_coinbase().transaction_signature})
+                if pending:
+                    return
+                else:
+                    # rebroadcast
+                    latest_block = await self.config.BU.get_latest_block_async()
+                    transaction = Transaction.from_dict(latest_block['index'], existing['txn'])
+                    await self.config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
+                    await self.broadcast_transaction(transaction)
+                    return
+            try:
+                shares = await self.get_share_list_for_height(block.index)
+            except KeyError as e:
+                self.app_log.warning(e)
+                return
+            except Exception as e:
+                self.app_log.warning(e)
+                return
+            coinbase = block.get_coinbase()
+            if coinbase.outputs[0].to != self.config.address:
+                return
+            pool_take = 0.01
+            total_pool_take = coinbase.outputs[0].value * pool_take
+            total_payout = coinbase.outputs[0].value - total_pool_take
+            coinbases.append(coinbase)
+
+            for address, x in shares.items():
+                exists = await self.config.mongo.async_db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
+                if exists:
+                    raise PartialPayoutException('this index has been partially paid out.')
+
+                payout = total_payout * x['payout_share']
+                outputs[address] += payout
+
+        outputs_formatted = []
+        for address, output in outputs.items():
+            outputs_formatted.append({
+                'to': address,
+                'value': output
+            })
 
         try:
             transaction = await TransactionFactory.construct(
@@ -123,8 +137,8 @@ class PoolPayer(object):
                 fee=0.0001,
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,
-                inputs=[{'id': total_reward.transaction_signature}],
-                outputs=outputs,
+                inputs=[{'id': coinbase.transaction_signature for coinbase in coinbases}],
+                outputs=outputs_formatted,
             )
         except NotEnoughMoneyException as e:
             if self.config.debug:
