@@ -149,9 +149,10 @@ class TransactionFactory(object):
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
         
+        input_sum = 0
+        inputs = []
+        enough = False
         if self.inputs:
-            inputs = []
-            enough = False
             for y in self.inputs:
                 txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
                 if not txn:
@@ -172,9 +173,6 @@ class TransactionFactory(object):
                 raise NotEnoughMoneyException('not enough money')
             self.inputs = inputs
         else:
-            inputs = []
-            input_sum = 0
-            enough = False
             async for input_txn in self.config.BU.get_wallet_unspent_transactions(my_address, no_zeros=True):
                 input_txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], input_txn)
                 if input_txn.transaction_signature in mtxn_ids:
