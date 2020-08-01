@@ -80,8 +80,8 @@ class PoolPayer(object):
                     if self.config.debug:
                         self.app_log.debug('block added for payout {}'.format(won_block.index))
                     ready_blocks.append(won_block)
-            
-        await self.do_payout_for_blocks(ready_blocks)
+        if do_payout:
+            await self.do_payout_for_blocks(ready_blocks)
 
 
     async def already_used(self, txn):
