@@ -165,7 +165,7 @@ class PoolPayer(object):
                 'value': output
             })
         if self.config.debug:
-            self.app_log.debug('do_payout_for_blocks done formatting outputs {}'.format([{'id': coinbase.transaction_signature for coinbase in coinbases}]))
+            self.app_log.debug('do_payout_for_blocks done formatting outputs {}'.format([{'id': coinbase.transaction_signature} for coinbase in coinbases]))
         try:
             transaction = await TransactionFactory.construct(
                 block_height=block.index,
