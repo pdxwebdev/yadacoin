@@ -71,8 +71,12 @@ class PoolPayer(object):
                 self.app_log.debug(won_block.index)
             if (won_block.index + 6) <= latest_block.index:
                 if len(ready_blocks) >= 6:
+                    if self.config.debug:
+                        self.app_log.debug('entering payout at block: {}'.format( won_block.index))
                     await self.do_payout_for_blocks(ready_blocks)
                 else:
+                    if self.config.debug:
+                        self.app_log.debug('block added for payout {}'.format(won_block.index))
                     ready_blocks.append(won_block)
 
     async def already_used(self, txn):
@@ -83,11 +87,15 @@ class PoolPayer(object):
         outputs = {}
         coinbases = []
         for block in blocks:
+            if self.config.debug:
+                self.app_log.debug('do_payout_for_blocks begin loop {}'.format(block.index))
             already_used = await self.already_used(block.get_coinbase())
             if already_used:
                 await self.config.mongo.async_db.shares.delete_many({'index': block.index})
                 return
 
+            if self.config.debug:
+                self.app_log.debug('do_payout_for_blocks passed already_used {}'.format(block.index))
             existing = await self.config.mongo.async_db.share_payout.find_one({'index': block.index})
             if existing:
                 pending = await self.config.mongo.async_db.miner_transactions.find_one({'inputs.id': block.get_coinbase().transaction_signature})
@@ -100,6 +108,8 @@ class PoolPayer(object):
                     await self.config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
                     await self.broadcast_transaction(transaction)
                     return
+            if self.config.debug:
+                self.app_log.debug('do_payout_for_blocks passed existing {}'.format(block.index))
             try:
                 shares = await self.get_share_list_for_height(block.index)
             except KeyError as e:
@@ -108,22 +118,35 @@ class PoolPayer(object):
             except Exception as e:
                 self.app_log.warning(e)
                 return
+            if self.config.debug:
+                self.app_log.debug('do_payout_for_blocks passed get_share_list_for_height {}'.format(block.index))
             coinbase = block.get_coinbase()
             if coinbase.outputs[0].to != self.config.address:
                 return
+            if self.config.debug:
+                self.app_log.debug('do_payout_for_blocks passed address compare {}'.format(block.index))
             pool_take = 0.01
             total_pool_take = coinbase.outputs[0].value * pool_take
             total_payout = coinbase.outputs[0].value - total_pool_take
             coinbases.append(coinbase)
 
+            if self.config.debug:
+                self.app_log.debug('do_payout_for_blocks passed coinbase calcs {}'.format(block.index))
             for address, x in shares.items():
+                if self.config.debug:
+                    self.app_log.debug('do_payout_for_blocks shares loop {}'.format(block.index))
                 exists = await self.config.mongo.async_db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
                 if exists:
                     raise PartialPayoutException('this index has been partially paid out.')
+
+                if self.config.debug:
+                    self.app_log.debug('do_payout_for_blocks passed shares exists {}'.format(block.index))
                 if address not in outputs:
                     outputs[address] = 0.0
                 payout = total_payout * x['payout_share']
                 outputs[address] += payout
+                if self.config.debug:
+                    self.app_log.debug('do_payout_for_blocks passed adding payout to outputs {}'.format(block.index))
 
         outputs_formatted = []
         for address, output in outputs.items():
