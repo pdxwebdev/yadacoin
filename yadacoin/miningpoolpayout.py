@@ -172,7 +172,7 @@ class PoolPayer(object):
                 fee=0.0001,
                 public_key=self.config.public_key,
                 private_key=self.config.private_key,
-                inputs=[{'id': coinbase.transaction_signature for coinbase in coinbases}],
+                inputs=[{'id': coinbase.transaction_signature} for coinbase in coinbases],
                 outputs=outputs_formatted,
             )
         except NotEnoughMoneyException as e:
