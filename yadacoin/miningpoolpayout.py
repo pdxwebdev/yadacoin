@@ -120,7 +120,8 @@ class PoolPayer(object):
                 exists = await self.config.mongo.async_db.share_payout.find_one({'index': block.index, 'txn.outputs.to': address})
                 if exists:
                     raise PartialPayoutException('this index has been partially paid out.')
-
+                if address not in outputs:
+                    outputs[address] = 0.0
                 payout = total_payout * x['payout_share']
                 outputs[address] += payout
 
