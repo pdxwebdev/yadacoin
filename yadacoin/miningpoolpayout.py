@@ -68,6 +68,9 @@ class PoolPayer(object):
         do_payout = False
         async for won_block in won_blocks:
             won_block = await Block.from_dict(won_block)
+            coinbase = won_block.get_coinbase()
+            if coinbase.outputs[0].to != self.config.address:
+                continue
             if self.config.debug:
                 self.app_log.debug(won_block.index)
             if (won_block.index + 6) <= latest_block.index:
