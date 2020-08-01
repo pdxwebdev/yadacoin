@@ -65,6 +65,7 @@ class PoolPayer(object):
         already_paid_height = await self.config.mongo.async_db.share_payout.find_one({}, sort=[('index', -1)])
         won_blocks = self.config.mongo.async_db.blocks.find({'transactions.outputs.to': self.config.address, 'index': {'$gt': already_paid_height.get('index', 0)}}).sort([('index', 1)])
         ready_blocks = []
+        do_payout = False
         async for won_block in won_blocks:
             won_block = await Block.from_dict(won_block)
             if self.config.debug:
@@ -73,11 +74,15 @@ class PoolPayer(object):
                 if len(ready_blocks) >= 6:
                     if self.config.debug:
                         self.app_log.debug('entering payout at block: {}'.format( won_block.index))
-                    await self.do_payout_for_blocks(ready_blocks)
+                    do_payout = True
+                    break
                 else:
                     if self.config.debug:
                         self.app_log.debug('block added for payout {}'.format(won_block.index))
                     ready_blocks.append(won_block)
+            
+        await self.do_payout_for_blocks(ready_blocks)
+
 
     async def already_used(self, txn):
         return await self.config.mongo.async_db.blocks.find_one({'transactions.inputs.id': txn.transaction_signature})
