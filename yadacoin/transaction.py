@@ -225,7 +225,7 @@ class TransactionFactory(object):
                     return input_sum
         return input_sum
 
-    async def get_inputs(inputs):
+    async def get_inputs(self, inputs):
         for x in inputs:
             yield x
 
@@ -379,7 +379,7 @@ class Transaction(object):
         """Tells whether the transaction is too far away in the future"""
         return int(self.time) > time.time() + CHAIN.TIME_TOLERANCE
 
-    async def get_inputs(inputs):
+    async def get_inputs(self, inputs):
         for x in inputs:
             yield x
 

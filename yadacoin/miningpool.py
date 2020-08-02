@@ -394,7 +394,7 @@ class MiningPool(object):
                 self.block_factory.block
             )
 
-    async def get_inputs(inputs):
+    async def get_inputs(self, inputs):
         for x in inputs:
             yield x
 
