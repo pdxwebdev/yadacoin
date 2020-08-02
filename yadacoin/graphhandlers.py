@@ -144,7 +144,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         for txn in items:
             transaction = Transaction.from_dict(BU().get_latest_block()['index'], txn)
             try:
-                transaction.verify()
+                await transaction.verify()
             except InvalidTransactionException:
                 await self.config.mongo.async_db.failed_transactions.insert_one({
                     'exception': 'InvalidTransactionException',

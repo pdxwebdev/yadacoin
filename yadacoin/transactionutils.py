@@ -91,7 +91,7 @@ class TU(object):  # Transaction Utilities
         except:
             raise
         try:
-            transaction.transaction.verify()
+            await transaction.transaction.verify()
         except:
             return {"error": "invalid transaction"}
 

@@ -153,18 +153,18 @@ class TransactionFactory(object):
         inputs = []
         enough = False
         if self.inputs:
-            for y in self.inputs:
+            async for y in self.get_inputs(self.inputs):
                 txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
                 if not txn:
                     raise MissingInputTransactionException()
 
                 if isinstance(y, ExternalInput):
-                    y.verify()
+                    await y.verify()
                     address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key)))
                 else:
                     address = my_address
 
-                input_sum = self.collect_needed_inputs(y, txn, address, input_sum, inputs, outputs_and_fee_total)
+                input_sum = await self.collect_needed_inputs(y, txn, address, input_sum, inputs, outputs_and_fee_total)
                 if input_sum >= outputs_and_fee_total:
                     enough = True
                     break
@@ -206,10 +206,10 @@ class TransactionFactory(object):
             )
             self.outputs.append(return_change_output)
 
-    def collect_needed_inputs(self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total):
+    async def collect_needed_inputs(self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total):
 
         if isinstance(input_obj, ExternalInput):
-            input_txn.verify()
+            await input_txn.verify()
             address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(input_txn.public_key)))
         else:
             address = my_address
@@ -225,10 +225,14 @@ class TransactionFactory(object):
                     return input_sum
         return input_sum
 
-    def get_input_hashes(self):
+    async def get_inputs(inputs):
+        for x in inputs:
+            yield x
+
+    async def get_input_hashes(self):
         from yadacoin.fastgraph import FastGraph
         input_hashes = []
-        for x in self.inputs:
+        async for x in self.get_inputs(self.inputs):
             txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             input_hashes.append(str(txn.transaction_signature))
 
@@ -375,7 +379,11 @@ class Transaction(object):
         """Tells whether the transaction is too far away in the future"""
         return int(self.time) > time.time() + CHAIN.TIME_TOLERANCE
 
-    def verify(self):
+    async def get_inputs(inputs):
+        for x in inputs:
+            yield x
+
+    async def verify(self):
         from yadacoin.fastgraph import FastGraph
         verify_hash = self.generate_hash()
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
@@ -404,7 +412,7 @@ class Transaction(object):
 
         # verify spend
         total_input = 0
-        for txn in self.inputs:
+        async for txn in self.get_inputs(self.inputs):
             # TODO: move to async
             input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
@@ -454,7 +462,7 @@ class Transaction(object):
             raise TotalValueMismatchException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     def generate_hash(self):
-        inputs_concat = self.get_input_hashes()
+        inputs_concat = await self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
         if self.time:
             hashout = hashlib.sha256((
@@ -482,10 +490,10 @@ class Transaction(object):
             ).digest().hex()
         return hashout
 
-    def get_input_hashes(self):
+    async def get_input_hashes(self):
         from yadacoin.fastgraph import FastGraph
         input_hashes = []
-        for x in self.inputs:
+        async for x in self.get_inputs(self.inputs):
             txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             if txn:
                 input_hashes.append(str(txn.transaction_signature))

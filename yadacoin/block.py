@@ -112,7 +112,7 @@ class BlockFactory(object):
                             print('duplicate transaction found and removed')
                             continue
 
-                        transaction_obj.verify()
+                        await transaction_obj.verify()
                         used_sigs.append(transaction_obj.transaction_signature)
                     except:
                         raise InvalidTransactionException("invalid transactions")

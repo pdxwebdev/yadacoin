@@ -185,7 +185,7 @@ class PoolPayer(object):
                 self.app_log.debug(e)
 
         try:
-            transaction.transaction.verify()
+            await transaction.transaction.verify()
         except Exception as e:
             if self.config.debug:
                 self.app_log.debug(e)

@@ -53,7 +53,7 @@ class Blockchain(object):
                     return {'verified': False, 'message': e}
             async for txn in get_transactions(block.transactions):
                 try:
-                    txn.verify()
+                    await txn.verify()
                 except InvalidTransactionException as e:
                     print("verify2", e)
                     if last_block:
@@ -95,7 +95,7 @@ class Blockchain(object):
         for block in self.blocks:
             block.verify()
             for txn in block.transactions:
-                txn.verify()
+                await txn.verify()
             if last_block:
                 if int(block.index) - int(last_block.index) > 1:
                     return last_block.index + 1

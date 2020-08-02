@@ -502,7 +502,7 @@ class Consensus(object):
                 try:
                     if extra_blocks:
                         transaction.extra_blocks = extra_blocks
-                    transaction.verify()
+                    await transaction.verify()
                 except InvalidTransactionException as e:
                     print(e)
                     return False

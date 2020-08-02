@@ -394,6 +394,9 @@ class MiningPool(object):
                 self.block_factory.block
             )
 
+    async def get_inputs(inputs):
+        for x in inputs:
+            yield x
 
     async def get_pending_transactions(self):
         transaction_objs = []
@@ -412,7 +415,7 @@ class MiningPool(object):
                     print('transaction unrecognizable, skipping')
                     continue
                 
-                transaction_obj.verify()
+                await transaction_obj.verify()
                 
                 if transaction_obj.transaction_signature in used_sigs:
                     print('duplicate transaction found and removed')
@@ -420,7 +423,7 @@ class MiningPool(object):
                 used_sigs.append(transaction_obj.transaction_signature)
 
                 if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
-                    for input_id in transaction_obj.inputs:
+                    async for input_id in self.get_inputs(transaction_obj.inputs):
                         input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
                         if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
                             continue
@@ -429,7 +432,7 @@ class MiningPool(object):
                 failed2 = False
                 used_ids_in_this_txn = []
 
-                for x in transaction_obj.inputs:
+                async for x in self.get_inputs(transaction_obj.inputs):
                     if self.config.BU.is_input_spent(x.id, transaction_obj.public_key):
                         failed1 = True
                     if x.id in used_ids_in_this_txn:

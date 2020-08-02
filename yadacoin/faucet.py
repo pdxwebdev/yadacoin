@@ -45,7 +45,7 @@ class Faucet(object):
             except Exception as e:
                 print(e)
             try:
-                transaction.transaction.verify()
+                await transaction.transaction.verify()
             except:
                 mongo.site_db.failed_faucet_transactions.insert(transaction.transaction.to_dict())
                 print('faucet transaction failed')

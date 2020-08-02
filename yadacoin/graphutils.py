@@ -1111,14 +1111,14 @@ class GraphUtils(object):
             shared_secrets = self.get_shared_secrets_by_rid(rid)
             if txn:
                 if isinstance(txn, Transaction):
-                    txn.verify()
+                    await txn.verify()
                 else:
                     txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
-                    txn.verify()
+                    await txn.verify()
             else:
                 txn = self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
                 txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
-                txn.verify()
+                await txn.verify()
             cipher = None
             for shared_secret in list(set(shared_secrets)):
                 res = self.mongo.db.verify_message_cache.find_one({

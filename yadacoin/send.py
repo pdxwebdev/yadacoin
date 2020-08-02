@@ -33,7 +33,7 @@ class Send(object):
         except:
             raise
         try:
-            transaction.transaction.verify()
+            await transaction.transaction.verify()
         except:
             print('transaction failed')
         TU.save(config, mongo, transaction.transaction)
