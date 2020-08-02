@@ -385,7 +385,7 @@ class Transaction(object):
 
     async def verify(self):
         from yadacoin.fastgraph import FastGraph
-        verify_hash = self.generate_hash()
+        verify_hash = await self.generate_hash()
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
 
         if verify_hash != self.hash:
@@ -461,7 +461,7 @@ class Transaction(object):
         if "{0:.8f}".format(total_input) != "{0:.8f}".format(total):
             raise TotalValueMismatchException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
-    def generate_hash(self):
+    async def generate_hash(self):
         inputs_concat = await self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
         if self.time:
