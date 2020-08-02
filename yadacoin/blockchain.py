@@ -90,7 +90,7 @@ class Blockchain(object):
                 progress("%s%s %s" % (str(int(float(block.index + 1) / float(len(self.blocks)) * 100)), '%', block.index))
         return {'verified': True}
 
-    def find_error_block(self):
+    async def find_error_block(self):
         last_block = None
         for block in self.blocks:
             block.verify()
