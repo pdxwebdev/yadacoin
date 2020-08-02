@@ -239,7 +239,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                 tb = NSBroadcaster(self.config)
                 await tb.ns_broadcast_job(x)
             if x.rid == self.rid and x.relationship:
-                self.config.GU.verify_message(
+                await self.config.GU.verify_message(
                     x.rid,
                     '',
                     self.config.public_key,

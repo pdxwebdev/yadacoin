@@ -1097,7 +1097,7 @@ class GraphUtils(object):
                 shared_secrets.append(scalarmult(unhexlify(dh_private_key).decode('latin1'), unhexlify(dh_public_key).decode('latin1')).encode('latin1'))
         return shared_secrets
 
-    def verify_message(self, rid, message, public_key, txn_id, txn=None):
+    async def verify_message(self, rid, message, public_key, txn_id, txn=None):
         from yadacoin.crypt import Crypt
         sent = False
         received = False

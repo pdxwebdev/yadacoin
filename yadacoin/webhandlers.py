@@ -62,7 +62,7 @@ class MultifactorAuthHandler(BaseHandler):
             cookie = str(uuid.uuid4())
             self.set_secure_cookie("signin_code", cookie)
 
-        result = GU().verify_message(
+        result = await GU().verify_message(
             rid,
             cookie,
             config.public_key,
