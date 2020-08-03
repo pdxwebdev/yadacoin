@@ -645,7 +645,7 @@ class Consensus(object):
                             return
                 latest_block = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
                 # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
-                if latest_block['hash'] == block.prev_hash:
+                if latest_block and latest_block['hash'] == block.prev_hash:
                     prev_blocks_check = await Block.from_dict(latest_block)
                     if self.debug:
                         self.app_log.debug("Previous block {}: {}".format(prev_blocks_check.hash, prev_blocks_check.index))
