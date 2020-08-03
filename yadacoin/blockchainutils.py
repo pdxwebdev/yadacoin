@@ -87,7 +87,7 @@ class BlockChainUtils(object):
                 if address == output['to']:
                     used_ids.append(txn['id'])
                     balance += float(output['value'])
-        yield balance
+        return balance
 
     async def get_wallet_unspent_transactions(self, address, ids=None, no_zeros=False):
         
@@ -126,7 +126,7 @@ class BlockChainUtils(object):
                     "transaction.outputs.to": address
                 }
             },
-        ])
+        ], allowDiskUse=True)
 
         reverse_public_key = ''
         async for public_key_address_pair in public_key_address_pairs:
@@ -182,7 +182,7 @@ class BlockChainUtils(object):
             }
         ])
 
-        spent = self.mongo.async_db.blocks.aggregate(spent_txns_query)
+        spent = self.mongo.async_db.blocks.aggregate(spent_txns_query, allowDiskUse=True)
 
         # here we're assuming block/transaction validation ensures the inputs used are valid for this address
         spent_ids = set()
@@ -233,7 +233,7 @@ class BlockChainUtils(object):
             }
         ])
 
-        async for unspent_txn in self.config.mongo.async_db.blocks.aggregate(unspent_txns_query):
+        async for unspent_txn in self.config.mongo.async_db.blocks.aggregate(unspent_txns_query, allowDiskUse=True):
             unspent_txn['transactions']['height'] = unspent_txn['index']
             unspent_txn['transactions']['outputs'] = [unspent_txn['transactions']['outputs']]
             yield unspent_txn['transactions']
@@ -493,7 +493,7 @@ class BlockChainUtils(object):
                     "transactions.public_key": public_key
                 }
             }
-        ])
+        ], allowDiskUse=True)
         if len(list(res)):
             return True
         
@@ -599,7 +599,7 @@ class BlockChainUtils(object):
                         "input_id": txn_input.id
                     }
                 }
-            ])
+            ], allowDiskUse=True)
             double_spends.extend([x for x in res])
         return double_spends
     
