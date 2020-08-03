@@ -253,10 +253,6 @@ class HashrateAPIHandler(BaseHandler):
 
 class AppHandler(BaseWebHandler):
 
-    async def prepare(self):
-        if self.request.protocol == 'https':
-            self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
-
     async def get(self):
         """
         :return:
