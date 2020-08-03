@@ -283,15 +283,19 @@ class BlockFactory(object):
         if average_block_time2 < target_time:
             hash_sum2 = 0
             for i in range(start_index, start_index - retarget_period2, -1):
-                block_tmp = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': i}))
-                hash_sum2 += block_tmp.target
+                this_block = await get_config().mongo.async_db.blocks.find_one({'index': i})
+                if this_block:
+                    block_tmp = await Block.from_dict(this_block)
+                    hash_sum2 += block_tmp.target
             average_target = hash_sum2 / retarget_period2
             target = int(average_target * average_block_time2 / target_time)
         else:
             hash_sum = 0
             for i in range(start_index, start_index - retarget_period, -1):
-                block_tmp = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': i}))
-                hash_sum += block_tmp.target
+                this_block = await get_config().mongo.async_db.blocks.find_one({'index': i})
+                if this_block:
+                    block_tmp = await Block.from_dict(this_block)
+                    hash_sum += block_tmp.target
             average_target = hash_sum / retarget_period
             # This adjusts both ways
             target = int(average_target * average_block_time / target_time)
