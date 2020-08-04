@@ -477,11 +477,16 @@ class BlockChainUtils(object):
         from yadacoin.fastgraph import FastGraph
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
         res = self.mongo.db.blocks.aggregate([
             {
                 '$match': {
                     "transactions.inputs.id": {'$in': input_ids},
-                    "transactions.public_key": public_key
+                    "$or": [
+                        {"transactions.public_key": public_key},
+                        {"transactions.inputs.public_key": public_key},
+                        {"transactions.inputs.address": address}
+                    ]
                 }
             },
             {
@@ -490,7 +495,11 @@ class BlockChainUtils(object):
             {
                 '$match': {
                     "transactions.inputs.id": {'$in': input_ids},
-                    "transactions.public_key": public_key
+                    "$or": [
+                        {"transactions.public_key": public_key},
+                        {"transactions.inputs.public_key": public_key},
+                        {"transactions.inputs.address": address}
+                    ]
                 }
             }
         ], allowDiskUse=True)
@@ -500,7 +509,11 @@ class BlockChainUtils(object):
         if inc_mempool:
             res2 = self.mongo.db.miner_transactions.find_one({
                 "inputs.id": {'$in': input_ids},
-                "public_key": public_key
+                "$or": [
+                    {"public_key": public_key},
+                    {"inputs.public_key": public_key},
+                    {"inputs.address": address}
+                ]
             })
             if res2:
                 return True
