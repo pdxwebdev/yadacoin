@@ -540,12 +540,16 @@ class Consensus(object):
             if block.index == 0:
                 return True
             height = block.index
-            last_block = await Block.from_dict(await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1}))
-            if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
-                self.app_log.warning("Integrate block error 2")
-                raise ForkException()
+            last_block = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
+
             if not last_block:
                 self.app_log.warning("Integrate block error 3")
+                raise ForkException()
+
+            last_block = await Block.from_dict(last_block)
+
+            if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
+                self.app_log.warning("Integrate block error 2")
                 raise ForkException()
 
             if height >= CHAIN.FORK_10_MIN_BLOCK:
