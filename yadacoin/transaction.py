@@ -17,6 +17,10 @@ from yadacoin.config import get_config
 from yadacoin.chain import CHAIN
 
 
+def fix_float1(value):
+    return '.'.join(["{0:.9f}".format(value).split('.')[0], "{0:.9f}".format(value).split('.')[1][:8]])
+
+
 class TransactionFactory(object):
     @classmethod
     async def construct(
@@ -444,7 +448,7 @@ class Transaction(object):
                 elif str(output.to) == str(address):
                     found = True
                     total_input += float(output.value)
-                
+            
             if not found:
                 if isinstance(txn, ExternalInput):
                     raise InvalidTransactionException("external input signing information did not match any recipients of the input transaction")
@@ -458,7 +462,7 @@ class Transaction(object):
         for txn in self.outputs:
             total_output += float(txn.value)
         total = float(total_output) + float(self.fee)
-        if "{0:.8f}".format(total_input) != "{0:.8f}".format(total):
+        if fix_float1(total_input) != fix_float1(total):
             raise TotalValueMismatchException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     async def generate_hash(self):
