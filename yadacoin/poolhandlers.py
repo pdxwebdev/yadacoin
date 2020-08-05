@@ -26,10 +26,7 @@ class JSONRPC(BaseHandler):
                 'result': await self.config.mp.block_template()
             })
         elif body.get('method') == 'get_balance':
-            balance = 0
-            async for x in self.config.BU.get_wallet_balance(self.config.address):
-                balance = x
-                break
+            balance = self.config.BU.get_wallet_balance(self.config.address)
             self.render_as_json({
                 'id': body.get('id'),
                 'method': body.get('method'),
