@@ -276,6 +276,77 @@ class UnlockHandler(BaseHandler):
             return self.finish()
 
 
+class SentPendingTransactionsView(BaseHandler):
+    async def get(self):
+        public_key = self.get_query_argument('public_key')
+        page = int(self.get_query_argument('page', 1)) - 1
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+
+        pending_txns = await self.config.mongo.async_db.miner_transactions.find({
+            'transactions.outputs.to': address,
+            '$or': [
+                {'public_key': public_key},
+                {'inputs.public_key': public_key},
+            ]
+        }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
+
+        return self.render_as_json({
+            'past_pending_transactions': pending_txns
+        })
+
+
+class SentTransactionsView(BaseHandler):
+    async def get(self):
+        public_key = self.get_query_argument('public_key')
+        page = int(self.get_query_argument('page', 1)) - 1
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        txns = await self.config.mongo.async_db.blocks.find({
+            'transactions.outputs.to': address,
+            '$or': [
+                {'transactions.public_key': public_key},
+                {'transactions.inputs.public_key': public_key},
+            ]
+        }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
+
+        return self.render_as_json({
+            'past_transactions': txns,
+        })
+
+
+class ReceivedPendingTransactionsView(BaseHandler):
+    async def get(self):
+        public_key = self.get_query_argument('public_key')
+        page = int(self.get_query_argument('page', 1)) - 1
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+
+        pending_txns = await self.config.mongo.async_db.miner_transactions.find({
+            'outputs.to': address,
+            'public_key': {'$ne': public_key},
+            'inputs.public_key': {'$ne': public_key}
+        }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
+
+        return self.render_as_json({
+            'past_pending_transactions': pending_txns
+        })
+
+
+class ReceivedTransactionsView(BaseHandler):
+    async def get(self):
+        public_key = self.get_query_argument('public_key')
+        page = int(self.get_query_argument('page', 1)) - 1
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+
+        txns = await self.config.mongo.async_db.blocks.find({
+            'transactions.outputs.to': address,
+            'transactions.public_key': {'$ne': public_key},
+            'transactions.inputs.public_key': {'$ne': public_key}
+        }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
+
+        return self.render_as_json({
+            'past_transactions': txns,
+        })
+
+
 WALLET_HANDLERS = [
     (r'/wallet', WalletHandler),
     (r'/generate-wallet', GenerateWalletHandler),
@@ -287,4 +358,8 @@ WALLET_HANDLERS = [
     (r'/send-transaction', SendTransactionView),
     (r'/unlocked', UnlockedHandler),
     (r'/unlock', UnlockHandler),
+    (r'/get-past-pending-sent-txns', SentPendingTransactionsView),
+    (r'/get-past-sent-txns', SentTransactionsView),
+    (r'/get-past-pending-received-txns', ReceivedPendingTransactionsView),
+    (r'/get-past-received-txns', ReceivedTransactionsView),
 ]
