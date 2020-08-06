@@ -417,10 +417,13 @@ class Transaction(object):
 
         # verify spend
         total_input = 0
+        exclude_recovered_ids = []
         async for txn in self.get_inputs(self.inputs):
             input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
-                raise InvalidTransactionException("Input not found on blockchain: {}".format(txn.id))
+                result = await self.recover_missing_transaction(txn.id, exclude_recovered_ids)
+                exclude_recovered_ids.append(exclude_recovered_ids)
+                raise MissingInputTransactionException("Input not found on blockchain: {}".format(txn.id))
             txn_input = Transaction.from_dict(self.block_height, input_txn)
 
             found = False
@@ -497,6 +500,7 @@ class Transaction(object):
     async def get_input_hashes(self):
         from yadacoin.fastgraph import FastGraph
         input_hashes = []
+        exclude_recovered_ids = []
         async for x in self.get_inputs(self.inputs):
             txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
             if txn:
@@ -513,10 +517,11 @@ class Transaction(object):
                         if found:
                             break
                 if not found:
-                    result = await self.recover_missing_transaction(x.id)
+                    result = await self.recover_missing_transaction(x.id, exclude_recovered_ids)
                     if result:
                         txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
                         input_hashes.append(str(txn.transaction_signature))
+                        exclude_recovered_ids.append(x.id)
                     else:
                         raise MissingInputTransactionException("This transaction is not in the blockchain.")
 
@@ -539,7 +544,7 @@ class Transaction(object):
                     output_txn = txn
                     return output_txn
 
-    async def recover_missing_transaction(self, txn_id):
+    async def recover_missing_transaction(self, txn_id, exclude_ids=[]):
         self.app_log.warning("recovering missing transaction input: {}".format(txn_id))
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         missing_txns = self.config.mongo.async_db.blocks.aggregate([
@@ -568,7 +573,7 @@ class Transaction(object):
                 result = verify_signature(base64.b64decode(txn_id), missing_txn['transaction']['hash'].encode(),
                                         bytes.fromhex(self.public_key))
                 if result:
-                    block_index = await self.find_unspent_missing_index(missing_txn['transaction']['hash'])
+                    block_index = await self.find_unspent_missing_index(missing_txn['transaction']['hash'], exclude_ids)
                     if block_index:
                         await self.replace_missing_transaction_input(
                             block_index,
@@ -583,7 +588,7 @@ class Transaction(object):
                         txn_id
                     )
                     if result:
-                        block_index = await self.find_unspent_missing_index(missing_txn['transaction']['hash'])
+                        block_index = await self.find_unspent_missing_index(missing_txn['transaction']['hash'], exclude_ids)
                         if block_index:
                             await self.replace_missing_transaction_input(
                                 block_index,
@@ -611,12 +616,12 @@ class Transaction(object):
         self.app_log.warning('missing transaction input recovery successful: {}'.format(txn_hash))
         return True
 
-    async def find_unspent_missing_index(self, txn_hash):
+    async def find_unspent_missing_index(self, txn_hash, exclude_ids=[]):
         blocks = self.config.mongo.async_db.blocks.find({'transactions.hash': txn_hash})
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         async for block in blocks:
             for txn in block['transactions']:
-                if txn['hash'] == txn_hash:
+                if txn['hash'] == txn_hash and txn['id'] not in exclude_ids:
                     spents = self.config.mongo.async_db.blocks.aggregate([
                         {
                             '$match': {
