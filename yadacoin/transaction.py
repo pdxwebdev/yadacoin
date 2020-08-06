@@ -20,6 +20,9 @@ from yadacoin.chain import CHAIN
 def fix_float1(value):
     return '.'.join(["{0:.9f}".format(value).split('.')[0], "{0:.9f}".format(value).split('.')[1][:8]])
 
+def fix_float2(value):
+    return "{0:.8f}".format(value)
+
 
 class TransactionFactory(object):
     @classmethod
@@ -465,7 +468,7 @@ class Transaction(object):
         for txn in self.outputs:
             total_output += float(txn.value)
         total = float(total_output) + float(self.fee)
-        if fix_float1(total_input) != fix_float1(total):
+        if fix_float1(total_input) != fix_float1(total) and fix_float2(total_input) != fix_float2(total):
             raise TotalValueMismatchException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     async def generate_hash(self):
