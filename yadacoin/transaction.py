@@ -420,7 +420,7 @@ class Transaction(object):
         async for txn in self.get_inputs(self.inputs):
             input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
-                raise InvalidTransactionException("Input not found on blockchain.")
+                raise InvalidTransactionException("Input not found on blockchain: {}".format(txn.id))
             txn_input = Transaction.from_dict(self.block_height, input_txn)
 
             found = False
