@@ -515,7 +515,10 @@ class Transaction(object):
                             break
                 if not found:
                     result = await self.recover_missing_transaction(x.id)
-                    if not result:
+                    if result:
+                        txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+                        input_hashes.append(str(txn.transaction_signature))
+                    else:
                         raise MissingInputTransactionException("This transaction is not in the blockchain.")
 
         return ''.join(sorted(input_hashes, key=lambda v: v.lower()))
@@ -539,7 +542,6 @@ class Transaction(object):
 
     async def recover_missing_transaction(self, txn_id):
         self.app_log.warning("recovering missing transaction input")
-        print("recovering missing transaction input")
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         missing_txns = self.config.mongo.async_db.blocks.aggregate([
             {
@@ -563,7 +565,6 @@ class Transaction(object):
             }
         ])
         async for missing_txn in missing_txns:
-            print("recovering missing transaction input loop")
             try:
                 result = verify_signature(base64.b64decode(txn_id), missing_txn['transaction']['hash'].encode(),
                                         bytes.fromhex(self.public_key))
