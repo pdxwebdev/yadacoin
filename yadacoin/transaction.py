@@ -418,7 +418,6 @@ class Transaction(object):
         # verify spend
         total_input = 0
         async for txn in self.get_inputs(self.inputs):
-            # TODO: move to async
             input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
             if not input_txn:
                 raise InvalidTransactionException("Input not found on blockchain.")
@@ -541,7 +540,7 @@ class Transaction(object):
                     return output_txn
 
     async def recover_missing_transaction(self, txn_id):
-        self.app_log.warning("recovering missing transaction input")
+        self.app_log.warning("recovering missing transaction input: {}".format(txn_id))
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         missing_txns = self.config.mongo.async_db.blocks.aggregate([
             {
@@ -604,12 +603,12 @@ class Transaction(object):
         for txn in block_to_replace['transactions']:
             if txn['hash'] == txn_hash:
                 txn['id'] = txn_id
-                self.app_log.warning('missing transaction input id updated')
+                self.app_log.warning('missing transaction input id updated: {}'.format(block_index))
                 break
         await self.config.mongo.async_db.blocks.replace_one({
             'index': block_index
         }, block_to_replace)
-        self.app_log.warning('missing transaction input recovery successful')
+        self.app_log.warning('missing transaction input recovery successful: {}'.format(txn_hash))
         return True
 
     async def find_unspent_missing_index(self, txn_hash):
