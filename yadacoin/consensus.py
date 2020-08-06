@@ -504,19 +504,18 @@ class Consensus(object):
                         transaction.extra_blocks = extra_blocks
                     await transaction.verify()
                 except InvalidTransactionException as e:
-                    print(e)
+                    self.app_log.warning(e)
                     return False
                 except InvalidTransactionSignatureException as e:
-                    print(e)
+                    self.app_log.warning(e)
                     return False
                 except MissingInputTransactionException as e:
-                    print(e)
-                    return False
+                    self.app_log.warning(e)
                 except NotEnoughMoneyException as e:
-                    print(e)
+                    self.app_log.warning(e)
                     return False
                 except Exception as e:
-                    print(e)
+                    self.app_log.warning(e)
                     return False
 
                 if transaction.inputs:

@@ -330,6 +330,7 @@ class Transaction(object):
         coinbase=False,
         extra_blocks=None
     ):
+        self.app_log = getLogger("tornado.application")
         self.config = get_config()
         self.mongo = self.config.mongo
         self.block_height = block_height
@@ -513,14 +514,16 @@ class Transaction(object):
                         if found:
                             break
                 if not found:
-                    raise MissingInputTransactionException("This transaction is not in the blockchain.")
+                    result = await self.recover_missing_transaction(x.id)
+                    if not result:
+                        raise MissingInputTransactionException("This transaction is not in the blockchain.")
 
         return ''.join(sorted(input_hashes, key=lambda v: v.lower()))
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
         return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
-    
+
     def used_as_input(self, input_id):
         block = self.config.mongo.db.blocks.find_one({ # we need to look ahead in the chain
             'transactions.inputs.id': input_id
@@ -533,6 +536,118 @@ class Transaction(object):
                 if inp['id'] == input_id:
                     output_txn = txn
                     return output_txn
+
+    async def recover_missing_transaction(self, txn_id):
+        self.app_log.warning("recovering missing transaction input")
+        print("recovering missing transaction input")
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+        missing_txns = self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.public_key': self.public_key
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.public_key': self.public_key
+                }
+            },
+            {
+                '$project': {
+                    'transaction': '$transactions',
+                    'index': '$index'
+                }
+            }
+        ])
+        async for missing_txn in missing_txns:
+            print("recovering missing transaction input loop")
+            try:
+                result = verify_signature(base64.b64decode(txn_id), missing_txn['transaction']['hash'].encode(),
+                                        bytes.fromhex(self.public_key))
+                if result:
+                    block_index = await self.find_unspent_missing_index(missing_txn['transaction']['hash'])
+                    if block_index:
+                        await self.replace_missing_transaction_input(
+                            block_index,
+                            missing_txn['transaction']['hash'],
+                            txn_id
+                        )
+                        return True
+                else:
+                    result = VerifyMessage(
+                        address,
+                        BitcoinMessage(missing_txn['transaction']['hash'].encode('utf-8'), magic=''),
+                        txn_id
+                    )
+                    if result:
+                        block_index = await self.find_unspent_missing_index(missing_txn['transaction']['hash'])
+                        if block_index:
+                            await self.replace_missing_transaction_input(
+                                block_index,
+                                missing_txn['transaction']['hash'],
+                                txn_id
+                            )
+                            return True
+            except:
+                pass
+        return False
+
+    async def replace_missing_transaction_input(self, block_index, txn_hash, txn_id):
+        block_to_replace = await self.config.mongo.async_db.blocks.find_one({
+            'index': block_index
+        })
+
+        for txn in block_to_replace['transactions']:
+            if txn['hash'] == txn_hash:
+                txn['id'] = txn_id
+                self.app_log.warning('missing transaction input id updated')
+                break
+        await self.config.mongo.async_db.blocks.replace_one({
+            'index': block_index
+        }, block_to_replace)
+        self.app_log.warning('missing transaction input recovery successful')
+        return True
+
+    async def find_unspent_missing_index(self, txn_hash):
+        blocks = self.config.mongo.async_db.blocks.find({'transactions.hash': txn_hash})
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+        async for block in blocks:
+            for txn in block['transactions']:
+                if txn['hash'] == txn_hash:
+                    spents = self.config.mongo.async_db.blocks.aggregate([
+                        {
+                            '$match': {
+                                'transactions.inputs.id': txn['id'],
+                                '$or': [
+                                    {'transactions.public_key': self.public_key},
+                                    {'transactions.inputs.public_key': self.public_key},
+                                    {'transactions.inputs.address': address},
+                                ]
+                            }
+                        },
+                        {
+                            '$unwind': '$transactions'
+                        },
+                        {
+                            '$match': {
+                                'transactions.inputs.id': txn['id'],
+                                '$or': [
+                                    {'transactions.public_key': self.public_key},
+                                    {'transactions.inputs.public_key': self.public_key},
+                                    {'transactions.inputs.address': address},
+                                ]
+                            }
+                        },
+                    ])
+                    found = False
+                    async for spent in spents:
+                        found = True
+                        break
+                    if not found:
+                        return block['index']
 
     def to_dict(self):
         relationship = self.relationship
