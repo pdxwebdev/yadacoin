@@ -182,7 +182,7 @@ class TransactionFactory(object):
                 if input_txn.transaction_signature in mtxn_ids:
                     continue
                 else:
-                    input_sum = self.collect_needed_inputs(Input.from_dict(input_txn.to_dict()), input_txn, my_address, input_sum, inputs, outputs_and_fee_total)
+                    input_sum = await self.collect_needed_inputs(Input.from_dict(input_txn.to_dict()), input_txn, my_address, input_sum, inputs, outputs_and_fee_total)
                     if input_sum >= outputs_and_fee_total:
                         enough = True
                         break
