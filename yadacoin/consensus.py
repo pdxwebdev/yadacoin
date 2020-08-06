@@ -708,6 +708,7 @@ class Consensus(object):
                     if (blocks[-1].index >= existing_blockchain_index
                         and inbound_difficulty >= existing_difficulty):
                         for block in blocks:
+                            fork_exception = False
                             try:
                                 if block.index == 0:
                                     continue
@@ -715,6 +716,13 @@ class Consensus(object):
                                 if self.debug:
                                     self.app_log.debug('inserted {}'.format(block.index))
                             except ForkException as e:
+                                fork_exception = True
+                            except AboveTargetException as e:
+                                return
+                            except IndexError as e:
+                                return
+                        
+                            if fork_exception:
                                 back_one_block = block
                                 while 1:
                                     back_one_block = await self.mongo.async_db.consensus.find_one({'block.hash': back_one_block.prev_hash})
@@ -731,10 +739,6 @@ class Consensus(object):
                                             pass
                                     else:
                                         return
-                            except AboveTargetException as e:
-                                return
-                            except IndexError as e:
-                                return
                         self.app_log.info("Retrace result: replaced chain with incoming")
                         return
                     else:
