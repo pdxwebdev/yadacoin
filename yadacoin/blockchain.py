@@ -14,35 +14,22 @@ class Blockchain(object):
         self = cls()
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.blocks = []
-        last_index = None
-        async for block in blocks:
-            if not isinstance(block, Block):
-                block = await Block.from_dict(block)
-            
-            if last_index and (block.index - last_index) != 1:
-                raise Exception('Either incomplete blockchain or unordered. block {} vs last {}'.format(block.index, last_index))
-                # In that case: (most often, dup buried block), check if block n+1 exists then remove the wrong block(s)
-                # see when inserting/replacing block how the dup insert occurs.
-
-            self.blocks.append(block)
-            last_index = block.index
+        self.blocks = blocks
         self.partial = partial
         if not self.blocks:
             return # allow nothing
-        if self.blocks and self.blocks[0].index != 0 and not self.partial:
-            raise Exception('Blocks do not start with zero index. Either incomplete blockchain or unordered.')
         return self
 
     async def verify(self, progress=None):
-        async def get_blocks():
-            for block in self.blocks:
-                yield block
         async def get_transactions(txns):
             for txn in txns:
                 yield txn
         last_block = None
-        async for block in get_blocks():
+        async for block in self.blocks:
+            if not isinstance(block, Block):
+                block = await Block.from_dict(block)
+            if last_block and last_block.index and (block.index - last_block.index) != 1:
+                raise Exception('Either incomplete blockchain or unordered. block {} vs last {}'.format(block.index, last_block.index))
             try:
                 block.verify()
             except Exception as e:
@@ -76,7 +63,7 @@ class Blockchain(object):
                 if block.index >= CHAIN.FORK_10_MIN_BLOCK:
                     target = await BlockFactory.get_target_10min(block.index, last_block, block)
                 else:
-                    target = await BlockFactory.get_target(block.index, last_block, block)
+                    target = await BlockFactory.get_target(block.index, last_block, block, latest_block=block.to_dict())
                 if int(block.hash, 16) > target and not block.special_min:
                     return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
                 if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:
@@ -103,9 +90,11 @@ class Blockchain(object):
                     return last_block.index
             last_block = block
 
-    def get_difficulty(self):
+    async def get_difficulty(self):
         difficulty = 0
-        for block in self.blocks:
+        async for block in self.blocks:
+            if not isinstance(block, Block):
+                block = await Block.from_dict(block)
             target = int(block.hash, 16)
             difficulty += CHAIN.MAX_TARGET - target
         return difficulty

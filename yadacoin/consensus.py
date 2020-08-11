@@ -87,6 +87,8 @@ class Consensus(object):
 
     async def verify_existing_blockchain(self, reset=False):
         self.app_log.info('verifying existing blockchain')
+        existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({}).sort([('index', 1)]))
+        result = await existing_blockchain.verify()
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
             return True
@@ -392,6 +394,7 @@ class Consensus(object):
                     {'$set': {'ignore': True}}
                 )
                 return False
+            fork_exception = False
             try:
                 result = await self.integrate_block_with_existing_chain(block, extra_blocks)
                 if result is False:
@@ -426,10 +429,7 @@ class Consensus(object):
                     {'$set': {'ignore': True}}
                 )
             except ForkException as e:
-                await self.retrace(block, peer)
-                if trigger_event:
-                    await self.trigger_update_event()
-                return False
+                fork_exception = True
             except IndexError as e:
                 await self.retrace(block, peer)
                 if trigger_event:
@@ -455,6 +455,13 @@ class Consensus(object):
             if trigger_event:
                 await self.trigger_update_event()
             return False
+
+        if fork_exception:
+            await self.retrace(block, peer)
+            if trigger_event:
+                await self.trigger_update_event()
+            return False
+
         if trigger_event:
             await self.trigger_update_event()
         return True
@@ -591,17 +598,10 @@ class Consensus(object):
                 raise AboveTargetException()
             return False  # unreachable code
         except Exception as e:
-            from traceback import format_exc
-            self.app_log.warning("{}".format(format_exc()))
+            if self.config.debug:
+                from traceback import format_exc
+                self.app_log.warning("{}".format(format_exc()))
             raise
-    
-    def get_difficulty(self, blocks):
-        """Computes a list of blocks difficulty. This is the sum of the distance to the highest possible target"""
-        difficulty = 0
-        for block in blocks:
-            target = int(block.hash, 16)
-            difficulty += (CHAIN.MAX_TARGET - target)
-        return difficulty
 
     async def retrace(self, block, peer):
         """We got a non compatible block. Retrace other chains to find a common ancestor and evaluate chains."""
@@ -697,13 +697,18 @@ class Consensus(object):
                     # if the block height is heigher, we compare the difficulty of the entire chain
                     existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': blocks[0].index}}), partial=True)
                     if existing_blockchain:
-                        existing_difficulty = self.get_difficulty(existing_blockchain.blocks)
-                        existing_blockchain_index = existing_blockchain.blocks[-1].index
+                        existing_difficulty = await existing_blockchain.get_difficulty()
+                        existing_latest_block = await self.config.BU.get_latest_block_async()
+                        existing_blockchain_index = existing_latest_block['index']
                     else:
                         existing_difficulty = 0
                         existing_blockchain_index = latest_block['index']
 
-                    inbound_difficulty = self.get_difficulty(blocks)
+                    async def get_blocks(blocks):
+                        for block in blocks:
+                            yield block
+                    inbound_blockchain = await Blockchain.init_async(get_blocks(blocks), partial=True)
+                    inbound_difficulty = await inbound_blockchain.get_difficulty()
 
                     if (blocks[-1].index >= existing_blockchain_index
                         and inbound_difficulty >= existing_difficulty):
