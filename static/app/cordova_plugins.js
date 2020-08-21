@@ -789,7 +789,8 @@ module.exports.metadata =
     "cordova-sqlite-storage": "2.6.0",
     "im.ltdev.cordova.UserAgent": "1.0.1",
     "cordova-plugin-splashscreen": "5.0.3",
-    "cordova-plugin-mixpanel": "4.7.0"
+    "cordova-plugin-mixpanel": "4.7.0",
+    "cordova-plugin-geolocation": "4.0.2"
 }
 // BOTTOM OF METADATA
 });

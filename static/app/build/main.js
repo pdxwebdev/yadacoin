@@ -139,9 +139,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 var SettingsService = /** @class */ (function () {
     function SettingsService() {
-        this.remoteSettings = {};
         this.remoteSettingsUrl = null;
-        this.seeds = [];
         this.tokens = {};
         this.tokens = {};
     }
@@ -160,7 +158,2180 @@ var SettingsService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 180:
+/***/ 181:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PeerService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(43);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__settings_service__ = __webpack_require__(17);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+var PeerService = /** @class */ (function () {
+    function PeerService(ahttp, walletService, transactionService, bulletinSecretService, settingsService, storage) {
+        this.ahttp = ahttp;
+        this.walletService = walletService;
+        this.transactionService = transactionService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.storage = storage;
+        this.loading = false;
+        this.mode = true;
+        this.failedSeedPeers = new Set();
+        this.failedConfigPeers = new Set();
+    }
+    PeerService.prototype.go = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var domain = window.location.origin;
+            _this.settingsService.remoteSettingsUrl = domain;
+            _this.settingsService.remoteSettings = {
+                "baseUrl": domain,
+                "transactionUrl": domain + "/transaction",
+                "fastgraphUrl": domain + "/post-fastgraph-transaction",
+                "graphUrl": domain,
+                "walletUrl": domain + "/get-graph-wallet",
+                "loginUrl": domain + "/login",
+                "registerUrl": domain + "/create-relationship",
+                "authenticatedUrl": domain + "/authenticated",
+                "logoData": ""
+            };
+            return resolve();
+        })
+            .then(function () {
+            return _this.getConfig();
+        })
+            .then(function () {
+            _this.peerLocked = true;
+            return _this.storage.set('node', _this.settingsService.remoteSettingsUrl);
+        });
+    };
+    PeerService.prototype.getConfig = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.ahttp.get(_this.settingsService.remoteSettingsUrl + '/yada_config.json').pipe(Object(__WEBPACK_IMPORTED_MODULE_3_rxjs_operators__["timeout"])(1000)).subscribe(function (res) {
+                _this.loading = false;
+                _this.settingsService.remoteSettings = res.json();
+                resolve();
+            }, function (err) {
+                _this.failedConfigPeers.add(_this.settingsService.remoteSettingsUrl);
+                _this.loading = false;
+                return reject('config');
+            });
+        });
+    };
+    PeerService.prototype.hexToBytes = function (s) {
+        var arr = [];
+        for (var i = 0; i < s.length; i += 2) {
+            var c = s.substr(i, 2);
+            arr.push(parseInt(c, 16));
+        }
+        return String.fromCharCode.apply(null, arr);
+    };
+    PeerService.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    PeerService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_5__wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_6__transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_7__settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_1__ionic_storage__["b" /* Storage */]])
+    ], PeerService);
+    return PeerService;
+}());
+
+//# sourceMappingURL=peer.service.js.map
+
+/***/ }),
+
+/***/ 182:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ChatPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(41);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(16);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+var ChatPage = /** @class */ (function () {
+    function ChatPage(navCtrl, navParams, storage, walletService, transactionService, alertCtrl, graphService, loadingCtrl, bulletinSecretService, settingsService, ahttp, toastCtrl) {
+        var _this = this;
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.storage = storage;
+        this.walletService = walletService;
+        this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
+        this.graphService = graphService;
+        this.loadingCtrl = loadingCtrl;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.ahttp = ahttp;
+        this.toastCtrl = toastCtrl;
+        this.rid = navParams.data.item.transaction.rid;
+        this.requester_rid = navParams.data.item.transaction.requester_rid || '';
+        this.requested_rid = navParams.data.item.transaction.requested_rid || '';
+        var key = 'last_message_height-' + navParams.data.item.transaction.rid;
+        if (navParams.data.item.transaction.height)
+            this.storage.set(key, navParams.data.item.transaction.time);
+        this.storage.get('blockchainAddress').then(function (blockchainAddress) {
+            _this.blockchainAddress = blockchainAddress;
+        });
+        this.public_key = this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex');
+        this.refresh(null, true);
+    }
+    ChatPage.prototype.parseChats = function () {
+        if (this.graphService.graph.messages[this.rid]) {
+            this.chats = this.graphService.graph.messages[this.rid];
+            for (var i = 0; i < this.chats.length; i++) {
+                this.chats[i].time = new Date(parseInt(this.chats[i].time)).toISOString().slice(0, 19).replace('T', ' ');
+            }
+        }
+        else {
+            this.chats = [];
+        }
+    };
+    ChatPage.prototype.refresh = function (refresher, showLoading) {
+        var _this = this;
+        if (showLoading === void 0) { showLoading = true; }
+        if (showLoading) {
+            this.loading = true;
+        }
+        this.graphService.getMessages(this.rid)
+            .then(function () {
+            _this.loading = false;
+            if (refresher)
+                refresher.complete();
+            return _this.parseChats();
+        })
+            .then(function () {
+            setTimeout(function () { return _this.content.scrollToBottom(1000); }, 500);
+        });
+    };
+    ChatPage.prototype.viewProfile = function (item) {
+        var _this = this;
+        return this.graphService.getFriends()
+            .then(function () {
+            for (var i = 0; i < _this.graphService.graph.friends.length; i++) {
+                var friend = _this.graphService.graph.friends[i];
+                if (friend.rid === item.rid) {
+                    item = friend;
+                }
+            }
+            _this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
+                item: item
+            });
+        });
+    };
+    ChatPage.prototype.joinGroup = function (item) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var invite = item.relationship.chatText;
+            var raw_dh_private_key = window.crypto.getRandomValues(new Uint8Array(32));
+            var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
+            var dh_private_key = _this.toHex(raw_dh_private_key);
+            var dh_public_key = _this.toHex(raw_dh_public_key);
+            resolve({
+                their_address: invite.their_address,
+                their_public_key: invite.their_public_key,
+                their_bulletin_secret: invite.their_bulletin_secret,
+                their_username: invite.their_username,
+                dh_public_key: dh_public_key,
+                dh_private_key: dh_private_key,
+                requested_rid: invite.requested_rid,
+                requester_rid: _this.graphService.graph.rid
+            });
+        })
+            .then(function (info) {
+            return _this.transactionService.generateTransaction({
+                relationship: {
+                    dh_private_key: info.dh_private_key,
+                    my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
+                    my_username: _this.bulletinSecretService.username,
+                    their_address: info.their_address,
+                    their_public_key: info.their_public_key,
+                    their_bulletin_secret: info.their_bulletin_secret,
+                    their_username: info.their_username,
+                    group: true
+                },
+                requester_rid: info.requester_rid,
+                requested_rid: info.requested_rid,
+                dh_public_key: info.dh_public_key,
+                to: info.their_address
+            });
+        }).then(function (txn) {
+            return _this.transactionService.sendTransaction();
+        })
+            .then(function (hash) {
+            if (_this.settingsService.remoteSettings['walletUrl']) {
+                return _this.graphService.getInfo();
+            }
+        })
+            .then(function () {
+            var toast = _this.toastCtrl.create({
+                message: 'Group joined!',
+                duration: 2000
+            });
+            toast.present();
+            return _this.refresh(null);
+        })
+            .catch(function (err) {
+        });
+    };
+    ChatPage.prototype.send = function () {
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Approve transaction');
+        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
+        alert.addButton('Cancel');
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                _this.walletService.get()
+                    .then(function () {
+                    return _this.graphService.getFriends();
+                })
+                    .then(function () {
+                    var dh_public_key = _this.graphService.keys[_this.rid].dh_public_keys[0];
+                    var dh_private_key = _this.graphService.keys[_this.rid].dh_private_keys[0];
+                    if (dh_public_key && dh_private_key) {
+                        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+                            return parseInt(h, 16);
+                        }));
+                        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+                            return parseInt(h, 16);
+                        }));
+                        var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
+                        // camera permission was granted
+                        return _this.transactionService.generateTransaction({
+                            dh_public_key: dh_public_key,
+                            dh_private_key: dh_private_key,
+                            relationship: {
+                                chatText: _this.chatText
+                            },
+                            shared_secret: shared_secret,
+                            rid: _this.rid,
+                            requester_rid: _this.requester_rid,
+                            requested_rid: _this.requested_rid,
+                        });
+                    }
+                    else {
+                        return new Promise(function (resolve, reject) {
+                            var alert = _this.alertCtrl.create();
+                            alert.setTitle('Friendship not yet processed');
+                            alert.setSubTitle('Please wait a few minutes and try again');
+                            alert.addButton('Ok');
+                            alert.present();
+                            return reject();
+                        });
+                    }
+                }).then(function (txn) {
+                    return _this.transactionService.sendTransaction();
+                }).then(function () {
+                    _this.chatText = '';
+                    _this.refresh(null);
+                })
+                    .catch(function (err) {
+                    console.log(err);
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Message error');
+                    alert.setSubTitle(err);
+                    alert.addButton('Ok');
+                    alert.present();
+                });
+            }
+        });
+        alert.present();
+    };
+    ChatPage.prototype.showChat = function () {
+        var item = { pageTitle: { title: "Chat" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    ChatPage.prototype.showFriendRequests = function () {
+        var item = { pageTitle: { title: "Friend Requests" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    ChatPage.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    ChatPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong><span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{(item.public_key == public_key) ? graphService.friends_indexed[item.rid].relationship.my_username : graphService.friends_indexed[item.rid].relationship.their_username}}</span> </strong><span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite">{{item.relationship.chatText}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true">Invite to join {{item.relationship.chatText.their_username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()"></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()">Send</button>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
+            queries: {
+                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
+            }
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
+            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
+            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_10__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */]])
+    ], ChatPage);
+    return ChatPage;
+}());
+
+//# sourceMappingURL=chat.js.map
+
+/***/ }),
+
+/***/ 183:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return GroupPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(41);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(184);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(16);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+var GroupPage = /** @class */ (function () {
+    function GroupPage(navCtrl, navParams, storage, walletService, transactionService, alertCtrl, graphService, loadingCtrl, bulletinSecretService, settingsService, ahttp, modalCtrl, toastCtrl) {
+        var _this = this;
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.storage = storage;
+        this.walletService = walletService;
+        this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
+        this.graphService = graphService;
+        this.loadingCtrl = loadingCtrl;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.ahttp = ahttp;
+        this.modalCtrl = modalCtrl;
+        this.toastCtrl = toastCtrl;
+        this.extraInfo = {};
+        this.wallet_mode = true;
+        this.item = navParams.data.item.transaction;
+        this.rid = navParams.data.item.transaction.rid;
+        this.requester_rid = navParams.data.item.transaction.requester_rid;
+        this.requested_rid = navParams.data.item.transaction.requested_rid;
+        this.their_address = navParams.data.item.transaction.relationship.their_address;
+        this.their_public_key = navParams.data.item.transaction.relationship.their_public_key;
+        this.their_bulletin_secret = navParams.data.item.transaction.relationship.their_bulletin_secret;
+        this.their_username = navParams.data.item.transaction.relationship.their_username;
+        var key = 'last_message_height-' + navParams.data.item.transaction.rid;
+        if (navParams.data.item.transaction.height)
+            this.storage.set(key, navParams.data.item.transaction.time);
+        this.storage.get('blockchainAddress').then(function (blockchainAddress) {
+            _this.blockchainAddress = blockchainAddress;
+        });
+        this.refresh(null, true);
+    }
+    GroupPage.prototype.showInvite = function () {
+        var _this = this;
+        this.graphService.getFriends()
+            .then(function () {
+            var alert = _this.alertCtrl.create();
+            alert.setTitle('Invite');
+            alert.setSubTitle('Select a friend to invite.');
+            alert.addButton({
+                text: 'Confirm',
+                handler: function (data) {
+                    _this.walletService.get()
+                        .then(function () {
+                        var dh_public_key = _this.graphService.keys[data.rid].dh_public_keys[0];
+                        var dh_private_key = _this.graphService.keys[data.rid].dh_private_keys[0];
+                        if (dh_public_key && dh_private_key) {
+                            var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+                                return parseInt(h, 16);
+                            }));
+                            var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+                                return parseInt(h, 16);
+                            }));
+                            var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
+                        }
+                        var myAddress = _this.bulletinSecretService.key.getAddress();
+                        var to = false;
+                        for (var h = 0; h < data.outputs.length; h++) {
+                            if (data.outputs[h].to != myAddress) {
+                                to = data.outputs[h].to;
+                            }
+                        }
+                        return _this.transactionService.generateTransaction({
+                            relationship: {
+                                chatText: Base64.encode(JSON.stringify({
+                                    their_public_key: _this.item.public_key,
+                                    their_bulletin_secret: _this.item.relationship.their_bulletin_secret,
+                                    their_username: _this.item.relationship.their_username,
+                                    their_address: _this.item.relationship.their_address,
+                                    group: true,
+                                    requested_rid: _this.requested_rid
+                                }))
+                            },
+                            rid: data.rid,
+                            requester_rid: data.requester_rid,
+                            requested_rid: data.requested_rid,
+                            shared_secret: shared_secret,
+                            to: to
+                        });
+                    }).then(function (txn) {
+                        return _this.transactionService.sendTransaction();
+                    }).then(function () {
+                        var toast = _this.toastCtrl.create({
+                            message: "Group invite sent!",
+                            duration: 2000,
+                        });
+                        toast.present();
+                        _this.groupChatText = '';
+                        _this.refresh(null);
+                    })
+                        .catch(function (err) {
+                        console.log(err);
+                        var alert = _this.alertCtrl.create();
+                        alert.setTitle('Message error');
+                        alert.setSubTitle(err);
+                        alert.addButton('Ok');
+                        alert.present();
+                    });
+                }
+            });
+            for (var i = 0; i < _this.graphService.graph.friends.length; i++) {
+                var friend = _this.graphService.graph.friends[i];
+                alert.addInput({
+                    name: 'username',
+                    type: 'radio',
+                    label: friend.relationship.their_username,
+                    value: friend,
+                    checked: false
+                });
+            }
+            alert.present();
+        });
+    };
+    GroupPage.prototype.parseChats = function () {
+        var rid_to_use = this.requested_rid || this.rid;
+        if (this.graphService.graph.messages[rid_to_use]) {
+            this.chats = this.graphService.graph.messages[rid_to_use];
+            for (var i = 0; i < this.chats.length; i++) {
+                this.chats[i].time = new Date(parseInt(this.chats[i].time) * 1000).toISOString().slice(0, 19).replace('T', ' ');
+            }
+        }
+        else {
+            this.chats = [];
+        }
+    };
+    GroupPage.prototype.refresh = function (refresher, showLoading) {
+        var _this = this;
+        if (showLoading === void 0) { showLoading = true; }
+        if (showLoading) {
+            this.loading = true;
+        }
+        this.graphService.getGroupMessages(this.their_bulletin_secret, this.requested_rid, this.rid)
+            .then(function () {
+            _this.loading = false;
+            if (refresher)
+                refresher.complete();
+            return _this.parseChats();
+        })
+            .then(function () {
+            setTimeout(function () { return _this.content.scrollToBottom(1000); }, 500);
+        })
+            .then(function () {
+            return _this.getSiaFiles();
+        })
+            .catch(function (err) {
+            console.log(err);
+        });
+    };
+    GroupPage.prototype.presentModal = function () {
+        var modal = this.modalCtrl.create(__WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__["a" /* SiaFiles */], {
+            mode: 'modal',
+            logicalParent: this,
+            group: {
+                their_bulletin_secret: this.their_bulletin_secret,
+                rid: this.rid,
+                requester_rid: this.requester_rid,
+                requested_rid: this.requested_rid
+            }
+        });
+        modal.present();
+    };
+    GroupPage.prototype.import = function (relationship) {
+        return this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/sia-share-file?origin=' + encodeURIComponent(window.location.origin), relationship)
+            .subscribe(function (res) {
+            var files = res.json();
+        });
+    };
+    GroupPage.prototype.getSiaFiles = function () {
+        return this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-files')
+            .subscribe(function (res) {
+            var files = res.json();
+        });
+    };
+    GroupPage.prototype.toggleExtraInfo = function (pending) {
+        var toast = this.toastCtrl.create({
+            message: pending ? "Not yet saved on the blockchain" : "Saved on the blockchain",
+            duration: 2000,
+            cssClass: pending ? 'redToast' : 'greenToast',
+            position: 'top'
+        });
+        toast.present();
+    };
+    GroupPage.prototype.viewProfile = function (item) {
+        var _this = this;
+        var bulletin_secrets = [this.bulletinSecretService.bulletin_secret, item.relationship.my_bulletin_secret].sort(function (a, b) {
+            return a.toLowerCase().localeCompare(b.toLowerCase());
+        });
+        if (bulletin_secrets[0] === bulletin_secrets[1])
+            return;
+        return this.graphService.getFriends()
+            .then(function () {
+            var rid = foobar.bitcoin.crypto.sha256(bulletin_secrets[0] + bulletin_secrets[1]).toString('hex');
+            for (var i = 0; i < _this.graphService.graph.friends.length; i++) {
+                var friend = _this.graphService.graph.friends[i];
+                if (friend.rid === rid) {
+                    item = friend;
+                }
+            }
+            _this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
+                item: item
+            });
+        });
+    };
+    GroupPage.prototype.send = function () {
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Approve transaction');
+        alert.setSubTitle('You are about to spend 0.00 coins ( 0.00 fee). Everything is free for now.');
+        alert.addButton('Cancel');
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                _this.walletService.get()
+                    .then(function () {
+                    return _this.graphService.getFriends();
+                })
+                    .then(function () {
+                    return _this.transactionService.generateTransaction({
+                        relationship: {
+                            groupChatText: _this.groupChatText,
+                            my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
+                            my_username: _this.bulletinSecretService.username
+                        },
+                        their_bulletin_secret: _this.their_bulletin_secret,
+                        rid: _this.rid,
+                        requester_rid: _this.requester_rid,
+                        requested_rid: _this.requested_rid
+                    });
+                }).then(function (hash) {
+                    return new Promise(function (resolve, reject) {
+                        if (_this.wallet_mode) {
+                            return resolve();
+                        }
+                        _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
+                            hash: hash,
+                            bulletin_secret: _this.bulletinSecretService.bulletin_secret,
+                            input: _this.transactionService.transaction.inputs[0].id,
+                            id: _this.transactionService.transaction.id,
+                            txn: _this.transactionService.transaction
+                        })
+                            .subscribe(function (res) {
+                            //this.loadingModal2.dismiss();
+                            try {
+                                var data_1 = res.json();
+                                _this.transactionService.transaction.signatures = [data_1.signature];
+                                return resolve();
+                            }
+                            catch (err) {
+                                return reject(err);
+                                //this.loadingModal.dismiss().catch(() => {});
+                            }
+                        }, function (err) {
+                            return reject(err);
+                        });
+                    });
+                }).then(function (txn) {
+                    return _this.transactionService.sendTransaction();
+                }).then(function () {
+                    _this.groupChatText = '';
+                    _this.refresh(null);
+                })
+                    .catch(function (err) {
+                    console.log(err);
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Message error');
+                    alert.setSubTitle(err);
+                    alert.addButton('Ok');
+                    alert.present();
+                });
+            }
+        });
+        alert.present();
+    };
+    GroupPage.prototype.showChat = function () {
+        var item = { pageTitle: { title: "Chat" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    GroupPage.prototype.showFriendRequests = function () {
+        var item = { pageTitle: { title: "Friend Requests" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    GroupPage.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    GroupPage.prototype.hexToBytes = function (s) {
+        var arr = [];
+        for (var i = 0; i < s.length; i += 2) {
+            var c = s.substr(i, 2);
+            arr.push(parseInt(c, 16));
+        }
+        return String.fromCharCode.apply(null, arr);
+    };
+    GroupPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'page-group',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/group/group.html"*/'<ion-header>\n    <ion-navbar>\n      <button ion-button menuToggle color="{{color}}">\n        <ion-icon name="menu"></ion-icon>\n      </button>\n      <button ion-button color="{{chatColor}}" title="Create invite" (click)="showInvite()">\n        Invite&nbsp;<ion-icon name="contacts"></ion-icon>\n      </button>\n    </ion-navbar>\n  </ion-header>\n  <ion-content #content>\n    <ion-refresher (ionRefresh)="refresh($event)">\n      <ion-refresher-content></ion-refresher-content>\n    </ion-refresher>\n    <ion-spinner *ngIf="loading"></ion-spinner>\n      <ion-list>\n        <ion-item *ngFor="let item of chats" text-wrap (click)="toggleExtraInfo(item.pending)">\n          <strong><span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.my_username || \'Anonymous\'}}</span> </strong><span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n          <h3 *ngIf="!item.relationship.groupChatFileName">{{item.relationship.groupChatText}}</h3>\n          <h3 *ngIf="item.relationship.groupChatFileName" (click)="receive(item.relationship)">{{item.relationship.groupChatFileName}}</h3>\n          <button *ngIf="item.relationship.groupChatFileName" ion-button (click)="import(item.relationship)">Import</button>\n          <ion-note color="primary">{{item.fee}} YADA</ion-note>\n          <ion-note *ngIf="item.pending" color="danger">Pending</ion-note>\n          <ion-note *ngIf="!item.pending" color="secondary">Saved</ion-note>\n          <hr />\n        </ion-item>\n      </ion-list>\n  </ion-content>\n  <ion-footer>\n    <ion-item>\n      <ion-label floating>Group text</ion-label>\n      <ion-input [(ngModel)]="groupChatText" (keyup.enter)="send()"></ion-input>\n    </ion-item>\n    <button ion-button (click)="send()">Send</button>\n    <button ion-button (click)="presentModal()">Share file</button>\n  </ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/group/group.html"*/,
+            queries: {
+                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
+            }
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
+            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
+            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_11__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["g" /* ModalController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */]])
+    ], GroupPage);
+    return GroupPage;
+}());
+
+//# sourceMappingURL=group.js.map
+
+/***/ }),
+
+/***/ 184:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SiaFiles; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(109);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(16);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+var SiaFiles = /** @class */ (function () {
+    function SiaFiles(navParams, viewCtrl, walletService, alertCtrl, transactionService, openGraphParserService, settingsService, bulletinSecretService, ahttp) {
+        var _this = this;
+        this.navParams = navParams;
+        this.viewCtrl = viewCtrl;
+        this.walletService = walletService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.openGraphParserService = openGraphParserService;
+        this.settingsService = settingsService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.ahttp = ahttp;
+        this.logicalParent = null;
+        this.mode = '';
+        this.postText = null;
+        this.post = {};
+        this.files = null;
+        this.selectedFile = null;
+        this.filepath = '';
+        this.group = null;
+        this.error = '';
+        this.group = navParams.data.group;
+        this.mode = navParams.data.mode || 'page';
+        this.logicalParent = navParams.data.logicalParent;
+        var headers = new __WEBPACK_IMPORTED_MODULE_7__angular_http__["a" /* Headers */]();
+        headers.append('Authorization', 'Bearer ' + this.settingsService.tokens[this.bulletinSecretService.keyname]);
+        var options = new __WEBPACK_IMPORTED_MODULE_7__angular_http__["d" /* RequestOptions */]({ headers: headers });
+        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-files', options)
+            .subscribe(function (res) {
+            _this.files = res.json()['files'];
+        }, function (err) {
+            _this.error = err.json().message;
+        });
+    }
+    SiaFiles.prototype.changeListener = function ($event) {
+        this.filepath = $event.target.files[0];
+    };
+    SiaFiles.prototype.upload = function () {
+        var _this = this;
+        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-upload?filepath=' + encodeURIComponent(this.filepath))
+            .subscribe(function (res) {
+            _this.files = res.json()['files'];
+        });
+    };
+    SiaFiles.prototype.delete = function (siapath) {
+        var _this = this;
+        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-delete?siapath=' + encodeURIComponent(siapath))
+            .subscribe(function (res) {
+            _this.files = res.json()['files'];
+        });
+    };
+    SiaFiles.prototype.submit = function () {
+        var _this = this;
+        this.walletService.get().then(function () {
+            return new Promise(function (resolve, reject) {
+                if (_this.selectedFile) {
+                    _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/sia-share-file?siapath=' + _this.selectedFile)
+                        .subscribe(function (res) {
+                        var sharefiledata = res.json()['filedata'];
+                        _this.approveTxn(sharefiledata, resolve);
+                    });
+                }
+                else {
+                    _this.approveTxn(null, resolve);
+                }
+                console.log(status);
+            }).then(function () {
+                _this.dismiss();
+            });
+        });
+    };
+    SiaFiles.prototype.approveTxn = function (sharefiledata, resolve) {
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Approve Transaction');
+        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
+        alert.addButton('Cancel');
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                // camera permission was granted
+                new Promise(function (resolve, reject) {
+                    if (sharefiledata) {
+                        return _this.transactionService.generateTransaction({
+                            relationship: {
+                                groupChatText: _this.postText,
+                                groupChatFile: sharefiledata,
+                                groupChatFileName: _this.selectedFile,
+                                my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
+                                my_username: _this.bulletinSecretService.username
+                            },
+                            their_bulletin_secret: _this.group.their_bulletin_secret,
+                            rid: _this.group.rid,
+                            requester_rid: _this.group.requester_rid,
+                            requested_rid: _this.group.requested_rid
+                        })
+                            .then(function () {
+                            resolve();
+                        })
+                            .catch(function (err) {
+                            reject();
+                        });
+                    }
+                    else {
+                        return _this.transactionService.generateTransaction({
+                            relationship: {
+                                postText: _this.postText
+                            }
+                        })
+                            .then(function () {
+                            resolve();
+                        })
+                            .catch(function (err) {
+                            reject();
+                        });
+                    }
+                })
+                    .then(function (hash) {
+                    return _this.transactionService.sendTransaction();
+                })
+                    .then(function () {
+                    _this.dismiss();
+                })
+                    .catch(function (err) {
+                    console.log('could not generate hash');
+                });
+            }
+        });
+        alert.present();
+    };
+    SiaFiles.prototype.dismiss = function () {
+        this.logicalParent.refresh();
+        this.viewCtrl.dismiss();
+    };
+    SiaFiles = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'modal-files',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/'<ion-header>\n  <ion-toolbar>\n    <ion-title>\n      Files\n    </ion-title>\n    <ion-buttons start *ngIf="mode == \'modal\'">\n      <button ion-button (click)="dismiss()">\n        <span ion-text color="primary" showWhen="ios">Cancel</span>\n        <ion-icon name="md-close" showWhen="android,windows,core"></ion-icon>\n      </button>\n    </ion-buttons>\n  </ion-toolbar>\n</ion-header>\n<ion-content>\n  <ion-item *ngIf="mode == \'modal\' && !error">\n    <ion-label>Files</ion-label>\n    <ion-select [(ngModel)]="selectedFile">\n      <ion-option *ngFor="let file of files" value="{{file.siapath}}">{{file.siapath}}</ion-option>\n    </ion-select>\n  </ion-item>\n  <ion-item *ngIf="!error">\n    <ion-textarea placeholder="Shortened url (35 chars max)" [(ngModel)]="filepath"></ion-textarea>\n  </ion-item>\n  <button ion-button secondary (click)="upload()" *ngIf="mode == \'page\' && !error" [disabled]="filepath">Upload</button>\n  <ion-item *ngIf="mode == \'page\' && !error">\n    <ion-list>\n      <ion-item *ngFor="let file of files">\n        <a *ngIf="file.available" href="{{file.stream_url}}" target="_blank">\n          <h3>{{file.siapath}}</h3>\n        </a>\n        <h3 *ngIf="!file.available">{{file.siapath}} (uploading...)</h3><button ion-button danger (click)="delete(file.siapath)">Delete</button>\n      </ion-item>\n    </ion-list>\n  </ion-item>\n  <button ion-button secondary (click)="submit()" *ngIf="mode == \'modal\'">Post</button>\n  <ion-card *ngIf="post.title">\n    <img src="{{post.image}}" *ngIf="post.image" />\n    <ion-card-content>\n      <ion-card-title>\n        {{post.title}}\n      </ion-card-title>\n      <p *ngIf="post.description">\n        {{post.description}}\n      </p>\n    </ion-card-content>\n  </ion-card>\n  <ion-item *ngIf="error">You must download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">full node</a> to store and share files.</ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["m" /* ViewController */],
+            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__["a" /* OpenGraphParserService */],
+            __WEBPACK_IMPORTED_MODULE_5__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_7__angular_http__["b" /* Http */]])
+    ], SiaFiles);
+    return SiaFiles;
+}());
+
+//# sourceMappingURL=siafiles.js.map
+
+/***/ }),
+
+/***/ 185:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return FirebaseService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(305);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(41);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(16);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+var FirebaseService = /** @class */ (function () {
+    function FirebaseService(settingsService, graphService, firebase, ahttp) {
+        this.settingsService = settingsService;
+        this.graphService = graphService;
+        this.firebase = firebase;
+        this.ahttp = ahttp;
+    }
+    FirebaseService.prototype.initFirebase = function () {
+        var _this = this;
+        if (!document.URL.startsWith('http') || document.URL.startsWith('http://localhost:8080')) {
+            this.firebase.getToken()
+                .then(function (token) {
+                console.log(token);
+                _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/fcm-token', {
+                    rid: _this.graphService.graph.rid,
+                    token: token,
+                }).subscribe(function () { });
+            })
+                .catch(function (error) {
+                console.log('Error getting token', error);
+            });
+            this.firebase.onTokenRefresh()
+                .subscribe(function (token) {
+                console.log(token);
+                _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/fcm-token', {
+                    rid: _this.graphService.graph.rid,
+                    token: token
+                }).subscribe(function () { });
+            });
+            this.firebase.onNotificationOpen().subscribe(function (notification) {
+                console.log(notification);
+            });
+        }
+    };
+    FirebaseService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_2__graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__["a" /* Firebase */],
+            __WEBPACK_IMPORTED_MODULE_4__angular_http__["b" /* Http */]])
+    ], FirebaseService);
+    return FirebaseService;
+}());
+
+//# sourceMappingURL=firebase.service.js.map
+
+/***/ }),
+
+/***/ 186:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SendReceive; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(308);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(85);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(16);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+
+var SendReceive = /** @class */ (function () {
+    function SendReceive(navCtrl, qrScanner, transactionService, alertCtrl, bulletinSecretService, walletService, socialSharing, loadingCtrl, ahttp, settingsService) {
+        var _this = this;
+        this.navCtrl = navCtrl;
+        this.qrScanner = qrScanner;
+        this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
+        this.bulletinSecretService = bulletinSecretService;
+        this.walletService = walletService;
+        this.socialSharing = socialSharing;
+        this.loadingCtrl = loadingCtrl;
+        this.ahttp = ahttp;
+        this.settingsService = settingsService;
+        this.value = null;
+        this.createdCode = null;
+        this.address = null;
+        this.balance = null;
+        this.isDevice = null;
+        this.loadingModal = this.loadingCtrl.create({
+            content: 'Please wait...'
+        });
+        this.value = 0;
+        this.bulletinSecretService.get().then(function () {
+            _this.createdCode = bulletinSecretService.key.getAddress();
+            _this.refresh();
+        });
+        this.sentPage = 1;
+        this.receivedPage = 1;
+        this.sentPendingPage = 1;
+        this.receivedPendingPage = 1;
+        this.past_sent_transactions = [];
+        this.past_sent_pending_transactions = [];
+        this.past_received_transactions = [];
+        this.past_received_pending_transactions = [];
+        this.sentPendingLoading = false;
+        this.receivedPendingLoading = false;
+        this.sentLoading = false;
+        this.receivedLoading = false;
+        this.past_sent_page_cache = {};
+        this.past_sent_pending_page_cache = {};
+        this.past_received_page_cache = {};
+        this.past_received_pending_page_cache = {};
+    }
+    SendReceive.prototype.scan = function () {
+        var _this = this;
+        if (!document.URL.startsWith('http') || document.URL.startsWith('http://localhost:8080')) {
+            this.isDevice = true;
+        }
+        else {
+            this.isDevice = false;
+        }
+        this.qrScanner.prepare().then(function (status) {
+            console.log(status);
+            if (status.authorized) {
+                // start scanning
+                var scanSub_1 = _this.qrScanner.scan().subscribe(function (text) {
+                    console.log('Scanned address', text);
+                    _this.address = text;
+                    _this.qrScanner.hide(); // hide camera preview
+                    scanSub_1.unsubscribe(); // stop scanning
+                    window.document.querySelector('ion-app').classList.remove('transparentBody');
+                });
+            }
+        });
+        this.qrScanner.resumePreview();
+        // show camera preview
+        this.qrScanner.show();
+        window.document.querySelector('ion-app').classList.add('transparentBody');
+    };
+    SendReceive.prototype.submit = function () {
+        var _this = this;
+        var value = parseFloat(this.value);
+        var total = value + 0.01;
+        var alert = this.alertCtrl.create();
+        if (!this.address) {
+            alert.setTitle('Enter an address');
+            alert.addButton('Ok');
+            alert.present();
+            return;
+        }
+        if (!value) {
+            alert.setTitle('Enter an amount');
+            alert.addButton('Ok');
+            alert.present();
+            return;
+        }
+        alert.setTitle('Approve Transaction');
+        alert.setSubTitle('You are about to spend ' + total + ' coins (' + this.value + ' coin + 0.001 fee)');
+        alert.addButton('Cancel');
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                _this.loadingModal.present();
+                _this.walletService.get(_this.value)
+                    .then(function () {
+                    return _this.transactionService.generateTransaction({
+                        to: _this.address,
+                        value: value
+                    });
+                }).then(function () {
+                    return _this.transactionService.sendTransaction();
+                }).then(function (txn) {
+                    var title = 'Transaction Sent';
+                    var message = 'Your transaction has been sent succefully.';
+                    if (!txn) {
+                        title = 'Insufficient Funds';
+                        message = "Not enough YadaCoins for transaction.";
+                    }
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle(title);
+                    alert.setSubTitle(message);
+                    alert.addButton('Ok');
+                    alert.present();
+                    _this.value = '0';
+                    _this.address = '';
+                    _this.refresh();
+                    _this.loadingModal.dismiss().catch(function () { });
+                })
+                    .catch(function (err) {
+                    console.log(err);
+                    _this.loadingModal.dismiss().catch(function () { });
+                });
+            }
+        });
+        alert.present();
+    };
+    SendReceive.prototype.refresh = function () {
+        var _this = this;
+        this.loadingBalance = true;
+        return this.walletService.get(this.value)
+            .then(function () {
+            _this.loadingBalance = false;
+            _this.balance = _this.walletService.wallet.balance;
+        })
+            .then(function () {
+            _this.getSentHistory();
+        })
+            .then(function () {
+            _this.getSentPendingHistory();
+        })
+            .then(function () {
+            _this.getReceivedHistory();
+        })
+            .then(function () {
+            _this.getReceivedPendingHistory();
+        }).catch(function (err) {
+            console.log(err);
+        });
+    };
+    SendReceive.prototype.convertDateTime = function (timestamp) {
+        var a = new Date(timestamp * 1000);
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var year = a.getFullYear();
+        var month = months[a.getMonth()];
+        var date = a.getDate();
+        var hour = '0' + a.getHours();
+        var min = '0' + a.getMinutes();
+        var time = date + '-' + month + '-' + year + ' ' + hour.substr(-2) + ':' + min.substr(-2);
+        return time;
+    };
+    SendReceive.prototype.getSentPendingHistory = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.sentPendingLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-pending-sent-txns?page=' + _this.sentPendingPage + '&public_key=' + _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex') + '&origin=' + encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.sentPendingLoading = false;
+                _this.past_sent_pending_transactions = res.json()['past_pending_transactions'].sort(_this.sortFunc);
+                _this.past_sent_pending_page_cache[_this.sentPendingPage] = _this.past_sent_pending_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject('cannot unlock wallet');
+            });
+        });
+    };
+    SendReceive.prototype.getSentHistory = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.sentLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-sent-txns?page=' + _this.sentPage + '&public_key=' + _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex') + '&origin=' + encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.sentLoading = false;
+                _this.past_sent_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
+                _this.past_sent_page_cache[_this.sentPage] = _this.past_sent_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject('cannot unlock wallet');
+            });
+        });
+    };
+    SendReceive.prototype.getReceivedPendingHistory = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.receivedPendingLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-pending-received-txns?page=' + _this.receivedPendingPage + '&public_key=' + _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex') + '&origin=' + encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.receivedPendingLoading = false;
+                _this.past_received_pending_transactions = res.json()['past_pending_transactions'].sort(_this.sortFunc);
+                _this.past_received_pending_page_cache[_this.receivedPendingPage] = _this.past_received_pending_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject('cannot unlock wallet');
+            });
+        });
+    };
+    SendReceive.prototype.getReceivedHistory = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.receivedLoading = true;
+            var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-received-txns?page=' + _this.receivedPage + '&public_key=' + _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex') + '&origin=' + encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.receivedLoading = false;
+                _this.past_received_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
+                _this.past_received_page_cache[_this.receivedPage] = _this.past_received_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject('cannot unlock wallet');
+            });
+        });
+    };
+    SendReceive.prototype.sortFunc = function (a, b) {
+        if (parseInt(a.time) < parseInt(b.time))
+            return 1;
+        if (parseInt(a.time) > parseInt(b.time))
+            return -1;
+        return 0;
+    };
+    SendReceive.prototype.prevReceivedPage = function () {
+        this.receivedPage--;
+        var result = this.past_received_page_cache[this.receivedPage] || [];
+        if (result.length > 0) {
+            this.past_received_transactions = result;
+            return;
+        }
+        return this.getReceivedHistory();
+    };
+    SendReceive.prototype.nextReceivedPage = function () {
+        this.receivedPage++;
+        var result = this.past_received_page_cache[this.receivedPage] || [];
+        if (result.length > 0) {
+            this.past_received_transactions = result;
+            return;
+        }
+        return this.getReceivedHistory();
+    };
+    SendReceive.prototype.prevReceivedPendingPage = function () {
+        this.receivedPendingPage--;
+        var result = this.past_received_pending_page_cache[this.receivedPendingPage] || [];
+        if (result.length > 0) {
+            this.past_received_pending_transactions = result;
+            return;
+        }
+        return this.getReceivedPendingHistory();
+    };
+    SendReceive.prototype.nextReceivedPendingPage = function () {
+        this.receivedPendingPage++;
+        var result = this.past_received_pending_transactions = this.past_received_pending_page_cache[this.receivedPendingPage] || [];
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getReceivedPendingHistory();
+    };
+    SendReceive.prototype.prevSentPage = function () {
+        this.sentPage--;
+        var result = this.past_sent_transactions = this.past_sent_page_cache[this.sentPage] || [];
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getSentHistory();
+    };
+    SendReceive.prototype.nextSentPage = function () {
+        this.sentPage++;
+        var result = this.past_sent_page_cache[this.sentPage] || [];
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getSentHistory();
+    };
+    SendReceive.prototype.prevSentPendingPage = function () {
+        this.sentPendingPage--;
+        var result = this.past_sent_pending_transactions = this.past_sent_pending_page_cache[this.sentPendingPage] || [];
+        if (result.length > 0) {
+            this.past_sent_pending_transactions = result;
+            return;
+        }
+        return this.getSentPendingHistory();
+    };
+    SendReceive.prototype.nextSentPendingPage = function () {
+        this.sentPendingPage++;
+        var result = this.past_sent_pending_page_cache[this.sentPendingPage] || [];
+        if (result.length > 0) {
+            this.past_sent_pending_transactions = result;
+            return;
+        }
+        return this.getSentPendingHistory();
+    };
+    SendReceive.prototype.shareAddress = function () {
+        this.socialSharing.share(this.bulletinSecretService.key.getAddress(), "Send Yada Coin to this address!");
+    };
+    SendReceive.prototype.showChat = function () {
+        var item = { pageTitle: { title: "Chat" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    SendReceive.prototype.showFriendRequests = function () {
+        var item = { pageTitle: { title: "Friend Requests" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
+    };
+    SendReceive = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'page-sendreceive',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item>\n    {{walletService.wallet.balance}} YADA\n  </ion-item>\n  <h4>Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>Scan Address</button>\n  <ion-item>\n    <ion-label color="primary" stacked>Address</ion-label>\n    <ion-input type="text" placeholder="Recipient address..." [(ngModel)]="address">\n    </ion-input>\n  </ion-item>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Amount..." [(ngModel)]="value">\n    </ion-input>\n  </ion-item>\n  <button ion-button secondary (click)="submit()">Send</button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <button *ngIf="isDevice" ion-button outline item-end (click)="shareAddress()">share address&nbsp;<ion-icon name="share"></ion-icon></button>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPendingPage()" [disabled]="receivedPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPendingPage()" [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p><span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPendingPage()" [disabled]="sentPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPendingPage()" [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p><span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPage()" [disabled]="receivedPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPage()" [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p><span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__["a" /* QRScanner */],
+            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__["a" /* SocialSharing */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
+            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_6__app_settings_service__["a" /* SettingsService */]])
+    ], SendReceive);
+    return SendReceive;
+}());
+
+//# sourceMappingURL=sendreceive.js.map
+
+/***/ }),
+
+/***/ 20:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return BulletinSecretService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(10);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+var BulletinSecretService = /** @class */ (function () {
+    function BulletinSecretService(storage, events) {
+        this.storage = storage;
+        this.events = events;
+        this.key = null;
+        this.bulletin_secret = null;
+        this.keyname = null;
+        this.keykeys = null;
+        this.username = null;
+    }
+    BulletinSecretService.prototype.shared_encrypt = function (shared_secret, message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
+        var cipher = forge.cipher.createCipher('AES-CBC', key);
+        var iv = '';
+        cipher.start({ iv: iv });
+        cipher.update(forge.util.createBuffer(iv + message));
+        cipher.finish();
+        return cipher.output.toHex();
+    };
+    BulletinSecretService.prototype.get = function () {
+        var _this = this;
+        return this.all()
+            .then(function (keys) {
+            return _this.setKeyName(keys);
+        })
+            .then(function () {
+            return _this.setKey();
+        });
+    };
+    BulletinSecretService.prototype.setKeyName = function (keys) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            keys.sort(function (a, b) {
+                if (a.idx < b.idx)
+                    return -1;
+                if (a.idx > b.idx)
+                    return 1;
+                return 0;
+            });
+            if (!_this.keyname) {
+                _this.storage.get('last-keyname').then(function (key) {
+                    if (key && typeof key == 'string') {
+                        _this.keyname = key;
+                    }
+                    else {
+                        _this.keyname = keys[0].idx;
+                    }
+                    resolve(keys);
+                });
+            }
+            else {
+                resolve(keys);
+            }
+        });
+    };
+    BulletinSecretService.prototype.setKey = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.storage.get(_this.keyname).then(function (key) {
+                _this.key = foobar.bitcoin.ECPair.fromWIF(key);
+                _this.username = _this.keyname.substr('usernames-'.length);
+                _this.bulletin_secret = _this.generate_bulletin_secret();
+                return resolve();
+            });
+        });
+    };
+    BulletinSecretService.prototype.generate_bulletin_secret = function () {
+        return foobar.base64.fromByteArray(this.key.sign(foobar.bitcoin.crypto.sha256(this.username)).toDER());
+    };
+    BulletinSecretService.prototype.set = function (key) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.keyname = key;
+            return _this.storage.set('last-keyname', key)
+                .then(function () {
+                return _this.storage.remove('usernames-');
+            })
+                .then(function (key) {
+                return _this.get();
+            })
+                .then(function () {
+                return _this.setKey();
+            })
+                .then(function () {
+                return resolve();
+            })
+                .catch(function () {
+                return reject();
+            });
+        });
+    };
+    BulletinSecretService.prototype.create = function (username) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            if (!username)
+                return reject();
+            _this.keyname = 'usernames-' + username;
+            _this.storage.set('last-keyname', _this.keyname);
+            _this.username = username;
+            _this.key = foobar.bitcoin.ECPair.makeRandom();
+            _this.storage.set(_this.keyname, _this.key.toWIF());
+            _this.bulletin_secret = _this.generate_bulletin_secret();
+            return _this.get().then(function () {
+                return resolve();
+            });
+        });
+    };
+    BulletinSecretService.prototype.import = function (keyWif, username) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            if (!username)
+                return reject();
+            _this.keyname = 'usernames-' + username;
+            _this.storage.set('last-keyname', _this.keyname);
+            _this.username = username;
+            _this.storage.set(_this.keyname, keyWif.trim());
+            _this.key = foobar.bitcoin.ECPair.fromWIF(keyWif.trim());
+            _this.bulletin_secret = _this.generate_bulletin_secret();
+            return _this.get().then(function () {
+                return resolve();
+            });
+        });
+    };
+    BulletinSecretService.prototype.all = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var keykeys = [];
+            _this.storage.forEach(function (value, key) {
+                if (key.substr(0, 'usernames-'.length) === 'usernames-') {
+                    keykeys.push({ key: value, idx: key });
+                }
+            })
+                .then(function () {
+                _this.keykeys = keykeys;
+                resolve(keykeys);
+            });
+        });
+    };
+    BulletinSecretService.prototype.decrypt = function (message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
+        var decipher = forge.cipher.createDecipher('AES-CBC', key);
+        var enc = this.hexToBytes(message);
+        decipher.start({ iv: enc.slice(0, 16) });
+        decipher.update(forge.util.createBuffer(enc.slice(16)));
+        decipher.finish();
+        return decipher.output;
+    };
+    BulletinSecretService.prototype.hexToBytes = function (s) {
+        var arr = [];
+        for (var i = 0; i < s.length; i += 2) {
+            var c = s.substr(i, 2);
+            arr.push(parseInt(c, 16));
+        }
+        return String.fromCharCode.apply(null, arr);
+    };
+    BulletinSecretService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1__ionic_storage__["b" /* Storage */],
+            __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["b" /* Events */]])
+    ], BulletinSecretService);
+    return BulletinSecretService;
+}());
+
+//# sourceMappingURL=bulletinSecret.service.js.map
+
+/***/ }),
+
+/***/ 218:
+/***/ (function(module, exports) {
+
+function webpackEmptyAsyncContext(req) {
+	// Here Promise.resolve().then() is used instead of new Promise() to prevent
+	// uncatched exception popping up in devtools
+	return Promise.resolve().then(function() {
+		throw new Error("Cannot find module '" + req + "'.");
+	});
+}
+webpackEmptyAsyncContext.keys = function() { return []; };
+webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
+module.exports = webpackEmptyAsyncContext;
+webpackEmptyAsyncContext.id = 218;
+
+/***/ }),
+
+/***/ 25:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WalletService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(43);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+var WalletService = /** @class */ (function () {
+    function WalletService(ahttp, bulletinSecretService, settingsService) {
+        this.ahttp = ahttp;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.walletError = false;
+        this.wallet = {
+            balance: 0,
+            unspent_transactions: []
+        };
+    }
+    WalletService.prototype.get = function (amount_needed) {
+        var _this = this;
+        if (amount_needed === void 0) { amount_needed = 0; }
+        return new Promise(function (resolve, reject) {
+            if (!_this.settingsService.remoteSettings['walletUrl'])
+                return resolve();
+            _this.bulletinSecretService.get()
+                .then(function () {
+                return _this.walletPromise(amount_needed);
+            })
+                .then(function () {
+                return resolve();
+            })
+                .catch(function () {
+                return reject();
+            });
+        });
+    };
+    WalletService.prototype.walletPromise = function (amount_needed) {
+        var _this = this;
+        if (amount_needed === void 0) { amount_needed = 0; }
+        return new Promise(function (resolve, reject) {
+            if (!_this.settingsService.remoteSettings['walletUrl']) {
+                return reject();
+            }
+            if (_this.bulletinSecretService.username) {
+                var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
+                headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
+                var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
+                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed=' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options)
+                    .pipe(Object(__WEBPACK_IMPORTED_MODULE_4_rxjs_operators__["timeout"])(30000))
+                    .subscribe(function (data) {
+                    if (data['_body']) {
+                        _this.walletError = false;
+                        _this.wallet = JSON.parse(data['_body']);
+                        _this.wallet.balance = parseFloat(_this.wallet.balance); //pasefloat
+                        _this.wallet.balancePretty = _this.wallet.balance.toFixed(2);
+                        resolve(data['_body']);
+                    }
+                    else {
+                        _this.walletError = true;
+                        _this.wallet = {};
+                        _this.wallet.balancePretty = 0;
+                        reject("no data returned");
+                    }
+                }, function (err) {
+                    _this.walletError = true;
+                    reject("data or server error");
+                });
+            }
+            else {
+                _this.walletError = true;
+                reject("username not set");
+            }
+        });
+    };
+    WalletService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_2__settings_service__["a" /* SettingsService */]])
+    ], WalletService);
+    return WalletService;
+}());
+
+//# sourceMappingURL=wallet.service.js.map
+
+/***/ }),
+
+/***/ 259:
+/***/ (function(module, exports) {
+
+function webpackEmptyAsyncContext(req) {
+	// Here Promise.resolve().then() is used instead of new Promise() to prevent
+	// uncatched exception popping up in devtools
+	return Promise.resolve().then(function() {
+		throw new Error("Cannot find module '" + req + "'.");
+	});
+}
+webpackEmptyAsyncContext.keys = function() { return []; };
+webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
+module.exports = webpackEmptyAsyncContext;
+webpackEmptyAsyncContext.id = 259;
+
+/***/ }),
+
+/***/ 29:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return TransactionService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(16);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+var TransactionService = /** @class */ (function () {
+    function TransactionService(walletService, bulletinSecretService, ahttp, settingsService) {
+        this.walletService = walletService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.ahttp = ahttp;
+        this.settingsService = settingsService;
+        this.info = null;
+        this.transaction = null;
+        this.key = null;
+        this.xhr = null;
+        this.rid = null;
+        this.callbackurl = null;
+        this.blockchainurl = null;
+        this.bulletin_secret = null;
+        this.their_bulletin_secret = null;
+        this.shared_secret = null;
+        this.to = null;
+        this.txnattempts = null;
+        this.cbattempts = null;
+        this.prevTxn = null;
+        this.txns = null;
+        this.resolve = null;
+        this.unspent_transaction_override = null;
+        this.value = null;
+        this.username = null;
+        this.signatures = null;
+    }
+    TransactionService.prototype.generateTransaction = function (info) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.key = _this.bulletinSecretService.key;
+            _this.bulletin_secret = _this.bulletinSecretService.generate_bulletin_secret();
+            _this.username = _this.bulletinSecretService.username;
+            _this.txnattempts = [12, 5, 4];
+            _this.cbattempts = [12, 5, 4];
+            _this.info = info;
+            _this.their_bulletin_secret = _this.info.their_bulletin_secret;
+            _this.unspent_transaction_override = _this.info.unspent_transaction;
+            _this.blockchainurl = _this.info.blockchainurl;
+            _this.callbackurl = _this.info.callbackurl;
+            _this.to = _this.info.to;
+            _this.value = _this.info.value;
+            if (_this.info.rid) {
+                _this.rid = _this.info.rid;
+            }
+            else if (_this.info.relationship && _this.info.relationship.their_bulletin_secret) {
+                var bulletin_secrets = [_this.bulletin_secret, _this.info.relationship.their_bulletin_secret].sort(function (a, b) {
+                    return a.toLowerCase().localeCompare(b.toLowerCase());
+                });
+                _this.rid = forge.sha256.create().update(bulletin_secrets[0] + bulletin_secrets[1]).digest().toHex();
+            }
+            else if (_this.info.their_bulletin_secret) {
+                bulletin_secrets = [_this.bulletin_secret, _this.info.their_bulletin_secret].sort(function (a, b) {
+                    return a.toLowerCase().localeCompare(b.toLowerCase());
+                });
+                _this.rid = forge.sha256.create().update(bulletin_secrets[0] + bulletin_secrets[1]).digest().toHex();
+            }
+            else {
+                _this.rid = '';
+            }
+            _this.transaction = {
+                rid: _this.rid,
+                fee: 0.00,
+                requester_rid: typeof _this.info.requester_rid == 'undefined' ? '' : _this.info.requester_rid,
+                requested_rid: typeof _this.info.requested_rid == 'undefined' ? '' : _this.info.requested_rid,
+                outputs: [],
+                time: parseInt(((+new Date()) / 1000).toString()).toString(),
+                public_key: _this.key.getPublicKeyBuffer().toString('hex')
+            };
+            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
+                _this.transaction.dh_public_key = _this.info.dh_public_key;
+            }
+            if (_this.to) {
+                _this.transaction.outputs.push({
+                    to: _this.to,
+                    value: _this.value || 0
+                });
+            }
+            if (_this.transaction.outputs.length > 0) {
+                var transaction_total = _this.transaction.outputs[0].value + _this.transaction.fee;
+            }
+            else {
+                transaction_total = _this.transaction.fee;
+            }
+            if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < transaction_total) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
+                reject("not enough money");
+                return;
+            }
+            else {
+                var inputs = [];
+                var input_sum = 0;
+                var unspent_transactions = void 0;
+                if (_this.unspent_transaction_override) {
+                    unspent_transactions = [_this.unspent_transaction_override];
+                }
+                else {
+                    _this.info.relationship = _this.info.relationship || {};
+                    unspent_transactions = _this.walletService.wallet.unspent_transactions;
+                    unspent_transactions.sort(function (a, b) {
+                        if (a.height < b.height)
+                            return -1;
+                        if (a.height > b.height)
+                            return 1;
+                        return 0;
+                    });
+                }
+                var already_added = [];
+                dance: for (var i = 0; i < unspent_transactions.length; i++) {
+                    var unspent_transaction = unspent_transactions[i];
+                    for (var j = 0; j < unspent_transaction.outputs.length; j++) {
+                        var unspent_output = unspent_transaction.outputs[j];
+                        if (unspent_output.to === _this.key.getAddress()) {
+                            if (already_added.indexOf(unspent_transaction.id) === -1) {
+                                already_added.push(unspent_transaction.id);
+                                inputs.push({ id: unspent_transaction.id });
+                            }
+                            input_sum += parseFloat(unspent_output.value);
+                            if (input_sum >= transaction_total) {
+                                _this.transaction.outputs.push({
+                                    to: _this.key.getAddress(),
+                                    value: (input_sum - transaction_total)
+                                });
+                                break dance;
+                            }
+                        }
+                    }
+                }
+            }
+            var myAddress = _this.key.getAddress();
+            var found = false;
+            for (var h = 0; h < _this.transaction.outputs.length; h++) {
+                if (_this.transaction.outputs[h].to == myAddress) {
+                    found = true;
+                }
+            }
+            if (!found) {
+                _this.transaction.outputs.push({
+                    to: _this.key.getAddress(),
+                    value: 0
+                });
+            }
+            if (input_sum < transaction_total) {
+                return reject(false);
+            }
+            _this.transaction.inputs = inputs;
+            var inputs_hashes = [];
+            for (i = 0; i < inputs.length; i++) {
+                inputs_hashes.push(inputs[i].id);
+            }
+            var inputs_hashes_arr = inputs_hashes.sort(function (a, b) {
+                if (a.toLowerCase() < b.toLowerCase())
+                    return -1;
+                if (a.toLowerCase() > b.toLowerCase())
+                    return 1;
+                return 0;
+            });
+            var inputs_hashes_concat = inputs_hashes_arr.join('');
+            var outputs_hashes = [];
+            for (i = 0; i < _this.transaction.outputs.length; i++) {
+                outputs_hashes.push(_this.transaction.outputs[i].to + _this.transaction.outputs[i].value.toFixed(8));
+            }
+            var outputs_hashes_arr = outputs_hashes.sort(function (a, b) {
+                if (a.toLowerCase() < b.toLowerCase())
+                    return -1;
+                if (a.toLowerCase() > b.toLowerCase())
+                    return 1;
+                return 0;
+            });
+            var outputs_hashes_concat = outputs_hashes_arr.join('');
+            if (_this.info.relationship) {
+                bulletin_secrets = [_this.bulletin_secret, _this.info.relationship.bulletin_secret].sort(function (a, b) {
+                    return a.toLowerCase().localeCompare(b.toLowerCase());
+                });
+                _this.rid = foobar.bitcoin.crypto.sha256(bulletin_secrets[0] + bulletin_secrets[1]).toString('hex');
+            }
+            else {
+                _this.info.relationship = {};
+            }
+            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
+                // creating new relationship
+                _this.transaction.relationship = _this.encrypt();
+                var hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.dh_public_key +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (typeof _this.info.relationship.groupChatText !== 'undefined') {
+                // group chat
+                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship.postText) {
+                // group post
+                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship.comment) {
+                // group comment
+                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship.react) {
+                // group react
+                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship.chatText) {
+                // chat
+                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship.signIn) {
+                // sign in
+                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship.wif) {
+                // recovery
+                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else {
+                //straight transaction
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.fee.toFixed(8) +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            _this.transaction.hash = hash;
+            var attempt = _this.txnattempts.pop();
+            attempt = _this.cbattempts.pop();
+            _this.transaction.id = _this.get_transaction_id(_this.transaction.hash, attempt);
+            if (hash) {
+                resolve(hash);
+            }
+            else {
+                reject(false);
+            }
+        });
+    };
+    TransactionService.prototype.getFastGraphSignature = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
+                hash: _this.transaction.hash,
+                bulletin_secret: _this.bulletinSecretService.bulletin_secret,
+                input: _this.transaction.inputs[0].id,
+                id: _this.transaction.id,
+                txn: _this.transaction
+            })
+                .subscribe(function (res) {
+                try {
+                    var data = res.json();
+                    _this.transaction.signatures = [data.signature];
+                    resolve();
+                }
+                catch (err) {
+                    reject();
+                }
+            }, function (err) {
+                reject();
+            });
+        });
+    };
+    TransactionService.prototype.sendTransaction = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var url = '';
+            url = _this.settingsService.remoteSettings['transactionUrl'] + '?bulletin_secret=' + _this.bulletin_secret + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
+            _this.ahttp.post(url, _this.transaction)
+                .subscribe(function (data) {
+                try {
+                    resolve(JSON.parse(data['_body']));
+                }
+                catch (err) {
+                    reject(err);
+                }
+            }, function (error) {
+                if (_this.txnattempts.length > 0) {
+                    reject();
+                }
+            });
+        });
+    };
+    TransactionService.prototype.sendCallback = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            if (_this.callbackurl) {
+                _this.ahttp.post(_this.callbackurl, {
+                    bulletin_secret: _this.bulletin_secret,
+                    to: _this.key.getAddress(),
+                    username: _this.username
+                })
+                    .subscribe(function (data) {
+                    resolve(JSON.parse(data['_body']));
+                }, function (error) {
+                    if (_this.cbattempts.length > 0) {
+                        reject();
+                    }
+                });
+            }
+        });
+    };
+    TransactionService.prototype.get_transaction_id = function (hash, trynum) {
+        var combine = new Uint8Array(hash.length);
+        //combine[0] = 0;
+        //combine[1] = 64;
+        for (var i = 0; i < hash.length; i++) {
+            combine[i] = hash.charCodeAt(i);
+        }
+        var shaMessage = foobar.bitcoin.crypto.sha256(combine);
+        var signature = this.key.sign(shaMessage);
+        var der = signature.toDER();
+        return foobar.base64.fromByteArray(der);
+    };
+    TransactionService.prototype.direct_message = function (data) {
+        //placeholder
+    };
+    TransactionService.prototype.hexToBytes = function (s) {
+        var arr = [];
+        for (var i = 0; i < s.length; i += 2) {
+            var c = s.substr(i, 2);
+            arr.push(parseInt(c, 16));
+        }
+        return String.fromCharCode.apply(null, arr);
+    };
+    TransactionService.prototype.hexToByteArray = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback);
+    };
+    TransactionService.prototype.byteArrayToHexString = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    TransactionService.prototype.encrypt = function () {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
+        var cipher = forge.cipher.createCipher('AES-CBC', key);
+        var iv = forge.random.getBytesSync(16);
+        cipher.start({ iv: iv });
+        cipher.update(forge.util.createBuffer(iv + JSON.stringify(this.info.relationship)));
+        cipher.finish();
+        return cipher.output.toHex();
+    };
+    TransactionService.prototype.shared_encrypt = function (shared_secret, message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
+        var cipher = forge.cipher.createCipher('AES-CBC', key);
+        var iv = forge.random.getBytesSync(16);
+        cipher.start({ iv: iv });
+        cipher.update(forge.util.createBuffer(iv + Base64.encode(message)));
+        cipher.finish();
+        return cipher.output.toHex();
+    };
+    TransactionService.prototype.decrypt = function (message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
+        var decipher = forge.cipher.createDecipher('AES-CBC', key);
+        var enc = this.hexToBytes(message);
+        decipher.start({ iv: enc.slice(0, 16) });
+        decipher.update(forge.util.createBuffer(enc.slice(16)));
+        decipher.finish();
+        return decipher.output;
+    };
+    TransactionService.prototype.shared_decrypt = function (shared_secret, message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
+        var decipher = forge.cipher.createDecipher('AES-CBC', key);
+        var enc = this.hexToBytes(message);
+        decipher.start({ iv: enc.slice(0, 16) });
+        decipher.update(forge.util.createBuffer(enc.slice(16)));
+        decipher.finish();
+        return decipher.output;
+    };
+    TransactionService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2__wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_3__settings_service__["a" /* SettingsService */]])
+    ], TransactionService);
+    return TransactionService;
+}());
+
+//# sourceMappingURL=transaction.service.js.map
+
+/***/ }),
+
+/***/ 303:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -168,21 +2339,21 @@ var SettingsService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_forms__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_storage__ = __webpack_require__(33);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_storage__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(40);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(41);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(181);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(52);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(53);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(86);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__postmodal__ = __webpack_require__(302);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__postmodal__ = __webpack_require__(304);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__app_opengraphparser_service__ = __webpack_require__(109);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__ionic_native_social_sharing__ = __webpack_require__(85);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__app_firebase_service__ = __webpack_require__(185);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_autocomplete_provider__ = __webpack_require__(304);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_autocomplete_provider__ = __webpack_require__(306);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -791,6 +2962,24 @@ var HomePage = /** @class */ (function () {
         alert.setSubTitle('How do you want to request this friend?');
         alert.present();
     };
+    HomePage.prototype.createGeoWallet = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.loadingModal = _this.loadingCtrl.create({
+                content: 'Burying treasure at this location...'
+            });
+            return _this.loadingModal.present()
+                .then(function () {
+                return resolve();
+            });
+        })
+            .then(function () {
+            return _this.graphService.createRecovery(_this.bulletinSecretService.username);
+        })
+            .then(function () {
+            return _this.loadingModal.dismiss();
+        });
+    };
     HomePage.prototype.createGroup = function () {
         var _this = this;
         this.graphService.getInfo()
@@ -821,54 +3010,8 @@ var HomePage = /** @class */ (function () {
                 alert.present();
             });
         })
-            .then(function (groupname) {
-            return new Promise(function (resolve, reject) {
-                if (!groupname)
-                    return reject();
-                var key = foobar.bitcoin.ECPair.makeRandom();
-                var wif = key.toWIF();
-                var pubKey = key.getPublicKeyBuffer().toString('hex');
-                var address = key.getAddress();
-                var bulletin_secret = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(groupname)).toDER());
-                var raw_dh_private_key = window.crypto.getRandomValues(new Uint8Array(32));
-                var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
-                var dh_private_key = _this.toHex(raw_dh_private_key);
-                var dh_public_key = _this.toHex(raw_dh_public_key);
-                resolve({
-                    their_public_key: pubKey,
-                    their_address: address,
-                    their_bulletin_secret: bulletin_secret,
-                    their_username: groupname,
-                    wif: wif,
-                    dh_public_key: dh_public_key,
-                    dh_private_key: dh_private_key
-                });
-            });
-        })
-            .then(function (info) {
-            var bulletin_secrets = [_this.graphService.graph.bulletin_secret, info.their_bulletin_secret].sort(function (a, b) {
-                return a.toLowerCase().localeCompare(b.toLowerCase());
-            });
-            var requested_rid = forge.sha256.create().update(bulletin_secrets[0] + bulletin_secrets[1]).digest().toHex();
-            return _this.transactionService.generateTransaction({
-                relationship: {
-                    dh_private_key: info.dh_private_key,
-                    their_bulletin_secret: info.their_bulletin_secret,
-                    their_public_key: info.their_public_key,
-                    their_username: info.their_username,
-                    their_address: info.their_address,
-                    my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
-                    my_username: _this.bulletinSecretService.username,
-                    wif: info.wif,
-                    group: true
-                },
-                dh_public_key: info.dh_public_key,
-                to: info.their_address,
-                requester_rid: _this.graphService.graph.rid,
-                requested_rid: requested_rid
-            });
-        }).then(function (txn) {
-            return _this.transactionService.sendTransaction();
+            .then(function (groupName) {
+            return _this.graphService.createGroup(groupName);
         })
             .then(function (hash) {
             if (_this.settingsService.remoteSettings['walletUrl']) {
@@ -1312,7 +3455,7 @@ var HomePage = /** @class */ (function () {
     };
     HomePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <form [formGroup]="myForm" (ngSubmit)="submit()">\n      <ion-auto-complete [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n      <button icon-left ion-button type="submit" block [disabled]="!myForm.valid">\n        <ion-icon name="eye"></ion-icon>\n        View profile\n      </button>\n    </form>\n    <ion-col col-lg-12 col-md-12 col-sm-12>\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button large ion-button title="Sign in" (click)="signIn()" *ngIf="!settingsService.tokens[bulletinSecretService.keyname]">\n        Sign in&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <a ion-button large secondary href="{{settingsService.remoteSettings[\'baseUrl\']}}/mfa?origin={{location.origin}}&rid={{graphService.graph.rid}}&id={{txnId}}&redirect=/" *ngIf="graphService.graph.rid && txnId" target="_blank">\n        Visit&nbsp;<ion-icon name="arrow-dropright"></ion-icon>\n      </a>\n    </ion-col>\n    <ion-col col-lg-4 col-md-12 col-sm-12>\n      <ion-item>\n        <ion-input type="text" placeholder="Sign-in code" [(ngModel)]="signInCode"></ion-input>\n        <button large ion-button item-right title="Sign in" (click)="signInRemote()" *ngIf="!settingsService.tokens[bulletinSecretService.keyname]">\n            Remote Sign in&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-list col-lg-7>\n    <ion-item *ngFor="let item of items">\n      <ion-card>\n        <a href="{{item.url}}" *ngIf="item.url" height="400">\n          <img src="{{item.image}}" *ngIf="item.image">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <p *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </p>\n          </ion-card-content>\n        </a>\n        <div *ngIf="!item.url">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <h1 *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </h1>\n            <span *ngIf="item.fileName">Files:</span><br>\n            <a *ngIf="item.fileName" style="text-overflow:ellipsis; margin-top:50px;" text-wrap (click)="download(item)">\n              <strong>{{item.fileName}}</strong>\n            </a>\n          </ion-card-content>\n        </div>\n        <ion-row no-padding text-wrap (click)="reactsDetail(item)">\n            <ion-item><span *ngFor="let react of graphService.graph.reacts[item.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n        </ion-row>\n        <ion-row no-padding>\n          <ion-col>\n            <button ion-button clear small icon-start (click)="toggled[item.id] = !toggled[item.id]" [(emojiPickerIf)]="toggled[item.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="react($event, item)">\n              <ion-icon name=\'sunny\'></ion-icon>\n              React\n            </button>\n          </ion-col>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="share(item)">\n              <ion-icon name=\'share-alt\'></ion-icon>\n              Share\n            </button>\n          </ion-col>\n          <ion-item>\n            <ion-input type="text" placeholder="Comment text..." [(ngModel)]="commentInputs[item.id]" (keyup.enter)="comment(item)">\n            </ion-input>\n          </ion-item>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="comment(item)">\n              <ion-icon name=\'text\'></ion-icon>\n              Post comment\n            </button>\n          </ion-col>\n        </ion-row>\n        <ion-row>\n          <ion-list col-lg-7>\n            <ion-item *ngFor="let comment of graphService.graph.comments[item.id]">\n              <button style="z-index:1000;"ion-button clear small icon-start (click)="toggled[comment.id] = !toggled[comment.id]" [(emojiPickerIf)]="toggled[comment.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="commentReact($event, comment)">\n                <ion-icon name=\'sunny\'></ion-icon>\n                React\n              </button>\n              <strong [innerHTML]="comment.username"></strong>\n              <ion-item [innerHTML]="comment.relationship.comment" text-wrap></ion-item>\n              <ion-row *ngIf="graphService.graph.commentReacts[comment.id] && graphService.graph.commentReacts[comment.id].length > 0" no-padding text-wrap (click)="commentReactsDetail(comment)">\n                  <ion-item><span *ngFor="let react of graphService.graph.commentReacts[comment.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n              </ion-row>\n            </ion-item>\n          </ion-list>\n        </ion-row>\n      </ion-card>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
+            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <form [formGroup]="myForm" (ngSubmit)="submit()">\n      <ion-auto-complete [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n      <button icon-left ion-button type="submit" block [disabled]="!myForm.valid">\n        <ion-icon name="eye"></ion-icon>\n        View profile\n      </button>\n    </form>\n    <ion-col col-lg-12 col-md-12 col-sm-12>\n      <button ion-button large secondary (click)="createGeoWallet()">\n        Bury this treasure&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button large ion-button title="Sign in" (click)="signIn()" *ngIf="!settingsService.tokens[bulletinSecretService.keyname]">\n        Sign in&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <a ion-button large secondary href="{{settingsService.remoteSettings[\'baseUrl\']}}/mfa?origin={{location.origin}}&rid={{graphService.graph.rid}}&id={{txnId}}&redirect=/" *ngIf="graphService.graph.rid && txnId" target="_blank">\n        Visit&nbsp;<ion-icon name="arrow-dropright"></ion-icon>\n      </a>\n    </ion-col>\n    <ion-col col-lg-4 col-md-12 col-sm-12>\n      <ion-item>\n        <ion-input type="text" placeholder="Sign-in code" [(ngModel)]="signInCode"></ion-input>\n        <button large ion-button item-right title="Sign in" (click)="signInRemote()" *ngIf="!settingsService.tokens[bulletinSecretService.keyname]">\n            Remote Sign in&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-list col-lg-7>\n    <ion-item *ngFor="let item of items">\n      <ion-card>\n        <a href="{{item.url}}" *ngIf="item.url" height="400">\n          <img src="{{item.image}}" *ngIf="item.image">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <p *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </p>\n          </ion-card-content>\n        </a>\n        <div *ngIf="!item.url">\n          <ion-card-content>\n            <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n              {{item.title}}\n            </ion-card-title>\n            <h2>{{item.username}}</h2>\n            <h1 *ngIf="item.description" style="text-overflow:ellipsis;" text-wrap>\n              {{item.description}}\n            </h1>\n            <span *ngIf="item.fileName">Files:</span><br>\n            <a *ngIf="item.fileName" style="text-overflow:ellipsis; margin-top:50px;" text-wrap (click)="download(item)">\n              <strong>{{item.fileName}}</strong>\n            </a>\n          </ion-card-content>\n        </div>\n        <ion-row no-padding text-wrap (click)="reactsDetail(item)">\n            <ion-item><span *ngFor="let react of graphService.graph.reacts[item.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n        </ion-row>\n        <ion-row no-padding>\n          <ion-col>\n            <button ion-button clear small icon-start (click)="toggled[item.id] = !toggled[item.id]" [(emojiPickerIf)]="toggled[item.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="react($event, item)">\n              <ion-icon name=\'sunny\'></ion-icon>\n              React\n            </button>\n          </ion-col>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="share(item)">\n              <ion-icon name=\'share-alt\'></ion-icon>\n              Share\n            </button>\n          </ion-col>\n          <ion-item>\n            <ion-input type="text" placeholder="Comment text..." [(ngModel)]="commentInputs[item.id]" (keyup.enter)="comment(item)">\n            </ion-input>\n          </ion-item>\n          <ion-col text-right>\n            <button ion-button clear small color="danger" icon-start (click)="comment(item)">\n              <ion-icon name=\'text\'></ion-icon>\n              Post comment\n            </button>\n          </ion-col>\n        </ion-row>\n        <ion-row>\n          <ion-list col-lg-7>\n            <ion-item *ngFor="let comment of graphService.graph.comments[item.id]">\n              <button style="z-index:1000;"ion-button clear small icon-start (click)="toggled[comment.id] = !toggled[comment.id]" [(emojiPickerIf)]="toggled[comment.id]" [emojiPickerDirection]="\'right\'" (emojiPickerSelect)="commentReact($event, comment)">\n                <ion-icon name=\'sunny\'></ion-icon>\n                React\n              </button>\n              <strong [innerHTML]="comment.username"></strong>\n              <ion-item [innerHTML]="comment.relationship.comment" text-wrap></ion-item>\n              <ion-row *ngIf="graphService.graph.commentReacts[comment.id] && graphService.graph.commentReacts[comment.id].length > 0" no-padding text-wrap (click)="commentReactsDetail(comment)">\n                  <ion-item><span *ngFor="let react of graphService.graph.commentReacts[comment.id]" [innerHTML]="react.relationship.react"></span></ion-item>\n              </ion-row>\n            </ion-item>\n          </ion-list>\n        </ion-row>\n      </ion-card>\n    </ion-item>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["j" /* NavParams */],
@@ -1341,1458 +3484,7 @@ var HomePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 181:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PeerService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__settings_service__ = __webpack_require__(17);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-var PeerService = /** @class */ (function () {
-    function PeerService(ahttp, walletService, transactionService, bulletinSecretService, settingsService, storage) {
-        this.ahttp = ahttp;
-        this.walletService = walletService;
-        this.transactionService = transactionService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.storage = storage;
-        this.seeds = null;
-        this.loading = false;
-        this.seeds = [
-            { "host": "0.0.0.0", "port": 8000 },
-            { "host": "34.237.46.10", "port": 80 },
-            { "host": "51.15.86.249", "port": 8000 },
-            { "host": "178.32.96.27", "port": 8000 },
-            { "host": "188.165.250.78", "port": 8000 },
-            { "host": "116.203.24.126", "port": 8000 }
-        ];
-        this.mode = true;
-        this.failedSeedPeers = new Set();
-        this.failedConfigPeers = new Set();
-    }
-    PeerService.prototype.go = function () {
-        return new Promise(this.peerRoutine.bind(this));
-    };
-    PeerService.prototype.peerRoutine = function (resolve, reject) {
-        var _this = this;
-        this.peerLocked = false;
-        if (this.loading)
-            return;
-        this.loading = true;
-        return this.storage.get('node')
-            .then(function (node) {
-            return new Promise(function (resolve2, reject2) {
-                var seedPeer = '';
-                if (node && !_this.failedSeedPeers.has(node)) {
-                    _this.settingsService.remoteSettingsUrl = node;
-                }
-                else {
-                    var min = 0;
-                    var max = _this.seeds.length - 1;
-                    var number = Math.floor(Math.random() * (+max - +min)) + +min;
-                    if (!_this.seeds[number])
-                        return reject(false);
-                    seedPeer = 'http://' + _this.seeds[number]['host'] + ':' + _this.seeds[number]['port'];
-                    while (_this.failedSeedPeers.has(seedPeer)) {
-                        number = Math.floor(Math.random() * (+max - +min)) + +min;
-                        if (!_this.seeds[number])
-                            return reject(false);
-                        seedPeer = 'http://' + _this.seeds[number]['host'] + ':' + _this.seeds[number]['port'];
-                    }
-                }
-                return resolve2(seedPeer);
-            });
-        })
-            .then(function (seedPeer) {
-            if (_this.settingsService.remoteSettingsUrl) {
-                return _this.getConfig();
-            }
-            else {
-                return _this.getPeers(seedPeer);
-            }
-        })
-            .then(function (step) {
-            if (step === 'config') {
-                return _this.getConfig();
-            }
-            return new Promise(function (resolve2, reject2) {
-                return resolve2();
-            });
-        })
-            .then(function () {
-            return new Promise(function (resolve2, reject2) {
-                return _this.walletService.get()
-                    .then(function () {
-                    return resolve2();
-                })
-                    .catch(function (err) {
-                    _this.failedConfigPeers.add(_this.settingsService.remoteSettingsUrl);
-                    return reject2('config');
-                });
-            });
-        })
-            .then(function () {
-            return _this.setupRelationship();
-        })
-            .then(function () {
-            _this.peerLocked = true;
-            return _this.storage.set('node', _this.settingsService.remoteSettingsUrl);
-        })
-            .then(function () {
-            return resolve(true);
-        })
-            .catch(function (e) {
-            _this.settingsService.remoteSettings = {};
-            _this.settingsService.remoteSettingsUrl = null;
-            _this.loading = false;
-            _this.storage.remove('node');
-            setTimeout(function () {
-                _this.peerRoutine(resolve, reject);
-            }, 100);
-        });
-    };
-    PeerService.prototype.getPeers = function (seedPeer) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.ahttp.get(seedPeer + '/get-peers').pipe(Object(__WEBPACK_IMPORTED_MODULE_3_rxjs_operators__["timeout"])(1000)).subscribe(function (res) {
-                var peers = res.json().peers;
-                var min = 0;
-                var max = peers.length - 1;
-                var number = Math.floor(Math.random() * (+max - +min)) + +min;
-                if (!peers[number])
-                    return reject(false);
-                _this.settingsService.remoteSettingsUrl = 'http://' + peers[number]['host'] + ':' + peers[number]['port'];
-                while (_this.failedConfigPeers.has(_this.settingsService.remoteSettingsUrl)) {
-                    number = Math.floor(Math.random() * (+max - +min)) + +min;
-                    if (!peers[number])
-                        return reject(false);
-                    _this.settingsService.remoteSettingsUrl = 'http://' + peers[number]['host'] + ':' + peers[number]['port'];
-                }
-                _this.storage.set('node', _this.settingsService.remoteSettingsUrl);
-                resolve('config');
-            }, function (err) {
-                _this.failedSeedPeers.add(seedPeer);
-                _this.loading = false;
-                return reject('seed');
-            });
-        });
-    };
-    PeerService.prototype.getConfig = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.ahttp.get(_this.settingsService.remoteSettingsUrl + '/yada_config.json').pipe(Object(__WEBPACK_IMPORTED_MODULE_3_rxjs_operators__["timeout"])(1000)).subscribe(function (res) {
-                _this.loading = false;
-                _this.settingsService.remoteSettings = res.json();
-                resolve();
-            }, function (err) {
-                _this.failedConfigPeers.add(_this.settingsService.remoteSettingsUrl);
-                _this.loading = false;
-                return reject('config');
-            });
-        });
-    };
-    PeerService.prototype.setupRelationship = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/register')
-                .subscribe(function (res) {
-                var data = JSON.parse(res['_body']);
-                var raw_dh_private_key = window.crypto.getRandomValues(new Uint8Array(32));
-                var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
-                var dh_private_key = _this.toHex(raw_dh_private_key);
-                var dh_public_key = _this.toHex(raw_dh_public_key);
-                data.dh_private_key = dh_private_key;
-                data.dh_public_key = dh_public_key;
-                var hash = _this.transactionService.generateTransaction({
-                    relationship: {
-                        dh_private_key: data.dh_private_key,
-                        their_bulletin_secret: data.bulletin_secret,
-                        their_username: data.username,
-                        my_bulletin_secret: _this.bulletinSecretService.bulletin_secret,
-                        my_username: _this.bulletinSecretService.username
-                    },
-                    dh_public_key: data.dh_public_key,
-                    requested_rid: data.requested_rid,
-                    requester_rid: data.requester_rid,
-                    callbackurl: data.callbackurl,
-                    to: data.to,
-                    resolve: resolve
-                });
-                resolve(hash);
-            });
-        }) // we cannot do fastgraph registrations. The signing process verifies a relationship. So one must already exist.
-            .then(function (hash) {
-            return _this.transactionService.sendTransaction();
-        })
-            .catch(function (err) {
-            console.log(err);
-        });
-    };
-    PeerService.prototype.hexToBytes = function (s) {
-        var arr = [];
-        for (var i = 0; i < s.length; i += 2) {
-            var c = s.substr(i, 2);
-            arr.push(parseInt(c, 16));
-        }
-        return String.fromCharCode.apply(null, arr);
-    };
-    PeerService.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    PeerService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_5__wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_6__transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_7__settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_1__ionic_storage__["b" /* Storage */]])
-    ], PeerService);
-    return PeerService;
-}());
-
-//# sourceMappingURL=peer.service.js.map
-
-/***/ }),
-
-/***/ 182:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ChatPage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(40);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(16);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-
-
-var ChatPage = /** @class */ (function () {
-    function ChatPage(navCtrl, navParams, storage, walletService, transactionService, alertCtrl, graphService, loadingCtrl, bulletinSecretService, settingsService, ahttp, toastCtrl) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.storage = storage;
-        this.walletService = walletService;
-        this.transactionService = transactionService;
-        this.alertCtrl = alertCtrl;
-        this.graphService = graphService;
-        this.loadingCtrl = loadingCtrl;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.ahttp = ahttp;
-        this.toastCtrl = toastCtrl;
-        this.rid = navParams.data.item.transaction.rid;
-        this.requester_rid = navParams.data.item.transaction.requester_rid || '';
-        this.requested_rid = navParams.data.item.transaction.requested_rid || '';
-        var key = 'last_message_height-' + navParams.data.item.transaction.rid;
-        if (navParams.data.item.transaction.height)
-            this.storage.set(key, navParams.data.item.transaction.time);
-        this.storage.get('blockchainAddress').then(function (blockchainAddress) {
-            _this.blockchainAddress = blockchainAddress;
-        });
-        this.public_key = this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex');
-        this.refresh(null, true);
-    }
-    ChatPage.prototype.parseChats = function () {
-        if (this.graphService.graph.messages[this.rid]) {
-            this.chats = this.graphService.graph.messages[this.rid];
-            for (var i = 0; i < this.chats.length; i++) {
-                this.chats[i].time = new Date(parseInt(this.chats[i].time)).toISOString().slice(0, 19).replace('T', ' ');
-            }
-        }
-        else {
-            this.chats = [];
-        }
-    };
-    ChatPage.prototype.refresh = function (refresher, showLoading) {
-        var _this = this;
-        if (showLoading === void 0) { showLoading = true; }
-        if (showLoading) {
-            this.loading = true;
-        }
-        this.graphService.getMessages(this.rid)
-            .then(function () {
-            _this.loading = false;
-            if (refresher)
-                refresher.complete();
-            return _this.parseChats();
-        })
-            .then(function () {
-            setTimeout(function () { return _this.content.scrollToBottom(1000); }, 500);
-        });
-    };
-    ChatPage.prototype.viewProfile = function (item) {
-        var _this = this;
-        return this.graphService.getFriends()
-            .then(function () {
-            for (var i = 0; i < _this.graphService.graph.friends.length; i++) {
-                var friend = _this.graphService.graph.friends[i];
-                if (friend.rid === item.rid) {
-                    item = friend;
-                }
-            }
-            _this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
-                item: item
-            });
-        });
-    };
-    ChatPage.prototype.joinGroup = function (item) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            var invite = item.relationship.chatText;
-            var raw_dh_private_key = window.crypto.getRandomValues(new Uint8Array(32));
-            var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
-            var dh_private_key = _this.toHex(raw_dh_private_key);
-            var dh_public_key = _this.toHex(raw_dh_public_key);
-            resolve({
-                their_address: invite.their_address,
-                their_public_key: invite.their_public_key,
-                their_bulletin_secret: invite.their_bulletin_secret,
-                their_username: invite.their_username,
-                dh_public_key: dh_public_key,
-                dh_private_key: dh_private_key,
-                requested_rid: invite.requested_rid,
-                requester_rid: _this.graphService.graph.rid
-            });
-        })
-            .then(function (info) {
-            return _this.transactionService.generateTransaction({
-                relationship: {
-                    dh_private_key: info.dh_private_key,
-                    my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
-                    my_username: _this.bulletinSecretService.username,
-                    their_address: info.their_address,
-                    their_public_key: info.their_public_key,
-                    their_bulletin_secret: info.their_bulletin_secret,
-                    their_username: info.their_username,
-                    group: true
-                },
-                requester_rid: info.requester_rid,
-                requested_rid: info.requested_rid,
-                dh_public_key: info.dh_public_key,
-                to: info.their_address
-            });
-        }).then(function (txn) {
-            return _this.transactionService.sendTransaction();
-        })
-            .then(function (hash) {
-            if (_this.settingsService.remoteSettings['walletUrl']) {
-                return _this.graphService.getInfo();
-            }
-        })
-            .then(function () {
-            var toast = _this.toastCtrl.create({
-                message: 'Group joined!',
-                duration: 2000
-            });
-            toast.present();
-            return _this.refresh(null);
-        })
-            .catch(function (err) {
-        });
-    };
-    ChatPage.prototype.send = function () {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Approve transaction');
-        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                _this.walletService.get()
-                    .then(function () {
-                    return _this.graphService.getFriends();
-                })
-                    .then(function () {
-                    var dh_public_key = _this.graphService.keys[_this.rid].dh_public_keys[0];
-                    var dh_private_key = _this.graphService.keys[_this.rid].dh_private_keys[0];
-                    if (dh_public_key && dh_private_key) {
-                        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-                            return parseInt(h, 16);
-                        }));
-                        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-                            return parseInt(h, 16);
-                        }));
-                        var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
-                        // camera permission was granted
-                        return _this.transactionService.generateTransaction({
-                            dh_public_key: dh_public_key,
-                            dh_private_key: dh_private_key,
-                            relationship: {
-                                chatText: _this.chatText
-                            },
-                            shared_secret: shared_secret,
-                            rid: _this.rid,
-                            requester_rid: _this.requester_rid,
-                            requested_rid: _this.requested_rid,
-                        });
-                    }
-                    else {
-                        return new Promise(function (resolve, reject) {
-                            var alert = _this.alertCtrl.create();
-                            alert.setTitle('Friendship not yet processed');
-                            alert.setSubTitle('Please wait a few minutes and try again');
-                            alert.addButton('Ok');
-                            alert.present();
-                            return reject();
-                        });
-                    }
-                }).then(function (txn) {
-                    return _this.transactionService.sendTransaction();
-                }).then(function () {
-                    _this.chatText = '';
-                    _this.refresh(null);
-                })
-                    .catch(function (err) {
-                    console.log(err);
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Message error');
-                    alert.setSubTitle(err);
-                    alert.addButton('Ok');
-                    alert.present();
-                });
-            }
-        });
-        alert.present();
-    };
-    ChatPage.prototype.showChat = function () {
-        var item = { pageTitle: { title: "Chat" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    ChatPage.prototype.showFriendRequests = function () {
-        var item = { pageTitle: { title: "Friend Requests" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    ChatPage.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    ChatPage = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong><span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{(item.public_key == public_key) ? graphService.friends_indexed[item.rid].relationship.my_username : graphService.friends_indexed[item.rid].relationship.their_username}}</span> </strong><span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite">{{item.relationship.chatText}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true">Invite to join {{item.relationship.chatText.their_username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()"></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()">Send</button>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
-            queries: {
-                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
-            }
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
-            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
-            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_10__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */]])
-    ], ChatPage);
-    return ChatPage;
-}());
-
-//# sourceMappingURL=chat.js.map
-
-/***/ }),
-
-/***/ 183:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return GroupPage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(40);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(86);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(184);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(16);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-var GroupPage = /** @class */ (function () {
-    function GroupPage(navCtrl, navParams, storage, walletService, transactionService, alertCtrl, graphService, loadingCtrl, bulletinSecretService, settingsService, ahttp, modalCtrl, toastCtrl) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.storage = storage;
-        this.walletService = walletService;
-        this.transactionService = transactionService;
-        this.alertCtrl = alertCtrl;
-        this.graphService = graphService;
-        this.loadingCtrl = loadingCtrl;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.ahttp = ahttp;
-        this.modalCtrl = modalCtrl;
-        this.toastCtrl = toastCtrl;
-        this.extraInfo = {};
-        this.wallet_mode = true;
-        this.item = navParams.data.item.transaction;
-        this.rid = navParams.data.item.transaction.rid;
-        this.requester_rid = navParams.data.item.transaction.requester_rid;
-        this.requested_rid = navParams.data.item.transaction.requested_rid;
-        this.their_address = navParams.data.item.transaction.relationship.their_address;
-        this.their_public_key = navParams.data.item.transaction.relationship.their_public_key;
-        this.their_bulletin_secret = navParams.data.item.transaction.relationship.their_bulletin_secret;
-        this.their_username = navParams.data.item.transaction.relationship.their_username;
-        var key = 'last_message_height-' + navParams.data.item.transaction.rid;
-        if (navParams.data.item.transaction.height)
-            this.storage.set(key, navParams.data.item.transaction.time);
-        this.storage.get('blockchainAddress').then(function (blockchainAddress) {
-            _this.blockchainAddress = blockchainAddress;
-        });
-        this.refresh(null, true);
-    }
-    GroupPage.prototype.showInvite = function () {
-        var _this = this;
-        this.graphService.getFriends()
-            .then(function () {
-            var alert = _this.alertCtrl.create();
-            alert.setTitle('Invite');
-            alert.setSubTitle('Select a friend to invite.');
-            alert.addButton({
-                text: 'Confirm',
-                handler: function (data) {
-                    _this.walletService.get()
-                        .then(function () {
-                        var dh_public_key = _this.graphService.keys[data.rid].dh_public_keys[0];
-                        var dh_private_key = _this.graphService.keys[data.rid].dh_private_keys[0];
-                        if (dh_public_key && dh_private_key) {
-                            var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-                                return parseInt(h, 16);
-                            }));
-                            var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-                                return parseInt(h, 16);
-                            }));
-                            var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
-                        }
-                        var myAddress = _this.bulletinSecretService.key.getAddress();
-                        var to = false;
-                        for (var h = 0; h < data.outputs.length; h++) {
-                            if (data.outputs[h].to != myAddress) {
-                                to = data.outputs[h].to;
-                            }
-                        }
-                        return _this.transactionService.generateTransaction({
-                            relationship: {
-                                chatText: Base64.encode(JSON.stringify({
-                                    their_public_key: _this.item.public_key,
-                                    their_bulletin_secret: _this.item.relationship.their_bulletin_secret,
-                                    their_username: _this.item.relationship.their_username,
-                                    their_address: _this.item.relationship.their_address,
-                                    group: true,
-                                    requested_rid: _this.requested_rid
-                                }))
-                            },
-                            rid: data.rid,
-                            requester_rid: data.requester_rid,
-                            requested_rid: data.requested_rid,
-                            shared_secret: shared_secret,
-                            to: to
-                        });
-                    }).then(function (txn) {
-                        return _this.transactionService.sendTransaction();
-                    }).then(function () {
-                        var toast = _this.toastCtrl.create({
-                            message: "Group invite sent!",
-                            duration: 2000,
-                        });
-                        toast.present();
-                        _this.groupChatText = '';
-                        _this.refresh(null);
-                    })
-                        .catch(function (err) {
-                        console.log(err);
-                        var alert = _this.alertCtrl.create();
-                        alert.setTitle('Message error');
-                        alert.setSubTitle(err);
-                        alert.addButton('Ok');
-                        alert.present();
-                    });
-                }
-            });
-            for (var i = 0; i < _this.graphService.graph.friends.length; i++) {
-                var friend = _this.graphService.graph.friends[i];
-                alert.addInput({
-                    name: 'username',
-                    type: 'radio',
-                    label: friend.relationship.their_username,
-                    value: friend,
-                    checked: false
-                });
-            }
-            alert.present();
-        });
-    };
-    GroupPage.prototype.parseChats = function () {
-        var rid_to_use = this.requested_rid || this.rid;
-        if (this.graphService.graph.messages[rid_to_use]) {
-            this.chats = this.graphService.graph.messages[rid_to_use];
-            for (var i = 0; i < this.chats.length; i++) {
-                this.chats[i].time = new Date(parseInt(this.chats[i].time) * 1000).toISOString().slice(0, 19).replace('T', ' ');
-            }
-        }
-        else {
-            this.chats = [];
-        }
-    };
-    GroupPage.prototype.refresh = function (refresher, showLoading) {
-        var _this = this;
-        if (showLoading === void 0) { showLoading = true; }
-        if (showLoading) {
-            this.loading = true;
-        }
-        this.graphService.getGroupMessages(this.their_bulletin_secret, this.requested_rid, this.rid)
-            .then(function () {
-            _this.loading = false;
-            if (refresher)
-                refresher.complete();
-            return _this.parseChats();
-        })
-            .then(function () {
-            setTimeout(function () { return _this.content.scrollToBottom(1000); }, 500);
-        })
-            .then(function () {
-            return _this.getSiaFiles();
-        })
-            .catch(function (err) {
-            console.log(err);
-        });
-    };
-    GroupPage.prototype.presentModal = function () {
-        var modal = this.modalCtrl.create(__WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__["a" /* SiaFiles */], {
-            mode: 'modal',
-            logicalParent: this,
-            group: {
-                their_bulletin_secret: this.their_bulletin_secret,
-                rid: this.rid,
-                requester_rid: this.requester_rid,
-                requested_rid: this.requested_rid
-            }
-        });
-        modal.present();
-    };
-    GroupPage.prototype.import = function (relationship) {
-        return this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/sia-share-file?origin=' + encodeURIComponent(window.location.origin), relationship)
-            .subscribe(function (res) {
-            var files = res.json();
-        });
-    };
-    GroupPage.prototype.getSiaFiles = function () {
-        return this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-files')
-            .subscribe(function (res) {
-            var files = res.json();
-        });
-    };
-    GroupPage.prototype.toggleExtraInfo = function (pending) {
-        var toast = this.toastCtrl.create({
-            message: pending ? "Not yet saved on the blockchain" : "Saved on the blockchain",
-            duration: 2000,
-            cssClass: pending ? 'redToast' : 'greenToast',
-            position: 'top'
-        });
-        toast.present();
-    };
-    GroupPage.prototype.viewProfile = function (item) {
-        var _this = this;
-        var bulletin_secrets = [this.bulletinSecretService.bulletin_secret, item.relationship.my_bulletin_secret].sort(function (a, b) {
-            return a.toLowerCase().localeCompare(b.toLowerCase());
-        });
-        if (bulletin_secrets[0] === bulletin_secrets[1])
-            return;
-        return this.graphService.getFriends()
-            .then(function () {
-            var rid = foobar.bitcoin.crypto.sha256(bulletin_secrets[0] + bulletin_secrets[1]).toString('hex');
-            for (var i = 0; i < _this.graphService.graph.friends.length; i++) {
-                var friend = _this.graphService.graph.friends[i];
-                if (friend.rid === rid) {
-                    item = friend;
-                }
-            }
-            _this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
-                item: item
-            });
-        });
-    };
-    GroupPage.prototype.send = function () {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Approve transaction');
-        alert.setSubTitle('You are about to spend 0.00 coins ( 0.00 fee). Everything is free for now.');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                _this.walletService.get()
-                    .then(function () {
-                    return _this.graphService.getFriends();
-                })
-                    .then(function () {
-                    return _this.transactionService.generateTransaction({
-                        relationship: {
-                            groupChatText: _this.groupChatText,
-                            my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
-                            my_username: _this.bulletinSecretService.username
-                        },
-                        their_bulletin_secret: _this.their_bulletin_secret,
-                        rid: _this.rid,
-                        requester_rid: _this.requester_rid,
-                        requested_rid: _this.requested_rid
-                    });
-                }).then(function (hash) {
-                    return new Promise(function (resolve, reject) {
-                        if (_this.wallet_mode) {
-                            return resolve();
-                        }
-                        _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
-                            hash: hash,
-                            bulletin_secret: _this.bulletinSecretService.bulletin_secret,
-                            input: _this.transactionService.transaction.inputs[0].id,
-                            id: _this.transactionService.transaction.id,
-                            txn: _this.transactionService.transaction
-                        })
-                            .subscribe(function (res) {
-                            //this.loadingModal2.dismiss();
-                            try {
-                                var data_1 = res.json();
-                                _this.transactionService.transaction.signatures = [data_1.signature];
-                                return resolve();
-                            }
-                            catch (err) {
-                                return reject(err);
-                                //this.loadingModal.dismiss().catch(() => {});
-                            }
-                        }, function (err) {
-                            return reject(err);
-                        });
-                    });
-                }).then(function (txn) {
-                    return _this.transactionService.sendTransaction();
-                }).then(function () {
-                    _this.groupChatText = '';
-                    _this.refresh(null);
-                })
-                    .catch(function (err) {
-                    console.log(err);
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Message error');
-                    alert.setSubTitle(err);
-                    alert.addButton('Ok');
-                    alert.present();
-                });
-            }
-        });
-        alert.present();
-    };
-    GroupPage.prototype.showChat = function () {
-        var item = { pageTitle: { title: "Chat" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    GroupPage.prototype.showFriendRequests = function () {
-        var item = { pageTitle: { title: "Friend Requests" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    GroupPage.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    GroupPage.prototype.hexToBytes = function (s) {
-        var arr = [];
-        for (var i = 0; i < s.length; i += 2) {
-            var c = s.substr(i, 2);
-            arr.push(parseInt(c, 16));
-        }
-        return String.fromCharCode.apply(null, arr);
-    };
-    GroupPage = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-group',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/group/group.html"*/'<ion-header>\n    <ion-navbar>\n      <button ion-button menuToggle color="{{color}}">\n        <ion-icon name="menu"></ion-icon>\n      </button>\n      <button ion-button color="{{chatColor}}" title="Create invite" (click)="showInvite()">\n        Invite&nbsp;<ion-icon name="contacts"></ion-icon>\n      </button>\n    </ion-navbar>\n  </ion-header>\n  <ion-content #content>\n    <ion-refresher (ionRefresh)="refresh($event)">\n      <ion-refresher-content></ion-refresher-content>\n    </ion-refresher>\n    <ion-spinner *ngIf="loading"></ion-spinner>\n      <ion-list>\n        <ion-item *ngFor="let item of chats" text-wrap (click)="toggleExtraInfo(item.pending)">\n          <strong><span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.my_username || \'Anonymous\'}}</span> </strong><span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n          <h3 *ngIf="!item.relationship.groupChatFileName">{{item.relationship.groupChatText}}</h3>\n          <h3 *ngIf="item.relationship.groupChatFileName" (click)="receive(item.relationship)">{{item.relationship.groupChatFileName}}</h3>\n          <button *ngIf="item.relationship.groupChatFileName" ion-button (click)="import(item.relationship)">Import</button>\n          <ion-note color="primary">{{item.fee}} YADA</ion-note>\n          <ion-note *ngIf="item.pending" color="danger">Pending</ion-note>\n          <ion-note *ngIf="!item.pending" color="secondary">Saved</ion-note>\n          <hr />\n        </ion-item>\n      </ion-list>\n  </ion-content>\n  <ion-footer>\n    <ion-item>\n      <ion-label floating>Group text</ion-label>\n      <ion-input [(ngModel)]="groupChatText" (keyup.enter)="send()"></ion-input>\n    </ion-item>\n    <button ion-button (click)="send()">Send</button>\n    <button ion-button (click)="presentModal()">Share file</button>\n  </ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/group/group.html"*/,
-            queries: {
-                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
-            }
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
-            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
-            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_11__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["g" /* ModalController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */]])
-    ], GroupPage);
-    return GroupPage;
-}());
-
-//# sourceMappingURL=group.js.map
-
-/***/ }),
-
-/***/ 184:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SiaFiles; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(109);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(16);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-var SiaFiles = /** @class */ (function () {
-    function SiaFiles(navParams, viewCtrl, walletService, alertCtrl, transactionService, openGraphParserService, settingsService, bulletinSecretService, ahttp) {
-        var _this = this;
-        this.navParams = navParams;
-        this.viewCtrl = viewCtrl;
-        this.walletService = walletService;
-        this.alertCtrl = alertCtrl;
-        this.transactionService = transactionService;
-        this.openGraphParserService = openGraphParserService;
-        this.settingsService = settingsService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.ahttp = ahttp;
-        this.logicalParent = null;
-        this.mode = '';
-        this.postText = null;
-        this.post = {};
-        this.files = null;
-        this.selectedFile = null;
-        this.filepath = '';
-        this.group = null;
-        this.error = '';
-        this.group = navParams.data.group;
-        this.mode = navParams.data.mode || 'page';
-        this.logicalParent = navParams.data.logicalParent;
-        var headers = new __WEBPACK_IMPORTED_MODULE_7__angular_http__["a" /* Headers */]();
-        headers.append('Authorization', 'Bearer ' + this.settingsService.tokens[this.bulletinSecretService.keyname]);
-        var options = new __WEBPACK_IMPORTED_MODULE_7__angular_http__["d" /* RequestOptions */]({ headers: headers });
-        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-files', options)
-            .subscribe(function (res) {
-            _this.files = res.json()['files'];
-        }, function (err) {
-            _this.error = err.json().message;
-        });
-    }
-    SiaFiles.prototype.changeListener = function ($event) {
-        this.filepath = $event.target.files[0];
-    };
-    SiaFiles.prototype.upload = function () {
-        var _this = this;
-        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-upload?filepath=' + encodeURIComponent(this.filepath))
-            .subscribe(function (res) {
-            _this.files = res.json()['files'];
-        });
-    };
-    SiaFiles.prototype.delete = function (siapath) {
-        var _this = this;
-        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-delete?siapath=' + encodeURIComponent(siapath))
-            .subscribe(function (res) {
-            _this.files = res.json()['files'];
-        });
-    };
-    SiaFiles.prototype.submit = function () {
-        var _this = this;
-        this.walletService.get().then(function () {
-            return new Promise(function (resolve, reject) {
-                if (_this.selectedFile) {
-                    _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/sia-share-file?siapath=' + _this.selectedFile)
-                        .subscribe(function (res) {
-                        var sharefiledata = res.json()['filedata'];
-                        _this.approveTxn(sharefiledata, resolve);
-                    });
-                }
-                else {
-                    _this.approveTxn(null, resolve);
-                }
-                console.log(status);
-            }).then(function () {
-                _this.dismiss();
-            });
-        });
-    };
-    SiaFiles.prototype.approveTxn = function (sharefiledata, resolve) {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Approve Transaction');
-        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                // camera permission was granted
-                new Promise(function (resolve, reject) {
-                    if (sharefiledata) {
-                        return _this.transactionService.generateTransaction({
-                            relationship: {
-                                groupChatText: _this.postText,
-                                groupChatFile: sharefiledata,
-                                groupChatFileName: _this.selectedFile,
-                                my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
-                                my_username: _this.bulletinSecretService.username
-                            },
-                            their_bulletin_secret: _this.group.their_bulletin_secret,
-                            rid: _this.group.rid,
-                            requester_rid: _this.group.requester_rid,
-                            requested_rid: _this.group.requested_rid
-                        })
-                            .then(function () {
-                            resolve();
-                        })
-                            .catch(function (err) {
-                            reject();
-                        });
-                    }
-                    else {
-                        return _this.transactionService.generateTransaction({
-                            relationship: {
-                                postText: _this.postText
-                            }
-                        })
-                            .then(function () {
-                            resolve();
-                        })
-                            .catch(function (err) {
-                            reject();
-                        });
-                    }
-                })
-                    .then(function (hash) {
-                    return _this.transactionService.sendTransaction();
-                })
-                    .then(function () {
-                    _this.dismiss();
-                })
-                    .catch(function (err) {
-                    console.log('could not generate hash');
-                });
-            }
-        });
-        alert.present();
-    };
-    SiaFiles.prototype.dismiss = function () {
-        this.logicalParent.refresh();
-        this.viewCtrl.dismiss();
-    };
-    SiaFiles = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'modal-files',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/'<ion-header>\n  <ion-toolbar>\n    <ion-title>\n      Files\n    </ion-title>\n    <ion-buttons start *ngIf="mode == \'modal\'">\n      <button ion-button (click)="dismiss()">\n        <span ion-text color="primary" showWhen="ios">Cancel</span>\n        <ion-icon name="md-close" showWhen="android,windows,core"></ion-icon>\n      </button>\n    </ion-buttons>\n  </ion-toolbar>\n</ion-header>\n<ion-content>\n  <ion-item *ngIf="mode == \'modal\' && !error">\n    <ion-label>Files</ion-label>\n    <ion-select [(ngModel)]="selectedFile">\n      <ion-option *ngFor="let file of files" value="{{file.siapath}}">{{file.siapath}}</ion-option>\n    </ion-select>\n  </ion-item>\n  <ion-item *ngIf="!error">\n    <ion-textarea placeholder="Shortened url (35 chars max)" [(ngModel)]="filepath"></ion-textarea>\n  </ion-item>\n  <button ion-button secondary (click)="upload()" *ngIf="mode == \'page\' && !error" [disabled]="filepath">Upload</button>\n  <ion-item *ngIf="mode == \'page\' && !error">\n    <ion-list>\n      <ion-item *ngFor="let file of files">\n        <a *ngIf="file.available" href="{{file.stream_url}}" target="_blank">\n          <h3>{{file.siapath}}</h3>\n        </a>\n        <h3 *ngIf="!file.available">{{file.siapath}} (uploading...)</h3><button ion-button danger (click)="delete(file.siapath)">Delete</button>\n      </ion-item>\n    </ion-list>\n  </ion-item>\n  <button ion-button secondary (click)="submit()" *ngIf="mode == \'modal\'">Post</button>\n  <ion-card *ngIf="post.title">\n    <img src="{{post.image}}" *ngIf="post.image" />\n    <ion-card-content>\n      <ion-card-title>\n        {{post.title}}\n      </ion-card-title>\n      <p *ngIf="post.description">\n        {{post.description}}\n      </p>\n    </ion-card-content>\n  </ion-card>\n  <ion-item *ngIf="error">You must download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">full node</a> to store and share files.</ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["m" /* ViewController */],
-            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__["a" /* OpenGraphParserService */],
-            __WEBPACK_IMPORTED_MODULE_5__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_7__angular_http__["b" /* Http */]])
-    ], SiaFiles);
-    return SiaFiles;
-}());
-
-//# sourceMappingURL=siafiles.js.map
-
-/***/ }),
-
-/***/ 185:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return FirebaseService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(303);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(40);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(16);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-var FirebaseService = /** @class */ (function () {
-    function FirebaseService(settingsService, graphService, firebase, ahttp) {
-        this.settingsService = settingsService;
-        this.graphService = graphService;
-        this.firebase = firebase;
-        this.ahttp = ahttp;
-    }
-    FirebaseService.prototype.initFirebase = function () {
-        var _this = this;
-        if (!document.URL.startsWith('http') || document.URL.startsWith('http://localhost:8080')) {
-            this.firebase.getToken()
-                .then(function (token) {
-                console.log(token);
-                _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/fcm-token', {
-                    rid: _this.graphService.graph.rid,
-                    token: token,
-                }).subscribe(function () { });
-            })
-                .catch(function (error) {
-                console.log('Error getting token', error);
-            });
-            this.firebase.onTokenRefresh()
-                .subscribe(function (token) {
-                console.log(token);
-                _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/fcm-token', {
-                    rid: _this.graphService.graph.rid,
-                    token: token
-                }).subscribe(function () { });
-            });
-            this.firebase.onNotificationOpen().subscribe(function (notification) {
-                console.log(notification);
-            });
-        }
-    };
-    FirebaseService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_2__graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__["a" /* Firebase */],
-            __WEBPACK_IMPORTED_MODULE_4__angular_http__["b" /* Http */]])
-    ], FirebaseService);
-    return FirebaseService;
-}());
-
-//# sourceMappingURL=firebase.service.js.map
-
-/***/ }),
-
-/***/ 20:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return BulletinSecretService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(10);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-var BulletinSecretService = /** @class */ (function () {
-    function BulletinSecretService(storage, events) {
-        this.storage = storage;
-        this.events = events;
-        this.key = null;
-        this.bulletin_secret = null;
-        this.keyname = null;
-        this.keykeys = null;
-        this.username = null;
-    }
-    BulletinSecretService.prototype.shared_encrypt = function (shared_secret, message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
-        var cipher = forge.cipher.createCipher('AES-CBC', key);
-        var iv = '';
-        cipher.start({ iv: iv });
-        cipher.update(forge.util.createBuffer(iv + message));
-        cipher.finish();
-        return cipher.output.toHex();
-    };
-    BulletinSecretService.prototype.get = function () {
-        var _this = this;
-        return this.all()
-            .then(function (keys) {
-            return _this.setKeyName(keys);
-        })
-            .then(function () {
-            return _this.setKey();
-        });
-    };
-    BulletinSecretService.prototype.setKeyName = function (keys) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            keys.sort(function (a, b) {
-                if (a.idx < b.idx)
-                    return -1;
-                if (a.idx > b.idx)
-                    return 1;
-                return 0;
-            });
-            if (!_this.keyname) {
-                _this.storage.get('last-keyname').then(function (key) {
-                    if (key && typeof key == 'string') {
-                        _this.keyname = key;
-                    }
-                    else {
-                        _this.keyname = keys[0].idx;
-                    }
-                    resolve(keys);
-                });
-            }
-            else {
-                resolve(keys);
-            }
-        });
-    };
-    BulletinSecretService.prototype.setKey = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.storage.get(_this.keyname).then(function (key) {
-                _this.key = foobar.bitcoin.ECPair.fromWIF(key);
-                _this.username = _this.keyname.substr('usernames-'.length);
-                _this.bulletin_secret = _this.generate_bulletin_secret();
-                return resolve();
-            });
-        });
-    };
-    BulletinSecretService.prototype.generate_bulletin_secret = function () {
-        return foobar.base64.fromByteArray(this.key.sign(foobar.bitcoin.crypto.sha256(this.username)).toDER());
-    };
-    BulletinSecretService.prototype.set = function (key) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.keyname = key;
-            return _this.storage.set('last-keyname', key)
-                .then(function () {
-                return _this.storage.remove('usernames-');
-            })
-                .then(function (key) {
-                return _this.get();
-            })
-                .then(function () {
-                return _this.setKey();
-            })
-                .then(function () {
-                return resolve();
-            })
-                .catch(function () {
-                return reject();
-            });
-        });
-    };
-    BulletinSecretService.prototype.create = function (username) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            if (!username)
-                return reject();
-            _this.keyname = 'usernames-' + username;
-            _this.storage.set('last-keyname', _this.keyname);
-            _this.username = username;
-            _this.key = foobar.bitcoin.ECPair.makeRandom();
-            _this.storage.set(_this.keyname, _this.key.toWIF());
-            _this.bulletin_secret = _this.generate_bulletin_secret();
-            return _this.get().then(function () {
-                return resolve();
-            });
-        });
-    };
-    BulletinSecretService.prototype.import = function (keyWif, username) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            if (!username)
-                return reject();
-            _this.keyname = 'usernames-' + username;
-            _this.storage.set('last-keyname', _this.keyname);
-            _this.username = username;
-            _this.storage.set(_this.keyname, keyWif.trim());
-            _this.key = foobar.bitcoin.ECPair.fromWIF(keyWif.trim());
-            _this.bulletin_secret = _this.generate_bulletin_secret();
-            return _this.get().then(function () {
-                return resolve();
-            });
-        });
-    };
-    BulletinSecretService.prototype.all = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            var keykeys = [];
-            _this.storage.forEach(function (value, key) {
-                if (key.substr(0, 'usernames-'.length) === 'usernames-') {
-                    keykeys.push({ key: value, idx: key });
-                }
-            })
-                .then(function () {
-                _this.keykeys = keykeys;
-                resolve(keykeys);
-            });
-        });
-    };
-    BulletinSecretService.prototype.decrypt = function (message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
-        var decipher = forge.cipher.createDecipher('AES-CBC', key);
-        var enc = this.hexToBytes(message);
-        decipher.start({ iv: enc.slice(0, 16) });
-        decipher.update(forge.util.createBuffer(enc.slice(16)));
-        decipher.finish();
-        return decipher.output;
-    };
-    BulletinSecretService.prototype.hexToBytes = function (s) {
-        var arr = [];
-        for (var i = 0; i < s.length; i += 2) {
-            var c = s.substr(i, 2);
-            arr.push(parseInt(c, 16));
-        }
-        return String.fromCharCode.apply(null, arr);
-    };
-    BulletinSecretService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1__ionic_storage__["b" /* Storage */],
-            __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["b" /* Events */]])
-    ], BulletinSecretService);
-    return BulletinSecretService;
-}());
-
-//# sourceMappingURL=bulletinSecret.service.js.map
-
-/***/ }),
-
-/***/ 217:
-/***/ (function(module, exports) {
-
-function webpackEmptyAsyncContext(req) {
-	// Here Promise.resolve().then() is used instead of new Promise() to prevent
-	// uncatched exception popping up in devtools
-	return Promise.resolve().then(function() {
-		throw new Error("Cannot find module '" + req + "'.");
-	});
-}
-webpackEmptyAsyncContext.keys = function() { return []; };
-webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
-module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 217;
-
-/***/ }),
-
-/***/ 25:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WalletService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(42);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-var WalletService = /** @class */ (function () {
-    function WalletService(ahttp, bulletinSecretService, settingsService) {
-        this.ahttp = ahttp;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.walletError = false;
-        this.wallet = {};
-    }
-    WalletService.prototype.get = function (amount_needed) {
-        var _this = this;
-        if (amount_needed === void 0) { amount_needed = 0; }
-        return new Promise(function (resolve, reject) {
-            if (!_this.settingsService.remoteSettings['walletUrl'])
-                return resolve();
-            _this.bulletinSecretService.get()
-                .then(function () {
-                return _this.walletPromise(amount_needed);
-            })
-                .then(function () {
-                return resolve();
-            })
-                .catch(function () {
-                return reject();
-            });
-        });
-    };
-    WalletService.prototype.walletPromise = function (amount_needed) {
-        var _this = this;
-        if (amount_needed === void 0) { amount_needed = 0; }
-        return new Promise(function (resolve, reject) {
-            if (!_this.settingsService.remoteSettings['walletUrl']) {
-                return reject();
-            }
-            if (_this.bulletinSecretService.username) {
-                var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
-                headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
-                var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
-                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed=' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret + '&origin=' + window.location.origin, options)
-                    .pipe(Object(__WEBPACK_IMPORTED_MODULE_4_rxjs_operators__["timeout"])(30000))
-                    .subscribe(function (data) {
-                    if (data['_body']) {
-                        _this.walletError = false;
-                        _this.wallet = JSON.parse(data['_body']);
-                        _this.wallet.balancePretty = _this.wallet.balance.toFixed(2);
-                        resolve(data['_body']);
-                    }
-                    else {
-                        _this.walletError = true;
-                        _this.wallet = {};
-                        _this.wallet.balancePretty = 0;
-                        reject("no data returned");
-                    }
-                }, function (err) {
-                    _this.walletError = true;
-                    reject("data or server error");
-                });
-            }
-            else {
-                _this.walletError = true;
-                reject("username not set");
-            }
-        });
-    };
-    WalletService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_2__settings_service__["a" /* SettingsService */]])
-    ], WalletService);
-    return WalletService;
-}());
-
-//# sourceMappingURL=wallet.service.js.map
-
-/***/ }),
-
-/***/ 258:
-/***/ (function(module, exports) {
-
-function webpackEmptyAsyncContext(req) {
-	// Here Promise.resolve().then() is used instead of new Promise() to prevent
-	// uncatched exception popping up in devtools
-	return Promise.resolve().then(function() {
-		throw new Error("Cannot find module '" + req + "'.");
-	});
-}
-webpackEmptyAsyncContext.keys = function() { return []; };
-webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
-module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 258;
-
-/***/ }),
-
-/***/ 302:
+/***/ 304:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -2800,7 +3492,7 @@ webpackEmptyAsyncContext.id = 258;
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(109);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(16);
@@ -2956,7 +3648,7 @@ var PostModal = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 304:
+/***/ 306:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -2965,7 +3657,7 @@ var PostModal = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(490);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(491);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -3011,24 +3703,25 @@ var CompleteTestService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 305:
+/***/ 307:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return Settings; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(33);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(181);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(185);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(40);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__ionic_native_social_sharing__ = __webpack_require__(85);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__home_home__ = __webpack_require__(180);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_geolocation__ = __webpack_require__(180);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__sendreceive_sendreceive__ = __webpack_require__(186);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3053,8 +3746,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 
 
+
 var Settings = /** @class */ (function () {
-    function Settings(navCtrl, navParams, settingsService, bulletinSecretService, firebaseService, loadingCtrl, alertCtrl, storage, graphService, socialSharing, walletService, events, toastCtrl, peerService, ahttp) {
+    function Settings(navCtrl, navParams, settingsService, bulletinSecretService, firebaseService, loadingCtrl, alertCtrl, storage, graphService, socialSharing, walletService, events, toastCtrl, peerService, ahttp, geolocation) {
         this.navCtrl = navCtrl;
         this.navParams = navParams;
         this.settingsService = settingsService;
@@ -3070,6 +3764,7 @@ var Settings = /** @class */ (function () {
         this.toastCtrl = toastCtrl;
         this.peerService = peerService;
         this.ahttp = ahttp;
+        this.geolocation = geolocation;
         this.baseUrl = null;
         this.blockchainAddress = null;
         this.graphproviderAddress = null;
@@ -3084,8 +3779,6 @@ var Settings = /** @class */ (function () {
         this.serverDown = false;
         this.noUsername = false;
         this.key = null;
-        this.favorites = null;
-        this.removeFavorites = null;
         if (typeof this.peerService.mode == 'undefined')
             this.peerService.mode = true;
         this.refresh(null).catch(function (err) {
@@ -3099,74 +3792,12 @@ var Settings = /** @class */ (function () {
         return this.bulletinSecretService.all().then(function (keys) {
             _this.setKey(keys);
         }).then(function () {
-            _this.getFavorites();
-        }).then(function () {
             if (refresher)
                 refresher.complete();
         });
     };
-    Settings.prototype.saveToFavorites = function () {
-        var _this = this;
-        var alert = this.alertCtrl.create({
-            title: 'Set group name',
-            inputs: [
-                {
-                    name: 'groupname',
-                    placeholder: 'Group name'
-                }
-            ],
-            buttons: [
-                {
-                    text: 'Save',
-                    handler: function (data) {
-                        _this.storage.set('favorites-' + data.groupname, _this.settingsService.remoteSettingsUrl);
-                        _this.getFavorites();
-                    }
-                }
-            ]
-        });
-        alert.present();
-    };
     Settings.prototype.getResults = function (keyword) {
         return ['234234', '234234'];
-    };
-    Settings.prototype.getFavorites = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            var favorites = [];
-            _this.storage.forEach(function (value, key) {
-                if (key.substr(0, 'favorites-'.length) === 'favorites-') {
-                    favorites.push({ label: key.substr('favorites-'.length), url: value });
-                }
-            })
-                .then(function () {
-                if (favorites.length == 0) {
-                    var host = window.location.protocol + '//' + window.location.host;
-                    _this.storage.set('favorites-Home', host);
-                    favorites.push({ label: 'Home', url: host });
-                }
-                _this.favorites = favorites;
-                resolve(favorites);
-            });
-        });
-    };
-    Settings.prototype.selectFavorite = function (favorite) {
-        for (var i = 0; i < this.favorites.length; i++) {
-            this.favorites[i].active = false;
-        }
-        favorite.active = true;
-        this.settingsService.remoteSettingsUrl = favorite.url;
-        this.storage.set('node', favorite.url);
-    };
-    Settings.prototype.removeFavorite = function (favorite) {
-        var _this = this;
-        this.storage.remove('favorites-' + favorite.label);
-        this.getFavorites()
-            .then(function (favorites) {
-            if (!favorites) {
-                _this.removeFavorites = null;
-            }
-        });
     };
     Settings.prototype.setKey = function (keys) {
         var _this = this;
@@ -3262,7 +3893,7 @@ var Settings = /** @class */ (function () {
             toast.present();
         });
     };
-    Settings.prototype.createKey = function () {
+    Settings.prototype.createWallet = function () {
         var _this = this;
         new Promise(function (resolve, reject) {
             var alert = _this.alertCtrl.create({
@@ -3298,11 +3929,15 @@ var Settings = /** @class */ (function () {
             alert.present();
         })
             .then(function (username) {
-            return new Promise(function (resolve, reject) {
-                _this.bulletinSecretService.create(username)
-                    .then(function () {
-                    resolve(username);
-                });
+            return _this.createKey(username);
+        });
+    };
+    Settings.prototype.createKey = function (username) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.bulletinSecretService.create(username)
+                .then(function () {
+                resolve(username);
             });
         })
             .then(function (key) {
@@ -3332,33 +3967,31 @@ var Settings = /** @class */ (function () {
     Settings.prototype.selectIdentity = function (key) {
         var _this = this;
         this.loadingModal = this.loadingCtrl.create({
-            content: 'Finding node...'
+            content: 'initializing...'
         });
         this.loadingModal.present();
-        return this.peerService.go()
+        return this.set(key)
             .then(function () {
-            return _this.set(key);
+            return _this.peerService.go();
         })
             .then(function () {
             return _this.refresh(null);
         })
             .then(function () {
-            return _this.unlockWallet();
-        })
-            .then(function () {
             _this.loadingModal.dismiss();
         })
             .then(function () {
-            _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_11__home_home__["a" /* HomePage */]);
+            _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_13__sendreceive_sendreceive__["a" /* SendReceive */]);
         })
             .catch(function (err) {
+            console.log(err);
             _this.loadingModal.dismiss();
         });
     };
     Settings.prototype.unlockWallet = function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            var options = new __WEBPACK_IMPORTED_MODULE_12__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            var options = new __WEBPACK_IMPORTED_MODULE_11__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
             _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/unlock?origin=' + encodeURIComponent(window.location.origin), { key_or_wif: _this.activeKey }, options)
                 .subscribe(function (res) {
                 _this.settingsService.tokens[_this.bulletinSecretService.keyname] = res.json()['token'];
@@ -3421,7 +4054,7 @@ var Settings = /** @class */ (function () {
     };
     Settings = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-settings',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-item *ngIf="peerService.mode">\n      <a button clear href="https://youtube.com/w=lajksdf98" target="_blank" item-start>\n        <ion-icon large name="help-circle"></ion-icon>\n      </a>\n      <ion-label color="primary" text-right>Node address: </ion-label>\n      <ion-input color="primary" type="text" placeholder="Enter a url" [(ngModel)]="settingsService.remoteSettingsUrl"></ion-input>\n      <button ion-button primary (click)="saveToFavorites()" item-end>Save</button>\n    </ion-item>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-item col-md-2>\n    <ion-toggle color="primary" class="wallet-toggle" [(ngModel)]="peerService.mode"></ion-toggle>\n    <ion-label>Wallet mode</ion-label>\n    <ion-item *ngIf="!peerService.mode">Will connect to any available YadaCoin node. You can send YadaCoins in this mode but social interaction data is limited.</ion-item>\n  </ion-item>\n  <h3 *ngIf="peerService.mode">Nodes</h3>\n  <ion-list *ngIf="peerService.mode">\n    <ion-row>\n      <ion-col col-lg-3 col-md-4 col-sm-4 *ngFor="let favorite of favorites">\n        <button ion-item (click)="selectFavorite(favorite)" [color]="favorite.active ? \'secondary\' : \'dark\'">\n          <ion-card padding>\n            <img src="assets/img/yadacoinlogotextsmall.png">\n            <ion-card-content>\n              <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n                  {{favorite.label}}\n              </ion-card-title>\n            </ion-card-content>\n          </ion-card>\n        </button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <h3>Identities</h3>\n  <button ion-button secondary (click)="createKey()">Create identity</button>\n  <ion-list>\n    <ion-row>\n      <ion-col col-lg-3 col-md-4 col-sm-4 *ngFor="let key of keys">\n        <button ion-item (click)="selectIdentity(key.username)" [color]="key.active ? \'secondary\' : \'dark\'">\n          <ion-card padding>\n            <img src="assets/img/yadacoinlogotextsmall.png">\n            <ion-card-content>\n              <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n                  {{key.username}}\n              </ion-card-title>\n            </ion-card-content>\n          </ion-card>\n        </button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname">\n    <hr/>\n    <h4>Export identity</h4>\n    <ion-item>\n      <ion-input type="text" [(ngModel)]="activeKey">\n      </ion-input>\n    </ion-item>\n    <h4>Bulletin secret</h4>\n    <ion-item>\n      <ion-input type="text" [(ngModel)]="bulletinSecretService.bulletin_secret">\n      </ion-input>\n      <button ion-button secondary (click)="exportKey()">Export active identity</button>\n    </ion-item>\n  </ion-list>\n  <ion-list>\n    <h4>Import identity</h4>\n    <ion-item>\n      <ion-input type="text" placeholder="Paste WIF key from your wallet..." [(ngModel)]="importedKey">\n      </ion-input>\n    </ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/
+            selector: 'page-settings',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <button ion-button secondary (click)="createWallet()">Create identity</button>\n  <h3>Identities</h3>\n  <ion-list>\n    <ion-row>\n      <ion-col col-lg-3 col-md-4 col-sm-4 *ngFor="let key of keys">\n        <button ion-item (click)="selectIdentity(key.username)" [color]="key.active ? \'secondary\' : \'dark\'">\n          <ion-card padding>\n            <img src="assets/img/yadacoinlogotextsmall.png">\n            <ion-card-content>\n              <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n                  {{key.username}}\n              </ion-card-title>\n            </ion-card-content>\n          </ion-card>\n        </button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname">\n    <hr/>\n    <h4>Export identity</h4>\n    <ion-item>\n      <ion-input type="text" [(ngModel)]="activeKey">\n      </ion-input>\n    </ion-item>\n    <h4>Bulletin secret</h4>\n    <ion-item>\n      <ion-input type="text" [(ngModel)]="bulletinSecretService.bulletin_secret">\n      </ion-input>\n      <button ion-button secondary (click)="exportKey()">Export active identity</button>\n    </ion-item>\n  </ion-list>\n  <ion-list>\n    <h4>Import identity</h4>\n    <ion-item>\n      <ion-input type="text" placeholder="Paste WIF key from your wallet..." [(ngModel)]="importedKey">\n      </ion-input>\n    </ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-list>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -3437,7 +4070,8 @@ var Settings = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
             __WEBPACK_IMPORTED_MODULE_4__app_peer_service__["a" /* PeerService */],
-            __WEBPACK_IMPORTED_MODULE_12__angular_http__["b" /* Http */]])
+            __WEBPACK_IMPORTED_MODULE_11__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_12__ionic_native_geolocation__["a" /* Geolocation */]])
     ], Settings);
     return Settings;
 }());
@@ -3446,21 +4080,21 @@ var Settings = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 306:
+/***/ 309:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return StreamPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(40);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(48);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3673,202 +4307,13 @@ var StreamPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 307:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SendReceive; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(308);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(85);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(16);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-
-var SendReceive = /** @class */ (function () {
-    function SendReceive(navCtrl, qrScanner, transactionService, alertCtrl, bulletinSecretService, walletService, socialSharing, loadingCtrl, ahttp, settingsService) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.qrScanner = qrScanner;
-        this.transactionService = transactionService;
-        this.alertCtrl = alertCtrl;
-        this.bulletinSecretService = bulletinSecretService;
-        this.walletService = walletService;
-        this.socialSharing = socialSharing;
-        this.loadingCtrl = loadingCtrl;
-        this.ahttp = ahttp;
-        this.settingsService = settingsService;
-        this.value = null;
-        this.createdCode = null;
-        this.address = null;
-        this.balance = null;
-        this.isDevice = null;
-        this.loadingModal = this.loadingCtrl.create({
-            content: 'Please wait...'
-        });
-        this.value = 0;
-        this.bulletinSecretService.get().then(function () {
-            _this.createdCode = bulletinSecretService.key.getAddress();
-            _this.refresh();
-        });
-    }
-    SendReceive.prototype.scan = function () {
-        var _this = this;
-        if (!document.URL.startsWith('http') || document.URL.startsWith('http://localhost:8080')) {
-            this.isDevice = true;
-        }
-        else {
-            this.isDevice = false;
-        }
-        this.qrScanner.prepare().then(function (status) {
-            console.log(status);
-            if (status.authorized) {
-                // start scanning
-                var scanSub_1 = _this.qrScanner.scan().subscribe(function (text) {
-                    console.log('Scanned address', text);
-                    _this.address = text;
-                    _this.qrScanner.hide(); // hide camera preview
-                    scanSub_1.unsubscribe(); // stop scanning
-                    window.document.querySelector('ion-app').classList.remove('transparentBody');
-                });
-            }
-        });
-        this.qrScanner.resumePreview();
-        // show camera preview
-        this.qrScanner.show();
-        window.document.querySelector('ion-app').classList.add('transparentBody');
-    };
-    SendReceive.prototype.submit = function () {
-        var _this = this;
-        var value = parseFloat(this.value);
-        var total = value + 0.01;
-        var alert = this.alertCtrl.create();
-        if (!this.address) {
-            alert.setTitle('Enter an address');
-            alert.addButton('Ok');
-            alert.present();
-            return;
-        }
-        if (!value) {
-            alert.setTitle('Enter an amount');
-            alert.addButton('Ok');
-            alert.present();
-            return;
-        }
-        alert.setTitle('Approve Transaction');
-        alert.setSubTitle('You are about to spend ' + total + ' coins (' + this.value + ' coin + 0.001 fee)');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                _this.loadingModal.present();
-                _this.walletService.get(_this.value)
-                    .then(function () {
-                    return _this.transactionService.generateTransaction({
-                        to: _this.address,
-                        value: value
-                    });
-                }).then(function () {
-                    return _this.transactionService.sendTransaction();
-                }).then(function (txn) {
-                    var title = 'Transaction Sent';
-                    var message = 'Your transaction has been sent succefully.';
-                    if (!txn) {
-                        title = 'Insufficient Funds';
-                        message = "Not enough YadaCoins for transaction.";
-                    }
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle(title);
-                    alert.setSubTitle(message);
-                    alert.addButton('Ok');
-                    alert.present();
-                    _this.value = '0';
-                    _this.address = '';
-                    _this.refresh();
-                    _this.loadingModal.dismiss().catch(function () { });
-                })
-                    .catch(function (err) {
-                    console.log(err);
-                    _this.loadingModal.dismiss().catch(function () { });
-                });
-            }
-        });
-        alert.present();
-    };
-    SendReceive.prototype.refresh = function () {
-        var _this = this;
-        this.loadingBalance = true;
-        return this.walletService.get(this.value)
-            .then(function () {
-            _this.loadingBalance = false;
-            _this.balance = _this.walletService.wallet.balance;
-        }).catch(function (err) {
-            console.log(err);
-        });
-    };
-    SendReceive.prototype.shareAddress = function () {
-        this.socialSharing.share(this.bulletinSecretService.key.getAddress(), "Send Yada Coin to this address!");
-    };
-    SendReceive.prototype.showChat = function () {
-        var item = { pageTitle: { title: "Chat" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    SendReceive.prototype.showFriendRequests = function () {
-        var item = { pageTitle: { title: "Friend Requests" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    SendReceive = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-sendreceive',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item>\n    {{walletService.wallet.balance}} YADA\n  </ion-item>\n  <h4>Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>Scan Address</button>\n  <ion-item>\n    <ion-label color="primary" stacked>Address</ion-label>\n    <ion-input type="text" placeholder="Recipient address..." [(ngModel)]="address">\n    </ion-input>\n  </ion-item>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Amount..." [(ngModel)]="value">\n    </ion-input>\n  </ion-item>\n  <button ion-button secondary (click)="submit()">Send</button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <button *ngIf="isDevice" ion-button outline item-end (click)="shareAddress()">share address&nbsp;<ion-icon name="share"></ion-icon></button>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__["a" /* QRScanner */],
-            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__["a" /* SocialSharing */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
-            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_6__app_settings_service__["a" /* SettingsService */]])
-    ], SendReceive);
-    return SendReceive;
-}());
-
-//# sourceMappingURL=sendreceive.js.map
-
-/***/ }),
-
-/***/ 326:
+/***/ 327:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(327);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(437);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(328);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(438);
 
 
 Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* platformBrowserDynamic */])().bootstrapModule(__WEBPACK_IMPORTED_MODULE_1__app_module__["a" /* AppModule */]);
@@ -3876,476 +4321,21 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 
 /***/ }),
 
-/***/ 34:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return TransactionService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(16);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-var TransactionService = /** @class */ (function () {
-    function TransactionService(walletService, bulletinSecretService, ahttp, settingsService) {
-        this.walletService = walletService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.ahttp = ahttp;
-        this.settingsService = settingsService;
-        this.info = null;
-        this.transaction = null;
-        this.key = null;
-        this.xhr = null;
-        this.rid = null;
-        this.callbackurl = null;
-        this.blockchainurl = null;
-        this.bulletin_secret = null;
-        this.their_bulletin_secret = null;
-        this.shared_secret = null;
-        this.to = null;
-        this.txnattempts = null;
-        this.cbattempts = null;
-        this.prevTxn = null;
-        this.txns = null;
-        this.resolve = null;
-        this.unspent_transaction_override = null;
-        this.value = null;
-        this.username = null;
-        this.signatures = null;
-    }
-    TransactionService.prototype.generateTransaction = function (info) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.key = _this.bulletinSecretService.key;
-            _this.bulletin_secret = _this.bulletinSecretService.generate_bulletin_secret();
-            _this.username = _this.bulletinSecretService.username;
-            _this.txnattempts = [12, 5, 4];
-            _this.cbattempts = [12, 5, 4];
-            _this.info = info;
-            _this.their_bulletin_secret = _this.info.their_bulletin_secret;
-            _this.unspent_transaction_override = _this.info.unspent_transaction;
-            _this.blockchainurl = _this.info.blockchainurl;
-            _this.callbackurl = _this.info.callbackurl;
-            _this.to = _this.info.to;
-            _this.value = _this.info.value;
-            if (_this.info.rid) {
-                _this.rid = _this.info.rid;
-            }
-            else if (_this.info.relationship && _this.info.relationship.their_bulletin_secret) {
-                var bulletin_secrets = [_this.bulletin_secret, _this.info.relationship.their_bulletin_secret].sort(function (a, b) {
-                    return a.toLowerCase().localeCompare(b.toLowerCase());
-                });
-                _this.rid = forge.sha256.create().update(bulletin_secrets[0] + bulletin_secrets[1]).digest().toHex();
-            }
-            else if (_this.info.their_bulletin_secret) {
-                bulletin_secrets = [_this.bulletin_secret, _this.info.their_bulletin_secret].sort(function (a, b) {
-                    return a.toLowerCase().localeCompare(b.toLowerCase());
-                });
-                _this.rid = forge.sha256.create().update(bulletin_secrets[0] + bulletin_secrets[1]).digest().toHex();
-            }
-            else {
-                _this.rid = '';
-            }
-            _this.transaction = {
-                rid: _this.rid,
-                fee: 0.00,
-                requester_rid: typeof _this.info.requester_rid == 'undefined' ? '' : _this.info.requester_rid,
-                requested_rid: typeof _this.info.requested_rid == 'undefined' ? '' : _this.info.requested_rid,
-                outputs: [],
-                time: parseInt(((+new Date()) / 1000).toString()).toString(),
-                public_key: _this.key.getPublicKeyBuffer().toString('hex')
-            };
-            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
-                _this.transaction.dh_public_key = _this.info.dh_public_key;
-            }
-            if (_this.to) {
-                _this.transaction.outputs.push({
-                    to: _this.to,
-                    value: _this.value || 0
-                });
-            }
-            if (_this.transaction.outputs.length > 0) {
-                var transaction_total = _this.transaction.outputs[0].value + _this.transaction.fee;
-            }
-            else {
-                transaction_total = _this.transaction.fee;
-            }
-            if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < transaction_total) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
-                reject("not enough money");
-                return;
-            }
-            else {
-                var inputs = [];
-                var input_sum = 0;
-                var unspent_transactions = void 0;
-                if (_this.unspent_transaction_override) {
-                    unspent_transactions = [_this.unspent_transaction_override];
-                }
-                else {
-                    _this.info.relationship = _this.info.relationship || {};
-                    unspent_transactions = _this.walletService.wallet.unspent_transactions;
-                    unspent_transactions.sort(function (a, b) {
-                        if (a.height < b.height)
-                            return -1;
-                        if (a.height > b.height)
-                            return 1;
-                        return 0;
-                    });
-                }
-                dance: for (var i = 0; i < unspent_transactions.length; i++) {
-                    var unspent_transaction = unspent_transactions[i];
-                    for (var j = 0; j < unspent_transaction.outputs.length; j++) {
-                        var unspent_output = unspent_transaction.outputs[j];
-                        if (unspent_output.to === _this.key.getAddress()) {
-                            inputs.push({ id: unspent_transaction.id });
-                            input_sum += parseFloat(unspent_output.value);
-                            if (input_sum >= transaction_total) {
-                                _this.transaction.outputs.push({
-                                    to: _this.key.getAddress(),
-                                    value: (input_sum - transaction_total)
-                                });
-                                break dance;
-                            }
-                        }
-                    }
-                }
-            }
-            var myAddress = _this.key.getAddress();
-            var found = false;
-            for (var h = 0; h < _this.transaction.outputs.length; h++) {
-                if (_this.transaction.outputs[h].to == myAddress) {
-                    found = true;
-                }
-            }
-            if (!found) {
-                _this.transaction.outputs.push({
-                    to: _this.key.getAddress(),
-                    value: 0
-                });
-            }
-            if (input_sum < transaction_total) {
-                return reject(false);
-            }
-            _this.transaction.inputs = inputs;
-            var inputs_hashes = [];
-            for (i = 0; i < inputs.length; i++) {
-                inputs_hashes.push(inputs[i].id);
-            }
-            var inputs_hashes_arr = inputs_hashes.sort(function (a, b) {
-                if (a.toLowerCase() < b.toLowerCase())
-                    return -1;
-                if (a.toLowerCase() > b.toLowerCase())
-                    return 1;
-                return 0;
-            });
-            var inputs_hashes_concat = inputs_hashes_arr.join('');
-            var outputs_hashes = [];
-            for (i = 0; i < _this.transaction.outputs.length; i++) {
-                outputs_hashes.push(_this.transaction.outputs[i].to + _this.transaction.outputs[i].value.toFixed(8));
-            }
-            var outputs_hashes_arr = outputs_hashes.sort(function (a, b) {
-                if (a.toLowerCase() < b.toLowerCase())
-                    return -1;
-                if (a.toLowerCase() > b.toLowerCase())
-                    return 1;
-                return 0;
-            });
-            var outputs_hashes_concat = outputs_hashes_arr.join('');
-            if (_this.info.relationship) {
-                bulletin_secrets = [_this.bulletin_secret, _this.info.relationship.bulletin_secret].sort(function (a, b) {
-                    return a.toLowerCase().localeCompare(b.toLowerCase());
-                });
-                _this.rid = foobar.bitcoin.crypto.sha256(bulletin_secrets[0] + bulletin_secrets[1]).toString('hex');
-            }
-            else {
-                _this.info.relationship = {};
-            }
-            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
-                // creating new relationship
-                _this.transaction.relationship = _this.encrypt();
-                var hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.dh_public_key +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (typeof _this.info.relationship.groupChatText !== 'undefined') {
-                // group chat
-                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.postText) {
-                // group post
-                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.comment) {
-                // group comment
-                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.react) {
-                // group react
-                _this.transaction.relationship = _this.shared_encrypt(_this.their_bulletin_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.chatText) {
-                // chat
-                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.signIn) {
-                // sign in
-                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else {
-                //straight transaction
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.fee.toFixed(8) +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            _this.transaction.hash = hash;
-            var attempt = _this.txnattempts.pop();
-            attempt = _this.cbattempts.pop();
-            _this.transaction.id = _this.get_transaction_id(_this.transaction.hash, attempt);
-            if (hash) {
-                resolve(hash);
-            }
-            else {
-                reject(false);
-            }
-        });
-    };
-    TransactionService.prototype.getFastGraphSignature = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
-                hash: _this.transaction.hash,
-                bulletin_secret: _this.bulletinSecretService.bulletin_secret,
-                input: _this.transaction.inputs[0].id,
-                id: _this.transaction.id,
-                txn: _this.transaction
-            })
-                .subscribe(function (res) {
-                try {
-                    var data = res.json();
-                    _this.transaction.signatures = [data.signature];
-                    resolve();
-                }
-                catch (err) {
-                    reject();
-                }
-            }, function (err) {
-                reject();
-            });
-        });
-    };
-    TransactionService.prototype.sendTransaction = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            var url = '';
-            url = _this.settingsService.remoteSettings['transactionUrl'] + '?bulletin_secret=' + _this.bulletin_secret + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
-            _this.ahttp.post(url, _this.transaction)
-                .subscribe(function (data) {
-                try {
-                    resolve(JSON.parse(data['_body']));
-                }
-                catch (err) {
-                    reject(err);
-                }
-            }, function (error) {
-                if (_this.txnattempts.length > 0) {
-                    reject();
-                }
-            });
-        });
-    };
-    TransactionService.prototype.sendCallback = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            if (_this.callbackurl) {
-                _this.ahttp.post(_this.callbackurl, {
-                    bulletin_secret: _this.bulletin_secret,
-                    to: _this.key.getAddress(),
-                    username: _this.username
-                })
-                    .subscribe(function (data) {
-                    resolve(JSON.parse(data['_body']));
-                }, function (error) {
-                    if (_this.cbattempts.length > 0) {
-                        reject();
-                    }
-                });
-            }
-        });
-    };
-    TransactionService.prototype.get_transaction_id = function (hash, trynum) {
-        var combine = new Uint8Array(hash.length);
-        //combine[0] = 0;
-        //combine[1] = 64;
-        for (var i = 0; i < hash.length; i++) {
-            combine[i] = hash.charCodeAt(i);
-        }
-        var shaMessage = foobar.bitcoin.crypto.sha256(combine);
-        var signature = this.key.sign(shaMessage);
-        var der = signature.toDER();
-        return foobar.base64.fromByteArray(der);
-    };
-    TransactionService.prototype.direct_message = function (data) {
-        //placeholder
-    };
-    TransactionService.prototype.hexToBytes = function (s) {
-        var arr = [];
-        for (var i = 0; i < s.length; i += 2) {
-            var c = s.substr(i, 2);
-            arr.push(parseInt(c, 16));
-        }
-        return String.fromCharCode.apply(null, arr);
-    };
-    TransactionService.prototype.hexToByteArray = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback);
-    };
-    TransactionService.prototype.byteArrayToHexString = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    TransactionService.prototype.encrypt = function () {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
-        var cipher = forge.cipher.createCipher('AES-CBC', key);
-        var iv = forge.random.getBytesSync(16);
-        cipher.start({ iv: iv });
-        cipher.update(forge.util.createBuffer(iv + JSON.stringify(this.info.relationship)));
-        cipher.finish();
-        return cipher.output.toHex();
-    };
-    TransactionService.prototype.shared_encrypt = function (shared_secret, message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
-        var cipher = forge.cipher.createCipher('AES-CBC', key);
-        var iv = forge.random.getBytesSync(16);
-        cipher.start({ iv: iv });
-        cipher.update(forge.util.createBuffer(iv + Base64.encode(message)));
-        cipher.finish();
-        return cipher.output.toHex();
-    };
-    TransactionService.prototype.decrypt = function (message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
-        var decipher = forge.cipher.createDecipher('AES-CBC', key);
-        var enc = this.hexToBytes(message);
-        decipher.start({ iv: enc.slice(0, 16) });
-        decipher.update(forge.util.createBuffer(enc.slice(16)));
-        decipher.finish();
-        return decipher.output;
-    };
-    TransactionService.prototype.shared_decrypt = function (shared_secret, message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
-        var decipher = forge.cipher.createDecipher('AES-CBC', key);
-        var enc = this.hexToBytes(message);
-        decipher.start({ iv: enc.slice(0, 16) });
-        decipher.update(forge.util.createBuffer(enc.slice(16)));
-        decipher.finish();
-        return decipher.output;
-    };
-    TransactionService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2__wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_4__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_3__settings_service__["a" /* SettingsService */]])
-    ], TransactionService);
-    return TransactionService;
-}());
-
-//# sourceMappingURL=transaction.service.js.map
-
-/***/ }),
-
-/***/ 40:
+/***/ 41:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return GraphService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(33);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(17);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__ionic_native_badge__ = __webpack_require__(301);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_rxjs_operators__ = __webpack_require__(42);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__settings_service__ = __webpack_require__(17);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(302);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_ionic_angular__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_rxjs_operators__ = __webpack_require__(43);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(180);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4355,6 +4345,8 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
+
 
 
 
@@ -4364,13 +4356,15 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 
 var GraphService = /** @class */ (function () {
-    function GraphService(storage, bulletinSecretService, settingsService, badge, platform, ahttp) {
+    function GraphService(storage, bulletinSecretService, settingsService, badge, platform, ahttp, transactionService, geolocation) {
         this.storage = storage;
         this.bulletinSecretService = bulletinSecretService;
         this.settingsService = settingsService;
         this.badge = badge;
         this.platform = platform;
         this.ahttp = ahttp;
+        this.transactionService = transactionService;
+        this.geolocation = geolocation;
         this.getGraphError = false;
         this.getSentFriendRequestsError = false;
         this.getGroupsRequestsError = false;
@@ -4406,9 +4400,9 @@ var GraphService = /** @class */ (function () {
         if (ids === void 0) { ids = null; }
         if (rids === void 0) { rids = null; }
         return new Promise(function (resolve, reject) {
-            var headers = new __WEBPACK_IMPORTED_MODULE_5__angular_http__["a" /* Headers */]();
+            var headers = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["a" /* Headers */]();
             headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
-            var options = new __WEBPACK_IMPORTED_MODULE_5__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
+            var options = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
             var promise = null;
             if (ids) {
                 promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + '/' + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret, { ids: ids }, options);
@@ -4420,7 +4414,7 @@ var GraphService = /** @class */ (function () {
                 promise = _this.ahttp.get(_this.settingsService.remoteSettings['graphUrl'] + '/' + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&bulletin_secret=' + _this.bulletinSecretService.bulletin_secret, options);
             }
             promise
-                .pipe(Object(__WEBPACK_IMPORTED_MODULE_7_rxjs_operators__["timeout"])(30000))
+                .pipe(Object(__WEBPACK_IMPORTED_MODULE_8_rxjs_operators__["timeout"])(30000))
                 .subscribe(function (data) {
                 try {
                     var info = JSON.parse(data['_body']);
@@ -5230,6 +5224,128 @@ var GraphService = /** @class */ (function () {
             });
         });
     };
+    GraphService.prototype.createGroup = function (groupname) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            if (!groupname)
+                return reject();
+            var key = foobar.bitcoin.ECPair.makeRandom();
+            var wif = key.toWIF();
+            var pubKey = key.getPublicKeyBuffer().toString('hex');
+            var address = key.getAddress();
+            var bulletin_secret = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(groupname)).toDER());
+            var raw_dh_private_key = window.crypto.getRandomValues(new Uint8Array(32));
+            var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
+            var dh_private_key = _this.toHex(raw_dh_private_key);
+            var dh_public_key = _this.toHex(raw_dh_public_key);
+            resolve({
+                their_public_key: pubKey,
+                their_address: address,
+                their_bulletin_secret: bulletin_secret,
+                their_username: groupname,
+                wif: wif,
+                dh_public_key: dh_public_key,
+                dh_private_key: dh_private_key
+            });
+        })
+            .then(function (info) {
+            var bulletin_secrets = [_this.graph.bulletin_secret, info.their_bulletin_secret].sort(function (a, b) {
+                return a.toLowerCase().localeCompare(b.toLowerCase());
+            });
+            var requested_rid = forge.sha256.create().update(bulletin_secrets[0] + bulletin_secrets[1]).digest().toHex();
+            return _this.transactionService.generateTransaction({
+                relationship: {
+                    dh_private_key: info.dh_private_key,
+                    their_bulletin_secret: info.their_bulletin_secret,
+                    their_public_key: info.their_public_key,
+                    their_username: info.their_username,
+                    their_address: info.their_address,
+                    my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
+                    my_username: _this.bulletinSecretService.username,
+                    wif: info.wif,
+                    group: true
+                },
+                dh_public_key: info.dh_public_key,
+                to: info.their_address,
+                requester_rid: _this.graph.rid,
+                requested_rid: requested_rid
+            });
+        }).then(function (txn) {
+            return _this.transactionService.sendTransaction();
+        });
+    };
+    GraphService.prototype.generateRecovery = function (username) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            return _this.geolocation.getCurrentPosition().then(function (resp) {
+                var result = resp.coords.longitude + (resp.coords.latitude + username);
+                var target = 0x00000fffffffffffffffffffffffffffffffffffffffffffffffffffffffffff;
+                var rid;
+                var password;
+                for (var i = 0; i === i; i++) {
+                    result = forge.sha256.create().update(result).digest().toHex();
+                    if (parseInt(result, 16) < target && password) {
+                        result = forge.sha256.create().update(result).digest().toHex();
+                        rid = result;
+                        break;
+                    }
+                    if (parseInt(result, 16) < target && !password) {
+                        result = forge.sha256.create().update(result).digest().toHex();
+                        password = result;
+                    }
+                }
+                return resolve([rid, password, username]);
+            }).catch(function (error) {
+                console.log('Error getting location', error);
+            });
+        });
+    };
+    GraphService.prototype.createRecovery = function (username) {
+        var _this = this;
+        this.generateRecovery(username)
+            .then(function (args) {
+            var rid = args[0];
+            var shared_secret = args[1];
+            return new Promise(function (resolve, reject) {
+                if (!username)
+                    return reject();
+                return _this.storage.get(_this.bulletinSecretService.keyname).then(function (wif) {
+                    var key = foobar.bitcoin.ECPair.fromWIF(wif);
+                    var pubKey = key.getPublicKeyBuffer().toString('hex');
+                    var address = key.getAddress();
+                    var bulletin_secret = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(username)).toDER());
+                    resolve({
+                        their_public_key: pubKey,
+                        their_address: address,
+                        their_bulletin_secret: bulletin_secret,
+                        their_username: username,
+                        wif: wif,
+                        rid: rid,
+                        shared_key: shared_secret
+                    });
+                });
+            });
+        })
+            .then(function (info) {
+            return _this.transactionService.generateTransaction({
+                relationship: {
+                    their_bulletin_secret: info.their_bulletin_secret,
+                    their_public_key: info.their_public_key,
+                    their_username: info.their_username,
+                    their_address: info.their_address,
+                    my_bulletin_secret: _this.bulletinSecretService.generate_bulletin_secret(),
+                    my_username: _this.bulletinSecretService.username,
+                    wif: info.wif,
+                    group: true
+                },
+                to: info.their_address,
+                rid: info.rid,
+                shared_secret: info.shared_key
+            });
+        }).then(function (txn) {
+            return _this.transactionService.sendTransaction();
+        });
+    };
     GraphService.prototype.decrypt = function (message) {
         var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.bulletinSecretService.key.toWIF()).digest().toHex(), 'salt', 400, 32);
         var decipher = forge.cipher.createDecipher('AES-CBC', key);
@@ -5276,10 +5392,12 @@ var GraphService = /** @class */ (function () {
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1__ionic_storage__["b" /* Storage */],
             __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_3__settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_4__ionic_native_badge__["a" /* Badge */],
-            __WEBPACK_IMPORTED_MODULE_6_ionic_angular__["k" /* Platform */],
-            __WEBPACK_IMPORTED_MODULE_5__angular_http__["b" /* Http */]])
+            __WEBPACK_IMPORTED_MODULE_4__settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__["a" /* Badge */],
+            __WEBPACK_IMPORTED_MODULE_7_ionic_angular__["k" /* Platform */],
+            __WEBPACK_IMPORTED_MODULE_6__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_3__transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__["a" /* Geolocation */]])
     ], GraphService);
     return GraphService;
 }());
@@ -5288,55 +5406,57 @@ var GraphService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 437:
+/***/ 438:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return AppModule; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(48);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(43);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(479);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(180);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(302);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(305);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(44);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(480);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(303);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(304);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(307);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(182);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(86);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_group_group__ = __webpack_require__(183);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__ = __webpack_require__(184);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__ = __webpack_require__(306);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_status_bar__ = __webpack_require__(298);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_splash_screen__ = __webpack_require__(300);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__ = __webpack_require__(309);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_status_bar__ = __webpack_require__(299);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_splash_screen__ = __webpack_require__(301);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_qr_scanner__ = __webpack_require__(308);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18_ngx_qrcode2__ = __webpack_require__(492);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__graph_service__ = __webpack_require__(40);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18_ngx_qrcode2__ = __webpack_require__(493);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__graph_service__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__peer_service__ = __webpack_require__(181);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__transaction_service__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__opengraphparser_service__ = __webpack_require__(109);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__firebase_service__ = __webpack_require__(185);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__pages_sendreceive_sendreceive__ = __webpack_require__(307);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__ionic_native_clipboard__ = __webpack_require__(512);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__pages_sendreceive_sendreceive__ = __webpack_require__(186);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__ionic_native_clipboard__ = __webpack_require__(513);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__ionic_native_social_sharing__ = __webpack_require__(85);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__ionic_native_badge__ = __webpack_require__(301);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_deeplinks__ = __webpack_require__(513);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_firebase__ = __webpack_require__(303);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_tools_emoji_picker__ = __webpack_require__(514);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_file__ = __webpack_require__(562);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36_ionic2_auto_complete__ = __webpack_require__(563);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__autocomplete_provider__ = __webpack_require__(304);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__ionic_native_badge__ = __webpack_require__(302);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_deeplinks__ = __webpack_require__(514);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_firebase__ = __webpack_require__(305);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_tools_emoji_picker__ = __webpack_require__(515);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_file__ = __webpack_require__(563);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36_ionic2_auto_complete__ = __webpack_require__(564);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__autocomplete_provider__ = __webpack_require__(306);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_native_geolocation__ = __webpack_require__(180);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+
 
 
 
@@ -5401,7 +5521,7 @@ var AppModule = /** @class */ (function () {
                 }),
                 __WEBPACK_IMPORTED_MODULE_19__ionic_storage__["a" /* IonicStorageModule */].forRoot({
                     name: '__mydb',
-                    driverOrder: ['sqlite', 'websql', 'indexeddb']
+                    driverOrder: ['websql', 'sqlite', 'indexeddb']
                 }),
                 __WEBPACK_IMPORTED_MODULE_18_ngx_qrcode2__["a" /* NgxQRCodeModule */],
                 __WEBPACK_IMPORTED_MODULE_3__angular_http__["c" /* HttpModule */],
@@ -5443,7 +5563,8 @@ var AppModule = /** @class */ (function () {
                 __WEBPACK_IMPORTED_MODULE_27__firebase_service__["a" /* FirebaseService */],
                 __WEBPACK_IMPORTED_MODULE_35__ionic_native_file__["a" /* File */],
                 __WEBPACK_IMPORTED_MODULE_37__autocomplete_provider__["a" /* CompleteTestService */],
-                __WEBPACK_IMPORTED_MODULE_36_ionic2_auto_complete__["a" /* AutoCompleteComponent */]
+                __WEBPACK_IMPORTED_MODULE_36_ionic2_auto_complete__["a" /* AutoCompleteComponent */],
+                __WEBPACK_IMPORTED_MODULE_38__ionic_native_geolocation__["a" /* Geolocation */]
             ]
         })
     ], AppModule);
@@ -5454,25 +5575,25 @@ var AppModule = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 479:
+/***/ 480:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MyApp; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(298);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(300);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(40);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(299);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(301);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(180);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_settings_settings__ = __webpack_require__(305);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(303);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_settings_settings__ = __webpack_require__(307);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_siafiles_siafiles__ = __webpack_require__(184);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_stream_stream__ = __webpack_require__(306);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_sendreceive_sendreceive__ = __webpack_require__(307);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_stream_stream__ = __webpack_require__(309);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_sendreceive_sendreceive__ = __webpack_require__(186);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -5575,7 +5696,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note style="font-size: 20px">\n            YadaCoin\n          </ion-note>\n          <ion-note style="font-size: 12px">\n             v3.3.1\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content>\n      <ion-list *ngIf="bulletinSecretService.key">\n        <ng-container *ngFor="let p of pages">\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Friend Requests\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.new_messages_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Messages\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            *ngIf="[\'Messages\', \'Friend Requests\'].indexOf(p.title) < 0"\n          >\n            {{p.label}}\n          </button>\n        </ng-container>\n      </ion-list>\n      <img src="assets/img/yadacoinlogosmall.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note style="font-size: 20px">\n            YadaCoin\n          </ion-note>\n          <ion-note style="font-size: 12px">\n             v3.5.1\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content>\n      <ion-list *ngIf="bulletinSecretService.key">\n        <ng-container *ngFor="let p of pages">\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Friend Requests\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.new_messages_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Messages\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            *ngIf="[\'Messages\', \'Friend Requests\'].indexOf(p.title) < 0"\n          >\n            {{p.label}}\n          </button>\n        </ng-container>\n      </ion-list>\n      <img src="assets/img/yadacoinlogosmall.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
@@ -5593,18 +5714,18 @@ var MyApp = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 52:
+/***/ 53:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ListPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(40);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(85);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(182);
@@ -6104,12 +6225,12 @@ var ListPage = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ProfilePage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(40);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(34);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(34);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(52);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(53);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(182);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__group_group__ = __webpack_require__(183);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(16);
@@ -6354,5 +6475,5 @@ var ProfilePage = /** @class */ (function () {
 
 /***/ })
 
-},[326]);
+},[327]);
 //# sourceMappingURL=main.js.map
