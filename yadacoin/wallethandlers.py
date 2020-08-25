@@ -300,16 +300,41 @@ class SentTransactionsView(BaseHandler):
         public_key = self.get_query_argument('public_key')
         page = int(self.get_query_argument('page', 1)) - 1
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-        txns = await self.config.mongo.async_db.blocks.find({
-            'transactions.outputs.to': address,
-            '$or': [
-                {'transactions.public_key': public_key},
-                {'transactions.inputs.public_key': public_key},
-            ]
-        }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
+        txns = self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.outputs.to': address,
+                    '$or': [
+                        {'transactions.public_key': public_key},
+                        {'transactions.inputs.public_key': public_key},
+                    ]
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.outputs.to': address,
+                    '$or': [
+                        {'transactions.public_key': public_key},
+                        {'transactions.inputs.public_key': public_key},
+                    ]
+                }
+            },
+            {
+                '$sort': {'txn.time': -1}
+            },
+            {
+                '$skip': page * 10
+            },
+            {
+                '$limit': 10
+            }
+        ])
 
         return self.render_as_json({
-            'past_transactions': txns,
+            'past_transactions': [x['transactions'] async for x in txns],
         })
 
 
@@ -320,9 +345,9 @@ class ReceivedPendingTransactionsView(BaseHandler):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         pending_txns = await self.config.mongo.async_db.miner_transactions.find({
-            'outputs.to': address,
-            'public_key': {'$ne': public_key},
-            'inputs.public_key': {'$ne': public_key}
+            'transactions.outputs.to': address,
+            'transactions.public_key': {'$ne': public_key},
+            'transactions.inputs.public_key': {'$ne': public_key}
         }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
 
         return self.render_as_json({
@@ -336,14 +361,37 @@ class ReceivedTransactionsView(BaseHandler):
         page = int(self.get_query_argument('page', 1)) - 1
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
-        txns = await self.config.mongo.async_db.blocks.find({
-            'transactions.outputs.to': address,
-            'transactions.public_key': {'$ne': public_key},
-            'transactions.inputs.public_key': {'$ne': public_key}
-        }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
+        txns = self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.outputs.to': address,
+                    'transactions.public_key': {'$ne': public_key},
+                    'transactions.inputs.public_key': {'$ne': public_key}
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.outputs.to': address,
+                    'transactions.public_key': {'$ne': public_key},
+                    'transactions.inputs.public_key': {'$ne': public_key}
+                }
+            },
+            {
+                '$sort': {'txn.time': -1}
+            },
+            {
+                '$skip': page * 10
+            },
+            {
+                '$limit': 10
+            }
+        ])
 
         return self.render_as_json({
-            'past_transactions': txns,
+            'past_transactions': [x['transactions'] async for x in txns],
         })
 
 
