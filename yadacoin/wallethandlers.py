@@ -323,7 +323,7 @@ class SentTransactionsView(BaseHandler):
                 }
             },
             {
-                '$sort': {'txn.time': -1}
+                '$sort': {'transactions.time': -1}
             },
             {
                 '$skip': page * 10
@@ -380,7 +380,7 @@ class ReceivedTransactionsView(BaseHandler):
                 }
             },
             {
-                '$sort': {'txn.time': -1}
+                '$sort': {'transactions.time': -1}
             },
             {
                 '$skip': page * 10
