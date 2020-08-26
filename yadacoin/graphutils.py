@@ -633,7 +633,7 @@ class GraphUtils(object):
                     }
                 res = self.config.mongo.db.miner_transactions.find(query, {
                     '_id': 0
-                })
+                }).sort([('time', -1)])
                 for txn in res:
                     res1 = self.config.mongo.db.miner_transactions_cache.find_one({
                         'id': txn['id'],
