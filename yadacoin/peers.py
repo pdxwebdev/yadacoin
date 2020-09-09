@@ -422,16 +422,12 @@ class Peer(object):
             import socket
             # deploy as an eventlet WSGI server
             try:
-                sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-                sock.bind((config.serve_host, 0))
-                server_port = sock.getsockname()[1]
-                sock.close()
+                server_port = config.peer_port
                 eport = server_port
                 r = u.getspecificportmapping(eport, 'TCP')
-                while r is not None and eport < 65536:
-                    eport = eport + 1
-                    r = u.getspecificportmapping(eport, 'TCP')
-                b = u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
+                if r:
+                    u.deleteportmapping(eport, 'TCP')
+                u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
                 config.serve_host = '0.0.0.0'
                 config.serve_port = server_port
                 config.peer_host = u.externalipaddress()
