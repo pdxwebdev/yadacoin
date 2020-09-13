@@ -269,7 +269,7 @@ class Peers(object):
             test_after = int(time())  # new peers will be tested asap.
         already_used = []
         for peer in peer_list:
-            if peer['host'] in already_used:
+            if peer['host'] in already_used or peer['host'] == self.config.peer_host:
                 continue
             already_used.append(peer['host'])
             res = await self.mongo.async_db.peers.count_documents({'host': peer['host'], 'port': peer['port']})
