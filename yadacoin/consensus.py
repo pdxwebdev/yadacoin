@@ -671,11 +671,15 @@ class Consensus(object):
                         try:
                             # if self.debug:
                             #     self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
-                            result = requests.get('http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                                peer=apeer.to_string(),
-                                start_index=block_for_next.index + 1,
-                                end_index=block_for_next.index + 100
-                            ), timeout=1)
+                            result = requests.get(
+                                'http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
+                                    peer=apeer.to_string(),
+                                    start_index=block_for_next.index + 1,
+                                    end_index=block_for_next.index + 100
+                                ),
+                                timeout=1,
+                                headers={'Connection':'close'}
+                            )
                             remote_blocks = [await Block.from_dict( x) for x in json.loads(result.content.decode())]
                             break_out = False
                             for remote_block in remote_blocks:

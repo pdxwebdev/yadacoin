@@ -469,7 +469,8 @@ class Peer(object):
                 }),
                 timeout=3,
                 headers={
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
+                    'Connection':'close'
                 }
             )
         except:  # TODO: catch specific exception
