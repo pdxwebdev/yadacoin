@@ -80,7 +80,8 @@ class Config(object):
         self.SIO = None
         self.debug = False
         self.mp = None
-        self.pp = None
+        self.pp = None,
+        self.stratum_pool_port = config.get('stratum_pool_port', None)
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event

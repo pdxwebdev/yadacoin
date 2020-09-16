@@ -31,6 +31,7 @@ class MiningPool(object):
         self.inbound = {}
         self.connected_ips = {}
         self.last_block_time = int(self.config.BU.get_latest_block()['time'])
+        self.index = self.config.BU.get_latest_block()['index']
         self.previous_block_to_mine = None  # todo
         self.last_refresh = 0
 

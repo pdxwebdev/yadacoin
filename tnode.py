@@ -24,6 +24,8 @@ import tornado.ioloop
 import tornado.locks
 import tornado.log
 # from tornado.log import LogFormatter
+from tornado.iostream import StreamClosedError
+from tornado.tcpserver import TCPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 from concurrent.futures import ThreadPoolExecutor
@@ -47,6 +49,7 @@ from yadacoin.webhandlers import WEB_HANDLERS
 from yadacoin.yadawebsockethandler import get_sio, ws_init
 from yadacoin.transactionbroadcaster import TxnBroadcaster
 from yadacoin.nsbroadcaster import NSBroadcaster
+from yadacoin.stratumpool import StratumServer
 
 __version__ = '0.0.13'
 
@@ -428,6 +431,8 @@ def main():
 
         if config.max_miners > 0:
             app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
+            server = StratumServer()
+            server.listen(config.stratum_pool_port)
         else:
             app_log.info("MiningPool disabled by config")
 
@@ -436,6 +441,7 @@ def main():
 
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
         tornado.ioloop.PeriodicCallback(background_consensus, 30000).start()
+        tornado.ioloop.PeriodicCallback(StratumServer.block_checker, 1).start()
         config.consensus_busy = False
         if config.network != 'regnet':
             tornado.ioloop.PeriodicCallback(background_peers, 30000).start()
