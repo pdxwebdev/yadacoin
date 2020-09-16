@@ -572,7 +572,7 @@ class Transaction(object):
                     'index': '$index'
                 }
             }
-        ])
+        ], allowDiskUse=True)
         async for missing_txn in missing_txns:
             try:
                 result = verify_signature(base64.b64decode(txn_id), missing_txn['transaction']['hash'].encode(),
@@ -620,7 +620,11 @@ class Transaction(object):
             'index': block_index
         })
 
-        for txn in block_to_replace['transactions']:
+        async def get_txns(txns):
+            for txn in txns:
+                yield txn
+
+        async for txn in get_txns(block_to_replace['transactions']):
             if txn['hash'] == txn_hash:
                 txn['id'] = txn_id
                 self.app_log.warning('missing transaction input id updated: {}'.format(block_index))
@@ -634,8 +638,13 @@ class Transaction(object):
     async def find_unspent_missing_index(self, txn_hash, exclude_ids=[]):
         blocks = self.config.mongo.async_db.blocks.find({'transactions.hash': txn_hash})
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+
+        async def get_txns(txns):
+            for txn in txns:
+                yield txn
+
         async for block in blocks:
-            for txn in block['transactions']:
+            async for txn in get_txns(block['transactions']):
                 if txn['hash'] == txn_hash and txn['id'] not in exclude_ids:
                     spents = self.config.mongo.async_db.blocks.aggregate([
                         {
