@@ -548,6 +548,8 @@ class Transaction(object):
                     return output_txn
 
     async def recover_missing_transaction(self, txn_id, exclude_ids=[]):
+        if await self.config.mongo.async_db.failed_recoveries.find_one({'txn_id': txn_id}):
+            return False
         self.app_log.warning("recovering missing transaction input: {}".format(txn_id))
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         missing_txns = self.config.mongo.async_db.blocks.aggregate([
@@ -585,9 +587,11 @@ class Transaction(object):
                         )
                         return True
                 else:
+                    if len(base64.b64decode(txn_id)) != 65:
+                        continue
                     result = VerifyMessage(
                         address,
-                        BitcoinMessage(missing_txn['transaction']['hash'].encode('utf-8'), magic=''),
+                        BitcoinMessage(missing_txn['transaction']['hash'], magic=''),
                         txn_id
                     )
                     if result:
@@ -600,7 +604,15 @@ class Transaction(object):
                             )
                             return True
             except:
-                pass
+                continue
+        await self.config.mongo.async_db.failed_recoveries.update_one({
+            'txn_id': txn_id
+        },
+        {
+            '$set': {
+                'txn_id': txn_id
+            }
+        }, upsert=True)
         return False
 
     async def replace_missing_transaction_input(self, block_index, txn_hash, txn_id):
