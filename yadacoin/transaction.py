@@ -554,17 +554,7 @@ class Transaction(object):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         missing_txns = self.config.mongo.async_db.blocks.aggregate([
             {
-                '$match': {
-                    'transactions.public_key': self.public_key
-                }
-            },
-            {
                 '$unwind': '$transactions'
-            },
-            {
-                '$match': {
-                    'transactions.public_key': self.public_key
-                }
             },
             {
                 '$project': {
@@ -574,6 +564,7 @@ class Transaction(object):
             }
         ], allowDiskUse=True)
         async for missing_txn in missing_txns:
+            self.app_log.warning('recovery searching block index: {}'.format(missing_txn['index']))
             try:
                 result = verify_signature(base64.b64decode(txn_id), missing_txn['transaction']['hash'].encode(),
                                         bytes.fromhex(self.public_key))

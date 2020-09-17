@@ -210,8 +210,7 @@ async def background_pool():
         if config.pool_busy:
             return
         config.pool_busy = True
-        if config.mp:
-            await config.mp.check_block_evolved()
+        await StratumServer.block_checker()
 
         config.pool_busy = False
     except Exception as e:
@@ -441,7 +440,6 @@ def main():
 
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
         tornado.ioloop.PeriodicCallback(background_consensus, 30000).start()
-        tornado.ioloop.PeriodicCallback(StratumServer.block_checker, 1).start()
         config.consensus_busy = False
         if config.network != 'regnet':
             tornado.ioloop.PeriodicCallback(background_peers, 30000).start()
@@ -452,7 +450,7 @@ def main():
             config.ns_broadcast_busy = False
         tornado.ioloop.PeriodicCallback(background_status, 30000).start()
         config.status_busy = False
-        tornado.ioloop.PeriodicCallback(background_pool, 30000).start()
+        tornado.ioloop.PeriodicCallback(background_pool, 3000).start()
         config.pool_busy = False
         tornado.ioloop.PeriodicCallback(background_cache_validator, 30000).start()
         config.cache_busy = False

@@ -105,6 +105,22 @@ class JSONRPC(BaseHandler):
                 })
 
 
+class PoolSharesHandler(BaseHandler):
+    async def get(self):
+        address = self.get_query_argument('address')
+        results = await self.config.mongo.async_db.shares.find({'address': address}, {'_id': 0}).sort([('index', -1)]).to_list(100)
+        self.render_as_json({'results': results})
+
+
+class PoolPayoutsHandler(BaseHandler):
+    async def get(self):
+        address = self.get_query_argument('address')
+        results = await self.config.mongo.async_db.share_payout.find({'txn.outputs.to': address}, {'_id': 0}).sort([('index', -1)]).to_list(100)
+        self.render_as_json({'results': results})
+
+
 POOL_HANDLERS = [
     (r'/json_rpc', JSONRPC),
+    (r'/shares-for-address', PoolSharesHandler),
+    (r'/payouts-for-address', PoolPayoutsHandler),
 ]
