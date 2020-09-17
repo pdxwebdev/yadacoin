@@ -431,6 +431,8 @@ def main():
         if config.max_miners > 0:
             app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
             server = StratumServer()
+            if not config.stratum_pool_port:
+                config.stratum_pool_port = 3333
             server.listen(config.stratum_pool_port)
         else:
             app_log.info("MiningPool disabled by config")
