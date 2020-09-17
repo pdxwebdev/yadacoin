@@ -137,6 +137,7 @@ class MiningPool(object):
         block_to_mine = await block_to_mine.copy()
         previous_block_to_mine = await self.previous_block_to_mine.copy() if self.previous_block_to_mine else None
         hash1 = block_to_mine.generate_hash_from_header(block_to_mine.index, block_to_mine.header, nonce)
+        self.app_log.warning('{} {}'.format(hash1, address))
         if int(hash1, 16) > block_to_mine.target and self.config.network != 'regnet' and (block_to_mine.special_min and int(hash1, 16) > block_to_mine.special_target):
             # TODO If not, does it match previous block of same height?
             self.app_log.debug("nonce {} did not match pool diff block, hash1 was {}".format(nonce, hash1))

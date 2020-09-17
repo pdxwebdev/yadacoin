@@ -130,7 +130,7 @@ class StratumServer(TCPServer):
                             'jsonrpc': body.get('jsonrpc'),
                             'result': {'n':'Ko'}
                         })
-                    result = await StratumServer.config.mp.on_miner_nonce(nonce, address=self.address)
+                    result = await StratumServer.config.mp.on_miner_nonce(nonce, address=stream.address)
                     if result:
                         data = json.dumps({
                             'id': body.get('id'),
@@ -147,7 +147,7 @@ class StratumServer(TCPServer):
                         })
                 elif body.get('method') == 'login':
                     job = await StratumServer.config.mp.block_template()
-                    self.address = body['params'].get('login')
+                    stream.address = body['params'].get('login')
                     job['job_id'] = job['blocktemplate_blob']
                     job['blob'] = job['blocktemplate_blob']
                     data = json.dumps({
