@@ -175,6 +175,7 @@ class PoolPayer(object):
                 inputs=[{'id': coinbase.transaction_signature} for coinbase in coinbases],
                 outputs=outputs_formatted,
             )
+            self.app_log.debug("transaction generated: {}".format(transaction.transaction_signature))
         except NotEnoughMoneyException as e:
             if self.config.debug:
                 self.app_log.debug("not enough money yet")
@@ -190,11 +191,11 @@ class PoolPayer(object):
             if self.config.debug:
                 self.app_log.debug(e)
             raise
-
+        self.app_log.debug('transaction verified')
         txn = transaction.transaction
+        await self.config.mongo.async_db.miner_transactions.insert_one(txn.to_dict())
+        await self.config.mongo.async_db.share_payout.insert_one({'index': block.index, 'txn': txn.to_dict()})
         if self.config.peers.peers:
-            await self.config.mongo.async_db.miner_transactions.insert_one(txn.to_dict())
-            await self.config.mongo.async_db.share_payout.insert_one({'index': block.index, 'txn': txn.to_dict()})
             await self.broadcast_transaction(txn)
         
     async def broadcast_transaction(self, transaction):
