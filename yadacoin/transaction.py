@@ -548,6 +548,7 @@ class Transaction(object):
                     return output_txn
 
     async def recover_missing_transaction(self, txn_id, exclude_ids=[]):
+        return False
         if await self.config.mongo.async_db.failed_recoveries.find_one({'txn_id': txn_id}):
             return False
         self.app_log.warning("recovering missing transaction input: {}".format(txn_id))

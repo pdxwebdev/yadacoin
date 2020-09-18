@@ -25,7 +25,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_signature_with_private_key(cls, private_key, message):
-        x = ffi.new('long *')
+        x = ffi.new('long long *')
         x[0] = random.SystemRandom().randint(0, sys.maxsize)
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message.encode('utf-8'), custom_nonce=(ffi.NULL, x))
@@ -33,7 +33,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     def generate_signature(cls, message, private_key):
-        x = ffi.new('long *')
+        x = ffi.new('long long *')
         x[0] = random.SystemRandom().randint(0, sys.maxsize)
         key = PrivateKey.from_hex(private_key)
         signature = key.sign(message.encode('utf-8'), custom_nonce=(ffi.NULL, x))
