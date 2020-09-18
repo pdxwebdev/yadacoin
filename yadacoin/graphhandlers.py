@@ -33,7 +33,7 @@ from yadacoin.auth import jwtauth
 class GraphConfigHandler(BaseHandler):
 
     async def get(self):
-        peer = "http://{}:{}".format(self.config.peer_host, self.config.peer_port)
+        peer = "http://{}".format(self.config.wallet_host_port)
         yada_config = {
             "baseUrl": "{}".format(peer),
             "transactionUrl": "{}/transaction".format(peer),

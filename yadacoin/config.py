@@ -80,8 +80,9 @@ class Config(object):
         self.SIO = None
         self.debug = False
         self.mp = None
-        self.pp = None,
-        self.stratum_pool_port = config.get('stratum_pool_port', None)
+        self.pp = None
+        self.stratum_pool_port = config.get('stratum_pool_port', 3333)
+        self.wallet_host_port = config.get('wallet_host_port', 'localhost:{}'.format(config['peer_port']))
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event
@@ -193,7 +194,8 @@ class Config(object):
             "mongodb_host": mongodb_host or "localhost",
             "mixpanel": "",
             "username": username or '',
-            "network": "mainnet"
+            "network": "mainnet",
+            "wallet_host_port": 'localhost:8000',
         })
 
     @classmethod
@@ -234,6 +236,7 @@ class Config(object):
         cls.fcm_key = config['fcm_key']
         cls.jwt_public_key = config.get('jwt_public_key')
         cls.sia_api_key = config.get('sia_api_key')
+        cls.wallet_host_port = config.get('wallet_host_port')
 
     def get_bulletin_secret(self):
         from yadacoin.transactionutils import TU
@@ -286,7 +289,8 @@ class Config(object):
             'polling': self.polling,
             'sia_api_key': self.sia_api_key,
             'jwt_public_key': self.jwt_public_key,
-            'callbackurl': self.callbackurl
+            'callbackurl': self.callbackurl,
+            'wallet_host_port': self.wallet_host_port,
         }
 
     def to_json(self):
