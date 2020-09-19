@@ -82,7 +82,7 @@ class Config(object):
         self.mp = None
         self.pp = None
         self.stratum_pool_port = config.get('stratum_pool_port', 3333)
-        self.wallet_host_port = config.get('wallet_host_port', 'localhost:{}'.format(config['peer_port']))
+        self.wallet_host_port = config.get('wallet_host_port', 'http://localhost:{}'.format(config['peer_port']))
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event
@@ -195,7 +195,7 @@ class Config(object):
             "mixpanel": "",
             "username": username or '',
             "network": "mainnet",
-            "wallet_host_port": 'localhost:8000',
+            "wallet_host_port": 'http://localhost:8000',
         })
 
     @classmethod
