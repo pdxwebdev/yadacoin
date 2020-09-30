@@ -76,7 +76,7 @@ class TU(object):  # Transaction Utilities
             else:
                 return {'status': 'error', 'message': 'no wallet matching from address'}
         
-        if inputs:
+        if not inputs:
             inputs = []
 
         try:
