@@ -185,8 +185,9 @@ class SendTransactionView(BaseHandler):
         to = args.get('address')
         value = float(args.get('value'))
         from_address = args.get('from')
+        inputs = args.get('inputs')
         dry_run = args.get('dry_run')
-        txn = await TU.send(config, to, value, from_address, dry_run)
+        txn = await TU.send(config, to, value, from_address, inputs, dry_run)
         return self.render_as_json(txn)
 
 
