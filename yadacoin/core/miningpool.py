@@ -1,15 +1,14 @@
 from time import time
-import requests
 import binascii
 from bitcoin.wallet import P2PKHBitcoinAddress
 from logging import getLogger
 from threading import Thread
 
-from yadacoin.chain import CHAIN
-from yadacoin.config import get_config
-from yadacoin.block import Block, BlockFactory
-from yadacoin.blockchain import Blockchain
-from yadacoin.transaction import (
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.block import Block, BlockFactory
+from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.transaction import (
     Transaction,
     MissingInputTransactionException, 
     InvalidTransactionException,
@@ -17,7 +16,6 @@ from yadacoin.transaction import (
     TransactionInputOutputMismatchException,
     TotalValueMismatchException
 )
-from yadacoin.fastgraph import FastGraph, MissingFastGraphInputTransactionException
 
 
 class MiningPool(object):
@@ -30,8 +28,8 @@ class MiningPool(object):
         self.max_target = CHAIN.MAX_TARGET
         self.inbound = {}
         self.connected_ips = {}
-        self.last_block_time = int(self.config.BU.get_latest_block()['time'])
-        self.index = self.config.BU.get_latest_block()['index']
+        self.last_block_time = int(self.config.LatestBlock.block.time)
+        self.index = self.config.LatestBlock.block.index
         self.previous_block_to_mine = None  # todo
         self.last_refresh = 0
 
@@ -242,7 +240,7 @@ class MiningPool(object):
                 backup_block = None
             self.last_refresh = int(time())
             if block is None:
-                block = self.config.BU.get_latest_block()
+                block = self.config.LatestBlock.block
             if block:
                 block = await Block.from_dict(block)
             else:
@@ -254,7 +252,7 @@ class MiningPool(object):
                     'id': genesis_block.signature,
                     'index': 0
                     })
-                block = await Block.from_dict(self.config.BU.get_latest_block())
+                block = await Block.from_dict(self.config.LatestBlock.block)
             self.index = block.index + 1
             self.last_block_time = int(block.time)
         except Exception as e:
@@ -320,7 +318,7 @@ class MiningPool(object):
             'header': self.block_factory.block.header,
             'version': self.block_factory.block.version,
             'height': self.block_factory.block.index,  # This is the height of the one we are mining
-            'previous_time': self.config.BU.get_latest_block()['time'],  # needed for miner to recompute the real diff
+            'previous_time': self.config.LatestBlock.block.time,  # needed for miner to recompute the real diff
         }
         return res
 
@@ -338,7 +336,7 @@ class MiningPool(object):
             'blocktemplate_blob': self.block_factory.block.header.replace('{nonce}', '{000000}'),
             'blockhashing_blob': self.block_factory.block.header.replace('{nonce}', '{000000}'),
             'seed_hash': seed_hash,
-            'height': self.config.BU.get_latest_block()['index'],  # This is the height of the one we are mining
+            'height': self.config.LatestBlock.block.index,  # This is the height of the one we are mining
         }
         return res
 
@@ -405,14 +403,10 @@ class MiningPool(object):
         used_sigs = []
         for txn in sorted([x for x in self.mongo.db.miner_transactions.find()], key=lambda i: int(i['fee']), reverse=True)[:1000]:
             try:
-                if isinstance(txn, FastGraph) and hasattr(txn, 'signatures'):
+                if isinstance(txn, Transaction):
                     transaction_obj = txn
-                elif isinstance(txn, Transaction):
-                    transaction_obj = txn
-                elif isinstance(txn, dict) and 'signatures' in txn:
-                    transaction_obj = FastGraph.from_dict(self.config.BU.get_latest_block()['index'], txn)
                 elif isinstance(txn, dict):
-                    transaction_obj = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
+                    transaction_obj = Transaction.from_dict(self.config.LatestBlock.block.index, txn)
                 else:
                     print('transaction unrecognizable, skipping')
                     continue
@@ -423,12 +417,6 @@ class MiningPool(object):
                     print('duplicate transaction found and removed')
                     continue
                 used_sigs.append(transaction_obj.transaction_signature)
-
-                if not isinstance(transaction_obj, FastGraph) and transaction_obj.rid:
-                    async for input_id in self.get_inputs(transaction_obj.inputs):
-                        input_block = self.config.BU.get_transaction_by_id(input_id.id, give_block=True)
-                        if input_block and input_block['index'] > (self.config.BU.get_latest_block()['index'] - 2016):
-                            continue
 
                 failed1 = False
                 failed2 = False

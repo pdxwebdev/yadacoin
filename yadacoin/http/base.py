@@ -6,7 +6,6 @@ import json
 import logging
 
 from tornado.web import RequestHandler
-from yadacoin.pushnotification import PushNotification
 
 
 class BaseHandler(RequestHandler):

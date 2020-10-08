@@ -21,6 +21,7 @@ class Config(object):
 
     def __init__(self, config):
         self.start_time = int(time())
+        self.mode = config.get('mode', 'node')
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
@@ -32,16 +33,12 @@ class Config(object):
         self.max_outbound = config.get('max_outbound', 10)
         self.max_miners = config.get('max_miners', -1)
         self.pool_payout = config.get('pool_payout', False)
-        self.polling = config.get('polling', 30)
-        if 0 < self.polling < 30:
-            getLogger("tornado.application").error("Using too small a polling value ({}), use 0 or > 30"
-                                                   .format(self.polling))
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
         self.private_key = config['private_key']
         self.wif = self.to_wif(self.private_key)
-        self.bulletin_secret = self.get_bulletin_secret()
+        self.username_signature = self.get_username_signature()
 
         self.mongodb_host = config['mongodb_host']
         self.database = config['database']
@@ -54,6 +51,7 @@ class Config(object):
             raise Exception("Please configure your peer_post to your public ipv4 address")
         self.peer_host = config['peer_host']
         self.peer_port = config['peer_port']
+        self.peer_type = config.get('peer_type', 'user')
         self.serve_host = config['serve_host']
         self.serve_port = config['serve_port']
         self.callbackurl = config['callbackurl']
@@ -65,7 +63,6 @@ class Config(object):
         self.peers_seed = config.get('peers_seed', [])  # not used, superceeded by config/seed.json
         self.api_whitelist = config.get('api_whitelist', [])
         self.force_broadcast_to = config.get('force_broadcast_to', [])
-        self.force_polling = config.get('force_polling', [])
         self.outgoing_blacklist =  config.get('outgoing_blacklist', [])
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
@@ -101,20 +98,23 @@ class Config(object):
     def get_status(self):
         pool_status = 'N/A'
         if self.mp:
-            pool_status = self.mp.get_status()
+            pool_status = self.mp.get_status() # TODO: get from stratumserver class, return number of streams
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
-        status = {'version': self.protocol_version, 'network': self.network,
-                  # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
-                  'peers': self.peers.get_status(),
-                  'pool': pool_status, 'height': self.BU.get_latest_block()['index'],
-                  'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s)}
+        status = {
+            'version': self.protocol_version, 
+            'network': self.network,
+            # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
+            # 'peers': self.peers.get_status(),
+            'pool': pool_status, 
+            'height': self.BU.get_latest_block()['index'],
+            'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s)
+        }
         # TODO: add uptime in human readable format
         return status
 
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None, mongodb_host=None):
-        from miniupnpc import UPnP
         mnemonic = Mnemonic('english')
         # generate 12 word mnemonic seed
         if not seed and not xprv and not prv:
@@ -166,6 +166,7 @@ class Config(object):
                 peer_host = ''
 
         return cls({
+            "mode": 'node',
             "seed": seed or '',
             "xprv": extended_key or '',
             "private_key": private_key,
@@ -178,11 +179,11 @@ class Config(object):
             "use_pnp": True,
             "ssl": False,
             "origin": '',
-            "polling": 30,
             "sia_api_key": '',
             "post_peer": False,
             "peer_host": peer_host,
             "peer_port": 8000,
+            "peer_type": "user",
             "web_server_host": "0.0.0.0",
             "web_server_port": 8000,
             "peer": "http://localhost:8000",
@@ -200,15 +201,13 @@ class Config(object):
 
     @classmethod
     def from_dict(cls, config):
-        from yadacoin.transactionutils import TU
-
+        cls.mode = config.get('mode', 'node')
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
         cls.use_pnp = config.get('use_pnp', True)
         cls.ssl = config.get('ssl', True)
         cls.origin = config.get('origin', True)
-        cls.polling = config.get('polling', -1)
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cls.public_key)))
@@ -216,7 +215,7 @@ class Config(object):
         cls.pool_payout = config.get('pool_payout', False)
         cls.private_key = config['private_key']
         cls.wif = cls.generate_wif(cls.private_key)
-        cls.bulletin_secret = TU.generate_deterministic_signature(config, config['username'], config['private_key'])
+        cls.username_signature = TU.generate_deterministic_signature(config, config['username'], config['private_key'])
 
         cls.api_whitelist = config.get('api_whitelist', [])
         cls.mongodb_host = config['mongodb_host']
@@ -230,6 +229,7 @@ class Config(object):
             raise Exception("please configure your peer_post to your public ipv4 address")
         cls.peer_host = config['peer_host']
         cls.peer_port = config['peer_port']
+        cls.peer_type = config.get('peer_type')
         cls.serve_host = config['serve_host']
         cls.serve_port = config['serve_port']
         cls.callbackurl = config['callbackurl']
@@ -238,8 +238,8 @@ class Config(object):
         cls.sia_api_key = config.get('sia_api_key')
         cls.wallet_host_port = config.get('wallet_host_port')
 
-    def get_bulletin_secret(self):
-        from yadacoin.transactionutils import TU
+    def get_username_signature(self):
+        from yadacoin.core.transactionutils import TU
         return TU.generate_deterministic_signature(self, self.username, self.private_key)
 
     def to_wif(self, private_key):
@@ -263,13 +263,14 @@ class Config(object):
 
     def to_dict(self):
         return {
+            'mode': self.mode,
             'seed': self.seed,
             'xprv': self.xprv,
             'public_key': self.public_key,
             'address': self.address,
             'private_key': self.private_key,
             'wif': self.wif,
-            'bulletin_secret': self.bulletin_secret,
+            'username_signature': self.username_signature,
             'mongodb_host': self.mongodb_host,
             'api_whitelist': self.api_whitelist,
             'username': self.username,
@@ -280,13 +281,13 @@ class Config(object):
             'web_server_port': self.web_server_port,
             'peer_host': self.peer_host,
             'peer_port': self.peer_port,
+            'peer_type': self.peer_type,
             'serve_host': self.serve_host,
             'serve_port': self.serve_port,
             'use_pnp': self.use_pnp,
             'ssl': self.ssl,
             'origin': self.origin,
             'fcm_key': self.fcm_key,
-            'polling': self.polling,
             'sia_api_key': self.sia_api_key,
             'jwt_public_key': self.jwt_public_key,
             'callbackurl': self.callbackurl,

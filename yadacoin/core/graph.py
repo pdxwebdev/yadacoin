@@ -1,13 +1,12 @@
 import json
 import hashlib
-import requests
 import logging
 import time
 
-from yadacoin.blockchainutils import BU
-from yadacoin.transactionutils import TU
-from yadacoin.graphutils import GraphUtils as GU
-from yadacoin.crypt import Crypt
+from yadacoin.core.blockchainutils import BU
+from yadacoin.core.transactionutils import TU
+from yadacoin.core.graphutils import GraphUtils as GU
+from yadacoin.core.crypt import Crypt
 
 
 class Graph(object):

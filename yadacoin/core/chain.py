@@ -176,7 +176,7 @@ class CHAIN(object):
         ]
 
         if block_index is None:
-            from yadacoin.blockchainutil import BU
+            from yadacoin import BU
             block_index = BU().get_latest_block()['index'] + 1
 
         try:
@@ -192,7 +192,7 @@ class CHAIN(object):
     def get_block_reward(cls, block_index=None):
         """Returns the reward matching a given block height, next block if None is provided"""
         if block_index is None:
-            from yadacoin.blockchainutils import BU
+            from yadacoin import BU
             block_index = BU().get_latest_block()['index'] + 1
         index = block_index // 2100000
         reward = int(50.0 * 1e8 / 2 ** index) / 1e8

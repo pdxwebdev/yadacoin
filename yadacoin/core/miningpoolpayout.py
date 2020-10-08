@@ -1,13 +1,11 @@
 from logging import getLogger
 from socketIO_client import SocketIO, BaseNamespace
 
-from yadacoin.chain import CHAIN
-from yadacoin.config import get_config
-from yadacoin.peers import Peers
-from yadacoin.block import Block
-# from yadacoin.blockchainutils import BU
-from yadacoin.transaction import Transaction, TransactionFactory, Input, Output, NotEnoughMoneyException
-from yadacoin.transactionutils import TU
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.block import Block
+from yadacoin.core.transaction import Transaction, TransactionFactory, Input, Output, NotEnoughMoneyException
+from yadacoin.core.transactionutils import TU
 
 
 class NonMatchingDifficultyException(Exception):

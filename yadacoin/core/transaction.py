@@ -10,11 +10,10 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
 
-from yadacoin.crypt import Crypt
-from yadacoin.transactionutils import TU
-# from yadacoin.blockchainutils import BU
-from yadacoin.config import get_config
-from yadacoin.chain import CHAIN
+from yadacoin.core.crypt import Crypt
+from yadacoin.core.transactionutils import TU
+from yadacoin.core.config import get_config
+from yadacoin.core.chain import CHAIN
 
 
 def fix_float1(value):
@@ -146,9 +145,9 @@ class TransactionFactory(object):
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         miner_transactions = self.mongo.db.miner_transactions.find({
             '$or': [
-                {"txn.public_key": self.public_key},
-                {"txn.inputs.public_key": self.public_key},
-                {"txn.inputs.address": my_address}
+                {"public_key": self.public_key},
+                {"inputs.public_key": self.public_key},
+                {"inputs.address": my_address}
             ]
         })
         mtxn_ids = []
@@ -181,7 +180,7 @@ class TransactionFactory(object):
             self.inputs = inputs
         else:
             async for input_txn in self.config.BU.get_wallet_unspent_transactions(my_address, no_zeros=True):
-                input_txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], input_txn)
+                input_txn = Transaction.from_dict(self.config.LatestBlock.block.index, input_txn)
                 if input_txn.transaction_signature in mtxn_ids:
                     continue
                 else:
@@ -237,10 +236,9 @@ class TransactionFactory(object):
             yield x
 
     async def get_input_hashes(self):
-        from yadacoin.fastgraph import FastGraph
         input_hashes = []
         async for x in self.get_inputs(self.inputs):
-            txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+            txn = self.config.BU.get_transaction_by_id(x.id, instance=True)
             input_hashes.append(str(txn.transaction_signature))
 
         return ''.join(sorted(input_hashes, key=str.lower))
@@ -392,7 +390,6 @@ class Transaction(object):
             yield x
 
     async def verify(self):
-        from yadacoin.fastgraph import FastGraph
         verify_hash = await self.generate_hash()
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
 
@@ -422,7 +419,7 @@ class Transaction(object):
         total_input = 0
         exclude_recovered_ids = []
         async for txn in self.get_inputs(self.inputs):
-            input_txn = self.config.BU.get_transaction_by_id(txn.id, include_fastgraph=isinstance(self, FastGraph))
+            input_txn = self.config.BU.get_transaction_by_id(txn.id)
             if not input_txn:
                 result = await self.recover_missing_transaction(txn.id, exclude_recovered_ids)
                 exclude_recovered_ids.append(exclude_recovered_ids)
@@ -501,11 +498,10 @@ class Transaction(object):
         return hashout
 
     async def get_input_hashes(self):
-        from yadacoin.fastgraph import FastGraph
         input_hashes = []
         exclude_recovered_ids = []
         async for x in self.get_inputs(self.inputs):
-            txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+            txn = self.config.BU.get_transaction_by_id(x.id, instance=True)
             if txn:
                 input_hashes.append(str(txn.transaction_signature))
             else:
@@ -522,7 +518,7 @@ class Transaction(object):
                 if not found:
                     result = await self.recover_missing_transaction(x.id, exclude_recovered_ids)
                     if result:
-                        txn = self.config.BU.get_transaction_by_id(x.id, instance=True, include_fastgraph=isinstance(self, FastGraph))
+                        txn = self.config.BU.get_transaction_by_id(x.id, instance=True)
                         input_hashes.append(str(txn.transaction_signature))
                         exclude_recovered_ids.append(x.id)
                     else:

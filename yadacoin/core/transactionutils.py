@@ -2,10 +2,8 @@ import hashlib
 import base64
 import random
 import sys
-# from binascii import unhexlify
 from coincurve.keys import PrivateKey
 from coincurve._libsecp256k1 import ffi
-# from eccsnacks.curve25519 import scalarmult
 from bitcoin.wallet import P2PKHBitcoinAddress
 
 
@@ -46,7 +44,7 @@ class TU(object):  # Transaction Utilities
     
     @classmethod
     def check_rid_txn_fully_spent(cls, config, rid_txn, address, index):
-        from yadacoin.transaction import Transaction
+        from yadacoin import Transaction
         rid_txn = Transaction.from_dict(index, rid_txn)
         spending_txn = rid_txn.used_as_input(rid_txn.transaction_signature)
         if spending_txn:
@@ -62,9 +60,8 @@ class TU(object):  # Transaction Utilities
             return False # hasn't been spent to zero yet
 
     @classmethod
-    async def send(cls, config, to, value, from_address=True, dry_run=False):
-        from yadacoin.transaction import NotEnoughMoneyException, TransactionFactory
-        from yadacoin.transactionbroadcaster import TxnBroadcaster
+    async def send(cls, config, to, value, from_address=True, inputs=None, dry_run=False):
+        from yadacoin.core.transaction import NotEnoughMoneyException, TransactionFactory
         if from_address == config.address:
             public_key = config.public_key
             private_key = config.private_key
@@ -75,16 +72,20 @@ class TU(object):  # Transaction Utilities
                 private_key = child_key['private_key']
             else:
                 return {'status': 'error', 'message': 'no wallet matching from address'}
+        
+        if not inputs:
+            inputs = []
 
         try:
             transaction = await TransactionFactory.construct(
-                block_height=config.BU.get_latest_block()['index'],
+                block_height=config.LatestBlock.block.index,
                 fee=0.00,
                 public_key=public_key,
                 private_key=private_key,
                 outputs=[
                     {'to': to, 'value': value}
-                ]
+                ],
+                inputs=inputs
             )
         except NotEnoughMoneyException:
             return {'status': "error", 'message': "not enough money"}
@@ -97,11 +98,5 @@ class TU(object):  # Transaction Utilities
 
         if not dry_run:
             await config.mongo.async_db.miner_transactions.insert_one(transaction.transaction.to_dict())
-
-            txn_b = TxnBroadcaster(config)
-            await txn_b.txn_broadcast_job(transaction.transaction)
-
-            txn_b2 = TxnBroadcaster(config, config.SIO.namespace_handlers['/chat'])
-            await txn_b2.txn_broadcast_job(transaction.transaction)
 
         return transaction.transaction.to_dict()

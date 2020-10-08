@@ -6,10 +6,9 @@ import json
 from time import time
 from tornado import escape
 
-from yadacoin.basehandlers import BaseHandler
-from yadacoin.blockchainutils import BU
-from yadacoin.common import ts_to_utc
-from yadacoin.chain import CHAIN
+from yadacoin.http.base import BaseHandler
+from yadacoin.core.common import ts_to_utc
+from yadacoin.core.chain import CHAIN
 
 
 class GetLatestBlockHandler(BaseHandler):
@@ -33,7 +32,7 @@ class GetBlocksHandler(BaseHandler):
         end_index = min(int(self.get_argument("end_index", 0)), start_index + CHAIN.MAX_BLOCKS_PER_MESSAGE)
         # global chain object with cache of current block height,
         # so we can instantly answer to pulling requests without any db request
-        if start_index > self.config.BU.get_latest_block()['index']:
+        if start_index > self.config.LatestBlock.block.index:
             # early exit without request
             self.render_as_json([])
         else:
@@ -72,7 +71,7 @@ class GetBlockHandler(BaseHandler):
 class GetBlockHeightHandler(BaseHandler):
 
     async def get(self):
-        block = self.config.BU.get_latest_block()
+        block = self.config.LatestBlock.block
         self.render_as_json({'height': block['index'], 'hash': block['hash']})
 
 
@@ -118,7 +117,7 @@ class NewBlockHandler(BaseHandler):
             # TODO: handle a dict here to store the consensus state
             if not self.peers.syncing:
                 self.app_log.debug("Trying to sync on latest block from {}".format(peer_string))
-                my_index = self.config.BU.get_latest_block()['index']
+                my_index = self.config.LatestBlock.block.index
                 # This is mostly to keep in sync with fast moving blocks from whitelisted peers and pools.
                 # ignore if this does not fit.
                 if block_data['index'] == my_index + 1:

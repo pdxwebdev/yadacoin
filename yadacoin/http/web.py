@@ -7,9 +7,9 @@ import os
 import json
 import time
 import hashlib
-from yadacoin.basehandlers import BaseHandler
-from yadacoin.graphutils import GraphUtils as GU
-from yadacoin.blockchainutils import BU
+from yadacoin.http.base import BaseHandler
+from yadacoin.core.graphutils import GraphUtils as GU
+from yadacoin.core.blockchainutils import BU
 
 
 class BaseWebHandler(BaseHandler):

@@ -3,23 +3,27 @@ from sys import exc_info
 from os import path
 import json
 import logging
-import requests
 import datetime
 from bitcoin.wallet import P2PKHBitcoinAddress
 from time import time
+from urllib3.exceptions import *
 from asyncio import sleep as async_sleep
 from pymongo.errors import DuplicateKeyError
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.httputil import HTTPHeaders
 from tornado import ioloop
-from yadacoin.chain import CHAIN
-from yadacoin.config import get_config
-from yadacoin.peers import Peers, Peer
-from yadacoin.blockchain import Blockchain
-from yadacoin.block import Block, BlockFactory
-from yadacoin.transaction import InvalidTransactionException, InvalidTransactionSignatureException, \
-    MissingInputTransactionException, NotEnoughMoneyException
-from urllib3.exceptions import *
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.block import Block, BlockFactory
+from yadacoin.core.transaction import (
+    InvalidTransactionException,
+    InvalidTransactionSignatureException,
+    MissingInputTransactionException,
+    NotEnoughMoneyException
+)
+from yadacoin.core.latestblock import LatestBlock
+from yadacoin.socket.node import NodeSocketServer
 
 
 class BadPeerException(Exception):
@@ -38,24 +42,13 @@ class Consensus(object):
 
     lowest = CHAIN.MAX_TARGET
 
-    def __init__(self, debug=False, peers=None, prevent_genesis=False):
+    def __init__(self, debug=False, prevent_genesis=False):
         self.app_log = logging.getLogger("tornado.application")
         self.debug = debug
         self.config = get_config()
         self.mongo = self.config.mongo
         self.prevent_genesis = prevent_genesis
-        if peers:
-            self.peers = peers
-        else:
-            self.peers = Peers()
-    
-    async def async_init(self):
-        latest_block = self.config.BU.get_latest_block()
-        if latest_block:
-            self.latest_block = await Block.from_dict(latest_block)
-        else:
-            if not self.prevent_genesis:
-                await self.insert_genesis()
+        self.latest_block = None
 
     def output(self, string):
         sys.stdout.write(string)  # write the next character
@@ -103,7 +96,7 @@ class Consensus(object):
             else:
                 self.app_log.critical("{} - reset False, not truncating - DID NOT VERIFY".format(result['message']))
             self.config.BU.latest_block = None
-            latest_block = self.config.BU.get_latest_block()
+            latest_block = self.config.LatestBlock.block
             if latest_block:
                 self.latest_block = await Block.from_dict(latest_block)
             else:
@@ -181,108 +174,65 @@ class Consensus(object):
                 return None
 
     async def insert_consensus_block(self, block, peer):
-        if self.debug:
-            self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
-
         await self.mongo.async_db.consensus.replace_one({
             'id': block.to_dict().get('id'),
-            'peer': peer.to_string()
+            'peer': peer.to_dict()
         },
         {
             'block': block.to_dict(),
             'index': block.to_dict().get('index'),
             'id': block.to_dict().get('id'),
-            'peer': peer.to_string()
+            'peer': peer.to_dict()
         }, upsert=True)
 
     async def sync_bottom_up(self):
-        try:
-            #bottom up syncing
+        if not self.latest_block:
+            self.latest_block = LatestBlock.block
+
+        if LatestBlock.block.index > self.latest_block.index:
+            self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+
+        self.latest_block = LatestBlock.block
+        latest_consensus = await self.mongo.async_db.consensus.find_one({
+            'index': self.latest_block.index + 1,
+            'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
+            'ignore': {'$ne': True}
+        })
+        if latest_consensus:
+            self.remove_pending_transactions_now_in_chain(latest_consensus)
+            self.remove_fastgraph_transactions_now_in_chain(latest_consensus)
+            latest_consensus = await Block.from_dict( latest_consensus['block'])
+            if self.debug:
+                self.app_log.info("Latest consensus_block {}".format(latest_consensus.index))
+
+            records = await self.mongo.async_db.consensus.find({
+                'index': self.latest_block.index + 1,
+                'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
+                'ignore': {'$ne': True}
+            }).to_list(length=100)
+            for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
+                await self.import_block(record)
+
             last_latest = self.latest_block
             self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
             if self.latest_block.index > last_latest.index:
                 self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-
-            latest_consensus = await self.mongo.async_db.consensus.find_one({
+            latest_consensus_now = await self.mongo.async_db.consensus.find_one({
                 'index': self.latest_block.index + 1,
                 'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
                 'ignore': {'$ne': True}
             })
-            if latest_consensus:
-                self.remove_pending_transactions_now_in_chain(latest_consensus)
-                self.remove_fastgraph_transactions_now_in_chain(latest_consensus)
-                latest_consensus = await Block.from_dict( latest_consensus['block'])
-                if self.debug:
-                    self.app_log.info("Latest consensus_block {}".format(latest_consensus.index))
 
-                records = await self.mongo.async_db.consensus.find({
-                    'index': self.latest_block.index + 1,
-                    'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
-                    'ignore': {'$ne': True}
-                }).to_list(length=100)
-                for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
-                    await self.import_block(record)
-
-                last_latest = self.latest_block
-                self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
-                if self.latest_block.index > last_latest.index:
-                    self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-                latest_consensus_now = await self.mongo.async_db.consensus.find_one({
-                    'index': self.latest_block.index + 1,
-                    'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
-                    'ignore': {'$ne': True}
-                })
-
-                if latest_consensus_now and latest_consensus.index == latest_consensus_now['index']:
-                    await self.search_network_for_new()
-                    return False
-                elif latest_consensus_now and  latest_consensus.index < latest_consensus_now['index']:
-                    return True
+            if latest_consensus_now and latest_consensus.index == latest_consensus_now['index']:
                 return False
-            else:
-                await self.search_network_for_new()
-                return False
-        except Exception as e:
-            from traceback import format_exc
-            self.app_log.warning(format_exc())
-            raise
-
-    async def search_network_for_new(self):
-        # Peers.init( self.config.network)
-        if self.config.network == 'regnet':
-            return
-        if self.peers.syncing:
-            self.app_log.debug("Already syncing, ignoring search_network_for_new")
-
-        if len(self.config.force_polling):
-            # This is a temp hack until everyone updated
-            polling_peers = ["{}:{}".format(peer['host'], peer['port']) for peer in self.config.force_polling]
+            elif latest_consensus_now and  latest_consensus.index < latest_consensus_now['index']:
+                return True
+            return False
         else:
-            if len(self.peers.peers) < 2:
-                await self.peers.refresh()
-            if len(self.peers.peers) < 1:
-                self.app_log.info("No peer to connect to yet")
-                return
-            polling_peers = [peer.to_string() for peer in self.peers.peers]
-        # TODO: use an aio lock
-        self.app_log.debug('requesting {} ...'.format(self.latest_block.index + 1))
-
-
-        # for peer in self.peers.peers:
-        for peer_string in polling_peers:
-            if '0.0.0.0' in peer_string: continue
-            self.peers.syncing = True
-            try:
-                await self.request_blocks(peer_string)
-            except Exception as e:
-                if self.debug:
-                    self.app_log.warning(e)
-            finally:
-                self.peers.syncing = False
+            return False
     
     async def request_blocks(self, peer_string):
         self.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer_string))
-        peer = Peer.from_string(peer_string)
         try:
             url = 'http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'\
                 .format(peer=peer_string,
@@ -466,7 +416,7 @@ class Consensus(object):
             await self.trigger_update_event()
         return True
 
-    async def process_next_block(self, block_data: dict, peer, trigger_event=True) -> bool:
+    async def process_next_block(self, block_data: Block) -> bool:
         """This is the common entry point for all new possible blocks to enter consensus and chain"""
         block_object = await Block.from_dict(block_data)
         if block_object.in_the_future():
@@ -663,37 +613,12 @@ class Consensus(object):
                             break
 
                     # self.peers.init(self.config.network)
-
-                    self.app_log.debug('requesting {} ...'.format(block_for_next.index + 1))
-                    for apeer in self.peers.peers:
-                        # TODO: there was a "while 1:" there, that got the retrace stuck with only 1 peer and no escape route.
-                        # recheck the logic.
-                        try:
-                            # if self.debug:
-                            #     self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
-                            result = requests.get(
-                                'http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                                    peer=apeer.to_string(),
-                                    start_index=block_for_next.index + 1,
-                                    end_index=block_for_next.index + 100
-                                ),
-                                timeout=1,
-                                headers={'Connection':'close'}
-                            )
-                            remote_blocks = [await Block.from_dict( x) for x in json.loads(result.content.decode())]
-                            break_out = False
-                            for remote_block in remote_blocks:
-                                if remote_block.prev_hash == block_for_next.hash:
-                                    blocks.append(remote_block)
-                                    block_for_next = remote_block
-                                else:
-                                    break_out = True
-                                    break
-                            if break_out:
-                                break
-                        except Exception as e:
-                            if self.debug:
-                                print(e)
+                    remote_blocks = NodeSocket.getblocks(block_for_next.index + 1, block_for_next.index + 100)
+                    for remote_block in remote_blocks:
+                        if remote_block.prev_hash == block_for_next.hash:
+                            blocks.append(remote_block)
+                            block_for_next = remote_block
+                        else:
                             break
 
                     # If the block height is equal, we throw out the inbound chain, it muse be greater

@@ -16,18 +16,12 @@ from eccsnacks.curve25519 import scalarmult_base
 from logging import getLogger
 from threading import Thread
 
-from yadacoin.basehandlers import BaseHandler
-from yadacoin.blockchainutils import BU
-from yadacoin.fastgraph import FastGraph
-from yadacoin.graph import Graph
-from yadacoin.graphutils import GraphUtils as GU
-from yadacoin.transaction import TransactionFactory, Transaction, InvalidTransactionException, \
+from yadacoin.http.base import BaseHandler
+from yadacoin.core.graph import Graph
+from yadacoin.core.transaction import TransactionFactory, Transaction, InvalidTransactionException, \
     InvalidTransactionSignatureException, MissingInputTransactionException
-from yadacoin.transactionutils import TU
-from yadacoin.transactionbroadcaster import TxnBroadcaster
-from yadacoin.nsbroadcaster import NSBroadcaster
-from yadacoin.peers import Peer
-from yadacoin.auth import jwtauth
+from yadacoin.core.transactionutils import TU
+from yadacoin.decorators.jwtauth import jwtauth
 
 
 class GraphConfigHandler(BaseHandler):
@@ -95,13 +89,14 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         regular_txns = []
         chain_balance = 0
         async for txn in BU().get_wallet_unspent_transactions(address, no_zeros=True):
-            if amount_needed:
+            if amount_needed and chain_balance < amount_needed:
                 for output in txn['outputs']:
                     if output['to'] == address and float(output['value']) > 0.0:
                         regular_txns.append(txn)
             for output in txn['outputs']:
                 if output['to'] == address:
                     chain_balance += float(output['value'])
+            self.app_log.warning(chain_balance)
     
         wallet = {
             'chain_balance': "{0:.8f}".format(chain_balance),
@@ -610,7 +605,7 @@ class NSHandler(BaseGraphHandler):
         except:
             return self.render_as_json({'status': 'error', 'message': 'invalid request body'})
         try:
-            nstxn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], ns['txn'])
+            nstxn = Transaction.from_dict(self.config.LatestBlock.block.index, ns['txn'])
         except:
             return self.render_as_json({'status': 'error', 'message': 'invalid transaction'})
         try:

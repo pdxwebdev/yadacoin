@@ -5,14 +5,14 @@ from time import time
 from logging import getLogger
 from binascii import unhexlify
 from eccsnacks.curve25519 import scalarmult
-from yadacoin.transactionutils import TU
-from yadacoin.crypt import Crypt
+from yadacoin.core.transactionutils import TU
+from yadacoin.core.crypt import Crypt
 # from bitcoin.wallet import P2PKHBitcoinAddress
 # from bson.son import SON
 # from coincurve import PrivateKey
 
-from yadacoin.config import get_config
-from yadacoin.transaction import Transaction
+from yadacoin.core.config import get_config
+from yadacoin.core.transaction import Transaction
 
 # Circular reference
 # from yadacoin.block import Block
@@ -112,7 +112,7 @@ class GraphUtils(object):
             'rid': {'$in': rids}
         }).sort([('height', -1)])
 
-        latest_block = self.config.BU.get_latest_block()
+        latest_block = self.config.LatestBlock.block
 
         if posts_cache.count():
             posts_cache = posts_cache[0]
@@ -263,7 +263,7 @@ class GraphUtils(object):
             'rids': {'$in': rids}
         }).sort([('height', -1)])
 
-        latest_block = self.config.BU.get_latest_block()
+        latest_block = self.config.LatestBlock.block
 
         if reacts_cache.count():
             reacts_cache = reacts_cache[0]
@@ -402,7 +402,7 @@ class GraphUtils(object):
             'rids': {'$in': rids}
         }).sort([('height', -1)])
 
-        latest_block = self.config.BU.get_latest_block()
+        latest_block = self.config.LatestBlock.block
 
         if comments_cache.count():
             comments_cache = comments_cache[0]
@@ -693,7 +693,7 @@ class GraphUtils(object):
                 'requested_rid': requested_rid
             }
         ).sort([('height', -1)])
-        latest_block = self.config.BU.get_latest_block()
+        latest_block = self.config.LatestBlock.block
 
         transactions = []
         if lt_block_height:
@@ -836,7 +836,7 @@ class GraphUtils(object):
 
         friend_requests_cache = self.mongo.db.friend_requests_cache.find({'requested_rid': {'$in': rids}}).sort(
             [('height', -1)])
-        latest_block = self.config.BU.get_latest_block()
+        latest_block = self.config.LatestBlock.block
         if friend_requests_cache.count():
             friend_requests_cache = friend_requests_cache[0]
             block_height = friend_requests_cache['height']
@@ -1113,11 +1113,11 @@ class GraphUtils(object):
                 if isinstance(txn, Transaction):
                     await txn.verify()
                 else:
-                    txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
+                    txn = Transaction.from_dict(self.config.LatestBlock.block.index, txn)
                     await txn.verify()
             else:
                 txn = self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
-                txn = Transaction.from_dict(self.config.BU.get_latest_block()['index'], txn)
+                txn = Transaction.from_dict(self.config.LatestBlock.block.index, txn)
                 await txn.verify()
             cipher = None
             for shared_secret in list(set(shared_secrets)):

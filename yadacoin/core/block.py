@@ -13,16 +13,9 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from logging import getLogger
 
-from yadacoin.chain import CHAIN
-from yadacoin.config import get_config
-from yadacoin.fastgraph import FastGraph
-from yadacoin.transaction import (
-    TransactionFactory,
-    Transaction,
-    InvalidTransactionException,
-    ExternalInput,
-    MissingInputTransactionException
-)
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.transaction import Transaction, InvalidTransactionException, MissingInputTransactionException
 
 
 def quantize_eight(value):
@@ -79,7 +72,7 @@ class BlockFactory(object):
             if index == 0:
                 prev_hash = ''
             else:
-                prev_hash = config.BU.get_latest_block()['hash']
+                prev_hash = config.LatestBlock.block.hash
 
             transaction_objs = []
             fee_sum = 0.0
@@ -514,7 +507,7 @@ class Block(object):
         self.special_target = special_target
         if target==0:
             # Same call as in new block check - but there's a circular reference here.
-            latest_block = self.config.BU.get_latest_block()
+            latest_block = self.config.LatestBlock.block
             if not latest_block:
                 self.target = CHAIN.MAX_TARGET
             else:
@@ -541,10 +534,7 @@ class Block(object):
                 txn['coinbase'] = True  
             else:
                 txn['coinbase'] = False
-            if 'signatures' in txn:
-                transactions.append(FastGraph.from_dict(block.get('index'), txn))
-            else:
-                transactions.append(Transaction.from_dict(block.get('index'), txn))
+            transactions.append(Transaction.from_dict(block.get('index'), txn))
 
         if block.get('special_target', 0) == 0:
             block['special_target'] = block.get('target')

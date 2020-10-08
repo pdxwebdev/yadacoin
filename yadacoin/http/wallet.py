@@ -11,12 +11,10 @@ import jwt
 import time
 from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from yadacoin.basehandlers import BaseHandler
-from yadacoin.blockchainutils import BU
-from yadacoin.transaction import Transaction, TransactionFactory, NotEnoughMoneyException
-from yadacoin.transactionbroadcaster import TxnBroadcaster
-from yadacoin.auth import jwtauth
-from yadacoin.transactionutils import TU
+from yadacoin.http.base import BaseHandler
+from yadacoin.core.transaction import Transaction, TransactionFactory, NotEnoughMoneyException
+from yadacoin.decorators.jwtauth import jwtauth
+from yadacoin.core.transactionutils import TU
 
 
 class WalletHandler(BaseHandler):
@@ -101,7 +99,7 @@ class GetBalanceSum(BaseHandler):
             return
         balance = 0.0
         for address in addresses:
-            balance += await BU().get_wallet_balance(address)
+            balance += await self.config.BU.get_wallet_balance(address)
         return self.render_as_json({
             'balance': "{0:.8f}".format(balance)
         })
@@ -128,10 +126,10 @@ class CreateTransactionView(BaseHandler):
 
         inputs = []
         for from_address in from_addresses:
-            inputs.extend([x async for x in BU().get_wallet_unspent_transactions(from_address)])
+            inputs.extend([x async for x in self.config.BU.get_wallet_unspent_transactions(from_address)])
 
         txn = await TransactionFactory.construct(
-            block_height=BU().get_latest_block()['index'],
+            block_height=self.config.BU.get_latest_block()['index'],
             private_key=config.private_key,
             public_key=config.public_key,
             fee=float(fee),
@@ -162,10 +160,10 @@ class CreateRawTransactionView(BaseHandler):
 
         inputs = []
         for from_address in from_addresses:
-            inputs.extend([x async for x in await BU().get_wallet_unspent_transactions(from_address)])
+            inputs.extend([x async for x in await self.config.BU.get_wallet_unspent_transactions(from_address)])
 
         txn = await TransactionFactory.construct(
-            block_height=BU().get_latest_block()['index'],
+            block_height=self.config.BU.get_latest_block()['index'],
             public_key=config.public_key,
             fee=float(fee),
             inputs=inputs,

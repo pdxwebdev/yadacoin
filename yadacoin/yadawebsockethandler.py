@@ -177,7 +177,7 @@ class ChatNamespace(AsyncNamespace):
     async def on_get_latest_block(self, sid, data):
         """peer ask for our latest block"""
         self.app_log.info('WS get-latest-block: {} {}'.format(sid, json.dumps(data)))
-        block = self.config.BU.get_latest_block()
+        block = self.config.LatestBlock.block
         block['time_utc'] = ts_to_utc(block['time'])
         await self.emit('latest_block', data=block, room=sid)
 
@@ -190,7 +190,7 @@ class ChatNamespace(AsyncNamespace):
         end_index = min(int(data.get("end_index", 0)), start_index + CHAIN.MAX_BLOCKS_PER_MESSAGE)
         # global chain object with cache of current block height,
         # so we can instantly answer to pulling requests without any db request
-        if start_index > self.config.BU.get_latest_block()['index']:
+        if start_index > self.config.LatestBlock.block.index:
             # early exit without request
             await self.emit('blocks', data=[], room=sid)
         else:
@@ -216,7 +216,7 @@ class ChatNamespace(AsyncNamespace):
             async with self.session(sid) as session:
                 peer = Peer(session['ip'], session['port'])
             self.app_log.debug("Trying to sync on latest block from {}".format(peer.to_string()))
-            my_index = self.config.BU.get_latest_block()['index']
+            my_index = self.config.LatestBlock.block.index
             if data['index'] == my_index + 1:
                 self.app_log.debug("Next index, trying to merge from {}".format(peer.to_string()))
                 if await self.consensus.process_next_block(data, peer):
@@ -238,7 +238,7 @@ class ChatNamespace(AsyncNamespace):
         self.app_log.info('WS blocks: {} {}'.format(sid, json.dumps(data)))
         if not len(data):
             return
-        my_index = self.config.BU.get_latest_block()['index']
+        my_index = self.config.LatestBlock.block.index
         if data[0]['index'] != my_index + 1:
             return
         self.peers.syncing = True

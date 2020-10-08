@@ -6,16 +6,16 @@ import json
 from asyncio import sleep as async_sleep
 from logging import getLogger
 
-from socketio import AsyncClient, AsyncClientNamespace
+from tornado.tcpserver import TCPServer
 
 from yadacoin.config import get_config
 from yadacoin.chain import CHAIN
 from yadacoin.common import ts_to_utc
 
 
-class ClientChatNamespace(AsyncClientNamespace):
+class ClientChatNamespace(TCPServer):
 
-    async def on_connect(self):
+    async def handle_stream(self, stream, address):
         self.app_log = getLogger("tornado.application")
         print("CONNECT WS")
         self.config = get_config()
@@ -119,7 +119,7 @@ class ClientChatNamespace(AsyncClientNamespace):
             end_index = min(int(data.get("end_index", 0)), start_index + CHAIN.MAX_BLOCKS_PER_MESSAGE)
             # global chain object with cache of current block height,
             # so we can instantly answer to pulling requests without any db request
-            if start_index > self.config.BU.get_latest_block()['index']:
+            if start_index > self.config.LatestBlock.block.index:
                 # early exit without request
                 await self.emit('blocks', data=[], namespace="/chat")
             else:
@@ -197,7 +197,7 @@ class YadaWebSocketClient(object):
         self.latest_peer_block = await Block.from_dict(data)
         if not self.peers.syncing:
             self.app_log.debug("Trying to sync on latest block from {}".format(self.peer.to_string()))
-            my_index = self.config.BU.get_latest_block()['index']
+            my_index = self.config.LatestBlock.block.index
             if data['index'] == my_index + 1:
                 self.app_log.debug("Next index, trying to merge from {}".format(self.peer.to_string()))
                 if await self.config.consensus.process_next_block(data, self.peer):
@@ -213,12 +213,12 @@ class YadaWebSocketClient(object):
             else:
                 # We have better
                 self.app_log.debug("We have higher index, sending {} to ws {}".format(data['index'], self.peer.to_string()))
-                block = self.config.BU.get_latest_block()
+                block = self.config.LatestBlock.block
                 block['time_utc'] = ts_to_utc(block['time'])
                 await self.client.emit('latest_block', data=block, namespace="/chat")
 
     async def on_blocks(self, data):
-        my_index = self.config.BU.get_latest_block()['index']
+        my_index = self.config.LatestBlock.block.index
         if data[0]['index'] != my_index + 1:
             return
         self.peers.syncing = True

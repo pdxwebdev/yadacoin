@@ -2,7 +2,7 @@ import os
 from pymongo import MongoClient, IndexModel, ASCENDING, DESCENDING
 from motor.motor_tornado import MotorClient
 
-from yadacoin.config import get_config
+from yadacoin.core.config import get_config
 
 
 class Mongo(object):
@@ -62,8 +62,13 @@ class Mongo(object):
         __id = IndexModel([("id", ASCENDING)], name="__id")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __block_hash = IndexModel([("block.hash", ASCENDING)], name="__block_hash")
+        __block_prevHash_index_version = IndexModel([
+            ("block.prevHash", ASCENDING),
+            ("block.index", ASCENDING),
+            ("block.version", ASCENDING)
+        ], name="__block_prevHash_index_version")
         try:
-            self.db.consensus.create_indexes([__id, __index, __block_hash])
+            self.db.consensus.create_indexes([__id, __index, __block_hash, __block_prevHash_index_version])
         except:
             pass
 

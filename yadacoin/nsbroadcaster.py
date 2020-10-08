@@ -13,7 +13,7 @@ class NSBroadcaster(object):
         if isinstance(nstxn, Transaction):
             transaction = nstxn
         else:
-            transaction = Transaction.from_dict(self.config.BU.get_latest_block()['index'], nstxn)
+            transaction = Transaction.from_dict(self.config.LatestBlock.block.index, nstxn)
 
         if self.config.network != 'regnet':
             for peer in self.config.peers.peers:

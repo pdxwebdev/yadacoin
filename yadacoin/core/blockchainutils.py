@@ -8,8 +8,8 @@ from bson.son import SON
 from coincurve import PrivateKey
 from logging import getLogger
 
-from yadacoin.chain import CHAIN
-from yadacoin.config import get_config
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
 # Circular reference
 #from yadacoin.block import Block
 from time import sleep, time
@@ -274,7 +274,7 @@ class BlockChainUtils(object):
             skip = []
         #from block import Block
         #from transaction import Transaction
-        from yadacoin.crypt import Crypt
+        from yadacoin import Crypt
 
         get_transactions_cache = self.mongo.db.get_transactions_cache.find(
                 {
@@ -396,7 +396,7 @@ class BlockChainUtils(object):
         
 
     def get_fastgraph_transactions(self, secret, query, queryType, raw=False, both=True, skip=None):
-        from yadacoin.crypt import Crypt
+        from yadacoin import Crypt
         cipher = None
         for transaction in self.mongo.db.fastgraph_transactions.find(query):
             if 'txn' in transaction:
@@ -438,9 +438,7 @@ class BlockChainUtils(object):
         return base64.b64encode(signature).decode("utf-8")
 
     def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
-        from yadacoin.transaction import Transaction
-        # from yadacoin.crypt import Crypt
-        from yadacoin.fastgraph import FastGraph
+        from yadacoin import Transaction
         res = self.mongo.db.blocks.find({"transactions.id": id})
         if res.count():
             for block in res:
@@ -472,9 +470,7 @@ class BlockChainUtils(object):
             return None
 
     def is_input_spent(self, input_ids, public_key, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
-        from yadacoin.transaction import Transaction
-        # from yadacoin.crypt import Crypt
-        from yadacoin.fastgraph import FastGraph
+        from yadacoin import Transaction
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))

@@ -1,7 +1,7 @@
-from yadacoin.chain import CHAIN
-from yadacoin.config import get_config
-from yadacoin.block import Block, BlockFactory
-from yadacoin.transaction import InvalidTransactionException, MissingInputTransactionException
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.block import Block, BlockFactory
+from yadacoin.core.transaction import InvalidTransactionException, MissingInputTransactionException
 
 
 class BlockChainException(Exception):
@@ -63,7 +63,7 @@ class Blockchain(object):
                 if block.index >= CHAIN.FORK_10_MIN_BLOCK:
                     target = await BlockFactory.get_target_10min(block.index, last_block, block)
                 else:
-                    target = await BlockFactory.get_target(block.index, last_block, block, latest_block=block.to_dict())
+                    target = await BlockFactory.get_target(block.index, last_block, block)
                 if int(block.hash, 16) > target and not block.special_min:
                     return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
                 if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:

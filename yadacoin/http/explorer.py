@@ -5,9 +5,8 @@ Handlers required by the explorer operations
 import base64
 import re
 
-from yadacoin.basehandlers import BaseHandler
-from yadacoin.blockchainutils import BU
-from yadacoin.common import changetime, abstract_block
+from yadacoin.http.base import BaseHandler
+from yadacoin.core.common import changetime, abstract_block
 
 
 class ExplorerSearchHandler(BaseHandler):
@@ -104,7 +103,7 @@ class ExplorerSearchHandler(BaseHandler):
             re.search(r'[A-Fa-f0-9]+', term).group(0)
             res = self.mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
             if res.count():
-                balance = await BU().get_wallet_balance(term)
+                balance = await self.config.BU.get_wallet_balance(term)
                 return self.render_as_json({
                     'balance': "{0:.8f}".format(balance),
                     'resultType': 'txn_outputs_to',
@@ -177,7 +176,7 @@ class ExplorerGetBalance(BaseHandler):
         if not address:
             self.render_as_json({})
             return
-        balance = await BU().get_wallet_balance(address)
+        balance = await self.config.BU.get_wallet_balance(address)
         return self.render_as_json({
             'balance': "{0:.8f}".format(balance)
         })
@@ -200,7 +199,7 @@ class ExplorerLast50(BaseHandler):
 
     async def get(self):
         """Returns abstract of the latest 50 blocks miners"""
-        latest = self.config.BU.get_latest_block()
+        latest = self.config.LatestBlock.block
         pipeline = [
                     {
                        '$match' : { 'index' : {'$gte': latest['index'] - 50} }
