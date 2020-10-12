@@ -104,17 +104,18 @@ class Config(object):
         status = {
             'version': self.protocol_version, 
             'network': self.network,
+            'peer_type': self.peer_type,
             # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
-            # 'peers': self.peers.get_status(),
+            'peers': len(self.nodeServer.sockets),
             'pool': pool_status, 
-            'height': self.BU.get_latest_block()['index'],
+            'height': self.LatestBlock.block.index,
             'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s)
         }
         # TODO: add uptime in human readable format
         return status
 
     @classmethod
-    def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None, mongodb_host=None):
+    def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None, mongodb_host=None, db_name=None):
         mnemonic = Mnemonic('english')
         # generate 12 word mnemonic seed
         if not seed and not xprv and not prv:
@@ -190,8 +191,8 @@ class Config(object):
             "callbackurl": "http://0.0.0.0:8000/create-relationship",
             "jwt_public_key": None,
             "fcm_key": "",
-            "database": "yadacoin",
-            "site_database": "yadacoinsite",
+            "database": db_name or "yadacoin",
+            "site_database": db_name + "site" if db_name else "yadacoinsite",
             "mongodb_host": mongodb_host or "localhost",
             "mixpanel": "",
             "username": username or '',

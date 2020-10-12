@@ -1,3 +1,4 @@
+import json
 from logging import getLogger
 
 from yadacoin.core.config import get_config
@@ -60,19 +61,22 @@ class Peer(object):
         return {
             'host': self.host,
             'port': self.port,
-            'identity': self.identity.to_dict()
+            'identity': self.identity.to_dict
         }
 
     def to_string(self):
         return '{}:{}'.format(self.host, self.port)
+    
+    def to_json(self):
+        return json.dumps(self.to_dict(), indent=4)
 
 
 class Seed(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, Seed):
+        if isinstance(peer, Seed) or type(peer) == type(Seed):
             return 100000
-        elif isinstance(peer, SeedGateway):
+        elif isinstance(peer, SeedGateway) or type(peer) == type(SeedGateway):
             return 1
         else:
             return 0
@@ -85,9 +89,9 @@ class Seed(Peer):
 class SeedGateway(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, Seed):
+        if isinstance(peer, Seed) or type(peer) == type(Seed):
             return 1
-        elif isinstance(peer, ServiceProvider):
+        elif isinstance(peer, ServiceProvider) or type(peer) == type(ServiceProvider):
             return 100000
         else:
             return 0
@@ -100,7 +104,7 @@ class SeedGateway(Peer):
 class ServiceProvider(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, SeedGateway):
+        if isinstance(peer, SeedGateway) or type(peer) == type(SeedGateway):
             return 1
         elif isinstance(peer, User):
             return 100000
@@ -115,7 +119,7 @@ class ServiceProvider(Peer):
 class User(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, ServiceProvider):
+        if isinstance(peer, ServiceProvider) or type(peer) == type(ServiceProvider):
             return 1
         else:
             return 0

@@ -1,6 +1,8 @@
 ﻿"""
 Async Yadacoin node poc
 """
+import sys
+sys.path.append('/home/mvogel/yadacoin')
 import importlib
 import pkgutil
 import json
@@ -40,7 +42,7 @@ from yadacoin.core.graphutils import GraphUtils
 from yadacoin.core.mongo import Mongo
 from yadacoin.core.miningpoolpayout import PoolPayer
 from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.peer import Peer, Seed, SeedGateway, User
+from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User
 from yadacoin.core.identity import Identity
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
@@ -70,11 +72,13 @@ class NodeApplication(Application):
         define("client", default=False, help="Is client for testing", type=bool)
 
         options.parse_command_line(final=False)
-        self.configure_logging()
         
         self.init_config(options)
+        self.configure_logging()
         self.init_config_properties()
         self.init_seeds()
+        self.init_seed_gateways()
+        self.init_service_providers()
         if self.config.mode == 'pool':
             self.init_pool()
         elif self.config.mode == 'web':
@@ -88,10 +92,10 @@ class NodeApplication(Application):
         if not self.config.consensus:
             self.config.consensus = Consensus(self.config.debug, self.config.peers)
             if options.verify:
-                self.app_log.info("Verifying existing blockchain")
+                self.config.app_log.info("Verifying existing blockchain")
                 await self.config.consensus.verify_existing_blockchain(reset=self.config.reset)
             else:
-                self.app_log.info("Verification of existing blockchain skipped by config")
+                self.config.app_log.warning("Verification of existing blockchain skipped by config")
 
         try:
             if self.consensus_busy:
@@ -101,18 +105,32 @@ class NodeApplication(Application):
             while again:
                 again = await self.config.consensus.sync_bottom_up()
             self.consensus_busy = False
-            self.app_log.warning("{} in Background_consensus".format(again))
         except Exception as e:
-            self.app_log.error(format_exc())
+            self.config.app_log.error(format_exc())
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
         try:
-            for peer in set(self.config.seeds) - set(self.config.nodeServer.streams): # only connect to seed nodes
-                await self.config.nodeClient.connect(self.config.peers_seed[peer].host, self.config.peers_seed[peer].port)
+            peers = None
+            if isinstance(self.config.peer, Seed):
+                peers = self.config.seeds
+                limit = self.config.peer.__class__.type_limit(Seed)
+            elif isinstance(self.config.peer, SeedGateway):
+                peers = self.config.seeds
+                limit = self.config.peer.__class__.type_limit(Seed)
+            elif isinstance(self.config.peer, ServiceProvider):
+                peers = self.config.seed_gateways
+                limit = self.config.peer.__class__.type_limit(SeedGateway)
+            elif isinstance(self.config.peer, User):
+                peers = self.config.service_providers
+                limit = self.config.peer.__class__.type_limit(User)
+
+            if limit and limit > len(self.config.nodeServer.sockets):
+                for peer in set(peers) - set(self.config.nodeServer.sockets): # only connect to seed nodes
+                    await self.config.nodeClient.connect(peers[peer])
 
         except Exception as e:
-            self.app_log.error(format_exc())
+            self.config.app_log.error(format_exc())
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
@@ -123,10 +141,10 @@ class NodeApplication(Application):
             self.config.status_busy = True
             status = self.config.get_status()
             # print(status)
-            self.app_log.info(json.dumps(status))
+            self.config.app_log.info(json.dumps(status))
             self.config.status_busy = False
         except Exception as e:
-            self.app_log.error(format_exc())
+            self.config.app_log.error(format_exc())
 
     async def background_block_checker(self):
         """Responsible for miner updates"""
@@ -143,7 +161,7 @@ class NodeApplication(Application):
 
             self.config.block_checker_busy = False
         except Exception as e:
-            self.app_log.error(format_exc())
+            self.config.app_log.error(format_exc())
 
     async def background_pool_payer(self):
         """Responsible for paying miners"""
@@ -161,7 +179,7 @@ class NodeApplication(Application):
 
             self.pool_payer_busy = False
         except Exception as e:
-            self.app_log.error(format_exc())
+            self.config.app_log.error(format_exc())
 
     async def background_cache_validator(self):
         """Responsible for validating the cache and clearing it when necessary"""
@@ -179,7 +197,7 @@ class NodeApplication(Application):
                     await self.config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
                 self.config.cache_inited = True
             except Exception as e:
-                self.app_log.error(format_exc())
+                self.config.app_log.error(format_exc())
 
         """
         We check for cache items that are not currently in the blockchain
@@ -214,8 +232,8 @@ class NodeApplication(Application):
 
             self.cache_busy = False
         except Exception as e:
-            self.app_log.error("error in background_cache_validator")
-            self.app_log.error(format_exc())
+            self.config.app_log.error("error in background_cache_validator")
+            self.config.app_log.error(format_exc())
 
     def configure_logging(self):
         ch = logging.StreamHandler(stdout)
@@ -223,17 +241,17 @@ class NodeApplication(Application):
         if options.debug:
             ch.setLevel(logging.DEBUG)
         # tornado.log.enable_pretty_logging()
-        self.app_log = logging.getLogger("tornado.application")
-        tornado.log.enable_pretty_logging(logger=self.app_log)
+        self.config.app_log = logging.getLogger("tornado.application")
+        tornado.log.enable_pretty_logging(logger=self.config.app_log)
         # app_log.addHandler(ch)
         logfile = path.abspath("yada_app.log")
         # Rotate log after reaching 512K, keep 5 old copies.
         rotateHandler = RotatingFileHandler(logfile, "a", 512 * 1024, 5)
         formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
         rotateHandler.setFormatter(formatter)
-        self.app_log.addHandler(rotateHandler)
+        self.config.app_log.addHandler(rotateHandler)
         if options.debug:
-            self.app_log.setLevel(logging.DEBUG)
+            self.config.app_log.setLevel(logging.DEBUG)
 
         self.access_log = logging.getLogger("tornado.access")
         tornado.log.enable_pretty_logging()
@@ -243,7 +261,7 @@ class NodeApplication(Application):
         rotateHandler2.setFormatter(formatter2)
         self.access_log.addHandler(rotateHandler2)
 
-        self.app_log.propagate = False
+        self.config.app_log.propagate = False
         self.access_log.propagate = False
         # This logguer config is quite a mess, but works well enough for the time being.
         logging.getLogger("engineio").propagate = False
@@ -251,7 +269,7 @@ class NodeApplication(Application):
 
     def init_config(self, options):
         if not path.isfile(options.config):
-            self.app_log.error("no config file found at '{}'. Generating new...".format(options.config))
+            get_logger().error("no config file found at '{}'. Generating new...".format(options.config))
             self.config = yadacoin.core.config.Config.generate()
             try:
                 os.makedirs(os.path.dirname(options.config))
@@ -299,7 +317,7 @@ class NodeApplication(Application):
         self.cache_busy = False
 
         if self.config.pool_payout:
-            self.app_log.info("PoolPayout activated")
+            self.config.app_log.info("PoolPayout activated")
             self.config.pp = PoolPayer()
 
             tornado.ioloop.PeriodicCallback(self.background_pool_payer, 120000).start()
@@ -326,9 +344,9 @@ class NodeApplication(Application):
                 'host': '71.193.201.21',
                 'port': 8000,
                 'identity': {
-                    "username": "seed",
-                    "username_signature": "MEUCIQCyl/saFzqVSVOC7+udTvFYWFZOsqk0pWh8gUG7h8v1cAIgbxGw6HyJiqlhY4vRptwx+VlCNVCfPjNEVmVzSXq/qmw=",
-                    "public_key": "42b5cf49a83f46e3a21f506a8ed43897036bc93f772356e2c72f751b35487be9"
+                    "username": "seed_A",
+                    "username_signature": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM=",
+                    "public_key": "0286707b29746a434ead4ab94af2d7758d4ae8aaa12fdad9ab42ce3952a8ef798f"
                 }
             })
 
@@ -341,19 +359,83 @@ class NodeApplication(Application):
                 'host': '71.193.201.21',
                 'port': 8000,
                 'identity': {
-                    "username": "seed",
-                    "username_signature": "MEUCIQCyl/saFzqVSVOC7+udTvFYWFZOsqk0pWh8gUG7h8v1cAIgbxGw6HyJiqlhY4vRptwx+VlCNVCfPjNEVmVzSXq/qmw=",
-                    "public_key": "42b5cf49a83f46e3a21f506a8ed43897036bc93f772356e2c72f751b35487be9"
+                    "username": "seed_A",
+                    "username_signature": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM=",
+                    "public_key": "0286707b29746a434ead4ab94af2d7758d4ae8aaa12fdad9ab42ce3952a8ef798f"
                 }
             })
 
             self.config.seeds = {
                 seed_peer.identity.username_signature: seed_peer
-            }    
+            }
+
+    def init_seed_gateways(self):
+        if self.config.network == 'mainnet':
+
+            seed_gateway_peer = SeedGateway.from_dict({
+                'host': '71.193.201.21',
+                'port': 8001,
+                'identity': {
+                    "username": "seed_gateway_A",
+                    "username_signature": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA==",
+                    "public_key": "03e8b4651a1e794998c265545facbab520131cdddaea3da304a36279b1d334dfb1"
+                }
+            })
+
+            self.config.seed_gateways = {
+                seed_gateway_peer.identity.username_signature: seed_gateway_peer
+            }
+        elif self.config.network == 'regnet':
+
+            seed_gateway_peer = SeedGateway.from_dict({
+                'host': '71.193.201.21',
+                'port': 8001,
+                'identity': {
+                    "username": "seed_gateway_A",
+                    "username_signature": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA==",
+                    "public_key": "03e8b4651a1e794998c265545facbab520131cdddaea3da304a36279b1d334dfb1"
+                }
+            })
+
+            self.config.seed_gateways = {
+                seed_gateway_peer.identity.username_signature: seed_gateway_peer
+            }
+
+    def init_service_providers(self):
+        if self.config.network == 'mainnet':
+
+            service_provider_peer = ServiceProvider.from_dict({
+                'host': '71.193.201.21',
+                'port': 8002,
+                'identity': {
+                    "username": "service_provider_A",
+                    "username_signature": "MEUCIQCIzIDpRwBJgU0fjTh6FZhpIrLz/WNTLIZwK2Ifx7HjtQIgfYYOPFy7ypU+KYeYzkCa9OWwbwPIt9Hk0cV8Q6pcXog=",
+                    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7"
+                }
+            })
+
+            self.config.service_providers = {
+                service_provider_peer.identity.username_signature: service_provider_peer
+            }
+        elif self.config.network == 'regnet':
+
+            service_provider_peer = ServiceProvider.from_dict({
+                'host': '71.193.201.21',
+                'port': 8002,
+                'identity': {
+                    "username": "service_provider_A",
+                    "username_signature": "MEUCIQCIzIDpRwBJgU0fjTh6FZhpIrLz/WNTLIZwK2Ifx7HjtQIgfYYOPFy7ypU+KYeYzkCa9OWwbwPIt9Hk0cV8Q6pcXog=",
+                    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7"
+                }
+            })
+
+            self.config.service_providers = {
+                service_provider_peer.identity.username_signature: service_provider_peer
+            }
 
     def init_http(self):
-        self.app_log.info("API: http://{}".format(self.config.peer.to_string()))
-        self.app_log.info("Starting server on {}:{}".format(self.config.serve_host, self.config.serve_port))
+        self.config.app_log.info("API: http://{}".format(self.config.peer.to_string()))
+        self.config.app_log.info("Starting server on {}:{}".format(self.config.serve_host, self.config.serve_port))
         core_handlers_enabled = False
         plugins_enabled = False
         self.default_handlers = []
@@ -406,24 +488,32 @@ class NodeApplication(Application):
 
     def init_pool(self):
         if self.config.max_miners > 0:
-            self.app_log.info("MiningPool activated, max miners {}".format(self.config.max_miners))
+            self.config.app_log.info("MiningPool activated, max miners {}".format(self.config.max_miners))
             server = StratumServer()
             server.listen(self.config.stratum_pool_port)
 
     def init_peer(self):
         Peer.create_upnp_mapping(self.config)
-
-        my_peer = Peer.from_dict({
+        
+        my_peer = {
             'host': self.config.peer_host,
             'port': self.config.peer_port,
             'identity': {
                 "username": self.config.username,
                 "username_signature": self.config.username_signature,
                 "public_key": self.config.public_key
-            }
-        })
+            },
+            'peer_type': self.config.peer_type
+        }
 
-        self.config.peer = my_peer
+        if my_peer.get('peer_type') == 'seed':
+            self.config.peer = Seed.from_dict(my_peer)
+        elif my_peer.get('peer_type') == 'seed_gateway':
+            self.config.peer = SeedGateway.from_dict(my_peer)
+        elif my_peer.get('peer_type') == 'service_provider':
+            self.config.peer = ServiceProvider.from_dict(my_peer)
+        elif my_peer.get('peer_type') == 'user' or True: # default if not specified
+            self.config.peer = User.from_dict(my_peer)
 
     def init_config_properties(self):
         self.config.mongo = Mongo()
@@ -436,7 +526,12 @@ class NodeApplication(Application):
         self.config.cipher = Crypt(self.config.wif)
         self.config.pyrx = pyrx.PyRX()
         self.config.nodeServer = NodeSocketServer
-        self.config.nodeClient = NodeSocketClient
+        self.config.nodeClient = NodeSocketClient(
+            self.config.nodeServer.sockets,
+            self.config.nodeServer.pending
+        )
+        self.config.LatestBlock = LatestBlock
+        self.config.app_log = logging.getLogger('tornado.application')
         if self.config.peer_type != 'user':
             self.config.nodeServer().listen(self.config.peer_port)
 

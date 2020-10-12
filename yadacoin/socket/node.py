@@ -1,42 +1,62 @@
+import base64
+from uuid import uuid4
+
+from tornado.iostream import StreamClosedError
+from coincurve import verify_signature
+
 from yadacoin.socket.base import RPCSocketServer, RPCSocketClient
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.block import Block
 from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.peer import Peer
+from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User
+from yadacoin.core.config import get_config
+from yadacoin.core.transactionutils import TU
 
 
 class NodeSocketServer(RPCSocketServer):
 
+    def __init__(self):
+        super(NodeSocketServer, self).__init__()
+        self.config = get_config()
+
     sockets = {}
+    pending = {}
     async def connect(self, body, stream):
         params = body.get('params')
-        peer = Peer.from_dict(params)
-
-        if self.config.peer_type == 'seed' and peer.identity.peer_type not in ['seed', 'seed_gateway']:
-            stream.close()
-            return
-        elif self.config.peer_type == 'seed_gateway' and peer.identity.peer_type != 'service_provider':
-            stream.close()
-            return
-        elif self.config.peer_type == 'service_provider' and peer.identity.peer_type != 'user':
-            stream.close()
-            return
-        elif self.config.peer_type == 'user':
-            stream.close()
-            return
-        self.__class__.streams[peer.identity.username_signature] = stream
+        peerCls = None
+        if isinstance(self.config.peer, Seed):
+            peerCls = SeedGateway
+        elif isinstance(self.config.peer, SeedGateway):
+            peerCls = ServiceProvider
+        elif isinstance(self.config.peer, ServiceProvider):
+            peerCls = User
+        stream.peer = peerCls.from_dict(params.get('peer'))
+        self.config.app_log.info('Connected to {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
         return {}
+    
+    async def challenge(self, body, stream):
+        challenge = body.get('params', {}).get('token')
+        signed_challenge = TU.generate_signature(challenge, self.config.private_key)
+        await self.write_result(stream, 'authenticate', {
+            'peer': self.config.peer.to_dict(),
+            'signed_challenge': signed_challenge
+        })
 
-    async def receivepeers(self, body, stream):
-        params = body.get('params')
-        peers = params('peers')
-        Peers.import_peers(peers)
-        return {}
+        stream.peer.token = str(uuid4())
+        await self.write_params(stream, 'challenge', {
+            'token': stream.peer.token
+        })
 
-    async def receivepeeridentity(self, body, stream):
-        params = body.get('params')
-        peers = params('peers')
-        Peers.import_peers(peers)
+    async def authenticate(self, body, stream):
+        signed_challenge = body.get('result', {}).get('signed_challenge')
+        result = verify_signature(
+            base64.b64decode(signed_challenge),
+            stream.peer.token.encode(),
+            bytes.fromhex(stream.peer.identity.public_key)
+        )
+        if result:
+            stream.peer.authenticated = True
+            self.config.app_log.info('Authenticated {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
 
     async def getblocks(self, body, stream):
         # get blocks should be done only by syncing peers
@@ -70,9 +90,43 @@ class NodeSocketServer(RPCSocketServer):
 
 class NodeSocketClient(RPCSocketClient):
 
+    def __init__(self, streams, pending):
+        super(NodeSocketClient, self).__init__()
+        self.streams = streams
+        self.pending = pending
+        self.config = get_config()
+
     async def connect(self, peer: Peer):
-        if (peer.identity.username_signature in NodeSocketServer.sockets and NodeSocketServer.sockets[peer.identity.username_signature]):
-            return
-        NodeSocketServer.sockets[peer.identity.username_signature] = None
-        sock = await super(NodeSocketClient, self).connect(peer.host, peer.port)
-        NodeSocketServer.sockets[peer.identity.username_signature] = sock
+        try:
+            stream = await super(NodeSocketClient, self).connect(peer)
+            if stream:
+                stream.peer = peer
+                stream.peer.token = str(uuid4())
+                await self.write_params(stream, 'connect', {
+                    'peer': self.config.peer.to_dict()
+                })
+                await self.write_params(stream, 'challenge', {
+                    'token': stream.peer.token
+                })
+                await self.wait_for_data(stream)
+        except StreamClosedError:
+            get_config().app_log.error('Cannot connect to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
+    
+    async def challenge(self, body, stream):
+        challenge =  body.get('params', {}).get('token')
+        signed_challenge = TU.generate_signature(challenge, self.config.private_key)
+        await self.write_result(stream, 'authenticate', {
+            'peer': self.config.peer.to_dict(),
+            'signed_challenge': signed_challenge
+        })
+    
+    async def authenticate(self, body, stream):
+        signed_challenge = body.get('result', {}).get('signed_challenge')
+        result = verify_signature(
+            base64.b64decode(signed_challenge),
+            stream.peer.token.encode(),
+            bytes.fromhex(stream.peer.identity.public_key)
+        )
+        if result:
+            stream.peer.authenticated = True
+            self.config.app_log.info('Authenticated {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))

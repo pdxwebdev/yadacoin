@@ -56,13 +56,36 @@ class BlockChainUtils(object):
     def get_latest_blocks(self):
         return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
-    def get_latest_block(self) -> dict:
+    async def get_latest_block(self) -> dict:
         # cached - WARNING : this is a json doc, NOT a block
         if not self.latest_block is None:
             return self.latest_block
-        self.latest_block = self.mongo.db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-        self.app_log.debug("last block " + str(self.latest_block))
+        self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+        if not self.latest_block:
+            await self.insert_genesis()
+            self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+        #self.app_log.debug("last block " + str(self.latest_block))
         return self.latest_block
+
+    async def insert_genesis(self):
+        #insert genesis if it doesn't exist
+        from yadacoin.core.block import BlockFactory
+        genesis_block = await BlockFactory.get_genesis_block()
+        await genesis_block.save()
+        self.mongo.db.consensus.update({
+            'block': genesis_block.to_dict(),
+            'peer': 'me',
+            'id': genesis_block.signature,
+            'index': 0
+        },
+        {
+            'block': genesis_block.to_dict(),
+            'peer': 'me',
+            'id': genesis_block.signature,
+            'index': 0
+        },
+        upsert=True)
+        self.latest_block = genesis_block
 
     def set_latest_block(self, block: dict):
         self.latest_block = block

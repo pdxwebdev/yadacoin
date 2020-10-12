@@ -129,7 +129,7 @@ class CreateTransactionView(BaseHandler):
             inputs.extend([x async for x in self.config.BU.get_wallet_unspent_transactions(from_address)])
 
         txn = await TransactionFactory.construct(
-            block_height=self.config.BU.get_latest_block()['index'],
+            block_height=await self.config.BU.get_latest_block()['index'],
             private_key=config.private_key,
             public_key=config.public_key,
             fee=float(fee),
@@ -163,7 +163,7 @@ class CreateRawTransactionView(BaseHandler):
             inputs.extend([x async for x in await self.config.BU.get_wallet_unspent_transactions(from_address)])
 
         txn = await TransactionFactory.construct(
-            block_height=self.config.BU.get_latest_block()['index'],
+            block_height=await self.config.BU.get_latest_block()['index'],
             public_key=config.public_key,
             fee=float(fee),
             inputs=inputs,

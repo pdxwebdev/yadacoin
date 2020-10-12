@@ -137,7 +137,7 @@ class GraphTransactionHandler(BaseGraphHandler):
             items = [item for item in items]
         transactions = []
         for txn in items:
-            transaction = Transaction.from_dict(BU().get_latest_block()['index'], txn)
+            transaction = Transaction.from_dict(await BU().get_latest_block()['index'], txn)
             try:
                 await transaction.verify()
             except InvalidTransactionException:
@@ -292,7 +292,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         dh_private_key = a.encode('latin1').hex()
 
         transaction = await TransactionFactory.construct(
-            block_height=BU().get_latest_block()['index'],
+            block_height=await BU().get_latest_block()['index'],
             bulletin_secret=bulletin_secret,
             username=username,
             fee=0.00,

@@ -59,25 +59,6 @@ class Consensus(object):
         # TODO: deprecate, use app_log
         print(message)
 
-    async def insert_genesis(self):
-        #insert genesis if it doesn't exist
-        genesis_block = await BlockFactory.get_genesis_block()
-        await genesis_block.save()
-        self.mongo.db.consensus.update({
-            'block': genesis_block.to_dict(),
-            'peer': 'me',
-            'id': genesis_block.signature,
-            'index': 0
-        },
-        {
-            'block': genesis_block.to_dict(),
-            'peer': 'me',
-            'id': genesis_block.signature,
-            'index': 0
-        },
-        upsert=True)
-        self.latest_block = genesis_block
-
     async def verify_existing_blockchain(self, reset=False):
         self.app_log.info('verifying existing blockchain')
         existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({}).sort([('index', 1)]))
