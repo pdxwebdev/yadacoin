@@ -329,7 +329,9 @@ class Transaction(object):
         inputs='',
         outputs='',
         coinbase=False,
-        extra_blocks=None
+        extra_blocks=None,
+        seed_gateway_rid='',
+        seed_rid=''
     ):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
@@ -347,6 +349,8 @@ class Transaction(object):
         self.hash = txn_hash
         self.outputs = []
         self.extra_blocks = extra_blocks
+        self.seed_gateway_rid = seed_gateway_rid,
+        self.seed_rid = seed_rid
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
         self.inputs = []

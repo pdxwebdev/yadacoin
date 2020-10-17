@@ -42,7 +42,7 @@ from yadacoin.core.graphutils import GraphUtils
 from yadacoin.core.mongo import Mongo
 from yadacoin.core.miningpoolpayout import PoolPayer
 from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User
+from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Peers
 from yadacoin.core.identity import Identity
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
@@ -76,9 +76,6 @@ class NodeApplication(Application):
         self.init_config(options)
         self.configure_logging()
         self.init_config_properties()
-        self.init_seeds()
-        self.init_seed_gateways()
-        self.init_service_providers()
         if self.config.mode == 'pool':
             self.init_pool()
         elif self.config.mode == 'web':
@@ -86,6 +83,9 @@ class NodeApplication(Application):
             self.init_whitelist()
         elif self.config.mode == 'node':
             self.init_peer()
+            self.init_seeds()
+            self.init_seed_gateways()
+            self.init_service_providers()
             self.init_ioloop()            
 
     async def background_consensus(self):
@@ -115,22 +115,31 @@ class NodeApplication(Application):
             if isinstance(self.config.peer, Seed):
                 peers = self.config.seeds
                 limit = self.config.peer.__class__.type_limit(Seed)
+                stream_collection = {**self.config.nodeServer.inbound_streams[Seed.__name__], **self.config.nodeClient.outbound_streams[Seed.__name__]}
+                await self.connect(stream_collection, limit, peers)
             elif isinstance(self.config.peer, SeedGateway):
                 peers = self.config.seeds
                 limit = self.config.peer.__class__.type_limit(Seed)
+                stream_collection = {**self.config.nodeClient.outbound_streams[Seed.__name__], **self.config.nodeClient.outbound_pending[Seed.__name__]}
+                await self.connect(stream_collection, limit, peers)
             elif isinstance(self.config.peer, ServiceProvider):
                 peers = self.config.seed_gateways
                 limit = self.config.peer.__class__.type_limit(SeedGateway)
+                stream_collection = {**self.config.nodeClient.outbound_streams[SeedGateway.__name__], **self.config.nodeClient.outbound_pending[SeedGateway.__name__]}
+                await self.connect(stream_collection, limit, peers)
             elif isinstance(self.config.peer, User):
                 peers = self.config.service_providers
-                limit = self.config.peer.__class__.type_limit(User)
+                limit = self.config.peer.__class__.type_limit(ServiceProvider)
+                stream_collection = {**self.config.nodeClient.outbound_streams[ServiceProvider.__name__], **self.config.nodeClient.outbound_pending[ServiceProvider.__name__]}
+                await self.connect(stream_collection, limit, peers)
 
-            if limit and limit > len(self.config.nodeServer.sockets):
-                for peer in set(peers) - set(self.config.nodeServer.sockets): # only connect to seed nodes
-                    await self.config.nodeClient.connect(peers[peer])
-
-        except Exception as e:
+        except:
             self.config.app_log.error(format_exc())
+
+    async def connect(self, stream_collection, limit, peers):
+        if limit and len(stream_collection) < limit:
+            for peer in set(peers) - set(stream_collection): # only connect to seed nodes
+                await self.config.nodeClient.connect(peers[peer])
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
@@ -140,7 +149,6 @@ class NodeApplication(Application):
                 return
             self.config.status_busy = True
             status = self.config.get_status()
-            # print(status)
             self.config.app_log.info(json.dumps(status))
             self.config.status_busy = False
         except Exception as e:
@@ -269,7 +277,6 @@ class NodeApplication(Application):
 
     def init_config(self, options):
         if not path.isfile(options.config):
-            get_logger().error("no config file found at '{}'. Generating new...".format(options.config))
             self.config = yadacoin.core.config.Config.generate()
             try:
                 os.makedirs(os.path.dirname(options.config))
@@ -339,99 +346,21 @@ class NodeApplication(Application):
 
     def init_seeds(self):
         if self.config.network == 'mainnet':
-
-            seed_peer = Seed.from_dict({
-                'host': '71.193.201.21',
-                'port': 8000,
-                'identity': {
-                    "username": "seed_A",
-                    "username_signature": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM=",
-                    "public_key": "0286707b29746a434ead4ab94af2d7758d4ae8aaa12fdad9ab42ce3952a8ef798f"
-                }
-            })
-
-            self.config.seeds = {
-                seed_peer.identity.username_signature: seed_peer
-            }
+            self.config.seeds = Peers.get_seeds()
         elif self.config.network == 'regnet':
-
-            seed_peer = Seed.from_dict({
-                'host': '71.193.201.21',
-                'port': 8000,
-                'identity': {
-                    "username": "seed_A",
-                    "username_signature": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM=",
-                    "public_key": "0286707b29746a434ead4ab94af2d7758d4ae8aaa12fdad9ab42ce3952a8ef798f"
-                }
-            })
-
-            self.config.seeds = {
-                seed_peer.identity.username_signature: seed_peer
-            }
+            self.config.seeds = Peers.get_seeds()
 
     def init_seed_gateways(self):
         if self.config.network == 'mainnet':
-
-            seed_gateway_peer = SeedGateway.from_dict({
-                'host': '71.193.201.21',
-                'port': 8001,
-                'identity': {
-                    "username": "seed_gateway_A",
-                    "username_signature": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA==",
-                    "public_key": "03e8b4651a1e794998c265545facbab520131cdddaea3da304a36279b1d334dfb1"
-                }
-            })
-
-            self.config.seed_gateways = {
-                seed_gateway_peer.identity.username_signature: seed_gateway_peer
-            }
+            self.config.seed_gateways = Peers.get_seed_gateways()
         elif self.config.network == 'regnet':
-
-            seed_gateway_peer = SeedGateway.from_dict({
-                'host': '71.193.201.21',
-                'port': 8001,
-                'identity': {
-                    "username": "seed_gateway_A",
-                    "username_signature": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA==",
-                    "public_key": "03e8b4651a1e794998c265545facbab520131cdddaea3da304a36279b1d334dfb1"
-                }
-            })
-
-            self.config.seed_gateways = {
-                seed_gateway_peer.identity.username_signature: seed_gateway_peer
-            }
+            self.config.seed_gateways = Peers.get_seed_gateways()
 
     def init_service_providers(self):
         if self.config.network == 'mainnet':
-
-            service_provider_peer = ServiceProvider.from_dict({
-                'host': '71.193.201.21',
-                'port': 8002,
-                'identity': {
-                    "username": "service_provider_A",
-                    "username_signature": "MEUCIQCIzIDpRwBJgU0fjTh6FZhpIrLz/WNTLIZwK2Ifx7HjtQIgfYYOPFy7ypU+KYeYzkCa9OWwbwPIt9Hk0cV8Q6pcXog=",
-                    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7"
-                }
-            })
-
-            self.config.service_providers = {
-                service_provider_peer.identity.username_signature: service_provider_peer
-            }
+            self.config.service_providers = Peers.get_service_providers()
         elif self.config.network == 'regnet':
-
-            service_provider_peer = ServiceProvider.from_dict({
-                'host': '71.193.201.21',
-                'port': 8002,
-                'identity': {
-                    "username": "service_provider_A",
-                    "username_signature": "MEUCIQCIzIDpRwBJgU0fjTh6FZhpIrLz/WNTLIZwK2Ifx7HjtQIgfYYOPFy7ypU+KYeYzkCa9OWwbwPIt9Hk0cV8Q6pcXog=",
-                    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7"
-                }
-            })
-
-            self.config.service_providers = {
-                service_provider_peer.identity.username_signature: service_provider_peer
-            }
+            self.config.service_providers = Peers.get_service_providers()
 
     def init_http(self):
         self.config.app_log.info("API: http://{}".format(self.config.peer.to_string()))
@@ -507,13 +436,13 @@ class NodeApplication(Application):
         }
 
         if my_peer.get('peer_type') == 'seed':
-            self.config.peer = Seed.from_dict(my_peer)
+            self.config.peer = Seed.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'seed_gateway':
-            self.config.peer = SeedGateway.from_dict(my_peer)
+            self.config.peer = SeedGateway.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'service_provider':
-            self.config.peer = ServiceProvider.from_dict(my_peer)
+            self.config.peer = ServiceProvider.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'user' or True: # default if not specified
-            self.config.peer = User.from_dict(my_peer)
+            self.config.peer = User.from_dict(my_peer, is_me=True)
 
     def init_config_properties(self):
         self.config.mongo = Mongo()
@@ -526,13 +455,22 @@ class NodeApplication(Application):
         self.config.cipher = Crypt(self.config.wif)
         self.config.pyrx = pyrx.PyRX()
         self.config.nodeServer = NodeSocketServer
-        self.config.nodeClient = NodeSocketClient(
-            self.config.nodeServer.sockets,
-            self.config.nodeServer.pending
-        )
+        self.config.nodeClient = NodeSocketClient()
+        for x in [Seed, SeedGateway, ServiceProvider, User]:
+            if x.__name__ not in self.config.nodeClient.outbound_streams:
+                self.config.nodeClient.outbound_ignore[x.__name__] = {}
+            if x.__name__ not in self.config.nodeClient.outbound_streams:
+                self.config.nodeClient.outbound_pending[x.__name__] = {}
+            if x.__name__ not in self.config.nodeClient.outbound_streams:
+                self.config.nodeClient.outbound_streams[x.__name__] = {}
         self.config.LatestBlock = LatestBlock
         self.config.app_log = logging.getLogger('tornado.application')
         if self.config.peer_type != 'user':
+            for x in [Seed, SeedGateway, ServiceProvider, User]:
+                if x.__name__ not in self.config.nodeServer.inbound_pending:
+                    self.config.nodeServer.inbound_pending[x.__name__] = {}
+                if x.__name__ not in self.config.nodeServer.inbound_streams:
+                    self.config.nodeServer.inbound_streams[x.__name__] = {}
             self.config.nodeServer().listen(self.config.peer_port)
 
 if __name__ == "__main__":

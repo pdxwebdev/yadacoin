@@ -1,4 +1,5 @@
 import json
+from collections import OrderedDict
 from logging import getLogger
 
 from yadacoin.core.config import get_config
@@ -8,21 +9,25 @@ from yadacoin.core.identity import Identity
 class Peer(object):
     """An individual Peer object"""
 
-    def __init__(self, host=None, port=None, peer_type=None, identity=None):
-        self.config = get_config()
+    def __init__(self, host=None, port=None, identity=None, is_me=False):
         self.host = host
         self.port = port
         self.identity = identity
+        self.config = get_config()
+        if is_me:
+            self.rid = None
+        else:
+            self.rid = self.identity.generate_rid(self.config.peer.identity.username_signature)
         self.app_log = getLogger("tornado.application")
     
     @classmethod
-    def from_dict(cls, peer):
-        inst = cls()
-        inst.config = get_config()
-        inst.host = peer['host']
-        inst.port = peer['port']
-        inst.identity = Identity.from_dict(peer['identity'])
-        inst.app_log = getLogger("tornado.application")
+    def from_dict(cls, peer, is_me=False):
+        inst = cls(
+            peer['host'],
+            peer['port'],
+            Identity.from_dict(peer['identity']),
+            is_me
+        )
         return inst
 
     @classmethod
@@ -61,7 +66,8 @@ class Peer(object):
         return {
             'host': self.host,
             'port': self.port,
-            'identity': self.identity.to_dict
+            'identity': self.identity.to_dict,
+            'rid': self.rid
         }
 
     def to_string(self):
@@ -74,9 +80,9 @@ class Peer(object):
 class Seed(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, Seed) or type(peer) == type(Seed):
+        if peer == Seed:
             return 100000
-        elif isinstance(peer, SeedGateway) or type(peer) == type(SeedGateway):
+        elif peer == SeedGateway:
             return 1
         else:
             return 0
@@ -89,9 +95,9 @@ class Seed(Peer):
 class SeedGateway(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, Seed) or type(peer) == type(Seed):
+        if peer == Seed:
             return 1
-        elif isinstance(peer, ServiceProvider) or type(peer) == type(ServiceProvider):
+        elif peer == ServiceProvider:
             return 100000
         else:
             return 0
@@ -104,9 +110,9 @@ class SeedGateway(Peer):
 class ServiceProvider(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, SeedGateway) or type(peer) == type(SeedGateway):
+        if peer == SeedGateway:
             return 1
-        elif isinstance(peer, User):
+        elif peer == User:
             return 100000
         else:
             return 0
@@ -119,7 +125,7 @@ class ServiceProvider(Peer):
 class User(Peer):
     @classmethod
     def type_limit(cls, peer):
-        if isinstance(peer, ServiceProvider) or type(peer) == type(ServiceProvider):
+        if peer == ServiceProvider:
             return 1
         else:
             return 0
@@ -127,3 +133,76 @@ class User(Peer):
     @classmethod
     def compatible_types(cls):
         return [ServiceProvider]
+
+
+class Peers:
+    
+    @classmethod
+    def get_seeds(cls):
+        return OrderedDict({x.identity.username_signature: x for x in [
+            Seed.from_dict({
+                'host': '71.193.201.21',
+                'port': 8000,
+                'identity': {
+                    "username": "seed_A",
+                    "username_signature": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM=",
+                    "public_key": "0286707b29746a434ead4ab94af2d7758d4ae8aaa12fdad9ab42ce3952a8ef798f"
+                }
+            }),
+            Seed.from_dict({
+                'host': '71.193.201.21',
+                'port': 8004,
+                'identity': {
+                    "username": "seed_B",
+                    "username_signature": "MEQCIBn3IO/QP6UerU5u0XqkTdK0iJpA7apayQgxqgT3E29yAiAljkzDzGucZXSKgjklsuDm9HhjZ70VMjpa21eObQIS7A==",
+                    "public_key": "03ef7653e994341268b81a33f35dbfa22cbd240b454a0995ecdd8713cd624a7251"
+                }
+            })
+        ]})
+
+    @classmethod
+    def get_seed_gateways(cls):
+        return OrderedDict({x.identity.username_signature: x for x in [
+            SeedGateway.from_dict({
+                'host': '71.193.201.21',
+                'port': 8001,
+                'identity': {
+                    "username": "seed_gateway_A",
+                    "username_signature": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA==",
+                    "public_key": "03e8b4651a1e794998c265545facbab520131cdddaea3da304a36279b1d334dfb1"
+                }
+            }),
+            SeedGateway.from_dict({
+                'host': '71.193.201.21',
+                'port': 8005,
+                'identity': {
+                    "username": "seed_gateway_B",
+                    "username_signature": "MEUCIQCGY5xwZgT5v7iNSpO7b6FFQne8h6RzPf1UAQr2yptHGgIgE6UaVTjyHYozwpona00Ydagkb5oCAiyPv008YL9a5hA=",
+                    "public_key": "0308b55c62b0bdce1a696ff21fd94a044ef882328b520341a65d617e8be6964361"
+                }
+            })
+        ]})
+
+    @classmethod
+    def get_service_providers(cls):
+        return OrderedDict({x.identity.username_signature: x for x in [
+            ServiceProvider.from_dict({
+                'host': '71.193.201.21',
+                'port': 8002,
+                'identity': {
+                    "username": "service_provider_A",
+                    "username_signature": "MEUCIQCIzIDpRwBJgU0fjTh6FZhpIrLz/WNTLIZwK2Ifx7HjtQIgfYYOPFy7ypU+KYeYzkCa9OWwbwPIt9Hk0cV8Q6pcXog=",
+                    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7"
+                }
+            }),
+            ServiceProvider.from_dict({
+                'host': '71.193.201.21',
+                'port': 8006,
+                'identity': {
+                    "username": "service_provider_B",
+                    "username_signature": "MEQCIF1jg+YOY3r7vR2pF1mLLdnUo/Va9wAQ2X6d6w9fVgLQAiBUyAmw88iMzK/nQ1AK5ZnJqifgXWCH4bid/dlGOJq8EA==",
+                    "public_key": "0341f797e55ca256505594e722e2a8c2ed9484d2de12492e704e1d019cef6cf647"
+                }
+            })
+        ]})
+

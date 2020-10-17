@@ -101,12 +101,17 @@ class Config(object):
             pool_status = self.mp.get_status() # TODO: get from stratumserver class, return number of streams
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
+        num_peers = 0
+        for x, y in self.nodeServer.inbound_streams.items():
+            num_peers += len(y)
+        for x, y in self.nodeClient.outbound_streams.items():
+            num_peers += len(y)
         status = {
             'version': self.protocol_version, 
             'network': self.network,
             'peer_type': self.peer_type,
             # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
-            'peers': len(self.nodeServer.sockets),
+            'peers': num_peers,
             'pool': pool_status, 
             'height': self.LatestBlock.block.index,
             'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s)
