@@ -1,4 +1,5 @@
 import os
+import getpass
 if not os.path.exists(os.getcwd() + '/services'):
     os.makedirs(os.getcwd() + '/services')
 with open(os.getcwd() + '/services/yadacoin-node.service', 'w+') as f:
@@ -19,5 +20,5 @@ Restart=always
 
 [Install]
 WantedBy=multi-user.target
-""".format(cwd=os.getcwd())
+""".format(cwd=os.getcwd(), user=getpass.getuser())
     f.write(out)
