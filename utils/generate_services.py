@@ -15,7 +15,7 @@ RemainAfterExit=true
 WorkingDirectory={cwd}
 ExecStart={cwd}/scripts/start_node.sh
 Environment=MOTOR_MAX_WORKERS=1
-TimeoutStopSec=2
+TimeoutStopSec=20
 Restart=always
 
 [Install]
