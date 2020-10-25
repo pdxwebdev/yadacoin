@@ -63,9 +63,9 @@ class RPCSocketClient(TCPClient):
                 return
             if peer.rid in self.outbound_streams[peer.__class__.__name__]:
                 return
-            if peer.rid in RPCSocketServer.inbound_pending[peer.__class__.__name__]:
+            if peer.rid in self.config.nodeServer.inbound_pending[peer.__class__.__name__]:
                 return
-            if peer.rid in RPCSocketServer.inbound_streams[peer.__class__.__name__]:
+            if peer.rid in self.config.nodeServer.inbound_streams[peer.__class__.__name__]:
                 return
             if self.config.peer.identity.username_signature == peer.identity.username_signature:
                 return

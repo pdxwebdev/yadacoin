@@ -1,4 +1,6 @@
 import json
+import hashlib
+import time
 from collections import OrderedDict
 from logging import getLogger
 
@@ -6,18 +8,18 @@ from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity
 
 
-class Peer(object):
+class Peer:
     """An individual Peer object"""
+    epoch = 1602914018
+    ttl = 259200
 
-    def __init__(self, host=None, port=None, identity=None, is_me=False):
+    def __init__(self, host=None, port=None, identity=None, seed=None, seed_gateway=None):
         self.host = host
         self.port = port
         self.identity = identity
+        self.seed = seed
+        self.seed_gateway = seed_gateway
         self.config = get_config()
-        if is_me:
-            self.rid = None
-        else:
-            self.rid = self.identity.generate_rid(self.config.peer.identity.username_signature)
         self.app_log = getLogger("tornado.application")
     
     @classmethod
@@ -26,9 +28,15 @@ class Peer(object):
             peer['host'],
             peer['port'],
             Identity.from_dict(peer['identity']),
-            is_me
+            seed=peer.get('seed'),
+            seed_gateway=peer.get('seed_gateway')
         )
         return inst
+    
+    @property
+    def rid(self):
+        if hasattr(self.config, 'peer'):
+            return self.identity.generate_rid(self.config.peer.identity.username_signature)
 
     @classmethod
     def create_upnp_mapping(cls, config):
@@ -62,12 +70,42 @@ class Peer(object):
                 config.peer_port = config.peer_port
                 print('UPnP failed: you must forward and/or whitelist port', config.peer_port)
 
+    @classmethod
+    def type_limit(cls, peer):
+        raise NotImplementedError()
+
+    async def get_outbound_class(self):
+        raise NotImplementedError()
+
+    async def get_inbound_class(self):
+        raise NotImplementedError()
+
+    async def get_outbound_peers(self):
+        raise NotImplementedError()
+    
+    async def calculate_seed_gateway(self, nonce=None):
+        raise NotImplementedError()
+    
+    async def ensure_peers_connected(self):
+        peers = await self.get_outbound_peers()
+        outbound_class = await self.get_outbound_class()
+        limit = self.__class__.type_limit(outbound_class)
+        stream_collection = {**self.config.nodeClient.outbound_streams[outbound_class.__name__], **self.config.nodeClient.outbound_pending[outbound_class.__name__]}
+        await self.connect(stream_collection, limit, peers)
+
+    async def connect(self, stream_collection, limit, peers):
+        if limit and len(stream_collection) < limit:
+            for peer in set(peers) - set(stream_collection): # only connect to seed nodes
+                await self.config.nodeClient.connect(peers[peer])
+
     def to_dict(self):
         return {
             'host': self.host,
             'port': self.port,
             'identity': self.identity.to_dict,
-            'rid': self.rid
+            'rid': self.rid,
+            'seed': self.seed,
+            'seed_gateway': self.seed_gateway
         }
 
     def to_string(self):
@@ -78,6 +116,15 @@ class Peer(object):
 
 
 class Seed(Peer):
+    async def get_outbound_class(self):
+        return Seed
+
+    async def get_inbound_class(self):
+        return SeedGateway
+
+    async def get_outbound_peers(self):
+        return self.config.seeds
+
     @classmethod
     def type_limit(cls, peer):
         if peer == Seed:
@@ -93,12 +140,21 @@ class Seed(Peer):
 
 
 class SeedGateway(Peer):
+    async def get_outbound_class(self):
+        return Seed
+
+    async def get_inbound_class(self):
+        return ServiceProvider
+
+    async def get_outbound_peers(self):
+        return {self.config.seeds[self.seed].identity.username_signature: self.config.seeds[self.seed]}
+
     @classmethod
     def type_limit(cls, peer):
         if peer == Seed:
             return 1
         elif peer == ServiceProvider:
-            return 100000
+            return 1
         else:
             return 0
 
@@ -108,12 +164,45 @@ class SeedGateway(Peer):
 
 
 class ServiceProvider(Peer):
+
+    async def get_outbound_class(self):
+        return SeedGateway
+
+    async def get_inbound_class(self):
+        return User
+
+    async def get_outbound_peers(self, nonce=None):
+        seed_gateway = await self.calculate_seed_gateway()
+        return {seed_gateway.identity.username_signature: seed_gateway}
+
+    async def calculate_seed_gateway(self, nonce=None):
+        username_signature_hash = hashlib.sha256(self.identity.username_signature.encode()).hexdigest()
+        # TODO: introduce some kind of unpredictability here. This uses the latest block hash. 
+        # So we won't be able to get the new seed without the block hash
+        # which is not known in advance
+        seed_time = int((time.time() - self.epoch) / self.ttl) + 1
+        seed_select = (int(username_signature_hash, 16) * seed_time) % len(self.config.seed_gateways)
+        username_signatures = list(self.config.seed_gateways)
+        first_number = seed_select
+        num_reset = False
+        while self.config.seed_gateways[username_signatures[seed_select]].rid in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
+            seed_select += 1
+            if num_reset and seed_select >= first_number:
+                break # failed to find a seed gateway
+            if seed_select >= len(self.config.seed_gateways) + 1:
+                if first_number > 0:
+                    seed_select = 0
+                
+
+        seed_gateway = self.config.seed_gateways[list(self.config.seed_gateways)[seed_select]]
+        return seed_gateway
+
     @classmethod
     def type_limit(cls, peer):
         if peer == SeedGateway:
             return 1
         elif peer == User:
-            return 100000
+            return 1
         else:
             return 0
 
@@ -123,6 +212,15 @@ class ServiceProvider(Peer):
 
 
 class User(Peer):
+    async def get_outbound_class(self):
+        return ServiceProvider
+
+    async def get_inbound_class(self):
+        return User
+
+    async def get_outbound_peers(self):
+        return self.config.service_providers
+
     @classmethod
     def type_limit(cls, peer):
         if peer == ServiceProvider:
@@ -147,7 +245,8 @@ class Peers:
                     "username": "seed_A",
                     "username_signature": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM=",
                     "public_key": "0286707b29746a434ead4ab94af2d7758d4ae8aaa12fdad9ab42ce3952a8ef798f"
-                }
+                },
+                "seed_gateway": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA=="
             }),
             Seed.from_dict({
                 'host': '71.193.201.21',
@@ -156,7 +255,8 @@ class Peers:
                     "username": "seed_B",
                     "username_signature": "MEQCIBn3IO/QP6UerU5u0XqkTdK0iJpA7apayQgxqgT3E29yAiAljkzDzGucZXSKgjklsuDm9HhjZ70VMjpa21eObQIS7A==",
                     "public_key": "03ef7653e994341268b81a33f35dbfa22cbd240b454a0995ecdd8713cd624a7251"
-                }
+                },
+                "seed_gateway": "MEUCIQCGY5xwZgT5v7iNSpO7b6FFQne8h6RzPf1UAQr2yptHGgIgE6UaVTjyHYozwpona00Ydagkb5oCAiyPv008YL9a5hA="
             })
         ]})
 
@@ -170,7 +270,8 @@ class Peers:
                     "username": "seed_gateway_A",
                     "username_signature": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA==",
                     "public_key": "03e8b4651a1e794998c265545facbab520131cdddaea3da304a36279b1d334dfb1"
-                }
+                },
+                "seed": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM="
             }),
             SeedGateway.from_dict({
                 'host': '71.193.201.21',
@@ -179,7 +280,8 @@ class Peers:
                     "username": "seed_gateway_B",
                     "username_signature": "MEUCIQCGY5xwZgT5v7iNSpO7b6FFQne8h6RzPf1UAQr2yptHGgIgE6UaVTjyHYozwpona00Ydagkb5oCAiyPv008YL9a5hA=",
                     "public_key": "0308b55c62b0bdce1a696ff21fd94a044ef882328b520341a65d617e8be6964361"
-                }
+                },
+                "seed": "MEQCIBn3IO/QP6UerU5u0XqkTdK0iJpA7apayQgxqgT3E29yAiAljkzDzGucZXSKgjklsuDm9HhjZ70VMjpa21eObQIS7A=="
             })
         ]})
 

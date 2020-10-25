@@ -21,7 +21,7 @@ class Config(object):
 
     def __init__(self, config):
         self.start_time = int(time())
-        self.mode = config.get('mode', 'node')
+        self.modes = config.get('modes', 'node')
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
@@ -98,7 +98,7 @@ class Config(object):
     def get_status(self):
         pool_status = 'N/A'
         if self.mp:
-            pool_status = self.mp.get_status() # TODO: get from stratumserver class, return number of streams
+            pool_status = self.mp.get_status()
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
         num_peers = 0
@@ -111,9 +111,9 @@ class Config(object):
             'network': self.network,
             'peer_type': self.peer_type,
             # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
+            'username': self.username,
             'peers': num_peers,
-            'pool': pool_status, 
-            'height': self.LatestBlock.block.index,
+            'pool': pool_status,
             'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s)
         }
         # TODO: add uptime in human readable format
@@ -172,7 +172,7 @@ class Config(object):
                 peer_host = ''
 
         return cls({
-            "mode": 'node',
+            "modes": 'node',
             "seed": seed or '',
             "xprv": extended_key or '',
             "private_key": private_key,
@@ -207,7 +207,7 @@ class Config(object):
 
     @classmethod
     def from_dict(cls, config):
-        cls.mode = config.get('mode', 'node')
+        cls.modes = config.get('modes', 'node')
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
@@ -269,7 +269,7 @@ class Config(object):
 
     def to_dict(self):
         return {
-            'mode': self.mode,
+            'modes': self.modes,
             'seed': self.seed,
             'xprv': self.xprv,
             'public_key': self.public_key,

@@ -10,6 +10,7 @@ import logging
 import os
 import ssl
 import ntpath
+from datetime import datetime
 from traceback import format_exc
 from asyncio import sleep as async_sleep
 from hashlib import sha256
@@ -41,6 +42,7 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.graphutils import GraphUtils
 from yadacoin.core.mongo import Mongo
 from yadacoin.core.miningpoolpayout import PoolPayer
+from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Peers
 from yadacoin.core.identity import Identity
@@ -50,7 +52,7 @@ from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
-from yadacoin.socket.node import NodeSocketServer, NodeSocketClient
+from yadacoin.socket.node import NodeSocketServer, NodeSocketClient, SharedNodeMethods
 from yadacoin.socket.pool import StratumServer
 
 __version__ = '0.1.0'
@@ -76,70 +78,24 @@ class NodeApplication(Application):
         self.init_config(options)
         self.configure_logging()
         self.init_config_properties()
-        if self.config.mode == 'pool':
+        if 'pool' in self.config.modes:
             self.init_pool()
-        elif self.config.mode == 'web':
+        if 'web' in self.config.modes:
             self.init_http()
             self.init_whitelist()
-        elif self.config.mode == 'node':
-            self.init_peer()
+        if 'node' in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
-            self.init_ioloop()            
-
-    async def background_consensus(self):
-        if not self.config.consensus:
-            self.config.consensus = Consensus(self.config.debug, self.config.peers)
-            if options.verify:
-                self.config.app_log.info("Verifying existing blockchain")
-                await self.config.consensus.verify_existing_blockchain(reset=self.config.reset)
-            else:
-                self.config.app_log.warning("Verification of existing blockchain skipped by config")
-
-        try:
-            if self.consensus_busy:
-                return
-            self.consensus_busy = True
-            again = True
-            while again:
-                again = await self.config.consensus.sync_bottom_up()
-            self.consensus_busy = False
-        except Exception as e:
-            self.config.app_log.error(format_exc())
+            self.init_peer()
+            self.init_ioloop()
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
         try:
-            peers = None
-            if isinstance(self.config.peer, Seed):
-                peers = self.config.seeds
-                limit = self.config.peer.__class__.type_limit(Seed)
-                stream_collection = {**self.config.nodeServer.inbound_streams[Seed.__name__], **self.config.nodeClient.outbound_streams[Seed.__name__]}
-                await self.connect(stream_collection, limit, peers)
-            elif isinstance(self.config.peer, SeedGateway):
-                peers = self.config.seeds
-                limit = self.config.peer.__class__.type_limit(Seed)
-                stream_collection = {**self.config.nodeClient.outbound_streams[Seed.__name__], **self.config.nodeClient.outbound_pending[Seed.__name__]}
-                await self.connect(stream_collection, limit, peers)
-            elif isinstance(self.config.peer, ServiceProvider):
-                peers = self.config.seed_gateways
-                limit = self.config.peer.__class__.type_limit(SeedGateway)
-                stream_collection = {**self.config.nodeClient.outbound_streams[SeedGateway.__name__], **self.config.nodeClient.outbound_pending[SeedGateway.__name__]}
-                await self.connect(stream_collection, limit, peers)
-            elif isinstance(self.config.peer, User):
-                peers = self.config.service_providers
-                limit = self.config.peer.__class__.type_limit(ServiceProvider)
-                stream_collection = {**self.config.nodeClient.outbound_streams[ServiceProvider.__name__], **self.config.nodeClient.outbound_pending[ServiceProvider.__name__]}
-                await self.connect(stream_collection, limit, peers)
-
+            await self.config.peer.ensure_peers_connected()
         except:
             self.config.app_log.error(format_exc())
-
-    async def connect(self, stream_collection, limit, peers):
-        if limit and len(stream_collection) < limit:
-            for peer in set(peers) - set(stream_collection): # only connect to seed nodes
-                await self.config.nodeClient.connect(peers[peer])
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
@@ -165,7 +121,19 @@ class NodeApplication(Application):
             if self.config.block_checker_busy:
                 return
             self.config.block_checker_busy = True
+            last_block_height = 0
+            if LatestBlock.block:
+                last_block_height = LatestBlock.block.index
             await LatestBlock.block_checker()
+            if last_block_height != LatestBlock.block.index:
+                self.config.app_log.info('Latest block height: %s | time: %s' % (
+                    self.config.LatestBlock.block.index, 
+                    datetime.fromtimestamp(
+                        int(
+                            self.config.LatestBlock.block.time
+                        )
+                    ).strftime("%Y-%m-%d %H:%M:%S")
+                ))
 
             self.config.block_checker_busy = False
         except Exception as e:
@@ -307,8 +275,8 @@ class NodeApplication(Application):
     def init_ioloop(self):
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
 
-        tornado.ioloop.PeriodicCallback(self.background_consensus, 30000).start()
-        self.consensus_busy = False
+        # tornado.ioloop.PeriodicCallback(self.background_consensus, 30000).start()
+        # self.consensus_busy = False
 
         if self.config.network != 'regnet':
             tornado.ioloop.PeriodicCallback(self.background_peers, 3000).start()
@@ -416,10 +384,9 @@ class NodeApplication(Application):
             webbrowser.open("http://{}/appvote/identity".format(self.config.peer.to_string()))
 
     def init_pool(self):
-        if self.config.max_miners > 0:
-            self.config.app_log.info("MiningPool activated, max miners {}".format(self.config.max_miners))
-            server = StratumServer()
-            server.listen(self.config.stratum_pool_port)
+        self.config.app_log.info("MiningPool activated")
+        server = StratumServer()
+        server.listen(self.config.stratum_pool_port)
 
     def init_peer(self):
         Peer.create_upnp_mapping(self.config)
@@ -438,6 +405,9 @@ class NodeApplication(Application):
         if my_peer.get('peer_type') == 'seed':
             self.config.peer = Seed.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'seed_gateway':
+            if not self.config.username_signature in self.config.seed_gateways:
+                raise Exception('You are not a valid SeedGateway. Could not find you in the list of SeedGateways')
+            my_peer['seed'] = self.config.seed_gateways[self.config.username_signature].seed
             self.config.peer = SeedGateway.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'service_provider':
             self.config.peer = ServiceProvider.from_dict(my_peer, is_me=True)
@@ -455,6 +425,7 @@ class NodeApplication(Application):
         self.config.cipher = Crypt(self.config.wif)
         self.config.pyrx = pyrx.PyRX()
         self.config.nodeServer = NodeSocketServer
+        self.config.nodeShared = SharedNodeMethods
         self.config.nodeClient = NodeSocketClient()
         for x in [Seed, SeedGateway, ServiceProvider, User]:
             if x.__name__ not in self.config.nodeClient.outbound_streams:
@@ -465,13 +436,12 @@ class NodeApplication(Application):
                 self.config.nodeClient.outbound_streams[x.__name__] = {}
         self.config.LatestBlock = LatestBlock
         self.config.app_log = logging.getLogger('tornado.application')
-        if self.config.peer_type != 'user':
-            for x in [Seed, SeedGateway, ServiceProvider, User]:
-                if x.__name__ not in self.config.nodeServer.inbound_pending:
-                    self.config.nodeServer.inbound_pending[x.__name__] = {}
-                if x.__name__ not in self.config.nodeServer.inbound_streams:
-                    self.config.nodeServer.inbound_streams[x.__name__] = {}
-            self.config.nodeServer().listen(self.config.peer_port)
+        for x in [Seed, SeedGateway, ServiceProvider, User]:
+            if x.__name__ not in self.config.nodeServer.inbound_pending:
+                self.config.nodeServer.inbound_pending[x.__name__] = {}
+            if x.__name__ not in self.config.nodeServer.inbound_streams:
+                self.config.nodeServer.inbound_streams[x.__name__] = {}
+        self.config.nodeServer().listen(self.config.peer_port)
 
 if __name__ == "__main__":
     NodeApplication()

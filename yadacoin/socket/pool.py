@@ -7,6 +7,7 @@ from yadacoin.core.config import Config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
 from yadacoin.socket.base import RPCSocketServer
+from yadacoin.core.miningpool import MiningPool
 
 
 class StratumServer(RPCSocketServer):
@@ -87,6 +88,10 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def login(self, body, stream):
+        if not self.config:
+            self.config = get_config()
+        if not self.config.mp:
+            self.config.mp = MiningPool()
         job = await self.config.mp.block_template()
         stream.address = body['params'].get('login')
         job['job_id'] = job['blocktemplate_blob']
@@ -95,4 +100,10 @@ class StratumServer(RPCSocketServer):
             'id': job['blocktemplate_blob'],
             'job': job
         }
-        return result
+        rpc_data = {
+            'id': body.get('id'),
+            'method': body.get('method'),
+            'jsonrpc': body.get('jsonrpc'),
+            'result': result
+        }
+        await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())

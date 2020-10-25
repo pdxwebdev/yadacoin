@@ -16,7 +16,7 @@ class LatestBlock:
         if not cls.config:
             await cls.set_config()
         await cls.update_latest_block()
-    
+
     @classmethod
     async def update_latest_block(cls):
         block = await cls.config.BU.get_latest_block()
@@ -24,7 +24,7 @@ class LatestBlock:
             cls.config.app_log.critical('get_latest_block failed')
             return
         cls.block = await Block.from_dict(block)
-    
+
     @classmethod
     async def get_latest_block(cls):
         block = await cls.config.BU.get_latest_block()

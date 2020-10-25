@@ -5,13 +5,15 @@ from uuid import uuid4
 from tornado.iostream import StreamClosedError
 from coincurve import verify_signature
 
-from yadacoin.socket.base import RPCSocketServer, RPCSocketClient
+from yadacoin.socket.base import RPCSocketServer, RPCSocketClient, SharedBaseMethods
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.block import Block
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User
 from yadacoin.core.config import get_config
 from yadacoin.core.transactionutils import TU
+from yadacoin.core.identity import Identity
+from yadacoin.core.transaction import Transaction
 
 
 class NodeSocketServer(RPCSocketServer):
@@ -147,16 +149,14 @@ class NodeSocketServer(RPCSocketServer):
             result = await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE)
         return result
     
-    async def newblock(self, body, stream):
-        result = body.get('result')
-        block = Block.from_dict(result)
-        block.verify()
-        if (block.index + 60) < LatestBlock.block.index:
-            return
-        await self.config.consensus.insert_consensus_block(block, stream.peer)
-    
     async def route(self, body, stream):
-        await SharedMethods.route(self, body, stream)
+        await SharedNodeMethods.route(self, body, stream)
+
+    async def getblock(self, body, stream):
+        await SharedNodeMethods.getblock(self, body, stream)
+    
+    async def blockresponse(self, body, stream):
+        await SharedNodeMethods.blockresponse(self, body, stream)
 
 
 class NodeSocketClient(RPCSocketClient):
@@ -206,57 +206,230 @@ class NodeSocketClient(RPCSocketClient):
         self.config.app_log.warning('{} at full capacity: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
     
     async def route(self, body, stream):
-        await SharedMethods.route(self, body, stream)
+        await SharedNodeMethods.route(self, body, stream)
+
+    async def getblock(self, body, stream):
+        await SharedNodeMethods.getblock(self, body, stream)
+    
+    async def blockresponse(self, body, stream):
+        await SharedNodeMethods.blockresponse(self, body, stream)
 
 
-class SharedMethods:
+class SharedNodeMethods:
     @staticmethod
     async def route(self, body, stream):
-        rid = body.get('params', {}).get('rid')
         payload = body.get('params', {}).get('payload')
+        if not payload.get('transaction') and not payload.get('block'):
+            return
+
+        txn = None
+        txn_sum = 0
+        if payload.get('transaction'):
+            txn = Transaction.from_dict(LatestBlock.block.index, payload.get('transaction'))
+            txn_sum = sum([x.value for x in txn.outputs])
+            peer = None
+
+            if payload.get('identity'):
+                peer = Peer.from_dict({'host': None, 'port': None, 'identity': payload.get('identity')})
+
+            if not peer and not txn_sum:
+                self.config.app_log.error('Zero sum transaction and no routing information. Cannot route transaction.')
+                return
+            
+            if txn_sum:
+                self.config.mongo.async_db.miner_transactions.replace_one(
+                    {
+                        'id': txn.transaction_signature
+                    },
+                    txn.to_dict()
+                )
+            
+            # TODO: figure out if I am the intended recipient. Maintain list of friends in memory with rid as index
+
+        block = None
+        if payload.get('block'):
+            block = await Block.from_dict(payload.get('block'))
+            await self.config.consensus.insert_consensus_block(block, stream.peer)
+            self.ensure_previous_block(self, block, stream)
+
         if isinstance(self.config.peer, ServiceProvider):
-            if rid in self.config.nodeServer.inbound_streams[User.__name__]:
-                await self.write_result(stream, 'found', self.config.nodeServer.inbound_streams[User.__name__][rid].peer.to_dict())
+            if isinstance(stream.peer, User):
+                for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
+                    await self.write_params(
+                        peer_stream,
+                        'route',
+                        {
+                            'payload': payload
+                        }
+                    )
+            
+            elif isinstance(stream.peer, SeedGateway):
+                if txn:
+                    rid = None
+                    if txn.requester_rid in self.config.nodeServer.inbound_streams[User.__name__]:
+                        rid = txn.requester_rid
+                    elif txn.requested_rid in self.config.nodeServer.inbound_streams[User.__name__]:
+                        rid = txn.requested_rid
+                    else:
+                        self.config.app_log.error('No user found. Cannot route transaction.')
+                    if rid and not txn_sum:
+                        await self.write_params(
+                            self.config.nodeServer.inbound_streams[User.__name__][rid],
+                            'route',
+                            {
+                                'payload': payload
+                            }
+                        )
+                    else:
+                        for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
+                            await self.write_params(
+                                peer_stream,
+                                'route',
+                                {
+                                    'payload': payload
+                                }
+                            )
+                if block:
+                    for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
+                        await self.write_params(
+                            peer_stream,
+                            'route',
+                            {
+                                'payload': payload
+                            }
+                        )
+
         elif isinstance(self.config.peer, Seed):
             if isinstance(stream.peer, SeedGateway):
-                seed = await SharedMethods.calculate_seed()
-                if self.config.nodeServer.inbound_streams[Seed.__name__]:
-                if self.config.nodeClient.outbound_streams[Seed.__name__]:
-                await self.write_params(peer_stream, 'route', {
-                    'rid': rid,
-                    'payload': payload
-                })
-            elif isinstance(stream.peer, Seed):
-                if self.config.nodeServer.inbound_streams[SeedGateway.__name__][]
+                if block:
+                    for rid, peer_stream in self.config.nodeServer.inbound_streams[Seed.__name__].items():
+                        await self.write_params(
+                            peer_stream,
+                            'route',
+                            {
+                                'payload': payload
+                            }
+                        )
+                    for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
+                        await self.write_params(
+                            peer_stream,
+                            'route',
+                            {
+                                'payload': payload
+                            }
+                        )
+                else:
+                    # this must be the identity of the destination service provider
+                    # the message originator must provide the necissary service provider identity information
+                    # typically, the originator will grab all mutual service providers of the originator and the recipient of the message
+                    # and send "through" every service provider so the recipient will receive the message on all services
+                    bridge_seed_gateway = await peer.calculate_seed_gateway() # get the seed gateway
+                    bridge_seed = bridge_seed_gateway.seed
+                    if bridge_seed.rid in self.config.nodeServer.inbound_streams[Seed.__name__]:
+                        peer_stream = self.config.nodeServer.inbound_streams[Seed.__name__][bridge_seed.rid]
+                    elif bridge_seed.rid in self.config.nodeClient.outbound_streams[Seed.__name__]:
+                        peer_stream = self.config.nodeClient.outbound_streams[Seed.__name__][bridge_seed.rid]
+                    else:
+                        self.config.app_log.error('No bridge seed found. Cannot route transaction.')
                     await self.write_params(peer_stream, 'route', {
-                        'rid': rid,
                         'payload': payload
                     })
+            elif isinstance(stream.peer, Seed):
+                for rid, peer_stream in self.config.nodeServer.inbound_streams[SeedGateway.__name__].items():
+                    await self.write_params(
+                        peer_stream,
+                        'route', {
+                            'payload': payload
+                        }
+                    )
+                for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
+                    await self.write_params(
+                        peer_stream,
+                        'route',
+                        {
+                            'payload': payload
+                        }
+                    )
         elif isinstance(self.config.peer, SeedGateway):
             if isinstance(stream.peer, Seed):
                 for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
                     await self.write_params(peer_stream, 'route', {
-                        'rid': rid,
                         'payload': payload
                     })
             elif isinstance(stream.peer, ServiceProvider):
-                for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
-                    await self.write_params(peer_stream, 'route', {
-                        'rid': rid,
-                        'payload': payload
-                    })
                 for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
                     await self.write_params(peer_stream, 'route', {
-                        'rid': rid,
                         'payload': payload
                     })
+
+    @staticmethod
+    async def ensure_previous_block(self, block, stream):
+        have_prev = self.config.mongo.async_db.blocks.find_one({
+            'hash': block.prev_hash
+        })
+        if not have_prev:
+            have_prev = self.config.mongo.async_db.consensus.find_one({
+                'block.hash': block.prev_hash
+            })
+            if not have_prev:
+                await self.write_params(
+                    stream,
+                    'getblock',
+                    {
+                        'hash': block.prev_hash
+                    }
+                )
+                return False
+        return True
     
-    async def calculate_seed(username_signature):
-        epoch = 1602914018
-        ttl = 259200
-        username_signature_hash = hashlib.sha256(username_signature).hexdigest()
-        #introduce some kind of unpredictability here. This uses the latest block hash. So we won't be able to get the new seed without the block hash
-        #which is not known in advance
-        seed_mod = (int(username_signature_hash, 16) + int(LatestBlock.block.hash, 16)) % len(self.config.seeds)
-        seed_time = (time.time() - epoch) / ttl
-        return self.config.seeds[list(self.config.seeds)[seed_select]]
+    @staticmethod
+    async def send_block(self, block):
+        outbound_class = await self.config.peer.get_outbound_class()
+        inbound_class = await self.config.peer.get_inbound_class()
+        streams = {
+            **self.config.nodeClient.outbound_streams[outbound_class.__name__], 
+            **self.config.nodeServer.inbound_streams[inbound_class.__name__]
+        }
+        for rid, peer_stream in streams.items():
+            await SharedBaseMethods.write_params(
+                self,
+                peer_stream,
+                'route',
+                {
+                    'payload': {
+                        'block': block.to_dict()
+                    }
+                }
+            )
+    
+    @staticmethod
+    async def getblock(self, body, stream):
+        # get blocks should be done only by syncing peers
+        params = body.get('params')
+        block_hash = params.get("hash")
+        block = await self.config.mongo.async_db.blocks.find_one({'hash': block_hash}, {'_id': 0})
+        if not block:
+            block = await self.config.mongo.async_db.consensus.find_one({'block.hash': block_hash}, {'_id': 0})
+            if block:
+                block = block['block']
+        
+        await self.write_result(stream, 'blockresponse', {
+            'block': block
+        })
+    
+    @staticmethod
+    async def blockresponse(self, body, stream):
+        # get blocks should be done only by syncing peers
+        result = body.get('result')
+        block = await Block.from_dict(result.get("block"))
+        await self.config.consensus.insert_consensus_block(block, stream.peer)
+        result = self.ensure_previous_block(self, block, stream)
+        if result: # get the heighest block from this chain
+            blocks = [block]
+            while result:
+                block = await self.config.mongo.async_db.blocks.find_one({'prevHash': block.hash}, {'_id': 0})
+                if not block:
+                    block = await self.config.mongo.async_db.consensus.find_one({'block.prevHash': block.hash}, {'_id': 0})
+                    if block:
+                        block = block['block']
+            blocks

@@ -15,7 +15,14 @@ from logging import getLogger
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
-from yadacoin.core.transaction import Transaction, InvalidTransactionException, MissingInputTransactionException
+from yadacoin.core.transaction import (
+    Transaction,
+    TransactionFactory,
+    NotEnoughMoneyException,
+    InvalidTransactionException,
+    MissingInputTransactionException,
+    InvalidTransactionSignatureException
+)
 
 
 def quantize_eight(value):
@@ -512,9 +519,9 @@ class Block(object):
                 self.target = CHAIN.MAX_TARGET
             else:
                 if self.index >= CHAIN.FORK_10_MIN_BLOCK:
-                    self.target = await BlockFactory.get_target_10min(self.index, await Block.from_dict(latest_block), self)
+                    self.target = await BlockFactory.get_target_10min(self.index, latest_block, self)
                 else:
-                    self.target = await BlockFactory.get_target(self.index, await Block.from_dict(latest_block), self)
+                    self.target = await BlockFactory.get_target(self.index, latest_block, self)
             self.special_target = self.target
             # TODO: do we need recalc special target here if special min?
         self.header = header
@@ -636,6 +643,54 @@ class Block(object):
             fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
             getLogger("tornado.application").warning("verify {} {} {}".format(exc_type, fname, exc_tb.tb_lineno))
             raise
+    
+    async def check_transactions(self):
+        async def get_txns(txns):
+            for x in txns:
+                yield x
+
+        async def get_inputs(inputs):
+            for x in inputs:
+                yield x
+
+        used_inputs = {}
+        i = 0
+        async for transaction in get_txns(self.transactions):
+            self.app_log.warning('verifying txn: {} block: {}'.format(i, self.index))
+            i += 1
+            try:
+                await transaction.verify()
+            except InvalidTransactionException as e:
+                self.app_log.warning(e)
+                return False
+            except InvalidTransactionSignatureException as e:
+                self.app_log.warning(e)
+                return False
+            except MissingInputTransactionException as e:
+                self.app_log.warning(e)
+            except NotEnoughMoneyException as e:
+                self.app_log.warning(e)
+                return False
+            except Exception as e:
+                self.app_log.warning(e)
+                return False
+
+            if transaction.inputs:
+                failed = False
+                used_ids_in_this_txn = []
+                async for x in get_inputs(transaction.inputs):
+                    if self.config.BU.is_input_spent(x.id, transaction.public_key):
+                        failed = True
+                    if x.id in used_ids_in_this_txn:
+                        failed = True
+                    if (x.id, transaction.public_key) in used_inputs:
+                        failed = True
+                    used_inputs[(x.id, transaction.public_key)] = transaction
+                    used_ids_in_this_txn.append(x.id)
+                if failed and self.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
+                    raise MissingInputTransactionException()
+                elif failed and self.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
+                    continue
 
     def get_transaction_hashes(self):
         """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""
