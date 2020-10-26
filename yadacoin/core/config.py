@@ -95,10 +95,10 @@ class Config(object):
         with open("debug.log", "a") as fp:
             fp.write(str(int(time())) + ' - ' + string + "\n")
 
-    def get_status(self):
+    async def get_status(self):
         pool_status = 'N/A'
-        if self.mp:
-            pool_status = self.mp.get_status()
+        if hasattr(self, 'poolServer'):
+            pool_status = await self.poolServer.status()
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
         num_peers = 0

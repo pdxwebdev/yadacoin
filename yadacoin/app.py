@@ -44,7 +44,9 @@ from yadacoin.core.mongo import Mongo
 from yadacoin.core.miningpoolpayout import PoolPayer
 from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Peers
+from yadacoin.core.peer import (
+    Peer, Seed, SeedGateway, ServiceProvider, User, Miner, Peers
+)
 from yadacoin.core.identity import Identity
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
@@ -52,7 +54,9 @@ from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
-from yadacoin.socket.node import NodeSocketServer, NodeSocketClient, SharedNodeMethods
+from yadacoin.socket.node import (
+    NodeSocketServer, NodeSocketClient, SharedNodeMethods
+)
 from yadacoin.socket.pool import StratumServer
 
 __version__ = '0.1.0'
@@ -104,7 +108,7 @@ class NodeApplication(Application):
             if self.config.status_busy:
                 return
             self.config.status_busy = True
-            status = self.config.get_status()
+            status = await self.config.get_status()
             self.config.app_log.info(json.dumps(status))
             self.config.status_busy = False
         except Exception as e:
@@ -385,8 +389,9 @@ class NodeApplication(Application):
 
     def init_pool(self):
         self.config.app_log.info("MiningPool activated")
-        server = StratumServer()
-        server.listen(self.config.stratum_pool_port)
+        StratumServer.inbound_streams[Miner.__name__] = {}
+        self.config.poolServer = StratumServer()
+        self.config.poolServer.listen(self.config.stratum_pool_port)
 
     def init_peer(self):
         Peer.create_upnp_mapping(self.config)

@@ -136,7 +136,7 @@ class MiningPool(object):
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
-            self.config.LatestBlock.block_checker()
+            await self.config.LatestBlock.block_checker()
             self.block_factory = await self.create_block(
                 await self.get_pending_transactions(),
                 self.config.public_key,

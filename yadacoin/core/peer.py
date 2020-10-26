@@ -9,6 +9,7 @@ from yadacoin.core.identity import Identity
 
 
 class Peer:
+    id_attribute = 'rid'
     """An individual Peer object"""
     epoch = 1602914018
     ttl = 259200
@@ -116,6 +117,7 @@ class Peer:
 
 
 class Seed(Peer):
+    id_attribute = 'rid'
     async def get_outbound_class(self):
         return Seed
 
@@ -140,6 +142,7 @@ class Seed(Peer):
 
 
 class SeedGateway(Peer):
+    id_attribute = 'rid'
     async def get_outbound_class(self):
         return Seed
 
@@ -164,6 +167,7 @@ class SeedGateway(Peer):
 
 
 class ServiceProvider(Peer):
+    id_attribute = 'rid'
 
     async def get_outbound_class(self):
         return SeedGateway
@@ -212,6 +216,30 @@ class ServiceProvider(Peer):
 
 
 class User(Peer):
+    id_attribute = 'rid'
+    async def get_outbound_class(self):
+        return ServiceProvider
+
+    async def get_inbound_class(self):
+        return User
+
+    async def get_outbound_peers(self):
+        return self.config.service_providers
+
+    @classmethod
+    def type_limit(cls, peer):
+        if peer == ServiceProvider:
+            return 1
+        else:
+            return 0
+
+    @classmethod
+    def compatible_types(cls):
+        return [ServiceProvider]
+
+
+class Miner(Peer):
+    id_attribute = 'address'
     async def get_outbound_class(self):
         return ServiceProvider
 

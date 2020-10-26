@@ -43,10 +43,11 @@ class RPCSocketServer(TCPServer):
         await SharedBaseMethods.write_params(self, stream, method, data)
 
     async def remove_peer(self, peer):
-        if peer.rid in self.inbound_streams[peer.__class__.__name__]:
-            del self.inbound_streams[peer.__class__.__name__][peer.rid]
-        if peer.rid in self.inbound_pending[peer.__class__.__name__]:
-            del self.inbound_pending[peer.__class__.__name__][peer.rid]
+        id_attr = getattr(peer, peer.id_attribute)
+        if id_attr in self.inbound_streams[peer.__class__.__name__]:
+            del self.inbound_streams[peer.__class__.__name__][id_attr]
+        if id_attr in self.inbound_pending[peer.__class__.__name__]:
+            del self.inbound_pending[peer.__class__.__name__][id_attr]
 
 
 class RPCSocketClient(TCPClient):
@@ -57,21 +58,22 @@ class RPCSocketClient(TCPClient):
 
     async def connect(self, peer):
         try:
-            if peer.rid in self.outbound_ignore[peer.__class__.__name__]:
+            id_attr = getattr(peer, peer.id_attribute)
+            if id_attr in self.outbound_ignore[peer.__class__.__name__]:
                 return
-            if peer.rid in self.outbound_pending[peer.__class__.__name__]:
+            if id_attr in self.outbound_pending[peer.__class__.__name__]:
                 return
-            if peer.rid in self.outbound_streams[peer.__class__.__name__]:
+            if id_attr in self.outbound_streams[peer.__class__.__name__]:
                 return
-            if peer.rid in self.config.nodeServer.inbound_pending[peer.__class__.__name__]:
+            if id_attr in self.config.nodeServer.inbound_pending[peer.__class__.__name__]:
                 return
-            if peer.rid in self.config.nodeServer.inbound_streams[peer.__class__.__name__]:
+            if id_attr in self.config.nodeServer.inbound_streams[peer.__class__.__name__]:
                 return
             if self.config.peer.identity.username_signature == peer.identity.username_signature:
                 return
             if (self.config.peer.host, self.config.peer.host) == (peer.host, peer.port):
                 return
-            self.outbound_pending[peer.__class__.__name__][peer.rid] = peer
+            self.outbound_pending[peer.__class__.__name__][id_attr] = peer
             stream = await super(RPCSocketClient, self).connect(peer.host, peer.port, timeout=1)
             stream.peer = peer
             try:
@@ -89,9 +91,9 @@ class RPCSocketClient(TCPClient):
                 self.config.app_log.warning('invalid peer identity signature')
                 stream.close()
                 return
-            if peer.rid in self.outbound_pending[peer.__class__.__name__]:
-                del self.outbound_pending[peer.__class__.__name__][peer.rid]
-            self.outbound_streams[peer.__class__.__name__][peer.rid] = stream
+            if id_attr in self.outbound_pending[peer.__class__.__name__]:
+                del self.outbound_pending[peer.__class__.__name__][id_attr]
+            self.outbound_streams[peer.__class__.__name__][id_attr] = stream
             self.config.app_log.info('Connected to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
             return stream
         except StreamClosedError:

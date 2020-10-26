@@ -8,6 +8,7 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
 from yadacoin.socket.base import RPCSocketServer
 from yadacoin.core.miningpool import MiningPool
+from yadacoin.core.peer import Miner
 
 
 class StratumServer(RPCSocketServer):
@@ -34,9 +35,10 @@ class StratumServer(RPCSocketServer):
                 'jsonrpc': 2.0,
                 'result': result
             }
-            for stream in cls.streams:
-                if 'miner' in stream.peer.roles:
-                    await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
+            for address in StratumServer.inbound_streams[Miner.__name__]:
+                await StratumServer.inbound_streams[Miner.__name__][address].write(
+                    '{}\n'.format(json.dumps(rpc_data)).encode()
+                )
 
     async def getblocktemplate(self, body, stream):
         return await self.config.mp.block_template()
@@ -94,6 +96,7 @@ class StratumServer(RPCSocketServer):
             self.config.mp = MiningPool()
         job = await self.config.mp.block_template()
         stream.address = body['params'].get('login')
+        StratumServer.inbound_streams[Miner.__name__][stream.address] = stream
         job['job_id'] = job['blocktemplate_blob']
         job['blob'] = job['blocktemplate_blob']
         result = {
@@ -107,3 +110,9 @@ class StratumServer(RPCSocketServer):
             'result': result
         }
         await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
+    
+    @classmethod
+    async def status(self):
+        return {
+            'miners': len(StratumServer.inbound_streams[Miner.__name__])
+        }
