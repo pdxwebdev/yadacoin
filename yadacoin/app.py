@@ -426,7 +426,7 @@ class NodeApplication(Application):
         self.config.TU = yadacoin.core.transactionutils.TU
         yadacoin.core.blockchainutils.set_BU(self.config.BU)  # To be removed
         self.config.GU = GraphUtils()
-        self.config.consensus = None
+        self.config.consensus = Consensus()
         self.config.cipher = Crypt(self.config.wif)
         self.config.pyrx = pyrx.PyRX()
         self.config.nodeServer = NodeSocketServer

@@ -23,6 +23,7 @@ from yadacoin.core.transaction import (
     MissingInputTransactionException,
     InvalidTransactionSignatureException
 )
+from yadacoin.core.transactionutils import TU
 
 
 def quantize_eight(value):
@@ -63,126 +64,146 @@ class BlockFactory(object):
     pyrx = None
     cores = 10
     @classmethod
-    async def generate(cls, config, transactions, public_key, private_key, force_version=None, index=None, force_time=None):
-        try:
-            mongo = config.mongo
-            app_log = getLogger("tornado.application")
-            if force_version is None:
-                version = CHAIN.get_version_for_height(index)
-            else:
-                version = force_version
-            if force_time:
-                xtime = str(int(force_time))
-            else:
-                xtime = str(int(time.time()))
-            index = int(index)
-            if index == 0:
-                prev_hash = ''
-            else:
-                prev_hash = config.LatestBlock.block.hash
+    async def generate(
+        cls,
+        config,
+        transactions,
+        public_key,
+        private_key,
+        force_version=None,
+        index=None,
+        force_time=None,
+        prev_hash=None,
+        nonce=None,
+        target=0
+    ):
+        mongo = config.mongo
+        app_log = getLogger("tornado.application")
+        if force_version is None:
+            version = CHAIN.get_version_for_height(index)
+        else:
+            version = force_version
+        if force_time:
+            xtime = str(int(force_time))
+        else:
+            xtime = str(int(time.time()))
+        index = int(index)
+        if index == 0:
+            prev_hash = ''
+        elif prev_hash is None and index != 0:
+            prev_hash = config.LatestBlock.block.hash
 
-            transaction_objs = []
-            fee_sum = 0.0
-            used_sigs = []
-            used_inputs = {}
-            for txn in transactions:
+        transaction_objs = []
+        fee_sum = 0.0
+        used_sigs = []
+        used_inputs = {}
+        for txn in transactions:
+            try:
+                if isinstance(txn, FastGraph):
+                    transaction_obj = txn
+                else:
+                    transaction_obj = FastGraph.from_dict(index, txn)
+
+                if transaction_obj.transaction_signature in used_sigs:
+                    print('duplicate transaction found and removed')
+                    continue
+
+                if not transaction_obj.verify():
+                    raise InvalidTransactionException("invalid transactions")
+
+                used_sigs.append(transaction_obj.transaction_signature)
+
+            except:
                 try:
-                    if isinstance(txn, FastGraph):
+                    if isinstance(txn, Transaction):
                         transaction_obj = txn
                     else:
-                        transaction_obj = FastGraph.from_dict(index, txn)
+                        transaction_obj = Transaction.from_dict(index, txn)
 
                     if transaction_obj.transaction_signature in used_sigs:
                         print('duplicate transaction found and removed')
                         continue
 
-                    if not transaction_obj.verify():
-                        raise InvalidTransactionException("invalid transactions")
-
+                    await transaction_obj.verify()
                     used_sigs.append(transaction_obj.transaction_signature)
-
                 except:
-                    try:
-                        if isinstance(txn, Transaction):
-                            transaction_obj = txn
-                        else:
-                            transaction_obj = Transaction.from_dict(index, txn)
-
-                        if transaction_obj.transaction_signature in used_sigs:
-                            print('duplicate transaction found and removed')
-                            continue
-
-                        await transaction_obj.verify()
-                        used_sigs.append(transaction_obj.transaction_signature)
-                    except:
-                        raise InvalidTransactionException("invalid transactions")
-                try:
-                    if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
-                        config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
-                        app_log.debug("Block embeds txn too far in the future")
+                    raise InvalidTransactionException("invalid transactions")
+            try:
+                if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
+                    config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
+                    app_log.debug("Block embeds txn too far in the future")
+                    continue
+                
+                if transaction_obj.inputs:
+                    failed = False
+                    used_ids_in_this_txn = []
+                    for x in transaction_obj.inputs:
+                        if get_config().BU.is_input_spent(x.id, transaction_obj.public_key):
+                            failed = True
+                        if x.id in used_ids_in_this_txn:
+                            failed = True
+                        if (x.id, transaction_obj.public_key) in used_inputs:
+                            failed = True
+                        used_inputs[(x.id, transaction_obj.public_key)] = transaction_obj
+                        used_ids_in_this_txn.append(x.id)
+                    if failed:
                         continue
-                    
-                    if transaction_obj.inputs:
-                        failed = False
-                        used_ids_in_this_txn = []
-                        for x in transaction_obj.inputs:
-                            if get_config().BU.is_input_spent(x.id, transaction_obj.public_key):
-                                failed = True
-                            if x.id in used_ids_in_this_txn:
-                                failed = True
-                            if (x.id, transaction_obj.public_key) in used_inputs:
-                                failed = True
-                            used_inputs[(x.id, transaction_obj.public_key)] = transaction_obj
-                            used_ids_in_this_txn.append(x.id)
-                        if failed:
-                            continue
-                    
-                    transaction_objs.append(transaction_obj)
-                    
-                    fee_sum += float(transaction_obj.fee)
-                except Exception as e:
-                    await mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
-                    if config.debug:
-                        app_log.debug('Exception {}'.format(e))
-                    else:
-                        continue
-            
-            block_reward = CHAIN.get_block_reward(index)
-            coinbase_txn_fctry = await TransactionFactory.construct(
-                index,
-                public_key=public_key,
-                private_key=private_key,
-                outputs=[{
-                    'value': block_reward + float(fee_sum),
-                    'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-                }],
-                coinbase=True
-            )
-            coinbase_txn = coinbase_txn_fctry.generate_transaction()
-            transaction_objs.append(coinbase_txn)
 
-            transactions = transaction_objs
-            block_factory = cls()
-            block = await Block.init_async(
-                version=version,
-                block_time=xtime,
-                block_index=index,
-                prev_hash=prev_hash,
-                transactions=transactions,
-                public_key=public_key
-            )
-            txn_hashes = block.get_transaction_hashes()
-            block.set_merkle_root(txn_hashes)
-            block.merkle_root = block.verify_merkle_root
-            block_factory.block = block
-            return block_factory
-        except Exception as e:
-            import sys, os
-            print("Exception {} BlockFactory".format(e))
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-            print(exc_type, fname, exc_tb.tb_lineno)
-            raise
+                transaction_objs.append(transaction_obj)
+
+                fee_sum += float(transaction_obj.fee)
+            except Exception as e:
+                await mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
+                if config.debug:
+                    app_log.debug('Exception {}'.format(e))
+                else:
+                    continue
+
+        block_reward = CHAIN.get_block_reward(index)
+        coinbase_txn_fctry = await TransactionFactory.construct(
+            index,
+            public_key=public_key,
+            private_key=private_key,
+            outputs=[{
+                'value': block_reward + float(fee_sum),
+                'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+            }],
+            coinbase=True
+        )
+        coinbase_txn = coinbase_txn_fctry.generate_transaction()
+        transaction_objs.append(coinbase_txn)
+
+        transactions = transaction_objs
+        block_factory = cls()
+        block_factory.config = config
+        block = await Block.init_async(
+            version=version,
+            block_time=xtime,
+            block_index=index,
+            prev_hash=prev_hash,
+            transactions=transactions,
+            public_key=public_key,
+            target=target
+        )
+        txn_hashes = block.get_transaction_hashes()
+        block.set_merkle_root(txn_hashes)
+        block.merkle_root = block.verify_merkle_root
+        block_factory.block = block
+        block_factory.block.header = BlockFactory.generate_header(block_factory.block)
+        block_factory.block.target = target
+        if nonce:
+            block_factory.block.nonce = str(nonce)
+            return await block_factory.complete()
+        return block_factory
+    
+    async def complete(self):
+        self.block.hash = self.generate_hash_from_header(
+            self.block.index,
+            self.block.header,
+            str(self.block.nonce)
+        )
+        self.block.signature = TU.generate_signature(self.block.hash, self.config.private_key)
+        return self.block
 
     @classmethod
     def generate_header(cls, block):
@@ -259,26 +280,29 @@ class BlockFactory(object):
         current_block_time = int(block.time) - int(last_block.time)
         adjusted = False
         if current_block_time > 2 * target_time:
-            latest_target = last_block.target
+            latest_target = get_config().LatestBlock.block.target
             delta = max_target - latest_target
             # Linear decrease to reach max target after one hour block time.
             new_target = int(latest_target + delta * current_block_time / 3600)
             # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
             adjusted = new_target
             # To be used later on, once the rest is calc'd
-        latest_block = await get_config().BU.get_latest_block_async()
-        start_index = latest_block['index']
 
-        block_from_retarget_period_ago = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period}))
+        start_index = get_config().LatestBlock.block.index
+
+        block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period})
+
+        block_from_retarget_period_ago = await Block.from_dict(block_data)
         retarget_period_ago_time = block_from_retarget_period_ago.time
         elapsed_time_from_retarget_period_ago = int(block.time) - int(retarget_period_ago_time)
         average_block_time = elapsed_time_from_retarget_period_ago / retarget_period
 
-        block_from_retarget_period2_ago = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period2}))
+        block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period2})
+        block_from_retarget_period2_ago = await Block.from_dict(block_data)
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
         elapsed_time_from_retarget_period2_ago = int(block.time) - int(retarget_period2_ago_time)
         average_block_time2 = elapsed_time_from_retarget_period2_ago / retarget_period2
-
+            
         # React faster to a drop in block time than to a raise. short block times are more a threat than large ones.
         if average_block_time2 < target_time:
             hash_sum2 = 0
@@ -316,104 +340,95 @@ class BlockFactory(object):
 
     @classmethod
     async def get_target(cls, height, last_block, block) -> int:
-        try:
-            # change target
-            max_target = CHAIN.MAX_TARGET
-            if get_config().network in ['regnet', 'testnet']:
-                return int(max_target)
+        # change target
+        max_target = CHAIN.MAX_TARGET
+        if get_config().network in ['regnet', 'testnet']:
+            return int(max_target)
 
-            latest_block = await get_config().BU.get_latest_block_async()
-            max_block_time = CHAIN.target_block_time(get_config().network)
-            retarget_period = CHAIN.RETARGET_PERIOD  # blocks
-            max_seconds = CHAIN.TWO_WEEKS  # seconds
-            min_seconds = CHAIN.HALF_WEEK  # seconds
-            if height >= CHAIN.POW_FORK_V3:
-                retarget_period = CHAIN.RETARGET_PERIOD_V3
-                max_seconds = CHAIN.MAX_SECONDS_V3  # seconds
-                min_seconds = CHAIN.MIN_SECONDS_V3  # seconds
-            elif height >= CHAIN.POW_FORK_V2:
-                retarget_period = CHAIN.RETARGET_PERIOD_V2
-                max_seconds = CHAIN.MAX_SECONDS_V2  # seconds
-                min_seconds = CHAIN.MIN_SECONDS_V2  # seconds
-            if height > 0 and height % retarget_period == 0:
-                get_config().debug_log(
-                    "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
-                block_from_2016_ago = await Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
-                get_config().debug_log(
-                    "Block_from_2016_ago - block {}/time {}".format(block_from_2016_ago.index, block_from_2016_ago.time))
-                two_weeks_ago_time = block_from_2016_ago.time
-                elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
-                get_config().debug_log("elapsed_time_from_2016_ago {} s {} days".format(int(elapsed_time_from_2016_ago), elapsed_time_from_2016_ago/(60*60*24)))
-                # greater than two weeks?
-                if elapsed_time_from_2016_ago > max_seconds:
-                    time_for_target = max_seconds
-                    get_config().debug_log("gt max")
-                elif elapsed_time_from_2016_ago < min_seconds:
-                    time_for_target = min_seconds
-                    get_config().debug_log("lt min")
-                else:
-                    time_for_target = int(elapsed_time_from_2016_ago)
+        max_block_time = CHAIN.target_block_time(get_config().network)
+        retarget_period = CHAIN.RETARGET_PERIOD  # blocks
+        max_seconds = CHAIN.TWO_WEEKS  # seconds
+        min_seconds = CHAIN.HALF_WEEK  # seconds
+        if height >= CHAIN.POW_FORK_V3:
+            retarget_period = CHAIN.RETARGET_PERIOD_V3
+            max_seconds = CHAIN.MAX_SECONDS_V3  # seconds
+            min_seconds = CHAIN.MIN_SECONDS_V3  # seconds
+        elif height >= CHAIN.POW_FORK_V2:
+            retarget_period = CHAIN.RETARGET_PERIOD_V2
+            max_seconds = CHAIN.MAX_SECONDS_V2  # seconds
+            min_seconds = CHAIN.MIN_SECONDS_V2  # seconds
+        if height > 0 and height % retarget_period == 0:
+            get_config().debug_log(
+                "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
+            block_from_2016_ago = await Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
+            get_config().debug_log(
+                "Block_from_2016_ago - block {}/time {}".format(block_from_2016_ago.index, block_from_2016_ago.time))
+            two_weeks_ago_time = block_from_2016_ago.time
+            elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
+            get_config().debug_log("elapsed_time_from_2016_ago {} s {} days".format(int(elapsed_time_from_2016_ago), elapsed_time_from_2016_ago/(60*60*24)))
+            # greater than two weeks?
+            if elapsed_time_from_2016_ago > max_seconds:
+                time_for_target = max_seconds
+                get_config().debug_log("gt max")
+            elif elapsed_time_from_2016_ago < min_seconds:
+                time_for_target = min_seconds
+                get_config().debug_log("lt min")
+            else:
+                time_for_target = int(elapsed_time_from_2016_ago)
 
-                block_to_check = last_block
+            block_to_check = last_block
 
-                start_index = latest_block['index']
+            start_index = get_config().LatestBlock.block.index
 
-                get_config().debug_log("start_index {}".format(start_index))
-                if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                    block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({
-                        '$and': [
-                            {
-                                'index': {'$lte': start_index}
-                            },
-                            {
-                                'special_min': False
-                            },
-                            {
-                                'target': { '$ne': hex(max_target)[2:]}
-                            }
-                        ]
-                    }, sort=[('index', -1)]))
-                target = block_to_check.target
-                get_config().debug_log("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
+            get_config().debug_log("start_index {}".format(start_index))
+            if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
+                block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({
+                    '$and': [
+                        {
+                            'index': {'$lte': start_index}
+                        },
+                        {
+                            'special_min': False
+                        },
+                        {
+                            'target': { '$ne': hex(max_target)[2:]}
+                        }
+                    ]
+                }, sort=[('index', -1)]))
+            target = block_to_check.target
+            get_config().debug_log("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
 
-                new_target = int((time_for_target * target) / max_seconds)
-                get_config().debug_log("new_target {}".format(hex(int(new_target))[2:].rjust(64, '0')))
+            new_target = int((time_for_target * target) / max_seconds)
+            get_config().debug_log("new_target {}".format(hex(int(new_target))[2:].rjust(64, '0')))
 
-                if new_target > max_target:
-                    target = max_target
-                else:
-                    target = new_target
-
-            elif height == 0:
+            if new_target > max_target:
                 target = max_target
             else:
-                block_to_check = block
-                delta_t = int(block.time) - int(last_block.time)
-                if block.index >= 38600 and delta_t > max_block_time and block.special_min:
-                    special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
-                    return special_target
+                target = new_target
 
-                block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
+        elif height == 0:
+            target = max_target
+        else:
+            block_to_check = block
+            delta_t = int(block.time) - int(last_block.time)
+            if block.index >= 38600 and delta_t > max_block_time and block.special_min:
+                special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
+                return special_target
 
-                start_index = latest_block['index']
+            block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
-                while 1:
-                    if start_index == 0:
-                        return block_to_check.target
-                    if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                        block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index}))
-                        start_index -= 1
-                    else:
-                        target = block_to_check.target
-                        break
-            return int(target)
-        except Exception as e:
-            import sys, os
-            print("Exception {} get_target".format(e))
-            exc_type, exc_obj, exc_tb = sys.exc_info()
-            fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-            print(exc_type, fname, exc_tb.tb_lineno)
-            raise
+            start_index = get_config().LatestBlock.block.index
+
+            while 1:
+                if start_index == 0:
+                    return block_to_check.target
+                if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
+                    block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index}))
+                    start_index -= 1
+                else:
+                    target = block_to_check.target
+                    break
+        return int(target)
 
     @classmethod
     def mine(cls, height, header, target, nonces, special_min=False, special_target=''):
@@ -581,68 +596,62 @@ class Block(object):
             return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
 
     def verify(self):
+        getcontext().prec = 8
+        if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
+            raise Exception("Wrong version for block height", self.version, CHAIN.get_version_for_height(self.index))
+
+        txns = self.get_transaction_hashes()
+        self.set_merkle_root(txns)
+        if self.verify_merkle_root != self.merkle_root:
+            raise Exception("Invalid block merkle root")
+
+        header = BlockFactory.generate_header(self)
+        hashtest = self.generate_hash_from_header(self.index, header, str(self.nonce))
+        # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
+        if self.hash != hashtest:
+            getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
+            raise Exception('Invalid block hash')
+
+        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         try:
-            getcontext().prec = 8
-            if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
-                raise Exception("Wrong version for block height", self.version, CHAIN.get_version_for_height(self.index))
-
-            txns = self.get_transaction_hashes()
-            self.set_merkle_root(txns)
-            if self.verify_merkle_root != self.merkle_root:
-                raise Exception("Invalid block merkle root")
-
-            header = BlockFactory.generate_header(self)
-            hashtest = self.generate_hash_from_header(self.index, header, str(self.nonce))
-            # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
-            if self.hash != hashtest:
-                getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
-                raise Exception('Invalid block hash')
-
-            address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+            # print("address", address, "sig", self.signature, "pubkey", self.public_key)
+            result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
+            if not result:
+                raise Exception("block signature1 is invalid")
+        except:
             try:
-                # print("address", address, "sig", self.signature, "pubkey", self.public_key)
-                result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
+                result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.signature)
                 if not result:
-                    raise Exception("block signature1 is invalid")
+                    raise
             except:
-                try:
-                    result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.signature)
-                    if not result:
-                        raise
-                except:
-                    raise Exception("block signature2 is invalid")
+                raise Exception("block signature2 is invalid")
 
-            # verify reward
-            coinbase_sum = 0
-            for txn in self.transactions:
-                if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
-                    self.config.mongo.db.miner_transactions.remove({'id': txn.transaction_signature}, multi=True)
-                    raise Exception("Block embeds txn too far in the future")
+        # verify reward
+        coinbase_sum = 0
+        for txn in self.transactions:
+            if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
+                self.config.mongo.db.miner_transactions.remove({'id': txn.transaction_signature}, multi=True)
+                raise Exception("Block embeds txn too far in the future")
 
-                if txn.coinbase:
-                    for output in txn.outputs:
-                        coinbase_sum += float(output.value)
+            if txn.coinbase:
+                for output in txn.outputs:
+                    coinbase_sum += float(output.value)
 
-            fee_sum = 0.0
-            for txn in self.transactions:
-                if not txn.coinbase:
-                    fee_sum += float(txn.fee)
-            reward = CHAIN.get_block_reward(self.index)
+        fee_sum = 0.0
+        for txn in self.transactions:
+            if not txn.coinbase:
+                fee_sum += float(txn.fee)
+        reward = CHAIN.get_block_reward(self.index)
 
-            #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
-            """
-            KO for block 13949
-            0.02099999 50.021 50.0
-            Integrate block error 1 ('Coinbase output total does not equal block reward + transaction fees', 0.020999999999999998, 0.021000000000000796)
-            """
-            if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
-                print(fee_sum, coinbase_sum, reward)
-                raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
-        except Exception as e:
-            exc_type, exc_obj, exc_tb = exc_info()
-            fname = path.split(exc_tb.tb_frame.f_code.co_filename)[1]
-            getLogger("tornado.application").warning("verify {} {} {}".format(exc_type, fname, exc_tb.tb_lineno))
-            raise
+        #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
+        """
+        KO for block 13949
+        0.02099999 50.021 50.0
+        Integrate block error 1 ('Coinbase output total does not equal block reward + transaction fees', 0.020999999999999998, 0.021000000000000796)
+        """
+        if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
+            print(fee_sum, coinbase_sum, reward)
+            raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
     
     async def check_transactions(self):
         async def get_txns(txns):
@@ -691,6 +700,7 @@ class Block(object):
                     raise MissingInputTransactionException()
                 elif failed and self.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
                     continue
+        return True
 
     def get_transaction_hashes(self):
         """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""

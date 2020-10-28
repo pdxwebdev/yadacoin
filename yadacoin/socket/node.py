@@ -14,6 +14,7 @@ from yadacoin.core.config import get_config
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
+from yadacoin.core.blockchain import Blockchain
 
 
 class NodeSocketServer(RPCSocketServer):
@@ -381,6 +382,12 @@ class SharedNodeMethods:
                 )
                 return False
         return True
+
+    @staticmethod
+    async def ensure_previous_on_blockchain(self, block):
+        return self.config.mongo.async_db.blocks.find_one({
+            'hash': block.prev_hash
+        })
     
     @staticmethod
     async def send_block(self, block):
@@ -412,10 +419,10 @@ class SharedNodeMethods:
             block = await self.config.mongo.async_db.consensus.find_one({'block.hash': block_hash}, {'_id': 0})
             if block:
                 block = block['block']
-        
-        await self.write_result(stream, 'blockresponse', {
-            'block': block
-        })
+        if block:
+            await self.write_result(stream, 'blockresponse', {
+                'block': block
+            })
     
     @staticmethod
     async def blockresponse(self, body, stream):
@@ -423,13 +430,9 @@ class SharedNodeMethods:
         result = body.get('result')
         block = await Block.from_dict(result.get("block"))
         await self.config.consensus.insert_consensus_block(block, stream.peer)
-        result = self.ensure_previous_block(self, block, stream)
-        if result: # get the heighest block from this chain
-            blocks = [block]
-            while result:
-                block = await self.config.mongo.async_db.blocks.find_one({'prevHash': block.hash}, {'_id': 0})
-                if not block:
-                    block = await self.config.mongo.async_db.consensus.find_one({'block.prevHash': block.hash}, {'_id': 0})
-                    if block:
-                        block = block['block']
-            blocks
+        self.ensure_previous_block(self, block, stream)
+
+        if self.ensure_previous_on_blockchain(self, block): 
+            # ensure_previous_on_blockchain is true, so we have the 
+            # linking block from our existing chain.
+            self.config.consensus.attempt_chain_insert(block)
