@@ -435,4 +435,4 @@ class SharedNodeMethods:
         if self.ensure_previous_on_blockchain(self, block): 
             # ensure_previous_on_blockchain is true, so we have the 
             # linking block from our existing chain.
-            self.config.consensus.attempt_chain_insert(block)
+            self.config.consensus.build_chains_and_test(block)

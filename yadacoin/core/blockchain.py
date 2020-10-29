@@ -1,5 +1,5 @@
 from types import GeneratorType
-from asyncstdlib import tee
+from asyncstdlib import tee, anext, islice
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
@@ -35,6 +35,41 @@ class Blockchain(object):
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
             yield block
+    
+    async def get_block(self, start, end):
+        return await anext(islice(self.blocks, start, end))
+    
+    async def get_blocks(self, start, end):
+        async for block in islice(self.blocks, start, end):
+            if not isinstance(block, Block):
+                block = await Block.from_dict(block)
+            yield block
+    
+    @property
+    async def is_consecutive(self):
+        prev = None
+        async for block in self.blocks:
+            if prev and (prev.index + 1) != block.index:
+                return False
+            if prev and prev.hash != block.prev_hash:
+                return False
+            prev = block
+
+        return True
+    
+    @property
+    async def final_block(self):
+        block = None
+        async for block in self.blocks:
+            pass
+        return block
+    
+    @property
+    async def count(self):
+        i = 0
+        async for block in self.blocks:
+            i += 1
+        return i
 
     async def verify(self, progress=None):
         async def get_transactions(txns):

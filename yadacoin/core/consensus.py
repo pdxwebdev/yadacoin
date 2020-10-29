@@ -5,14 +5,17 @@ import json
 import logging
 import datetime
 from traceback import format_exc
-from bitcoin.wallet import P2PKHBitcoinAddress
 from time import time
 from urllib3.exceptions import *
 from asyncio import sleep as async_sleep
+
+from asyncstdlib import anext
+from bitcoin.wallet import P2PKHBitcoinAddress
 from pymongo.errors import DuplicateKeyError
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.httputil import HTTPHeaders
 from tornado import ioloop
+
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
 from yadacoin.core.blockchain import Blockchain
@@ -120,12 +123,10 @@ class Consensus(object):
     async def test_block_insertable(
         self,
         latest_local_block,
-        block
+        latest_remote_block
     ):
+        block = latest_remote_block
         if block.index == 0:
-            return False
-
-        if latest_local_block.hash != block.prev_hash:
             return False
 
         try:
@@ -147,15 +148,8 @@ class Consensus(object):
             self.config.app_log.warning('Block should not yet be special min. Rejecting')
             return False
 
-        if latest_local_block.index != (block.index - 1):
-            self.config.app_log.warning('Block height does not follow chain. Rejecting {}:{}'.format(latest_local_block.index, block.index -1))
-            return False
 
-        if latest_local_block.hash != block.prev_hash:
-            self.config.app_log.warning('Block hash does not follow chain. Rejecting {}:{}'.format(latest_local_block.hash, block.prev_hash -1))
-            return False
-
-        delta_t = int(time()) - int(latest_local_block.time)
+        delta_t = int(block.time) - int(latest_local_block.time)
         if block.index >= 35200 and delta_t < 600 and block.special_min:
             self.config.app_log.warning('Special min block too soon. Rejecting')
 
@@ -164,10 +158,10 @@ class Consensus(object):
             consecutive = True
 
         passed = False
-        if int(block.hash, 16) < self.target:
+        if int(block.hash, 16) < latest_local_block.target:
             passed = True
 
-        if block.special_min and int(block.hash, 16) < self.special_target:
+        if block.special_min and int(block.hash, 16) < latest_local_block.special_target:
             passed = True
 
         if block.special_min and block.index < 35200:
@@ -186,32 +180,64 @@ class Consensus(object):
 
     async def test_chain_insertable(
         self,
-        latest_local_block,
+        fork_block,
         local_chain,
-        latest_remote_block,
         remote_chain
     ):
-        # this function should only accept the local chain starting at the previous block height
-        # of the remove block.
+        # this function should only accept chains starting at the same height
+        first_block_local = await anext(local_chain.blocks)
+        first_block_remote = await anext(remote_chain.blocks)
 
-        # If the block height is equal, we throw out the inbound chain, it muse be greater
-        # If the block height is lower, we throw it out
-        # if the block height is heigher, we compare the difficulty of the entire chain
-        latest_block = latest_local_block
-        async for remote_block in remote_chain.blocks:
-            if not await self.test_block_insertable(latest_block, remote_block):
-                return False
-            latest_block = remote_block # This is a dry run as if the block was inserted
+        if await local_chain.count == 0:
+            if await self.test_block_insertable(
+                fork_block,
+                first_block_remote
+            ):
+                return True
+            return False
 
+        if first_block_local.index != first_block_remote.index:
+            return False
+
+        if first_block_local.prev_hash != first_block_remote.prev_hash:
+            return False
+
+        if not await local_chain.is_consecutive or not await remote_chain.is_consecutive:
+            return False
+
+        final_block_local = await local_chain.final_block
+        final_block_remote = await remote_chain.final_block
         if (
-            latest_remote_block.index < latest_local_block.index or 
+            final_block_remote.index < final_block_local.index or 
             await remote_chain.get_difficulty() < await local_chain.get_difficulty()
         ):
             return False
 
+        if await remote_chain.count == 2:
+            if await self.test_block_insertable(
+                first_block_local,
+                final_block_remote
+            ):
+                return True
+            return False
+
+        #latest remote block is one ahead of local and deserves to advance the chain
+        latest_block = fork_block
+        async for block in remote_chain.blocks:
+            if not await self.test_block_insertable(
+                latest_block,
+                block
+            ):
+                return False
+            latest_block = block
+
         return True
 
-    async def attempt_chain_insert(self, block):
+    async def build_chains_and_test(self, block: Block):
+
+        local_blocks = await self.config.mongo.async_db.blocks.find({'index': {'$gte': block.index}}).sort([('index', 1)])
+        local_chain = await Blockchain.init_async(local_blocks, partial=True)
+
         # now we just need to see how far this chain extends
         blocks = [block]
         while True:
@@ -228,15 +254,12 @@ class Consensus(object):
             if not block:
                 break
 
+        blocks.sort(blocks, key=lambda x: x.index)
+
         remote_chain = await Blockchain.init_async(blocks, partial=True)
 
-        local_blocks = await self.config.mongo.async_db.blocks.find({'index': {'$gte': blocks[0].index}})
-        local_chain = await Blockchain.init_async(local_blocks, partial=True)
-
         if not await self.test_chain_insertable(
-            self.config.LatestBlock.block,
             local_chain,
-            blocks[-1],
             remote_chain
         ):
             return False
