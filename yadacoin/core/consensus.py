@@ -185,7 +185,6 @@ class Consensus(object):
         remote_chain
     ):
         # this function should only accept chains starting at the same height
-        first_block_local = await anext(local_chain.blocks)
         first_block_remote = await anext(remote_chain.blocks)
 
         if await local_chain.count == 0:
@@ -195,6 +194,8 @@ class Consensus(object):
             ):
                 return True
             return False
+            
+        first_block_local = await anext(local_chain.blocks)
 
         if first_block_local.index != first_block_remote.index:
             return False
