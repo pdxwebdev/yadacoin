@@ -99,15 +99,18 @@ class Consensus(object):
             'peer': peer.to_dict()
         }, upsert=True)
 
-    async def integrate_block_with_existing_chain(self, block: Block):
+    async def integrate_remote_chain_with_existing_chain(self, remote_chain: Blockchain):
         """Even in case of retrace, this is the only place where we insert a new block into the block collection and update BU"""
 
-        await self.mongo.async_db.blocks.replace_one({'index': block.index}, block.to_dict(), upsert=True)
-        await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
+        first_remote_block = await remote_chain.get_block(0, 1)
+        await self.config.mongo.async_db.blocks.delete_many({'index': {'$gte': first_remote_block.index}})
 
-        self.app_log.info("New block inserted for height: {}".format(block.index))
+        async for block in remote_chain.blocks:
+            await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
+            await self.config.mongo.async_db.blocks.replace_one({'index': block.index}, block.to_dict(), upsert=True)
+            self.app_log.info("New block inserted for height: {}".format(block.index))
 
-        await self.config.LatestBlock.block_checker()
+            await self.config.LatestBlock.block_checker()
         return True
 
     async def get_target(self, block):
@@ -194,7 +197,7 @@ class Consensus(object):
             ):
                 return True
             return False
-            
+
         first_block_local = await anext(local_chain.blocks)
 
         if first_block_local.index != first_block_remote.index:
@@ -214,14 +217,6 @@ class Consensus(object):
         ):
             return False
 
-        if await remote_chain.count == 2:
-            if await self.test_block_insertable(
-                first_block_local,
-                final_block_remote
-            ):
-                return True
-            return False
-
         #latest remote block is one ahead of local and deserves to advance the chain
         latest_block = fork_block
         async for block in remote_chain.blocks:
@@ -234,11 +229,12 @@ class Consensus(object):
 
         return True
 
-    async def build_chains_and_test(self, block: Block):
+    async def build_local_chain(self, block: Block):
 
         local_blocks = await self.config.mongo.async_db.blocks.find({'index': {'$gte': block.index}}).sort([('index', 1)])
-        local_chain = await Blockchain.init_async(local_blocks, partial=True)
+        return await Blockchain.init_async(local_blocks, partial=True)
 
+    async def build_remote_chain(self, block: Block):
         # now we just need to see how far this chain extends
         blocks = [block]
         while True:
@@ -257,13 +253,4 @@ class Consensus(object):
 
         blocks.sort(blocks, key=lambda x: x.index)
 
-        remote_chain = await Blockchain.init_async(blocks, partial=True)
-
-        if not await self.test_chain_insertable(
-            local_chain,
-            remote_chain
-        ):
-            return False
-        
-        await self.config.mongo.async_db.blocks.delete_many({'index': {'$gte': blocks[0].index}})
-        await self.integrate_block_with_existing_chain(block)
+        return await Blockchain.init_async(blocks, partial=True)

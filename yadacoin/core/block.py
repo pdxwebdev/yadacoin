@@ -734,9 +734,9 @@ class Block(object):
                     used_ids_in_this_txn.append(x.id)
                 if failed:
                     raise Exception('double spend', [x.id for x in txn.inputs])
-        res = self.mongo.db.blocks.find({"index": (int(self.index) - 1)})
-        if res.count() and res[0]['hash'] == self.prev_hash or self.index == 0:
-            self.mongo.db.blocks.insert(self.to_dict())
+        res = self.mongo.async_db.blocks.find({"index": (int(self.index) - 1)})
+        if res.count_documents() and res[0]['hash'] == self.prev_hash or self.index == 0:
+            self.mongo.db.blocks.insert_one(self.to_dict())
         else:
             print("CRITICAL: block rejected...")
 

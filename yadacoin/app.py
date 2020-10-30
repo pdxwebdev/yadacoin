@@ -64,21 +64,21 @@ __version__ = '0.1.0'
 PROTOCOL_VERSION = 3
 
 
+define("debug", default=False, help="debug mode", type=bool)
+define("verbose", default=False, help="verbose mode", type=bool)
+define("network", default='', help="Force mainnet, testnet or regnet", type=str)
+define("reset", default=False, help="If blockchain is invalid, truncate at error block", type=bool)
+define("config", default='config/config.json', help="Config file location, default is 'config/config.json'", type=str)
+define("verify", default=True, help="Verify chain, default True", type=bool)
+define("server", default=False, help="Is server for testing", type=bool)
+define("client", default=False, help="Is client for testing", type=bool)
+
 class NodeApplication(Application):
 
     def __init__(self):
 
-        define("debug", default=False, help="debug mode", type=bool)
-        define("verbose", default=False, help="verbose mode", type=bool)
-        define("network", default='', help="Force mainnet, testnet or regnet", type=str)
-        define("reset", default=False, help="If blockchain is invalid, truncate at error block", type=bool)
-        define("config", default='config/config.json', help="Config file location, default is 'config/config.json'", type=str)
-        define("verify", default=True, help="Verify chain, default True", type=bool)
-        define("server", default=False, help="Is server for testing", type=bool)
-        define("client", default=False, help="Is client for testing", type=bool)
-
         options.parse_command_line(final=False)
-        
+
         self.init_config(options)
         self.configure_logging()
         self.init_config_properties()
@@ -446,6 +446,8 @@ class NodeApplication(Application):
                 self.config.nodeServer.inbound_pending[x.__name__] = {}
             if x.__name__ not in self.config.nodeServer.inbound_streams:
                 self.config.nodeServer.inbound_streams[x.__name__] = {}
+        if 'test' in self.config.modes:
+            return
         self.config.nodeServer().listen(self.config.peer_port)
 
 if __name__ == "__main__":

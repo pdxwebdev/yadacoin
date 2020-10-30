@@ -432,7 +432,19 @@ class SharedNodeMethods:
         await self.config.consensus.insert_consensus_block(block, stream.peer)
         self.ensure_previous_block(self, block, stream)
 
-        if self.ensure_previous_on_blockchain(self, block): 
+        fork_block = await self.ensure_previous_on_blockchain(self, block)
+        if fork_block:
+            fork_block = await Block.from_dict(fork_block)
             # ensure_previous_on_blockchain is true, so we have the 
             # linking block from our existing chain.
-            self.config.consensus.build_chains_and_test(block)
+            local_chain = await self.config.consensus.buld_local_chain(block)
+            remote_chain = await self.config.consensus.buld_remote_chain(block)
+    
+            if not await self.consensus.test_chain_insertable(
+                fork_block,
+                local_chain,
+                remote_chain
+            ):
+                return False
+            
+            await self.consensus.integrate_remote_chain_with_existing_chain(local_chain, remote_chain)

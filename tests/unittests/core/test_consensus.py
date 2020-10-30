@@ -3,303 +3,180 @@ import pyrx
 import binascii
 import os
 import sys
-from random import randrange
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir, os.pardir))
 sys.path.insert(0, parent_dir)
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir, os.pardir))
 sys.path.insert(0, parent_dir)
 parent_dir = os.path.abspath(os.path.join(os.path.dirname(os.path.realpath(__file__)), os.pardir))
 sys.path.insert(0, parent_dir)
-from unittest import IsolatedAsyncioTestCase # python 3.8 requiredsudo apt install python3.8
 
-from yadacoin.core.transaction import Transaction
-from yadacoin.core.block import BlockFactory
-from yadacoin.core.chain import CHAIN
-from yadacoin.core.blockchain import Blockchain
+from tornado.testing import gen_test
 
-from test_setup import app
+from test_setup import BaseTestCase
+
 
 # Scenerios:
 #
 # Upper line represents local blockchain
 # Lower line represents remote blockchain
 #
-# 1. Same height, larger diff
-#  ________
-#  \_______
+# 1. One block ahead, no fork
+# _
+#  \
 # 
-# 2. Larger diff, smaller height
-#  ________
-#  \______
+# 2. Same height, fork, one block 
+# __
+#  \
+#
+# 3. Two blocks ahead, no fork
+# _
+#  \_
 # 
-# 3. Larger height, smaller diff
-#  ________
-#  \________
+# 4. Same height, fork, two blocks
+# ___
+#  \_
+#
+### Should fail ###
+#
+# 5. One block behind, fork
+# ___
+#  \
 # 
-# 4. Chain has error, preceeding blocks have larger diff, same height
-#  _____
-#  \____e____
-# 
-# 4. Chain has error, preceeding blocks have larger diff, smaller height
-#  _____
-#  \__e______
-# 
-# 4. Chain has error, preceeding blocks have larger diff, greater height
-#  _____
-#  \______e__
+# 6. Same height, fork, lower diff
+# ___
+#  \_
 # 
 
+class TestConsensus(BaseTestCase):
 
-class TestConsensus(IsolatedAsyncioTestCase):
-    async def test_test_block_insertable(self):
-        """ test the block validation before it is passed to the db
+    @gen_test
+    async def test_scenerio_1(self):
+        """ One block ahead, no fork
         """
 
-        fork_block = await BlockFactory.generate(
-            app.config,
-            [],
-            app.config.public_key,
-            app.config.private_key,
-            index=124499,
-            force_version=4,
-            nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
-        )
+        fork_block = await self.create_fork_block()
 
         sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
             await self.create_blockchain(124500, 0, fork_block),
             await self.create_blockchain(124500, 1, fork_block)
         ])
 
-        result = await app.config.consensus.test_chain_insertable(
+        result = await self._app.config.consensus.test_chain_insertable(
             fork_block,
             sorted_blockchains[0],
             sorted_blockchains[1],
         )
         self.assertTrue(result)
 
-    async def test_block_insertable_fails(self):
-        """ this case receives a block that returns false.
-            We do not merge it.
+    @gen_test
+    async def test_scenerio_2(self):
+        """ Same height, fork, one block 
         """
 
-        fork_block = await BlockFactory.generate(
-            app.config,
-            [],
-            app.config.public_key,
-            app.config.private_key,
-            index=124499,
-            force_version=4,
-            nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
-        )
+        fork_block = await self.create_fork_block()
 
         sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
-            await self.create_blockchain(124500, 5, fork_block),
-            await self.create_blockchain(124500, 5, fork_block)
+            await self.create_blockchain(124500, 1, fork_block),
+            await self.create_blockchain(124500, 1, fork_block)
         ])
 
-        result = await app.config.consensus.test_chain_insertable(
+        result = await self._app.config.consensus.test_chain_insertable(
+            fork_block,
+            sorted_blockchains[0],
+            sorted_blockchains[1],
+        )
+        self.assertTrue(result)
+
+    @gen_test
+    async def test_scenerio_3(self):
+        """ Two blocks ahead, no fork
+        """
+
+        fork_block = await self.create_fork_block()
+
+        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
+            await self.create_blockchain(124500, 0, fork_block),
+            await self.create_blockchain(124500, 2, fork_block)
+        ])
+
+        result = await self._app.config.consensus.test_chain_insertable(
+            fork_block,
+            sorted_blockchains[0],
+            sorted_blockchains[1],
+        )
+        self.assertTrue(result)
+
+    @gen_test
+    async def test_scenerio_4(self):
+        """ Same height, fork, two blocks
+        """
+
+        fork_block = await self.create_fork_block()
+
+        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
+            await self.create_blockchain(124500, 2, fork_block),
+            await self.create_blockchain(124500, 2, fork_block)
+        ])
+
+        result = await self._app.config.consensus.test_chain_insertable(
+            fork_block,
+            sorted_blockchains[0],
+            sorted_blockchains[1],
+        )
+        self.assertTrue(result)
+
+    @gen_test
+    async def test_scenerio_5(self):
+        """ One block behind, fork
+        """
+
+        fork_block = await self.create_fork_block()
+
+        result = await self._app.config.consensus.test_chain_insertable(
+            fork_block,
+            await self.create_blockchain(124500, 2, fork_block),
+            await self.create_blockchain(124500, 1, fork_block),
+        )
+
+        self.assertFalse(result)
+
+    @gen_test
+    async def test_scenerio_6(self):
+        """ Same height, fork, lower diff
+        """
+
+        fork_block = await self.create_fork_block()
+
+        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
+            await self.create_blockchain(124500, 1, fork_block),
+            await self.create_blockchain(124500, 1, fork_block)
+        ])
+
+        result = await self._app.config.consensus.test_chain_insertable(
             fork_block,
             sorted_blockchains[1],
             sorted_blockchains[0],
         )
         self.assertFalse(result)
 
-    async def test_test_chain_insertable(self):
-        """ test the chain validation before it is passed to the db
-        """
-
-        fork_block = await BlockFactory.generate(
-            app.config,
-            [],
-            app.config.public_key,
-            app.config.private_key,
-            index=124499,
-            force_version=4,
-            nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
-        )
+    @gen_test
+    async def test_integrate_remote_chain_with_existing_chain(self):
+        fork_block = await self.create_fork_block()
 
         sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
             await self.create_blockchain(124500, 5, fork_block),
             await self.create_blockchain(124500, 5, fork_block)
         ])
-
-        result = await app.config.consensus.test_chain_insertable(
-            fork_block,
-            sorted_blockchains[0],
-            sorted_blockchains[1],
-        )
+        first_remote_block = await sorted_blockchains[1].get_block(0, 1)
+        first_local_block = await sorted_blockchains[0].get_block(0, 1)
+        await self._app.config.consensus.integrate_remote_chain_with_existing_chain(sorted_blockchains[0])
+        result = await self._app.config.mongo.async_db.blocks.find_one()
+        self.assertEqual(result['hash'], first_local_block.hash)
+        result = await self._app.config.consensus.integrate_remote_chain_with_existing_chain(sorted_blockchains[1])
         self.assertTrue(result)
-
-    async def test_external_consecutive_merge(self):
-        """ this case receives a block at the next block height.
-            We merge it.
-        """
-
-        fork_block = await BlockFactory.generate(
-            app.config,
-            [],
-            app.config.public_key,
-            app.config.private_key,
-            index=124499,
-            force_version=4,
-            nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
-        )
-
-        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
-            await self.create_blockchain(124500, 5, fork_block),
-            await self.create_blockchain(124500, 5, fork_block)
-        ])
-
-        result = await app.config.consensus.test_chain_insertable(
-            fork_block,
-            sorted_blockchains[0],
-            sorted_blockchains[1],
-        )
-        self.assertTrue(result)
-
-    async def test_external_future_block_consecutive_merge(self):
-        """ this case receives a future block and the chain 
-            running up to it starts at our current height. 
-            The chain difficulty is greater than ours. 
-            We merge it.
-        """
-
-        fork_block = await BlockFactory.generate(
-            app.config,
-            [],
-            app.config.public_key,
-            app.config.private_key,
-            index=124499,
-            force_version=4,
-            nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
-        )
-
-        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
-            await self.create_blockchain(124500, 5, fork_block),
-            await self.create_blockchain(124500, 5, fork_block)
-        ])
-
-        result = await app.config.consensus.test_chain_insertable(
-            fork_block,
-            sorted_blockchains[0],
-            sorted_blockchains[1],
-        )
-        self.assertTrue(result)
-    
-    async def test_external_future_block_backtrace_merge(self):
-        """ this case receives a future block and the chain 
-            running up to it starts at a height below our 
-            current height. The chain difficulty is greater 
-            than ours. We merge it.
-        """
-
-        fork_block = await BlockFactory.generate(
-            app.config,
-            [],
-            app.config.public_key,
-            app.config.private_key,
-            index=124499,
-            force_version=4,
-            nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
-        )
-
-        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
-            await self.create_blockchain(124500, 5, fork_block),
-            await self.create_blockchain(124500, 5, fork_block)
-        ])
-
-        result = await app.config.consensus.test_chain_insertable(
-            fork_block,
-            sorted_blockchains[0],
-            sorted_blockchains[1],
-        )
-        self.assertTrue(result)
-
-    async def test_external_future_block_backtrace_with_block_failure_merge(self):
-        """ this case receives a future block and the chain 
-            running up to it starts at a height below our 
-            current height. The chain difficulty is greater 
-            than ours but a block in that chain raises an exeption.
-            The chain should be shortened and tested again upto
-            but not including the block raising the exception. If that
-            chain results in greater difficulty than our own, merge it.
-        """
-
-        fork_block = await BlockFactory.generate(
-            app.config,
-            [],
-            app.config.public_key,
-            app.config.private_key,
-            index=124499,
-            force_version=4,
-            nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
-        )
-
-        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
-            await self.create_blockchain(124500, 5, fork_block),
-            await self.create_blockchain(124500, 5, fork_block)
-        ])
-
-        result = await app.config.consensus.test_chain_insertable(
-            fork_block,
-            sorted_blockchains[0],
-            sorted_blockchains[1],
-        )
-        self.assertTrue(result)
-    
-    async def create_blockchain(self, start_index, num_blocks, fork_block):
-        blocks = []
-
-        for i in range(num_blocks):
-            if i == 0:
-                block = await BlockFactory.generate(
-                    app.config,
-                    [],
-                    app.config.public_key,
-                    app.config.private_key,
-                    index=start_index,
-                    force_version=4,
-                    nonce=randrange(1, 1000000),
-                    target=CHAIN.MAX_TARGET - 1,
-                    prev_hash=fork_block.hash
-                )
-            else:
-                block = await BlockFactory.generate(
-                    app.config,
-                    [],
-                    app.config.public_key,
-                    app.config.private_key,
-                    index=start_index + i,
-                    force_version=4,
-                    nonce=randrange(1, 1000000),
-                    target=CHAIN.MAX_TARGET - 1,
-                    prev_hash=block.hash
-                )
-            blocks.append(block)
-
-        return await Blockchain.init_async(blocks, partial=True)
-    
-    async def sort_blockchains_by_difficulty(self, *args):
-        return [x['blockchain'] for x in sorted([
-            {
-                'blockchain': x, 
-                'difficulty': await x.get_difficulty()
-            } for x in args
-        ], key=lambda bc: bc['difficulty'])]
+        result = await self._app.config.mongo.async_db.blocks.find_one()
+        self.assertEqual(result['hash'], first_remote_block.hash)
+        self.assertNotEqual(result['hash'], first_local_block.hash)
 
 if "__main__" == __name__:
     unittest.main(argv=['first-arg-is-ignored'], exit=False)

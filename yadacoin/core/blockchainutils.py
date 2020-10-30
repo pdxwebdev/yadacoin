@@ -61,9 +61,6 @@ class BlockChainUtils(object):
         if not self.latest_block is None:
             return self.latest_block
         self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
-        if not self.latest_block:
-            await self.insert_genesis()
-            self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
         #self.app_log.debug("last block " + str(self.latest_block))
         return self.latest_block
 
@@ -72,7 +69,7 @@ class BlockChainUtils(object):
         from yadacoin.core.block import BlockFactory
         genesis_block = await BlockFactory.get_genesis_block()
         await genesis_block.save()
-        self.mongo.db.consensus.update({
+        self.mongo.db.consensus.update_one({
             'block': genesis_block.to_dict(),
             'peer': 'me',
             'id': genesis_block.signature,
