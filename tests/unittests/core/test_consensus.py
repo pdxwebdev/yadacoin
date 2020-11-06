@@ -167,16 +167,60 @@ class TestConsensus(BaseTestCase):
             await self.create_blockchain(124500, 5, fork_block),
             await self.create_blockchain(124500, 5, fork_block)
         ])
+
         first_remote_block = await sorted_blockchains[1].get_block(0, 1)
         first_local_block = await sorted_blockchains[0].get_block(0, 1)
+
         await self._app.config.consensus.integrate_remote_chain_with_existing_chain(sorted_blockchains[0])
+
         result = await self._app.config.mongo.async_db.blocks.find_one()
         self.assertEqual(result['hash'], first_local_block.hash)
+
         result = await self._app.config.consensus.integrate_remote_chain_with_existing_chain(sorted_blockchains[1])
         self.assertTrue(result)
+
         result = await self._app.config.mongo.async_db.blocks.find_one()
         self.assertEqual(result['hash'], first_remote_block.hash)
         self.assertNotEqual(result['hash'], first_local_block.hash)
+
+    @gen_test
+    async def test_build_local_chain(self):
+        fork_block = await self.create_fork_block()
+
+        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
+            await self.create_blockchain(124500, 5, fork_block),
+            await self.create_blockchain(124500, 5, fork_block)
+        ])
+
+        first_local_block = await sorted_blockchains[0].get_block(0, 1)
+        first_remote_block = await sorted_blockchains[1].get_block(0, 1)
+
+        await self._app.config.consensus.integrate_remote_chain_with_existing_chain(sorted_blockchains[0])
+        local_chain = await self._app.config.consensus.build_local_chain(first_remote_block)
+        local_block = await local_chain.get_block(0, 1)
+        self.assertEqual(local_block.hash, first_local_block.hash)
+
+    @gen_test
+    async def test_build_remote_chain(self):
+        fork_block = await self.create_fork_block()
+
+        sorted_blockchains = await self.sort_blockchains_by_difficulty(*[
+            await self.create_blockchain(124500, 5, fork_block),
+            await self.create_blockchain(124500, 5, fork_block)
+        ])
+
+        first_remote_block = await sorted_blockchains[1].get_block(0, 1)
+        async for block in sorted_blockchains[1].blocks:
+            self._app.config.mongo.async_db.consensus.replace_one(
+                {
+                    'index': block.index,
+                    'id': block.signature
+                },
+                block.to_dict()
+            )
+        remote_chain = await self._app.config.consensus.build_remote_chain(first_remote_block)
+        remote_block = await remote_chain.get_block(0, 1)
+        self.assertEqual(remote_block.hash, first_remote_block.hash)
 
 if "__main__" == __name__:
     unittest.main(argv=['first-arg-is-ignored'], exit=False)

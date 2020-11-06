@@ -6,6 +6,8 @@ from logging import getLogger
 
 from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity
+from yadacoin.core.latestblock import LatestBlock
+from yadacoin.core.transaction import Transaction
 
 
 class Peer:
@@ -114,6 +116,12 @@ class Peer:
     
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
+    
+    async def get_payload_txn(self, payload):
+        txn = None
+        if payload.get('transaction'):
+            txn = Transaction.from_dict(LatestBlock.block.index, payload.get('transaction'))
+        return txn
 
 
 class Seed(Peer):
@@ -139,6 +147,33 @@ class Seed(Peer):
     @classmethod
     def compatible_types(cls):
         return [Seed, SeedGateway]
+    
+    async def get_route_peers(self, peer, payload):
+        if isinstance(peer, SeedGateway):
+            # this if statement allow bi-directional communication cross-seed
+            if 'origin_seed' in payload:
+                # this is a response
+                bridge_seed = self.config.seeds[payload['origin_seed']]
+            else:
+                # this must be the identity of the destination service provider
+                # the message originator must provide the necissary service provider identity information
+                # typically, the originator will grab all mutual service providers of the originator and the recipient of the message
+                # and send "through" every service provider so the recipient will receive the message on all services
+                bridge_seed_gateway = await peer.calculate_seed_gateway() # get the seed gateway
+                bridge_seed = bridge_seed_gateway.seed
+                payload['origin_seed'] = self.config.peer.identity.username_signature
+            if bridge_seed.rid in self.config.nodeServer.inbound_streams[Seed.__name__]:
+                peer_stream = self.config.nodeServer.inbound_streams[Seed.__name__][bridge_seed.rid]
+            elif bridge_seed.rid in self.config.nodeClient.outbound_streams[Seed.__name__]:
+                peer_stream = self.config.nodeClient.outbound_streams[Seed.__name__][bridge_seed.rid]
+            else:
+                self.config.app_log.error('No bridge seed found. Cannot route transaction.')
+            yield peer_stream
+        elif isinstance(peer, Seed):
+            for rid, peer_stream in self.config.nodeServer.inbound_streams[SeedGateway.__name__].items():
+                yield peer_stream
+            for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
+                yield peer_stream
 
 
 class SeedGateway(Peer):
@@ -164,6 +199,22 @@ class SeedGateway(Peer):
     @classmethod
     def compatible_types(cls):
         return [Seed, ServiceProvider]
+    
+    async def get_route_peers(self, peer, payload):
+        if isinstance(peer, Seed):
+            for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
+                yield peer_stream
+        elif isinstance(peer, ServiceProvider):
+            for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
+                yield peer_stream
+    
+    async def get_service_provider_request_peers(self, peer, payload):
+        if isinstance(peer, Seed):
+            for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
+                yield peer_stream
+        elif isinstance(peer, ServiceProvider):
+            for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
+                yield peer_stream
 
 
 class ServiceProvider(Peer):
@@ -181,6 +232,119 @@ class ServiceProvider(Peer):
 
     async def calculate_seed_gateway(self, nonce=None):
         username_signature_hash = hashlib.sha256(self.identity.username_signature.encode()).hexdigest()
+        # TODO: introduce some kind of unpredictability here. This uses the latest block hash. 
+        # So we won't be able to get the new seed without the block hash
+        # which is not known in advance
+        seed_time = int((time.time() - self.epoch) / self.ttl) + 1
+        seed_select = (int(username_signature_hash, 16) * seed_time) % len(self.config.seed_gateways)
+        username_signatures = list(self.config.seed_gateways)
+        first_number = seed_select
+        num_reset = False
+        while self.config.seed_gateways[username_signatures[seed_select]].rid in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
+            seed_select += 1
+            if num_reset and seed_select >= first_number:
+                break # failed to find a seed gateway
+            if seed_select >= len(self.config.seed_gateways) + 1:
+                if first_number > 0:
+                    seed_select = 0
+                
+
+        seed_gateway = self.config.seed_gateways[list(self.config.seed_gateways)[seed_select]]
+        return seed_gateway
+
+    @classmethod
+    def type_limit(cls, peer):
+        if peer == SeedGateway:
+            return 1
+        elif peer == User:
+            return 1
+        else:
+            return 0
+
+    @classmethod
+    def compatible_types(cls):
+        return [ServiceProvider, User]
+    
+    async def get_route_peers(self, peer, payload):
+
+        if isinstance(peer, User):
+            for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
+                yield peer_stream
+
+            for rid, peer_stream in self.config.websocketServer.inbound_streams.items():
+                if peer.identity.username_signature == peer_stream.peer.identity.username_signature:
+                    continue
+                yield peer_stream
+        
+        elif isinstance(peer, SeedGateway):
+            txn = self.get_payload_txn(payload)
+            if txn:
+                txn_sum = sum([x.value for x in txn.outputs])
+
+                if not peer and not txn_sum:
+                    self.config.app_log.error('Zero sum transaction and no routing information. Cannot route transaction.')
+                    return
+
+                from_peer = None
+                if payload.get('from_peer'):
+                    from_peer = Identity.from_dict(payload.get('from_peer'))
+
+                rid = None
+                if txn.requester_rid in self.config.nodeServer.inbound_streams[User.__name__]:
+                    rid = txn.requester_rid
+                elif txn.requested_rid in self.config.nodeServer.inbound_streams[User.__name__]:
+                    rid = txn.requested_rid
+                elif from_peer and from_peer in self.config.nodeServer.inbound_streams[User.__name__]:
+                    rid = from_peer.rid
+                else:
+                    self.config.app_log.error('No user found. Cannot route transaction.')
+
+                if txn_sum:
+                    self.config.mongo.async_db.miner_transactions.replace_one(
+                        {
+                            'id': txn.transaction_signature
+                        },
+                        txn.to_dict()
+                    )
+                    for peer_rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
+                        yield peer_stream
+                elif rid:
+                    yield self.config.nodeServer.inbound_streams[User.__name__][rid]
+    
+    async def get_service_provider_request_peers(self, peer, payload):
+        # check if the calculated service provider for the group is me
+        if payload.get('group'):
+            group = Group.from_dict(payload.get('group'))
+
+        if isinstance(peer, User):
+            for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
+                yield peer_stream
+
+            for rid, peer_stream in self.config.websocketServer.inbound_streams.items():
+                if peer.identity.username_signature == peer_stream.peer.identity.username_signature:
+                    continue
+                yield peer_stream
+        
+        elif isinstance(peer, SeedGateway):
+            for peer_rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
+                yield peer_stream
+
+
+class Group(Peer):
+    id_attribute = 'rid'
+
+    async def get_outbound_class(self):
+        return ServiceProvider
+
+    async def get_inbound_class(self):
+        return User
+
+    async def get_outbound_peers(self, nonce=None):
+        service_provider = await self.calculate_service_provider()
+        return {service_provider.identity.username_signature: service_provider}
+
+    async def calculate_service_provider(self, nonce=None):
+        username_signature_hash = hashlib.sha256(self.identity.username.encode()).hexdigest()
         # TODO: introduce some kind of unpredictability here. This uses the latest block hash. 
         # So we won't be able to get the new seed without the block hash
         # which is not known in advance
@@ -332,6 +496,21 @@ class Peers:
                     "username": "service_provider_B",
                     "username_signature": "MEQCIF1jg+YOY3r7vR2pF1mLLdnUo/Va9wAQ2X6d6w9fVgLQAiBUyAmw88iMzK/nQ1AK5ZnJqifgXWCH4bid/dlGOJq8EA==",
                     "public_key": "0341f797e55ca256505594e722e2a8c2ed9484d2de12492e704e1d019cef6cf647"
+                }
+            })
+        ]})
+    
+    @classmethod
+    def get_groups(cls):
+        return OrderedDict({x.identity.username_signature: x for x in [
+            Group.from_dict({
+                'host': None,
+                'port': None,
+                'identity': {
+                    'username':'group',
+                    'username_signature':'MEUCIQDIlC+SpeLwUI4fzV1mkEsJCG6HIvBvazHuMMNGuVKi+gIgV8r1cexwDHM3RFGkP9bURi+RmcybaKHUcco1Qu0wvxw=',
+                    'public_key':'036f99ba2238167d9726af27168384d5fe00ef96b928427f3b931ed6a695aaabff',
+                    'wif':'KydUVG4w2ZSQkg6DAZ4UCEbfZz9Tg4PsjJFnvHwFsfmRkqXAHN8W'
                 }
             })
         ]})

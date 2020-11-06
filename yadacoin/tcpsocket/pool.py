@@ -6,7 +6,7 @@ from yadacoin.core.transactionutils import TU
 from yadacoin.core.config import Config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
-from yadacoin.socket.base import RPCSocketServer
+from yadacoin.tcpsocket.base import RPCSocketServer
 from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.peer import Miner
 

@@ -27,7 +27,7 @@ from yadacoin.core.transaction import (
     NotEnoughMoneyException
 )
 from yadacoin.core.latestblock import LatestBlock
-from yadacoin.socket.node import NodeSocketServer
+from yadacoin.tcpsocket.node import NodeSocketServer
 from yadacoin.core.peer import Peer
 
 
@@ -231,7 +231,7 @@ class Consensus(object):
 
     async def build_local_chain(self, block: Block):
 
-        local_blocks = await self.config.mongo.async_db.blocks.find({'index': {'$gte': block.index}}).sort([('index', 1)])
+        local_blocks = self.config.mongo.async_db.blocks.find({'index': {'$gte': block.index}}).sort([('index', 1)])
         return await Blockchain.init_async(local_blocks, partial=True)
 
     async def build_remote_chain(self, block: Block):
@@ -239,18 +239,18 @@ class Consensus(object):
         blocks = [block]
         while True:
             # get the heighest block from this chain
-            block = await self.config.mongo.async_db.blocks.find_one({'prevHash': block.hash}, {'_id': 0})
-            if block:
-                block = await Block.from_dict(block)
-                blocks.append(block)
+            local_block = await self.config.mongo.async_db.blocks.find_one({'prevHash': block.hash}, {'_id': 0})
+            if local_block:
+                local_block = await Block.from_dict(local_block)
+                blocks.append(local_block)
             else:
-                block = await self.config.mongo.async_db.consensus.find_one({'block.prevHash': block.hash}, {'_id': 0})
-                if block:
-                    block = await Block.from_dict(block['block'])
-                    blocks.append(block)
-            if not block:
+                consensus_block = await self.config.mongo.async_db.consensus.find_one({'block.prevHash': block.hash}, {'_id': 0})
+                if consensus_block:
+                    consensus_block = await Block.from_dict(consensus_block['block'])
+                    blocks.append(consensus_block)
+            if not local_block and not consensus_block:
                 break
 
-        blocks.sort(blocks, key=lambda x: x.index)
+        blocks.sort(key=lambda x: x.index)
 
         return await Blockchain.init_async(blocks, partial=True)

@@ -30,7 +30,7 @@ import tornado.locks
 import tornado.log
 from tornado.iostream import StreamClosedError
 from tornado.options import define, options
-from tornado.web import Application, StaticFileHandler
+from tornado.web import Application
 from concurrent.futures import ThreadPoolExecutor
 
 import yadacoin.core.blockchainutils
@@ -45,7 +45,7 @@ from yadacoin.core.miningpoolpayout import PoolPayer
 from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.peer import (
-    Peer, Seed, SeedGateway, ServiceProvider, User, Miner, Peers
+    Peer, Seed, SeedGateway, ServiceProvider, User, Miner, Peers, Group
 )
 from yadacoin.core.identity import Identity
 from yadacoin.http.web import WEB_HANDLERS
@@ -54,10 +54,12 @@ from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
-from yadacoin.socket.node import (
-    NodeSocketServer, NodeSocketClient, SharedNodeMethods
+from yadacoin.websocket.base import WEBSOCKET_HANDLERS
+from yadacoin.tcpsocket.node import (
+    NodeSocketServer, NodeSocketClient, RPCBase
 )
-from yadacoin.socket.pool import StratumServer
+from yadacoin.websocket.base import RCPWebSocketServer
+from yadacoin.tcpsocket.pool import StratumServer
 
 __version__ = '0.1.0'
 
@@ -82,16 +84,22 @@ class NodeApplication(Application):
         self.init_config(options)
         self.configure_logging()
         self.init_config_properties()
-        if 'pool' in self.config.modes:
-            self.init_pool()
-        if 'web' in self.config.modes:
-            self.init_http()
-            self.init_whitelist()
         if 'node' in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
+            self.init_groups()
             self.init_peer()
+            if 'pool' in self.config.modes:
+                self.init_pool()
+            if 'web' in self.config.modes:
+                self.config.root_app = 'yadacoinweb'
+                self.default_handlers = []
+                self.init_websocket()
+                self.init_webui()
+                self.init_plugins()
+                self.init_http()
+                self.init_whitelist()
             self.init_ioloop()
 
     async def background_peers(self):
@@ -334,35 +342,37 @@ class NodeApplication(Application):
         elif self.config.network == 'regnet':
             self.config.service_providers = Peers.get_service_providers()
 
+    def init_groups(self):
+        if self.config.network == 'mainnet':
+            self.config.groups = Peers.get_groups()
+        elif self.config.network == 'regnet':
+            self.config.groups = Peers.get_groups()
+    
+    def init_websocket(self):
+        self.default_handlers.extend(WEBSOCKET_HANDLERS)
+    
+    def init_webui(self):
+        self.default_handlers.extend(NODE_HANDLERS)
+        self.default_handlers.extend(GRAPH_HANDLERS)
+        self.default_handlers.extend(EXPLORER_HANDLERS)
+        self.default_handlers.extend(WALLET_HANDLERS)
+        self.default_handlers.extend(WEB_HANDLERS)
+    
+    def init_plugins(self):
+        for finder, name, ispkg in pkgutil.iter_modules([path.join(path.dirname(__file__), '..', 'plugins')]):
+            handlers = importlib.import_module('plugins.' + name + '.handlers')
+            if name == self.config.root_app:
+                [self.default_handlers.insert(0, handler) for handler in handlers.HANDLERS]
+            else:
+                self.default_handlers.extend(handlers.HANDLERS)
+
     def init_http(self):
         self.config.app_log.info("API: http://{}".format(self.config.peer.to_string()))
         self.config.app_log.info("Starting server on {}:{}".format(self.config.serve_host, self.config.serve_port))
-        core_handlers_enabled = False
-        plugins_enabled = False
-        self.default_handlers = []
-        if core_handlers_enabled:
-            static_path = path.join(path.dirname(__file__), 'static')
-            self.default_handlers.extend([
-                (r"/app/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app')}),
-                (r"/app2fa/(.*)", StaticFileHandler, {"path": path.join(static_path, 'app2fa')}),
-                (r"/(apple-touch-icon\.png)", StaticFileHandler, dict(path=static_path)),
-            ])
-            self.default_handlers.extend(NODE_HANDLERS)
-            self.default_handlers.extend(GRAPH_HANDLERS)
-            self.default_handlers.extend(EXPLORER_HANDLERS)
-            self.default_handlers.extend(WALLET_HANDLERS)
-            self.default_handlers.extend(WEB_HANDLERS)
-
-        if plugins_enabled:
-            for finder, name, ispkg in pkgutil.iter_modules([path.join(path.dirname(__file__), 'plugins')]):
-                handlers = importlib.import_module('plugins.' + name + '.handlers')
-                self.default_handlers.extend(handlers.HANDLERS)
-        
-            self.default_handlers.insert(0, handlers.HANDLERS[0])  # replace / root handler
 
         settings = dict(
             app_title=u"Yadacoin Node",
-            template_path=path.join(path.dirname(__file__), 'templates'),
+            template_path=path.join(path.dirname(__file__), '..', 'templates'),
             xsrf_cookies=False,  # TODO: sort out, depending on python client version (< 3.6) does not work with xsrf activated
             cookie_secret=sha256(self.config.private_key.encode('utf-8')).hexdigest(),
             compress_response=True,
@@ -379,13 +389,12 @@ class NodeApplication(Application):
         )
         handlers = self.default_handlers.copy()
         self.app = super().__init__(handlers, **settings)
-        self.listen(self.config.serve_port, self.config.serve_host)
+        self.listen(self.config.serve_port + 1, self.config.serve_host)
         if self.config.ssl:
             ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.get('cafile'))
             ssl_ctx.load_cert_chain(self.config.ssl.get('certfile'), keyfile=self.config.ssl.get('keyfile'))
             http_server = tornado.httpserver.HTTPServer(self.app, ssl_options=ssl_ctx)
             http_server.listen(self.config.ssl['port'])
-            webbrowser.open("http://{}/appvote/identity".format(self.config.peer.to_string()))
 
     def init_pool(self):
         self.config.app_log.info("MiningPool activated")
@@ -430,8 +439,9 @@ class NodeApplication(Application):
         self.config.cipher = Crypt(self.config.wif)
         self.config.pyrx = pyrx.PyRX()
         self.config.nodeServer = NodeSocketServer
-        self.config.nodeShared = SharedNodeMethods
+        self.config.nodeShared = RPCBase
         self.config.nodeClient = NodeSocketClient()
+        self.config.websocketServer = RCPWebSocketServer
         for x in [Seed, SeedGateway, ServiceProvider, User]:
             if x.__name__ not in self.config.nodeClient.outbound_streams:
                 self.config.nodeClient.outbound_ignore[x.__name__] = {}
@@ -446,6 +456,9 @@ class NodeApplication(Application):
                 self.config.nodeServer.inbound_pending[x.__name__] = {}
             if x.__name__ not in self.config.nodeServer.inbound_streams:
                 self.config.nodeServer.inbound_streams[x.__name__] = {}
+        for x in [User, Group]:
+            if x.__name__ not in self.config.websocketServer.inbound_streams:
+                self.config.websocketServer.inbound_streams[x.__name__] = {}
         if 'test' in self.config.modes:
             return
         self.config.nodeServer().listen(self.config.peer_port)

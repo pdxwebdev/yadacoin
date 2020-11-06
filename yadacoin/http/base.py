@@ -7,6 +7,8 @@ import logging
 
 from tornado.web import RequestHandler
 
+from yadacoin.core.config import get_config
+
 
 class BaseHandler(RequestHandler):
     """Common ancestor for all route handlers"""
@@ -18,10 +20,7 @@ class BaseHandler(RequestHandler):
             origin = origin[:-1]
         self.app_log = logging.getLogger("tornado.application")
         self.app_log.info(self._request_summary())
-        self.config = self.settings['yadacoin_config']
-        self.mongo = self.settings['mongo']
-        self.config.mp = self.config.mp
-        self.peers = self.settings['peers']
+        self.config = get_config()
         self.yadacoin_vars = self.settings['yadacoin_vars']
         self.settings["page_title"] = self.settings["app_title"]
         self.set_header("Access-Control-Allow-Origin", origin)
@@ -31,8 +30,6 @@ class BaseHandler(RequestHandler):
         self.set_header('Access-Control-Allow-Headers', "Authorization, Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
         self.jwt = {}
-        if not hasattr(self.config, 'push_service') and self.config.fcm_key:
-            self.config.push_service = PushNotification(self.config)
     
     async def prepare(self):
         if self.config.api_whitelist and self.request.remote_ip not in self.config.api_whitelist:

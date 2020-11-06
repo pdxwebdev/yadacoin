@@ -17,8 +17,10 @@ class Blockchain(object):
         self = cls()
         self.config = get_config()
         self.mongo = self.config.mongo
-        if not isinstance(blocks, GeneratorType):
+        if isinstance(blocks, list):
             self.init_blocks = self.make_gen(blocks)
+        else:
+            self.init_blocks = blocks
         self.partial = partial
         if not self.blocks:
             return # allow nothing
