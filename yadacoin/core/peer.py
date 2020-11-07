@@ -85,9 +85,30 @@ class Peer:
 
     async def get_outbound_peers(self):
         raise NotImplementedError()
-    
+
     async def calculate_seed_gateway(self, nonce=None):
-        raise NotImplementedError()
+        if self.__class__ not in [Group, ServiceProvider]:
+            raise Exception('Should not calculate a seed gateway for anything other than groups or service providers')
+        username_signature_hash = hashlib.sha256(self.identity.username_signature.encode()).hexdigest()
+        # TODO: introduce some kind of unpredictability here. This uses the latest block hash. 
+        # So we won't be able to get the new seed without the block hash
+        # which is not known in advance
+        seed_time = int((time.time() - self.epoch) / self.ttl) + 1
+        seed_select = (int(username_signature_hash, 16) * seed_time) % len(self.config.seed_gateways)
+        username_signatures = list(self.config.seed_gateways)
+        first_number = seed_select
+        num_reset = False
+        while self.config.seed_gateways[username_signatures[seed_select]].rid in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
+            seed_select += 1
+            if num_reset and seed_select >= first_number:
+                break # failed to find a seed gateway
+            if seed_select >= len(self.config.seed_gateways) + 1:
+                if first_number > 0:
+                    seed_select = 0
+                
+
+        seed_gateway = self.config.seed_gateways[list(self.config.seed_gateways)[seed_select]]
+        return seed_gateway
     
     async def ensure_peers_connected(self):
         peers = await self.get_outbound_peers()
@@ -126,6 +147,7 @@ class Peer:
 
 class Seed(Peer):
     id_attribute = 'rid'
+    source_property = 'source_seed'
     async def get_outbound_class(self):
         return Seed
 
@@ -151,17 +173,19 @@ class Seed(Peer):
     async def get_route_peers(self, peer, payload):
         if isinstance(peer, SeedGateway):
             # this if statement allow bi-directional communication cross-seed
-            if 'origin_seed' in payload:
+            if self.source_property in payload:
                 # this is a response
-                bridge_seed = self.config.seeds[payload['origin_seed']]
+                bridge_seed = self.config.seeds[payload[self.source_property]]
             else:
                 # this must be the identity of the destination service provider
                 # the message originator must provide the necissary service provider identity information
                 # typically, the originator will grab all mutual service providers of the originator and the recipient of the message
                 # and send "through" every service provider so the recipient will receive the message on all services
+
+                peer = Peer.from_dict(payload.get('dest_service_provider'))
                 bridge_seed_gateway = await peer.calculate_seed_gateway() # get the seed gateway
                 bridge_seed = bridge_seed_gateway.seed
-                payload['origin_seed'] = self.config.peer.identity.username_signature
+                payload[self.source_property] = self.config.peer.identity.username_signature
             if bridge_seed.rid in self.config.nodeServer.inbound_streams[Seed.__name__]:
                 peer_stream = self.config.nodeServer.inbound_streams[Seed.__name__][bridge_seed.rid]
             elif bridge_seed.rid in self.config.nodeClient.outbound_streams[Seed.__name__]:
@@ -174,10 +198,40 @@ class Seed(Peer):
                 yield peer_stream
             for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
                 yield peer_stream
+    
+    async def get_service_provider_request_peers(self, peer, payload):
+        if isinstance(peer, SeedGateway):
+            # this if statement allow bi-directional communication cross-seed
+            if self.source_property in payload:
+                # this is a response
+                bridge_seed_from_payload = Peer.from_dict(payload[self.source_property])
+                bridge_seed = self.config.seeds[bridge_seed_from_payload.identity.username_signature]
+            else:
+                # this must be the identity of the destination service provider
+                # the message originator must provide the necissary service provider identity information
+                # typically, the originator will grab all mutual service providers of the originator and the recipient of the message
+                # and send "through" every service provider so the recipient will receive the message on all services
+
+                bridge_seed_gateway = Peer.from_dict(payload.get('seed_gateway'))
+                bridge_seed = self.config.seeds[
+                    self.config.seed_gateways[bridge_seed_gateway.identity.username_signature].seed
+                ]
+                payload[self.source_property] = self.config.peer.identity.username_signature
+            if bridge_seed.rid in self.config.nodeServer.inbound_streams[Seed.__name__]:
+                peer_stream = self.config.nodeServer.inbound_streams[Seed.__name__][bridge_seed.rid]
+            elif bridge_seed.rid in self.config.nodeClient.outbound_streams[Seed.__name__]:
+                peer_stream = self.config.nodeClient.outbound_streams[Seed.__name__][bridge_seed.rid]
+            else:
+                self.config.app_log.error('No bridge seed found. Cannot route transaction.')
+            yield peer_stream
+        elif isinstance(peer, Seed):
+            for rid, peer_stream in self.config.nodeServer.inbound_streams[SeedGateway.__name__].items():
+                yield peer_stream
 
 
 class SeedGateway(Peer):
     id_attribute = 'rid'
+    source_property = 'source_seed_gateway'
     async def get_outbound_class(self):
         return Seed
 
@@ -219,6 +273,7 @@ class SeedGateway(Peer):
 
 class ServiceProvider(Peer):
     id_attribute = 'rid'
+    source_property = 'source_service_provider'
 
     async def get_outbound_class(self):
         return SeedGateway
@@ -229,28 +284,6 @@ class ServiceProvider(Peer):
     async def get_outbound_peers(self, nonce=None):
         seed_gateway = await self.calculate_seed_gateway()
         return {seed_gateway.identity.username_signature: seed_gateway}
-
-    async def calculate_seed_gateway(self, nonce=None):
-        username_signature_hash = hashlib.sha256(self.identity.username_signature.encode()).hexdigest()
-        # TODO: introduce some kind of unpredictability here. This uses the latest block hash. 
-        # So we won't be able to get the new seed without the block hash
-        # which is not known in advance
-        seed_time = int((time.time() - self.epoch) / self.ttl) + 1
-        seed_select = (int(username_signature_hash, 16) * seed_time) % len(self.config.seed_gateways)
-        username_signatures = list(self.config.seed_gateways)
-        first_number = seed_select
-        num_reset = False
-        while self.config.seed_gateways[username_signatures[seed_select]].rid in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
-            seed_select += 1
-            if num_reset and seed_select >= first_number:
-                break # failed to find a seed gateway
-            if seed_select >= len(self.config.seed_gateways) + 1:
-                if first_number > 0:
-                    seed_select = 0
-                
-
-        seed_gateway = self.config.seed_gateways[list(self.config.seed_gateways)[seed_select]]
-        return seed_gateway
 
     @classmethod
     def type_limit(cls, peer):
@@ -329,6 +362,9 @@ class ServiceProvider(Peer):
             for peer_rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
                 yield peer_stream
 
+            for peer_rid, peer_stream in self.config.websocketServer.inbound_streams[User.__name__].items():
+                yield peer_stream
+
 
 class Group(Peer):
     id_attribute = 'rid'
@@ -342,28 +378,6 @@ class Group(Peer):
     async def get_outbound_peers(self, nonce=None):
         service_provider = await self.calculate_service_provider()
         return {service_provider.identity.username_signature: service_provider}
-
-    async def calculate_service_provider(self, nonce=None):
-        username_signature_hash = hashlib.sha256(self.identity.username.encode()).hexdigest()
-        # TODO: introduce some kind of unpredictability here. This uses the latest block hash. 
-        # So we won't be able to get the new seed without the block hash
-        # which is not known in advance
-        seed_time = int((time.time() - self.epoch) / self.ttl) + 1
-        seed_select = (int(username_signature_hash, 16) * seed_time) % len(self.config.seed_gateways)
-        username_signatures = list(self.config.seed_gateways)
-        first_number = seed_select
-        num_reset = False
-        while self.config.seed_gateways[username_signatures[seed_select]].rid in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
-            seed_select += 1
-            if num_reset and seed_select >= first_number:
-                break # failed to find a seed gateway
-            if seed_select >= len(self.config.seed_gateways) + 1:
-                if first_number > 0:
-                    seed_select = 0
-                
-
-        seed_gateway = self.config.seed_gateways[list(self.config.seed_gateways)[seed_select]]
-        return seed_gateway
 
     @classmethod
     def type_limit(cls, peer):
@@ -442,7 +456,7 @@ class Peers:
             }),
             Seed.from_dict({
                 'host': '71.193.201.21',
-                'port': 8004,
+                'port': 8008,
                 'identity': {
                     "username": "seed_B",
                     "username_signature": "MEQCIBn3IO/QP6UerU5u0XqkTdK0iJpA7apayQgxqgT3E29yAiAljkzDzGucZXSKgjklsuDm9HhjZ70VMjpa21eObQIS7A==",
@@ -457,7 +471,7 @@ class Peers:
         return OrderedDict({x.identity.username_signature: x for x in [
             SeedGateway.from_dict({
                 'host': '71.193.201.21',
-                'port': 8001,
+                'port': 8002,
                 'identity': {
                     "username": "seed_gateway_A",
                     "username_signature": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA==",
@@ -467,7 +481,7 @@ class Peers:
             }),
             SeedGateway.from_dict({
                 'host': '71.193.201.21',
-                'port': 8005,
+                'port': 8010,
                 'identity': {
                     "username": "seed_gateway_B",
                     "username_signature": "MEUCIQCGY5xwZgT5v7iNSpO7b6FFQne8h6RzPf1UAQr2yptHGgIgE6UaVTjyHYozwpona00Ydagkb5oCAiyPv008YL9a5hA=",
@@ -482,7 +496,7 @@ class Peers:
         return OrderedDict({x.identity.username_signature: x for x in [
             ServiceProvider.from_dict({
                 'host': '71.193.201.21',
-                'port': 8002,
+                'port': 8004,
                 'identity': {
                     "username": "service_provider_A",
                     "username_signature": "MEUCIQCIzIDpRwBJgU0fjTh6FZhpIrLz/WNTLIZwK2Ifx7HjtQIgfYYOPFy7ypU+KYeYzkCa9OWwbwPIt9Hk0cV8Q6pcXog=",
@@ -491,7 +505,7 @@ class Peers:
             }),
             ServiceProvider.from_dict({
                 'host': '71.193.201.21',
-                'port': 8006,
+                'port': 80012,
                 'identity': {
                     "username": "service_provider_B",
                     "username_signature": "MEQCIF1jg+YOY3r7vR2pF1mLLdnUo/Va9wAQ2X6d6w9fVgLQAiBUyAmw88iMzK/nQ1AK5ZnJqifgXWCH4bid/dlGOJq8EA==",

@@ -24,7 +24,7 @@ class RCPWebSocketServer(WebSocketHandler):
                 'public_key': self.get_secure_cookie('public_key')
             }
         })
-        RCPWebSocketServer.inbound_streams[User.__name__][user.identity.username_signature] = user
+        RCPWebSocketServer.inbound_streams[User.__name__][user.rid] = self
 
     async def on_message(self, data):
         body = json.loads(data)
@@ -127,16 +127,15 @@ class RCPWebSocketServer(WebSocketHandler):
         RCPWebSocketServer.inbound_streams[Group.__name__][group.identity.username_signature][self.peer.identity.username_signature] = self
     
     async def service_provider_request(self, body):
-        # route request for service provider peer
-        group = self.config.groups[body.get('params').get('username_signature')]
-        seed_gateway = group.calculate_seed_gateway()
+        group = Group.from_dict({
+            'host': None,
+            'port': None,
+            'identity': body.get('params').get('group')
+        })
+        seed_gateway = await group.calculate_seed_gateway()
         params = {
-            'params': {
-                'payload': {
-                    'identity': seed_gateway.to_dict(),
-                    'requested_peer': group.to_dict()
-                }
-            }
+            'seed_gateway': seed_gateway.to_dict(),
+            'group': group.to_dict()
         }
 
         for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
@@ -149,10 +148,10 @@ class RCPWebSocketServer(WebSocketHandler):
         if id_attr in self.inbound_streams[Group.__name__]:
             del self.inbound_streams[Group.__name__][id_attr]
 
-    async def write_result(self, stream, method, data):
+    async def write_result(self, method, data):
         await self.write_as_json(method, data, 'result')
 
-    async def write_params(self, stream, method, data):
+    async def write_params(self, method, data):
         await self.write_as_json(method, data, 'params')
 
     async def write_as_json(self, method, data, rpc_type):

@@ -66,6 +66,9 @@ class NodeSocketServer(RPCSocketServer):
     
     async def challenge(self, body, stream):
         await RPCBase.challenge(self, body, stream)
+    
+    async def service_provider_request(self, body, stream):
+        await RPCBase.service_provider_request(self, body, stream)
 
 
 class NodeSocketClient(RPCSocketClient):
@@ -117,25 +120,50 @@ class NodeSocketClient(RPCSocketClient):
     
     async def blockresponse(self, body, stream):
         await RPCBase.blockresponse(self, body, stream)
+    
+    async def service_provider_request(self, body, stream):
+        await RPCBase.service_provider_request(self, body, stream)
 
 
 class RPCBase:
     @staticmethod
     async def service_provider_request(self, body, stream):
-        payload = body.get('params', {}).get('payload')
+        payload = body.get('params', {})
         if (
-            not payload.get('service_provider')
+            not payload.get('seed_gateway')
         ):
             return
-
-        for peer_stream in self.config.peer.get_service_provider_request_peers(stream.peer, payload):
-            await self.write_params(
-                peer_stream,
+        seed_gateway = SeedGateway.from_dict(payload.get('seed_gateway'))
+        if (
+            self.config.peer.__class__ == SeedGateway and
+            self.config.peer.identity.username_signature == seed_gateway.identity.username_signature
+        ):
+            service_provider = None
+            for x, service_provider in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
+                break
+            
+            if not service_provider:
+                return
+            payload[service_provider.peer.source_property] = service_provider.peer.to_dict()
+            return await self.write_params(
+                stream,
                 'service_provider_request',
-                {
-                    'payload': payload
-                }
+                payload
             )
+        payload2 = payload.copy()
+        payload2.setdefault(self.config.peer.source_property, self.config.peer.to_dict())
+        async for peer_stream in self.config.peer.get_service_provider_request_peers(stream.peer, payload):
+            try:
+                await self.write_params(
+                    peer_stream,
+                    'service_provider_request',
+                    payload2
+                )
+            except:
+                await peer_stream.write_params(
+                    'service_provider_request',
+                    payload2
+                )
 
     @staticmethod
     async def newtxn(self, body, stream):
@@ -144,10 +172,6 @@ class RPCBase:
             not payload.get('transaction')
         ):
             return
-
-        peer = None
-        if payload.get('identity'):
-            peer = Peer.from_dict({'host': None, 'port': None, 'identity': payload.get('identity')})
 
         request_peer = None
         if payload.get('request_peer'):
@@ -158,9 +182,6 @@ class RPCBase:
             del payload['request_peer']
             payload['response_peer'] = response_peer.to_dict()
             # TODO: figure out if I am the intended recipient. Maintain list of friends in memory with rid as index
-
-        if request_peer:
-            payload['from_peer'] = peer.identity.to_dict()
 
         for peer_stream in self.config.peer.get_route_peers(stream.peer, payload):
             await self.write_params(
