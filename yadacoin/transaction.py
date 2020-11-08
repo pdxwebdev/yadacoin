@@ -47,7 +47,8 @@ class TransactionFactory(object):
         chattext=None,
         signin=None,
         relationship='',
-        no_relationship=False
+        no_relationship=False,
+        exact_match=False
     ):
         cls_inst = cls()
         cls_inst.config = get_config()
@@ -70,6 +71,7 @@ class TransactionFactory(object):
         cls_inst.outputs = []
         cls_inst.relationship = relationship
         cls_inst.no_relationship = no_relationship
+        cls_inst.exact_match = exact_match
         for x in outputs:
             cls_inst.outputs.append(Output.from_dict(x))
         cls_inst.inputs = []
@@ -199,6 +201,8 @@ class TransactionFactory(object):
             raise NotEnoughMoneyException('No inputs, not a coinbase, and transaction amount is greater than zero')
 
         remainder = input_sum - outputs_and_fee_total
+        if float(fix_float1(remainder)) == 0 and float(fix_float2(remainder)) == 0:
+            remainder = 0.0
 
         found = False
         for x in self.outputs:
@@ -223,6 +227,16 @@ class TransactionFactory(object):
 
         for txn_output in input_txn.outputs:
             if txn_output.to == address and float(txn_output.value) > 0.0:
+                fix1 = fix_float1(txn_output.value)
+                fix2 = fix_float2(txn_output.value)
+                fixtotal1 = fix_float1(outputs_and_fee_total)
+                fixtotal2 = fix_float2(outputs_and_fee_total)
+                if (
+                    self.exact_match and
+                    fix1 != fixtotal1 and
+                    fix2 != fixtotal2
+                ):
+                    continue
                 input_sum += txn_output.value
 
                 if input_txn not in inputs:
