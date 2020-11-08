@@ -7,12 +7,17 @@ from coincurve import verify_signature
 from yadacoin.core.identity import Identity
 from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Group
 from yadacoin.core.config import get_config
+from yadacoin.core.transaction import Transaction
 from yadacoin.tcpsocket.node import RPCBase
 
 class RCPWebSocketServer(WebSocketHandler):
     inbound_streams = {}
     inbound_pending = {}
     config = None
+
+    def __init__(self, application, request):
+        super(RCPWebSocketServer, self).__init__(application, request)
+        self.config = get_config()
 
     async def open(self):
         user = User.from_dict({
@@ -38,7 +43,6 @@ class RCPWebSocketServer(WebSocketHandler):
         return True
 
     async def connect(self, body):
-        self.config = get_config()
         params = body.get('params')
         if not params.get('identity'):
             self.close()
@@ -73,6 +77,7 @@ class RCPWebSocketServer(WebSocketHandler):
             )
             if result:
                 self.config.app_log.info('new {} is valid'.format(peer.__class__.__name__))
+                await self.write_result('connect', self.config.peer.to_dict())
             else:
                 self.close()
         except:
@@ -83,6 +88,8 @@ class RCPWebSocketServer(WebSocketHandler):
     async def route(self, body):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
         params = body.get('params')
+        transaction = Transaction.from_dict(self.config.LatestBlock.block.index, params['transaction'])
+
         if isinstance(self.config.peer, Seed):
 
             for rid, peer_stream in self.config.nodeServer.inbound_streams[Seed.__name__].items():
@@ -110,6 +117,13 @@ class RCPWebSocketServer(WebSocketHandler):
             for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
                 await RPCBase.write_params(self, peer_stream, 'route', params)
 
+            params2 = params.copy()
+            params2['identity'] = self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid][transaction.requester_rid].peer.to_dict()
+            for rid, peer_stream in self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid].items():
+                if rid == transaction.requester_rid:
+                    continue
+                await peer_stream.write_params('route', params2)
+
         elif isinstance(self.config.peer, User):
 
             for rid, peer_stream in self.config.nodeClient.outbound_streams[ServiceProvider.__name__].items():
@@ -122,9 +136,9 @@ class RCPWebSocketServer(WebSocketHandler):
     
     async def join_group(self, body):
         group = self.config.groups[body.get('params').get('username_signature')]
-        if group.identity.username_signature not in RCPWebSocketServer.inbound_streams[Group.__name__]:
-            RCPWebSocketServer.inbound_streams[Group.__name__][group.identity.username_signature] = {}
-        RCPWebSocketServer.inbound_streams[Group.__name__][group.identity.username_signature][self.peer.identity.username_signature] = self
+        if group.rid not in RCPWebSocketServer.inbound_streams[Group.__name__]:
+            RCPWebSocketServer.inbound_streams[Group.__name__][group.rid] = {}
+        RCPWebSocketServer.inbound_streams[Group.__name__][group.rid][self.peer.rid] = self
     
     async def service_provider_request(self, body):
         group = Group.from_dict({

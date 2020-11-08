@@ -92,7 +92,8 @@ class NodeSocketClient(RPCSocketClient):
 
                 await self.wait_for_data(stream)
         except StreamClosedError:
-            get_config().app_log.error('Cannot connect to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
+            pass
+            #get_config().app_log.error('Cannot connect to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
     
     async def challenge(self, body, stream):
         challenge =  body.get('params', {}).get('token')

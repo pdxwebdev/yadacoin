@@ -707,25 +707,20 @@ class SiaStreamFileHandler(BaseGraphHandler):
 class SiaUploadHandler(BaseGraphHandler):
     async def post(self):
         from requests.auth import HTTPBasicAuth
-        from siaskynet import Skynet
+        from siaskynet import SkynetClient, utils
+        sc = SkynetClient()
         uploaded_file = self.request.files['file'][0]
-        filename = self.get_query_argument('filename')
         if len(uploaded_file['body']) > 2000000:
             return self.render_as_json({'status': 'error', 'message': 'file too large', 'files': []})
-        local_filename = '/tmp/{}'.format(filename)
-        with open(local_filename, 'wb') as f:
-            f.write(uploaded_file['body'])
         try:
-            opts = Skynet.default_upload_options()
-            opts.portal_url = 'http://0.0.0.0:9980'
-            skylink = Skynet.upload_file(local_filename)
+            skylink = sc.upload({self.get_query_argument('filename'): uploaded_file.body})
         except Exception as e:
             self.set_status(400)
             return self.render_as_json({
                 'status': 'error',
                 'message': 'sia node not responding'
             })
-        return self.render_as_json({'status': 'success', 'skylink': Skynet.strip_prefix(skylink)})
+        return self.render_as_json({'status': 'success', 'skylink': utils.strip_prefix(skylink)})
 
 
 class SiaUploadDirectoryHandler(BaseGraphHandler):
