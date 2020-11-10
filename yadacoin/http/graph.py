@@ -710,8 +710,6 @@ class SiaUploadHandler(BaseGraphHandler):
         from siaskynet import SkynetClient, utils
         sc = SkynetClient()
         uploaded_file = self.request.files['file'][0]
-        if len(uploaded_file['body']) > 2000000:
-            return self.render_as_json({'status': 'error', 'message': 'file too large', 'files': []})
         try:
             skylink = sc.upload({self.get_query_argument('filename'): uploaded_file.body})
         except Exception as e:
