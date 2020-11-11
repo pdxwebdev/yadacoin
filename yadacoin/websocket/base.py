@@ -122,12 +122,28 @@ class RCPWebSocketServer(WebSocketHandler):
             for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
                 await RPCBase.write_params(self, peer_stream, 'route', params)
 
-            params2 = params.copy()
-            params2['identity'] = self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid][transaction.requester_rid].peer.to_dict()
-            for rid, peer_stream in self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid].items():
-                if rid == transaction.requester_rid:
-                    continue
-                await peer_stream.write_params('route', params2)
+            if transaction.requested_rid in self.config.websocketServer.inbound_streams[Group.__name__]:
+                for rid, peer_stream in self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid].items():
+                    if rid == transaction.requester_rid:
+                        continue
+                    await peer_stream.write_params('route', params)
+            
+            if 'group' in params:
+                group = Group.from_dict({
+                    'host': None,
+                    'port': None,
+                    'identity': params['group']
+                })
+                params2 = params.copy()
+                to = User.from_dict({
+                    'host': None,
+                    'port': None,
+                    'identity': params['to']
+                })
+                peer_stream = self.config.websocketServer.inbound_streams[Group.__name__][group.rid].get(to.rid)
+                if peer_stream:
+                    await peer_stream.write_params('route', params2)
+
 
         elif isinstance(self.config.peer, User):
 
