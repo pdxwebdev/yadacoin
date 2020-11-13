@@ -62,7 +62,7 @@ class TU(object):  # Transaction Utilities
             return False # hasn't been spent to zero yet
 
     @classmethod
-    async def send(cls, config, to, value, from_address=True, dry_run=False, exact_match=False):
+    async def send(cls, config, to, value, from_address=True, dry_run=False, exact_match=False, outputs=None):
         from yadacoin.transaction import NotEnoughMoneyException, TransactionFactory
         from yadacoin.transactionbroadcaster import TxnBroadcaster
         if from_address == config.address:
@@ -75,16 +75,20 @@ class TU(object):  # Transaction Utilities
                 private_key = child_key['private_key']
             else:
                 return {'status': 'error', 'message': 'no wallet matching from address'}
-
+        if outputs:
+            for output in outputs:
+                output['value'] = float(output['value'])
+        else:
+            outputs=[
+                {'to': to, 'value': value}
+            ]
         try:
             transaction = await TransactionFactory.construct(
                 block_height=config.BU.get_latest_block()['index'],
                 fee=0.00,
                 public_key=public_key,
                 private_key=private_key,
-                outputs=[
-                    {'to': to, 'value': value}
-                ],
+                outputs=outputs,
                 exact_match=exact_match
             )
         except NotEnoughMoneyException:

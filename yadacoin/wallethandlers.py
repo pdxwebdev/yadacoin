@@ -183,7 +183,8 @@ class SendTransactionView(BaseHandler):
         config = self.config
         args = json.loads(self.request.body.decode())
         to = args.get('address')
-        value = float(args.get('value'))
+        outputs = args.get('outputs')
+        value = float(args.get('value', 0))
         from_address = args.get('from')
         dry_run = args.get('dry_run')
         exact_match = args.get('exact_match', False)
@@ -193,7 +194,8 @@ class SendTransactionView(BaseHandler):
             value,
             from_address,
             dry_run,
-            exact_match
+            exact_match,
+            outputs=outputs
         )
         return self.render_as_json(txn)
 
