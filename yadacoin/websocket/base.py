@@ -36,6 +36,8 @@ class RCPWebSocketServer(WebSocketHandler):
         self.peer.groups = {}
 
     async def on_message(self, data):
+        if not data:
+            return
         body = json.loads(data)
         method = body.get('method')
         await getattr(self, method)(body)
@@ -82,13 +84,16 @@ class RCPWebSocketServer(WebSocketHandler):
             )
             if result:
                 self.config.app_log.info('new {} is valid'.format(peer.__class__.__name__))
-                await self.write_result('connect', self.config.peer.to_dict())
+                await self.write_result('connect_confirm', self.config.peer.to_dict(), body=body)
             else:
                 self.close()
         except:
             self.config.app_log.error('invalid peer identity signature')
             self.close()
             return {}
+    
+    async def route_confirm(self, body):
+        await self.route(body)
     
     async def route(self, body):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
@@ -154,7 +159,7 @@ class RCPWebSocketServer(WebSocketHandler):
             self.config.app_log.error('inbound peer is not defined, disconnecting')
             self.close()
             return {}
-        await self.write_result('route_confirm', {})
+        await self.write_result('route_confirm', {}, body=body)
     
     async def join_group(self, body):
         
@@ -167,7 +172,7 @@ class RCPWebSocketServer(WebSocketHandler):
                     for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr].items():
                         await peer_stream.write_result('group_user_count', {
                             'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr])
-                        })
+                        }, body=body)
 
         if body.get('params').get('username_signature') in self.config.groups:
             group = self.config.groups[body.get('params').get('username_signature')]
@@ -184,11 +189,11 @@ class RCPWebSocketServer(WebSocketHandler):
 
         await self.write_result('join_confirmed', {
             'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
-        })
+        }, body=body)
         for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group.rid].items():
             await peer_stream.write_result('group_user_count', {
                 'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
-            })
+            }, body=body)
     
     async def service_provider_request(self, body):
         group = Group.from_dict({
@@ -203,7 +208,8 @@ class RCPWebSocketServer(WebSocketHandler):
         }
 
         for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
-            await RPCBase.write_params(self, peer_stream, 'service_provider_request', params)
+            await RPCBase.write_params(self, peer_stream, 'service_provider_request', params, body=body)
+        await self.write_result('service_provider_request_confirm', {}, body=body)
 
     def remove_peer(self, peer):
         id_attr = getattr(peer, peer.id_attribute)
@@ -226,15 +232,15 @@ class RCPWebSocketServer(WebSocketHandler):
                     )
                 )
 
-    async def write_result(self, method, data):
-        await self.write_as_json(method, data, 'result')
+    async def write_result(self, method, data, body=None):
+        await self.write_as_json(method, data, 'result', body)
 
-    async def write_params(self, method, data):
-        await self.write_as_json(method, data, 'params')
+    async def write_params(self, method, data, body=None):
+        await self.write_as_json(method, data, 'params', body)
 
-    async def write_as_json(self, method, data, rpc_type):
+    async def write_as_json(self, method, data, rpc_type, body=None):
         rpc_data = {
-            'id': 1,
+            'id': body.get('id') if body else 1,
             'method': method,
             'jsonrpc': 2.0,
             rpc_type: data
