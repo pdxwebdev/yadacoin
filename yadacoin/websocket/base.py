@@ -93,7 +93,7 @@ class RCPWebSocketServer(WebSocketHandler):
             return {}
     
     async def route_confirm(self, body):
-        await self.route(body)
+        await self.write_result('route_server_confirm', {}, body=body)
     
     async def route(self, body):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
@@ -159,7 +159,7 @@ class RCPWebSocketServer(WebSocketHandler):
             self.config.app_log.error('inbound peer is not defined, disconnecting')
             self.close()
             return {}
-        await self.write_result('route_confirm', {}, body=body)
+        await self.write_result('route_server_confirm', {}, body=body)
     
     async def join_group(self, body):
         
@@ -220,17 +220,18 @@ class RCPWebSocketServer(WebSocketHandler):
         for rid, group in peer.groups.items():
             group_id_attr = getattr(group, group.id_attribute)
             if group_id_attr in self.inbound_streams[Group.__name__]:
-                del self.inbound_streams[Group.__name__][group_id_attr][id_attr]
-            for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr]:
-                loop.run_sync(
-                    functools.partial(
-                        peer_stream.write_result,
-                        'group_user_count',
-                        {
-                            'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr])
-                        }
+                if id_attr in self.inbound_streams[Group.__name__]:
+                    del self.inbound_streams[Group.__name__][group_id_attr][id_attr]
+                for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr]:
+                    loop.run_sync(
+                        functools.partial(
+                            peer_stream.write_result,
+                            'group_user_count',
+                            {
+                                'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr])
+                            }
+                        )
                     )
-                )
 
     async def write_result(self, method, data, body=None):
         await self.write_as_json(method, data, 'result', body)
