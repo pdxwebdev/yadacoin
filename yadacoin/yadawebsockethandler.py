@@ -219,7 +219,7 @@ class ChatNamespace(AsyncNamespace):
             my_index = self.config.BU.get_latest_block()['index']
             if data['index'] == my_index + 1:
                 self.app_log.debug("Next index, trying to merge from {}".format(peer.to_string()))
-                if await self.consensus.process_next_block(data, peer):
+                if await self.config.consensus.process_next_block(data, peer):
                     pass
                     # if ok, block was inserted and event triggered by import block
                     # await self.peers.on_block_insert(data)
@@ -249,7 +249,7 @@ class ChatNamespace(AsyncNamespace):
             block = None  # Avoid linter warning
             for block in data:
                 if block['index'] == my_index + 1:
-                    if await self.consensus.process_next_block(block, peer, trigger_event=False):
+                    if await self.config.consensus.process_next_block(block, peer, trigger_event=False):
                         inserted = True
                         my_index = block['index']
                     else:

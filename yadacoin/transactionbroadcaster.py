@@ -99,10 +99,8 @@ class TxnBroadcaster(object):
 
     async def send_it(self, txn_dict: dict, peer: Peer):
         try:
-            if self.config.debug:
-                self.app_log.debug('Transmitting transaction to: {}'.format(peer.to_string()))
+            self.app_log.warning('Transmitting transaction to: {} {}'.format(peer.to_string(), txn_dict['id']))
             await peer.client.client.emit('newtransaction', data=txn_dict, namespace='/chat')
         except Exception as e:
-            if self.config.debug:
-                self.app_log.debug(e)
+            self.app_log.warning(e)
             # peer.report()

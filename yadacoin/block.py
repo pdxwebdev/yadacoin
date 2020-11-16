@@ -86,6 +86,8 @@ class BlockFactory(object):
             used_sigs = []
             used_inputs = {}
             for txn in transactions:
+                if len(used_sigs) > 100:
+                    break
                 try:
                     if isinstance(txn, FastGraph):
                         transaction_obj = txn
@@ -119,7 +121,7 @@ class BlockFactory(object):
                 try:
                     if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
                         config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
-                        app_log.debug("Block embeds txn too far in the future")
+                        app_log.debug("Block embeds txn too far in the future {} {}".format(xtime, transaction_obj.time))
                         continue
                     
                     if transaction_obj.inputs:
@@ -216,7 +218,7 @@ class BlockFactory(object):
         header = header.format(nonce=nonce)
         if height >= CHAIN.RANDOMX_FORK:
             seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
-            bh = cls.pyrx.get_rx_hash(header, seed_hash, height, cls.cores)
+            bh = cls.pyrx.get_rx_hash(header, seed_hash, height)
             hh = binascii.hexlify(bh).decode()
             return hh
         else:
@@ -577,7 +579,7 @@ class Block(object):
         header = header.format(nonce=nonce)
         if height >= CHAIN.RANDOMX_FORK:
             seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
-            bh = BlockFactory.pyrx.get_rx_hash(header, seed_hash, height, BlockFactory.cores)
+            bh = BlockFactory.pyrx.get_rx_hash(header, seed_hash, height)
             hh = binascii.hexlify(bh).decode()
             return hh
         else:
@@ -619,8 +621,9 @@ class Block(object):
             coinbase_sum = 0
             for txn in self.transactions:
                 if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
-                    self.config.mongo.db.miner_transactions.remove({'id': txn.transaction_signature}, multi=True)
-                    raise Exception("Block embeds txn too far in the future")
+                    #self.config.mongo.db.miner_transactions.remove({'id': txn.transaction_signature}, multi=True)
+                    #raise Exception("Block embeds txn too far in the future")
+                    pass
 
                 if txn.coinbase:
                     for output in txn.outputs:

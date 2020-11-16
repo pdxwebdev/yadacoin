@@ -140,28 +140,26 @@ class Consensus(object):
 
     async def get_previous_consensus_block_from_local(self, block, peer):
         #table cleanup
-        new_block = await self.mongo.async_db.consensus.find_one({
+        new_blocks = self.mongo.async_db.consensus.find({
             'block.hash': block.prev_hash,
             'block.index': (block.index - 1),
-            'block.version': CHAIN.get_version_for_height((block.index - 1)),
-            'ignore': {'$ne': True}
+            'block.version': CHAIN.get_version_for_height((block.index - 1))
         })
-        if new_block:
+        async for new_block in new_blocks:
             new_block = await Block.from_dict(new_block['block'])
             if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
-                return new_block
+                yield new_block
             else:
-                return None
-        return None
+                yield None
 
     async def get_previous_consensus_block_from_remote(self, block, peer):
         # TODO: async conversion
         retry = 0
-        while True:
+        peers = self.config.mongo.async_db.consensus.find({'block.prevHash': block.prev_hash, 'peer': {'$ne': 'me'}})
+        async for peer in peers:
             try:
-                url = 'http://' + peer.to_string() + '/get-block?hash=' + block.prev_hash
-                if self.debug:
-                    print('getting block', url)
+                url = 'http://' + peer['peer'] + '/get-block?hash=' + block.prev_hash
+                self.app_log.warning('getting block {} {}'.format(url, block.prev_hash))
                 res = requests.get(url, timeout=1, headers={'Connection':'close'})
             except:
                 if retry == 1:
@@ -170,15 +168,15 @@ class Consensus(object):
                     retry += 1
                     continue
             try:
-                if self.debug:
-                    print('response code: ', res.status_code)
+                self.app_log.warning('response code: {} {}'.format(res.status_code, res.content))
                 new_block = await Block.from_dict(json.loads(res.content.decode('utf-8')))
+
                 if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
                     return new_block
                 else:
                     return None
             except:
-                return None
+                continue
 
     async def insert_consensus_block(self, block, peer):
         if self.debug:
@@ -196,7 +194,6 @@ class Consensus(object):
         }, upsert=True)
 
     async def sync_bottom_up(self):
-        try:
             #bottom up syncing
             last_latest = self.latest_block
             self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
@@ -221,6 +218,22 @@ class Consensus(object):
                     'ignore': {'$ne': True}
                 }).to_list(length=100)
                 for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
+                    if self.latest_block.hash != record['block']['prevHash']:
+                        retrace_blocks = []
+                        prev_retrace_consensus_block = record
+                        while True:
+                            retrace_consensus_block = await self.mongo.async_db.consensus.find_one({'block.hash': prev_retrace_consensus_block['block']['prevHash']})
+                            retrace_block = await self.mongo.async_db.block.find_one({'hash': prev_retrace_consensus_block['block']['prevHash']})
+                            if retrace_block and retrace_consensus_block:
+                                for retrace_block_x in sorted(retrace_blocks, key=lambda x: int(x['block']['index'])): 
+                                    await self.import_block(retrace_block_x)
+                                break
+                            if not retrace_block and retrace_consensus_block:
+                                retrace_blocks.append(retrace_consensus_block['block'])
+                            if not retrace_consensus_block:
+                                break
+                            prev_retrace_consensus_block = retrace_consensus_block
+
                     await self.import_block(record)
 
                 last_latest = self.latest_block
@@ -234,18 +247,14 @@ class Consensus(object):
                 })
 
                 if latest_consensus_now and latest_consensus.index == latest_consensus_now['index']:
-                    await self.search_network_for_new()
+                    #await self.search_network_for_new()
                     return False
                 elif latest_consensus_now and  latest_consensus.index < latest_consensus_now['index']:
                     return True
                 return False
             else:
-                await self.search_network_for_new()
+                #await self.search_network_for_new()
                 return False
-        except Exception as e:
-            from traceback import format_exc
-            self.app_log.warning(format_exc())
-            raise
 
     async def search_network_for_new(self):
         # Peers.init( self.config.network)
@@ -355,6 +364,7 @@ class Consensus(object):
         await self.peers.on_block_insert(block)  # This will propagate to everyone
 
     async def import_block(self, block_data: dict, trigger_event=True) -> bool:
+        self.app_log.warning('import_block: {}'.format(block_data['block']['index']))
         """Block_data contains peer and block keys. Tries to import that block, retrace if necessary
         sends True if that block was inserted, False if it fails or if a retrace was needed.
 
@@ -371,29 +381,59 @@ class Consensus(object):
             self.app_log.debug("Latest block was {} {} {} {}".format(self.latest_block.hash, block.prev_hash, self.latest_block.index, (block.index - 1)))
             if int(block.index) > CHAIN.CHECK_TIME_FROM and int(block.time) < int(self.latest_block.time):
                 self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index))
-                await self.mongo.async_db.consensus.update_one(
-                    {
-                        'peer': peer.to_string(),
-                        'index': block.index,
-                        'id': block.signature
-                    },
-                    {'$set': {'ignore': True}}
-                )
-                await self.retrace(block, peer)
-                if trigger_event:
-                    await self.trigger_update_event()
-                return False
+                prev_one_block = await self.mongo.async_db.consensus.find_one({
+                    'index': block.index - 1,
+                    'block.hash': block.prev_hash
+                })
+                failed = False
+
+                if not prev_one_block:
+                    self.app_log.warning("no prev_one_block {}".format(block.index -1))
+                    failed = True
+
+                if prev_one_block and not await self.import_block(prev_one_block, trigger_event=False):
+                    failed = True
+
+                if failed:
+                    await self.mongo.async_db.consensus.update_one(
+                        {
+                            'peer': peer.to_string(),
+                            'index': block.index,
+                            'id': block.signature
+                        },
+                        {'$set': {'ignore': True}}
+                    )
+                    await self.retrace(block, peer)
+                    if trigger_event:
+                        await self.trigger_update_event()
+                    return False
             if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(self.latest_block.time) + 600)) and block.special_min:
                 self.app_log.warning("New special min block {} too soon. Rejecting".format(block.index))
-                await self.mongo.async_db.consensus.update_one(
-                    {
-                        'peer': peer.to_string(),
-                        'index': block.index,
-                        'id': block.signature
-                    },
-                    {'$set': {'ignore': True}}
-                )
-                return False
+                prev_one_block = await self.mongo.async_db.consensus.find_one({
+                    'index': block.index - 1,
+                    'block.hash': block.prev_hash
+                })
+                failed = False
+
+                if not prev_one_block:
+                    self.app_log.warning("no prev_one_block2 {}".format(block.index -1))
+                    failed = True
+
+                if prev_one_block and not await self.import_block(prev_one_block, trigger_event=False):
+                    self.app_log.warning("failed import block retrace")
+                    failed = True
+
+                if failed:
+                    self.app_log.warning("hheeerrrr")
+                    await self.mongo.async_db.consensus.update_one(
+                        {
+                            'peer': peer.to_string(),
+                            'index': block.index,
+                            'id': block.signature
+                        },
+                        {'$set': {'ignore': True}}
+                    )
+                    return False
             fork_exception = False
             try:
                 result = await self.integrate_block_with_existing_chain(block, extra_blocks)
@@ -492,7 +532,9 @@ class Consensus(object):
 
             await self.config.mongo.async_db.blocks.delete_many({'index': {'$gte': block.index}})
             self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async(False))
-
+            if (self.latest_block.index - block.index) > 50:
+                self.app_log.warning('trying to reorg over 50 blocks back, rejecting')
+                return False
             async def get_txns(txns):
                 for x in txns:
                     yield x
@@ -546,6 +588,7 @@ class Consensus(object):
             if block.index == 0:
                 return True
             height = block.index
+            self.app_log.warning('checking for block index {}'.format(block.index - 1))
             last_block = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
 
             if not last_block:
@@ -569,13 +612,21 @@ class Consensus(object):
             if block.index >= 35200 and delta_t < 600 and block.special_min:
                 raise Exception('Special min block too soon')
 
-            # TODO: use a CHAIN constant for pow blocks limits
-            if ((int(block.hash, 16) < target) or
-                (block.special_min and int(block.hash, 16) < special_target) or
-                (block.special_min and block.index < 35200) or
-                (block.index >= 35200 and block.index < 38600 and block.special_min and
-                (int(block.time) - int(last_block.time)) > target_block_time)):
+            checks_passed = False
+            if (int(block.hash, 16) < target):
+                checks_passed = True
+            elif (block.special_min and int(block.hash, 16) < special_target):
+                checks_passed = True
+            elif (block.special_min and block.index < 35200):
+                checks_passed = True
+            elif (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time):
+                checks_passed = True
+            else:
+                self.app_log.warning("Integrate block error - index and time error")
 
+
+            # TODO: use a CHAIN constant for pow blocks limits
+            if checks_passed:
                 if last_block.index == (block.index - 1) and last_block.hash == block.prev_hash:
                     # self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
                     # self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
@@ -611,25 +662,24 @@ class Consensus(object):
         try:
             self.app_log.info("Retracing...")
             blocks = [block]
-            while 1:
-                if self.debug:
-                    self.app_log.info("{} : {}".format(block.hash, block.index))
-                # get the previous block from either the consensus collection in mongo
-                # or attempt to get the block from the remote peer
-                previous_consensus_block = await self.get_previous_consensus_block_from_local(block, peer)
+            self.app_log.info("{} : {}".format(block.hash, block.index))
+            # get the previous block from either the consensus collection in mongo
+            # or attempt to get the block from the remote peer
+            async for previous_consensus_block in self.get_previous_consensus_block_from_local(block, peer):
                 if previous_consensus_block:
                         block = previous_consensus_block
                         blocks.append(block)
                 else:
                     if peer.is_me:
                         self.mongo.db.consensus.update({'peer': peer.to_string(), 'index': {'$gte': block.index}}, {'$set': {'ignore': True}}, multi=True)
-                        return
+                        self.app_log.warning('block peer is me, exiting {} {}'.format(block.index, block.hash))
+                        continue
                     try:
                         previous_consensus_block = await self.get_previous_consensus_block_from_remote(block, peer)
                     except BadPeerException as e:
                         self.mongo.db.consensus.update({'peer': peer.to_string(), 'index': {'$gte': block.index}}, {'$set': {'ignore': True}}, multi=True)
-                    except:
-                        pass
+                    except Exception as e:
+                        self.app_log.warning(e)
                     if previous_consensus_block and previous_consensus_block.index + 1 == block.index:
                         block = previous_consensus_block
                         blocks.append(block)
@@ -645,132 +695,136 @@ class Consensus(object):
                             block = previous_consensus_block
                             blocks = [block]
                         else:
-                            return
-                latest_block = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
-                # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
-                if latest_block and latest_block['hash'] == block.prev_hash:
-                    prev_blocks_check = await Block.from_dict(latest_block)
-                    if self.debug:
-                        self.app_log.debug("Previous block {}: {}".format(prev_blocks_check.hash, prev_blocks_check.index))
-                    blocks = sorted(blocks, key=lambda x: x.index)
-                    block_for_next = blocks[-1]
-                    while 1:
-                        next_block = await self.get_next_consensus_block_from_local(block_for_next)
-                        if next_block:
-                            blocks.append(next_block)
-                            block_for_next = next_block
-                        else:
-                            break
+                            self.app_log.warning("!previous_consensus_block, exit retrace {} {}".format(block.index, block.hash))
+                        continue
+            latest_block = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
+            # if they do have it, query our consensus collection for prevHash of that block, repeat 1 and 2 until index 1
+            if latest_block and latest_block['hash'] == block.prev_hash:
+                prev_blocks_check = await Block.from_dict(latest_block)
+                self.app_log.warning("Previous block {}: {}".format(prev_blocks_check.hash, prev_blocks_check.index))
+                blocks = sorted(blocks, key=lambda x: x.index)
+                block_for_next = blocks[-1]
+                while 1:
+                    self.app_log.warning('get block from local {}'.format(block_for_next.index))
+                    next_block = await self.get_next_consensus_block_from_local(block_for_next)
+                    if next_block:
+                        blocks.append(next_block)
+                        block_for_next = next_block
+                    else:
+                        break
 
-                    # self.peers.init(self.config.network)
+                # self.peers.init(self.config.network)
 
-                    self.app_log.debug('requesting {} ...'.format(block_for_next.index + 1))
-                    for apeer in self.peers.peers:
-                        # TODO: there was a "while 1:" there, that got the retrace stuck with only 1 peer and no escape route.
-                        # recheck the logic.
-                        try:
-                            # if self.debug:
-                            #     self.app_log.debug('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
-                            result = requests.get(
-                                'http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
-                                    peer=apeer.to_string(),
-                                    start_index=block_for_next.index + 1,
-                                    end_index=block_for_next.index + 100
-                                ),
-                                timeout=1,
-                                headers={'Connection':'close'}
-                            )
-                            remote_blocks = [await Block.from_dict( x) for x in json.loads(result.content.decode())]
-                            break_out = False
-                            for remote_block in remote_blocks:
-                                if remote_block.prev_hash == block_for_next.hash:
-                                    blocks.append(remote_block)
-                                    block_for_next = remote_block
-                                else:
-                                    break_out = True
-                                    break
-                            if break_out:
+                self.app_log.warning('requesting {} ...'.format(block_for_next.index + 1))
+                for apeer in self.peers.peers:
+                    # TODO: there was a "while 1:" there, that got the retrace stuck with only 1 peer and no escape route.
+                    # recheck the logic.
+                    try:
+                        # if self.debug:
+                        self.app_log.warning('requesting {} from {}'.format(block_for_next.index + 1, apeer.to_string()))
+                        result = requests.get(
+                            'http://{peer}/get-blocks?start_index={start_index}&end_index={end_index}'.format(
+                                peer=apeer.to_string(),
+                                start_index=block_for_next.index + 1,
+                                end_index=block_for_next.index + 100
+                            ),
+                            timeout=1,
+                            headers={'Connection':'close'}
+                        )
+                        result.close()
+                        remote_blocks = [await Block.from_dict( x) for x in json.loads(result.content.decode())]
+                        break_out = False
+                        for remote_block in remote_blocks:
+                            if remote_block.prev_hash == block_for_next.hash:
+                                blocks.append(remote_block)
+                                block_for_next = remote_block
+                            else:
+                                break_out = True
                                 break
-                        except Exception as e:
-                            if self.debug:
-                                print(e)
+                        if break_out:
                             break
+                    except Exception as e:
+                        if self.debug:
+                            print(e)
+                        break
 
-                    # If the block height is equal, we throw out the inbound chain, it muse be greater
-                    # If the block height is lower, we throw it out
-                    # if the block height is heigher, we compare the difficulty of the entire chain
-                    existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': blocks[0].index}}), partial=True)
-                    if existing_blockchain:
-                        existing_difficulty = await existing_blockchain.get_difficulty()
-                        existing_latest_block = await self.config.BU.get_latest_block_async()
-                        existing_blockchain_index = existing_latest_block['index']
-                    else:
-                        existing_difficulty = 0
-                        existing_blockchain_index = latest_block['index']
+                # If the block height is equal, we throw out the inbound chain, it muse be greater
+                # If the block height is lower, we throw it out
+                # if the block height is heigher, we compare the difficulty of the entire chain
+                existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': blocks[0].index}}), partial=True)
+                if existing_blockchain:
+                    existing_difficulty = await existing_blockchain.get_difficulty()
+                    existing_latest_block = await self.config.BU.get_latest_block_async()
+                    existing_blockchain_index = existing_latest_block['index']
+                else:
+                    existing_difficulty = 0
+                    existing_blockchain_index = latest_block['index']
 
-                    async def get_blocks(blocks):
-                        for block in blocks:
-                            yield block
-                    inbound_blockchain = await Blockchain.init_async(get_blocks(blocks), partial=True)
-                    inbound_difficulty = await inbound_blockchain.get_difficulty()
-
-                    if (blocks[-1].index >= existing_blockchain_index
-                        and inbound_difficulty >= existing_difficulty):
-                        for block in blocks:
-                            fork_exception = False
-                            try:
-                                if block.index == 0:
-                                    continue
-                                await self.integrate_block_with_existing_chain(block)
-                                if self.debug:
-                                    self.app_log.debug('inserted {}'.format(block.index))
-                            except ForkException as e:
-                                fork_exception = True
-                            except AboveTargetException as e:
-                                return
-                            except IndexError as e:
-                                return
-                        
-                            if fork_exception:
-                                back_one_block = block
-                                while 1:
-                                    back_one_block = await self.mongo.async_db.consensus.find_one({'block.hash': back_one_block.prev_hash})
-                                    if back_one_block:
-                                        back_one_block = await Block.from_dict( back_one_block['block'])
-                                        if back_one_block.index < self.latest_block.index: # If its index less than latest, it won't get integrated
-                                            break
-                                        try:
-                                            result = await self.integrate_block_with_existing_chain(back_one_block)
-                                            if result:
-                                                await self.integrate_block_with_existing_chain(block)
-                                                break
-                                        except ForkException as e:
-                                            pass
-                                    else:
-                                        return
-                        self.app_log.info("Retrace result: replaced chain with incoming")
-                        return
-                    else:
-                        if not peer.is_me:
+                async def get_blocks(blocks):
+                    for block in blocks:
+                        yield block
+                inbound_blockchain = await Blockchain.init_async(get_blocks(blocks), partial=True)
+                inbound_difficulty = await inbound_blockchain.get_difficulty()
+                self.app_log.warning('checking diff and length {} {}'.format(blocks[-1].index, existing_blockchain_index))
+                if (blocks[-1].index >= existing_blockchain_index
+                    and inbound_difficulty >= existing_difficulty):
+                    for block in blocks:
+                        fork_exception = False
+                        try:
+                            if block.index == 0:
+                                continue
+                            await self.integrate_block_with_existing_chain(block)
                             if self.debug:
-                                self.app_log.info("Incoming chain lost {} {} {} {}"
-                                                  .format(inbound_difficulty, existing_difficulty, blocks[-1].index,
-                                                          await self.config.BU.get_latest_block_async().index)
-                                                  )
-                            for block in blocks:
-                                self.mongo.db.consensus.update({'block.hash': block.hash}, {'$set': {'ignore': True}}, multi=True)
-                        return
-                # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
-                # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
-                #there is no else, we just loop again
-                # if we get to index 1 and prev hash doesn't match the genesis, throw out the chain and black list the peer
-                # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
-                # blockchain against the proposed chain.
-
-                # TODO: Here, compare vs current known consensus height, and limit to consensus height - CHAIN.MAX_RETRACE_DEPTH
-                if block.index == 0:
-                    self.app_log.info("Retrace result: zero index reached")
+                                self.app_log.debug('inserted {}'.format(block.index))
+                        except ForkException as e:
+                            fork_exception = True
+                        except AboveTargetException as e:
+                            return
+                        except IndexError as e:
+                            return
+                    
+                        if fork_exception:
+                            back_one_block = block
+                            while 1:
+                                self.app_log.warning('back one block')
+                                back_one_block = await self.mongo.async_db.consensus.find_one({'block.hash': back_one_block.prev_hash})
+                                if back_one_block:
+                                    back_one_block = await Block.from_dict( back_one_block['block'])
+                                    if back_one_block.index < self.latest_block.index: # If its index less than latest, it won't get integrated
+                                        break
+                                    try:
+                                        result = await self.integrate_block_with_existing_chain(back_one_block)
+                                        if result:
+                                            await self.integrate_block_with_existing_chain(block)
+                                            break
+                                    except ForkException as e:
+                                        pass
+                                else:
+                                    return
+                    self.app_log.info("Retrace result: replaced chain with incoming")
                     return
+                else:
+                    if not peer.is_me:
+                        if self.debug:
+                            lblock = await self.config.BU.get_latest_block_async()
+                            self.app_log.info("Incoming chain lost {} {} {} {}"
+                                              .format(inbound_difficulty, existing_difficulty, blocks[-1].index,
+                                                      lblock['index'])
+                                              )
+                        for block in blocks:
+                            await self.mongo.async_db.consensus.update_many({'block.hash': block.hash}, {'$set': {'ignore': True}})
+                    return
+            # lets go down the hash path to see where prevHash is in our blockchain, hopefully before the genesis block
+            # we need some way of making sure we have all previous blocks until we hit a block with prevHash in our main blockchain
+            #there is no else, we just loop again
+            # if we get to index 1 and prev hash doesn't match the genesis, throw out the chain and black list the peer
+            # if we get a fork point, prevHash is found in our consensus or genesis, then we compare the current
+            # blockchain against the proposed chain.
+
+            # TODO: Here, compare vs current known consensus height, and limit to consensus height - CHAIN.MAX_RETRACE_DEPTH
+            if block.index == 0:
+                self.app_log.info("Retrace result: zero index reached")
+                return
             self.app_log.info("Retrace result: doesn't follow any known chain")  # throwing out the block for now
             return
         except Exception as e:

@@ -34,6 +34,7 @@ class MiningPool(object):
         self.index = self.config.BU.get_latest_block()['index']
         self.previous_block_to_mine = None  # todo
         self.last_refresh = 0
+        self.busy = False
 
     async def block_to_mine(self):
         """Returns the block to mine"""
@@ -90,8 +91,9 @@ class MiningPool(object):
             print("refresh_and_signal_miners2: {}".format(e))
 
     def get_status(self):
+        from yadacoin.stratumpool import StratumServer
         """Returns pool status as explicit dict"""
-        status = {"miners": len(self.inbound), "ips": len(self.connected_ips)}
+        status = {"miners": len(StratumServer.stream_set), "ips": len(self.connected_ips)}
         return status
 
     @property
@@ -128,6 +130,7 @@ class MiningPool(object):
         we have to provied either a sid (websocket context, either an address (http context)"""
         # Does it match current block?
         # we can't avoid but compute the hash, since we can't trust the hash the miner could send to be honest.
+        self.app_log.warning("on_miner_nonce {}".format(address))
         if address == '':
             try:
                 address = self.inbound[sid]['address']
@@ -265,6 +268,9 @@ class MiningPool(object):
             print(exc_type, fname, exc_tb.tb_lineno)
             raise
         try:
+            if self.busy:
+                return
+            self.busy = True
             self.app_log.debug('Refreshing mp block Factory {}'.format(time()))
             if current_index != self.index:
                 self.block_factory = await self.create_block(
@@ -273,6 +279,7 @@ class MiningPool(object):
                     self.config.private_key,
                     index=self.index
                 )
+            self.busy = False
             self.app_log.debug('End refreshing mp block Factory {}'.format(time()))
             # TODO: centralize handling of min target
             self.set_target(int(time()))

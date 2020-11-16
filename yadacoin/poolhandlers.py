@@ -15,6 +15,12 @@ from yadacoin.config import Config
 
 class JSONRPC(BaseHandler):
     async def post(self):
+        return serlf.render_as_json({
+            'id': body.get('id'),
+            'method': body.get('method'),
+            'jsonrpc': body.get('jsonrpc'),
+            'result': {}
+        })
         body = json.loads(self.request.body.decode())
         if body.get('method') == 'getblocktemplate':
             if self.config.mp is None:
@@ -120,7 +126,6 @@ class PoolPayoutsHandler(BaseHandler):
 
 
 POOL_HANDLERS = [
-    (r'/json_rpc', JSONRPC),
     (r'/shares-for-address', PoolSharesHandler),
     (r'/payouts-for-address', PoolPayoutsHandler),
 ]

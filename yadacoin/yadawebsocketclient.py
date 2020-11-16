@@ -82,10 +82,35 @@ class ClientChatNamespace(AsyncClientNamespace):
                 # Most important
                 raise ValueError('In the future {}'.format(incoming_txn.transaction_signature))
             # print(incoming_txn.transaction_signature)
-            dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({'id': incoming_txn.transaction_signature})
+            dup_check_count = await get_config().mongo.async_db.miner_transactions.find_one({'id': incoming_txn.transaction_signature})
             if dup_check_count:
                 self.app_log.debug('found duplicate tx {}'.format(incoming_txn.transaction_signature))
                 return
+            
+            for txn_input in incoming_txn.inputs:
+                spent_check = get_config().mongo.async_db.blocks.find({
+                    'transactions.public_key': incoming_txn.public_key,
+                    'transactions.inputs.id': txn_input.id
+                })
+                async for check_block in spent_check:
+                    for check_txn in check_block['transactions']:
+                        self.app_log.debug('checking input {}'.format(txn_input.id))
+                        if (
+                            check_txn['public_key'] == incoming_txn.public_key and
+                            {'id': txn_input.id} in check_txn['inputs']
+                        ):
+                            self.app_log.debug('incoming txn has inputs already spent')
+                            return
+
+            for txn_input in incoming_txn.inputs:
+                spent_check = await get_config().mongo.async_db.miner_transactions.find_one({
+                    'public_key': incoming_txn.public_key,
+                    'inputs.id': txn_input.id
+                })
+                if spent_check:
+                    self.app_log.debug('incoming txn has inputs already spent')
+                    return
+
 
             if incoming_txn.dh_public_key:
                 dup_check_count = await get_config().mongo.async_db.miner_transactions.count_documents({
@@ -206,7 +231,7 @@ class YadaWebSocketClient(object):
                     # await self.peers.on_block_insert(data)
             elif data['index'] > my_index + 1:
                 self.app_log.debug("Missing blocks between {} and {} , asking more to {}".format(my_index, data['index'], self.peer.to_string()))
-                data = {"start_index": my_index + 1, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
+                data = {"start_index": my_index - 100, "end_index": my_index + 1 + CHAIN.MAX_BLOCKS_PER_MESSAGE}
                 await self.client.emit('get_blocks', data=data, namespace="/chat")
             elif data['index'] == my_index:
                 self.app_log.debug("Same index, ignoring {} from {}".format(data['index'], self.peer.to_string()))
@@ -219,21 +244,15 @@ class YadaWebSocketClient(object):
 
     async def on_blocks(self, data):
         my_index = self.config.BU.get_latest_block()['index']
-        if data[0]['index'] != my_index + 1:
-            return
         self.peers.syncing = True
         try:
             inserted = False
             block = None  # Avoid linter warning
             for block in data:
-                if block['index'] == my_index + 1:
-                    if await self.consensus.process_next_block(block, self.peer, trigger_event=False):
-                        inserted = True
-                        my_index = block['index']
-                    else:
-                        break
+                if await self.consensus.process_next_block(block, self.peer, trigger_event=False):
+                    inserted = True
+                    my_index = block['index']
                 else:
-                    # As soon as a block fails, abort
                     break
             if inserted:
                 # If import was successful, inform out peers once the batch is processed

@@ -160,7 +160,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                 })
                 return 'InvalidTransactionSignatureException', 400
             except MissingInputTransactionException:
-                pass
+                self.app_log.warning('missing input transactions')
             except:
                 raise
                 print('uknown error')

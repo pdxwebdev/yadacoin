@@ -1,5 +1,6 @@
 import json
 import tornado.ioloop
+from logging import getLogger
 from tornado.tcpserver import TCPServer
 from tornado.iostream import StreamClosedError
 from yadacoin.config import get_config, Config
@@ -11,6 +12,7 @@ from yadacoin.transactionutils import TU
 class StratumServer(TCPServer):
     address = ''
     stream_set = set()
+    app_log = getLogger('tornado.application')
     @classmethod
     async def set_config(cls):
         cls.config = get_config()
@@ -22,7 +24,10 @@ class StratumServer(TCPServer):
     async def block_checker(cls):
         if not hasattr(cls, 'config'):
             await cls.set_config()
+        getLogger('tornado.application').warning('stratum block checker {} {}'.format(cls.current_index, cls.config.mp.index))
         if cls.current_index != cls.config.mp.index:
+            if cls.config.mp.busy:
+                return
             job = await cls.config.mp.block_template()
             job['job_id'] = job['blocktemplate_blob']
             job['blob'] = job['blocktemplate_blob']
@@ -44,6 +49,7 @@ class StratumServer(TCPServer):
                     await stream.write('{}\n'.format(data).encode())
             for stream in to_delete:
                 cls.stream_set.remove(stream)
+            cls.app_log.warning(cls.stream_set)
 
     async def handle_stream(self, stream, address):
         if not hasattr(StratumServer, 'config'):
@@ -51,7 +57,10 @@ class StratumServer(TCPServer):
         StratumServer.stream_set.add(stream)
         while True:
             try:
-                body = json.loads(await stream.read_until(b"\n"))
+                data = await stream.read_until(b"\n")
+                if StratumServer.config.mp.busy:
+                    continue
+                body = json.loads(data)
                 if body.get('method') == 'getblocktemplate':
                     data = json.dumps({
                         'id': body.get('id'),
@@ -164,4 +173,5 @@ class StratumServer(TCPServer):
                 
                 await stream.write('{}\n'.format(data).encode())
             except StreamClosedError:
+                StratumServer.stream_set.remove(stream)
                 break

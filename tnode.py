@@ -29,7 +29,7 @@ from tornado.tcpserver import TCPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 from concurrent.futures import ThreadPoolExecutor
-
+from bson.objectid import ObjectId
 import yadacoin.blockchainutils
 import yadacoin.transactionutils
 import yadacoin.config
@@ -119,17 +119,14 @@ async def background_consensus():
     if config.polling <= 0:
         app_log.warning("No consensus polling")
         return
-    try:
-        if config.consensus_busy:
-            return
-        config.consensus_busy = True
-        again = True
-        while again:
-            again = await config.consensus.sync_bottom_up()
-        config.consensus_busy = False
-        app_log.warning("{} in Background_consensus".format(again))
-    except Exception as e:
-        app_log.error("{} in Background_consensus".format(e))
+    if config.consensus_busy:
+        return
+    config.consensus_busy = True
+    again = True
+    while again:
+        again = await config.consensus.sync_bottom_up()
+    config.consensus_busy = False
+    app_log.warning("{} in Background_consensus".format(again))
 
 
 async def background_peers():
@@ -174,6 +171,10 @@ async def background_transaction_broadcast():
         # status = {"peers": config.peers.get_status()}
 
         async for txn in config.mongo.async_db.miner_transactions.find({}).sort([('time', -1)]).limit(20):
+            await config.mongo.async_db.miner_transactions.delete_many({
+                '_id': {'$ne': ObjectId(txn['_id'])},
+                'id': txn['id']
+            })
             await tb.txn_broadcast_job(txn, txn.get('sent_to'))
             await tb2.txn_broadcast_job(txn, txn.get('sent_to'))
         config.txn_broadcast_busy = False
@@ -211,10 +212,10 @@ async def background_pool():
             return
         config.pool_busy = True
         await StratumServer.block_checker()
-
-        config.pool_busy = False
     except Exception as e:
+        app_log.warning("{}".format(format_exc()))
         app_log.error("{} in background_pool".format(e))
+    config.pool_busy = False
 
 
 async def background_pool_payer():
@@ -317,11 +318,21 @@ def configure_logging():
     rotateHandler2.setFormatter(formatter2)
     access_log.addHandler(rotateHandler2)
 
+    asyncio_log = logging.getLogger("asyncio")
+    tornado.log.enable_pretty_logging()
+    logfile3 = path.abspath("yada_asyncio.log")
+    rotateHandler3 = RotatingFileHandler(logfile3, "a", 512 * 1024, 5)
+    formatter3 = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
+    rotateHandler3.setFormatter(formatter3)
+    access_log.addHandler(rotateHandler3)
+
     app_log.propagate = False
     access_log.propagate = False
     # This logguer config is quite a mess, but works well enough for the time being.
-    logging.getLogger("engineio").propagate = False
-    logging.getLogger("socketio").propagate = False
+    logging.getLogger("engineio").propagate = True
+    logging.getLogger("socketio").propagate = True
+    logging.getLogger("asyncio").propagate = True
+    logging.basicConfig(level=logging.DEBUG)
 
 
 def main():
@@ -378,6 +389,8 @@ def main():
     config.cipher = Crypt(config.wif)
 
     config.pyrx = pyrx.PyRX()
+    import binascii
+    config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
     config.reset = options.reset
 
     config.disable_web = options.disable_web
@@ -444,7 +457,7 @@ def main():
         if config.network != 'regnet':
             tornado.ioloop.PeriodicCallback(background_peers, 30000).start()
             config.peers_busy = False
-            tornado.ioloop.PeriodicCallback(background_transaction_broadcast, 120000).start()
+            tornado.ioloop.PeriodicCallback(background_transaction_broadcast, 10000).start()
             config.txn_broadcast_busy = False
             tornado.ioloop.PeriodicCallback(background_ns_broadcast, 120000).start()
             config.ns_broadcast_busy = False
