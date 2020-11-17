@@ -92,7 +92,8 @@ class Config(object):
         # self.BU.invalidate_last_block()
         block_dict = block.to_dict()
         self.BU.set_latest_block(block_dict)  # Warning, this is a dict, not a Block!
-        await self.mp.refresh()
+        if self.mp:
+            await self.mp.refresh()
 
     def debug_log(self, string: str):
         # Helper to write temp string to a debug file

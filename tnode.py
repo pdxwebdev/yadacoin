@@ -359,6 +359,7 @@ def main():
         except:
             pass
         with open(options.config, 'w') as f:
+            config.force_polling = [{"host": "34.237.46.10","port": 80 }]
             f.write(config.to_json())
 
     with open(options.config) as f:
@@ -441,8 +442,12 @@ def main():
 
         config.consensus = None
 
+        tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
+
         if config.max_miners > 0:
             app_log.info("MiningPool activated, max miners {}".format(config.max_miners))
+            tornado.ioloop.PeriodicCallback(background_pool, 3000).start()
+            config.pool_busy = False
             server = StratumServer()
             server.listen(config.stratum_pool_port)
         else:
@@ -451,7 +456,6 @@ def main():
         ws_init()
         config.SIO = get_sio()
 
-        tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
         tornado.ioloop.PeriodicCallback(background_consensus, 30000).start()
         config.consensus_busy = False
         if config.network != 'regnet':
@@ -463,8 +467,6 @@ def main():
             config.ns_broadcast_busy = False
         tornado.ioloop.PeriodicCallback(background_status, 30000).start()
         config.status_busy = False
-        tornado.ioloop.PeriodicCallback(background_pool, 3000).start()
-        config.pool_busy = False
         tornado.ioloop.PeriodicCallback(background_cache_validator, 30000).start()
         config.cache_busy = False
         if config.pool_payout:

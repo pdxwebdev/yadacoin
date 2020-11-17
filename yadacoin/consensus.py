@@ -223,7 +223,7 @@ class Consensus(object):
                         prev_retrace_consensus_block = record
                         while True:
                             retrace_consensus_block = await self.mongo.async_db.consensus.find_one({'block.hash': prev_retrace_consensus_block['block']['prevHash']})
-                            retrace_block = await self.mongo.async_db.block.find_one({'hash': prev_retrace_consensus_block['block']['prevHash']})
+                            retrace_block = await self.mongo.async_db.blocks.find_one({'hash': prev_retrace_consensus_block['block']['prevHash']})
                             if retrace_block and retrace_consensus_block:
                                 for retrace_block_x in sorted(retrace_blocks, key=lambda x: int(x['block']['index'])): 
                                     await self.import_block(retrace_block_x)
@@ -383,30 +383,30 @@ class Consensus(object):
                 self.app_log.warning("New block {} can't be at a sooner time than previous one. Rejecting".format(block.index))
                 prev_one_block = await self.mongo.async_db.consensus.find_one({
                     'index': block.index - 1,
-                    'block.hash': block.prev_hash
+                    'block.hash': block.prev_hash,
+                    'block.time': {'$lt': block.time}
                 })
-                failed = False
+                await self.integrate_block_with_existing_chain(await Block.from_dict(prev_one_block['block']))
+                return False
 
-                if not prev_one_block:
-                    self.app_log.warning("no prev_one_block {}".format(block.index -1))
-                    failed = True
+            last_block = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
 
-                if prev_one_block and not await self.import_block(prev_one_block, trigger_event=False):
-                    failed = True
+            if not last_block:
+                self.app_log.warning("Integrate block error 3")
+                raise ForkException()
 
-                if failed:
-                    await self.mongo.async_db.consensus.update_one(
-                        {
-                            'peer': peer.to_string(),
-                            'index': block.index,
-                            'id': block.signature
-                        },
-                        {'$set': {'ignore': True}}
-                    )
-                    await self.retrace(block, peer)
-                    if trigger_event:
-                        await self.trigger_update_event()
-                    return False
+            last_block = await Block.from_dict(last_block)
+
+            if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
+                self.app_log.warning("New block {} prevHash doesn't match previous block hash {}. Rejecting".format(block.index))
+                prev_one_block = await self.mongo.async_db.consensus.find_one({
+                    'index': block.index - 1,
+                    'block.hash': block.prev_hash,
+                    'block.time': {'$lt': block.time}
+                })
+                await self.integrate_block_with_existing_chain(await Block.from_dict(prev_one_block['block']))
+                return False
+
             if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(self.latest_block.time) + 600)) and block.special_min:
                 self.app_log.warning("New special min block {} too soon. Rejecting".format(block.index))
                 prev_one_block = await self.mongo.async_db.consensus.find_one({
@@ -631,14 +631,13 @@ class Consensus(object):
                     # self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
                     # self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
                     # todo: is this useful? can we have more blocks above? No because if we had, we would have raised just above
-                    await self.mongo.async_db.block.delete_many({'index': {"$gte": block.index}})
+                    await self.mongo.async_db.blocks.delete_many({'index': {"$gte": block.index}})
                     db_block = block.to_dict()
                     db_block['updated_at'] = time()
                     await self.mongo.async_db.blocks.replace_one({'index': block.index}, db_block, upsert=True)
                     await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
                     self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async(False))
-                    if self.debug:
-                        self.app_log.info("New block inserted for height: {}".format(block.index))
+                    self.app_log.info("New block inserted for height: {}".format(block.index))
                     await self.config.on_new_block(block)  # This will propagate to BU
                     return True
                 else:
