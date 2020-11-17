@@ -62,8 +62,18 @@ class Mongo(object):
         __id = IndexModel([("id", ASCENDING)], name="__id")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __block_hash = IndexModel([("block.hash", ASCENDING)], name="__block_hash")
+        __block_prevHash_index_version = IndexModel([
+            ('block.prevHash', ASCENDING),
+            ('block.index', ASCENDING),
+            ('block.version', ASCENDING),
+        ], name="__block_prevHash_index_version")
         try:
-            self.db.consensus.create_indexes([__id, __index, __block_hash])
+            self.db.consensus.create_indexes([
+                __id,
+                __index,
+                __block_hash,
+                __block_prevHash_index_version
+            ])
         except:
             pass
 
