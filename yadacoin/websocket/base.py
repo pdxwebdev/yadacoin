@@ -1,9 +1,10 @@
 import json
 import base64
 import functools
+from traceback import format_exc
 
 from tornado import gen, ioloop
-from tornado.websocket import WebSocketHandler
+from tornado.websocket import WebSocketHandler, WebSocketClosedError
 from coincurve import verify_signature
 
 from yadacoin.core.identity import Identity
@@ -191,9 +192,14 @@ class RCPWebSocketServer(WebSocketHandler):
             'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
         }, body=body)
         for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group.rid].items():
-            await peer_stream.write_result('group_user_count', {
-                'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
-            }, body=body)
+            try:
+                await peer_stream.write_result('group_user_count', {
+                    'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
+                }, body=body)
+            except WebSocketClosedError:
+                self.remove_peer(peer_stream.peer)
+            except:
+                self.config.app_log.warning(format_exc())
     
     async def service_provider_request(self, body):
         group = Group.from_dict({
@@ -222,15 +228,15 @@ class RCPWebSocketServer(WebSocketHandler):
             if group_id_attr in self.inbound_streams[Group.__name__]:
                 if id_attr in self.inbound_streams[Group.__name__]:
                     del self.inbound_streams[Group.__name__][group_id_attr][id_attr]
-                for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr]:
-                    loop.run_sync(
-                        functools.partial(
-                            peer_stream.write_result,
-                            'group_user_count',
-                            {
-                                'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr])
-                            }
-                        )
+                for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr].items():
+                    if id_attr == rid:
+                        continue
+                    loop.add_callback(
+                        peer_stream.write_result,
+                        'group_user_count',
+                        {
+                            'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr])
+                        }
                     )
 
     async def write_result(self, method, data, body=None):
