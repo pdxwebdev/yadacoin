@@ -247,13 +247,13 @@ class Consensus(object):
                 })
 
                 if latest_consensus_now and latest_consensus.index == latest_consensus_now['index']:
-                    #await self.search_network_for_new()
+                    await self.search_network_for_new()
                     return False
                 elif latest_consensus_now and  latest_consensus.index < latest_consensus_now['index']:
                     return True
                 return False
             else:
-                #await self.search_network_for_new()
+                await self.search_network_for_new()
                 return False
 
     async def search_network_for_new(self):
