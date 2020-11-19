@@ -149,17 +149,14 @@ class Consensus(object):
             new_block = await Block.from_dict(new_block['block'])
 
             # if peer has a fork in their own chain, we need to choose 
-            # whatever path has a link to a previous consensus block --<>--
+            # whatever path has a link to the blockchain
             new_new_block = await self.mongo.async_db.consensus.find_one({
                 'block.hash': new_block.prev_hash,
                 'block.index': (new_block.index - 1),
                 'block.version': CHAIN.get_version_for_height((new_block.index - 1))
             })
 
-            if not new_new_block:
-                continue
-            return new_block
-        return None
+            yield new_block
 
     async def get_previous_consensus_block_from_remote(self, block):
         # TODO: async conversion
@@ -181,9 +178,7 @@ class Consensus(object):
                 new_block = await Block.from_dict(json.loads(res.content.decode('utf-8')))
 
                 if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
-                    return new_block
-                else:
-                    return None
+                    yield new_block
             except:
                 continue
 
@@ -307,37 +302,23 @@ class Consensus(object):
         return True
     
     async def get_previous_consensus_block(self, block):
-        local_block = await self.get_previous_consensus_block_from_local(block)
-        if local_block:
-            return local_block
-        try:
-            remote_block = await self.get_previous_consensus_block_from_remote(block)
-            return remote_block
-        except BadPeerException as e:
-            return None
-        except Exception as e:
-            self.app_log.warning(e)
-            return None
+        async for local_block in self.get_previous_consensus_block_from_local(block):
+            yield local_block
+        async for remote_block in self.get_previous_consensus_block_from_remote(block):
+            yield remote_block
     
-    async def build_backward_from_block_to_fork(self, block):
-        blocks = []
-        prev_retrace_consensus_block = block
+    async def build_backward_from_block_to_fork(self, block, blocks):
 
-        while True:
-            retrace_consensus_block = await self.get_previous_consensus_block(prev_retrace_consensus_block)
-            retrace_block = await self.mongo.async_db.blocks.find_one({'hash': prev_retrace_consensus_block.prev_hash})
+        retrace_block = await self.mongo.async_db.blocks.find_one({'hash': block.prev_hash})
+        if retrace_block:
+            blocks = blocks.copy()
+            return blocks
 
-            if not retrace_consensus_block:
-                return None
-
-            if retrace_block and retrace_consensus_block:
-                return blocks
-
-            if not retrace_block and retrace_consensus_block:
-                blocks.append(retrace_consensus_block)
-
-            prev_retrace_consensus_block = retrace_consensus_block
-        return None
+        async for retrace_consensus_block in self.get_previous_consensus_block(block):
+            result = await self.build_backward_from_block_to_fork(retrace_consensus_block, blocks)
+            if isinstance(result, list):
+                result.append(retrace_consensus_block)
+                return result
     
     async def integrate_blocks_with_existing_chain(self, blocks):
         for block in blocks:
@@ -368,7 +349,13 @@ class Consensus(object):
             await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
             self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async(False))
             self.app_log.info("New block inserted for height: {}".format(block.index))
-            await self.config.on_new_block(block)  # This will propagate to BU
+            latest_consensus = await self.mongo.async_db.consensus.find_one({
+                'index': self.latest_block.index + 1,
+                'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
+                'ignore': {'$ne': True}
+            })
+            if not latest_consensus:
+                await self.config.on_new_block(block)  # This will trigger mining pool to generate a new block to mine
             return True
         except Exception as e:
             if self.config.debug:
@@ -406,14 +393,22 @@ class Consensus(object):
                     except:
                         continue
 
-                    ### CONDITIONS
                     if await self.integrate_block_with_existing_chain(block):
                         return True
-                    blocks = await self.build_backward_from_block_to_fork(block)
+
+                    blocks = await self.build_backward_from_block_to_fork(block, [])
                     if not blocks:
                         return False
-                    if await self.integrate_blocks_with_existing_chain(blocks):
-                        return True
+                    existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': blocks[0].index}}), partial=True)
+                    existing_difficulty = await existing_blockchain.get_difficulty()
+                    inbound_blockchain = await Blockchain.init_async(blocks, partial=True)
+                    inbound_difficulty = await inbound_blockchain.get_difficulty()
+                    latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
+                    if (
+                        blocks[-1].index >= latest_block['index'] and
+                        inbound_difficulty > existing_difficulty
+                    ):
+                        await self.integrate_blocks_with_existing_chain(blocks)
             else:
                 return await self.search_network_for_new()
     

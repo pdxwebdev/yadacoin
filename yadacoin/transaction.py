@@ -467,7 +467,7 @@ class Transaction(object):
                         total_input += int('{0:.16f}'.format(output.value).replace('.', ''))
                 elif str(output.to) == str(address):
                     found = True
-                    self.app_log.warning(output.value)
+                    #self.app_log.warning(output.value)
                     total_input += int('{0:.16f}'.format(output.value).replace('.', ''))
             
             if not found:
