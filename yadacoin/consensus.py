@@ -147,15 +147,6 @@ class Consensus(object):
         })
         async for new_block in new_blocks:
             new_block = await Block.from_dict(new_block['block'])
-
-            # if peer has a fork in their own chain, we need to choose 
-            # whatever path has a link to the blockchain
-            new_new_block = await self.mongo.async_db.consensus.find_one({
-                'block.hash': new_block.prev_hash,
-                'block.index': (new_block.index - 1),
-                'block.version': CHAIN.get_version_for_height((new_block.index - 1))
-            })
-
             yield new_block
 
     async def get_previous_consensus_block_from_remote(self, block):
@@ -175,13 +166,14 @@ class Consensus(object):
                     continue
             #self.app_log.warning('response code: {} {}'.format(res.status_code, res.content))
             new_block = await Block.from_dict(json.loads(res.content.decode('utf-8')))
+            await self.insert_consensus_block(new_block, Peer.from_string(peer))
             yield new_block
 
     async def insert_consensus_block(self, block, peer):
         if self.debug:
             self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
 
-        await self.mongo.async_db.consensus.replace_one({
+        await self.config.mongo.async_db.consensus.replace_one({
             'id': block.to_dict().get('id'),
             'peer': peer.to_string()
         },
