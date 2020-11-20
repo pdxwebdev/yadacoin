@@ -74,8 +74,8 @@ class ClientChatNamespace(AsyncClientNamespace):
         from yadacoin.blockchainutils import BU
 
         # TODO: generic test, is the peer known and has rights for this command? Decorator?
-        if self.config.debug:
-            self.app_log.info('WS newtransaction: {}'.format(json.dumps(data)))
+        #if self.config.debug:
+        #    self.app_log.info('WS newtransaction: {}'.format(json.dumps(data)))
         try:
             incoming_txn = Transaction.from_dict(BU().get_latest_block()['index'], data)
             if incoming_txn.in_the_future():

@@ -317,7 +317,7 @@ def configure_logging():
     formatter2 = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     rotateHandler2.setFormatter(formatter2)
     access_log.addHandler(rotateHandler2)
-
+    """
     asyncio_log = logging.getLogger("asyncio")
     tornado.log.enable_pretty_logging()
     logfile3 = path.abspath("yada_asyncio.log")
@@ -325,13 +325,14 @@ def configure_logging():
     formatter3 = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
     rotateHandler3.setFormatter(formatter3)
     access_log.addHandler(rotateHandler3)
+    """
 
     app_log.propagate = False
     access_log.propagate = False
     # This logguer config is quite a mess, but works well enough for the time being.
-    logging.getLogger("engineio").propagate = True
-    logging.getLogger("socketio").propagate = True
-    logging.getLogger("asyncio").propagate = True
+    logging.getLogger("engineio").propagate = False
+    logging.getLogger("socketio").propagate = False
+    logging.getLogger("asyncio").propagate = False
     logging.basicConfig(level=logging.DEBUG)
 
 

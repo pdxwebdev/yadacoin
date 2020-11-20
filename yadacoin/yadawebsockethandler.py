@@ -65,8 +65,8 @@ class ChatNamespace(AsyncNamespace):
 
     async def on_newtransaction(self, sid, data):
         # TODO: generic test, is the peer known and has rights for this command? Decorator?
-        if self.config.debug:
-            self.app_log.info('WS newtransaction: {} {}'.format(sid, json.dumps(data)))
+        # if self.config.debug:
+        #     self.app_log.info('WS newtransaction: {} {}'.format(sid, json.dumps(data)))
         try:
             incoming_txn = Transaction.from_dict(BU().get_latest_block()['index'], data)
             if incoming_txn.in_the_future():
