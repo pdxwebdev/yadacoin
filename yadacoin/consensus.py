@@ -173,14 +173,9 @@ class Consensus(object):
                 else:
                     retry += 1
                     continue
-            try:
-                self.app_log.warning('response code: {} {}'.format(res.status_code, res.content))
-                new_block = await Block.from_dict(json.loads(res.content.decode('utf-8')))
-
-                if int(new_block.version) == CHAIN.get_version_for_height(new_block.index):
-                    yield new_block
-            except:
-                continue
+            #self.app_log.warning('response code: {} {}'.format(res.status_code, res.content))
+            new_block = await Block.from_dict(json.loads(res.content.decode('utf-8')))
+            yield new_block
 
     async def insert_consensus_block(self, block, peer):
         if self.debug:
