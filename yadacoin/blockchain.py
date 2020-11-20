@@ -1,3 +1,5 @@
+from asyncstdlib import tee
+
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.block import Block, BlockFactory
@@ -14,11 +16,26 @@ class Blockchain(object):
         self = cls()
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.blocks = blocks
+        if isinstance(blocks, list):
+            self.init_blocks = self.make_gen(blocks)
+        else:
+            self.init_blocks = blocks
         self.partial = partial
         if not self.blocks:
             return # allow nothing
         return self
+    
+    async def make_gen(self, blocks):
+        for block in blocks:
+            yield block
+    
+    @property
+    async def blocks(self):
+        self.init_blocks, blocks = tee(self.init_blocks)
+        async for block in blocks:
+            if not isinstance(block, Block):
+                block = await Block.from_dict(block)
+            yield block
 
     async def verify(self, progress=None):
         async def get_transactions(txns):
