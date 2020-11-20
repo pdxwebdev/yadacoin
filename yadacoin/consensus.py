@@ -405,7 +405,7 @@ class Consensus(object):
                     inbound_difficulty = await inbound_blockchain.get_difficulty()
                     latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
                     if (
-                        blocks[-1].index >= latest_block['index'] and
+                        blocks[-1].index >= latest_block.index and
                         inbound_difficulty > existing_difficulty
                     ):
                         await self.integrate_blocks_with_existing_chain(blocks)
