@@ -166,7 +166,7 @@ class Consensus(object):
                     continue
             #self.app_log.warning('response code: {} {}'.format(res.status_code, res.content))
             new_block = await Block.from_dict(json.loads(res.content.decode('utf-8')))
-            await self.insert_consensus_block(new_block, Peer.from_string(peer))
+            await self.insert_consensus_block(new_block, Peer.from_string(peer['peer']))
             yield new_block
 
     async def insert_consensus_block(self, block, peer):
