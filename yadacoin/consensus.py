@@ -255,30 +255,39 @@ class Consensus(object):
                     continue
 
         if block.index >= 35200 and delta_t < 600 and block.special_min:
+            self.app_log.warning('1')
             return False
 
         if int(block.index) > CHAIN.CHECK_TIME_FROM and int(block.time) < int(last_block.time):
+            self.app_log.warning('2')
             return False            
 
         if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
+            self.app_log.warning('3')
             return False
 
         if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(last_block.time) + 600)) and block.special_min:
+            self.app_log.warning('4')
             return False
 
         if block.index >= 35200 and delta_t < 600 and block.special_min:
+            self.app_log.warning('5')
             return False
 
         target_block_time = CHAIN.target_block_time(self.config.network)
 
         checks_passed = False
         if (int(block.hash, 16) < target):
+            self.app_log.warning('6')
             checks_passed = True
         elif (block.special_min and int(block.hash, 16) < special_target):
+            self.app_log.warning('7')
             checks_passed = True
         elif (block.special_min and block.index < 35200):
+            self.app_log.warning('8')
             checks_passed = True
         elif (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time):
+            self.app_log.warning('9')
             checks_passed = True
         else:
             self.app_log.warning("Integrate block error - index and time error")
@@ -295,14 +304,17 @@ class Consensus(object):
             yield remote_block
     
     async def build_backward_from_block_to_fork(self, block, blocks):
+        self.app_log.warning(block.to_dict())
+        self.app_log.warning(blocks)
 
         retrace_block = await self.mongo.async_db.blocks.find_one({'hash': block.prev_hash})
         if retrace_block:
-            blocks = blocks.copy()
             return blocks
 
         async for retrace_consensus_block in self.get_previous_consensus_block(block):
-            result = await self.build_backward_from_block_to_fork(retrace_consensus_block, blocks)
+            self.app_log.warning(retrace_consensus_block.to_dict())
+            result = await self.build_backward_from_block_to_fork(retrace_consensus_block, blocks.copy())
+            self.app_log.warning(result)
             if isinstance(result, list):
                 result.append(retrace_consensus_block)
                 return result
