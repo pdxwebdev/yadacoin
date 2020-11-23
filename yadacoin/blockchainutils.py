@@ -471,14 +471,23 @@ class BlockChainUtils(object):
             self.mongo.db.unspent_cache.remove({})
             return None
 
-    def is_input_spent(self, input_ids, public_key, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
+    def is_input_spent(
+      self,
+      input_ids,
+      public_key,
+      instance=False,
+      give_block=False,
+      include_fastgraph=False,
+      inc_mempool=False,
+      from_index=None
+    ):
         from yadacoin.transaction import Transaction
         # from yadacoin.crypt import Crypt
         from yadacoin.fastgraph import FastGraph
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-        res = self.mongo.db.blocks.aggregate([
+        query = [
             {
                 '$match': {
                     "transactions.inputs.id": {'$in': input_ids},
@@ -502,7 +511,14 @@ class BlockChainUtils(object):
                     ]
                 }
             }
-        ], allowDiskUse=True)
+        ]
+        if from_index:
+            query.insert(0, {
+                '$match': {
+                    "index": {'$lt': from_index}
+                }
+            })
+        res = self.mongo.db.blocks.aggregate(query, allowDiskUse=True)
         if len(list(res)):
             return True
         

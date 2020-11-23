@@ -108,20 +108,12 @@ class NodeApplication(Application):
 
 
 async def background_consensus():
-    if not config.consensus:
-        config.consensus = Consensus(config.debug, config.peers)
-        await config.consensus.async_init()
-        if options.verify:
-            app_log.info("Verifying existing blockchain")
-            await config.consensus.verify_existing_blockchain(reset=config.reset)
-        else:
-            app_log.info("Verification of existing blockchain skipped by config")
-    if config.polling <= 0:
-        app_log.warning("No consensus polling")
-        return
     if config.consensus_busy:
         return
     config.consensus_busy = True
+    if config.polling <= 0:
+        app_log.warning("No consensus polling")
+        return
     again = True
     while again:
         again = await config.consensus.sync_bottom_up()
@@ -489,6 +481,15 @@ def main():
             http_server = tornado.httpserver.HTTPServer(app, ssl_options=ssl_ctx)
             http_server.listen(config.ssl['port'])
             webbrowser.open("http://{}/appvote/identity".format(my_peer.to_string()))
+
+    config.consensus = Consensus(config.debug, config.peers)
+    if options.verify:
+        app_log.info("Verifying existing blockchain")
+        tornado.ioloop.IOLoop.current().run_sync(config.consensus.async_init)
+        tornado.ioloop.IOLoop.current().run_sync(config.consensus.verify_existing_blockchain)
+    else:
+        app_log.info("Verification of existing blockchain skipped by config")
+
     # The server will simply run until interrupted
     # with Ctrl-C, but if you want to shut down more gracefully,
     # call shutdown_event.set().

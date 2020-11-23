@@ -421,7 +421,7 @@ class Transaction(object):
                 raise Exception()
         except:
             try:
-                result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.transaction_signature)
+                result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
                 if not result:
                     print("t verify2")
                     raise

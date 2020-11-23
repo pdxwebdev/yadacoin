@@ -268,8 +268,7 @@ class BlockFactory(object):
             # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
             adjusted = new_target
             # To be used later on, once the rest is calc'd
-        latest_block = await get_config().BU.get_latest_block_async()
-        start_index = latest_block['index']
+        start_index = last_block.index
 
         block_from_retarget_period_ago = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period}))
         retarget_period_ago_time = block_from_retarget_period_ago.time
@@ -324,7 +323,6 @@ class BlockFactory(object):
             if get_config().network in ['regnet', 'testnet']:
                 return int(max_target)
 
-            latest_block = await get_config().BU.get_latest_block_async()
             max_block_time = CHAIN.target_block_time(get_config().network)
             retarget_period = CHAIN.RETARGET_PERIOD  # blocks
             max_seconds = CHAIN.TWO_WEEKS  # seconds
@@ -358,14 +356,14 @@ class BlockFactory(object):
 
                 block_to_check = last_block
 
-                start_index = latest_block['index']
+                start_index = height
 
                 get_config().debug_log("start_index {}".format(start_index))
                 if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
                     block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({
                         '$and': [
                             {
-                                'index': {'$lte': start_index}
+                                'index': {'$lt': start_index}
                             },
                             {
                                 'special_min': False
@@ -397,7 +395,7 @@ class BlockFactory(object):
 
                 block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
-                start_index = latest_block['index']
+                start_index = height
 
                 while 1:
                     if start_index == 0:

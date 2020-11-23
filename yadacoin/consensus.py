@@ -44,6 +44,7 @@ class Consensus(object):
         self.config = get_config()
         self.mongo = self.config.mongo
         self.prevent_genesis = prevent_genesis
+        self.latest_block = None
         if peers:
             self.peers = peers
         else:
@@ -87,7 +88,7 @@ class Consensus(object):
 
     async def verify_existing_blockchain(self, reset=False):
         self.app_log.info('verifying existing blockchain')
-        existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({}).sort([('index', 1)]))
+        existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({}, no_cursor_timeout=True).sort([('index', 1)]))
         result = await existing_blockchain.verify()
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -184,119 +185,6 @@ class Consensus(object):
             'peer': peer.to_string()
         }, upsert=True)
     
-    async def test_block(self, block):
-        try:
-            block.verify()
-        except Exception as e:
-            self.app_log.warning("Integrate block error 1: {}".format(e))
-            return False
-
-        async def get_txns(txns):
-            for x in txns:
-                yield x
-
-        async def get_inputs(inputs):
-            for x in inputs:
-                yield x
-        
-        if block.index == 0:
-            return True
-
-        last_block = await Block.from_dict(await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1}))
-
-        if block.index >= CHAIN.FORK_10_MIN_BLOCK:
-            target = await BlockFactory.get_target_10min(block.index, last_block, block)
-        else:
-            target = await BlockFactory.get_target(block.index, last_block, block)
-
-        delta_t = int(time()) - int(last_block.time)
-        special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
-
-        if block.index >= 35200 and delta_t < 600 and block.special_min:
-            return False
-
-        used_inputs = {}
-        i = 0
-        async for transaction in get_txns(block.transactions):
-            self.app_log.warning('verifying txn: {} block: {}'.format(i, block.index))
-            i += 1
-            try:
-                await transaction.verify()
-            except InvalidTransactionException as e:
-                self.app_log.warning(e)
-                return False
-            except InvalidTransactionSignatureException as e:
-                self.app_log.warning(e)
-                return False
-            except MissingInputTransactionException as e:
-                self.app_log.warning(e)
-            except NotEnoughMoneyException as e:
-                self.app_log.warning(e)
-                return False
-            except Exception as e:
-                self.app_log.warning(e)
-                return False
-
-            if transaction.inputs:
-                failed = False
-                used_ids_in_this_txn = []
-                async for x in get_inputs(transaction.inputs):
-                    if self.config.BU.is_input_spent(x.id, transaction.public_key):
-                        failed = True
-                    if x.id in used_ids_in_this_txn:
-                        failed = True
-                    if (x.id, transaction.public_key) in used_inputs:
-                        failed = True
-                    used_inputs[(x.id, transaction.public_key)] = transaction
-                    used_ids_in_this_txn.append(x.id)
-                if failed and block.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
-                    return False
-                elif failed and block.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
-                    continue
-
-        if block.index >= 35200 and delta_t < 600 and block.special_min:
-            self.app_log.warning('1')
-            return False
-
-        if int(block.index) > CHAIN.CHECK_TIME_FROM and int(block.time) < int(last_block.time):
-            self.app_log.warning('2')
-            return False            
-
-        if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
-            self.app_log.warning('3')
-            return False
-
-        if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(last_block.time) + 600)) and block.special_min:
-            self.app_log.warning('4')
-            return False
-
-        if block.index >= 35200 and delta_t < 600 and block.special_min:
-            self.app_log.warning('5')
-            return False
-
-        target_block_time = CHAIN.target_block_time(self.config.network)
-
-        checks_passed = False
-        if (int(block.hash, 16) < target):
-            self.app_log.warning('6')
-            checks_passed = True
-        elif (block.special_min and int(block.hash, 16) < special_target):
-            self.app_log.warning('7')
-            checks_passed = True
-        elif (block.special_min and block.index < 35200):
-            self.app_log.warning('8')
-            checks_passed = True
-        elif (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time):
-            self.app_log.warning('9')
-            checks_passed = True
-        else:
-            self.app_log.warning("Integrate block error - index and time error")
-
-        if not checks_passed:
-            return False
-
-        return True
-    
     async def get_previous_consensus_block(self, block):
         async for local_block in self.get_previous_consensus_block_from_local(block):
             yield local_block
@@ -334,7 +222,7 @@ class Consensus(object):
         try:
             # TODO: reorg the checks, to have the faster ones first.
             # Like, here we begin with checking every tx one by one, when <e did not even check index and provided hash matched previous one.
-            result = await self.test_block(block)
+            result = await Blockchain().test_block(block)
             if not result:
                 return False
 
@@ -364,10 +252,12 @@ class Consensus(object):
 
     async def sync_bottom_up(self):
             #bottom up syncing
+            
             last_latest = self.latest_block
             self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
-            if self.latest_block.index > last_latest.index:
-                self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
+            if last_latest:
+                if self.latest_block.index > last_latest.index:
+                    self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
 
             latest_consensus = await self.mongo.async_db.consensus.find_one({
                 'index': self.latest_block.index + 1,

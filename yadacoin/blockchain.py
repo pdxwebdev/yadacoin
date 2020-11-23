@@ -1,9 +1,17 @@
+from logging import getLogger
+from time import time
+
 from asyncstdlib import tee
 
 from yadacoin.chain import CHAIN
 from yadacoin.config import get_config
 from yadacoin.block import Block, BlockFactory
-from yadacoin.transaction import InvalidTransactionException, MissingInputTransactionException
+from yadacoin.transaction import (
+  InvalidTransactionException,
+  MissingInputTransactionException,
+  InvalidTransactionSignatureException,
+  NotEnoughMoneyException
+)
 
 
 class BlockChainException(Exception):
@@ -16,6 +24,7 @@ class Blockchain(object):
         self = cls()
         self.config = get_config()
         self.mongo = self.config.mongo
+        self.app_log = getLogger('tornado.application')
         if isinstance(blocks, list):
             self.init_blocks = self.make_gen(blocks)
         else:
@@ -38,65 +47,131 @@ class Blockchain(object):
             yield block
 
     async def verify(self, progress=None):
-        async def get_transactions(txns):
-            for txn in txns:
-                yield txn
-        last_block = None
         async for block in self.blocks:
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
-            if last_block and last_block.index and (block.index - last_block.index) != 1:
-                raise Exception('Either incomplete blockchain or unordered. block {} vs last {}'.format(block.index, last_block.index))
-            try:
-                block.verify()
-            except Exception as e:
-                print("verify1", e)
-                if last_block:
-                    return {'verified': False, 'last_good_block': last_block, 'message': e}
-                else:
-                    return {'verified': False, 'message': e}
-            async for txn in get_transactions(block.transactions):
-                try:
-                    await txn.verify()
-                except InvalidTransactionException as e:
-                    print("verify2", e)
-                    if last_block:
-                        return {'verified': False, 'last_good_block': last_block, 'message': e}
-                    else:
-                        return {'verified': False, 'message': e}
-                except MissingInputTransactionException as e:
-                    print("verify3", e)
-                    if last_block:
-                        return {'verified': False, 'last_good_block': last_block, 'message': e}
-                    else:
-                        return {'verified': False, 'message': e}
-                except Exception as e:
-                    print("verify4", e)
-                    if last_block:
-                        return {'verified': False, 'last_good_block': last_block, 'message': e}
-                    else:
-                        return {'verified': False, 'message': e}
-            if last_block:
-                if block.index >= CHAIN.FORK_10_MIN_BLOCK:
-                    target = await BlockFactory.get_target_10min(block.index, last_block, block)
-                else:
-                    target = await BlockFactory.get_target(block.index, last_block, block)
-                if int(block.hash, 16) > target and not block.special_min:
-                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block target is not below the previous target and not special minimum"}
-                if block.index >= 35200 and (int(block.time) - int(last_block.time)) < 600 and block.special_min:
-                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: block index is greater than or equal to 35200 and less than 10 minutes has passed since the last block"}
-                if block.prev_hash != last_block.hash:
-                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: hashes are not consecutive: %s %s %s %s" % (last_block.hash, block.prev_hash, last_block.index, block.index)}
-                if block.index - last_block.index != 1:
-                    return {'verified': False, 'last_good_block': last_block, 'message': "invalid block chain: indexes are not consecutive: %s %s" % (last_block.index, block.index)}
-            last_block = block
-            if progress:
-                progress("%s%s %s" % (str(int(float(block.index + 1) / float(len(self.blocks)) * 100)), '%', block.index))
+            result = await self.test_block(block)
+            if not result:
+              return {'verified': False}
+
         return {'verified': True}
+
+    async def test_block(self, block):
+        try:
+            block.verify()
+        except Exception as e:
+            self.app_log.warning("Integrate block error 1: {}".format(e))
+            return False
+
+        async def get_txns(txns):
+            for x in txns:
+                yield x
+
+        async def get_inputs(inputs):
+            for x in inputs:
+                yield x
+
+        if block.index == 0:
+            return True
+
+        last_block = await Block.from_dict(await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1}))
+
+        if block.index >= CHAIN.FORK_10_MIN_BLOCK:
+            target = await BlockFactory.get_target_10min(block.index, last_block, block)
+        else:
+            target = await BlockFactory.get_target(block.index, last_block, block)
+
+        delta_t = int(time()) - int(last_block.time)
+        special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
+
+        if block.index >= 35200 and delta_t < 600 and block.special_min:
+            return False
+
+        used_inputs = {}
+        i = 0
+        async for transaction in get_txns(block.transactions):
+            self.app_log.warning('verifying txn: {} block: {}'.format(i, block.index))
+            i += 1
+            try:
+                await transaction.verify()
+            except InvalidTransactionException as e:
+                self.app_log.warning(e)
+                return False
+            except InvalidTransactionSignatureException as e:
+                self.app_log.warning(e)
+                return False
+            except MissingInputTransactionException as e:
+                self.app_log.warning(e)
+            except NotEnoughMoneyException as e:
+                self.app_log.warning(e)
+                return False
+            except Exception as e:
+                self.app_log.warning(e)
+                return False
+
+            if transaction.inputs:
+                failed = False
+                used_ids_in_this_txn = []
+                async for x in get_inputs(transaction.inputs):
+                    if self.config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index):
+                        failed = True
+                    if x.id in used_ids_in_this_txn:
+                        failed = True
+                    if (x.id, transaction.public_key) in used_inputs:
+                        failed = True
+                    used_inputs[(x.id, transaction.public_key)] = transaction
+                    used_ids_in_this_txn.append(x.id)
+                if failed and block.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
+                    return False
+                elif failed and block.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
+                    continue
+
+        if block.index >= 35200 and delta_t < 600 and block.special_min:
+            self.app_log.warning('1')
+            return False
+
+        if int(block.index) > CHAIN.CHECK_TIME_FROM and int(block.time) < int(last_block.time):
+            self.app_log.warning('2')
+            return False
+
+        if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
+            self.app_log.warning('3')
+            return False
+
+        if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(last_block.time) + 600)) and block.special_min:
+            self.app_log.warning('4')
+            return False
+
+        if block.index >= 35200 and delta_t < 600 and block.special_min:
+            self.app_log.warning('5')
+            return False
+
+        target_block_time = CHAIN.target_block_time(self.config.network)
+
+        checks_passed = False
+        if (int(block.hash, 16) < target):
+            self.app_log.warning('6')
+            checks_passed = True
+        elif (block.special_min and int(block.hash, 16) < special_target):
+            self.app_log.warning('7')
+            checks_passed = True
+        elif (block.special_min and block.index < 35200):
+            self.app_log.warning('8')
+            checks_passed = True
+        elif (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time):
+            self.app_log.warning('9')
+            checks_passed = True
+        else:
+            self.app_log.warning("Integrate block error - index and time error")
+
+        if not checks_passed:
+            return False
+
+        return True
 
     async def find_error_block(self):
         last_block = None
-        for block in self.blocks:
+        async for block in self.blocks:
             block.verify()
             for txn in block.transactions:
                 await txn.verify()
