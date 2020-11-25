@@ -222,7 +222,8 @@ class Consensus(object):
         try:
             # TODO: reorg the checks, to have the faster ones first.
             # Like, here we begin with checking every tx one by one, when <e did not even check index and provided hash matched previous one.
-            result = await Blockchain().test_block(block)
+            bc = await Blockchain.init_async()
+            result = await bc.test_block(block)
             if not result:
                 return False
 
