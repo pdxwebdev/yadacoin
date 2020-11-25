@@ -78,16 +78,8 @@ class RCPWebSocketServer(WebSocketHandler):
             return {}
 
         try:
-            result = verify_signature(
-                base64.b64decode(peer.identity.username_signature),
-                peer.identity.username.encode(),
-                bytes.fromhex(self.get_secure_cookie('public_key').decode())
-            )
-            if result:
-                self.config.app_log.info('new {} is valid'.format(peer.__class__.__name__))
-                await self.write_result('connect_confirm', self.config.peer.to_dict(), body=body)
-            else:
-                self.close()
+            self.config.app_log.info('new {} is valid'.format(peer.__class__.__name__))
+            await self.write_result('connect_confirm', self.config.peer.to_dict(), body=body)
         except:
             self.config.app_log.error('invalid peer identity signature')
             self.close()
@@ -252,6 +244,9 @@ class RCPWebSocketServer(WebSocketHandler):
             'jsonrpc': 2.0,
             rpc_type: data
         }
-        await self.write_message('{}'.format(json.dumps(rpc_data)).encode())
+        try:
+            await self.write_message('{}'.format(json.dumps(rpc_data)).encode())
+        except:
+            self.config.app_log.warning('message did not send')
 
 WEBSOCKET_HANDLERS = [(r'/websocket', RCPWebSocketServer),]

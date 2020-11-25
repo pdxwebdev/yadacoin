@@ -709,9 +709,9 @@ class SiaUploadHandler(BaseGraphHandler):
         from requests.auth import HTTPBasicAuth
         from siaskynet import SkynetClient, utils
         sc = SkynetClient()
-        uploaded_file = self.request.files['file'][0]
+        json_body = json.loads(self.request.body)
         try:
-            skylink = sc.upload({self.get_query_argument('filename'): uploaded_file.body})
+            skylink = sc.upload({self.get_query_argument('filename'): base64.b64decode(json_body['file'])})
         except Exception as e:
             self.set_status(400)
             return self.render_as_json({
