@@ -337,7 +337,7 @@ def main():
     define("reset", default=False, help="If blockchain is invalid, truncate at error block", type=bool)
     define("config", default='config/config.json', help="Config file location, default is 'config/config.json'",
            type=str)
-    define("verify", default=True, help="Verify chain, default True", type=bool)
+    define("verify", default=False, help="Verify chain, default True", type=bool)
     define("webonly", default=False, help="Web only (ignores node processes for faster init when restarting server frequently), default False", type=bool)
     define("disable-web", default=False, help="Disable web server", type=bool)
 
