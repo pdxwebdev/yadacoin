@@ -30,11 +30,25 @@ class MiningPool(object):
         self.max_target = CHAIN.MAX_TARGET
         self.inbound = {}
         self.connected_ips = {}
-        self.last_block_time = int(self.config.BU.get_latest_block()['time'])
-        self.index = self.config.BU.get_latest_block()['index']
+        self.last_block_time = 0
+        self.index = 0
+        last_block = self.config.BU.get_latest_block()
+        if last_block:
+            self.last_block_time = int(last_block['time'])
+            self.index = last_block['index']
         self.previous_block_to_mine = None  # todo
         self.last_refresh = 0
         self.busy = False
+    
+    async def bootstrap_db(self):
+        genesis_block = await BlockFactory.get_genesis_block()
+        await genesis_block.save()
+        self.mongo.db.consensus.insert({
+            'block': genesis_block.to_dict(),
+            'peer': 'me',
+            'id': genesis_block.signature,
+            'index': 0
+        })
 
     async def block_to_mine(self):
         """Returns the block to mine"""
@@ -249,14 +263,7 @@ class MiningPool(object):
             if block:
                 block = await Block.from_dict(block)
             else:
-                genesis_block = await BlockFactory.get_genesis_block()
-                await genesis_block.save()
-                self.mongo.db.consensus.insert({
-                    'block': genesis_block.to_dict(),
-                    'peer': 'me',
-                    'id': genesis_block.signature,
-                    'index': 0
-                    })
+                await self.bootstrap_db()
                 block = await Block.from_dict(self.config.BU.get_latest_block())
             self.index = block.index + 1
             self.last_block_time = int(block.time)
