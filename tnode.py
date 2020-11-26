@@ -483,9 +483,9 @@ def main():
             webbrowser.open("http://{}/appvote/identity".format(my_peer.to_string()))
 
     config.consensus = Consensus(config.debug, config.peers)
+    tornado.ioloop.IOLoop.current().run_sync(config.consensus.async_init)
     if options.verify:
         app_log.info("Verifying existing blockchain")
-        tornado.ioloop.IOLoop.current().run_sync(config.consensus.async_init)
         tornado.ioloop.IOLoop.current().run_sync(config.consensus.verify_existing_blockchain)
     else:
         app_log.info("Verification of existing blockchain skipped by config")
