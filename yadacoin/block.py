@@ -356,7 +356,7 @@ class BlockFactory(object):
 
                 block_to_check = last_block
 
-                start_index = height
+                start_index = last_block.index
 
                 get_config().debug_log("start_index {}".format(start_index))
                 if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
@@ -395,7 +395,7 @@ class BlockFactory(object):
 
                 block_to_check = last_block  # this would be accurate. right now, it checks if the current block is under its own target, not the previous block's target
 
-                start_index = height
+                start_index = last_block.index
 
                 while 1:
                     if start_index == 0:
