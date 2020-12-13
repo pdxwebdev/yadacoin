@@ -2,7 +2,7 @@ import sys
 import json
 import time
 from base64 import b64encode
-from yadacoin import Config, BU, BlockFactory, Mongo
+from yadacoin import Config, BU, Block, Mongo
 
 with open('config/config.json') as f:
     config = Config.from_dict(json.loads(f.read()))
@@ -12,7 +12,7 @@ config.grace = 10
 config.block_version = '1'
 mongo = Mongo(config)
 start = time.time()
-genesis_block = BlockFactory.mine(
+genesis_block = Block.mine(
     [],
     config.public_key,
     config.private_key,

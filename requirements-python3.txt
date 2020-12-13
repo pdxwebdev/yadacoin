@@ -1,8 +1,8 @@
 wheel
 scikit-build
 cmake
-tornado>=6.0.2
-python-engineio>=3.8.0
+tornado
+python-engineio==3.14.2
 base58
 coincurve
 bip32utils
@@ -27,3 +27,4 @@ python-jwt
 qrcode==6.1
 -e git+https://github.com/pdxwebdev/pyrx#egg=pyrx
 pbkdf2
+asyncstdlib

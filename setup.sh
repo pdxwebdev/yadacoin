@@ -18,14 +18,13 @@ cd yadacoin
 # Install prerequisites
 sudo apt update
 sudo apt install -y libssl-dev cmake python3-pip libjpeg-dev
-python -m pip install wheel
-python -m pip install scikit-build
-python -m pip install cmake
-python -m pip install --upgrade pip
+python3 -m pip install wheel
+python3 -m pip install scikit-build
+python3 -m pip install cmake
+python3 -m pip install --upgrade pip
 sudo pip3 install -r requirements-python3.txt
 
 python3 utils/generate_config.py auto > config/config.json
-# TODO: config needs more editing (ip?)
 python3 utils/generate_services.py
 sudo chmod +x scripts/start_node.sh
 sudo cp services/* /lib/systemd/system/.
