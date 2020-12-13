@@ -12,7 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/..')
 # from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 # from urllib2 import urlopen
-from yadacoin.config import Config
+from yadacoin.core.config import Config
 
 
 class Wif:
@@ -63,6 +63,8 @@ if __name__ == "__main__":
     auto_parser.add_argument('-f', '--force', help='Forcefully create file, possibly overwriting existing, use with caution!')
     auto_parser.add_argument('-c', '--create', help='Create a new config file if one does not already exist')
     auto_parser.add_argument('-m', '--mongodb-host', help='Specify a mongodb host')
+    auto_parser.add_argument('-u', '--username', help='Specify a username')
+    auto_parser.add_argument('-d', '--db_name', help='Specify a database name')
 
     args = parser.parse_args()
 
@@ -88,11 +90,13 @@ if __name__ == "__main__":
             else:
                 username = args.username
             config.username = username
-            config.bulletin_secret = config.get_bulletin_secret()
+            config.username_signature = config.get_bulletin_secret()
             print(config.to_json())
     elif args.which == 'auto':
-        config = Config.generate(mongodb_host=args.mongodb_host)
-        config.username = ''
+        config = Config.generate(
+            db_name=args.db_name,
+            username=args.username
+        )
         filename = 'config.json'
         kwargs = {}
         if args.force:

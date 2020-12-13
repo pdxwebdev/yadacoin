@@ -1,3 +1,3 @@
 #!/bin/sh -
 
-python3 tnode.py --config=config/config.json
+python3 yadacoin/app.py --config=config/config.json
