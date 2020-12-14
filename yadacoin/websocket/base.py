@@ -11,7 +11,7 @@ from yadacoin.core.identity import Identity
 from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Group
 from yadacoin.core.config import get_config
 from yadacoin.core.transaction import Transaction
-from yadacoin.tcpsocket.node import NodeRPC
+from yadacoin.tcpsocket.base import BaseRPC
 
 class RCPWebSocketServer(WebSocketHandler):
     inbound_streams = {}
@@ -96,29 +96,29 @@ class RCPWebSocketServer(WebSocketHandler):
         if isinstance(self.config.peer, Seed):
 
             for rid, peer_stream in self.config.nodeServer.inbound_streams[Seed.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
             for rid, peer_stream in self.config.nodeServer.inbound_streams[SeedGateway.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
             for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
         elif isinstance(self.config.peer, SeedGateway):
 
             for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
             for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
         elif isinstance(self.config.peer, ServiceProvider):
 
             for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
             for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
             if transaction.requested_rid in self.config.websocketServer.inbound_streams[Group.__name__]:
                 for rid, peer_stream in self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid].items():
@@ -151,7 +151,7 @@ class RCPWebSocketServer(WebSocketHandler):
         elif isinstance(self.config.peer, User):
 
             for rid, peer_stream in self.config.nodeClient.outbound_streams[ServiceProvider.__name__].items():
-                await RPCBase.write_params(self, peer_stream, 'route', params)
+                await BaseRPC().write_params(peer_stream, 'route', params)
 
         else:
             self.config.app_log.error('inbound peer is not defined, disconnecting')
@@ -211,7 +211,7 @@ class RCPWebSocketServer(WebSocketHandler):
         }
 
         for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
-            await RPCBase.write_params(self, peer_stream, 'service_provider_request', params, body=body)
+            await BaseRPC().write_params(peer_stream, 'service_provider_request', params, body=body)
         await self.write_result('service_provider_request_confirm', {}, body=body)
     
     async def online(self, body):
