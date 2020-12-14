@@ -24,7 +24,6 @@ class MiningPool(object):
         self = cls()
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.block_factory = None
         self.app_log = getLogger("tornado.application")
         self.target_block_time = CHAIN.target_block_time(self.config.network)
         self.max_target = CHAIN.MAX_TARGET
@@ -36,15 +35,9 @@ class MiningPool(object):
         if last_block:
             self.last_block_time = int(last_block['time'])
             self.index = last_block['index']
-        self.previous_block_to_mine = None  # todo
         self.last_refresh = 0
+        await self.refresh()
         return self
-
-    async def block_to_mine(self):
-        """Returns the block to mine"""
-        if self.block_factory is None:
-            await self.refresh()
-        return self.block_factory
 
     def get_status(self):
         """Returns pool status as explicit dict"""
@@ -140,7 +133,7 @@ class MiningPool(object):
             'id': self.block_factory.signature
         }
 
-    async def refresh(self, block=None):
+    async def refresh(self):
         """Refresh computes a new bloc to mine. The block is stored in self.block_factory and contains
         the transactions at the time of the refresh. Since tx hash is in the header, a refresh here means we have to
         trigger the events for the pools, even if the block index did not change."""

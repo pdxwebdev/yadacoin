@@ -41,13 +41,13 @@ class StratumServer(RPCSocketServer):
                 )
 
     async def getblocktemplate(self, body, stream):
-        return await self.config.mp.block_template()
+        return await StratumServer.config.mp.block_template()
     
     async def get_info(self, body, stream):
-        return await self.config.mp.block_template()
+        return await StratumServer.config.mp.block_template()
 
     async def get_balance(self, body, stream):
-        balance = self.config.BU.get_wallet_balance(self.config.address)
+        balance = StratumServer.config.BU.get_wallet_balance(StratumServer.config.address)
         return {
             'balance': balance,
             'unlocked_balance': balance
@@ -55,12 +55,12 @@ class StratumServer(RPCSocketServer):
     
     async def getheight(self, body, stream):
         return {
-            'height': self.config.LatestBlock.block.index
+            'height': StratumServer.config.LatestBlock.block.index
         }
     
     async def transfer(self, body, stream):
         for x in body.get('params').get('destinations'):
-            result = await TU.send(self.config, x['address'], x['amount'], from_address=self.config.address)
+            result = await TU.send(StratumServer.config, x['address'], x['amount'], from_address=StratumServer.config.address)
             result['tx_hash'] = result['hash']
         return result
     
@@ -68,7 +68,7 @@ class StratumServer(RPCSocketServer):
         result =  []
         for y in body.get('params').get('payment_ids'):
             config = Config.generate(prv=y)
-            async for x in self.config.BU.get_wallet_unspent_transactions(config.address):
+            async for x in StratumServer.config.BU.get_wallet_unspent_transactions(config.address):
                 txn = {'amount': 0}
                 txn['block_height'] = x['height']
                 for j in x['outputs']:
@@ -84,7 +84,7 @@ class StratumServer(RPCSocketServer):
             result = {'error': True, 'message': 'nonce is wrong data type'}
         if len(nonce) > CHAIN.MAX_NONCE_LEN:
             result = {'error': True, 'message': 'nonce is too long'}
-        result = await self.config.mp.on_miner_nonce(nonce, address=stream.address)
+        result = await StratumServer.config.mp.on_miner_nonce(nonce, address=stream.address)
         data = {
             'id': body.get('id'),
             'method': body.get('method'),
@@ -102,11 +102,11 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def login(self, body, stream):
-        if not self.config:
-            self.config = get_config()
-        if not self.config.mp:
-            self.config.mp = await MiningPool.init_async()
-        job = await self.config.mp.block_template()
+        if not StratumServer.config:
+            StratumServer.config = get_config()
+        if not StratumServer.config.mp:
+            StratumServer.config.mp = await MiningPool.init_async()
+        job = await StratumServer.config.mp.block_template()
         stream.address = body['params'].get('login')
         StratumServer.inbound_streams[Miner.__name__][stream.address] = stream
         job['job_id'] = job['blocktemplate_blob']

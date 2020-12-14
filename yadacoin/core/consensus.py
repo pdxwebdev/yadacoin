@@ -16,6 +16,7 @@ from pymongo.errors import DuplicateKeyError
 from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 from tornado.httputil import HTTPHeaders
 from tornado import ioloop
+from tornado.iostream import StreamClosedError
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
@@ -161,6 +162,8 @@ class Consensus(object):
                 continue
             try:
                 await self.request_blocks(peer)
+            except StreamClosedError:
+                peer.close()
             except Exception as e:
                 self.config.app_log.warning(e)
     

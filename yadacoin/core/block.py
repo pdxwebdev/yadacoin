@@ -83,8 +83,8 @@ class Block(object):
         signature='',
         special_min: bool=False,
         header= '',
-        target: int=0,
-        special_target: int=0
+        target: int=CHAIN.MAX_TARGET,
+        special_target: int=CHAIN.MAX_TARGET
     ):
         self = cls()
         self.config = get_config()
@@ -105,7 +105,7 @@ class Block(object):
         self.special_min = special_min
         self.target = target
         self.special_target = special_target
-        if target==0:
+        if target==CHAIN.MAX_TARGET:
             # Same call as in new block check - but there's a circular reference here.
             latest_block = LatestBlock.block
             if not latest_block:
@@ -136,7 +136,7 @@ class Block(object):
         force_time=None,
         prev_hash=None,
         nonce=None,
-        target=0
+        target=CHAIN.MAX_TARGET
     ):
         config = get_config()
         app_log = getLogger("tornado.application")
