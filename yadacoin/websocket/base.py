@@ -94,31 +94,31 @@ class RCPWebSocketServer(WebSocketHandler):
         transaction = Transaction.from_dict(params['transaction'])
 
         if isinstance(self.config.peer, Seed):
+            pass
+            # for rid, peer_stream in self.config.nodeServer.inbound_streams[Seed.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
-            for rid, peer_stream in self.config.nodeServer.inbound_streams[Seed.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
+            # for rid, peer_stream in self.config.nodeServer.inbound_streams[SeedGateway.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
-            for rid, peer_stream in self.config.nodeServer.inbound_streams[SeedGateway.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
-
-            for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
+            # for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
         elif isinstance(self.config.peer, SeedGateway):
+            pass
+            # for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
-            for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
-
-            for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
+            # for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
         elif isinstance(self.config.peer, ServiceProvider):
+            pass
+            # for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
-            for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
-
-            for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
+            # for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
             if transaction.requested_rid in self.config.websocketServer.inbound_streams[Group.__name__]:
                 for rid, peer_stream in self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid].items():
@@ -149,9 +149,9 @@ class RCPWebSocketServer(WebSocketHandler):
 
 
         elif isinstance(self.config.peer, User):
-
-            for rid, peer_stream in self.config.nodeClient.outbound_streams[ServiceProvider.__name__].items():
-                await BaseRPC().write_params(peer_stream, 'route', params)
+            pass
+            # for rid, peer_stream in self.config.nodeClient.outbound_streams[ServiceProvider.__name__].items():
+            #     await BaseRPC().write_params(peer_stream, 'route', params)
 
         else:
             self.config.app_log.error('inbound peer is not defined, disconnecting')
