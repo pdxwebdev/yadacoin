@@ -88,12 +88,9 @@ class StratumServer(RPCSocketServer):
         data = {
             'id': body.get('id'),
             'method': body.get('method'),
-            'jsonrpc': body.get('jsonrpc')
+            'jsonrpc': body.get('jsonrpc'),
+            'result': result
         }
-        if result:
-            data['result'] = result
-        else:
-            data['result'] = {}
         await stream.write('{}\n'.format(json.dumps(data)).encode())
         if result:
             await StratumServer.block_checker()
