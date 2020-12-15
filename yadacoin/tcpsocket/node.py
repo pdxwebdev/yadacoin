@@ -157,7 +157,8 @@ class NodeRPC(BaseRPC):
                     stream,
                     'getblock',
                     {
-                        'hash': block.prev_hash
+                        'hash': block.prev_hash,
+                        'index': block.index - 1
                     }
                 )
                 return False
@@ -184,11 +185,14 @@ class NodeRPC(BaseRPC):
         # get blocks should be done only by syncing peers
         params = body.get('params')
         block_hash = params.get("hash")
+        block_index = params.get("index")
         block = await self.config.mongo.async_db.blocks.find_one({'hash': block_hash}, {'_id': 0})
         if not block:
             block = await self.config.mongo.async_db.consensus.find_one({'block.hash': block_hash}, {'_id': 0})
             if block:
                 block = block['block']
+            else:
+                block = await self.config.mongo.async_db.blocks.find_one({'index': block_index}, {'_id': 0})
         if block:
             await self.write_result(stream, 'blockresponse', {
                 'block': block
