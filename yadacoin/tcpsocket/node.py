@@ -125,7 +125,15 @@ class NodeRPC(BaseRPC):
         if payload.get('block'):
             block = await Block.from_dict(payload.get('block'))
             await self.config.consensus.insert_consensus_block(block, stream.peer)
-            await self.ensure_previous_block(block, stream)
+            result = await self.ensure_previous_block(block, stream)
+            if not result:
+                await self.write_params(
+                    stream,
+                    'getblock',
+                    {
+                        'payload': block.to_dict()
+                    }
+                )
 
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:
@@ -212,16 +220,7 @@ class NodeRPC(BaseRPC):
         await self.config.consensus.insert_consensus_block(block, stream.peer)
         prev_block = await self.ensure_previous_block(block, stream)
 
-        fork_block = await self.ensure_previous_on_blockchain(block)
-        if fork_block:
-            fork_block = await Block.from_dict(fork_block)
-            # ensure_previous_on_blockchain is true, so we have the 
-            # linking block from our existing chain.
-            local_chain = await self.config.consensus.build_local_chain(block)
-            remote_chain = await self.config.consensus.build_remote_chain(block)
-            
-            await local_chain.test_inbound_blockchain(remote_chain)
-        elif prev_block:
+        if prev_block:
             await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
     async def connect(self, body, stream):
