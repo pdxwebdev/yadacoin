@@ -28,3 +28,4 @@ qrcode==6.1
 -e git+https://github.com/pdxwebdev/pyrx#egg=pyrx
 pbkdf2
 asyncstdlib
+GitPython
