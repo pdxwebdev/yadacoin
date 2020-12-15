@@ -95,16 +95,16 @@ class Consensus(object):
             block.verify()
         except:
             return
-        await self.mongo.async_db.consensus.replace_one({
-            'id': block.signature,
+        await self.mongo.async_db.consensus.delete_many({
+            'index': block.index,
             'peer.rid': peer.rid
-        },
-        {
+        })
+        await self.mongo.async_db.consensus.insert_one({
             'block': block.to_dict(),
             'index': block.index,
             'id': block.signature,
             'peer': peer.to_dict()
-        }, upsert=True)
+        })
 
     async def sync_bottom_up(self):
         #bottom up syncing

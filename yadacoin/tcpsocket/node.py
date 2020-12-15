@@ -332,6 +332,7 @@ class NodeRPC(BaseRPC):
         if result:
             stream.peer.authenticated = True
             self.config.app_log.info('Authenticated {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
+            await self.send_block(self.config.LatestBlock.block)
         else:
             stream.close()
 
