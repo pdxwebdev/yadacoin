@@ -105,6 +105,9 @@ class StratumServer(RPCSocketServer):
             StratumServer.config.mp = await MiningPool.init_async()
         job = await StratumServer.config.mp.block_template()
         stream.address = body['params'].get('login')
+        if hasattr(stream, 'logged_in') and stream.logged_in:
+            stream.close()
+        stream.logged_in = True
         StratumServer.inbound_streams[Miner.__name__][stream.address] = stream
         job['job_id'] = job['blocktemplate_blob']
         job['blob'] = job['blocktemplate_blob']

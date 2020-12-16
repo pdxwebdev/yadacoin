@@ -264,6 +264,7 @@ class Consensus(object):
                 if not blocks:
                     return False
 
+                blocks.append(block)
                 return await self.integrate_blocks_with_existing_chain(blocks)
             except:
                 return False
