@@ -171,13 +171,23 @@ class NodeRPC(BaseRPC):
 
     async def send_block(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
-            await self.config.nodeShared().write_params(
+            await self.write_params(
                 peer_stream,
                 'newblock',
                 {
                     'payload': {
                         'block': block.to_dict()
                     }
+                }
+            )
+
+    async def get_next_block(self, block):
+        async for peer_stream in self.config.peer.get_sync_peers():
+            await self.write_params(
+                peer_stream,
+                'getblock',
+                {
+                    'index': block.index + 1
                 }
             )
 
@@ -336,6 +346,7 @@ class NodeRPC(BaseRPC):
             stream.peer.authenticated = True
             self.config.app_log.info('Authenticated {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
             await self.send_block(self.config.LatestBlock.block)
+            await self.get_next_block(self.config.LatestBlock.block)
         else:
             stream.close()
 
