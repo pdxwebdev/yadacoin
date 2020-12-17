@@ -92,11 +92,7 @@ class StratumServer(RPCSocketServer):
             'result': result
         }
         await stream.write('{}\n'.format(json.dumps(data)).encode())
-        if result:
-            await StratumServer.block_checker()
-        else:
-            result = {'error': True, 'message': 'nonce rejected'}
-        return result
+        await StratumServer.block_checker()
 
     async def login(self, body, stream):
         if not StratumServer.config:
