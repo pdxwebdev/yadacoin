@@ -36,6 +36,7 @@ class MiningPool(object):
             self.last_block_time = int(last_block['time'])
             self.index = last_block['index']
         self.last_refresh = 0
+        self.block_factory = None
         await self.refresh()
         return self
 
@@ -140,6 +141,8 @@ class MiningPool(object):
         # TODO: to be taken care of, no refresh atm between blocks
         try:
             await self.config.LatestBlock.block_checker()
+            if self.block_factory:
+                self.last_block_time = int(self.block_factory.time)
             self.block_factory = await self.create_block(
                 await self.get_pending_transactions(),
                 self.config.public_key,
