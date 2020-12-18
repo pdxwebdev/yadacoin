@@ -84,6 +84,14 @@ class RCPWebSocketServer(WebSocketHandler):
             self.config.app_log.error('invalid peer identity signature')
             self.close()
             return {}
+
+    async def chat_history(self, body):
+        results = await self.config.mongo.async_db.miner_transactions.find({
+            'requested_rid': self.config.peer.identity.generate_rid(body.get('params', {}).get('to').get('username_signature'))
+        }, {
+            '_id': 0
+        }).sort([('time', -1)]).to_list(100)
+        await self.write_result('chat_history_response', {'chats': sorted(results, key=lambda x: x['time']), 'to': body.get('params', {}).get('to')}, body=body)
     
     async def route_confirm(self, body):
         await self.write_result('route_server_confirm', {}, body=body)
@@ -92,7 +100,13 @@ class RCPWebSocketServer(WebSocketHandler):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
         params = body.get('params')
         transaction = Transaction.from_dict(params['transaction'])
-
+        await self.config.mongo.async_db.miner_transactions.replace_one(
+            {
+                'id': transaction.transaction_signature
+            },
+            transaction.to_dict(),
+            upsert=True
+        )
         if isinstance(self.config.peer, Seed):
             pass
             # for rid, peer_stream in self.config.nodeServer.inbound_streams[Seed.__name__].items():
@@ -186,6 +200,7 @@ class RCPWebSocketServer(WebSocketHandler):
         self.peer.groups[group.rid] = group
 
         await self.write_result('join_confirmed', {
+            'rid': group.rid,
             'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
         }, body=body)
         for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group.rid].items():
@@ -205,6 +220,9 @@ class RCPWebSocketServer(WebSocketHandler):
             'identity': body.get('params').get('group')
         })
         seed_gateway = await group.calculate_seed_gateway()
+        if not seed_gateway:
+            self.config.app_log.error('No seed gateways available.')
+            return
         params = {
             'seed_gateway': seed_gateway.to_dict(),
             'group': group.to_dict()
