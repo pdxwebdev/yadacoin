@@ -309,6 +309,7 @@ class Consensus(object):
                 await self.config.LatestBlock.block_checker()  # This will trigger mining pool to generate a new block to mine
                 if self.config.mp:
                     await self.config.mp.refresh()
+                await self.config.nodeShared().send_block(self.config.LatestBlock.block)
             return True
         except Exception as e:
             from traceback import format_exc

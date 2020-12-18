@@ -19,6 +19,11 @@ from yadacoin.core.blockchain import Blockchain
 
 
 class NodeRPC(BaseRPC):
+
+    def __init__(self):
+        super(NodeRPC, self).__init__()
+        self.config = get_config()
+
     config = None
     async def getblocks(self, body, stream):
         # get blocks should be done only by syncing peers
