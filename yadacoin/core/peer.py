@@ -261,7 +261,7 @@ class SeedGateway(Peer):
         if peer == Seed:
             return 1
         elif peer == ServiceProvider:
-            return 1
+            return 100000
         else:
             return 0
 
