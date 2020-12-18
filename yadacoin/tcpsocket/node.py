@@ -259,7 +259,7 @@ class NodeRPC(BaseRPC):
 
             if generic_peer.identity.username_signature in self.config.seeds:
                 peerCls = Seed
-            elif generic_peer.identity.username_signature in self.config.service_providers:
+            else:
                 peerCls = ServiceProvider
 
         elif isinstance(self.config.peer, ServiceProvider):
