@@ -58,80 +58,81 @@ class MiningPool(object):
             int(hash1, 16) > self.block_factory.special_target)
         ):
             return False
-        self.block_factory.hash = hash1
-        self.block_factory.nonce = nonce
-        self.block_factory.signature = self.config.BU.generate_signature(self.block_factory.hash, self.config.private_key)
+        block_candidate = await self.block_factory.copy()
+        block_candidate.hash = hash1
+        block_candidate.nonce = nonce
+        block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
 
         try:
-            self.block_factory.verify()
+            block_candidate.verify()
         except Exception as e:
             self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
                 e,
-                self.block_factory.hash,
-                self.block_factory.header,
-                self.block_factory.nonce
+                block_candidate.hash,
+                block_candidate.header,
+                block_candidate.nonce
             ))
             return False
 
-        if self.block_factory.special_min:
-            delta_t = int(self.block_factory.time) - int(self.last_block_time)
+        if block_candidate.special_min:
+            delta_t = int(block_candidate.time) - int(self.last_block_time)
             special_target = CHAIN.special_target(
-                self.block_factory.index,
-                self.block_factory.target,
+                block_candidate.index,
+                block_candidate.target,
                 delta_t, 
                 self.config.network
             )
-            self.block_factory.special_target = special_target
+            block_candidate.special_target = special_target
 
         if (
-            self.block_factory.index >= 35200 and 
-            (int(self.block_factory.time) - int(self.last_block_time)) < 600 and 
-            self.block_factory.special_min
+            block_candidate.index >= 35200 and
+            (int(block_candidate.time) - int(self.last_block_time)) < 600 and 
+            block_candidate.special_min
         ):
             self.app_log.warning("Special min block too soon: hash {} header {} nonce {}".format(
-                self.block_factory.hash,
-                self.block_factory.header,
-                self.block_factory.nonce
+                block_candidate.hash,
+                block_candidate.header,
+                block_candidate.nonce
             ))
             return False
 
 
-        if (int(self.block_factory.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(hash1, 16):
+        if (int(block_candidate.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(hash1, 16):
             # submit share only now, not to slow down if we had a block
             self.app_log.warning('{} {}'.format(hash1, address))
             await self.mongo.async_db.shares.update_one({
                 'address': address,
-                'index': self.block_factory.index,
-                'hash': self.block_factory.hash,
+                'index': block_candidate.index,
+                'hash': block_candidate.hash,
                 'nonce': nonce,
             },
             {
                 '$set': {
                     'address': address,
-                    'index': self.block_factory.index,
-                    'hash': self.block_factory.hash,
+                    'index': block_candidate.index,
+                    'hash': block_candidate.hash,
                     'nonce': nonce
                 }
             }, upsert=True)
 
-        if int(self.block_factory.target) > int(self.block_factory.hash, 16):
+        if int(block_candidate.target) > int(block_candidate.hash, 16):
             # accept winning block
-            await self.accept_block(self.block_factory)
+            await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok')
             self.app_log.error('^^ ^^ ^^')
-        elif self.block_factory.special_min and (int(self.block_factory.special_target) > int(self.block_factory.hash, 16)):
+        elif block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.hash, 16)):
             # accept winning block
-            await self.accept_block(self.block_factory)
+            await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok - special_min')
             self.app_log.error('^^ ^^ ^^')
 
         return {
-            'hash': self.block_factory.hash,
+            'hash': block_candidate.hash,
             'nonce': nonce,
-            'height': self.block_factory.index,
-            'id': self.block_factory.signature
+            'height': block_candidate.index,
+            'id': block_candidate.signature
         }
 
     async def refresh(self):
