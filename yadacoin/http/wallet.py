@@ -135,7 +135,7 @@ class CreateTransactionView(BaseHandler):
             inputs=inputs,
             outputs=outputs
         )
-        return self.render_as_json(txn.transaction.to_dict())
+        return self.render_as_json(txn.to_dict())
 
 
 @jwtauth
@@ -167,7 +167,7 @@ class CreateRawTransactionView(BaseHandler):
             inputs=inputs,
             outputs=outputs
         )
-        return self.render_as_json(txn.transaction.to_dict())
+        return self.render_as_json(txn.to_dict())
 
 
 @jwtauth

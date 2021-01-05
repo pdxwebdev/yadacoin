@@ -121,9 +121,7 @@ class Block(object):
         return self
 
     async def copy(self):
-        return await Block.init_async(self.version, self.time, self.index, self.prev_hash, self.nonce, self.transactions,
-                     self.hash, self.merkle_root, self.public_key, self.signature, self.special_min,
-                     self.header, self.target, self.special_target)
+        return await Block.from_dict(self.to_dict())
 
     @classmethod
     async def generate(
