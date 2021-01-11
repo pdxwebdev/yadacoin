@@ -72,7 +72,7 @@ class GetBlockHeightHandler(BaseHandler):
 
     async def get(self):
         block = self.config.LatestBlock.block
-        self.render_as_json({'height': block['index'], 'hash': block['hash']})
+        self.render_as_json({'height': block.index, 'hash': block.hash})
 
 
 class GetPeersHandler(BaseHandler):
