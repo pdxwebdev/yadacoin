@@ -82,6 +82,9 @@ class Config(object):
         self.pp = None
         self.stratum_pool_port = config.get('stratum_pool_port', 3333)
         self.wallet_host_port = config.get('wallet_host_port', 'http://localhost:{}'.format(config['peer_port']))
+        self.credits_per_share = config.get('credits_per_share', 5)
+        self.shares_required = config.get('shares_required', True)
+        self.pool_take = config.get('pool_take', .01)
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event
@@ -209,6 +212,9 @@ class Config(object):
             "username": username or '',
             "network": "mainnet",
             "wallet_host_port": 'http://localhost:8000',
+            "credits_per_share": 5,
+            "shares_required": True,
+            "pool_take": .01
         })
 
     @classmethod
@@ -250,6 +256,9 @@ class Config(object):
         cls.jwt_public_key = config.get('jwt_public_key')
         cls.sia_api_key = config.get('sia_api_key')
         cls.wallet_host_port = config.get('wallet_host_port')
+        cls.credits_per_share = config.get('credits_per_share', 5)
+        cls.shares_required = config.get('shares_required', True)
+        cls.pool_take = config.get('pool_take', .01)
 
     def get_username_signature(self):
         from yadacoin.core.transactionutils import TU
@@ -306,6 +315,9 @@ class Config(object):
             'jwt_public_key': self.jwt_public_key,
             'callbackurl': self.callbackurl,
             'wallet_host_port': self.wallet_host_port,
+            'credits_per_share': self.credits_per_share,
+            'shares_required': self.shares_required,
+            'pool_take': self.pool_take,
         }
 
     def to_json(self):

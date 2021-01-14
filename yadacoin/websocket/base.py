@@ -6,6 +6,7 @@ from traceback import format_exc
 from tornado import gen, ioloop
 from tornado.websocket import WebSocketHandler, WebSocketClosedError
 from coincurve import verify_signature
+from bitcoin.wallet import P2PKHBitcoinAddress
 
 from yadacoin.core.identity import Identity
 from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Group
@@ -79,7 +80,12 @@ class RCPWebSocketServer(WebSocketHandler):
 
         try:
             self.config.app_log.info('new {} is valid'.format(peer.__class__.__name__))
-            await self.write_result('connect_confirm', self.config.peer.to_dict(), body=body)
+            await self.write_result('connect_confirm', {
+              'identity': self.config.peer.identity.to_dict,
+              'shares_required': self.config.shares_required,
+              'credit_balance': await self.get_credit_balance(),
+              'server_pool_address': f'{self.config.peer_host}:{self.config.stratum_pool_port}'
+            }, body=body)
         except:
             self.config.app_log.error('invalid peer identity signature')
             self.close()
@@ -94,10 +100,19 @@ class RCPWebSocketServer(WebSocketHandler):
         await self.write_result('chat_history_response', {'chats': sorted(results, key=lambda x: x['time']), 'to': body.get('params', {}).get('to')}, body=body)
     
     async def route_confirm(self, body):
-        await self.write_result('route_server_confirm', {}, body=body)
+        credit_balance = await self.get_credit_balance()
+        await self.write_result('route_server_confirm', {'credit_balance': credit_balance}, body=body)
     
     async def route(self, body):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
+        if self.config.shares_required:
+
+            credit_balance = await self.get_credit_balance()
+
+            if credit_balance <= 0:
+                await self.write_result('route_server_confirm', {'credit_balance': credit_balance}, body=body)
+                return
+
         params = body.get('params')
         transaction = Transaction.from_dict(params['transaction'])
         await self.config.mongo.async_db.miner_transactions.replace_one(
@@ -171,7 +186,18 @@ class RCPWebSocketServer(WebSocketHandler):
             self.config.app_log.error('inbound peer is not defined, disconnecting')
             self.close()
             return {}
-        await self.write_result('route_server_confirm', {}, body=body)
+        await self.write_result('route_server_confirm', {'credit_balance': credit_balance}, body=body)
+
+    async def get_credit_balance(self):
+      address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.peer.identity.public_key))
+
+      shares = await self.config.mongo.async_db.shares.count_documents({'address': str(address)})
+
+      txns_routed = await self.config.mongo.async_db.miner_transactions.count_documents({'public_key': self.peer.identity.public_key})
+
+      credit_balance = shares - (txns_routed * .1)
+
+      return credit_balance if credit_balance > 0 else 0.00
     
     async def join_group(self, body):
         

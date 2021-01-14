@@ -131,7 +131,7 @@ class PoolPayer(object):
                 return
             if self.config.debug:
                 self.app_log.debug('do_payout_for_blocks passed address compare {}'.format(block.index))
-            pool_take = 0.01
+            pool_take = self.config.pool_take
             total_pool_take = coinbase.outputs[0].value * pool_take
             total_payout = coinbase.outputs[0].value - total_pool_take
             coinbases.append(coinbase)
