@@ -454,7 +454,8 @@ class NodeApplication(Application):
                 "public_key": self.config.public_key
             },
             'peer_type': self.config.peer_type,
-            'http_port': self.config.serve_port
+            'http_port': self.config.serve_port,
+            'secure': isinstance(self.config.ssl, dict)
         }
 
         if my_peer.get('peer_type') == 'seed':

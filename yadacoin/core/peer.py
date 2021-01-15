@@ -23,7 +23,8 @@ class Peer:
         identity=None,
         seed=None,
         seed_gateway=None,
-        http_port=None
+        http_port=None,
+        secure=None
     ):
         self.host = host
         self.port = port
@@ -31,6 +32,7 @@ class Peer:
         self.seed = seed
         self.seed_gateway = seed_gateway
         self.http_port = http_port
+        self.secure = secure
         self.config = get_config()
         self.app_log = getLogger("tornado.application")
     
@@ -42,7 +44,8 @@ class Peer:
             Identity.from_dict(peer['identity']),
             seed=peer.get('seed'),
             seed_gateway=peer.get('seed_gateway'),
-            http_port=peer.get('http_port')
+            http_port=peer.get('http_port'),
+            secure=peer.get('secure')
         )
         return inst
     
@@ -147,7 +150,8 @@ class Peer:
             'rid': self.rid,
             'seed': self.seed,
             'seed_gateway': self.seed_gateway,
-            'http_port': self.http_port
+            'http_port': self.http_port,
+            'secure': self.secure
         }
 
     def to_string(self):
