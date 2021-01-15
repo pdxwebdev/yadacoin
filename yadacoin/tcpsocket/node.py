@@ -74,7 +74,7 @@ class NodeRPC(BaseRPC):
                 return
             payload[service_provider.peer.source_property] = service_provider.peer.to_dict()
             scheme = 'wss' if service_provider.peer.secure else 'ws'
-            payload[service_provider.peer.source_property]['websocket_host'] = f'{scheme}://{service_provider.peer.host}:{service_provider.peer.http_port}'
+            payload[service_provider.peer.source_property]['websocket_host'] = f'{scheme}://{service_provider.peer.http_host}:{service_provider.peer.http_port}'
             return await self.write_params(
                 stream,
                 'service_provider_request',
