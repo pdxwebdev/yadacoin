@@ -225,7 +225,7 @@ class Config(object):
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
         cls.use_pnp = config.get('use_pnp', True)
-        cls.ssl = config.get('ssl', True)
+        cls.ssl = config.get('ssl', False)
         cls.origin = config.get('origin', True)
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
