@@ -453,7 +453,8 @@ class NodeApplication(Application):
                 "username_signature": self.config.username_signature,
                 "public_key": self.config.public_key
             },
-            'peer_type': self.config.peer_type
+            'peer_type': self.config.peer_type,
+            'http_port': self.config.serve_port
         }
 
         if my_peer.get('peer_type') == 'seed':

@@ -255,7 +255,7 @@ class RCPWebSocketServer(WebSocketHandler):
         }
 
         for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
-            await BaseRPC().write_params(peer_stream, 'service_provider_request', params, body=body)
+            await BaseRPC().write_params(peer_stream, 'service_provider_request', params)
         await self.write_result('service_provider_request_confirm', {}, body=body)
     
     async def online(self, body):

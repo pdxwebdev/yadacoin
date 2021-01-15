@@ -16,12 +16,21 @@ class Peer:
     epoch = 1602914018
     ttl = 259200
 
-    def __init__(self, host=None, port=None, identity=None, seed=None, seed_gateway=None):
+    def __init__(
+        self,
+        host=None,
+        port=None,
+        identity=None,
+        seed=None,
+        seed_gateway=None,
+        http_port=None
+    ):
         self.host = host
         self.port = port
         self.identity = identity
         self.seed = seed
         self.seed_gateway = seed_gateway
+        self.http_port = http_port
         self.config = get_config()
         self.app_log = getLogger("tornado.application")
     
@@ -32,7 +41,8 @@ class Peer:
             peer['port'],
             Identity.from_dict(peer['identity']),
             seed=peer.get('seed'),
-            seed_gateway=peer.get('seed_gateway')
+            seed_gateway=peer.get('seed_gateway'),
+            http_port=peer.get('http_port')
         )
         return inst
     
@@ -105,6 +115,8 @@ class Peer:
         num_reset = False
         while self.config.seed_gateways[username_signatures[seed_select]].rid in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
             seed_select += 1
+            if seed_select >= len(username_signatures):
+                return None
             if num_reset and seed_select >= first_number:
                 break # failed to find a seed gateway
             if seed_select >= len(self.config.seed_gateways) + 1:
@@ -134,15 +146,16 @@ class Peer:
             'identity': self.identity.to_dict,
             'rid': self.rid,
             'seed': self.seed,
-            'seed_gateway': self.seed_gateway
+            'seed_gateway': self.seed_gateway,
+            'http_port': self.http_port
         }
 
     def to_string(self):
         return '{}:{}'.format(self.host, self.port)
-    
+
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
-    
+
     async def get_payload_txn(self, payload):
         txn = None
         if payload.get('transaction'):
