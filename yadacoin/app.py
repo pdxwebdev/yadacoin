@@ -454,6 +454,7 @@ class NodeApplication(Application):
                 "public_key": self.config.public_key
             },
             'peer_type': self.config.peer_type,
+            'http_host': self.config.ssl['common_name'] if isinstance(self.config.ssl, dict) else self.config.peer_host,
             'http_port': self.config.ssl['port'] if isinstance(self.config.ssl, dict) else self.config.serve_port,
             'secure': isinstance(self.config.ssl, dict)
         }
