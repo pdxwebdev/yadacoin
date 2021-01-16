@@ -105,6 +105,7 @@ class RCPWebSocketServer(WebSocketHandler):
     
     async def route(self, body):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
+        route_server_confirm_out = {}
         if self.config.shares_required:
 
             credit_balance = await self.get_credit_balance()
@@ -112,6 +113,7 @@ class RCPWebSocketServer(WebSocketHandler):
             if credit_balance <= 0:
                 await self.write_result('route_server_confirm', {'credit_balance': credit_balance}, body=body)
                 return
+            route_server_confirm_out = {'credit_balance': credit_balance}
 
         params = body.get('params')
         transaction = Transaction.from_dict(params['transaction'])
@@ -186,7 +188,7 @@ class RCPWebSocketServer(WebSocketHandler):
             self.config.app_log.error('inbound peer is not defined, disconnecting')
             self.close()
             return {}
-        await self.write_result('route_server_confirm', {'credit_balance': credit_balance}, body=body)
+        await self.write_result('route_server_confirm', route_server_confirm_out, body=body)
 
     async def get_credit_balance(self):
       address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.peer.identity.public_key))
