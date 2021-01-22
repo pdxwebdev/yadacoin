@@ -109,7 +109,11 @@ class Blockchain(object):
         if block.index == 0:
             return True
 
-        last_block = await Block.from_dict(await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1}))
+        last_block_data = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
+        if not last_block_data:
+            return False
+
+        last_block = await Block.from_dict(last_block_data)
 
         if block.index >= CHAIN.FORK_10_MIN_BLOCK:
             target = await CHAIN.get_target_10min(block.index, last_block, block)
