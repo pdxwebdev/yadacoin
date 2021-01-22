@@ -68,6 +68,12 @@ class Blockchain(object):
         return True
     
     @property
+    async def first_block(self):
+        block = None
+        async for block in self.blocks:
+            return block
+    
+    @property
     async def final_block(self):
         block = None
         async for block in self.blocks:

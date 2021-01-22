@@ -265,11 +265,14 @@ class Consensus(object):
 
                 blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
                 if not status:
-                    await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
+                    await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': blockchain.first_block.index}})
                     return False
 
                 blocks.append(block)
-                return await self.integrate_blocks_with_existing_chain(blocks)
+                result = await self.integrate_blocks_with_existing_chain(blocks)
+                if not result:
+                    await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': blockchain.first_block.index}})
+                    return False
             except:
                 return False
         return True
@@ -279,6 +282,7 @@ class Consensus(object):
             try:
                 result = await self.integrate_block_with_existing_chain(block)
                 if not result:
+                    await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': blocks[0].index}})
                     return False
             except:
                 return False
