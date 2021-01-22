@@ -233,7 +233,7 @@ class Consensus(object):
                 }
             )
     
-    async def build_backward_from_block_to_fork(self, block, blocks, stream=None):
+    async def build_backward_from_block_to_fork(self, block, blocks, stream=None, depth=0):
         self.app_log.warning(block.to_dict())
         self.app_log.warning(blocks)
 
@@ -246,12 +246,15 @@ class Consensus(object):
             result = await self.build_backward_from_block_to_fork(
                 retrace_consensus_block,
                 blocks.copy(),
-                stream
+                stream,
+                depth + 1
             )
             self.app_log.warning(result)
             if isinstance(result, list):
                 result.append(retrace_consensus_block)
-                return result
+                return result, True
+        if depth == 0:
+            return blocks, False
     
     async def integrate_blockchain_with_existing_chain(self, blockchain, stream=None):
         async for block in blockchain.blocks:
@@ -260,8 +263,10 @@ class Consensus(object):
                 if result:
                     continue
 
-                blocks = await self.build_backward_from_block_to_fork(block, [], stream)
-                if not blocks:
+                blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
+                if not status:
+                    for block in blocks:
+                        await self.config.mongo.async_db.consensus.delete_many({'hash': block.hash})
                     return False
 
                 blocks.append(block)
