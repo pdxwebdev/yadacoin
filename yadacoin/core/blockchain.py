@@ -161,6 +161,9 @@ class Blockchain(object):
                 failed = False
                 used_ids_in_this_txn = []
                 async for x in get_inputs(transaction.inputs):
+                    txn = self.config.BU.get_transaction_by_id(x.id, instance=True)
+                    if not txn:
+                        failed = True
                     if self.config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index):
                         failed = True
                     if x.id in used_ids_in_this_txn:
