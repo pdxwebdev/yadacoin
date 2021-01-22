@@ -262,7 +262,7 @@ class Consensus(object):
     async def integrate_blockchain_with_existing_chain(self, blockchain, stream=None):
         bc = await Blockchain.init_async()
         async for block in blockchain.blocks:
-            result = await bc.test_block(block)
+            result = await bc.test_block(block, extra_blocks=[extra_block async for extra_block in blockchain.blocks])
             if not result:
                 first_block = await blockchain.first_block
                 await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': first_block.index}})
@@ -288,7 +288,7 @@ class Consensus(object):
     async def integrate_blocks_with_existing_chain(self, blocks):
         bc = await Blockchain.init_async()
         for block in blocks:
-            result = await bc.test_block(block)
+            result = await bc.test_block(block, extra_blocks=blocks)
             if not result:
                 await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': blocks[0].index}})
                 return False

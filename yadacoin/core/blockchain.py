@@ -97,7 +97,7 @@ class Blockchain(object):
 
         return {'verified': True}
 
-    async def test_block(self, block):
+    async def test_block(self, block, extra_blocks=blocks):
         try:
             block.verify()
         except Exception as e:
@@ -135,6 +135,8 @@ class Blockchain(object):
         used_inputs = {}
         i = 0
         async for transaction in get_txns(block.transactions):
+            if extra_blocks:
+                transaction.extra_blocks = extra_blocks
             self.config.app_log.warning('verifying txn: {} block: {}'.format(i, block.index))
             i += 1
             try:
