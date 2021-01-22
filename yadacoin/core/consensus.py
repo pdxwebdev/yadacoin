@@ -265,8 +265,7 @@ class Consensus(object):
 
                 blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
                 if not status:
-                    for block in blocks:
-                        await self.config.mongo.async_db.consensus.delete_many({'hash': block.hash})
+                    await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
                     return False
 
                 blocks.append(block)

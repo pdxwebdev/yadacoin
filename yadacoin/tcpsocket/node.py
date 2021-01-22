@@ -245,8 +245,7 @@ class NodeRPC(BaseRPC):
         if prev_block:
             blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
             if not status:  # there is a break somewhere
-                for block in blocks:
-                    await self.config.mongo.async_db.consensus.delete_many({'hash': block.hash})
+                await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
 
     async def connect(self, body, stream):
         params = body.get('params')
