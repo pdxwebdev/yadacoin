@@ -137,6 +137,7 @@ class Blockchain(object):
                 return False
             except MissingInputTransactionException as e:
                 self.config.app_log.warning(e)
+                return False
             except NotEnoughMoneyException as e:
                 self.config.app_log.warning(e)
                 return False
