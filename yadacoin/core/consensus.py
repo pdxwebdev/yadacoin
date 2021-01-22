@@ -248,7 +248,7 @@ class Consensus(object):
             self.app_log.warning(retrace_consensus_block.to_dict())
             result, status = await self.build_backward_from_block_to_fork(
                 retrace_consensus_block,
-                blocks.copy(),
+                json.loads(json.dumps([x.to_dict() for x in blocks])),
                 stream,
                 depth + 1
             )

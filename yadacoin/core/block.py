@@ -121,7 +121,7 @@ class Block(object):
         return self
 
     async def copy(self):
-        return await Block.from_dict(self.to_dict())
+        return await Block.from_json(self.to_json())
 
     @classmethod
     async def generate(
@@ -308,6 +308,10 @@ class Block(object):
             target=int(block.get('target'), 16),
             special_target=int(block.get('special_target', 0), 16)
         )
+
+    @classmethod
+    async def from_json(cls, block_json):
+        return await cls.from_dict(json.loads(block_json))
     
     def get_coinbase(self):
         for txn in self.transactions:
