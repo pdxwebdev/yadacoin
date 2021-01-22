@@ -162,23 +162,19 @@ class Blockchain(object):
                     continue
 
         if block.index >= 35200 and delta_t < 600 and block.special_min:
-            self.config.app_log.warning('1')
+            self.config.app_log.warning(f'Failed: {block.index} >= {35200} and {delta_t} < {600} and {block.special_min}')
             return False
 
         if int(block.index) > CHAIN.CHECK_TIME_FROM and int(block.time) < int(last_block.time):
-            self.config.app_log.warning('2')
+            self.config.app_log.warning(f'Failed: {int(block.index)} > {CHAIN.CHECK_TIME_FROM} and {int(block.time)} < {int(last_block.time)}')
             return False
 
         if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
-            self.config.app_log.warning('3')
+            self.config.app_log.warning(f'Failed: {last_block.index} != {(block.index - 1)} or {last_block.hash} != {block.prev_hash}')
             return False
 
         if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(last_block.time) + 600)) and block.special_min:
-            self.config.app_log.warning('4')
-            return False
-
-        if block.index >= 35200 and delta_t < 600 and block.special_min:
-            self.config.app_log.warning('5')
+            self.config.app_log.warning(f'Failed: {int(block.index)} > {CHAIN.CHECK_TIME_FROM} and ({int(block.time)} < ({int(last_block.time)} + {600})) and {block.special_min}')
             return False
 
         target_block_time = CHAIN.target_block_time(self.config.network)

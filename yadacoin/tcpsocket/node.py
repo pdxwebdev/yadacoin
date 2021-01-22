@@ -152,13 +152,9 @@ class NodeRPC(BaseRPC):
             )
 
     async def ensure_previous_block(self, block, stream):
-        have_prev = await self.config.mongo.async_db.blocks.find_one({
-            'hash': block.prev_hash
-        })
+        have_prev = await self.ensure_previous_on_blockchain(block)
         if not have_prev:
-            have_prev = await self.config.mongo.async_db.consensus.find_one({
-                'block.hash': block.prev_hash
-            })
+            have_prev = await self.ensure_previous_in_consensus(block)
             if not have_prev:
                 await self.write_params(
                     stream,
@@ -174,6 +170,11 @@ class NodeRPC(BaseRPC):
     async def ensure_previous_on_blockchain(self, block):
         return await self.config.mongo.async_db.blocks.find_one({
             'hash': block.prev_hash
+        })
+
+    async def ensure_previous_in_consensus(self, block):
+        return await self.config.mongo.async_db.consensus.find_one({
+            'block.hash': block.prev_hash
         })
 
     async def send_block(self, block):
