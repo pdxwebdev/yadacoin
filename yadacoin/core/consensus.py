@@ -239,20 +239,20 @@ class Consensus(object):
 
         retrace_block = await self.mongo.async_db.blocks.find_one({'hash': block.prev_hash})
         if retrace_block:
-            return blocks
+            return blocks, True
 
         async for retrace_consensus_block in self.get_previous_consensus_block(block, stream):
             self.app_log.warning(retrace_consensus_block.to_dict())
-            result = await self.build_backward_from_block_to_fork(
+            result, status = await self.build_backward_from_block_to_fork(
                 retrace_consensus_block,
                 blocks.copy(),
                 stream,
                 depth + 1
             )
             self.app_log.warning(result)
-            if isinstance(result, list):
+            if status:
                 result.append(retrace_consensus_block)
-                return result, True
+                return result, status
         if depth == 0:
             return blocks, False
     
