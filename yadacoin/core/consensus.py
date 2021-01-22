@@ -237,7 +237,10 @@ class Consensus(object):
         self.app_log.warning(block.to_dict())
         self.app_log.warning(blocks)
 
-        retrace_block = await self.mongo.async_db.blocks.find_one({'hash': block.prev_hash})
+        retrace_block = await self.mongo.async_db.blocks.find_one({
+            'hash': block.prev_hash,
+            'time': {'$lt': block.time}
+        })
         if retrace_block:
             return blocks, True
 
