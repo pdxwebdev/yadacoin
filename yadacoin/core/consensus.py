@@ -246,6 +246,8 @@ class Consensus(object):
 
         async for retrace_consensus_block in self.get_previous_consensus_block(block, stream):
             self.app_log.warning(retrace_consensus_block.to_dict())
+            if blocks is None:
+                blocks = []
             result, status = await self.build_backward_from_block_to_fork(
                 retrace_consensus_block,
                 json.loads(json.dumps([x.to_dict() for x in blocks])),
@@ -321,7 +323,7 @@ class Consensus(object):
             db_block['updated_at'] = time()
             await self.mongo.async_db.blocks.replace_one({'index': block.index}, db_block, upsert=True)
             await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
-            self.latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async(False))
+            await self.config.LatestBlock.update_latest_block()
             self.app_log.info("New block inserted for height: {}".format(block.index))
             latest_consensus = await self.mongo.async_db.consensus.find_one({
                 'index': self.latest_block.index + 1,

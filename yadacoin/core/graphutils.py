@@ -597,8 +597,39 @@ class GraphUtils(object):
                 if 'rid' in transaction and transaction['rid'] in selectors:
                     return transaction
 
-    def get_transactions_by_rid(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
-                                returnheight=True, lt_block_height=None, requested_rid=False, inc_mempool=False, shared_decrypt=False):
+    async def get_transactions_by_rid_v2(
+        self,
+        rid=False,
+        requested_rid=False,
+        requester_rid=False
+    ):
+        if rid:
+            query = {'rid': rid}
+        elif requested_rid:
+            query = {'requested_rid': requested_rid}
+        elif requester_rid:
+            query = {'requester_rid': requester_rid}
+        async for txn in self.config.mongo.async_db.miner_transactions.find(query, {'_id': 0}):
+            yield txn
+        async for txn in self.config.mongo.async_db.blocks.find(query, {'_id': 0}):
+            yield txn
+
+
+
+    def get_transactions_by_rid(
+        self,
+        selector,
+        bulletin_secret,
+        wif=None,
+        rid=False,
+        raw=False,
+        returnheight=True,
+        lt_block_height=None,
+        requested_rid=False,
+        requester_rid=False,
+        inc_mempool=False,
+        shared_decrypt=False
+    ):
         # selectors is old code before we got an RID by sorting the bulletin secrets
         # from block import Block
         # from transaction import Transaction
