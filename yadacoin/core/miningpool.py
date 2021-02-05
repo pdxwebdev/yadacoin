@@ -33,8 +33,8 @@ class MiningPool(object):
         self.index = 0
         last_block = await self.config.LatestBlock.block.copy()
         if last_block:
-            self.last_block_time = int(last_block['time'])
-            self.index = last_block['index']
+            self.last_block_time = int(last_block.time)
+            self.index = last_block.index
         self.last_refresh = 0
         self.block_factory = None
         await self.refresh()
