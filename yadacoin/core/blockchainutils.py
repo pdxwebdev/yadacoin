@@ -288,7 +288,7 @@ class BlockChainUtils(object):
                     # x['txn']['height'] = x['height'] # TODO: make height work for frastgraph transactions so we can order messages etc.
                     yield x['txn']
 
-    def get_transactions(self, wif, query, queryType, raw=False, both=True, skip=None):
+    async def get_transactions(self, wif, query, queryType, raw=False, both=True, skip=None):
         if not skip:
             skip = []
         #from block import Block
@@ -304,7 +304,7 @@ class BlockChainUtils(object):
                     'queryType': queryType
                 }
         ).sort([('height', -1)])
-        latest_block = self.get_latest_block()
+        latest_block = await self.config.LatestBlock.block.copy()
         if get_transactions_cache.count():
             get_transactions_cache = get_transactions_cache[0]
             block_height = get_transactions_cache['height']
@@ -335,8 +335,8 @@ class BlockChainUtils(object):
                             'raw': raw,
                             'both': both,
                             'skip': skip,
-                            'height': latest_block['index'],
-                            'block_hash': latest_block['hash'],
+                            'height': latest_block.index,
+                            'block_hash': latest_block.hash,
                             'queryType': queryType,
                             'id': transaction['id']
                         },
@@ -345,8 +345,8 @@ class BlockChainUtils(object):
                             'raw': raw,
                             'both': both,
                             'skip': skip,
-                            'height': latest_block['index'],
-                            'block_hash': latest_block['hash'],
+                            'height': latest_block.index,
+                            'block_hash': latest_block.hash,
                             'txn': transaction,
                             'queryType': queryType,
                             'id': transaction['id'],
@@ -363,8 +363,8 @@ class BlockChainUtils(object):
                                 'raw': raw,
                                 'both': both,
                                 'skip': skip,
-                                'height': latest_block['index'],
-                                'block_hash': latest_block['hash'],
+                                'height': latest_block.index,
+                                'block_hash': latest_block.hash,
                                 'queryType': queryType
                             },
                             {
@@ -372,8 +372,8 @@ class BlockChainUtils(object):
                                 'raw': raw,
                                 'both': both,
                                 'skip': skip,
-                                'height': latest_block['index'],
-                                'block_hash': latest_block['hash'],
+                                'height': latest_block.index,
+                                'block_hash': latest_block.hash,
                                 'txn': transaction,
                                 'queryType': queryType,
                                 'cache_time': time()
@@ -388,8 +388,8 @@ class BlockChainUtils(object):
                 'both': both,
                 'skip': skip,
                 'queryType': queryType,
-                'height': latest_block['index'],
-                'block_hash': latest_block['hash'],
+                'height': latest_block.index,
+                'block_hash': latest_block.hash,
                 'cache_time': time()
             })
 
@@ -559,7 +559,7 @@ class BlockChainUtils(object):
         else:
             return 3
 
-    def get_block_reward_DEPRECATED(self, block=None):
+    async def get_block_reward_DEPRECATED(self, block=None):
         # TODO: move to CHAIN
         block_rewards = [
             {"block": "0", "reward": "50"},
@@ -598,9 +598,9 @@ class BlockChainUtils(object):
             {"block": "6930000", "reward": "0"}
         ]
 
-        latest_block = self.get_latest_block()
+        latest_block = await self.config.LatestBlock.block.copy()
         if latest_block:
-            block_count = (latest_block['index'] + 1)
+            block_count = (latest_block.index + 1)
         else:
             block_count = 0
 

@@ -394,11 +394,15 @@ class Transaction(object):
         exclude_recovered_ids = []
         async for txn in self.get_inputs(self.inputs):
             input_txn = self.config.BU.get_transaction_by_id(txn.id)
+            if input_txn:
+                txn_input = Transaction.from_dict(input_txn)
             if not input_txn:
-                result = await self.recover_missing_transaction(txn.id, exclude_recovered_ids)
-                exclude_recovered_ids.append(exclude_recovered_ids)
-                raise MissingInputTransactionException("Input not found on blockchain: {}".format(txn.id))
-            txn_input = Transaction.from_dict(input_txn)
+                if self.extra_blocks:
+                    txn_input = await self.find_in_extra_blocks(txn)
+                if not txn_input:
+                    result = await self.recover_missing_transaction(txn.id, exclude_recovered_ids)
+                    exclude_recovered_ids.append(exclude_recovered_ids)
+                    raise MissingInputTransactionException("Input not found on blockchain: {}".format(txn.id))
 
             found = False
             for output in txn_input.outputs:
@@ -481,15 +485,10 @@ class Transaction(object):
             else:
                 found = False
                 if self.extra_blocks:
-                    for block in self.extra_blocks:
-                        for xtxn in block.transactions:
-                            if xtxn.transaction_signature == x.id:
-                                input_hashes.append(str(xtxn.transaction_signature))
-                                found = True
-                                break
-                        if found:
-                            break
-                if not found:
+                    found = await self.find_in_extra_blocks(x)
+                if found:
+                    input_hashes.append(str(found.transaction_signature))
+                else:
                     result = await self.recover_missing_transaction(x.id, exclude_recovered_ids)
                     if result:
                         txn = self.config.BU.get_transaction_by_id(x.id, instance=True)
@@ -499,6 +498,12 @@ class Transaction(object):
                         raise MissingInputTransactionException("This transaction is not in the blockchain.")
 
         return ''.join(sorted(input_hashes, key=lambda v: v.lower()))
+    
+    async def find_in_extra_blocks(self, txn_input):
+        for block in self.extra_blocks:
+            for xtxn in block.transactions:
+                if xtxn.transaction_signature == txn_input.id:
+                    return xtxn
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())

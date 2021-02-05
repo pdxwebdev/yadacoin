@@ -164,7 +164,7 @@ class Graph(object):
             for txn in res:
                 txn['pending'] = True
                 self.friend_requests.append(txn)
-            self.all_relationships = [x for x in GU().get_all_usernames()]
+            self.all_relationships = [x async for x in GU().get_all_usernames()]
             rids = []
             rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
             rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])
@@ -209,7 +209,7 @@ class Graph(object):
             for txn in res:
                 txn['pending'] = True
                 self.sent_friend_requests.append(txn)
-            self.all_relationships = [x for x in GU().get_all_usernames()]
+            self.all_relationships = [x async for x in GU().get_all_usernames()]
             rids = []
             rids.extend([x['rid'] for x in self.all_relationships if 'rid' in x and x['rid']])
             rids.extend([x['requested_rid'] for x in self.all_relationships if 'requested_rid' in x and x['requested_rid']])

@@ -29,7 +29,7 @@ class GraphUtils(object):
         self.mongo = self.config.mongo
         self.app_log = getLogger('tornado.application')
 
-    def get_all_usernames(self):
+    async def get_all_usernames(self):
         return self.config.BU.get_transactions(
             wif=self.config.wif,
             both=False,
@@ -37,7 +37,7 @@ class GraphUtils(object):
             queryType='allUsernames'
         )
 
-    def get_all_groups(self):
+    async def get_all_groups(self):
         return self.config.BU.get_transactions(
             wif=self.config.wif,
             both=False,
@@ -45,7 +45,7 @@ class GraphUtils(object):
             queryType='allUsernames'
         )
 
-    def search_username(self, username):
+    async def search_username(self, username):
         return self.config.BU.get_transactions(
             wif=self.config.wif,
             both=False,
@@ -92,7 +92,7 @@ class GraphUtils(object):
             query['txn.relationship.{}'.format(id_type)] = True
         return await self.config.mongo.async_db.name_server.find(query, {'_id': 0}).to_list(100)
 
-    def search_rid(self, rids):
+    async def search_rid(self, rids):
         if not isinstance(rids, (list, tuple)):
             rids = [rids]
         return self.config.BU.get_transactions(

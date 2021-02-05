@@ -97,7 +97,7 @@ class Blockchain(object):
 
         return {'verified': True}
 
-    async def test_block(self, block, extra_blocks=blocks):
+    async def test_block(self, block, extra_blocks=blocks, simulate_last_block=None):
         try:
             block.verify()
         except Exception as e:
@@ -115,14 +115,18 @@ class Blockchain(object):
         if block.index == 0:
             return True
 
-        last_block_data = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
-        if not last_block_data:
-            return False
-
-        last_block = await Block.from_dict(last_block_data)
-
+        
+        if simulate_last_block:
+            last_block = simulate_last_block
+        else:
+            last_block_data = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
+            if last_block_data:
+                last_block = await Block.from_dict(last_block_data)
+            else:
+                return False
+        
         if block.index >= CHAIN.FORK_10_MIN_BLOCK:
-            target = await CHAIN.get_target_10min(block.index, last_block, block)
+            target = await CHAIN.get_target_10min(block.index, last_block, block, extra_blocks)
         else:
             target = await CHAIN.get_target(block.index, last_block, block)
 
@@ -163,7 +167,9 @@ class Blockchain(object):
                 async for x in get_inputs(transaction.inputs):
                     txn = self.config.BU.get_transaction_by_id(x.id, instance=True)
                     if not txn:
-                        failed = True
+                        txn = await transaction.find_in_extra_blocks(x)
+                        if not txn:
+                            failed = True
                     if self.config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index):
                         failed = True
                     if x.id in used_ids_in_this_txn:

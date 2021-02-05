@@ -176,8 +176,7 @@ class CHAIN(object):
         ]
 
         if block_index is None:
-            from yadacoin import BU
-            block_index = BU().get_latest_block()['index'] + 1
+            block_index = get_config().LatestBlock.block.index + 1
 
         try:
             for t, block_reward in enumerate(block_rewards):
@@ -192,8 +191,7 @@ class CHAIN(object):
     def get_block_reward(cls, block_index=None):
         """Returns the reward matching a given block height, next block if None is provided"""
         if block_index is None:
-            from yadacoin import BU
-            block_index = BU().get_latest_block()['index'] + 1
+            block_index = get_config().LatestBlock.block.index + 1
         index = block_index // 2100000
         reward = int(50.0 * 1e8 / 2 ** index) / 1e8
         return reward
@@ -203,7 +201,8 @@ class CHAIN(object):
         self,
         height,
         last_block,  # This is the latest on chain block we have in db
-        block  # This is the block we are currently mining, not on chain yet, with current time in it.
+        block,  # This is the block we are currently mining, not on chain yet, with current time in it.
+        extra_blocks=None
     ):
         from yadacoin.core.block import Block
         # Aim at 5 min average block time, with escape hatch
@@ -219,7 +218,7 @@ class CHAIN(object):
         current_block_time = int(block.time) - int(last_block.time)
         adjusted = False
         if current_block_time > 2 * target_time:
-            latest_target = get_config().LatestBlock.block.target
+            latest_target = last_block.target
             delta = max_target - latest_target
             # Linear decrease to reach max target after one hour block time.
             new_target = int(latest_target + delta * current_block_time / 3600)
@@ -231,13 +230,32 @@ class CHAIN(object):
 
         block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period})
 
-        block_from_retarget_period_ago = await Block.from_dict(block_data)
+        if block_data:
+            block_from_retarget_period_ago = await Block.from_dict(block_data)
+        elif extra_blocks:
+            for extra_block in extra_blocks:
+                if extra_block.index == start_index-retarget_period:
+                    block_from_retarget_period_ago = extra_block
+                    break
+        else:
+            return False
+
+        
         retarget_period_ago_time = block_from_retarget_period_ago.time
         elapsed_time_from_retarget_period_ago = int(block.time) - int(retarget_period_ago_time)
         average_block_time = elapsed_time_from_retarget_period_ago / retarget_period
 
         block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period2})
-        block_from_retarget_period2_ago = await Block.from_dict(block_data)
+
+        if block_data:
+            block_from_retarget_period2_ago = await Block.from_dict(block_data)
+        elif extra_blocks:
+            for extra_block in extra_blocks:
+                if extra_block.index == start_index-retarget_period2:
+                    block_from_retarget_period2_ago = extra_block
+                    break
+        else:
+            return False
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
         elapsed_time_from_retarget_period2_ago = int(block.time) - int(retarget_period2_ago_time)
         average_block_time2 = elapsed_time_from_retarget_period2_ago / retarget_period2
@@ -250,6 +268,11 @@ class CHAIN(object):
                 if this_block:
                     block_tmp = await Block.from_dict(this_block)
                     hash_sum2 += block_tmp.target
+                elif extra_blocks:
+                    for extra_block in extra_blocks:
+                        if extra_block.index == i:
+                            hash_sum2 += extra_block.target
+                            break
             average_target = hash_sum2 / retarget_period2
             target = int(average_target * average_block_time2 / target_time)
         else:
@@ -259,6 +282,11 @@ class CHAIN(object):
                 if this_block:
                     block_tmp = await Block.from_dict(this_block)
                     hash_sum += block_tmp.target
+                elif extra_blocks:
+                    for extra_block in extra_blocks:
+                        if extra_block.index == i:
+                            hash_sum += extra_block.target
+                            break
             average_target = hash_sum / retarget_period
             # This adjusts both ways
             target = int(average_target * average_block_time / target_time)

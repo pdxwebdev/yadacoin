@@ -17,7 +17,7 @@ class GetLatestBlockHandler(BaseHandler):
         """
         :return:
         """
-        block = await self.config.BU.get_latest_block()
+        block = await self.config.LatestBlock.block.copy()
         # Note: I'd rather use an extra field "time_human" or time_utc than having different formats for a same field name.
         block['time_utc'] = ts_to_utc(block['time'])
         self.render_as_json(block)

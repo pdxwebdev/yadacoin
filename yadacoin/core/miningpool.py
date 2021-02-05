@@ -31,7 +31,7 @@ class MiningPool(object):
         self.connected_ips = {}
         self.last_block_time = 0
         self.index = 0
-        last_block = await self.config.BU.get_latest_block()
+        last_block = await self.config.LatestBlock.block.copy()
         if last_block:
             self.last_block_time = int(last_block['time'])
             self.index = last_block['index']

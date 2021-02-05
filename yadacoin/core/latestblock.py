@@ -28,7 +28,7 @@ class LatestBlock:
     @classmethod
     async def get_latest_block(cls):
         from yadacoin.core.block import Block
-        block = await cls.config.BU.get_latest_block()
+        block = await cls.config.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
         if block:
             return await Block.from_dict(block)
         else:

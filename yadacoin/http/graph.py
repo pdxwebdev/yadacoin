@@ -561,7 +561,7 @@ class NSHandler(BaseGraphHandler):
                     ns_record['txn']['relationship']['requester_rid'] = requester_rid
                     return self.render_as_json(ns_record['txn']['relationship'])
         else:
-            friends = [x for x in GU().search_username(phrase)]
+            friends = [x async for x in GU().search_username(phrase)]
             ns_records = await self.config.mongo.async_db.name_server.find({
                 'txn.relationship.their_username': phrase,
             }).to_list(10)
