@@ -1,6 +1,7 @@
 import json
 import socket
 import base64
+import time
 from json.decoder import JSONDecodeError
 from uuid import uuid4
 from collections import OrderedDict
@@ -102,6 +103,7 @@ class RPCSocketClient(TCPClient):
             stream.synced = False
             stream.message_queue = {}
             stream.peer = peer
+            stream.last_activity = int(time.time())
             try:
                 result = verify_signature(
                     base64.b64decode(stream.peer.identity.username_signature),
@@ -138,6 +140,7 @@ class RPCSocketClient(TCPClient):
                         del stream.message_queue[body['id']]
                     else:
                         continue
+                stream.last_activity = int(time.time())
                 await getattr(self, body.get('method'))(body, stream)
             except StreamClosedError:
                 del self.outbound_streams[stream.peer.__class__.__name__][stream.peer.rid]

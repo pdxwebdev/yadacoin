@@ -137,12 +137,16 @@ class Peer:
         peers = await self.get_outbound_peers()
         outbound_class = await self.get_outbound_class()
         limit = self.__class__.type_limit(outbound_class)
+        for idx, stream in self.config.nodeClient.outbound_streams[outbound_class.__name__].items():
+            if (int(time.time()) - stream.last_activity) > 600:
+                stream.close()
+
         stream_collection = {**self.config.nodeClient.outbound_streams[outbound_class.__name__], **self.config.nodeClient.outbound_pending[outbound_class.__name__]}
         await self.connect(stream_collection, limit, peers)
 
     async def connect(self, stream_collection, limit, peers):
         if limit and len(stream_collection) < limit:
-            for peer in set(peers) - set(stream_collection): # only connect to seed nodes
+            for peer in set(peers) - set(stream_collection):
                 await self.config.nodeClient.connect(peers[peer])
 
     def to_dict(self):
