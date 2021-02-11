@@ -1,6 +1,8 @@
 import json
+import traceback
 
 import tornado.ioloop
+from tornado.iostream import StreamClosedError
 
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.config import Config
@@ -36,9 +38,14 @@ class StratumServer(RPCSocketServer):
                 'result': result
             }
             for address in StratumServer.inbound_streams[Miner.__name__]:
-                await StratumServer.inbound_streams[Miner.__name__][address].write(
-                    '{}\n'.format(json.dumps(rpc_data)).encode()
-                )
+                try:
+                    await StratumServer.inbound_streams[Miner.__name__][address].write(
+                        '{}\n'.format(json.dumps(rpc_data)).encode()
+                    )
+                except StreamClosedError:
+                    pass
+                except Exception:
+                    cls.config.app_log.warning(traceback.format_exc())
 
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template()
