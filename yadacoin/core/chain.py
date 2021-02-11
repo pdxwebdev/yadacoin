@@ -237,6 +237,7 @@ class CHAIN(object):
                 if extra_block.index == start_index-retarget_period:
                     block_from_retarget_period_ago = extra_block
                     break
+            return False
         else:
             return False
 
@@ -254,6 +255,7 @@ class CHAIN(object):
                 if extra_block.index == start_index-retarget_period2:
                     block_from_retarget_period2_ago = extra_block
                     break
+            return False
         else:
             return False
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
