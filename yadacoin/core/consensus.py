@@ -32,6 +32,7 @@ from yadacoin.core.latestblock import LatestBlock
 from yadacoin.tcpsocket.node import NodeSocketServer
 from yadacoin.core.peer import Peer
 from yadacoin.tcpsocket.base import BaseRPC
+from yadacoin.tcpsocket.pool import StratumServer
 
 
 class Consensus(object):
@@ -345,14 +346,15 @@ class Consensus(object):
             await self.config.LatestBlock.update_latest_block()
             self.app_log.info("New block inserted for height: {}".format(block.index))
             latest_consensus = await self.mongo.async_db.consensus.find_one({
-                'index': self.latest_block.index + 1,
-                'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
+                'index': block.index + 1,
+                'block.version': CHAIN.get_version_for_height(block.index + 1),
                 'ignore': {'$ne': True}
             })
             if not latest_consensus:
                 await self.config.LatestBlock.block_checker()  # This will trigger mining pool to generate a new block to mine
                 if self.config.mp:
                     await self.config.mp.refresh()
+                    await StratumServer.block_checker()
                 if not self.syncing:
                     await self.config.nodeShared().send_block(self.config.LatestBlock.block)
             return True
