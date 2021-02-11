@@ -97,7 +97,7 @@ class Blockchain(object):
 
         return {'verified': True}
 
-    async def test_block(self, block, extra_blocks=blocks, simulate_last_block=None):
+    async def test_block(self, block, extra_blocks=[], simulate_last_block=None):
         try:
             block.verify()
         except Exception as e:
