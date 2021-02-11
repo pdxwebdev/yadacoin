@@ -229,7 +229,7 @@ class CHAIN(object):
         start_index = last_block.index
 
         block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period})
-
+        block_from_retarget_period_ago = None
         if block_data:
             block_from_retarget_period_ago = await Block.from_dict(block_data)
         elif extra_blocks:
@@ -237,7 +237,8 @@ class CHAIN(object):
                 if extra_block.index == start_index-retarget_period:
                     block_from_retarget_period_ago = extra_block
                     break
-            return False
+            if not block_from_retarget_period_ago:
+                return False
         else:
             return False
 
@@ -247,7 +248,7 @@ class CHAIN(object):
         average_block_time = elapsed_time_from_retarget_period_ago / retarget_period
 
         block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period2})
-
+        block_from_retarget_period2_ago = None
         if block_data:
             block_from_retarget_period2_ago = await Block.from_dict(block_data)
         elif extra_blocks:
@@ -255,7 +256,8 @@ class CHAIN(object):
                 if extra_block.index == start_index-retarget_period2:
                     block_from_retarget_period2_ago = extra_block
                     break
-            return False
+            if not block_from_retarget_period2_ago:
+                return False
         else:
             return False
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
