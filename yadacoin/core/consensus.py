@@ -258,19 +258,36 @@ class Consensus(object):
             if status:
                 result.append(retrace_consensus_block)
                 return result, status
-        if depth == 0:
-            return blocks, False
+        return blocks, False
     
     async def integrate_blockchain_with_existing_chain(self, blockchain, stream=None):
         bc = await Blockchain.init_async()
         prev_block = None
+        chain_passed = True
         async for block in blockchain.blocks:
             result = await bc.test_block(block, extra_blocks=[extra_block async for extra_block in blockchain.blocks], simulate_last_block=prev_block)
             prev_block = block
             if not result:
-                first_block = await blockchain.first_block
-                await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': first_block.index}})
-                return False
+                chain_passed = False
+        if not chain_passed:
+            chain_passed = True
+            blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
+            if status:
+                prev_block = None
+                bcblocks = [x async for x in blockchain.blocks]
+                for block in blocks + bcblocks:
+                    result = await bc.test_block(block, extra_blocks=[extra_block async for extra_block in blockchain.blocks], simulate_last_block=prev_block)
+                    prev_block = block
+                    if not result:
+                        chain_passed = False
+                if chain_passed:
+                    blockchain = await Blockchain.init_async(blocks + bcblocks)
+            else:
+                chain_passed = False
+        if not chain_passed:
+            first_block = await blockchain.first_block
+            await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': first_block.index}})
+            return False
         async for block in blockchain.blocks:
             try:
                 result = await self.integrate_block_with_existing_chain(block)

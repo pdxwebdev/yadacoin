@@ -605,14 +605,23 @@ class GraphUtils(object):
     ):
         if rid:
             query = {'rid': rid}
+            blocks_query = {'transactions.rid': rid}
         elif requested_rid:
             query = {'requested_rid': requested_rid}
+            blocks_query = {'transactions.requested_rid': requested_rid}
         elif requester_rid:
             query = {'requester_rid': requester_rid}
+            blocks_query = {'transactions.requester_rid': requester_rid}
         async for txn in self.config.mongo.async_db.miner_transactions.find(query, {'_id': 0}):
             yield txn
-        async for txn in self.config.mongo.async_db.blocks.find(query, {'_id': 0}):
-            yield txn
+        async for block in self.config.mongo.async_db.blocks.find(blocks_query, {'_id': 0}):
+            for txn in block.get('transactions'):
+                if (
+                    (rid and rid == txn.get('rid')) or
+                    (requested_rid and requested_rid == txn.get('requested_rid')) or
+                    (requester_rid and requester_rid == txn.get('requester_rid'))
+                ):
+                    yield txn
 
 
 
