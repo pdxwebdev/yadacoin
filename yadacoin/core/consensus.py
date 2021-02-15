@@ -62,6 +62,7 @@ class Consensus(object):
         else:
             if not self.prevent_genesis:
                 await self.config.BU.insert_genesis()
+                self.latest_block = self.config.LatestBlock.block
         return self
 
     async def verify_existing_blockchain(self, reset=False):

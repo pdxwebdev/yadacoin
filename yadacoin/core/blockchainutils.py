@@ -65,7 +65,6 @@ class BlockChainUtils(object):
 
     async def insert_genesis(self):
         #insert genesis if it doesn't exist
-        from yadacoin.core.block import Block
         genesis_block = await Blockchain.get_genesis_block()
         await genesis_block.save()
         self.mongo.db.consensus.update_one({
@@ -75,13 +74,15 @@ class BlockChainUtils(object):
             'index': 0
         },
         {
-            'block': genesis_block.to_dict(),
-            'peer': 'me',
-            'id': genesis_block.signature,
-            'index': 0
+            '$set': {
+                'block': genesis_block.to_dict(),
+                'peer': 'me',
+                'id': genesis_block.signature,
+                'index': 0
+            }
         },
         upsert=True)
-        self.latest_block = genesis_block
+        await self.config.LatestBlock.block_checker()
 
     def set_latest_block(self, block: dict):
         self.latest_block = block

@@ -458,7 +458,7 @@ class Block(object):
                     raise Exception('double spend', [x.id for x in txn.inputs])
         res = await self.config.mongo.async_db.blocks.find_one({"index": (int(self.index) - 1)})
         if (res and res[0]['hash'] == self.prev_hash) or self.index == 0:
-            await self.config.mongo.async_db.blocks.replace_one({'index': self.index}, self.to_dict())
+            await self.config.mongo.async_db.blocks.replace_one({'index': self.index}, self.to_dict(), upsert=True)
         else:
             print("CRITICAL: block rejected...")
 
