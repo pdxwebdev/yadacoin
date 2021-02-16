@@ -58,7 +58,6 @@ class PoolPayer(object):
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
-        latest_block = await Block.from_dict(await self.config.BU.get_latest_block_async())
         already_paid_height = await self.config.mongo.async_db.share_payout.find_one({}, sort=[('index', -1)])
         won_blocks = self.config.mongo.async_db.blocks.find({'transactions.outputs.to': self.config.address, 'index': {'$gt': already_paid_height.get('index', 0)}}).sort([('index', 1)])
         ready_blocks = []
@@ -70,7 +69,7 @@ class PoolPayer(object):
                 continue
             if self.config.debug:
                 self.app_log.debug(won_block.index)
-            if (won_block.index + 6) <= latest_block.index:
+            if (won_block.index + 6) <= self.config.LatestBlock.block.index:
                 if len(ready_blocks) >= 6:
                     if self.config.debug:
                         self.app_log.debug('entering payout at block: {}'.format( won_block.index))
