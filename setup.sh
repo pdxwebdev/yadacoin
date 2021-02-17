@@ -22,7 +22,7 @@ python3 -m pip install wheel
 python3 -m pip install scikit-build
 python3 -m pip install cmake
 python3 -m pip install --upgrade pip
-sudo pip3 install -r requirements-python3.txt
+python3 -m pip install -r requirements-python3.txt
 
 python3 utils/generate_config.py auto > config/config.json
 python3 utils/generate_services.py
