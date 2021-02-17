@@ -10,6 +10,9 @@ import os
 import ssl
 import ntpath
 import binascii
+currentdir = os.path.dirname(os.path.realpath(__file__))
+parentdir = os.path.dirname(currentdir)
+sys.path.append(parentdir)
 from datetime import datetime
 from traceback import format_exc
 from asyncio import sleep as async_sleep
