@@ -224,9 +224,11 @@ class Consensus(object):
             yield new_block
     
     async def get_previous_consensus_block(self, block, stream=None):
+        had_results = False
         async for local_block in self.get_previous_consensus_block_from_local(block):
+            had_results = True
             yield local_block
-        if stream:
+        if stream and not had_results:
             await BaseRPC().write_params(
                 stream,
                 'getblock',

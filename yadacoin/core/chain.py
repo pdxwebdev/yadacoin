@@ -310,7 +310,7 @@ class CHAIN(object):
         return int(target)
 
     @classmethod
-    async def get_target(cls, height, last_block, block) -> int:
+    async def get_target(cls, height, last_block, block, extra_blocks=None) -> int:
         from yadacoin.core.block import Block
         # change target
         max_target = CHAIN.MAX_TARGET
@@ -332,7 +332,18 @@ class CHAIN(object):
         if height > 0 and height % retarget_period == 0:
             get_config().debug_log(
                 "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
-            block_from_2016_ago = await Block.from_dict(get_config().BU.get_block_by_index(height - retarget_period))
+            block_data = get_config().BU.get_block_by_index(height - retarget_period)
+            block_from_2016_ago = None
+            if block_data:
+                block_from_2016_ago = await Block.from_dict(block_data)
+            elif extra_blocks:
+                for extra_block in extra_blocks:
+                    if extra_block.index == height-retarget_period:
+                        block_from_2016_ago = extra_block
+                        break
+                if not block_from_2016_ago:
+                    return False
+
             get_config().debug_log(
                 "Block_from_2016_ago - block {}/time {}".format(block_from_2016_ago.index, block_from_2016_ago.time))
             two_weeks_ago_time = block_from_2016_ago.time
@@ -354,7 +365,7 @@ class CHAIN(object):
 
             get_config().debug_log("start_index {}".format(start_index))
             if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                block_to_check = await Block.from_dict(await get_config().mongo.async_db.blocks.find_one({
+                block_data = await get_config().mongo.async_db.blocks.find_one({
                     '$and': [
                         {
                             'index': {'$lte': start_index}
@@ -366,7 +377,18 @@ class CHAIN(object):
                             'target': { '$ne': hex(max_target)[2:]}
                         }
                     ]
-                }, sort=[('index', -1)]))
+                }, sort=[('index', -1)])
+                block_to_check = None
+                if block_data:
+                    block_to_check = await Block.from_dict(block_data)
+                elif extra_blocks:
+                    for extra_block in extra_blocks:
+                        if extra_block.index <= start_index and extra_block.special_min and extra_block != max_target:
+                            block_to_check = extra_block
+                            break
+                    if not block_to_check:
+                        return False
+
             target = block_to_check.target
             get_config().debug_log("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
 
@@ -395,11 +417,19 @@ class CHAIN(object):
                 if start_index == 0:
                     return block_to_check.target
                 if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
-                    prev_block = await get_config().mongo.async_db.blocks.find_one({'index': start_index})
+                    block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index})
+                    prev_block = None
+                    if block_data:
+                        prev_block = await Block.from_dict(block_data)
+                    elif extra_blocks:
+                        for extra_block in extra_blocks:
+                            if extra_block.index == start_index:
+                                prev_block = extra_block
+                                break
                     if not prev_block:
                         start_index -= 1
                         continue
-                    block_to_check = await Block.from_dict(prev_block)
+                    block_to_check = prev_block
                     start_index -= 1
                 else:
                     target = block_to_check.target
