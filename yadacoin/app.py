@@ -412,8 +412,9 @@ class NodeApplication(Application):
                 self.default_handlers.extend(handlers.HANDLERS)
 
     def init_http(self):
-        self.config.app_log.info("API: http://{}".format(self.config.peer.to_string()))
-        self.config.app_log.info("Starting server on {}:{}".format(self.config.serve_host, self.config.serve_port))
+        self.config.app_log.info("API: http://{}:{}".format(self.config.serve_host, self.config.serve_port))
+        self.config.app_log.info("Wallet: http://{}:{}/app".format(self.config.serve_host, self.config.serve_port))
+        self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
 
         settings = dict(
             app_title=u"Yadacoin Node",
@@ -440,7 +441,7 @@ class NodeApplication(Application):
             http_server.listen(self.config.ssl['port'])
 
     def init_pool(self):
-        self.config.app_log.info("MiningPool activated")
+        self.config.app_log.info("Pool: {}:{}".format(self.config.peer_host, self.config.stratum_pool_port))
         StratumServer.inbound_streams[Miner.__name__] = {}
         self.config.poolServer = StratumServer()
         self.config.poolServer.listen(self.config.stratum_pool_port)

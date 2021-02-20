@@ -29,15 +29,11 @@ The comments are not valid json, they are only there to explain each parameter
     "database": "yadacoin",
     "site_database": "yadacoinsite",
     
-    # The server configuration
-    "web_server_host": "0.0.0.0",
-    "web_server_port": 5000,
-    
-    # This is not used 
+    # IP and port the node socket server will listen on
     "peer_host": "192.168.1.173",
     "peer_port": 8000,
     
-    # IP and port the server will listen on
+    # IP and port the web server will listen on
     "serve_host": "192.168.1.173",
     "serve_port": 8000,
     # pnp should only be used for specific configs

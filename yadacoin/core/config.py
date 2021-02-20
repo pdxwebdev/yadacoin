@@ -22,13 +22,13 @@ class Config(object):
 
     def __init__(self, config):
         self.start_time = int(time())
-        self.modes = config.get('modes', 'node')
+        self.modes = config.get('modes', ['node', 'web', 'pool'])
         self.root_app = config.get('root_app', '')
         self.seed = config.get('seed', '')
         self.xprv = config.get('xprv', '')
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
-        self.use_pnp = config.get('use_pnp', True)
+        self.use_pnp = config.get('use_pnp', False)
         self.ssl = config.get('ssl', False)
         self.origin = config.get('origin', False)
         self.max_inbound = config.get('max_inbound', 10)
@@ -45,8 +45,6 @@ class Config(object):
         self.mongodb_host = config['mongodb_host']
         self.database = config['database']
         self.site_database = config['site_database']
-        self.web_server_host = config['web_server_host']
-        self.web_server_port = config['web_server_port']
         if config['peer_host'] == '0.0.0.0' or config['peer_host'] == 'localhost':
             raise Exception("Cannot use localhost or 0.0.0.0, must specify public ipv4 address")
         if config['peer_host'] == '[my public ip]':
@@ -180,7 +178,7 @@ class Config(object):
                 peer_host = ''
 
         return cls({
-            "modes": 'node',
+            "modes": ['node', 'web', 'pool'],
             "root_app": '',
             "seed": seed or '',
             "xprv": extended_key or '',
@@ -190,8 +188,8 @@ class Config(object):
             "address": address,
             "api_whitelist": [],
             "serve_host": "0.0.0.0",
-            "serve_port": 8000,
-            "use_pnp": True,
+            "serve_port": 8001,
+            "use_pnp": False,
             "ssl": False,
             "origin": '',
             "sia_api_key": '',
@@ -199,10 +197,8 @@ class Config(object):
             "peer_host": peer_host,
             "peer_port": 8000,
             "peer_type": "user",
-            "web_server_host": "0.0.0.0",
-            "web_server_port": 8000,
             "peer": "http://localhost:8000",
-            "callbackurl": "http://0.0.0.0:8000/create-relationship",
+            "callbackurl": "http://0.0.0.0:8001/create-relationship",
             "jwt_public_key": None,
             "fcm_key": "",
             "database": db_name or "yadacoin",
@@ -211,7 +207,7 @@ class Config(object):
             "mixpanel": "",
             "username": username or '',
             "network": "mainnet",
-            "wallet_host_port": 'http://localhost:8000',
+            "wallet_host_port": 'http://localhost:8001',
             "credits_per_share": 5,
             "shares_required": True,
             "pool_take": .01
@@ -219,12 +215,12 @@ class Config(object):
 
     @classmethod
     def from_dict(cls, config):
-        cls.modes = config.get('modes', 'node')
+        cls.modes = config.get('modes', ['node', 'web', 'pool'])
         cls.root_app = config.get('root_app', '')
         cls.seed = config.get('seed', '')
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
-        cls.use_pnp = config.get('use_pnp', True)
+        cls.use_pnp = config.get('use_pnp', False)
         cls.ssl = config.get('ssl', False)
         cls.origin = config.get('origin', True)
         cls.network = config.get('network', 'mainnet')
@@ -240,8 +236,6 @@ class Config(object):
         cls.mongodb_host = config['mongodb_host']
         cls.database = config['database']
         cls.site_database = config['site_database']
-        cls.web_server_host = config['web_server_host']
-        cls.web_server_port = config['web_server_port']
         if config['peer_host'] == '0.0.0.0' or config['peer_host'] == 'localhost':
             raise Exception("cannot use localhost or 0.0.0.0, must specify public ipv4 address")
         if config['peer_host'] == '[my public ip]':
@@ -300,8 +294,6 @@ class Config(object):
             'network': self.network,
             'database': self.database,
             'site_database': self.site_database,
-            'web_server_host': self.web_server_host,
-            'web_server_port': self.web_server_port,
             'peer_host': self.peer_host,
             'peer_port': self.peer_port,
             'peer_type': self.peer_type,
