@@ -268,8 +268,9 @@ class Consensus(object):
         bc = await Blockchain.init_async()
         prev_block = None
         chain_passed = True
+        extra_blocks = [extra_block async for extra_block in blockchain.blocks]
         async for block in blockchain.blocks:
-            result = await bc.test_block(block, extra_blocks=[extra_block async for extra_block in blockchain.blocks], simulate_last_block=prev_block)
+            result = await bc.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block)
             prev_block = block
             if not result:
                 chain_passed = False
@@ -278,14 +279,13 @@ class Consensus(object):
             blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
             if status:
                 prev_block = None
-                bcblocks = [x async for x in blockchain.blocks]
-                for block in blocks + bcblocks:
-                    result = await bc.test_block(block, extra_blocks=[extra_block async for extra_block in blockchain.blocks], simulate_last_block=prev_block)
+                for block in blocks + extra_blocks:
+                    result = await bc.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block)
                     prev_block = block
                     if not result:
                         chain_passed = False
                 if chain_passed:
-                    blockchain = await Blockchain.init_async(blocks + bcblocks)
+                    blockchain = await Blockchain.init_async(blocks + extra_blocks)
             else:
                 chain_passed = False
         if not chain_passed:
@@ -294,7 +294,7 @@ class Consensus(object):
             return False
         async for block in blockchain.blocks:
             try:
-                result = await self.integrate_block_with_existing_chain(block)
+                result = await self.integrate_block_with_existing_chain(block, extra_blocks=extra_blocks)
                 if result:
                     continue
 
