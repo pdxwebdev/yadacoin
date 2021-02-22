@@ -25,9 +25,4 @@ python3 -m pip install --upgrade pip
 python3 -m pip install -r requirements-python3.txt
 
 python3 utils/generate_config.py auto > config/config.json
-python3 utils/generate_services.py
-sudo chmod +x scripts/start_node.sh
-sudo cp services/* /lib/systemd/system/.
-sudo systemctl daemon-reload
-sudo systemctl enable yadacoin-node
-sudo service yadacoin-node start
+python3 yadacoin/app.py --config=config/config.json
