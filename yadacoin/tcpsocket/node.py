@@ -129,6 +129,8 @@ class NodeRPC(BaseRPC):
 
     async def newblock(self, body, stream):
         payload = body.get('params', {}).get('payload')
+        if not stream.synced:
+            return
         if payload.get('block'):
             block = await Block.from_dict(payload.get('block'))
             await self.config.consensus.insert_consensus_block(block, stream.peer)
@@ -237,6 +239,8 @@ class NodeRPC(BaseRPC):
 
     async def blockresponse(self, body, stream):
         # get blocks should be done only by syncing peers
+        if not stream.synced:
+            return
         result = body.get('result')
         block = await Block.from_dict(result.get("block"))
         await self.config.consensus.insert_consensus_block(block, stream.peer)
