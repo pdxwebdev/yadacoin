@@ -81,8 +81,11 @@ class Config(object):
         self.stratum_pool_port = config.get('stratum_pool_port', 3333)
         self.wallet_host_port = config.get('wallet_host_port', 'http://localhost:{}'.format(config['peer_port']))
         self.credits_per_share = config.get('credits_per_share', 5)
-        self.shares_required = config.get('shares_required', True)
+        self.shares_required = config.get('shares_required', False)
         self.pool_take = config.get('pool_take', .01)
+        for key, val in config.items():
+            if not hasattr(self, key):
+                setattr(self, key, val)
 
     async def on_new_block(self, block):
         """Dispatcher for the new bloc event
@@ -209,7 +212,7 @@ class Config(object):
             "network": "mainnet",
             "wallet_host_port": 'http://localhost:8001',
             "credits_per_share": 5,
-            "shares_required": True,
+            "shares_required": False,
             "pool_take": .01
         })
 
@@ -251,7 +254,7 @@ class Config(object):
         cls.sia_api_key = config.get('sia_api_key')
         cls.wallet_host_port = config.get('wallet_host_port')
         cls.credits_per_share = config.get('credits_per_share', 5)
-        cls.shares_required = config.get('shares_required', True)
+        cls.shares_required = config.get('shares_required', False)
         cls.pool_take = config.get('pool_take', .01)
 
     def get_username_signature(self):

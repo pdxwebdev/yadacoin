@@ -13,8 +13,18 @@ from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.peer import Miner
 
 
-class StratumServer(RPCSocketServer):
+class Peer:
     address = ''
+
+    def __init__(self, address):
+        self.address = address
+
+    def to_json(self):
+        return {
+            'address': self.address
+        }
+
+class StratumServer(RPCSocketServer):
     current_index = 0
     config = None
 
@@ -43,9 +53,14 @@ class StratumServer(RPCSocketServer):
                         '{}\n'.format(json.dumps(rpc_data)).encode()
                     )
                 except StreamClosedError:
-                    pass
+                    await StratumServer.remove_peer(address)
                 except Exception:
                     cls.config.app_log.warning(traceback.format_exc())
+
+    @classmethod
+    async def remove_peer(self, peer):
+        if peer.address in StratumServer.inbound_streams[Miner.__name__]:
+            del StratumServer.inbound_streams[Miner.__name__][peer.address]
 
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template()
@@ -91,7 +106,7 @@ class StratumServer(RPCSocketServer):
             result = {'error': True, 'message': 'nonce is wrong data type'}
         if len(nonce) > CHAIN.MAX_NONCE_LEN:
             result = {'error': True, 'message': 'nonce is too long'}
-        result = await StratumServer.config.mp.on_miner_nonce(nonce, address=stream.address)
+        result = await StratumServer.config.mp.on_miner_nonce(nonce, address=stream.peer.address)
         data = {
             'id': body.get('id'),
             'method': body.get('method'),
@@ -106,9 +121,11 @@ class StratumServer(RPCSocketServer):
             StratumServer.config = get_config()
         if not StratumServer.config.mp:
             StratumServer.config.mp = await MiningPool.init_async()
+        await StratumServer.block_checker()
         job = await StratumServer.config.mp.block_template()
-        stream.address = body['params'].get('login')
-        StratumServer.inbound_streams[Miner.__name__][stream.address] = stream
+        stream.peer = Peer(body['params'].get('login'))
+        self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
+        StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
         job['job_id'] = job['blocktemplate_blob']
         job['blob'] = job['blocktemplate_blob']
         result = {
@@ -126,5 +143,5 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def status(self):
         return {
-            'miners': len(StratumServer.inbound_streams[Miner.__name__])
+            'miners': len(StratumServer.inbound_streams[Miner.__name__].keys())
         }

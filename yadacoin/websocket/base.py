@@ -242,6 +242,9 @@ class RCPWebSocketServer(WebSocketHandler):
                 self.config.app_log.warning(format_exc())
     
     async def service_provider_request(self, body):
+        if not body.get('params').get('group'):
+            self.config.app_log.error('Group not provided')
+            return
         group = Group.from_dict({
             'host': None,
             'port': None,
