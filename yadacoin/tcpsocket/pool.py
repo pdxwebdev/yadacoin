@@ -47,20 +47,20 @@ class StratumServer(RPCSocketServer):
                 'jsonrpc': 2.0,
                 'result': result
             }
-            for address in StratumServer.inbound_streams[Miner.__name__]:
+            for stream in StratumServer.inbound_streams[Miner.__name__].values():
                 try:
-                    await StratumServer.inbound_streams[Miner.__name__][address].write(
+                    await stream.write(
                         '{}\n'.format(json.dumps(rpc_data)).encode()
                     )
                 except StreamClosedError:
-                    await StratumServer.remove_peer(address)
+                    await StratumServer.remove_peer(stream.peer)
                 except Exception:
                     cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
     async def remove_peer(self, peer):
-        if peer.address in StratumServer.inbound_streams[Miner.__name__]:
-            del StratumServer.inbound_streams[Miner.__name__][peer.address]
+        if peer in StratumServer.inbound_streams[Miner.__name__]:
+            del StratumServer.inbound_streams[Miner.__name__][peer]
 
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template()
@@ -125,7 +125,7 @@ class StratumServer(RPCSocketServer):
         job = await StratumServer.config.mp.block_template()
         stream.peer = Peer(body['params'].get('login'))
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
-        StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
+        StratumServer.inbound_streams[Miner.__name__][stream.peer] = stream
         job['job_id'] = job['blocktemplate_blob']
         job['blob'] = job['blocktemplate_blob']
         result = {
