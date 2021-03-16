@@ -228,13 +228,20 @@ class NodeRPC(BaseRPC):
             return
         self.config.consensus.syncing = True
         
+        first_inbound_block = await Block.from_dict(blocks[0])
         inbound_blockchain = await Blockchain.init_async(blocks, partial=True)
-        existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': blocks[0]['index']}}), partial=True)
-        prev_block = await self.ensure_previous_block(await Block.from_dict(blocks[0]), stream)
+        existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
+
+        prev_block = await self.ensure_previous_block(first_inbound_block, stream)
         if not prev_block:
+            stream.synced = True
+            self.config.consensus.syncing = False
             return False
         if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
-            await self.config.consensus.integrate_blockchain_with_existing_chain(inbound_blockchain, stream)
+            await self.config.consensus.integrate_blockchain_with_existing_chain(
+                inbound_blockchain,
+                stream
+            )
         self.config.consensus.syncing = False
 
     async def blockresponse(self, body, stream):
