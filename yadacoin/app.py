@@ -92,17 +92,17 @@ class NodeApplication(Application):
             self.init_peer()
             if 'pool' in self.config.modes:
                 self.init_pool()
-            if 'web' in self.config.modes:
-                self.default_handlers = [
-                  (r"/app/(.*)", StaticFileHandler, {"path": path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')}),
-                ]
-                self.init_websocket()
-                self.init_webui()
-                self.init_plugins()
-                self.init_http()
-                self.init_whitelist()
-                self.init_jwt()
-            self.init_ioloop()
+        if 'web' in self.config.modes:
+            self.default_handlers = [
+              (r"/app/(.*)", StaticFileHandler, {"path": path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')}),
+            ]
+            self.init_websocket()
+            self.init_webui()
+            self.init_plugins()
+            self.init_http()
+            self.init_whitelist()
+            self.init_jwt()
+        self.init_ioloop()
 
     async def background_consensus(self):
         if self.config.consensus_busy:
@@ -150,7 +150,7 @@ class NodeApplication(Application):
             await LatestBlock.block_checker()
             if last_block_height != LatestBlock.block.index:
                 self.config.app_log.info('Latest block height: %s | time: %s' % (
-                    self.config.LatestBlock.block.index, 
+                    self.config.LatestBlock.block.index,
                     datetime.fromtimestamp(
                         int(
                             self.config.LatestBlock.block.time
@@ -161,7 +161,7 @@ class NodeApplication(Application):
             self.config.block_checker_busy = False
         except Exception as e:
             self.config.app_log.error(format_exc())
-    
+
     async def background_transaction_sender(self):
         if self.config.transaction_sender_busy:
             return
@@ -309,7 +309,7 @@ class NodeApplication(Application):
                 self.config.network = options.network
 
         self.config.reset = options.reset
-      
+
     def init_consensus(self):
         tornado.ioloop.IOLoop.current().run_sync(self.config.consensus.async_init)
         if self.options.verify:
@@ -328,24 +328,23 @@ class NodeApplication(Application):
     def init_ioloop(self):
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
 
-        tornado.ioloop.PeriodicCallback(self.background_consensus, 3000).start()
-        self.config.consensus_busy = False
-
-        if self.config.network != 'regnet':
+        if self.config.network != 'regnet' and 'node' in self.config.modes:
+            tornado.ioloop.PeriodicCallback(self.background_consensus, 3000).start()
+            self.config.consensus_busy = False
             tornado.ioloop.PeriodicCallback(self.background_peers, 3000).start()
             self.config.peers_busy = False
 
-        tornado.ioloop.PeriodicCallback(self.background_status, 30000).start()
-        self.config.status_busy = False
+            tornado.ioloop.PeriodicCallback(self.background_status, 30000).start()
+            self.config.status_busy = False
 
-        tornado.ioloop.PeriodicCallback(self.background_block_checker, 1000).start()
-        self.config.block_checker_busy = False
+            tornado.ioloop.PeriodicCallback(self.background_block_checker, 1000).start()
+            self.config.block_checker_busy = False
 
-        tornado.ioloop.PeriodicCallback(self.background_cache_validator, 30000).start()
-        self.config.cache_busy = False
+            tornado.ioloop.PeriodicCallback(self.background_cache_validator, 30000).start()
+            self.config.cache_busy = False
 
-        tornado.ioloop.PeriodicCallback(self.background_transaction_sender, 10000).start()
-        self.config.transaction_sender_busy = False
+            tornado.ioloop.PeriodicCallback(self.background_transaction_sender, 10000).start()
+            self.config.transaction_sender_busy = False
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
@@ -391,10 +390,10 @@ class NodeApplication(Application):
             self.config.groups = Peers.get_groups()
         elif self.config.network == 'regnet':
             self.config.groups = Peers.get_groups()
-    
+
     def init_websocket(self):
         self.default_handlers.extend(WEBSOCKET_HANDLERS)
-    
+
     def init_webui(self):
         self.default_handlers.extend(NODE_HANDLERS)
         self.default_handlers.extend(GRAPH_HANDLERS)
@@ -402,7 +401,7 @@ class NodeApplication(Application):
         self.default_handlers.extend(WALLET_HANDLERS)
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
-    
+
     def init_plugins(self):
         for finder, name, ispkg in pkgutil.iter_modules([path.join(path.dirname(__file__), '..', 'plugins')]):
             handlers = importlib.import_module('plugins.' + name + '.handlers')
@@ -413,8 +412,10 @@ class NodeApplication(Application):
 
     def init_http(self):
         self.config.app_log.info("API: http://{}:{}".format(self.config.serve_host, self.config.serve_port))
-        self.config.app_log.info("Wallet: http://{}:{}/app".format(self.config.serve_host, self.config.serve_port))
-        self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
+        if 'web' in self.config.modes:
+            self.config.app_log.info("Wallet: http://{}:{}/app".format(self.config.serve_host, self.config.serve_port))
+        if 'node' in self.config.modes:
+            self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
 
         settings = dict(
             app_title=u"Yadacoin Node",
@@ -448,7 +449,7 @@ class NodeApplication(Application):
 
     def init_peer(self):
         Peer.create_upnp_mapping(self.config)
-        
+
         my_peer = {
             'host': self.config.peer_host,
             'port': self.config.peer_port,
@@ -486,31 +487,35 @@ class NodeApplication(Application):
         tornado.ioloop.IOLoop.current().run_sync(self.config.LatestBlock.block_checker)
         self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(Consensus.init_async)
         self.config.cipher = Crypt(self.config.wif)
-        self.config.pyrx = pyrx.PyRX()
-        self.config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
-        self.config.nodeServer = NodeSocketServer
-        self.config.nodeShared = NodeRPC
-        self.config.nodeClient = NodeSocketClient()
+        if 'node' in self.config.modes:
+            self.config.pyrx = pyrx.PyRX()
+            self.config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
+            self.config.nodeServer = NodeSocketServer
+            self.config.nodeShared = NodeRPC
+            self.config.nodeClient = NodeSocketClient()
+
+            for x in [Seed, SeedGateway, ServiceProvider, User]:
+                if x.__name__ not in self.config.nodeClient.outbound_streams:
+                    self.config.nodeClient.outbound_ignore[x.__name__] = {}
+                if x.__name__ not in self.config.nodeClient.outbound_streams:
+                    self.config.nodeClient.outbound_pending[x.__name__] = {}
+                if x.__name__ not in self.config.nodeClient.outbound_streams:
+                    self.config.nodeClient.outbound_streams[x.__name__] = {}
+            for x in [Seed, SeedGateway, ServiceProvider, User]:
+                if x.__name__ not in self.config.nodeServer.inbound_pending:
+                    self.config.nodeServer.inbound_pending[x.__name__] = {}
+                if x.__name__ not in self.config.nodeServer.inbound_streams:
+                    self.config.nodeServer.inbound_streams[x.__name__] = {}
+            self.config.nodeServer().listen(self.config.peer_port)
+
         self.config.websocketServer = RCPWebSocketServer
-        for x in [Seed, SeedGateway, ServiceProvider, User]:
-            if x.__name__ not in self.config.nodeClient.outbound_streams:
-                self.config.nodeClient.outbound_ignore[x.__name__] = {}
-            if x.__name__ not in self.config.nodeClient.outbound_streams:
-                self.config.nodeClient.outbound_pending[x.__name__] = {}
-            if x.__name__ not in self.config.nodeClient.outbound_streams:
-                self.config.nodeClient.outbound_streams[x.__name__] = {}
         self.config.app_log = logging.getLogger('tornado.application')
-        for x in [Seed, SeedGateway, ServiceProvider, User]:
-            if x.__name__ not in self.config.nodeServer.inbound_pending:
-                self.config.nodeServer.inbound_pending[x.__name__] = {}
-            if x.__name__ not in self.config.nodeServer.inbound_streams:
-                self.config.nodeServer.inbound_streams[x.__name__] = {}
-        for x in [User, Group]:
-            if x.__name__ not in self.config.websocketServer.inbound_streams:
-                self.config.websocketServer.inbound_streams[x.__name__] = {}
+        if 'web' in self.config.modes:
+            for x in [User, Group]:
+                if x.__name__ not in self.config.websocketServer.inbound_streams:
+                    self.config.websocketServer.inbound_streams[x.__name__] = {}
         if 'test' in self.config.modes:
             return
-        self.config.nodeServer().listen(self.config.peer_port)
 
 if __name__ == "__main__":
     NodeApplication()
