@@ -207,14 +207,24 @@ class MiningPool(object):
 
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
-        res = {
-            'job_id': self.block_factory.header.replace('{nonce}', '{00}'),
-            'difficulty': difficulty, 
-            'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', #hex(int(self.block_factory.target))[2:].rjust(64, '0')[:14],
-            'blob': self.block_factory.header.replace('{nonce}', '{00}').encode().hex(),
-            'seed_hash': seed_hash,
-            'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
-        }
+        if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
+            res = {
+                'job_id': self.block_factory.header.replace('{nonce}', '{00}'),
+                'difficulty': difficulty, 
+                'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', #hex(int(self.block_factory.target))[2:].rjust(64, '0')[:14],
+                'blob': self.block_factory.header.replace('{nonce}', '{00}').encode().hex(),
+                'seed_hash': seed_hash,
+                'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
+            }
+        else:
+            res = {
+                'difficulty': difficulty, 
+                'target': hex(int(self.block_factory.target))[2:].rjust(64, '0')[:16],
+                'blocktemplate_blob': self.block_factory.header.replace('{nonce}', '{000000}'),
+                'blockhashing_blob': self.block_factory.header.replace('{nonce}', '{000000}'),
+                'seed_hash': seed_hash,
+                'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
+            }
         return res
 
     async def set_target(self, to_time):

@@ -34,13 +34,22 @@ class StratumServer(RPCSocketServer):
             cls.config = get_config()
         if cls.current_index != cls.config.LatestBlock.block.index:
             job = await cls.config.mp.block_template()
-            job['job_id'] = job['job_id']
-            job['blob'] = job['blob']
-            cls.current_index = cls.config.LatestBlock.block.index
-            result = {
-                'id': job['job_id'],
-                'job': job
-            }
+            if cls.config.LatestBlock.block.index >= CHAIN.BLOCK_V5_FORK:
+                job['job_id'] = job['job_id']
+                job['blob'] = job['blob']
+                cls.current_index = cls.config.LatestBlock.block.index
+                result = {
+                    'id': job['job_id'],
+                    'job': job
+                }
+            else:
+                job['job_id'] = job['blocktemplate_blob']
+                job['blob'] = job['blocktemplate_blob']
+                cls.current_index = cls.config.LatestBlock.block.index
+                result = {
+                    'id': job['blocktemplate_blob'],
+                    'job': job
+                }
             rpc_data = {
                 'id': 1,
                 'method': 'login',
@@ -126,12 +135,21 @@ class StratumServer(RPCSocketServer):
         stream.peer = Peer(body['params'].get('login'))
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
         StratumServer.inbound_streams[Miner.__name__][stream.peer] = stream
-        job['job_id'] = job['job_id']
-        job['blob'] = job['blob']
-        result = {
-            'id': job['blob'],
-            'job': job
-        }
+        if self.config.LatestBlock.block.index >= CHAIN.BLOCK_V5_FORK:
+            job['job_id'] = job['job_id']
+            job['blob'] = job['blob']
+            result = {
+                'id': job['blob'],
+                'job': job
+            }
+        else:
+            job['job_id'] = job['blocktemplate_blob']
+            job['blob'] = job['blocktemplate_blob']
+            result = {
+                'id': job['blocktemplate_blob'],
+                'job': job
+            }
+
         rpc_data = {
             'id': body.get('id'),
             'method': body.get('method'),
