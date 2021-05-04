@@ -202,7 +202,10 @@ class Blockchain(object):
         target_block_time = CHAIN.target_block_time(self.config.network)
 
         checks_passed = False
-        if (int(block.hash, 16) < target):
+        if (block.index >= CHAIN.BLOCK_V5_FORK) and int(block.little_hash(), 16) < target:
+            self.config.app_log.warning('5')
+            checks_passed = True
+        elif (int(block.hash, 16) < target):
             self.config.app_log.warning('6')
             checks_passed = True
         elif (block.special_min and int(block.hash, 16) < special_target):

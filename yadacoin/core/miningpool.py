@@ -97,7 +97,13 @@ class MiningPool(object):
             return False
 
 
-        if (int(block_candidate.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(hash1, 16):
+        if (
+          (int(block_candidate.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(hash1, 16) or
+          (
+            block_candidate.index >= CHAIN.BLOCK_V5_FORK and
+            (int(block_candidate.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(block_candidate.little_hash(), 16)
+          )
+        ):
             # submit share only now, not to slow down if we had a block
             self.app_log.warning('{} {}'.format(hash1, address))
             await self.mongo.async_db.shares.update_one({
@@ -115,13 +121,25 @@ class MiningPool(object):
                 }
             }, upsert=True)
 
-        if int(block_candidate.target) > int(block_candidate.hash, 16):
+        if (
+          int(block_candidate.target) > int(block_candidate.hash, 16) or
+          (
+            block_candidate.index >= CHAIN.BLOCK_V5_FORK and
+            int(block_candidate.target) > int(block_candidate.little_hash(), 16)
+          )
+        ):
             # accept winning block
             await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok')
             self.app_log.error('^^ ^^ ^^')
-        elif block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.hash, 16)):
+        elif (
+          block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.hash, 16)) or
+          (
+            block_candidate.index >= CHAIN.BLOCK_V5_FORK and
+            block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.little_hash(), 16))
+          )
+        ):
             # accept winning block
             await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
@@ -190,10 +208,10 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         res = {
+            'job_id': self.block_factory.header.replace('{nonce}', '{00}'),
             'difficulty': difficulty, 
-            'target': hex(int(self.block_factory.target))[2:].rjust(64, '0')[:16],
-            'blocktemplate_blob': self.block_factory.header.replace('{nonce}', '{000000}'),
-            'blockhashing_blob': self.block_factory.header.replace('{nonce}', '{000000}'),
+            'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', #hex(int(self.block_factory.target))[2:].rjust(64, '0')[:14],
+            'blob': self.block_factory.header.replace('{nonce}', '{00}').encode().hex(),
             'seed_hash': seed_hash,
             'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
         }
@@ -204,7 +222,7 @@ class MiningPool(object):
             await self.set_target_from_last_non_special_min(self.config.LatestBlock.block)
         # todo: keep block target at normal target, for header and block info.
         # Only tweak target at validation time, and don't include special_min into header
-        if self.block_factory.index >= 38600:  # TODO: use a CHAIN constant
+        if self.block_factory.index >= CHAIN.SPECIAL_MIN_FORK:  # TODO: use a CHAIN constant
             # print("test target", int(to_time), self.last_block_time)
             if self.block_factory.target == 0:
                 # If the node is started when the current block is special_min, then we have a 0 target
@@ -219,7 +237,7 @@ class MiningPool(object):
                 self.block_factory.time = int(to_time)
             else:
                 self.block_factory.special_min = False
-        elif self.block_factory.index < 38600:  # TODO: use a CHAIN constant
+        elif self.block_factory.index < CHAIN.SPECIAL_MIN_FORK:  # TODO: use a CHAIN constant
             if (int(to_time) - self.last_block_time) > self.target_block_time:
                 self.block_factory.target = self.max_target
                 self.block_factory.special_min = True

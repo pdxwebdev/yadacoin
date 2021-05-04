@@ -237,6 +237,14 @@ class Block(object):
             block.signature = TU.generate_signature(block.hash, private_key)
         return block
 
+    def little_hash(self):
+        little_hex = bytearray.fromhex(self.hash)
+        little_hex.reverse()
+
+        str_little = ''.join(format(x, '02x') for x in little_hex)
+
+        return str_little
+
     def generate_header(self):
         if int(self.version) < 3:
             return str(self.version) + \
@@ -321,13 +329,27 @@ class Block(object):
     def generate_hash_from_header(self, height, header, nonce):
         if not hasattr(Block, 'pyrx'):
             Block.pyrx = pyrx.PyRX()
-        header = header.format(nonce=nonce)
-        if height >= CHAIN.RANDOMX_FORK:
-            seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
+        seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
+        if height >= CHAIN.BLOCK_V5_FORK:
+            bh = Block.pyrx.get_rx_hash(
+                header.encode().replace(
+                    b'{nonce}',
+                    binascii.unhexlify(
+                        nonce
+                    )
+                ),
+                seed_hash,
+                height
+            )
+            hh = binascii.hexlify(bh).decode()
+            return hh
+        elif height >= CHAIN.RANDOMX_FORK:
+            header = header.format(nonce=nonce)
             bh = Block.pyrx.get_rx_hash(header, seed_hash, height)
             hh = binascii.hexlify(bh).decode()
             return hh
         else:
+            header = header.format(nonce=nonce)
             return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
 
     def verify(self):

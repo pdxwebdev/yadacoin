@@ -18,8 +18,11 @@ class CHAIN(object):
     POW_FORK_V2 = 60000
     MINING_AND_TXN_REFORM_FORK = 60000
     POW_FORK_V3 = 61110
+
+    BLOCK_V5_FORK = 176000
     RANDOMX_FORK = 65000
     FORK_10_MIN_BLOCK = 65500
+    SPECIAL_MIN_FORK = 38600
 
     RETARGET_PERIOD = 2016  # blocks
     TWO_WEEKS = 1209600  # seconds
@@ -129,6 +132,8 @@ class CHAIN(object):
     def get_version_for_height(cls, height: int):
         if int(height) <= 14484:
             return 1
+        elif int(height) >= cls.BLOCK_V5_FORK:
+            return 5
         elif int(height) >= cls.POW_FORK_V3:
             return 4
         elif int(height) > cls.POW_FORK_V2 and int(height) < cls.POW_FORK_V3:
@@ -405,7 +410,7 @@ class CHAIN(object):
         else:
             block_to_check = block
             delta_t = int(block.time) - int(last_block.time)
-            if block.index >= 38600 and delta_t > max_block_time and block.special_min:
+            if block.index >= CHAIN.SPECIAL_MIN_FORK and delta_t > max_block_time and block.special_min:
                 special_target = CHAIN.special_target(block.index, block.target, delta_t, get_config().network)
                 return special_target
 
