@@ -45,7 +45,9 @@ class PoolInfoHandler(BaseWebHandler):
             last_btc = self.config.ticker.json()['ydabtc']['ticker']['last']
         except:
             last_btc = 0
-            
+        
+        last_five_blocks_query = self.config.mongo.async_db.blocks.find({'index': { '$gte': self.config.LatestBlock.block.index - 5}}, {'_id': 0})
+        last_five_blocks = await last_five_blocks_query.to_list(length=5)
         shares_count = await self.config.mongo.async_db.shares.count_documents({'index': { '$gte': self.config.LatestBlock.block.index - 10}})
         blocks_found = await self.config.mongo.async_db.share_payout.count_documents({})
         last_block_found_payout = await self.config.mongo.async_db.share_payout.find_one({}, sort=[('index', -1)])
@@ -76,7 +78,8 @@ class PoolInfoHandler(BaseWebHandler):
                 'height': self.config.LatestBlock.block.index,
                 'reward': CHAIN.get_block_reward(self.config.LatestBlock.block.index),
                 'last_block': self.config.LatestBlock.block.time,
-                'hashes_per_second': network_hash_rate
+                'hashes_per_second': network_hash_rate,
+                'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in last_five_blocks]
             },
             'market': {
                 'last_btc': last_btc
