@@ -64,6 +64,7 @@ from yadacoin.tcpsocket.node import (
 from yadacoin.websocket.base import RCPWebSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin import version
+from plugins.yadacoinpool import handlers
 
 
 define("debug", default=False, help="debug mode", type=bool)
@@ -93,9 +94,14 @@ class NodeApplication(Application):
             if 'pool' in self.config.modes:
                 self.init_pool()
         if 'web' in self.config.modes:
+            if os.path.exists(path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')):
+                static_path = path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')
+            else:
+                static_path = path.join(path.join(path.dirname(__file__), 'static'), 'app') # probably running from binary
             self.default_handlers = [
-              (r"/app/(.*)", StaticFileHandler, {"path": path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')}),
+              (r"/app/(.*)", StaticFileHandler, {"path": static_path}),
             ]
+            self.default_handlers.extend(handlers.HANDLERS)
             self.init_websocket()
             self.init_webui()
             self.init_plugins()
@@ -416,10 +422,13 @@ class NodeApplication(Application):
             self.config.app_log.info("Wallet: http://{}:{}/app".format(self.config.serve_host, self.config.serve_port))
         if 'node' in self.config.modes:
             self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
-
+        if os.path.exists(path.join(path.dirname(__file__), '..', 'templates')):
+            template_path = path.join(path.dirname(__file__), '..', 'templates')
+        else:
+            template_path = path.join(path.dirname(__file__), 'templates')
         settings = dict(
             app_title=u"Yadacoin Node",
-            template_path=path.join(path.dirname(__file__), '..', 'templates'),
+            template_path=template_path,
             xsrf_cookies=False,  # TODO: sort out, depending on python client version (< 3.6) does not work with xsrf activated
             cookie_secret=sha256(self.config.private_key.encode('utf-8')).hexdigest(),
             compress_response=True,

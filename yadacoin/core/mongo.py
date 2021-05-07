@@ -15,11 +15,8 @@ class Mongo(object):
         try:
             # test connection
             self.db.yadacoin.find_one()
-        except:
-            if hasattr(self.config, 'mongod_path'):
-                os.system('sudo {} --syslog --fork'.format(self.config.mongod_path))
-            else:
-                os.system('sudo mongod --syslog --fork')
+        except Exception as e:
+            raise e
 
         __id = IndexModel([("id", ASCENDING)], name="__id", unique=True)
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
@@ -97,3 +94,9 @@ class Mongo(object):
         self.async_client = MotorClient(self.config.mongodb_host)
         self.async_db = self.async_client[self.config.database]
         self.async_site_db = self.async_client[self.config.site_database]
+
+        # convert block time from string to number
+        blocks_to_convert = self.db.blocks.find({'time': {'$type': 2}})
+        for block in blocks_to_convert:
+            self.config.app_log.warning(f'Converting block time to int for block: {block["index"]}')
+            self.db.blocks.update({'index': block['index']}, {'$set': {'time': int(block['time'])}})

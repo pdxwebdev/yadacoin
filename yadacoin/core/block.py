@@ -90,7 +90,7 @@ class Block(object):
         self.config = get_config()
         self.app_log = getLogger('tornado.application')
         self.version = version
-        self.time = block_time
+        self.time = int(block_time)
         self.index = block_index
         self.prev_hash = prev_hash
         self.nonce = nonce
@@ -143,9 +143,9 @@ class Block(object):
         else:
             version = force_version
         if force_time:
-            xtime = str(int(force_time))
+            xtime = int(force_time)
         else:
-            xtime = str(int(time.time()))
+            xtime = int(time.time())
         index = int(index)
         if index == 0:
             prev_hash = ''
@@ -491,7 +491,7 @@ class Block(object):
         try:
             return {
                 'version': self.version,
-                'time': self.time,
+                'time': int(self.time),
                 'index': self.index,
                 'public_key': self.public_key,
                 'prevHash': self.prev_hash,

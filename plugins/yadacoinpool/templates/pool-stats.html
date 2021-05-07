@@ -1,0 +1,121 @@
+<script src="yadacoinpoolstatic/lib/jquery/dist/jquery.js"></script>
+<script src="yadacoinpoolstatic/lib/bootstrap/dist/js/bootstrap.min.js"></script>
+<link href="yadacoinpoolstatic/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
+<body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
+    <main>
+      <div class="main">
+        <section class="module container" id="about">
+          <h1>YadaCoin Pool Stats</h1>
+          <h2>Pool</h2>
+          <div style="width: 350px; float:left;">
+            <h4 style="font-weight: bold;">Hash rate</h4 style="font-weight: bold;">
+            <div id="pool-hash-rate"></div>
+            <h4 style="font-weight: bold;">Last block</h4 style="font-weight: bold;">
+            <div id="pool-last-block"></div>
+            <h4 style="font-weight: bold;">Miner count</h4 style="font-weight: bold;">
+            <div id="pool-miner-count"></div>
+          </div>
+          <div style="width: 350px; float:left;">
+            <h4 style="font-weight: bold;">Payout scheme</h4 style="font-weight: bold;">
+            <div id="pool-payout-scheme"></div>
+            <h4 style="font-weight: bold;">Fee</h4 style="font-weight: bold;">
+            <div id="pool-fee"></div>
+            <h4 style="font-weight: bold;">Blocks found</h4 style="font-weight: bold;">
+            <div id="pool-blocks-found"></div>
+          </div>
+          <div style="width: 350px; float:left;clear:right;">
+            <h4 style="font-weight: bold;">Min payout</h4 style="font-weight: bold;">
+            <div id="pool-min-payout"></div>
+            <h4 style="font-weight: bold;">Url</h4 style="font-weight: bold;">
+            <div id="pool-url"></div>
+          </div>
+          <div style="width: 350px; clear: left; float:left">
+            <h2>Network</h2>
+            <h4 style="font-weight: bold;">Hash rate</h4 style="font-weight: bold;">
+            <div id="network-hash-rate"></div>
+            <h4 style="font-weight: bold;">Height</h4 style="font-weight: bold;">
+            <div id="network-height"></div>
+            <h4 style="font-weight: bold;">Reward</h4 style="font-weight: bold;">
+            <div id="network-reward"></div>
+            <h4 style="font-weight: bold;">Last block</h4 style="font-weight: bold;">
+            <div id="network-last-block"></div>
+          </div>
+          <div style="width: 350px; float:left;">
+            <h2>Market</h2>
+            <h4 style="font-weight: bold;">YDABTC</h4 style="font-weight: bold;">
+            <div id="market-last-btc"></div>
+          </div>
+          <div style="width: 150px; float:left;">
+            <h2>Download</h2>
+            <h4 style="font-weight: bold;"><a href="/pool-guide" target="_blank">XMRigCC</a></h4 style="font-weight: bold;">
+          </div>
+            <form method="GET" action="." id="form">
+                <input type="text" name="address" id="address" placeholder="address" class="form-control" />
+                <button class="form-control">Get stats</button>
+            </form>
+            <h2>Recent 100 shares</h2>
+            <table id="shares-table" class="table">
+                <tr><td>No results</td></tr>
+            </table>
+            <h2>Recent 100 payouts</h2>
+            <table id="payouts-table" class="table">
+                <tr><td>No results</td></tr>
+            </table>
+        </section>
+      </div>
+      <div class="scroll-up"><a href="#totop"><i class="fa fa-angle-double-up"></i></a></div>
+    </main>
+    <script type="text/javascript">
+        $(document).ready(function() {
+            $.get('/pool-info').then((data) => {
+                $('#pool-hash-rate').html(data.pool.hashes_per_second.toFixed(0) + 'H/s');
+                var newDate = new Date();
+                newDate.setTime(data.pool.last_block*1000);
+                dateString = newDate.toUTCString();
+                $('#pool-last-block').html(dateString);
+                $('#pool-miner-count').html(data.pool.miner_count);
+                $('#pool-payout-scheme').html(data.pool.payout_scheme);
+                $('#pool-fee').html(data.pool.pool_fee * 100 + '%');
+                $('#pool-blocks-found').html(data.pool.blocks_found);
+                $('#pool-min-payout').html(data.pool.min_payout);
+                $('#pool-url').html(data.pool.url);
+
+                $('#network-height').html(data.network.height);
+                $('#network-reward').html(data.network.reward);
+                var newDate = new Date();
+                newDate.setTime(data.network.last_block*1000);
+                dateString = newDate.toUTCString();
+                $('#network-last-block').html(dateString);
+                $('#network-hash-rate').html(data.network.hashes_per_second.toFixed(0) + 'H/s');
+
+                $('#market-last-btc').html(data.market.last_btc);
+            })
+            $('#form').submit(function(e) {
+                e.preventDefault();
+                $.get('/shares-for-address?address=' + $('#address').val()).then((data) => {
+                    if(data.results.length === 0) return $('#shares-table').html('<tr><td>No results</td></tr>');
+                    $('#shares-table').html('');
+                    $('#shares-table').append('<tr><th>Height</th><th>Hash</th></tr>');
+                    for(var i=0; i < data.results.length; i++) {
+                        $('#shares-table').append('<tr><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i].index + '">' + data.results[i].index + '</a></td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i].hash + '">' + data.results[i].hash + '</td></tr>');
+                    }
+                });
+                $.get('/payouts-for-address?address=' + $('#address').val()).then((data) => {
+                    if(data.results.length === 0) return $('#payouts-table').html('<tr><td>No results</td></tr>');
+                    $('#payouts-table').html('');
+                    $('#payouts-table').append('<tr><th>Height</th><th>Amount</th></tr>');
+                    for(var i=0; i < data.results.length; i++) {
+                        var selectOutput = {};
+                        for(var j=0; j < data.results[i]['txn'].outputs.length; j++) {
+                            if(data.results[i]['txn'].outputs[j].to === $('#address').val()) {
+                                selectOutput = data.results[i]['txn'].outputs[j];
+                            }
+                        }
+                        $('#payouts-table').append('<tr><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i].index + '">' + data.results[i].index + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + '</td></tr>');
+                    }
+                });
+            });
+        });
+    </script>
+  </body>
+</html>

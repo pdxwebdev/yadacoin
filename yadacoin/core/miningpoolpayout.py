@@ -164,6 +164,11 @@ class PoolPayer(object):
                 'to': address,
                 'value': output
             })
+        if hasattr(self.config, 'pool_payout_address_override') and self.config.pool_payout_address_override:
+            outputs_formatted.append({
+                'to': self.config.pool_payout_address_override,
+                'value': total_pool_take
+            })
         if self.config.debug:
             self.app_log.debug('do_payout_for_blocks done formatting outputs {}'.format([{'id': coinbase.transaction_signature} for coinbase in coinbases]))
         try:

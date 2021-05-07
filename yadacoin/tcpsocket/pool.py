@@ -67,9 +67,23 @@ class StratumServer(RPCSocketServer):
                     cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
+    async def update_miner_count(cls):
+        if not cls.config:
+            cls.config = get_config()
+        await cls.config.mongo.async_db.pool_stats.update_one({
+            'stat': 'miner_count'
+        }, {
+            '$set': {
+                'value': len(StratumServer.inbound_streams[Miner.__name__].keys())
+            }
+        }
+        , upsert=True)
+
+    @classmethod
     async def remove_peer(self, peer):
         if peer in StratumServer.inbound_streams[Miner.__name__]:
             del StratumServer.inbound_streams[Miner.__name__][peer]
+        await StratumServer.update_miner_count()
 
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template()
@@ -135,6 +149,7 @@ class StratumServer(RPCSocketServer):
         stream.peer = Peer(body['params'].get('login'))
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
         StratumServer.inbound_streams[Miner.__name__][stream.peer] = stream
+        await StratumServer.update_miner_count()
         if self.config.LatestBlock.block.index >= CHAIN.BLOCK_V5_FORK:
             job['job_id'] = job['job_id']
             job['blob'] = job['blob']
