@@ -46,15 +46,17 @@ class PoolInfoHandler(BaseWebHandler):
         except:
             last_btc = 0
         
-        last_five_blocks_query = self.config.mongo.async_db.blocks.find({'index': { '$gte': self.config.LatestBlock.block.index - 5}}, {'_id': 0})
+        last_five_blocks_query = self.config.mongo.async_db.blocks.find(
+          {
+              'public_key': self.config.public_key
+          },
+          {
+            '_id': 0
+          }
+        ).sort([('index', -1)])
         last_five_blocks = await last_five_blocks_query.to_list(length=5)
         shares_count = await self.config.mongo.async_db.shares.count_documents({'index': { '$gte': self.config.LatestBlock.block.index - 10}})
         blocks_found = await self.config.mongo.async_db.share_payout.count_documents({})
-        last_block_found_payout = await self.config.mongo.async_db.share_payout.find_one({}, sort=[('index', -1)])
-        if last_block_found_payout:
-            last_block_found = await self.config.mongo.async_db.blocks.find_one({'index': last_block_found_payout['index']})
-        else:
-            last_block_found = None
         prev_block = await self.config.mongo.async_db.blocks.find_one({'index': self.config.LatestBlock.block.index - 10})
         seconds_elapsed = int(self.config.LatestBlock.block.time) - int(prev_block['time'])
 
@@ -62,24 +64,22 @@ class PoolInfoHandler(BaseWebHandler):
         difficulty = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff / self.config.LatestBlock.block.target
         net_blocks_found = await self.config.mongo.async_db.blocks.count_documents({'time': {'$gte': time.time() - ( 600 * 144 )}})
         network_hash_rate = ((net_blocks_found/expected_blocks)*difficulty * 2**32 / 600)
-
+        miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'})
         self.render_as_json({
             'pool': {
                 'hashes_per_second': (shares_count * 1000) / float(seconds_elapsed / 60), # it takes 1000H/s to produce 1 0x0000f... share per minute
-                'miner_count': len(self.config.poolServer.inbound_streams['Miner'].keys()),
-                'last_block': last_block_found['time'] if last_block_found else 0,
+                'miner_count': miner_count_pool_stat['value'],
                 'payout_scheme': 'PPLNS',
                 'pool_fee': self.config.pool_take,
-                'blocks_found': blocks_found,
                 'min_payout': 0,
-                'url': f'{self.config.peer_host}:{self.config.stratum_pool_port}'
+                'url': f'{self.config.peer_host}:{self.config.stratum_pool_port}',
+                'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in last_five_blocks]
             },
             'network': {
                 'height': self.config.LatestBlock.block.index,
                 'reward': CHAIN.get_block_reward(self.config.LatestBlock.block.index),
                 'last_block': self.config.LatestBlock.block.time,
                 'hashes_per_second': network_hash_rate,
-                'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in last_five_blocks]
             },
             'market': {
                 'last_btc': last_btc
