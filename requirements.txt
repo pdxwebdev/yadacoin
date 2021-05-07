@@ -75,7 +75,7 @@ pyOpenSSL==18.0.0
 pytest==4.0.2
 python-bitcoinlib==0.8.0
 python-dateutil==2.7.3
-python-engineio==3.4.2
+python-engineio==3.8.2.post1
 python-socketio==3.1.2
 pytz==2018.5
 qrcode==5.3
