@@ -63,7 +63,7 @@ pluggy==0.8.0
 portend==2.3
 prompt-toolkit==1.0.15
 ptyprocess==0.5.2
-py==1.7.0
+py==1.10.0
 pycparser==2.18
 pycrypto==2.6.1
 pyfcm==1.4.3
