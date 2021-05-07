@@ -20,7 +20,7 @@ cryptography==2.3.1
 decorator==4.1.2
 dis3==0.1.2
 eccsnacks==1.0.1
-ecdsa==0.13
+ecdsa==0.13.3
 enum-compat==0.0.2
 enum34==1.1.6
 eventlet==0.21.0
