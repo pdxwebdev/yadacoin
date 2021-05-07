@@ -79,7 +79,7 @@ python-engineio==3.4.2
 python-socketio==3.1.2
 pytz==2018.5
 qrcode==5.3
-requests==2.18.4
+requests==2.20.0
 requests-toolbelt==0.8.0
 scandir==1.6
 simplegeneric==0.8.1
