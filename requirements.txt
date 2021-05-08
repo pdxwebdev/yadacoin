@@ -23,7 +23,7 @@ eccsnacks==1.0.1
 ecdsa==0.13
 enum-compat==0.0.2
 enum34==1.1.6
-eventlet==0.21.0
+eventlet==0.31.0
 Flask==0.12.2
 Flask-Cors==3.0.4
 Flask-SocketIO==3.3.1
