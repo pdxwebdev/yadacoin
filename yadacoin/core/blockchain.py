@@ -218,7 +218,7 @@ class Blockchain(object):
             self.config.app_log.warning('9')
             checks_passed = True
         else:
-            self.config.app_log.warning("Integrate block error - index and time error")
+            self.config.app_log.warning("Integrate block error - target too high, possible fork")
 
         if not checks_passed:
             return False
