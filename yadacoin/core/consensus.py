@@ -280,14 +280,16 @@ class Consensus(object):
             blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
             if status:
                 prev_block = None
+                new_blocks = []
                 for block in blocks + extra_blocks:
                     result = await bc.test_block(block, extra_blocks=blocks + extra_blocks, simulate_last_block=prev_block)
                     prev_block = block
-                    if not result:
-                        chain_passed = False
+                    if result:
+                        new_blocks.append(block)
+                    else:
                         break
-                if chain_passed:
-                    blockchain = await Blockchain.init_async(blocks + extra_blocks)
+                if new_blocks:
+                    blockchain = await Blockchain.init_async(new_blocks)
             else:
                 chain_passed = False
         if not chain_passed:

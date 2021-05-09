@@ -112,7 +112,7 @@ class Block(object):
                 self.target = CHAIN.MAX_TARGET
             else:
                 if self.index >= CHAIN.FORK_10_MIN_BLOCK:
-                    self.target = await CHAIN.get_target_10min(self.index, latest_block, self)
+                    self.target = await CHAIN.get_target_10min(latest_block, self)
                 else:
                     self.target = await CHAIN.get_target(self.index, latest_block, self)
             self.special_target = self.target

@@ -290,7 +290,6 @@ class GetRecoveryTransaction(BaseWebHandler):
 
 
 WEB_HANDLERS = [
-    (r'/', HomeHandler),
     (r'/mfa', MultifactorAuthHandler),
     (r'/login', LoginHandler),
     (r'/rmfa', RemoteMultifactorAuthHandler),

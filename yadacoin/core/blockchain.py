@@ -126,7 +126,7 @@ class Blockchain(object):
                 return False
         
         if block.index >= CHAIN.FORK_10_MIN_BLOCK:
-            target = await CHAIN.get_target_10min(block.index, last_block, block, extra_blocks)
+            target = await CHAIN.get_target_10min(last_block, block, extra_blocks)
         else:
             target = await CHAIN.get_target(block.index, last_block, block, extra_blocks)
 

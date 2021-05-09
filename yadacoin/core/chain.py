@@ -204,7 +204,6 @@ class CHAIN(object):
     @classmethod
     async def get_target_10min(
         self,
-        height,
         last_block,  # This is the latest on chain block we have in db
         block,  # This is the block we are currently mining, not on chain yet, with current time in it.
         extra_blocks=None
@@ -233,38 +232,34 @@ class CHAIN(object):
 
         start_index = last_block.index
 
-        block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period})
         block_from_retarget_period_ago = None
-        if block_data:
-            block_from_retarget_period_ago = await Block.from_dict(block_data)
-        elif extra_blocks:
-            for extra_block in extra_blocks:
-                if extra_block.index == start_index-retarget_period:
-                    block_from_retarget_period_ago = extra_block
-                    break
-            if not block_from_retarget_period_ago:
-                return False
-        else:
-            return False
+        for extra_block in extra_blocks:
+            if extra_block.index == start_index-retarget_period:
+                block_from_retarget_period_ago = extra_block
+                break
 
+        if not block_from_retarget_period_ago:
+            block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period})
+            if not block_data:
+                return False
+            block_from_retarget_period_ago = await Block.from_dict(block_data)
         
         retarget_period_ago_time = block_from_retarget_period_ago.time
         elapsed_time_from_retarget_period_ago = int(block.time) - int(retarget_period_ago_time)
         average_block_time = elapsed_time_from_retarget_period_ago / retarget_period
 
-        block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period2})
         block_from_retarget_period2_ago = None
-        if block_data:
-            block_from_retarget_period2_ago = await Block.from_dict(block_data)
-        elif extra_blocks:
-            for extra_block in extra_blocks:
-                if extra_block.index == start_index-retarget_period2:
-                    block_from_retarget_period2_ago = extra_block
-                    break
-            if not block_from_retarget_period2_ago:
+        for extra_block in extra_blocks:
+            if extra_block.index == start_index-retarget_period2:
+                block_from_retarget_period2_ago = extra_block
+                break
+
+        if not block_from_retarget_period2_ago:
+            block_data = await get_config().mongo.async_db.blocks.find_one({'index': start_index-retarget_period2})
+            if not block_data:
                 return False
-        else:
-            return False
+            block_from_retarget_period2_ago = await Block.from_dict(block_data)
+
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
         elapsed_time_from_retarget_period2_ago = int(block.time) - int(retarget_period2_ago_time)
         average_block_time2 = elapsed_time_from_retarget_period2_ago / retarget_period2
@@ -273,29 +268,33 @@ class CHAIN(object):
         if average_block_time2 < target_time:
             hash_sum2 = 0
             for i in range(start_index, start_index - retarget_period2, -1):
-                this_block = await get_config().mongo.async_db.blocks.find_one({'index': i})
-                if this_block:
-                    block_tmp = await Block.from_dict(this_block)
-                    hash_sum2 += block_tmp.target
-                elif extra_blocks:
-                    for extra_block in extra_blocks:
-                        if extra_block.index == i:
-                            hash_sum2 += extra_block.target
-                            break
+                found = False
+                for extra_block in extra_blocks:
+                    if extra_block.index == i:
+                        hash_sum2 += extra_block.target
+                        found = True
+                        break
+                if not found:
+                    this_block = await get_config().mongo.async_db.blocks.find_one({'index': i})
+                    if this_block:
+                        block_tmp = await Block.from_dict(this_block)
+                        hash_sum2 += block_tmp.target
             average_target = hash_sum2 / retarget_period2
             target = int(average_target * average_block_time2 / target_time)
         else:
             hash_sum = 0
             for i in range(start_index, start_index - retarget_period, -1):
-                this_block = await get_config().mongo.async_db.blocks.find_one({'index': i})
-                if this_block:
-                    block_tmp = await Block.from_dict(this_block)
-                    hash_sum += block_tmp.target
-                elif extra_blocks:
-                    for extra_block in extra_blocks:
-                        if extra_block.index == i:
-                            hash_sum += extra_block.target
-                            break
+                found = False
+                for extra_block in extra_blocks:
+                    if extra_block.index == i:
+                        hash_sum += extra_block.target
+                        found = True
+                        break
+                if not found:
+                    this_block = await get_config().mongo.async_db.blocks.find_one({'index': i})
+                    if this_block:
+                        block_tmp = await Block.from_dict(this_block)
+                        hash_sum += block_tmp.target
             average_target = hash_sum / retarget_period
             # This adjusts both ways
             target = int(average_target * average_block_time / target_time)

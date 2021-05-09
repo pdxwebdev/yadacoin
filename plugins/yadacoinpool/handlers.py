@@ -45,18 +45,23 @@ class PoolInfoHandler(BaseWebHandler):
             last_btc = self.config.ticker.json()['ydabtc']['ticker']['last']
         except:
             last_btc = 0
-        
+
+        total_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
+            {
+                'public_key': self.config.public_key
+            }
+        )
+
         last_five_blocks_query = self.config.mongo.async_db.blocks.find(
-          {
-              'public_key': self.config.public_key
-          },
-          {
-            '_id': 0
-          }
+            {
+                'public_key': self.config.public_key
+            },
+            {
+                '_id': 0
+            }
         ).sort([('index', -1)])
         last_five_blocks = await last_five_blocks_query.to_list(length=5)
         shares_count = await self.config.mongo.async_db.shares.count_documents({'index': { '$gte': self.config.LatestBlock.block.index - 10}})
-        blocks_found = await self.config.mongo.async_db.share_payout.count_documents({})
         prev_block = await self.config.mongo.async_db.blocks.find_one({'index': self.config.LatestBlock.block.index - 10})
         seconds_elapsed = int(self.config.LatestBlock.block.time) - int(prev_block['time'])
 
@@ -73,7 +78,8 @@ class PoolInfoHandler(BaseWebHandler):
                 'pool_fee': self.config.pool_take,
                 'min_payout': 0,
                 'url': f'{self.config.peer_host}:{self.config.stratum_pool_port}',
-                'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in last_five_blocks]
+                'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in last_five_blocks],
+                'blocks_found': total_blocks_found
             },
             'network': {
                 'height': self.config.LatestBlock.block.index,
@@ -89,6 +95,6 @@ class PoolInfoHandler(BaseWebHandler):
 
 HANDLERS = [
     (r'/pool-info', PoolInfoHandler),
-    (r'/pool-stats', PoolStatsInterfaceHandler),
+    (r'/', PoolStatsInterfaceHandler),
     (r'/yadacoinpoolstatic/(.*)', StaticFileHandler, {"path": os.path.join(os.path.dirname(__file__), 'static')}),
 ]

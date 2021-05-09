@@ -276,7 +276,6 @@ class MiningPool(object):
     async def set_target_from_last_non_special_min(self, latest_block):
         if self.index >= CHAIN.FORK_10_MIN_BLOCK:
             self.block_factory.target = await CHAIN.get_target_10min(
-                self.index,
                 latest_block,
                 self.block_factory
             )
