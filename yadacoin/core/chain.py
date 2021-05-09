@@ -208,6 +208,8 @@ class CHAIN(object):
         block,  # This is the block we are currently mining, not on chain yet, with current time in it.
         extra_blocks=None
     ):
+        if extra_blocks is None:
+            extra_blocks = []
         from yadacoin.core.block import Block
         # Aim at 5 min average block time, with escape hatch
         max_target = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  # A single cpu does that under a minute.
