@@ -45,7 +45,7 @@ class PoolInfoHandler(BaseWebHandler):
             last_btc = self.config.ticker.json()['ydabtc']['ticker']['last']
         except:
             last_btc = 0
-
+        await self.config.LatestBlock.block_checker()
         total_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
             {
                 'public_key': self.config.public_key
