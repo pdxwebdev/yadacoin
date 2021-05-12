@@ -287,6 +287,7 @@ class Consensus(object):
                     if result:
                         new_blocks.append(block)
                     else:
+                        await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
                         break
                 if new_blocks:
                     blockchain = await Blockchain.init_async(new_blocks)
