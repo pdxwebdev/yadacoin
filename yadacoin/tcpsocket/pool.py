@@ -34,7 +34,7 @@ class StratumServer(RPCSocketServer):
             cls.config = get_config()
         if cls.current_index != cls.config.LatestBlock.block.index:
             job = await cls.config.mp.block_template()
-            if cls.config.LatestBlock.block.index >= CHAIN.BLOCK_V5_FORK:
+            if cls.config.LatestBlock.block.index + 1 >= CHAIN.BLOCK_V5_FORK:
                 job['job_id'] = job['job_id']
                 job['blob'] = job['blob']
                 cls.current_index = cls.config.LatestBlock.block.index
@@ -150,7 +150,7 @@ class StratumServer(RPCSocketServer):
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
         StratumServer.inbound_streams[Miner.__name__][stream.peer] = stream
         await StratumServer.update_miner_count()
-        if self.config.LatestBlock.block.index >= CHAIN.BLOCK_V5_FORK:
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.BLOCK_V5_FORK:
             job['job_id'] = job['job_id']
             job['blob'] = job['blob']
             result = {

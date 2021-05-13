@@ -45,14 +45,27 @@ class MiningPool(object):
         status = {"miners": len(self.inbound), "ips": len(self.connected_ips)}
         return status
 
+    def little_hash(self, block_hash):
+        little_hex = bytearray.fromhex(block_hash)
+        little_hex.reverse()
+
+        str_little = ''.join(format(x, '02x') for x in little_hex)
+
+        return str_little
+
     async def on_miner_nonce(self, nonce: str, address: str='') -> bool:
         hash1 = self.block_factory.generate_hash_from_header(
             self.block_factory.index,
             self.block_factory.header,
             nonce
         )
+        if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
+            hash1_test = self.little_hash(hash1)
+        else:
+            hash1_test = hash1
+
         if (
-            int(hash1, 16) > self.block_factory.target and
+            int(hash1_test, 16) > self.block_factory.target and
             self.config.network != 'regnet' and
             (self.block_factory.special_min and
             int(hash1, 16) > self.block_factory.special_target)
