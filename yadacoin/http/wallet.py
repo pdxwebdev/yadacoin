@@ -91,7 +91,7 @@ class GetAddressesHandler(BaseHandler):
 
 class GetBalanceSum(BaseHandler):
 
-    async def get(self):
+    async def post(self):
         args = json.loads(self.request.body.decode())
         addresses = args.get("addresses", None)
         if not addresses:
