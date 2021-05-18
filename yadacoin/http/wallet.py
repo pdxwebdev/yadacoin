@@ -100,9 +100,7 @@ class GetBalanceSum(BaseHandler):
         balance = 0.0
         for address in addresses:
             balance += await self.config.BU.get_wallet_balance(address)
-        return self.render_as_json({
-            'balance': "{0:.8f}".format(balance)
-        })
+        return self.render_as_json("{0:.8f}".format(balance))
 
 
 @jwtauth
