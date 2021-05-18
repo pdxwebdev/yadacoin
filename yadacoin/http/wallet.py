@@ -82,7 +82,7 @@ class GetAddressesHandler(BaseHandler):
 
     async def get(self):
         addresses = []
-        async for x in await self.config.mongo.async_db.child_keys.find():
+        async for x in self.config.mongo.async_db.child_keys.find():
             addresses.append(x['address'])
         addresses.append(self.config.address)
 
