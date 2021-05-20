@@ -1,5 +1,6 @@
 import json
 import traceback
+import time
 
 import tornado.ioloop
 from tornado.iostream import StreamClosedError
@@ -65,6 +66,9 @@ class StratumServer(RPCSocketServer):
                     await StratumServer.remove_peer(stream.peer)
                 except Exception:
                     cls.config.app_log.warning(traceback.format_exc())
+
+        if time.time() - cls.config.mp.block_factory.time > 600:
+            await cls.config.mp.refresh()
 
     @classmethod
     async def update_miner_count(cls):
