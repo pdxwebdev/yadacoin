@@ -33,42 +33,50 @@ class StratumServer(RPCSocketServer):
     async def block_checker(cls):
         if not cls.config:
             cls.config = get_config()
+
         if cls.current_index != cls.config.LatestBlock.block.index:
-            job = await cls.config.mp.block_template()
-            if cls.config.LatestBlock.block.index + 1 >= CHAIN.BLOCK_V5_FORK:
-                job['job_id'] = job['job_id']
-                job['blob'] = job['blob']
-                cls.current_index = cls.config.LatestBlock.block.index
-                result = {
-                    'id': job['job_id'],
-                    'job': job
-                }
-            else:
-                job['job_id'] = job['blocktemplate_blob']
-                job['blob'] = job['blocktemplate_blob']
-                cls.current_index = cls.config.LatestBlock.block.index
-                result = {
-                    'id': job['blocktemplate_blob'],
-                    'job': job
-                }
-            rpc_data = {
-                'id': 1,
-                'method': 'login',
-                'jsonrpc': 2.0,
-                'result': result
-            }
-            for stream in StratumServer.inbound_streams[Miner.__name__].values():
-                try:
-                    await stream.write(
-                        '{}\n'.format(json.dumps(rpc_data)).encode()
-                    )
-                except StreamClosedError:
-                    await StratumServer.remove_peer(stream.peer)
-                except Exception:
-                    cls.config.app_log.warning(traceback.format_exc())
+            await cls.send_job()
 
         if time.time() - cls.config.mp.block_factory.time > 600:
             await cls.config.mp.refresh()
+            await cls.send_job()
+    
+    @classmethod
+    async def send_job(cls):
+        if not cls.config:
+            cls.config = get_config()
+        job = await cls.config.mp.block_template()
+        if cls.config.LatestBlock.block.index + 1 >= CHAIN.BLOCK_V5_FORK:
+            job['job_id'] = job['job_id']
+            job['blob'] = job['blob']
+            cls.current_index = cls.config.LatestBlock.block.index
+            result = {
+                'id': job['job_id'],
+                'job': job
+            }
+        else:
+            job['job_id'] = job['blocktemplate_blob']
+            job['blob'] = job['blocktemplate_blob']
+            cls.current_index = cls.config.LatestBlock.block.index
+            result = {
+                'id': job['blocktemplate_blob'],
+                'job': job
+            }
+        rpc_data = {
+            'id': 1,
+            'method': 'login',
+            'jsonrpc': 2.0,
+            'result': result
+        }
+        for stream in StratumServer.inbound_streams[Miner.__name__].values():
+            try:
+                await stream.write(
+                    '{}\n'.format(json.dumps(rpc_data)).encode()
+                )
+            except StreamClosedError:
+                await StratumServer.remove_peer(stream.peer)
+            except Exception:
+                cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
     async def update_miner_count(cls):
