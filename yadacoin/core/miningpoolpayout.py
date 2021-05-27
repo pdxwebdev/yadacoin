@@ -99,7 +99,7 @@ class PoolPayer(object):
             already_used = await self.already_used(block.get_coinbase())
             if already_used:
                 await self.config.mongo.async_db.shares.delete_many({'index': block.index})
-                return
+                continue
 
             if self.config.debug:
                 self.app_log.debug('do_payout_for_blocks passed already_used {}'.format(block.index))
