@@ -88,7 +88,7 @@ six==1.12.0
 socketIO-client==0.7.2
 tempora==1.13
 traitlets==4.3.2
-urllib3==1.22
+urllib3==1.26.5
 wcwidth==0.1.7
 websocket-client==0.44.0
 Werkzeug==0.12.2
