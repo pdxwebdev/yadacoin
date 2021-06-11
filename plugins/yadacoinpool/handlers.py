@@ -52,43 +52,53 @@ class PoolInfoHandler(BaseWebHandler):
             }
         )
 
-        last_five_blocks_query = self.config.mongo.async_db.blocks.find(
+        expected_blocks = 144
+        pool_blocks_found = self.config.mongo.async_db.blocks.find(
             {
-                'public_key': self.config.public_key
+                'public_key': self.config.public_key,
+                'time': {'$gte': time.time() - ( 600 * 144 )}
             },
             {
                 '_id': 0
             }
         ).sort([('index', -1)])
-        last_five_blocks = await last_five_blocks_query.to_list(length=5)
-        shares_count = await self.config.mongo.async_db.shares.count_documents({'index': { '$gte': self.config.LatestBlock.block.index - 10}})
-        prev_block = await self.config.mongo.async_db.blocks.find_one({'index': self.config.LatestBlock.block.index - 10})
-        seconds_elapsed = int(self.config.LatestBlock.block.time) - int(prev_block['time'])
-
         expected_blocks = 144
-        difficulty = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffff / self.config.LatestBlock.block.target
+        pool_blocks_found_list = await pool_blocks_found.to_list(length=expected_blocks)
+        avg_target = 0
+        for block in pool_blocks_found_list:
+            avg_target += int(block['target'], 16)
+        avg_target = avg_target / len(pool_blocks_found_list)
+        difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_target
         net_blocks_found = await self.config.mongo.async_db.blocks.count_documents({'time': {'$gte': time.time() - ( 600 * 144 )}})
         network_hash_rate = ((net_blocks_found/expected_blocks)*difficulty * 2**32 / 600)
         miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'})
         self.render_as_json({
             'pool': {
-                'hashes_per_second': (shares_count * 1000) / float(seconds_elapsed / 60), # it takes 1000H/s to produce 1 0x0000f... share per minute
+                'hashes_per_second': ((len(pool_blocks_found_list)/expected_blocks)*difficulty * 2**32 / 600),
                 'miner_count': miner_count_pool_stat['value'],
                 'payout_scheme': 'PPLNS',
                 'pool_fee': self.config.pool_take,
                 'min_payout': 0,
                 'url': f'{self.config.peer_host}:{self.config.stratum_pool_port}',
-                'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in last_five_blocks],
-                'blocks_found': total_blocks_found
+                'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in pool_blocks_found_list[:5]],
+                'blocks_found': total_blocks_found,
+                'fee': self.config.pool_take,
+                'payout_frequency': self.config.payout_frequency
             },
             'network': {
                 'height': self.config.LatestBlock.block.index,
                 'reward': CHAIN.get_block_reward(self.config.LatestBlock.block.index),
                 'last_block': self.config.LatestBlock.block.time,
                 'hashes_per_second': network_hash_rate,
+                'difficulty': difficulty
             },
             'market': {
                 'last_btc': last_btc
+            },
+            'coin': {
+                'algo': 'randomx YDA',
+                'circulating': self.config.LatestBlock.block.index * 50,
+                'max_supply': 21000000
             }
         })
 

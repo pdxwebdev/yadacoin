@@ -34,7 +34,6 @@ class Config(object):
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
         self.max_miners = config.get('max_miners', -1)
-        self.pool_payout = config.get('pool_payout', False)
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
@@ -82,7 +81,9 @@ class Config(object):
         self.wallet_host_port = config.get('wallet_host_port', 'http://localhost:{}'.format(config['peer_port']))
         self.credits_per_share = config.get('credits_per_share', 5)
         self.shares_required = config.get('shares_required', False)
+        self.pool_payout = config.get('pool_payout', False)
         self.pool_take = config.get('pool_take', .01)
+        self.payout_frequency = config.get('payout_frequency', 6)
         for key, val in config.items():
             if not hasattr(self, key):
                 setattr(self, key, val)
@@ -213,7 +214,9 @@ class Config(object):
             "wallet_host_port": 'http://localhost:8001',
             "credits_per_share": 5,
             "shares_required": False,
-            "pool_take": .01
+            "pool_payout": False,
+            "pool_take": .01,
+            "payout_frequency": 6
         })
 
     @classmethod
@@ -230,7 +233,6 @@ class Config(object):
         cls.public_key = config['public_key']
         cls.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(cls.public_key)))
 
-        cls.pool_payout = config.get('pool_payout', False)
         cls.private_key = config['private_key']
         cls.wif = cls.generate_wif(cls.private_key)
         cls.username_signature = TU.generate_deterministic_signature(config, config['username'], config['private_key'])
@@ -255,7 +257,9 @@ class Config(object):
         cls.wallet_host_port = config.get('wallet_host_port')
         cls.credits_per_share = config.get('credits_per_share', 5)
         cls.shares_required = config.get('shares_required', False)
+        cls.pool_payout = config.get('pool_payout', False)
         cls.pool_take = config.get('pool_take', .01)
+        cls.payout_frequency = config.get('payout_frequency', 6)
 
     def get_username_signature(self):
         from yadacoin.core.transactionutils import TU
@@ -312,7 +316,9 @@ class Config(object):
             'wallet_host_port': self.wallet_host_port,
             'credits_per_share': self.credits_per_share,
             'shares_required': self.shares_required,
+            'pool_payout': self.pool_payout,
             'pool_take': self.pool_take,
+            'payout_frequency': self.payout_frequency
         }
 
     def to_json(self):

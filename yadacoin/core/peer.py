@@ -115,6 +115,8 @@ class Peer:
         # So we won't be able to get the new seed without the block hash
         # which is not known in advance
         seed_time = int((time.time() - self.epoch) / self.ttl) + 1
+        if not self.config.seed_gateways:
+            return None
         seed_select = (int(username_signature_hash, 16) * seed_time) % len(self.config.seed_gateways)
         username_signatures = list(self.config.seed_gateways)
         first_number = seed_select
@@ -135,6 +137,8 @@ class Peer:
     
     async def ensure_peers_connected(self):
         peers = await self.get_outbound_peers()
+        if not peers:
+            return
         outbound_class = await self.get_outbound_class()
         limit = self.__class__.type_limit(outbound_class)
         for idx, stream in self.config.nodeClient.outbound_streams[outbound_class.__name__].items():
@@ -330,6 +334,8 @@ class ServiceProvider(Peer):
 
     async def get_outbound_peers(self, nonce=None):
         seed_gateway = await self.calculate_seed_gateway()
+        if not seed_gateway:
+            return None
         return {seed_gateway.identity.username_signature: seed_gateway}
 
     @classmethod
