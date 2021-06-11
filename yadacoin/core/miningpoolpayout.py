@@ -72,8 +72,8 @@ class PoolPayer(object):
                 continue
             if self.config.debug:
                 self.app_log.debug(won_block.index)
-            if (won_block.index + 6) <= self.config.LatestBlock.block.index:
-                if len(ready_blocks) >= 6:
+            if (won_block.index + self.config.payout_frequency) <= self.config.LatestBlock.block.index:
+                if len(ready_blocks) >= self.config.payout_frequency:
                     if self.config.debug:
                         self.app_log.debug('entering payout at block: {}'.format( won_block.index))
                     do_payout = True
