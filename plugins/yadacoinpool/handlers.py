@@ -64,17 +64,27 @@ class PoolInfoHandler(BaseWebHandler):
         ).sort([('index', -1)])
         expected_blocks = 144
         pool_blocks_found_list = await pool_blocks_found.to_list(length=expected_blocks)
+
         avg_target = 0
         for block in pool_blocks_found_list:
             avg_target += int(block['target'], 16)
         avg_target = avg_target / len(pool_blocks_found_list)
         difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_target
-        net_blocks_found = await self.config.mongo.async_db.blocks.count_documents({'time': {'$gte': time.time() - ( 600 * 144 )}})
-        network_hash_rate = ((net_blocks_found/expected_blocks)*difficulty * 2**32 / 600)
+        pool_hash_rate = ((len(pool_blocks_found_list)/expected_blocks)*difficulty * 2**32 / 600)
+
+        net_blocks_found = self.config.mongo.async_db.blocks.find({'time': {'$gte': time.time() - ( 600 * 144 )}})
+        net_blocks_found = await net_blocks_found.to_list(length=expected_blocks*10)
+        avg_net_target = 0
+        for block in net_blocks_found:
+            avg_net_target += int(block['target'], 16)
+        avg_net_target = avg_net_target / len(net_blocks_found)
+        net_difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_net_target
+        network_hash_rate = ((len(net_blocks_found)/expected_blocks)*net_difficulty * 2**32 / 600)
+
         miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'})
         self.render_as_json({
             'pool': {
-                'hashes_per_second': ((len(pool_blocks_found_list)/expected_blocks)*difficulty * 2**32 / 600),
+                'hashes_per_second': pool_hash_rate,
                 'miner_count': miner_count_pool_stat['value'],
                 'payout_scheme': 'PPLNS',
                 'pool_fee': self.config.pool_take,
@@ -90,7 +100,7 @@ class PoolInfoHandler(BaseWebHandler):
                 'reward': CHAIN.get_block_reward(self.config.LatestBlock.block.index),
                 'last_block': self.config.LatestBlock.block.time,
                 'hashes_per_second': network_hash_rate,
-                'difficulty': difficulty
+                'difficulty': net_difficulty
             },
             'market': {
                 'last_btc': last_btc
