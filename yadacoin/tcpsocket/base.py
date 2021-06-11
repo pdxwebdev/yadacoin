@@ -54,6 +54,8 @@ class RPCSocketServer(TCPServer, BaseRPC):
                         del stream.message_queue[body['id']]
                     else:
                         continue
+                if not hasattr(self, method):
+                    continue
                 await getattr(self, method)(body, stream)
             except StreamClosedError:
                 if hasattr(stream, 'peer'):
