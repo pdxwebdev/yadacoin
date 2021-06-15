@@ -1,4 +1,5 @@
 import uuid
+import random
 from time import time
 import binascii
 from bitcoin.wallet import P2PKHBitcoinAddress
@@ -54,7 +55,9 @@ class MiningPool(object):
 
         return str_little
 
-    async def on_miner_nonce(self, nonce: str, address: str='') -> bool:
+    async def on_miner_nonce(self, nonce: str, job_id: str, address: str='') -> bool:
+        pool_job = await self.config.mongo.async_db.pool_jobs.find_one({'job_id': job_id})
+        nonce = nonce + pool_job['extra_nonce'].encode().hex()
         hash1 = self.block_factory.generate_hash_from_header(
             self.block_factory.index,
             self.block_factory.header,
@@ -221,12 +224,22 @@ class MiningPool(object):
 
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
+        job_id = str(uuid.uuid4())
+        extra_nonce = hex(random.randrange(1000000,1000000000000000))[2:]
+        header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
+        await self.config.mongo.async_db.pool_jobs.replace_one({
+            'job_id': job_id
+        }, {
+            'job_id': job_id,
+            'index': self.block_factory.index,
+            'extra_nonce': extra_nonce
+        }, upsert=True)
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             res = {
-                'job_id': str(uuid.uuid4()),
+                'job_id': job_id,
                 'difficulty': difficulty, 
                 'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', #hex(int(self.block_factory.target))[2:].rjust(64, '0')[:14],
-                'blob': self.block_factory.header.replace('{nonce}', '{00}').encode().hex(),
+                'blob': header.encode().hex(),
                 'seed_hash': seed_hash,
                 'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
             }

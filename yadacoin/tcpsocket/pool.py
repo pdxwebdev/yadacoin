@@ -34,6 +34,8 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = get_config()
 
+        await cls.config.mongo.async_db.pool_jobs.delete_many({'index': {'$lt': cls.config.LatestBlock.block.index}})
+
         if cls.current_index != cls.config.LatestBlock.block.index:
             await cls.send_job()
 
@@ -141,7 +143,11 @@ class StratumServer(RPCSocketServer):
             result = {'error': True, 'message': 'nonce is wrong data type'}
         if len(nonce) > CHAIN.MAX_NONCE_LEN:
             result = {'error': True, 'message': 'nonce is too long'}
-        result = await StratumServer.config.mp.on_miner_nonce(nonce, address=stream.peer.address)
+        result = await StratumServer.config.mp.on_miner_nonce(
+          nonce,
+          body['params']['job_id'],
+          address=stream.peer.address
+        )
         data = {
             'id': body.get('id'),
             'method': body.get('method'),
