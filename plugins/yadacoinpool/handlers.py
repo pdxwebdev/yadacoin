@@ -89,7 +89,7 @@ class PoolInfoHandler(BaseWebHandler):
                 'payout_scheme': 'PPLNS',
                 'pool_fee': self.config.pool_take,
                 'min_payout': 0,
-                'url': f'{self.config.peer_host}:{self.config.stratum_pool_port}',
+                'url': getattr(self.config, 'pool_url', f'{self.config.peer_host}:{self.config.stratum_pool_port}'),
                 'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in pool_blocks_found_list[:5]],
                 'blocks_found': total_blocks_found,
                 'fee': self.config.pool_take,
