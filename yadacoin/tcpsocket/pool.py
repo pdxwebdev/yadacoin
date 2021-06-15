@@ -47,30 +47,30 @@ class StratumServer(RPCSocketServer):
     async def send_job(cls):
         if not cls.config:
             cls.config = get_config()
-        job = await cls.config.mp.block_template()
-        if cls.config.LatestBlock.block.index + 1 >= CHAIN.BLOCK_V5_FORK:
-            job['job_id'] = job['job_id']
-            job['blob'] = job['blob']
-            cls.current_index = cls.config.LatestBlock.block.index
-            result = {
-                'id': job['job_id'],
-                'job': job
-            }
-        else:
-            job['job_id'] = job['blocktemplate_blob']
-            job['blob'] = job['blocktemplate_blob']
-            cls.current_index = cls.config.LatestBlock.block.index
-            result = {
-                'id': job['blocktemplate_blob'],
-                'job': job
-            }
-        rpc_data = {
-            'id': 1,
-            'method': 'login',
-            'jsonrpc': 2.0,
-            'result': result
-        }
         for stream in StratumServer.inbound_streams[Miner.__name__].values():
+            job = await cls.config.mp.block_template()
+            if cls.config.LatestBlock.block.index + 1 >= CHAIN.BLOCK_V5_FORK:
+                job['job_id'] = job['job_id']
+                job['blob'] = job['blob']
+                cls.current_index = cls.config.LatestBlock.block.index
+                result = {
+                    'id': job['job_id'],
+                    'job': job
+                }
+            else:
+                job['job_id'] = job['blocktemplate_blob']
+                job['blob'] = job['blocktemplate_blob']
+                cls.current_index = cls.config.LatestBlock.block.index
+                result = {
+                    'id': job['blocktemplate_blob'],
+                    'job': job
+                }
+            rpc_data = {
+                'id': 1,
+                'method': 'login',
+                'jsonrpc': 2.0,
+                'result': result
+            }
             try:
                 await stream.write(
                     '{}\n'.format(json.dumps(rpc_data)).encode()
