@@ -64,22 +64,28 @@ class PoolInfoHandler(BaseWebHandler):
         ).sort([('index', -1)])
         expected_blocks = 144
         pool_blocks_found_list = await pool_blocks_found.to_list(length=expected_blocks)
-
-        avg_target = 0
-        for block in pool_blocks_found_list:
-            avg_target += int(block['target'], 16)
-        avg_target = avg_target / len(pool_blocks_found_list)
-        difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_target
-        pool_hash_rate = ((len(pool_blocks_found_list)/expected_blocks)*difficulty * 2**32 / 600)
+        if len(pool_blocks_found_list) > 0:
+            avg_target = 0
+            for block in pool_blocks_found_list:
+                avg_target += int(block['target'], 16)
+            avg_target = avg_target / len(pool_blocks_found_list)
+            difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_target
+            pool_hash_rate = ((len(pool_blocks_found_list)/expected_blocks)*difficulty * 2**32 / 600)
+        else:
+            pool_hash_rate = 0
 
         net_blocks_found = self.config.mongo.async_db.blocks.find({'time': {'$gte': time.time() - ( 600 * 144 )}})
         net_blocks_found = await net_blocks_found.to_list(length=expected_blocks*10)
-        avg_net_target = 0
-        for block in net_blocks_found:
-            avg_net_target += int(block['target'], 16)
-        avg_net_target = avg_net_target / len(net_blocks_found)
-        net_difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_net_target
-        network_hash_rate = ((len(net_blocks_found)/expected_blocks)*net_difficulty * 2**32 / 600)
+        if len(net_blocks_found) > 0:
+            avg_net_target = 0
+            for block in net_blocks_found:
+                avg_net_target += int(block['target'], 16)
+            avg_net_target = avg_net_target / len(net_blocks_found)
+            net_difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_net_target
+            network_hash_rate = ((len(net_blocks_found)/expected_blocks)*net_difficulty * 2**32 / 600)
+        else:
+            net_difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+            network_hash_rate = 0
 
         miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'})
         self.render_as_json({
