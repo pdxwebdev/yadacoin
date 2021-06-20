@@ -85,10 +85,18 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = get_config()
         await cls.config.mongo.async_db.pool_stats.update_one({
-            'stat': 'miner_count'
+            'stat': 'worker_count'
         }, {
             '$set': {
                 'value': len(StratumServer.inbound_streams[Miner.__name__].keys())
+            }
+        }
+        , upsert=True)
+        await cls.config.mongo.async_db.pool_stats.update_one({
+            'stat': 'miner_count'
+        }, {
+            '$set': {
+                'value': len(list(set([x.address for x in StratumServer.inbound_streams[Miner.__name__].keys()])))
             }
         }
         , upsert=True)
@@ -194,5 +202,6 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def status(self):
         return {
-            'miners': len(StratumServer.inbound_streams[Miner.__name__].keys())
+            'miners': len(StratumServer.inbound_streams[Miner.__name__].keys()),
+            'workers': len(list(set([x.address for x in StratumServer.inbound_streams[Miner.__name__].keys()])))
         }

@@ -88,10 +88,12 @@ class PoolInfoHandler(BaseWebHandler):
             network_hash_rate = 0
 
         miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'})
+        worker_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'worker_count'})
         self.render_as_json({
             'pool': {
                 'hashes_per_second': pool_hash_rate,
                 'miner_count': miner_count_pool_stat['value'],
+                'worker_count': worker_count_pool_stat['value'],
                 'payout_scheme': 'PPLNS',
                 'pool_fee': self.config.pool_take,
                 'min_payout': 0,
