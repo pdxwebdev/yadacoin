@@ -202,6 +202,6 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def status(self):
         return {
-            'miners': len(StratumServer.inbound_streams[Miner.__name__].keys()),
-            'workers': len(list(set([x.address for x in StratumServer.inbound_streams[Miner.__name__].keys()])))
+            'miners': len(list(set([x.address for x in StratumServer.inbound_streams[Miner.__name__].keys()]))),
+            'workers': len(StratumServer.inbound_streams[Miner.__name__].keys())
         }
