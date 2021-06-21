@@ -89,6 +89,7 @@ class PoolInfoHandler(BaseWebHandler):
 
         miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'})
         worker_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'worker_count'})
+        payouts = await self.config.mongo.async_db.share_payout.find({}, {'_id': 0}).sort([('index', -1)]).to_list(100)
         self.render_as_json({
             'pool': {
                 'hashes_per_second': pool_hash_rate,
@@ -101,7 +102,9 @@ class PoolInfoHandler(BaseWebHandler):
                 'last_five_blocks': [{'timestamp': x['time'], 'height': x['index']} for x in pool_blocks_found_list[:5]],
                 'blocks_found': total_blocks_found,
                 'fee': self.config.pool_take,
-                'payout_frequency': self.config.payout_frequency
+                'payout_frequency': self.config.payout_frequency,
+                'payouts': payouts,
+                'blocks': pool_blocks_found_list[:100]
             },
             'network': {
                 'height': self.config.LatestBlock.block.index,
