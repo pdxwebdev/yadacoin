@@ -25,7 +25,8 @@ class Peer:
         seed_gateway=None,
         http_host=None,
         http_port=None,
-        secure=None
+        secure=None,
+        protocol_version=1
     ):
         self.host = host
         self.port = port
@@ -37,6 +38,7 @@ class Peer:
         self.secure = secure
         self.config = get_config()
         self.app_log = getLogger("tornado.application")
+        self.protocol_version = protocol_version
     
     @classmethod
     def from_dict(cls, peer, is_me=False):

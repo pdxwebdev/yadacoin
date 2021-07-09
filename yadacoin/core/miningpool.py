@@ -34,6 +34,7 @@ class MiningPool(object):
         self.last_block_time = 0
         self.index = 0
         last_block = await self.config.LatestBlock.block.copy()
+        self.refreshing = False
         if last_block:
             self.last_block_time = int(last_block.time)
             self.index = last_block.index
@@ -57,6 +58,8 @@ class MiningPool(object):
 
     async def on_miner_nonce(self, nonce: str, job_id: str, address: str='') -> bool:
         pool_job = await self.config.mongo.async_db.pool_jobs.find_one({'job_id': job_id})
+        if not pool_job:
+            return
         nonce = nonce + pool_job['extra_nonce'].encode().hex()
         hash1 = self.block_factory.generate_hash_from_header(
             self.block_factory.index,
@@ -78,18 +81,6 @@ class MiningPool(object):
         block_candidate = await self.block_factory.copy()
         block_candidate.hash = hash1
         block_candidate.nonce = nonce
-        block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
-
-        try:
-            block_candidate.verify()
-        except Exception as e:
-            self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
-                e,
-                block_candidate.hash,
-                block_candidate.header,
-                block_candidate.nonce
-            ))
-            return False
 
         if block_candidate.special_min:
             delta_t = int(block_candidate.time) - int(self.last_block_time)
@@ -123,20 +114,18 @@ class MiningPool(object):
         ):
             # submit share only now, not to slow down if we had a block
             self.app_log.warning('{} {}'.format(hash1, address))
-            share_hash = await self.mongo.async_db.shares.find_one({'hash': block_candidate.hash})
-            if share_hash:
-                return {
+            await self.mongo.async_db.shares.update_one(
+                {
+                    'hash': block_candidate.hash
+                },
+                {
+                    'address': address,
+                    'index': block_candidate.index,
                     'hash': block_candidate.hash,
-                    'nonce': nonce,
-                    'height': block_candidate.index,
-                    'id': block_candidate.signature
-                }
-            await self.mongo.async_db.shares.insert_one({
-                'address': address,
-                'index': block_candidate.index,
-                'hash': block_candidate.hash,
-                'nonce': nonce
-            })
+                    'nonce': nonce
+                },
+                upsert=True
+            )
 
         if (
           int(block_candidate.target) > int(block_candidate.hash, 16) or
@@ -145,6 +134,18 @@ class MiningPool(object):
             int(block_candidate.target) > int(block_candidate.little_hash(), 16)
           )
         ):
+            block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
+
+            try:
+                block_candidate.verify()
+            except Exception as e:
+                self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
+                    e,
+                    block_candidate.hash,
+                    block_candidate.header,
+                    block_candidate.nonce
+                ))
+                return False
             # accept winning block
             await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
@@ -157,6 +158,18 @@ class MiningPool(object):
             block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.little_hash(), 16))
           )
         ):
+            block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
+
+            try:
+                block_candidate.verify()
+            except Exception as e:
+                self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
+                    e,
+                    block_candidate.hash,
+                    block_candidate.header,
+                    block_candidate.nonce
+                ))
+                return False
             # accept winning block
             await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
@@ -176,6 +189,9 @@ class MiningPool(object):
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
+            if self.refreshing:
+                return
+            self.refreshing = True
             await self.config.LatestBlock.block_checker()
             if self.block_factory:
                 self.last_block_time = int(self.block_factory.time)
@@ -187,7 +203,9 @@ class MiningPool(object):
             )
             await self.set_target(int(time()))
             self.block_factory.header = self.block_factory.generate_header()
+            self.refreshing = False
         except Exception as e:
+            self.refreshing = False
             from traceback import format_exc
             self.app_log.error("Exception {} mp.refresh".format(format_exc()))
             raise
@@ -342,7 +360,8 @@ class MiningPool(object):
                 used_ids_in_this_txn = []
 
                 async for x in self.get_inputs(transaction_obj.inputs):
-                    if self.config.BU.is_input_spent(x.id, transaction_obj.public_key):
+                    is_input_spent = await self.config.BU.is_input_spent(x.id, transaction_obj.public_key)
+                    if is_input_spent:
                         failed1 = True
                     if x.id in used_ids_in_this_txn:
                         failed2 = True

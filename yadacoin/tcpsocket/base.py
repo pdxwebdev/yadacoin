@@ -17,7 +17,21 @@ from yadacoin.core.config import get_config, Config
 from yadacoin.core.chain import CHAIN
 
 
+REQUEST_RESPONSE_MAP = {
+    'blockresponse': 'getblock',
+    'blocksresponse': 'getblocks',
+}
+
+REQUEST_ONLY = [
+    'connect',
+    'challenge',
+    'newblock'
+]
+
 class BaseRPC:
+    def __init__(self):
+        self.config = get_config()
+
     async def write_result(self, stream, method, data, req_id):
         await self.write_as_json(stream, method, data, 'result', req_id)
 
@@ -25,6 +39,8 @@ class BaseRPC:
         await self.write_as_json(stream, method, data, 'params')
 
     async def write_as_json(self, stream, method, data, rpc_type, req_id=None):
+        if method in stream.message_queue and stream.message_queue[method] and method not in REQUEST_ONLY:
+            return
 
         rpc_data = {
             'id': req_id if req_id else str(uuid4()),
@@ -33,8 +49,11 @@ class BaseRPC:
             rpc_type: data
         }
         if rpc_type == 'params':
-            stream.message_queue[rpc_data['id']] = rpc_data
+            if method not in stream.message_queue:
+                stream.message_queue[method] = {}
+            stream.message_queue[method][rpc_data['id']] = rpc_data
         await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
+        self.config.app_log.debug(f'SENT {stream.peer.host} {method} {data} {rpc_type} {req_id}')
 
 class RPCSocketServer(TCPServer, BaseRPC):
     inbound_streams = {}
@@ -50,12 +69,14 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 body = json.loads(data)
                 method = body.get('method')
                 if 'result' in body:
-                    if body['id'] in stream.message_queue:
-                        del stream.message_queue[body['id']]
+                    if method in stream.message_queue:
+                        del stream.message_queue[method][body['id']]
                     else:
                         continue
                 if not hasattr(self, method):
                     continue
+                if hasattr(stream, 'peer'):
+                    self.config.app_log.debug(f'RECEIVED {stream.peer.host} {method} {body}')
                 await getattr(self, method)(body, stream)
             except StreamClosedError:
                 if hasattr(stream, 'peer'):
@@ -139,10 +160,11 @@ class RPCSocketClient(TCPClient):
             try:
                 body = json.loads(await stream.read_until(b"\n"))
                 if 'result' in body:
-                    if body['id'] in stream.message_queue:
-                        del stream.message_queue[body['id']]
-                    else:
-                        continue
+                    if body['method'] in REQUEST_RESPONSE_MAP:
+                        if body['id'] in stream.message_queue.get(REQUEST_RESPONSE_MAP[body['method']], {}):
+                            del stream.message_queue[REQUEST_RESPONSE_MAP[body['method']]][body['id']]
+                if hasattr(stream, 'peer'):
+                    self.config.app_log.debug(f'RECEIVED {stream.peer.host} {body["method"]} {body}')
                 stream.last_activity = int(time.time())
                 await getattr(self, body.get('method'))(body, stream)
             except StreamClosedError:

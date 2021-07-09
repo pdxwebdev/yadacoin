@@ -180,16 +180,17 @@ class Block(object):
                 
                 if transaction_obj.inputs:
                     failed = False
-                    used_ids_in_this_txn = []
+                    input_ids = []
                     for x in transaction_obj.inputs:
-                        if config.BU.is_input_spent(x.id, transaction_obj.public_key):
-                            failed = True
-                        if x.id in used_ids_in_this_txn:
-                            failed = True
                         if (x.id, transaction_obj.public_key) in used_inputs:
                             failed = True
                         used_inputs[(x.id, transaction_obj.public_key)] = transaction_obj
-                        used_ids_in_this_txn.append(x.id)
+                        input_ids.append(x.id)
+                    is_input_spent = await config.BU.is_input_spent(input_ids, transaction_obj.public_key)
+                    if is_input_spent:
+                        failed = True
+                    if len(input_ids) != len(list(set(input_ids))):
+                        failed = True
                     if failed:
                         continue
 
@@ -446,7 +447,8 @@ class Block(object):
                 failed = False
                 used_ids_in_this_txn = []
                 async for x in get_inputs(transaction.inputs):
-                    if yadacoin.core.config.CONFIG.BU.is_input_spent(x.id, transaction.public_key):
+                    is_input_spent = await yadacoin.core.config.CONFIG.BU.is_input_spent(x.id, transaction.public_key)
+                    if is_input_spent:
                         failed = True
                     if x.id in used_ids_in_this_txn:
                         failed = True
@@ -471,7 +473,8 @@ class Block(object):
                 failed = False
                 used_ids_in_this_txn = []
                 for x in txn.inputs:
-                    if yadacoin.core.config.CONFIG.BU.is_input_spent(x.id, txn.public_key):
+                    is_input_spent = await yadacoin.core.config.CONFIG.BU.is_input_spent(x.id, txn.public_key)
+                    if is_input_spent:
                         failed = True
                     if x.id in used_ids_in_this_txn:
                         failed = True

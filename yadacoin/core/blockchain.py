@@ -170,7 +170,8 @@ class Blockchain(object):
                         txn = await transaction.find_in_extra_blocks(x)
                         if not txn:
                             failed = True
-                    if self.config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index):
+                    is_input_spent = await self.config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index)
+                    if is_input_spent:
                         failed = True
                     if x.id in used_ids_in_this_txn:
                         failed = True

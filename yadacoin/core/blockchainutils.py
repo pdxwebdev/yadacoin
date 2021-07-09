@@ -489,7 +489,7 @@ class BlockChainUtils(object):
             self.mongo.db.unspent_cache.remove({})
             return None
 
-    def is_input_spent(
+    async def is_input_spent(
       self,
       input_ids,
       public_key,
@@ -534,12 +534,11 @@ class BlockChainUtils(object):
                     "index": {'$lt': from_index}
                 }
             })
-        res = self.mongo.db.blocks.aggregate(query, allowDiskUse=True)
-        if len(list(res)):
+        async for x in self.mongo.async_db.blocks.aggregate(query, allowDiskUse=True):
             return True
         
         if inc_mempool:
-            res2 = self.mongo.db.miner_transactions.find_one({
+            res2 = self.mongo.async_db.miner_transactions.find_one({
                 "inputs.id": {'$in': input_ids},
                 "$or": [
                     {"public_key": public_key},

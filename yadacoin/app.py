@@ -169,6 +169,30 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
 
     async def background_transaction_sender(self):
+        if self.config.block_sender_busy:
+            return
+        self.config.block_sender_busy = True
+        async for peer in self.config.peer.get_sync_peers():
+            res = self.config.mongo.async_db.blocks.find({
+              '$or': [
+                  {'sent_to.identity.username_signature': {'$ne': peer.peer.identity.username_signature}},
+                  {'sent_to': {'$exists': False}}
+              ]
+            }, {'_id': 0})
+            async for block in res:
+                await self.config.nodeShared().write_params(peer, 'newblock', {'block': block})
+                await self.config.mongo.async_db.blocks.update_one({
+                    'id': block['id']
+                },
+                {
+                    '$addToSet': {
+                        'sent_to': peer.peer.to_dict()
+                    }
+                })
+
+        self.config.block_sender_busy = False
+
+    async def background_transaction_sender(self):
         if self.config.transaction_sender_busy:
             return
         self.config.transaction_sender_busy = True

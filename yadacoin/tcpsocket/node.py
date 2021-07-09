@@ -133,7 +133,25 @@ class NodeRPC(BaseRPC):
             return
         if payload.get('block'):
             block = await Block.from_dict(payload.get('block'))
-            await self.config.consensus.insert_consensus_block(block, stream.peer)
+            added = await self.config.consensus.insert_consensus_block(block, stream.peer)
+
+            if added and stream.peer.protocol_version > 1:
+                await self.write_params(
+                    stream,
+                    'newblock_confirmed',
+                    body.get('params', {})
+                )
+                return await self.config.mongo.async_db.blocks.update_one(
+                    {
+                        'hash': block.hash
+                    },
+                    {
+                        '$addToSet': {
+                            'sent_to': stream.peer.to_dict()
+                        }
+                    }
+                )
+
             result = await self.ensure_previous_block(block, stream)
             if not result:
                 await self.write_params(
@@ -152,6 +170,20 @@ class NodeRPC(BaseRPC):
                 'newblock',
                 body.get('params', {})
             )
+
+    async def newblock_confirmed(self, body, stream):
+        payload = body.get('params', {}).get('payload')
+        block = await Block.from_dict(payload.get('block'))
+        return await self.config.mongo.async_db.blocks.update_one(
+            {
+                'hash': block.hash
+            },
+            {
+                '$addToSet': {
+                    'received_by': stream.peer.to_dict()
+                }
+            }
+        )
 
     async def ensure_previous_block(self, block, stream):
         have_prev = await self.ensure_previous_on_blockchain(block)
@@ -250,13 +282,45 @@ class NodeRPC(BaseRPC):
             return
         result = body.get('result')
         block = await Block.from_dict(result.get("block"))
-        await self.config.consensus.insert_consensus_block(block, stream.peer)
+        added = await self.config.consensus.insert_consensus_block(block, stream.peer)
+
+        if added and stream.peer.protocol_version > 1:
+                await self.write_params(
+                    stream,
+                    'newblock_confirmed',
+                    body.get('params', {})
+                )
+                return await self.config.mongo.async_db.blocks.update_one(
+                    {
+                        'hash': block.hash
+                    },
+                    {
+                        '$addToSet': {
+                            'sent_to': stream.peer.to_dict()
+                        }
+                    }
+                )
+
         prev_block = await self.ensure_previous_block(block, stream)
 
         if prev_block:
             blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
             if not status:  # there is a break somewhere
                 await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
+
+    async def blockresponse_confirmed(self, body, stream):
+        result = body.get('result')
+        block = await Block.from_dict(result.get("block"))
+        return await self.config.mongo.async_db.blocks.update_one(
+            {
+                'hash': block.hash
+            },
+            {
+                '$addToSet': {
+                    'received_by': stream.peer.to_dict()
+                }
+            }
+        )
 
     async def connect(self, body, stream):
         params = body.get('params')
@@ -389,27 +453,39 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
         try:
             stream = await super(NodeSocketClient, self).connect(peer)
             if stream:
-                await self.write_params(stream, 'connect', {
-                    'peer': self.config.peer.to_dict()
-                })
+                await self.write_params(
+                    stream,
+                    'connect',
+                    {
+                        'peer': self.config.peer.to_dict()
+                    }
+                )
 
                 stream.peer.token = str(uuid4())
-                await self.write_params(stream, 'challenge', {
-                    'token': stream.peer.token
-                })
+                await self.write_params(
+                    stream,
+                    'challenge',
+                    {
+                        'token': stream.peer.token
+                    }
+                )
 
                 await self.wait_for_data(stream)
         except StreamClosedError:
-            pass
-            #get_config().app_log.error('Cannot connect to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
+            get_config().app_log.error('Cannot connect to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
     
     async def challenge(self, body, stream):
         challenge =  body.get('params', {}).get('token')
         signed_challenge = TU.generate_signature(challenge, self.config.private_key)
-        await self.write_result(stream, 'authenticate', {
-            'peer': self.config.peer.to_dict(),
-            'signed_challenge': signed_challenge
-        }, body['id'])
+        await self.write_result(
+            stream,
+            'authenticate',
+            {
+                'peer': self.config.peer.to_dict(),
+                'signed_challenge': signed_challenge
+            },
+            body['id']
+        )
     
     async def capacity(self, body, stream):
         NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][stream.peer.rid] = stream.peer

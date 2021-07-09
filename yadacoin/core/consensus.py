@@ -92,11 +92,18 @@ class Consensus(object):
         self.mongo.db.fastgraph_transactions.remove({'id': {'$in': [x['id'] for x in block['block']['transactions']]}}, {'_id': 0})
 
     async def insert_consensus_block(self, block, peer):
-        self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
+        existing = await self.mongo.async_db.consensus.find_one({
+            'index': block.index,
+            'peer.rid': peer.rid,
+            'id': block.signature,
+        })
+        if existing:
+            return False
         try:
             block.verify()
         except:
-            return
+            return False
+        self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
         await self.mongo.async_db.consensus.delete_many({
             'index': block.index,
             'peer.rid': peer.rid
@@ -107,6 +114,7 @@ class Consensus(object):
             'id': block.signature,
             'peer': peer.to_dict()
         })
+        return True
 
     async def sync_bottom_up(self):
         #bottom up syncing
@@ -170,7 +178,6 @@ class Consensus(object):
                 self.config.app_log.warning(e)
     
     async def request_blocks(self, peer):
-        self.config.app_log.debug('requesting {} from {}'.format(self.latest_block.index + 1, peer.peer.identity.username))
         await self.config.nodeShared().write_params(peer, 'getblocks', {
             'start_index': int(self.latest_block.index) + 1,
             'end_index': int(self.latest_block.index) + 100
@@ -239,7 +246,6 @@ class Consensus(object):
     
     async def build_backward_from_block_to_fork(self, block, blocks, stream=None, depth=0):
         self.app_log.warning(block.to_dict())
-        self.app_log.warning(blocks)
 
         retrace_block = await self.mongo.async_db.blocks.find_one({
             'hash': block.prev_hash,
@@ -248,21 +254,23 @@ class Consensus(object):
         if retrace_block:
             return blocks, True
 
-        async for retrace_consensus_block in self.get_previous_consensus_block(block, stream):
-            self.app_log.warning(retrace_consensus_block.to_dict())
-            if blocks is None:
-                blocks = []
-            result, status = await self.build_backward_from_block_to_fork(
-                retrace_consensus_block,
-                json.loads(json.dumps([x.to_dict() for x in blocks])),
-                stream,
-                depth + 1
-            )
-            self.app_log.warning(result)
-            if status:
-                result.append(retrace_consensus_block)
-                return result, status
-        return blocks, False
+        retrace_consensus_block = [x async for x in self.get_previous_consensus_block(block, stream)]
+        if not retrace_consensus_block:
+            return blocks, True
+
+        retrace_consensus_block = retrace_consensus_block[0]
+
+        if blocks is None:
+            blocks = []
+
+        result, status = await self.build_backward_from_block_to_fork(
+            retrace_consensus_block,
+            json.loads(json.dumps([x for x in blocks])),
+            stream,
+            depth + 1
+        )
+        result.append(retrace_consensus_block)
+        return result, status
     
     async def integrate_blockchain_with_existing_chain(self, blockchain, stream=None):
         bc = await Blockchain.init_async()
