@@ -410,10 +410,10 @@ class NodeRPC(BaseRPC):
     async def challenge(self, body, stream):
         challenge = body.get('params', {}).get('token')
         signed_challenge = TU.generate_signature(challenge, self.config.private_key)
-        await self.write_result(stream, 'authenticate', {
+        await self.write_params(stream, 'authenticate', {
             'peer': self.config.peer.to_dict(),
             'signed_challenge': signed_challenge
-        }, body['id'])
+        })
 
         stream.peer.token = str(uuid4())
         await self.write_params(stream, 'challenge', {
@@ -421,7 +421,7 @@ class NodeRPC(BaseRPC):
         })
 
     async def authenticate(self, body, stream):
-        signed_challenge = body.get('result', {}).get('signed_challenge')
+        signed_challenge = body.get('params', {}).get('signed_challenge')
         result = verify_signature(
             base64.b64decode(signed_challenge),
             stream.peer.token.encode(),
@@ -477,14 +477,13 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
     async def challenge(self, body, stream):
         challenge =  body.get('params', {}).get('token')
         signed_challenge = TU.generate_signature(challenge, self.config.private_key)
-        await self.write_result(
+        await self.write_params(
             stream,
             'authenticate',
             {
                 'peer': self.config.peer.to_dict(),
                 'signed_challenge': signed_challenge
-            },
-            body['id']
+            }
         )
     
     async def capacity(self, body, stream):
