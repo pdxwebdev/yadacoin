@@ -303,8 +303,6 @@ class NodeApplication(Application):
         formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
         rotateHandler.setFormatter(formatter)
         self.config.app_log.addHandler(rotateHandler)
-        if options.debug:
-            self.config.app_log.setLevel(logging.DEBUG)
 
         self.access_log = logging.getLogger("tornado.access")
         tornado.log.enable_pretty_logging()

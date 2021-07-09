@@ -25,6 +25,7 @@ REQUEST_RESPONSE_MAP = {
 REQUEST_ONLY = [
     'connect',
     'challenge',
+    'authenticate',
     'newblock'
 ]
 
