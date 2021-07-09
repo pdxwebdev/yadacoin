@@ -191,6 +191,8 @@ class Seed(Peer):
         return SeedGateway
 
     async def get_outbound_peers(self):
+        if self.config.username_signature in self.config.seeds:
+            del self.config.seeds[self.config.username_signature]
         return self.config.seeds
 
     @classmethod
