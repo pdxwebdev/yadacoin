@@ -119,10 +119,12 @@ class MiningPool(object):
                     'hash': block_candidate.hash
                 },
                 {
-                    'address': address,
-                    'index': block_candidate.index,
-                    'hash': block_candidate.hash,
-                    'nonce': nonce
+                    '$set': {
+                        'address': address,
+                        'index': block_candidate.index,
+                        'hash': block_candidate.hash,
+                        'nonce': nonce
+                    }
                 },
                 upsert=True
             )

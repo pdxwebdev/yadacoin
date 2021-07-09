@@ -75,8 +75,10 @@ class RPCSocketServer(TCPServer, BaseRPC):
                         continue
                 if not hasattr(self, method):
                     continue
-                if hasattr(stream, 'peer'):
+                if hasattr(stream, 'peer') and hasattr(stream.peer, 'host'):
                     self.config.app_log.debug(f'RECEIVED {stream.peer.host} {method} {body}')
+                if hasattr(stream, 'peer') and hasattr(stream.peer, 'address'):
+                    self.config.app_log.debug(f'RECEIVED {stream.peer.address} {method} {body}')
                 await getattr(self, method)(body, stream)
             except StreamClosedError:
                 if hasattr(stream, 'peer'):
