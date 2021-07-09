@@ -211,6 +211,25 @@ class NodeRPC(BaseRPC):
             'block.hash': block.prev_hash
         })
 
+    async def fill_gap(self, end_index, stream):
+        start_block = await self.config.mongo.async_db.blocks.find_one(
+            {
+                'index': {
+                    '$lt': end_index
+                }
+            },
+            sort=[('index', -1)]
+        )
+        await self.config.nodeShared().write_params(
+            stream,
+            'getblocks',
+            {
+                'start_index': start_block['index'] + 1,
+                'end_index': end_index - 1
+            }
+        )
+
+
     async def send_block(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
             await self.write_params(
@@ -266,6 +285,7 @@ class NodeRPC(BaseRPC):
 
         prev_block = await self.ensure_previous_block(first_inbound_block, stream)
         if not prev_block:
+            await self.fill_gap(first_inbound_block.index, stream)
             stream.synced = True
             self.config.consensus.syncing = False
             return False
@@ -285,21 +305,21 @@ class NodeRPC(BaseRPC):
         added = await self.config.consensus.insert_consensus_block(block, stream.peer)
 
         if added and stream.peer.protocol_version > 1:
-                await self.write_params(
-                    stream,
-                    'newblock_confirmed',
-                    body.get('params', {})
-                )
-                return await self.config.mongo.async_db.blocks.update_one(
-                    {
-                        'hash': block.hash
-                    },
-                    {
-                        '$addToSet': {
-                            'sent_to': stream.peer.to_dict()
-                        }
+            await self.write_params(
+                stream,
+                'newblock_confirmed',
+                body.get('params', {})
+            )
+            return await self.config.mongo.async_db.blocks.update_one(
+                {
+                    'hash': block.hash
+                },
+                {
+                    '$addToSet': {
+                        'sent_to': stream.peer.to_dict()
                     }
-                )
+                }
+            )
 
         prev_block = await self.ensure_previous_block(block, stream)
 
