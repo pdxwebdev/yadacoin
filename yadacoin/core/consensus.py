@@ -256,7 +256,7 @@ class Consensus(object):
 
         retrace_consensus_block = [x async for x in self.get_previous_consensus_block(block, stream)]
         if not retrace_consensus_block:
-            return blocks, True
+            return blocks, False
 
         retrace_consensus_block = retrace_consensus_block[0]
 

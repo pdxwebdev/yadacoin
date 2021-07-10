@@ -91,6 +91,7 @@ class NodeApplication(Application):
             self.init_service_providers()
             self.init_groups()
             self.init_peer()
+            self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
             if 'pool' in self.config.modes:
                 self.init_pool()
         if 'web' in self.config.modes:
@@ -289,20 +290,18 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
 
     def configure_logging(self):
-        ch = logging.StreamHandler(stdout)
-        ch.setLevel(logging.INFO)
-        if options.debug:
-            ch.setLevel(logging.DEBUG)
         # tornado.log.enable_pretty_logging()
         self.config.app_log = logging.getLogger("tornado.application")
         tornado.log.enable_pretty_logging(logger=self.config.app_log)
-        # app_log.addHandler(ch)
         logfile = path.abspath("yada_app.log")
         # Rotate log after reaching 512K, keep 5 old copies.
         rotateHandler = RotatingFileHandler(logfile, "a", 512 * 1024, 5)
         formatter = logging.Formatter('%(asctime)s %(levelname)s %(message)s')
         rotateHandler.setFormatter(formatter)
         self.config.app_log.addHandler(rotateHandler)
+        self.config.app_log.setLevel(logging.INFO)
+        if self.config.debug:
+            self.config.app_log.setLevel(logging.DEBUG)
 
         self.access_log = logging.getLogger("tornado.access")
         tornado.log.enable_pretty_logging()
@@ -442,8 +441,6 @@ class NodeApplication(Application):
         self.config.app_log.info("API: http://{}:{}".format(self.config.serve_host, self.config.serve_port))
         if 'web' in self.config.modes:
             self.config.app_log.info("Wallet: http://{}:{}/app".format(self.config.serve_host, self.config.serve_port))
-        if 'node' in self.config.modes:
-            self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
         if os.path.exists(path.join(path.dirname(__file__), '..', 'templates')):
             template_path = path.join(path.dirname(__file__), '..', 'templates')
         else:
@@ -492,7 +489,8 @@ class NodeApplication(Application):
             'peer_type': self.config.peer_type,
             'http_host': self.config.ssl['common_name'] if isinstance(self.config.ssl, dict) else self.config.peer_host,
             'http_port': self.config.ssl['port'] if isinstance(self.config.ssl, dict) else self.config.serve_port,
-            'secure': isinstance(self.config.ssl, dict)
+            'secure': isinstance(self.config.ssl, dict),
+            'protocol_version': 2
         }
 
         if my_peer.get('peer_type') == 'seed':

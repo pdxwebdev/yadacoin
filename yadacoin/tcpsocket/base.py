@@ -69,7 +69,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 data = await stream.read_until(b"\n")
                 body = json.loads(data)
                 method = body.get('method')
-                if 'result' in body and stream.peer.protocol_version > 1:
+                if 'result' in body:
                     if method in REQUEST_RESPONSE_MAP:
                         if body['id'] in stream.message_queue.get(REQUEST_RESPONSE_MAP[method], {}):
                             del stream.message_queue[REQUEST_RESPONSE_MAP[method]][body['id']]
@@ -163,7 +163,7 @@ class RPCSocketClient(TCPClient):
         while True:
             try:
                 body = json.loads(await stream.read_until(b"\n"))
-                if 'result' in body and stream.peer.protocol_version > 1:
+                if 'result' in body:
                     if body['method'] in REQUEST_RESPONSE_MAP:
                         if body['id'] in stream.message_queue.get(REQUEST_RESPONSE_MAP[body['method']], {}):
                             del stream.message_queue[REQUEST_RESPONSE_MAP[body['method']]][body['id']]

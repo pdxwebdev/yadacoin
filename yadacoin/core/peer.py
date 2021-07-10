@@ -26,7 +26,7 @@ class Peer:
         http_host=None,
         http_port=None,
         secure=None,
-        protocol_version=1
+        protocol_version=2
     ):
         self.host = host
         self.port = port
@@ -50,7 +50,8 @@ class Peer:
             seed_gateway=peer.get('seed_gateway'),
             http_host=peer.get('http_host'),
             http_port=peer.get('http_port'),
-            secure=peer.get('secure')
+            secure=peer.get('secure'),
+            protocol_version=peer.get('protocol_version', 1)
         )
         return inst
     
@@ -165,7 +166,8 @@ class Peer:
             'seed_gateway': self.seed_gateway,
             'http_host': self.http_host,
             'http_port': self.http_port,
-            'secure': self.secure
+            'secure': self.secure,
+            'protocol_version': self.protocol_version
         }
 
     def to_string(self):
