@@ -23,6 +23,7 @@ class NodeRPC(BaseRPC):
     def __init__(self):
         super(NodeRPC, self).__init__()
         self.config = get_config()
+        self.retry_blocks = {}
 
     config = None
     async def getblocks(self, body, stream):
