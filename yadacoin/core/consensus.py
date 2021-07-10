@@ -178,7 +178,7 @@ class Consensus(object):
                 self.config.app_log.warning(e)
     
     async def request_blocks(self, peer):
-        await self.config.nodeShared().write_params(peer, 'getblocks', {
+        await self.config.nodeShared.write_params(peer, 'getblocks', {
             'start_index': int(self.latest_block.index) + 1,
             'end_index': int(self.latest_block.index) + 100
         })
@@ -372,7 +372,7 @@ class Consensus(object):
                     await self.config.mp.refresh()
                     await StratumServer.block_checker()
                 if not self.syncing:
-                    await self.config.nodeShared().send_block(self.config.LatestBlock.block)
+                    await self.config.nodeShared.send_block(self.config.LatestBlock.block)
             return True
         except Exception as e:
             from traceback import format_exc

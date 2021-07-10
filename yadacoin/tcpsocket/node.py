@@ -23,7 +23,6 @@ class NodeRPC(BaseRPC):
     def __init__(self):
         super(NodeRPC, self).__init__()
         self.config = get_config()
-        self.retry_blocks = {}
 
     config = None
     async def getblocks(self, body, stream):
@@ -147,7 +146,6 @@ class NodeRPC(BaseRPC):
                 'newblock_confirmed',
                 body.get('params', {})
             )
-            self.retry_blocks[(block.hash, stream.peer.rid)] = block
 
         result = await self.ensure_previous_block(block, stream)
         if not result:
@@ -167,13 +165,14 @@ class NodeRPC(BaseRPC):
                 'newblock',
                 body.get('params', {})
             )
+            self.retry_blocks[(stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
 
     async def newblock_confirmed(self, body, stream):
         payload = body.get('params', {}).get('payload')
         block = await Block.from_dict(payload.get('block'))
 
-        if (block.hash, stream.peer.rid) in self.retry_blocks:
-            del self.retry_blocks[(block.hash, stream.peer.rid)]
+        if (stream.peer.rid, 'newblock', block.hash) in self.retry_blocks:
+            del self.retry_blocks[(stream.peer.rid, 'newblock', block.hash)]
 
     async def ensure_previous_block(self, block, stream):
         have_prev = await self.ensure_previous_on_blockchain(block)
@@ -210,7 +209,7 @@ class NodeRPC(BaseRPC):
             },
             sort=[('index', -1)]
         )
-        await self.config.nodeShared().write_params(
+        await self.config.nodeShared.write_params(
             stream,
             'getblocks',
             {
@@ -221,16 +220,18 @@ class NodeRPC(BaseRPC):
 
 
     async def send_block(self, block):
+        payload = {
+            'payload': {
+                'block': block.to_dict()
+            }
+        }
         async for peer_stream in self.config.peer.get_sync_peers():
             await self.write_params(
                 peer_stream,
                 'newblock',
-                {
-                    'payload': {
-                        'block': block.to_dict()
-                    }
-                }
+                payload
             )
+            self.retry_blocks[(peer_stream.peer.rid, 'newblock', block.hash)] = payload
 
     async def get_next_block(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
@@ -258,6 +259,7 @@ class NodeRPC(BaseRPC):
             await self.write_result(stream, 'blockresponse', {
                 'block': block
             }, body['id'])
+            self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])] = body.get('params', {})
 
     async def blocksresponse(self, body, stream):
         # get blocks should be done only by syncing peers
@@ -300,7 +302,6 @@ class NodeRPC(BaseRPC):
                 'blockresponse_confirmed',
                 body.get('params', {})
             )
-            self.retry_blocks[(block.hash, stream.peer.rid)] = block
 
         prev_block = await self.ensure_previous_block(block, stream)
 
@@ -312,8 +313,8 @@ class NodeRPC(BaseRPC):
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('result')
         block = await Block.from_dict(result.get("block"))
-        if (block.hash, stream.peer.rid) in self.retry_blocks:
-            del self.retry_blocks[(block.hash, stream.peer.rid)]
+        if (stream.peer.rid, 'blockresponse', block.hash) in self.retry_blocks:
+            del self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])]
 
     async def connect(self, body, stream):
         params = body.get('params')
@@ -459,18 +460,20 @@ class NodeRPC(BaseRPC):
 
 class NodeSocketServer(RPCSocketServer, NodeRPC):
 
+    retry_blocks = {}
+
     def __init__(self):
         super(NodeSocketServer, self).__init__()
         self.config = get_config()
-        self.retry_blocks = {}
 
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
 
+    retry_blocks = {}
+
     def __init__(self):
         super(NodeSocketClient, self).__init__()
         self.config = get_config()
-        self.retry_blocks = {}
 
     async def connect(self, peer: Peer):
         try:

@@ -420,7 +420,7 @@ class MiningPool(object):
 
         await self.config.consensus.integrate_block_with_existing_chain(block)
 
-        await self.config.nodeShared().send_block(block)
+        await self.config.nodeShared.send_block(block)
 
         await self.refresh()
         

@@ -169,27 +169,25 @@ class NodeApplication(Application):
         except Exception as e:
             self.config.app_log.error(format_exc())
 
-    async def background_transaction_sender(self):
+    async def background_block_sender(self):
         if self.config.block_sender_busy:
             return
         self.config.block_sender_busy = True
-        async for peer in self.config.peer.get_sync_peers():
-            res = self.config.mongo.async_db.blocks.find({
-              '$or': [
-                  {'sent_to.identity.username_signature': {'$ne': peer.peer.identity.username_signature}},
-                  {'sent_to': {'$exists': False}}
-              ]
-            }, {'_id': 0})
-            async for block in res:
-                await self.config.nodeShared().write_params(peer, 'newblock', {'block': block})
-                await self.config.mongo.async_db.blocks.update_one({
-                    'id': block['id']
-                },
-                {
-                    '$addToSet': {
-                        'sent_to': peer.peer.to_dict()
-                    }
-                })
+        for x, message in self.config.nodeServer.retry_blocks.items():
+            for peer_cls in self.config.nodeClient.outbound_streams.keys():
+                if peer_cls in self.config.nodeClient.outbound_streams and x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                    if len(x) > 3:
+                        await self.config.nodeShared.write_result(self.config.nodeServer.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
+                    else:
+                        await self.config.nodeShared.write_params(self.config.nodeServer.outbound_streams[peer_cls][x[0]], x[1], message)
+
+        for x, message in self.config.nodeClient.retry_blocks.items():
+            for peer_cls in self.config.nodeClient.outbound_streams.keys():
+                if peer_cls in self.config.nodeClient.outbound_streams and x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                    if len(x) > 3:
+                        await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
+                    else:
+                        await self.config.nodeShared.write_params(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message)
 
         self.config.block_sender_busy = False
 
@@ -204,7 +202,7 @@ class NodeApplication(Application):
                   {'sent_to': {'$exists': False}}
               ]
             }, {'_id': 0}):
-                await self.config.nodeShared().write_params(peer, 'newtxn', {'transaction': txn})
+                await self.config.nodeShared.write_params(peer, 'newtxn', {'transaction': txn})
                 await self.config.mongo.async_db.miner_transactions.update_one({
                     'id': txn['id']
                 },
@@ -373,6 +371,9 @@ class NodeApplication(Application):
             tornado.ioloop.PeriodicCallback(self.background_transaction_sender, 10000).start()
             self.config.transaction_sender_busy = False
 
+            tornado.ioloop.PeriodicCallback(self.background_block_sender, 10000).start()
+            self.config.block_sender_busy = False
+
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
             self.config.pp = PoolPayer()
@@ -520,7 +521,7 @@ class NodeApplication(Application):
             self.config.pyrx = pyrx.PyRX()
             self.config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
             self.config.nodeServer = NodeSocketServer
-            self.config.nodeShared = NodeRPC
+            self.config.nodeShared = NodeRPC()
             self.config.nodeClient = NodeSocketClient()
 
             for x in [Seed, SeedGateway, ServiceProvider, User]:
