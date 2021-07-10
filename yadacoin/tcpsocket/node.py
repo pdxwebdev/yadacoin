@@ -165,7 +165,8 @@ class NodeRPC(BaseRPC):
                 'newblock',
                 body.get('params', {})
             )
-            self.retry_blocks[(stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
+            if peer_stream.peer.protocol_version > 1:
+                self.retry_blocks[(peer_stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
 
     async def newblock_confirmed(self, body, stream):
         payload = body.get('params', {}).get('payload')
@@ -231,7 +232,8 @@ class NodeRPC(BaseRPC):
                 'newblock',
                 payload
             )
-            self.retry_blocks[(peer_stream.peer.rid, 'newblock', block.hash)] = payload
+            if peer_stream.peer.protocol_version > 1:
+                self.retry_blocks[(peer_stream.peer.rid, 'newblock', block.hash)] = payload
 
     async def get_next_block(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
@@ -259,7 +261,8 @@ class NodeRPC(BaseRPC):
             await self.write_result(stream, 'blockresponse', {
                 'block': block
             }, body['id'])
-            self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])] = body.get('params', {})
+            if stream.peer.protocol_version > 1:
+                self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])] = body.get('params', {})
 
     async def blocksresponse(self, body, stream):
         # get blocks should be done only by syncing peers
