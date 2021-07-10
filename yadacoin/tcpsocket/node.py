@@ -462,6 +462,7 @@ class NodeSocketServer(RPCSocketServer, NodeRPC):
     def __init__(self):
         super(NodeSocketServer, self).__init__()
         self.config = get_config()
+        self.retry_blocks = {}
 
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
@@ -469,6 +470,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
     def __init__(self):
         super(NodeSocketClient, self).__init__()
         self.config = get_config()
+        self.retry_blocks = {}
 
     async def connect(self, peer: Peer):
         try:
