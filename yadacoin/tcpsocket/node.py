@@ -141,7 +141,7 @@ class NodeRPC(BaseRPC):
 
         added = await self.config.consensus.insert_consensus_block(block, stream.peer)
 
-        if added and stream.peer.protocol_version > 1:
+        if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,
                 'newblock_confirmed',
@@ -294,7 +294,7 @@ class NodeRPC(BaseRPC):
             return
         added = await self.config.consensus.insert_consensus_block(block, stream.peer)
 
-        if added and stream.peer.protocol_version > 1:
+        if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,
                 'blockresponse_confirmed',
