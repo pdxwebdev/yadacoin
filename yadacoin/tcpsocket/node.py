@@ -46,14 +46,17 @@ class NodeRPC(BaseRPC):
             }, {'_id': 0}).sort([('index',1)])
             result = await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE)
         
+        message = {
+            'blocks': result
+        }
         await self.write_result(
             stream,
             'blocksresponse',
-            {
-                'blocks': result
-            },
+            message,
             body['id']
         )
+        if stream.peer.protocol_version > 1:
+            self.retry_blocks[(stream.peer.rid, 'blocksresponse', start_index)] = message
 
     async def service_provider_request(self, body, stream):
         payload = body.get('params', {})
@@ -297,6 +300,10 @@ class NodeRPC(BaseRPC):
                 stream
             )
         self.config.consensus.syncing = False
+
+    async def blocksresponse_confirmed(self, body, stream):
+        if (stream.peer.rid, 'blockresponse') in self.retry_blocks:
+            del self.retry_blocks[(stream.peer.rid, 'blockresponse')]
 
     async def blockresponse(self, body, stream):
         # get blocks should be done only by syncing peers
