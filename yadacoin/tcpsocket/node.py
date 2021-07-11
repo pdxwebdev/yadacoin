@@ -269,6 +269,12 @@ class NodeRPC(BaseRPC):
         # get blocks should be done only by syncing peers
         result = body.get('result')
         blocks = result.get('blocks')
+        if stream.peer.protocol_version > 1:
+            await self.write_params(
+                stream,
+                'blocksresponse_confirmed',
+                body.get('result', {})
+            )
         if not blocks:
             self.config.consensus.syncing = False
             stream.synced = True
