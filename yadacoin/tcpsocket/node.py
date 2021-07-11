@@ -258,9 +258,14 @@ class NodeRPC(BaseRPC):
             else:
                 block = await self.config.mongo.async_db.blocks.find_one({'index': block_index}, {'_id': 0})
         if block:
-            await self.write_result(stream, 'blockresponse', {
-                'block': block
-            }, body['id'])
+            await self.write_result(
+                stream,
+                'blockresponse',
+                {
+                    'block': block
+                },
+                body['id']
+            )
             if stream.peer.protocol_version > 1:
                 self.retry_blocks[(stream.peer.rid, 'blockresponse', block['hash'], body['id'])] = body.get('params', {})
 
