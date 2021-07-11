@@ -299,6 +299,14 @@ class NodeRPC(BaseRPC):
     async def blockresponse(self, body, stream):
         # get blocks should be done only by syncing peers
         result = body.get('result')
+        if not result.get("block"):
+            if stream.peer.protocol_version > 1:
+                await self.write_params(
+                    stream,
+                    'blockresponse_confirmed',
+                    body.get('result', {})
+                )
+            return
         block = await Block.from_dict(result.get("block"))
         if block.index > (self.config.LatestBlock.block.index + 100):
             return
