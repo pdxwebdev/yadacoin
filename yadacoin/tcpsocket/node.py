@@ -308,7 +308,7 @@ class NodeRPC(BaseRPC):
             await self.write_params(
                 stream,
                 'blockresponse_confirmed',
-                body.get('params', {})
+                body.get('result', {})
             )
 
         prev_block = await self.ensure_previous_block(block, stream)
