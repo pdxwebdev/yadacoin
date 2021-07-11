@@ -145,17 +145,12 @@ class NodeRPC(BaseRPC):
         if block.index > (self.config.LatestBlock.block.index + 100) or block.index < self.config.LatestBlock.block.index:
             return
 
-        added = await self.config.consensus.insert_consensus_block(block, stream.peer)
+        blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
-        result = await self.ensure_previous_block(block, stream)
-        if not result:
-            await self.write_params(
-                stream,
-                'getblock',
-                {
-                    'payload': block.to_dict()
-                }
-            )
+        if not status:
+            return
+
+        await self.config.consensus.insert_consensus_block(block, stream.peer)
 
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:

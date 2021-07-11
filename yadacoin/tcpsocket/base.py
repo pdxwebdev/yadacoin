@@ -26,7 +26,10 @@ REQUEST_ONLY = [
     'connect',
     'challenge',
     'authenticate',
-    'newblock'
+    'newblock',
+    'blockresponse_confirmed',
+    'blocksresponse_confirmed',
+    'newblock_confirmed'
 ]
 
 class BaseRPC:
