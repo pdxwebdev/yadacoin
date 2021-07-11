@@ -174,16 +174,16 @@ class NodeApplication(Application):
             return
         self.config.block_sender_busy = True
         for x, message in self.config.nodeServer.retry_blocks.items():
-            for peer_cls in self.config.nodeClient.outbound_streams.keys():
-                if peer_cls in self.config.nodeClient.outbound_streams and x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+            for peer_cls in self.config.nodeServer.inbound_streams.keys():
+                if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                     if len(x) > 3:
-                        await self.config.nodeShared.write_result(self.config.nodeServer.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
+                        await self.config.nodeShared.write_result(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message, x[3])
                     else:
-                        await self.config.nodeShared.write_params(self.config.nodeServer.outbound_streams[peer_cls][x[0]], x[1], message)
+                        await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
         for x, message in self.config.nodeClient.retry_blocks.items():
             for peer_cls in self.config.nodeClient.outbound_streams.keys():
-                if peer_cls in self.config.nodeClient.outbound_streams and x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                     if len(x) > 3:
                         await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
                     else:
