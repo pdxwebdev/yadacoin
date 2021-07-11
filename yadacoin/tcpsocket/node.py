@@ -314,7 +314,8 @@ class NodeRPC(BaseRPC):
                 await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
 
     async def blockresponse_confirmed(self, body, stream):
-        result = body.get('result')
+        result = body.get('params')
+
         block = await Block.from_dict(result.get("block"))
         if (stream.peer.rid, 'blockresponse', block.hash) in self.retry_blocks:
             del self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])]
