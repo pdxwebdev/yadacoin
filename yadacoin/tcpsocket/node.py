@@ -19,7 +19,7 @@ from yadacoin.core.blockchain import Blockchain
 
 
 class NodeRPC(BaseRPC):
-
+    retry_blocks = {}
     def __init__(self):
         super(NodeRPC, self).__init__()
         self.config = get_config()
