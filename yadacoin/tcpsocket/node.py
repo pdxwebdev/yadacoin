@@ -262,7 +262,7 @@ class NodeRPC(BaseRPC):
                 'block': block
             }, body['id'])
             if stream.peer.protocol_version > 1:
-                self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])] = body.get('params', {})
+                self.retry_blocks[(stream.peer.rid, 'blockresponse', block['hash'], body['id'])] = body.get('params', {})
 
     async def blocksresponse(self, body, stream):
         # get blocks should be done only by syncing peers
