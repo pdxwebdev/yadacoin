@@ -56,7 +56,7 @@ class NodeRPC(BaseRPC):
             body['id']
         )
         if stream.peer.protocol_version > 1:
-            self.retry_blocks[(stream.peer.rid, 'blocksresponse', start_index)] = message
+            self.retry_blocks[(stream.peer.rid, 'blocksresponse', start_index, body['id'])] = message
 
     async def service_provider_request(self, body, stream):
         payload = body.get('params', {})
