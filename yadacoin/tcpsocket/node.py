@@ -130,22 +130,22 @@ class NodeRPC(BaseRPC):
     async def newblock(self, body, stream):
         payload = body.get('params', {}).get('payload')
 
-        if not payload.get('block'):
-            return
-
-        block = await Block.from_dict(payload.get('block'))
-
-        if block.index > (self.config.LatestBlock.block.index + 100):
-            return
-
-        added = await self.config.consensus.insert_consensus_block(block, stream.peer)
-
         if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,
                 'newblock_confirmed',
                 body.get('params', {})
             )
+
+        if not payload.get('block'):
+            return
+
+        block = await Block.from_dict(payload.get('block'))
+
+        if block.index > (self.config.LatestBlock.block.index + 100) or block.index < self.config.LatestBlock.block.index:
+            return
+
+        added = await self.config.consensus.insert_consensus_block(block, stream.peer)
 
         result = await self.ensure_previous_block(block, stream)
         if not result:
