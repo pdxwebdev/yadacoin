@@ -341,7 +341,7 @@ class NodeRPC(BaseRPC):
             await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
 
     async def blockresponse_confirmed(self, body, stream):
-        result = body.get('params')
+        result = body.get('result')
         if not result.get("block"):
             return
         block = await Block.from_dict(result.get("block"))
