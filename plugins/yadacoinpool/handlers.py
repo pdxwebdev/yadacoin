@@ -46,16 +46,17 @@ class PoolInfoHandler(BaseWebHandler):
         except:
             last_btc = 0
         await self.config.LatestBlock.block_checker()
+        pool_public_key = self.config.pool_public_key if hasattr(self.config, 'pool_public_key') else self.config.public_key
         total_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
             {
-                'public_key': self.config.public_key
+                'public_key': pool_public_key
             }
         )
 
         expected_blocks = 144
         pool_blocks_found = self.config.mongo.async_db.blocks.find(
             {
-                'public_key': self.config.public_key,
+                'public_key': pool_public_key,
                 'time': {'$gte': time.time() - ( 600 * 144 )}
             },
             {

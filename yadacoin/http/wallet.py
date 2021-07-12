@@ -275,7 +275,7 @@ class UnlockHandler(BaseHandler):
                 }, 
                 upsert=True
             )
-            return self.render_as_json({'token': self.encoded.decode()})
+            return self.render_as_json({'token': self.encoded})
         else:
             self.write({'status': 'error', 'message': 'Wrong private key or WIF. You must provide the private key or WIF of the currently running server.'})
             self.set_header('Content-Type', 'application/json')

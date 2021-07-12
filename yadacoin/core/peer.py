@@ -521,60 +521,80 @@ class Peers:
     
     @classmethod
     def get_seeds(cls):
-        return OrderedDict({x.identity.username_signature: x for x in [
-            Seed.from_dict({
-                'host': '34.237.46.10',
-                'port': 8000,
-                'identity': {
-                    "username": "",
-                    "username_signature": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
-                    "public_key": "02fa9550f57055c96c7ce4c6c9cd1411856beba5c7d5a07417e980a39aa03da3dc"
-                },
-                "seed_gateway": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ=="
-            }),
-        ]})
+        config = get_config()
+        if hasattr(config, 'network_seeds'):
+            seeds = [Seed.from_dict(x) for x in config.network_seeds]
+        else:
+            seeds = [
+                Seed.from_dict({
+                    'host': '34.237.46.10',
+                    'port': 8000,
+                    'identity': {
+                        "username": "",
+                        "username_signature": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
+                        "public_key": "02fa9550f57055c96c7ce4c6c9cd1411856beba5c7d5a07417e980a39aa03da3dc"
+                    },
+                    "seed_gateway": "MEQCIEvShxHewQt9u/4+WlcjSubCfsjOmvq8bRoU6t/LGmdLAiAQyr5op3AZj58NzRDthvq7bEouwHhEzis5ZYKlE6D0HA=="
+                }),
+            ]
+        return OrderedDict({x.identity.username_signature: x for x in seeds})
 
     @classmethod
     def get_seed_gateways(cls):
-        return OrderedDict({x.identity.username_signature: x for x in [
-            SeedGateway.from_dict({
-                'host': '18.214.218.185',
-                'port': 8000,
-                'identity': {
-                    "username": "",
-                    "username_signature": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
-                    "public_key": "03362203ee71bc15918a7992f3c76728fc4e45f4916d2c0311c37aad0f736b26b9"
-                },
-                "seed": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M="
-            }),
-        ]})
+        config = get_config()
+        if hasattr(config, 'network_seed_gateways'):
+            seed_gateways = [SeedGateway.from_dict(x) for x in config.network_seed_gateways]
+        else:
+            seed_gateways = [
+                SeedGateway.from_dict({
+                    'host': '18.214.218.185',
+                    'port': 8000,
+                    'identity': {
+                        "username": "",
+                        "username_signature": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
+                        "public_key": "03362203ee71bc15918a7992f3c76728fc4e45f4916d2c0311c37aad0f736b26b9"
+                    },
+                    "seed": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M="
+                }),
+            ]
+        return OrderedDict({x.identity.username_signature: x for x in seed_gateways})
 
     @classmethod
     def get_service_providers(cls):
-        return OrderedDict({x.identity.username_signature: x for x in [
-            ServiceProvider.from_dict({
-                'host': '3.225.228.97',
-                'port': 8000,
-                'identity': {
-                    "username": "",
-                    "username_signature": "MEQCIC7ADPLI3VPDNpQPaXAeB8gUk2LrvZDJIdEg9C12dj5PAiB61Te/sen1D++EJAcgnGLH4iq7HTZHv/FNByuvu4PrrA==",
-                    "public_key": "02a9aed3a4d69013246d24e25ded69855fbd590cb75b4a90fbfdc337111681feba"
-                }
-            }),
-        ]})
+        config = get_config()
+        if hasattr(config, 'network_service_providers'):
+            service_providers = [ServiceProvider.from_dict(x) for x in config.network_service_providers]
+        else:
+            service_providers = [
+                ServiceProvider.from_dict({
+                    'host': '3.225.228.97',
+                    'port': 8000,
+                    'identity': {
+                        "username": "",
+                        "username_signature": "MEQCIC7ADPLI3VPDNpQPaXAeB8gUk2LrvZDJIdEg9C12dj5PAiB61Te/sen1D++EJAcgnGLH4iq7HTZHv/FNByuvu4PrrA==",
+                        "public_key": "02a9aed3a4d69013246d24e25ded69855fbd590cb75b4a90fbfdc337111681feba"
+                    }
+                }),
+            ]
+        return OrderedDict({x.identity.username_signature: x for x in service_providers})
     
     @classmethod
     def get_groups(cls):
-        return OrderedDict({x.identity.username_signature: x for x in [
-            Group.from_dict({
-                'host': None,
-                'port': None,
-                'identity': {
-                    'username':'group',
-                    'username_signature':'MEUCIQDIlC+SpeLwUI4fzV1mkEsJCG6HIvBvazHuMMNGuVKi+gIgV8r1cexwDHM3RFGkP9bURi+RmcybaKHUcco1Qu0wvxw=',
-                    'public_key':'036f99ba2238167d9726af27168384d5fe00ef96b928427f3b931ed6a695aaabff',
-                    'wif':'KydUVG4w2ZSQkg6DAZ4UCEbfZz9Tg4PsjJFnvHwFsfmRkqXAHN8W'
-                }
-            })
-        ]})
+        config = get_config()
+        if hasattr(config, 'network_groups'):
+            groups = [Group.from_dict(x) for x in config.network_groups]
+        else:
+            groups = [
+                Group.from_dict({
+                    'host': None,
+                    'port': None,
+                    'identity': {
+                        'username':'group',
+                        'username_signature':'MEUCIQDIlC+SpeLwUI4fzV1mkEsJCG6HIvBvazHuMMNGuVKi+gIgV8r1cexwDHM3RFGkP9bURi+RmcybaKHUcco1Qu0wvxw=',
+                        'public_key':'036f99ba2238167d9726af27168384d5fe00ef96b928427f3b931ed6a695aaabff',
+                        'wif':'KydUVG4w2ZSQkg6DAZ4UCEbfZz9Tg4PsjJFnvHwFsfmRkqXAHN8W'
+                    }
+                })
+            ]
+        return OrderedDict({x.identity.username_signature: x for x in groups})
 

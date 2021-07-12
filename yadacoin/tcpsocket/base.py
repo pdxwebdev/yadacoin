@@ -95,7 +95,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     self.config.app_log.warning('Bad data from {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
                     await self.remove_peer(stream.peer)
                 stream.close()
-                #self.config.app_log.warning("{}".format(format_exc()))
+                self.config.app_log.warning("{}".format(format_exc()))
                 break
 
     async def remove_peer(self, peer):
