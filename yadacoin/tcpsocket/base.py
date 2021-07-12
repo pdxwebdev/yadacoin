@@ -43,8 +43,6 @@ class BaseRPC:
         await self.write_as_json(stream, method, data, 'params')
 
     async def write_as_json(self, stream, method, data, rpc_type, req_id=None):
-        if method in stream.message_queue and stream.message_queue[method] and method not in REQUEST_ONLY:
-            return
 
         rpc_data = {
             'id': req_id if req_id else str(uuid4()),

@@ -152,7 +152,18 @@ class NodeRPC(BaseRPC):
 
         blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
-        if not status:
+        if status:
+            first_inbound_block = blocks[0] if blocks else block
+            inbound_blockchain = await Blockchain.init_async(blocks if blocks else [block], partial=True)
+            existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
+            if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
+                await self.config.consensus.integrate_blockchain_with_existing_chain(
+                    inbound_blockchain,
+                    stream
+                )
+            else:
+                return
+        else:
             return
 
         await self.config.consensus.insert_consensus_block(block, stream.peer)
@@ -337,7 +348,16 @@ class NodeRPC(BaseRPC):
 
         blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
-        if not status:
+        if status:
+            first_inbound_block = blocks[0] if blocks else block
+            inbound_blockchain = await Blockchain.init_async(blocks if blocks else [block], partial=True)
+            existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
+            if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
+                await self.config.consensus.integrate_blockchain_with_existing_chain(
+                    inbound_blockchain,
+                    stream
+                )
+        else:
             await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
 
     async def blockresponse_confirmed(self, body, stream):
