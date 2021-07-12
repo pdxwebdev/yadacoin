@@ -307,7 +307,7 @@ class NodeRPC(BaseRPC):
     async def blocksresponse_confirmed(self, body, stream):
         params = body.get('result')
         start_index = params.get('start_index')
-        if (stream.peer.rid, 'blockresponse', start_index, body['id']) in self.retry_blocks:
+        if (stream.peer.rid, 'blocksresponse', start_index, body['id']) in self.retry_blocks:
             del self.retry_blocks[(stream.peer.rid, 'blockresponse', start_index, body['id'])]
 
     async def blockresponse(self, body, stream):
