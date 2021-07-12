@@ -154,7 +154,10 @@ class NodeRPC(BaseRPC):
 
         if status:
             first_inbound_block = blocks[0] if blocks else block
-            inbound_blockchain = await Blockchain.init_async(blocks if blocks else [block], partial=True)
+            forward_blocks_chain = await self.config.consensus.build_remote_chain(block)
+            forward_blocks = [x async for x in forward_blocks_chain.blocks]
+            inbound_blocks = (blocks if blocks else [block]) + forward_blocks[1:]
+            inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
             existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
             if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
                 await self.config.consensus.integrate_blockchain_with_existing_chain(
@@ -299,7 +302,10 @@ class NodeRPC(BaseRPC):
         self.config.consensus.syncing = True
         
         first_inbound_block = await Block.from_dict(blocks[0])
-        inbound_blockchain = await Blockchain.init_async(blocks, partial=True)
+        forward_blocks_chain = await self.config.consensus.build_remote_chain(blocks[-1])
+        forward_blocks = [x async for x in forward_blocks_chain.blocks]
+        inbound_blocks = blocks + forward_blocks[1:]
+        inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
         existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
 
         prev_block = await self.ensure_previous_block(first_inbound_block, stream)
@@ -350,15 +356,16 @@ class NodeRPC(BaseRPC):
 
         if status:
             first_inbound_block = blocks[0] if blocks else block
-            inbound_blockchain = await Blockchain.init_async(blocks if blocks else [block], partial=True)
+            forward_blocks_chain = await self.config.consensus.build_remote_chain(block)
+            forward_blocks = [x async for x in forward_blocks_chain.blocks]
+            inbound_blocks = (blocks if blocks else [block]) + forward_blocks[1:]
+            inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
             existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
             if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
                 await self.config.consensus.integrate_blockchain_with_existing_chain(
                     inbound_blockchain,
                     stream
                 )
-        else:
-            await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
 
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('result')

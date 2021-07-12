@@ -196,11 +196,13 @@ class Consensus(object):
             local_block = await self.config.mongo.async_db.blocks.find_one({'prevHash': block.hash}, {'_id': 0})
             if local_block:
                 local_block = await Block.from_dict(local_block)
+                block = local_block
                 blocks.append(local_block)
             else:
                 consensus_block = await self.config.mongo.async_db.consensus.find_one({'block.prevHash': block.hash}, {'_id': 0})
                 if consensus_block:
                     consensus_block = await Block.from_dict(consensus_block['block'])
+                    block = consensus_block
                     blocks.append(consensus_block)
             if not local_block and not consensus_block:
                 break
