@@ -169,7 +169,7 @@ class NodeRPC(BaseRPC):
                 self.retry_blocks[(peer_stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
 
     async def newblock_confirmed(self, body, stream):
-        payload = body.get('params', {}).get('payload')
+        payload = body.get('result', {}).get('payload')
         block = await Block.from_dict(payload.get('block'))
 
         if (stream.peer.rid, 'newblock', block.hash) in self.retry_blocks:
