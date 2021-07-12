@@ -308,7 +308,7 @@ class NodeRPC(BaseRPC):
         params = body.get('result')
         start_index = params.get('start_index')
         if (stream.peer.rid, 'blocksresponse', start_index, body['id']) in self.retry_blocks:
-            del self.retry_blocks[(stream.peer.rid, 'blockresponse', start_index, body['id'])]
+            del self.retry_blocks[(stream.peer.rid, 'blocksresponse', start_index, body['id'])]
 
     async def blockresponse(self, body, stream):
         # get blocks should be done only by syncing peers
