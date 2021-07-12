@@ -47,7 +47,8 @@ class NodeRPC(BaseRPC):
             result = await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE)
         
         message = {
-            'blocks': result
+            'blocks': result,
+            'start_index': start_index
         }
         await self.write_result(
             stream,
@@ -134,10 +135,11 @@ class NodeRPC(BaseRPC):
         payload = body.get('params', {}).get('payload')
 
         if stream.peer.protocol_version > 1:
-            await self.write_params(
+            await self.write_result(
                 stream,
                 'newblock_confirmed',
-                body.get('params', {})
+                body.get('params', {}),
+                body['id']
             )
 
         if not payload.get('block'):
@@ -273,10 +275,11 @@ class NodeRPC(BaseRPC):
         result = body.get('result')
         blocks = result.get('blocks')
         if stream.peer.protocol_version > 1:
-            await self.write_params(
+            await self.write_result(
                 stream,
                 'blocksresponse_confirmed',
-                body.get('result', {})
+                body.get('result', {}),
+                body['id']
             )
         if not blocks:
             self.config.consensus.syncing = False
@@ -302,18 +305,21 @@ class NodeRPC(BaseRPC):
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
-        if (stream.peer.rid, 'blockresponse') in self.retry_blocks:
-            del self.retry_blocks[(stream.peer.rid, 'blockresponse')]
+        params = body.get('result')
+        start_index = params.get('start_index')
+        if (stream.peer.rid, 'blockresponse', start_index, body['id']) in self.retry_blocks:
+            del self.retry_blocks[(stream.peer.rid, 'blockresponse', start_index, body['id'])]
 
     async def blockresponse(self, body, stream):
         # get blocks should be done only by syncing peers
         result = body.get('result')
         if not result.get("block"):
             if stream.peer.protocol_version > 1:
-                await self.write_params(
+                await self.write_result(
                     stream,
                     'blockresponse_confirmed',
-                    body.get('result', {})
+                    body.get('result', {}),
+                    body['id']
                 )
             return
         block = await Block.from_dict(result.get("block"))
@@ -322,25 +328,24 @@ class NodeRPC(BaseRPC):
         added = await self.config.consensus.insert_consensus_block(block, stream.peer)
 
         if stream.peer.protocol_version > 1:
-            await self.write_params(
+            await self.write_result(
                 stream,
                 'blockresponse_confirmed',
-                body.get('result', {})
+                body.get('result', {}),
+                body['id']
             )
 
-        prev_block = await self.ensure_previous_block(block, stream)
+        blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
-        if prev_block:
-            blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
-            if not status:  # there is a break somewhere
-                await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
+        if not status:
+            await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
 
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('params')
         if not result.get("block"):
             return
         block = await Block.from_dict(result.get("block"))
-        if (stream.peer.rid, 'blockresponse', block.hash) in self.retry_blocks:
+        if (stream.peer.rid, 'blockresponse', block.hash, body['id']) in self.retry_blocks:
             del self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])]
 
     async def connect(self, body, stream):

@@ -76,8 +76,6 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     if method in REQUEST_RESPONSE_MAP:
                         if body['id'] in stream.message_queue.get(REQUEST_RESPONSE_MAP[method], {}):
                             del stream.message_queue[REQUEST_RESPONSE_MAP[method]][body['id']]
-                        else:
-                            continue
                 if not hasattr(self, method):
                     continue
                 if hasattr(stream, 'peer') and hasattr(stream.peer, 'host'):
