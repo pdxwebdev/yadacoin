@@ -300,7 +300,7 @@ class NodeRPC(BaseRPC):
             stream.synced = True
             return
         self.config.consensus.syncing = True
-        blocks = [await Block.from_dict(x) async for x in blocks]
+        blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = await Block.from_dict(blocks[0])
         forward_blocks_chain = await self.config.consensus.build_remote_chain(blocks[-1])
         forward_blocks = [x async for x in forward_blocks_chain.blocks]
