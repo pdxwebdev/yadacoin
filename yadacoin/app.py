@@ -354,7 +354,7 @@ class NodeApplication(Application):
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
 
         if self.config.network != 'regnet' and 'node' in self.config.modes:
-            #tornado.ioloop.PeriodicCallback(self.background_consensus, 3000).start()
+            tornado.ioloop.PeriodicCallback(self.background_consensus, 3000).start()
             self.config.consensus_busy = False
             tornado.ioloop.PeriodicCallback(self.background_peers, 3000).start()
             self.config.peers_busy = False
