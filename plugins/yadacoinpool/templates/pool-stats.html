@@ -69,10 +69,12 @@
         $(document).ready(function() {
             $.get('/pool-info').then((data) => {
                 $('#pool-hash-rate').html(data.pool.hashes_per_second.toFixed(0) + 'H/s');
-                var newDate = new Date();
-                newDate.setTime(data.pool.last_five_blocks[data.pool.last_five_blocks.length -1].timestamp*1000);
-                dateString = newDate.toUTCString();
-                $('#pool-last-block').html(data.pool.last_five_blocks[0].height + " - " + dateString);
+                if(data.pool.last_five_blocks.length > 0) {
+                    var newDate = new Date();
+                    newDate.setTime(data.pool.last_five_blocks[data.pool.last_five_blocks.length -1].timestamp*1000);
+                    dateString = newDate.toUTCString();
+                    $('#pool-last-block').html(data.pool.last_five_blocks[0].height + " - " + dateString);
+                }
                 $('#pool-miner-count').html(data.pool.miner_count);
                 $('#pool-payout-scheme').html(data.pool.payout_scheme);
                 $('#pool-fee').html(data.pool.pool_fee * 100 + '%');
