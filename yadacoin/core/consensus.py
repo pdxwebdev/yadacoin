@@ -371,8 +371,14 @@ class Consensus(object):
             if not latest_consensus:
                 await self.config.LatestBlock.block_checker()  # This will trigger mining pool to generate a new block to mine
                 if self.config.mp:
-                    await self.config.mp.refresh()
-                    await StratumServer.block_checker()
+                    try:
+                        await self.config.mp.refresh()
+                    except Exception as e:
+                        self.app_log.warning("{}".format(format_exc()))
+                    try:
+                        await StratumServer.block_checker()
+                    except Exception as e:
+                        self.app_log.warning("{}".format(format_exc()))
                 if not self.syncing:
                     await self.config.nodeShared.send_block(self.config.LatestBlock.block)
             return True

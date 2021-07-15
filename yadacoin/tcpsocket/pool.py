@@ -47,7 +47,8 @@ class StratumServer(RPCSocketServer):
     async def send_job(cls):
         if not cls.config:
             cls.config = get_config()
-        for stream in StratumServer.inbound_streams[Miner.__name__].values():
+        streams = list(StratumServer.inbound_streams[Miner.__name__].values())
+        for stream in streams:
             job = await cls.config.mp.block_template()
             if cls.config.LatestBlock.block.index + 1 >= CHAIN.BLOCK_V5_FORK:
                 job['job_id'] = job['job_id']
