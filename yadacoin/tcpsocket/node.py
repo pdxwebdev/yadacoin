@@ -153,10 +153,11 @@ class NodeRPC(BaseRPC):
         blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
         if status:
-            first_inbound_block = blocks[0] if blocks else block
+            blocks.insert(0, block)
+            first_inbound_block = blocks[0]
             forward_blocks_chain = await self.config.consensus.build_remote_chain(block)
             forward_blocks = [x async for x in forward_blocks_chain.blocks]
-            inbound_blocks = (blocks if blocks else [block]) + forward_blocks[1:]
+            inbound_blocks = blocks + forward_blocks[1:]
             inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
             existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
             if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
@@ -355,10 +356,11 @@ class NodeRPC(BaseRPC):
         blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
         if status:
-            first_inbound_block = blocks[0] if blocks else block
+            blocks.insert(0, block)
+            first_inbound_block = blocks[0]
             forward_blocks_chain = await self.config.consensus.build_remote_chain(block)
             forward_blocks = [x async for x in forward_blocks_chain.blocks]
-            inbound_blocks = (blocks if blocks else [block]) + forward_blocks[1:]
+            inbound_blocks = blocks + forward_blocks[1:]
             inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
             existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
             if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
