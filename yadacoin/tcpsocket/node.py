@@ -412,18 +412,27 @@ class NodeRPC(BaseRPC):
             stream.close()
             return {}
 
-        limit = self.config.peer.__class__.type_limit(peerCls)
-        if (len(NodeSocketServer.inbound_pending[peerCls.__name__]) + len(NodeSocketServer.inbound_streams[peerCls.__name__])) >= limit:
-            await self.write_result(stream, 'capacity', {}, body['id'])
-            stream.close()
-            return {}
-
         try:
             stream.peer = peerCls.from_dict(params.get('peer'))
         except:
             self.config.app_log.error('invalid peer identity')
             stream.close()
             return {}
+
+        limit = self.config.peer.__class__.type_limit(peerCls)
+        if (len(NodeSocketServer.inbound_pending[peerCls.__name__]) + len(NodeSocketServer.inbound_streams[peerCls.__name__])) >= limit:
+            if self.config.peer.is_linked_peer(stream.peer):
+                if stream.peer.rid in NodeSocketServer.inbound_pending[peerCls.__name__]:
+                    NodeSocketServer.inbound_pending[peerCls.__name__][stream.peer.rid].close()
+                    del NodeSocketServer.inbound_pending[peerCls.__name__][stream.peer.rid]
+
+                if stream.peer.rid in NodeSocketServer.inbound_streams[peerCls.__name__]:
+                    NodeSocketServer.inbound_streams[peerCls.__name__][stream.peer.rid].close()
+                    del NodeSocketServer.inbound_streams[peerCls.__name__][stream.peer.rid]
+            else:
+                await self.write_result(stream, 'capacity', {}, body['id'])
+                stream.close()
+                return {}
 
         if generic_peer.rid in NodeSocketServer.inbound_pending[stream.peer.__class__.__name__]:
             stream.close()

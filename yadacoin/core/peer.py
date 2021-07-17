@@ -278,6 +278,11 @@ class Seed(Peer):
         for x, y in self.config.nodeClient.outbound_streams[Seed.__name__].items():
             yield y
 
+    def is_linked_peer(self, peer):
+        if self.seed_gateway == peer.identity.username_signature:
+            return True
+        return False
+
 
 class SeedGateway(Peer):
     id_attribute = 'rid'
@@ -326,6 +331,9 @@ class SeedGateway(Peer):
 
         for x, y in self.config.nodeClient.outbound_streams[Seed.__name__].items():
             yield y
+
+    def is_linked_peer(self, peer):
+        return False
 
 
 class ServiceProvider(Peer):
@@ -431,6 +439,9 @@ class ServiceProvider(Peer):
         for x, y in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
             yield y
 
+    def is_linked_peer(self, peer):
+        return False
+
 
 class Group(Peer):
     id_attribute = 'rid'
@@ -492,6 +503,9 @@ class User(Peer):
             yield y
         for x, y in self.config.nodeServer.inbound_streams[User.__name__].items():
             yield y
+
+    def is_linked_peer(self, peer):
+        return False
 
 
 class Miner(Peer):
