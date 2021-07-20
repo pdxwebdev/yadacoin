@@ -20,6 +20,31 @@ from yadacoin.core.transaction import (
 )
 
 
+class Job:
+    @classmethod
+    async def from_dict(cls, job):
+        inst = cls()
+        inst.id = job['job_id']
+        inst.diff = job['difficulty']
+        inst.target = job['target']
+        inst.blob = job['blob']
+        inst.seed_hash = job['seed_hash']
+        inst.index = job['height']
+        inst.extra_nonce = job['extra_nonce']
+        return inst
+
+    def to_dict(self):
+        return {
+            'job_id': self.id,
+            'difficulty': self.diff,
+            'target': self.target,
+            'blob': self.blob,
+            'seed_hash': self.seed_hash,
+            'height': self.index,
+            'extra_nonce': self.extra_nonce,
+        }
+
+
 class MiningPool(object):
     @classmethod
     async def init_async(cls):
@@ -56,11 +81,8 @@ class MiningPool(object):
 
         return str_little
 
-    async def on_miner_nonce(self, nonce: str, job_id: str, address: str='') -> bool:
-        pool_job = await self.config.mongo.async_db.pool_jobs.find_one({'job_id': job_id})
-        if not pool_job:
-            return
-        nonce = nonce + pool_job['extra_nonce'].encode().hex()
+    async def on_miner_nonce(self, nonce: str, job: Job, address: str='') -> bool:
+        nonce = nonce + job.extra_nonce.encode().hex()
         hash1 = self.block_factory.generate_hash_from_header(
             self.block_factory.index,
             self.block_factory.header,
@@ -262,37 +284,26 @@ class MiningPool(object):
             await self.refresh()
         if not self.block_factory.target:
             await self.set_target_from_last_non_special_min(self.config.LatestBlock.block)
+
+        job = await self.generate_job()
+        return job
+
+    async def generate_job(self):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
         extra_nonce = hex(random.randrange(1000000,1000000000000000))[2:]
         header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
-        await self.config.mongo.async_db.pool_jobs.replace_one({
-            'job_id': job_id
-        }, {
+        res = {
             'job_id': job_id,
-            'index': self.block_factory.index,
+            'difficulty': difficulty,
+            'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', #hex(int(self.block_factory.target))[2:].rjust(64, '0')[:14],
+            'blob': header.encode().hex(),
+            'seed_hash': seed_hash,
+            'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
             'extra_nonce': extra_nonce
-        }, upsert=True)
-        if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
-            res = {
-                'job_id': job_id,
-                'difficulty': difficulty, 
-                'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', #hex(int(self.block_factory.target))[2:].rjust(64, '0')[:14],
-                'blob': header.encode().hex(),
-                'seed_hash': seed_hash,
-                'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
-            }
-        else:
-            res = {
-                'difficulty': difficulty, 
-                'target': hex(int(self.block_factory.target))[2:].rjust(64, '0')[:16],
-                'blocktemplate_blob': self.block_factory.header.replace('{nonce}', '{000000}'),
-                'blockhashing_blob': self.block_factory.header.replace('{nonce}', '{000000}'),
-                'seed_hash': seed_hash,
-                'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
-            }
-        return res
+        }
+        return await Job.from_dict(res)
 
     async def set_target(self, to_time):
         if not self.block_factory.special_min:

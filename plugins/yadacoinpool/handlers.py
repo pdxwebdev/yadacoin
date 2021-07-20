@@ -54,7 +54,7 @@ class PoolInfoHandler(BaseWebHandler):
         )
 
         expected_blocks = 144
-        pool_blocks_found = self.config.mongo.async_db.blocks.find(
+        pool_blocks_found_list = await self.config.mongo.async_db.blocks.find(
             {
                 'public_key': pool_public_key,
                 'time': {'$gte': time.time() - ( 600 * 144 )}
@@ -62,16 +62,12 @@ class PoolInfoHandler(BaseWebHandler):
             {
                 '_id': 0
             }
-        ).sort([('index', -1)])
+        ).sort([('index', -1)]).to_list(100)
         expected_blocks = 144
-        pool_blocks_found_list = await pool_blocks_found.to_list(length=expected_blocks)
-        if len(pool_blocks_found_list) > 0:
-            avg_target = 0
-            for block in pool_blocks_found_list:
-                avg_target += int(block['target'], 16)
-            avg_target = avg_target / len(pool_blocks_found_list)
-            difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_target
-            pool_hash_rate = ((len(pool_blocks_found_list)/expected_blocks)*difficulty * 2**32 / 600)
+        mining_time_interval = 240
+        shares_count = await self.config.mongo.async_db.shares.count_documents({'time': {'$gte': time.time() - mining_time_interval}})
+        if shares_count > 0:
+            pool_hash_rate = (shares_count * 69905) / mining_time_interval
         else:
             pool_hash_rate = 0
 
