@@ -77,8 +77,9 @@ class Mongo(object):
         __address = IndexModel([("address", ASCENDING)], name="__address")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
+        __time = IndexModel([("time", DESCENDING)], name="__time")
         try:
-            self.db.shares.create_indexes([__address, __index, __hash])
+            self.db.shares.create_indexes([__address, __index, __hash, __time])
         except:
             pass
 
