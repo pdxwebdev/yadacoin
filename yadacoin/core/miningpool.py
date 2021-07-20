@@ -104,6 +104,7 @@ class MiningPool(object):
             ))
             return False
 
+        accepted = False
 
         if (
           (int(block_candidate.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(hash1, 16) or
@@ -130,12 +131,7 @@ class MiningPool(object):
                 upsert=True
             )
 
-            return {
-                'hash': block_candidate.hash,
-                'nonce': nonce,
-                'height': block_candidate.index,
-                'id': block_candidate.signature
-            }
+            accepted = True
 
         if (
           int(block_candidate.target) > int(block_candidate.hash, 16) or
@@ -193,6 +189,14 @@ class MiningPool(object):
             self.app_log.debug('block ok - special_min')
             self.app_log.error('^^ ^^ ^^')
 
+            return {
+                'hash': block_candidate.hash,
+                'nonce': nonce,
+                'height': block_candidate.index,
+                'id': block_candidate.signature
+            }
+
+        if accepted:
             return {
                 'hash': block_candidate.hash,
                 'nonce': nonce,
