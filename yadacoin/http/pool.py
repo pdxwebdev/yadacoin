@@ -29,7 +29,20 @@ class PoolPayoutsHandler(BaseHandler):
         self.render_as_json({'results': results})
 
 
+class PoolHashRateHandler(BaseHandler):
+    async def get(self):
+        address = self.get_query_argument('address')
+        last_share = await self.config.mongo.async_db.shares.find_one({'address': address}, {'_id': 0}, sort=[('time', -1)])
+        if not last_share:
+            return self.render_as_json({'result': 0})
+        miner_hashrate_seconds = self.config.miner_hashrate_seconds if hasattr(self.config, 'miner_hashrate_seconds') else 600
+        number_of_shares = await self.config.mongo.async_db.shares.count_documents({'address': address, 'time': { '$gt': last_share['time'] - miner_hashrate_seconds}})
+        miner_hashrate = (number_of_shares * 69905) / miner_hashrate_seconds
+        self.render_as_json({'miner_hashrate': int(miner_hashrate)})
+
+
 POOL_HANDLERS = [
     (r'/shares-for-address', PoolSharesHandler),
     (r'/payouts-for-address', PoolPayoutsHandler),
+    (r'/hashrate-for-address', PoolHashRateHandler),
 ]

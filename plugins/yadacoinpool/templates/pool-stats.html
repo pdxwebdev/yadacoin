@@ -53,6 +53,7 @@
                 <input type="text" name="address" id="address" placeholder="address" class="form-control" />
                 <button class="form-control">Get stats</button>
             </form>
+            <h2>Miner Hash Rate: <span id="hash-rate"></span></h2>
             <h2>Recent 100 shares</h2>
             <table id="shares-table" class="table">
                 <tr><td>No results</td></tr>
@@ -71,7 +72,7 @@
                 $('#pool-hash-rate').html(data.pool.hashes_per_second.toFixed(0) + 'H/s');
                 if(data.pool.last_five_blocks.length > 0) {
                     var newDate = new Date();
-                    newDate.setTime(data.pool.last_five_blocks[data.pool.last_five_blocks.length -1].timestamp*1000);
+                    newDate.setTime(data.pool.last_five_blocks[0].timestamp*1000);
                     dateString = newDate.toUTCString();
                     $('#pool-last-block').html(data.pool.last_five_blocks[0].height + " - " + dateString);
                 }
@@ -115,6 +116,9 @@
                         }
                         $('#payouts-table').append('<tr><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i].index + '">' + data.results[i].index + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + '</td></tr>');
                     }
+                });
+                $.get('/hashrate-for-address?address=' + $('#address').val()).then((data) => {
+                    $('#hash-rate').html(data.miner_hashrate + 'H/s');
                 });
             });
         });

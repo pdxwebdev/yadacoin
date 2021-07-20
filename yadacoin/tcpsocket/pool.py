@@ -42,7 +42,7 @@ class StratumServer(RPCSocketServer):
         if time.time() - cls.config.mp.block_factory.time > 600:
             await cls.config.mp.refresh()
             await cls.send_job()
-    
+
     @classmethod
     async def send_job(cls):
         if not cls.config:
@@ -110,7 +110,7 @@ class StratumServer(RPCSocketServer):
 
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template()
-    
+
     async def get_info(self, body, stream):
         return await StratumServer.config.mp.block_template()
 
@@ -120,18 +120,18 @@ class StratumServer(RPCSocketServer):
             'balance': balance,
             'unlocked_balance': balance
         }
-    
+
     async def getheight(self, body, stream):
         return {
             'height': StratumServer.config.LatestBlock.block.index
         }
-    
+
     async def transfer(self, body, stream):
         for x in body.get('params').get('destinations'):
             result = await TU.send(StratumServer.config, x['address'], x['amount'], from_address=StratumServer.config.address)
             result['tx_hash'] = result['hash']
         return result
-    
+
     async def get_bulk_payments(self, body, stream):
         result =  []
         for y in body.get('params').get('payment_ids'):
@@ -152,17 +152,22 @@ class StratumServer(RPCSocketServer):
             result = {'error': True, 'message': 'nonce is wrong data type'}
         if len(nonce) > CHAIN.MAX_NONCE_LEN:
             result = {'error': True, 'message': 'nonce is too long'}
-        result = await StratumServer.config.mp.on_miner_nonce(
-          nonce,
-          body['params']['job_id'],
-          address=stream.peer.address
-        )
         data = {
             'id': body.get('id'),
             'method': body.get('method'),
-            'jsonrpc': body.get('jsonrpc'),
-            'result': result
+            'jsonrpc': body.get('jsonrpc')
         }
+        try:
+            data['result'] = await StratumServer.config.mp.on_miner_nonce(
+              nonce,
+              body['params']['job_id'],
+              address=stream.peer.address
+            )
+            if not data['result']:
+                data['error'] = {'message': 'Invalid hash for current block'}
+        except:
+            data['result'] = {}
+            data['error'] = {'message': 'Invalid hash for current block'}
         await stream.write('{}\n'.format(json.dumps(data)).encode())
         await StratumServer.block_checker()
 
@@ -199,7 +204,7 @@ class StratumServer(RPCSocketServer):
             'result': result
         }
         await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
-    
+
     @classmethod
     async def status(self):
         return {

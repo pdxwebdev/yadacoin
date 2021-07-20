@@ -123,11 +123,19 @@ class MiningPool(object):
                         'address': address,
                         'index': block_candidate.index,
                         'hash': block_candidate.hash,
-                        'nonce': nonce
+                        'nonce': nonce,
+                        'time': int(time())
                     }
                 },
                 upsert=True
             )
+
+            return {
+                'hash': block_candidate.hash,
+                'nonce': nonce,
+                'height': block_candidate.index,
+                'id': block_candidate.signature
+            }
 
         if (
           int(block_candidate.target) > int(block_candidate.hash, 16) or
@@ -153,6 +161,13 @@ class MiningPool(object):
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok')
             self.app_log.error('^^ ^^ ^^')
+
+            return {
+                'hash': block_candidate.hash,
+                'nonce': nonce,
+                'height': block_candidate.index,
+                'id': block_candidate.signature
+            }
         elif (
           block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.hash, 16)) or
           (
@@ -178,12 +193,12 @@ class MiningPool(object):
             self.app_log.debug('block ok - special_min')
             self.app_log.error('^^ ^^ ^^')
 
-        return {
-            'hash': block_candidate.hash,
-            'nonce': nonce,
-            'height': block_candidate.index,
-            'id': block_candidate.signature
-        }
+            return {
+                'hash': block_candidate.hash,
+                'nonce': nonce,
+                'height': block_candidate.index,
+                'id': block_candidate.signature
+            }
 
     async def refresh(self):
         """Refresh computes a new bloc to mine. The block is stored in self.block_factory and contains
