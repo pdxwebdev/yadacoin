@@ -27,6 +27,7 @@ class Peer:
 
 class StratumServer(RPCSocketServer):
     current_index = 0
+    current_hash = 0
     config = None
 
     @classmethod
@@ -35,6 +36,9 @@ class StratumServer(RPCSocketServer):
             cls.config = get_config()
 
         if cls.current_index != cls.config.LatestBlock.block.index:
+            await cls.send_job()
+
+        if cls.current_hash != cls.config.LatestBlock.block.hash:
             await cls.send_job()
 
         if time.time() - cls.config.mp.block_factory.time > 600:
@@ -50,6 +54,7 @@ class StratumServer(RPCSocketServer):
             job = await cls.config.mp.block_template()
             stream.job = job
             cls.current_index = cls.config.LatestBlock.block.index
+            cls.current_hash = cls.config.LatestBlock.block.hash
             result = {
                 'id': job.id,
                 'job': job.to_dict()
