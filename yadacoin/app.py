@@ -10,6 +10,7 @@ import os
 import ssl
 import ntpath
 import binascii
+import socket
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
 sys.path.append(parentdir)
@@ -539,7 +540,9 @@ class NodeApplication(Application):
                     self.config.nodeServer.inbound_pending[x.__name__] = {}
                 if x.__name__ not in self.config.nodeServer.inbound_streams:
                     self.config.nodeServer.inbound_streams[x.__name__] = {}
-            self.config.nodeServer().listen(self.config.peer_port)
+            server = self.config.nodeServer()
+            server.bind(self.config.peer_port, family=socket.AF_INET)
+            server.start(1)
 
         self.config.websocketServer = RCPWebSocketServer
         self.config.app_log = logging.getLogger('tornado.application')
