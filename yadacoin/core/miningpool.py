@@ -441,6 +441,7 @@ class MiningPool(object):
         return transaction_objs
 
     async def accept_block(self, block):
+        from yadacoin.core.consensus import ProcessingQueueItem
         self.app_log.info('Candidate submitted for index: {}'.format(block.index))
         self.app_log.info('Transactions:')
         for x in block.transactions:
@@ -448,7 +449,7 @@ class MiningPool(object):
 
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 
-        await self.config.consensus.block_queue.add(block)
+        await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block)))
 
         await self.config.nodeShared.send_block(block)
 
