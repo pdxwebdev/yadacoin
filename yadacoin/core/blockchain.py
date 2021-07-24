@@ -25,6 +25,8 @@ class Blockchain(object):
         self.mongo = self.config.mongo
         if isinstance(blocks, list):
             self.init_blocks = self.make_gen(blocks)
+        elif isinstance(blocks, Block):
+            self.init_blocks = self.make_gen([blocks])
         elif not blocks:
             self.init_blocks = self.make_gen([])
         else:
@@ -91,17 +93,19 @@ class Blockchain(object):
         async for block in self.blocks:
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
-            result = await self.test_block(block)
+            result = await Blockchain.test_block(block)
             if not result:
               return {'verified': False}
 
         return {'verified': True}
 
-    async def test_block(self, block, extra_blocks=[], simulate_last_block=None):
+    @staticmethod
+    async def test_block(block, extra_blocks=[], simulate_last_block=None):
+        config = get_config()
         try:
             block.verify()
         except Exception as e:
-            self.config.app_log.warning("Integrate block error 1: {}".format(e))
+            config.app_log.warning("Integrate block error 1: {}".format(e))
             return False
 
         async def get_txns(txns):
@@ -119,7 +123,7 @@ class Blockchain(object):
         if simulate_last_block:
             last_block = simulate_last_block
         else:
-            last_block_data = await self.config.mongo.async_db.blocks.find_one({'index': block.index - 1})
+            last_block_data = await config.mongo.async_db.blocks.find_one({'index': block.index - 1})
             if last_block_data:
                 last_block = await Block.from_dict(last_block_data)
             else:
@@ -141,36 +145,36 @@ class Blockchain(object):
         async for transaction in get_txns(block.transactions):
             if extra_blocks:
                 transaction.extra_blocks = extra_blocks
-            self.config.app_log.warning('verifying txn: {} block: {}'.format(i, block.index))
+            config.app_log.warning('verifying txn: {} block: {}'.format(i, block.index))
             i += 1
             try:
                 await transaction.verify()
             except InvalidTransactionException as e:
-                self.config.app_log.warning(e)
+                config.app_log.warning(e)
                 return False
             except InvalidTransactionSignatureException as e:
-                self.config.app_log.warning(e)
+                config.app_log.warning(e)
                 return False
             except MissingInputTransactionException as e:
-                self.config.app_log.warning(e)
+                config.app_log.warning(e)
                 return False
             except NotEnoughMoneyException as e:
-                self.config.app_log.warning(e)
+                config.app_log.warning(e)
                 return False
             except Exception as e:
-                self.config.app_log.warning(e)
+                config.app_log.warning(e)
                 return False
 
             if transaction.inputs:
                 failed = False
                 used_ids_in_this_txn = []
                 async for x in get_inputs(transaction.inputs):
-                    txn = self.config.BU.get_transaction_by_id(x.id, instance=True)
+                    txn = config.BU.get_transaction_by_id(x.id, instance=True)
                     if not txn:
                         txn = await transaction.find_in_extra_blocks(x)
                         if not txn:
                             failed = True
-                    is_input_spent = await self.config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index)
+                    is_input_spent = await config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index)
                     if is_input_spent:
                         failed = True
                     if x.id in used_ids_in_this_txn:
@@ -185,41 +189,41 @@ class Blockchain(object):
                     continue
 
         if block.index >= 35200 and delta_t < 600 and block.special_min:
-            self.config.app_log.warning(f'Failed: {block.index} >= {35200} and {delta_t} < {600} and {block.special_min}')
+            config.app_log.warning(f'Failed: {block.index} >= {35200} and {delta_t} < {600} and {block.special_min}')
             return False
 
         if int(block.index) > CHAIN.CHECK_TIME_FROM and int(block.time) < int(last_block.time):
-            self.config.app_log.warning(f'Failed: {int(block.index)} > {CHAIN.CHECK_TIME_FROM} and {int(block.time)} < {int(last_block.time)}')
+            config.app_log.warning(f'Failed: {int(block.index)} > {CHAIN.CHECK_TIME_FROM} and {int(block.time)} < {int(last_block.time)}')
             return False
 
         if last_block.index != (block.index - 1) or last_block.hash != block.prev_hash:
-            self.config.app_log.warning(f'Failed: {last_block.index} != {(block.index - 1)} or {last_block.hash} != {block.prev_hash}')
+            config.app_log.warning(f'Failed: {last_block.index} != {(block.index - 1)} or {last_block.hash} != {block.prev_hash}')
             return False
 
         if int(block.index) > CHAIN.CHECK_TIME_FROM and (int(block.time) < (int(last_block.time) + 600)) and block.special_min:
-            self.config.app_log.warning(f'Failed: {int(block.index)} > {CHAIN.CHECK_TIME_FROM} and ({int(block.time)} < ({int(last_block.time)} + {600})) and {block.special_min}')
+            config.app_log.warning(f'Failed: {int(block.index)} > {CHAIN.CHECK_TIME_FROM} and ({int(block.time)} < ({int(last_block.time)} + {600})) and {block.special_min}')
             return False
 
-        target_block_time = CHAIN.target_block_time(self.config.network)
+        target_block_time = CHAIN.target_block_time(config.network)
 
         checks_passed = False
         if (block.index >= CHAIN.BLOCK_V5_FORK) and int(block.little_hash(), 16) < target:
-            self.config.app_log.warning('5')
+            config.app_log.warning('5')
             checks_passed = True
         elif (int(block.hash, 16) < target):
-            self.config.app_log.warning('6')
+            config.app_log.warning('6')
             checks_passed = True
         elif (block.special_min and int(block.hash, 16) < special_target):
-            self.config.app_log.warning('7')
+            config.app_log.warning('7')
             checks_passed = True
         elif (block.special_min and block.index < 35200):
-            self.config.app_log.warning('8')
+            config.app_log.warning('8')
             checks_passed = True
         elif (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time):
-            self.config.app_log.warning('9')
+            config.app_log.warning('9')
             checks_passed = True
         else:
-            self.config.app_log.warning("Integrate block error - target too high, possible fork")
+            config.app_log.warning("Integrate block error - target too high, possible fork")
 
         if not checks_passed:
             return False

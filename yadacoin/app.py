@@ -192,6 +192,16 @@ class NodeApplication(Application):
 
         self.config.block_sender_busy = False
 
+    async def background_block_inserter(self):
+        if self.config.block_inserter_busy:
+            return
+        self.config.block_inserter_busy = True
+        try:
+            await self.config.consensus.process_block_queue()
+        except:
+            self.config.app_log.error(format_exc())
+        self.config.block_inserter_busy = False
+
     async def background_transaction_sender(self):
         if self.config.transaction_sender_busy:
             return
@@ -374,6 +384,9 @@ class NodeApplication(Application):
 
             tornado.ioloop.PeriodicCallback(self.background_block_sender, 10000).start()
             self.config.block_sender_busy = False
+
+            tornado.ioloop.PeriodicCallback(self.background_block_inserter, 1000).start()
+            self.config.block_inserter_busy = False
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")

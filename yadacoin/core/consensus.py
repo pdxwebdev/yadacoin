@@ -56,6 +56,7 @@ class Consensus(object):
         self.target = target
         self.special_target = special_target
         self.syncing = False
+        self.block_queue = ProcessingQueue()
 
         if self.config.LatestBlock.block:
             self.latest_block = self.config.LatestBlock.block
@@ -83,6 +84,21 @@ class Consensus(object):
             else:
                 self.app_log.critical("{} - reset False, not truncating - DID NOT VERIFY".format(result['message']))
             self.config.BU.latest_block = None
+
+    async def process_block_queue(self):
+        item = self.block_queue.pop()
+
+        if not item:
+            return
+
+        count = await item.blockchain.count
+
+        if count < 1:
+            return
+        elif count == 1:
+            await self.integrate_block_with_existing_chain(await item.blockchain.first_block, item.stream)
+        else:
+            await self.integrate_blocks_with_existing_chain(item.blockchain, item.stream)
 
     def remove_pending_transactions_now_in_chain(self, block):
         #remove transactions from miner_transactions collection in the blockchain
@@ -147,17 +163,15 @@ class Consensus(object):
                     block = await Block.from_dict(record['block'])
                 except:
                     continue
-                blockchain = await Blockchain.init_async([block])
-                if await self.integrate_blockchain_with_existing_chain(blockchain):
-                    return True
+                self.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block)))
         else:
-            #  this path should be for syncing only. 
+            #  this path is for syncing only.
             #  Stack:
             #    search_network_for_new
             #    request_blocks
             #    getblocks <--- rpc request
             #    blocksresponse <--- rpc response
-            #    integrate_blockchain_with_existing_chain
+            #    process_block_queue
             return await self.search_network_for_new()
 
     async def search_network_for_new(self):
@@ -168,9 +182,10 @@ class Consensus(object):
             return False
 
         async for peer in self.config.peer.get_sync_peers():
-            if peer.synced:
+            if peer.synced or peer.message_queue.get('getblocks') or peer.syncing:
                 continue
             try:
+                peer.syncing = True
                 await self.request_blocks(peer)
             except StreamClosedError:
                 peer.close()
@@ -179,8 +194,8 @@ class Consensus(object):
     
     async def request_blocks(self, peer):
         await self.config.nodeShared.write_params(peer, 'getblocks', {
-            'start_index': int(self.latest_block.index) + 1,
-            'end_index': int(self.latest_block.index) + 100
+            'start_index': int(self.config.LatestBlock.block.index) + 1,
+            'end_index': int(self.config.LatestBlock.block.index) + 100
         })
 
     async def build_local_chain(self, block: Block):
@@ -265,97 +280,64 @@ class Consensus(object):
         if blocks is None:
             blocks = []
 
-        result, status = await self.build_backward_from_block_to_fork(
+        backward_blocks, status = await self.build_backward_from_block_to_fork(
             retrace_consensus_block,
             json.loads(json.dumps([x for x in blocks])),
             stream,
             depth + 1
         )
-        result.append(retrace_consensus_block)
-        return result, status
+        backward_blocks.append(retrace_consensus_block)
+        return backward_blocks, status
     
-    async def integrate_blockchain_with_existing_chain(self, blockchain, stream=None):
-        bc = await Blockchain.init_async()
-        prev_block = None
-        chain_passed = True
-        extra_blocks = [extra_block async for extra_block in blockchain.blocks]
-        async for block in blockchain.blocks:
-            result = await bc.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block)
-            prev_block = block
-            if not result:
-                chain_passed = False
-                break
-        if not chain_passed:
-            chain_passed = True
-            blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
-            if status:
-                prev_block = None
-                new_blocks = []
-                for block in blocks + extra_blocks:
-                    result = await bc.test_block(block, extra_blocks=blocks + extra_blocks, simulate_last_block=prev_block)
-                    prev_block = block
-                    if result:
-                        new_blocks.append(block)
-                    else:
-                        await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': block.index}})
-                        break
-                if new_blocks:
-                    blockchain = await Blockchain.init_async(new_blocks)
-            else:
-                chain_passed = False
-        if not chain_passed:
-            first_block = await blockchain.first_block
-            await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': first_block.index}})
-            return False
-        async for block in blockchain.blocks:
-            try:
-                result = await self.integrate_block_with_existing_chain(block, extra_blocks=extra_blocks)
-                if result:
-                    continue
-
-                blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
-                if not status:
-                    return False
-
-                blocks.append(block)
-                result = await self.integrate_blocks_with_existing_chain(blocks)
-                if not result:
-                    return False
-            except:
-                return False
-        return True
-
-    async def integrate_blocks_with_existing_chain(self, blocks):
-        bc = await Blockchain.init_async()
-        for block in blocks:
-            result = await bc.test_block(block, extra_blocks=blocks)
-            if not result:
-                await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': blocks[0].index}})
-                return False
-
-        for block in blocks:
-            try:
-                result = await self.integrate_block_with_existing_chain(block)
-                if not result:
-                    await self.config.mongo.async_db.consensus.delete_many({'index': {'$gte': blocks[0].index}})
-                    return False
-            except:
-                return False
-
-    async def integrate_block_with_existing_chain(self, block: Block, extra_blocks=None):
-        """Even in case of retrace, this is the only place where we insert a new block into the block collection and update BU"""
+    async def integrate_block_with_existing_chain(self, block: Block, stream):
         self.app_log.warning('integrate_block_with_existing_chain')
-        try:
-            # TODO: reorg the checks, to have the faster ones first.
-            # Like, here we begin with checking every tx one by one, when <e did not even check index and provided hash matched previous one.
-            bc = await Blockchain.init_async()
-            result = await bc.test_block(block)
-            if not result:
-                return False
+        backward_blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
 
-            # self.mongo.db.blocks.update({'index': block.index}, block.to_dict(), upsert=True)
-            # self.mongo.db.blocks.remove({'index': {"$gt": block.index}}, multi=True)
-            # todo: is this useful? can we have more blocks above? No because if we had, we would have raised just above
+        if not status:
+            return
+
+        forward_blocks_chain = await self.config.consensus.build_remote_chain(block) #contains block
+
+        inbound_blockchain = await Blockchain.init_async(sorted(backward_blocks + [x async for x in forward_blocks_chain.blocks], key=lambda x: x.index))
+
+        if not await inbound_blockchain.is_consecutive:
+            return False
+
+        first_block = await inbound_blockchain.first_block
+
+        existing_blockchain = await Blockchain.init_async(
+            self.config.mongo.async_db.blocks.find({
+                'index': {
+                    '$gte': first_block.index
+                }
+            }),
+            partial=True
+        )
+
+        if not await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
+            return
+
+        await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)
+
+    async def integrate_blocks_with_existing_chain(self, blockchain, stream):
+        extra_blocks = [x async for x in blockchain.blocks]
+        prev_block = None
+        async for block in blockchain.blocks:
+            if not await Blockchain.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block):
+                return
+            prev_block = block
+
+        async for block in blockchain.blocks:
+            if not await Blockchain.test_block(block):
+                return
+            await self.insert_block(block, stream)
+
+        if stream:
+            stream.syncing = False
+
+    async def insert_block(self, block, stream):
+        self.app_log.warning('insert_block')
+        try:
             await self.mongo.async_db.blocks.delete_many({'index': {"$gte": block.index}})
             db_block = block.to_dict()
             db_block['updated_at'] = time()
@@ -380,8 +362,27 @@ class Consensus(object):
                     except Exception as e:
                         self.app_log.warning("{}".format(format_exc()))
                 if not self.syncing:
+                    if stream and stream.syncing:
+                        return True
                     await self.config.nodeShared.send_block(self.config.LatestBlock.block)
             return True
         except Exception as e:
             from traceback import format_exc
             self.app_log.warning("{}".format(format_exc()))
+
+
+class ProcessingQueueItem:
+    def __init__(self, blockchain: Blockchain, stream=None):
+        self.blockchain = blockchain
+        self.stream = stream
+
+
+class ProcessingQueue:
+    def __init__(self):
+        self.queue = []
+
+    def add(self, item: ProcessingQueueItem):
+        self.queue.append(item)
+
+    def pop(self):
+        return self.queue.pop() if self.queue else None

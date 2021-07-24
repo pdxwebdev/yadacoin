@@ -132,6 +132,7 @@ class NodeRPC(BaseRPC):
             )
 
     async def newblock(self, body, stream):
+        from yadacoin.core.consensus import ProcessingQueueItem
         payload = body.get('params', {}).get('payload')
 
         if stream.peer.protocol_version > 1:
@@ -150,27 +151,8 @@ class NodeRPC(BaseRPC):
         if block.index > (self.config.LatestBlock.block.index + 100) or block.index < self.config.LatestBlock.block.index:
             return
 
-        blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
-
-        if status:
-            blocks.insert(0, block)
-            first_inbound_block = blocks[0]
-            forward_blocks_chain = await self.config.consensus.build_remote_chain(block)
-            forward_blocks = [x async for x in forward_blocks_chain.blocks]
-            inbound_blocks = blocks + forward_blocks[1:]
-            inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
-            existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
-            if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
-                await self.config.consensus.integrate_blockchain_with_existing_chain(
-                    inbound_blockchain,
-                    stream
-                )
-            else:
-                return
-        else:
-            return
-
         await self.config.consensus.insert_consensus_block(block, stream.peer)
+        self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
 
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:
@@ -286,6 +268,7 @@ class NodeRPC(BaseRPC):
                 self.retry_blocks[(stream.peer.rid, 'blockresponse', block['hash'], body['id'])] = message
 
     async def blocksresponse(self, body, stream):
+        from yadacoin.core.consensus import ProcessingQueueItem
         # get blocks should be done only by syncing peers
         result = body.get('result')
         blocks = result.get('blocks')
@@ -307,19 +290,14 @@ class NodeRPC(BaseRPC):
         forward_blocks = [x async for x in forward_blocks_chain.blocks]
         inbound_blocks = blocks + forward_blocks[1:]
         inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
-        existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
+        backward_blocks, status = await self.config.consensus.build_backward_from_block_to_fork(first_inbound_block, [], stream)
 
-        prev_block = await self.ensure_previous_block(first_inbound_block, stream)
-        if not prev_block:
+        if not status:
             await self.fill_gap(first_inbound_block.index, stream)
-            stream.synced = True
             self.config.consensus.syncing = False
             return False
-        if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
-            await self.config.consensus.integrate_blockchain_with_existing_chain(
-                inbound_blockchain,
-                stream
-            )
+
+        self.config.consensus.block_queue.add(ProcessingQueueItem(inbound_blockchain, stream))
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
@@ -329,6 +307,7 @@ class NodeRPC(BaseRPC):
             del self.retry_blocks[(stream.peer.rid, 'blocksresponse', start_index, body['id'])]
 
     async def blockresponse(self, body, stream):
+        from yadacoin.core.consensus import ProcessingQueueItem
         # get blocks should be done only by syncing peers
         result = body.get('result')
         if not result.get("block"):
@@ -343,7 +322,9 @@ class NodeRPC(BaseRPC):
         block = await Block.from_dict(result.get("block"))
         if block.index > (self.config.LatestBlock.block.index + 100):
             return
-        added = await self.config.consensus.insert_consensus_block(block, stream.peer)
+
+        await self.config.consensus.insert_consensus_block(block, stream.peer)
+        self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
 
         if stream.peer.protocol_version > 1:
             await self.write_result(
@@ -352,22 +333,6 @@ class NodeRPC(BaseRPC):
                 body.get('result', {}),
                 body['id']
             )
-
-        blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
-
-        if status:
-            blocks.insert(0, block)
-            first_inbound_block = blocks[0]
-            forward_blocks_chain = await self.config.consensus.build_remote_chain(block)
-            forward_blocks = [x async for x in forward_blocks_chain.blocks]
-            inbound_blocks = blocks + forward_blocks[1:]
-            inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
-            existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({'index': {'$gte': first_inbound_block.index}}), partial=True)
-            if await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
-                await self.config.consensus.integrate_blockchain_with_existing_chain(
-                    inbound_blockchain,
-                    stream
-                )
 
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('result')

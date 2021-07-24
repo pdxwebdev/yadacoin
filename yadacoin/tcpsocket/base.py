@@ -64,6 +64,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
 
     async def handle_stream(self, stream, address):
         stream.synced = False
+        stream.syncing = False
         stream.message_queue = {}
         while True:
             try:
@@ -128,6 +129,7 @@ class RPCSocketClient(TCPClient):
             self.outbound_pending[peer.__class__.__name__][id_attr] = peer
             stream = await super(RPCSocketClient, self).connect(peer.host, peer.port, timeout=1)
             stream.synced = False
+            stream.syncing = False
             stream.message_queue = {}
             stream.peer = peer
             stream.last_activity = int(time.time())
