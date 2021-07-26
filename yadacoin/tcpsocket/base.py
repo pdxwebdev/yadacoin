@@ -29,7 +29,8 @@ REQUEST_ONLY = [
     'newblock',
     'blockresponse_confirmed',
     'blocksresponse_confirmed',
-    'newblock_confirmed'
+    'newblock_confirmed',
+    'newtxn_confirmed',
 ]
 
 class BaseRPC:

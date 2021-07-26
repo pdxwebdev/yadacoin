@@ -26,8 +26,7 @@ class Peer:
         }
 
 class StratumServer(RPCSocketServer):
-    current_index = 0
-    current_hash = 0
+    current_header = ''
     config = None
 
     @classmethod
@@ -35,44 +34,43 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = get_config()
 
-        if cls.current_index != cls.config.LatestBlock.block.index:
-            await cls.send_job()
-
-        if cls.current_hash != cls.config.LatestBlock.block.hash:
-            await cls.send_job()
-
         if time.time() - cls.config.mp.block_factory.time > 600:
             await cls.config.mp.refresh()
-            await cls.send_job()
+
+        if cls.current_header != cls.config.mp.block_factory.header:
+            await cls.send_jobs()
 
     @classmethod
-    async def send_job(cls):
+    async def send_jobs(cls):
         if not cls.config:
             cls.config = get_config()
         streams = list(StratumServer.inbound_streams[Miner.__name__].values())
         for stream in streams:
-            job = await cls.config.mp.block_template()
-            stream.job = job
-            cls.current_index = cls.config.LatestBlock.block.index
-            cls.current_hash = cls.config.LatestBlock.block.hash
-            result = {
-                'id': job.id,
-                'job': job.to_dict()
-            }
-            rpc_data = {
-                'id': 1,
-                'method': 'login',
-                'jsonrpc': 2.0,
-                'result': result
-            }
-            try:
-                await stream.write(
-                    '{}\n'.format(json.dumps(rpc_data)).encode()
-                )
-            except StreamClosedError:
-                await StratumServer.remove_peer(stream.peer)
-            except Exception:
-                cls.config.app_log.warning(traceback.format_exc())
+            cls.send_job(stream)
+
+    @classmethod
+    async def send_job(cls, stream):
+        job = await cls.config.mp.block_template()
+        stream.job = job
+        cls.current_header = cls.config.mp.block_factory.header
+        result = {
+            'id': job.id,
+            'job': job.to_dict()
+        }
+        rpc_data = {
+            'id': 1,
+            'method': 'login',
+            'jsonrpc': 2.0,
+            'result': result
+        }
+        try:
+            await stream.write(
+                '{}\n'.format(json.dumps(rpc_data)).encode()
+            )
+        except StreamClosedError:
+            await StratumServer.remove_peer(stream.peer)
+        except Exception:
+            cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
     async def update_miner_count(cls):
@@ -161,7 +159,11 @@ class StratumServer(RPCSocketServer):
         except:
             data['result'] = {}
             data['error'] = {'message': 'Invalid hash for current block'}
+
         await stream.write('{}\n'.format(json.dumps(data)).encode())
+        if 'error' in data:
+            await StratumServer.send_job(stream)
+
         await StratumServer.block_checker()
 
     async def login(self, body, stream):

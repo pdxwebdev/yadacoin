@@ -219,6 +219,13 @@ class GraphTransactionHandler(BaseGraphHandler):
 
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
+            async for peer_stream in self.config.peer.get_sync_peers():
+                await self.config.nodeShared.write_params(
+                    peer_stream,
+                    'newtxn',
+                    {'transaction': x.to_dict()}
+                )
+
         return self.render_as_json(items)
 
     async def create_relationship(self, bulletin_secret, username, to):

@@ -131,7 +131,7 @@ class NodeRPC(BaseRPC):
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get('result', {})
-        transaction = await Transaction.from_dict(result.get('transaction'))
+        transaction = Transaction.from_dict(result.get('transaction'))
 
         if (stream.peer.rid, 'newtxn', transaction.transaction_signature) in self.retry_messages:
             del self.retry_messages[(stream.peer.rid, 'newtxn', transaction.transaction_signature)]

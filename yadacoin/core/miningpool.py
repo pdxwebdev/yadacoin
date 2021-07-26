@@ -438,6 +438,8 @@ class MiningPool(object):
 
             except Exception as e:
                 self.config.app_log.warning(format_exc())
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'Unhandled exception', 'error': format_exc()})
 
         return transaction_objs
 

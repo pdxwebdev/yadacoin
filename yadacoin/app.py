@@ -201,30 +201,6 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
         self.config.block_inserter_busy = False
 
-    async def background_transaction_sender(self):
-        if self.config.transaction_sender_busy:
-            return
-        self.config.transaction_sender_busy = True
-        async for peer in self.config.peer.get_sync_peers():
-            async for txn in self.config.mongo.async_db.miner_transactions.find({
-              '$or': [
-                  {'sent_to.identity.username_signature': {'$ne': peer.peer.identity.username_signature}},
-                  {'sent_to': {'$exists': False}}
-              ]
-            }, {'_id': 0}):
-                await self.config.nodeShared.write_params(peer, 'newtxn', {'transaction': txn})
-                await self.config.mongo.async_db.miner_transactions.update_one({
-                    'id': txn['id']
-                },
-                {
-                    '$addToSet': {
-                        'sent_to': peer.peer.to_dict()
-                    }
-                })
-
-        self.config.transaction_sender_busy = False
-
-
     async def background_pool_payer(self):
         """Responsible for paying miners"""
         """
@@ -377,9 +353,6 @@ class NodeApplication(Application):
 
             tornado.ioloop.PeriodicCallback(self.background_cache_validator, 30000).start()
             self.config.cache_busy = False
-
-            tornado.ioloop.PeriodicCallback(self.background_transaction_sender, 10000).start()
-            self.config.transaction_sender_busy = False
 
             tornado.ioloop.PeriodicCallback(self.background_message_sender, 10000).start()
             self.config.block_sender_busy = False

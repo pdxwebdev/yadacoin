@@ -289,7 +289,7 @@ class SentPendingTransactionsView(BaseHandler):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         pending_txns = await self.config.mongo.async_db.miner_transactions.find({
-            'transactions.outputs.to': address,
+            'outputs.to': address,
             '$or': [
                 {'public_key': public_key},
                 {'inputs.public_key': public_key},
@@ -351,9 +351,9 @@ class ReceivedPendingTransactionsView(BaseHandler):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         pending_txns = await self.config.mongo.async_db.miner_transactions.find({
-            'transactions.outputs.to': address,
-            'transactions.public_key': {'$ne': public_key},
-            'transactions.inputs.public_key': {'$ne': public_key}
+            'outputs.to': address,
+            'public_key': {'$ne': public_key},
+            'inputs.public_key': {'$ne': public_key}
         }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
 
         return self.render_as_json({
