@@ -339,32 +339,45 @@ class Consensus(object):
         self.app_log.warning('insert_block')
         try:
             await self.mongo.async_db.blocks.delete_many({'index': {"$gte": block.index}})
+
             db_block = block.to_dict()
+
             db_block['updated_at'] = time()
+
             await self.mongo.async_db.blocks.replace_one({'index': block.index}, db_block, upsert=True)
+
             await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x.transaction_signature for x in block.transactions]}})
+
             await self.config.LatestBlock.update_latest_block()
+
             self.app_log.info("New block inserted for height: {}".format(block.index))
+
             latest_consensus = await self.mongo.async_db.consensus.find_one({
                 'index': block.index + 1,
                 'block.version': CHAIN.get_version_for_height(block.index + 1),
                 'ignore': {'$ne': True}
             })
+
             if not latest_consensus:
                 await self.config.LatestBlock.block_checker()  # This will trigger mining pool to generate a new block to mine
-                if self.config.mp:
-                    try:
-                        await self.config.mp.refresh()
-                    except Exception as e:
-                        self.app_log.warning("{}".format(format_exc()))
-                    try:
-                        await StratumServer.block_checker()
-                    except Exception as e:
-                        self.app_log.warning("{}".format(format_exc()))
                 if not self.syncing:
                     if stream and stream.syncing:
                         return True
                     await self.config.nodeShared.send_block(self.config.LatestBlock.block)
+
+            if self.config.mp:
+                if self.syncing:
+                    return True
+                try:
+                    await self.config.mp.refresh()
+                except Exception as e:
+                    self.app_log.warning("{}".format(format_exc()))
+
+                try:
+                    await StratumServer.block_checker()
+                except Exception as e:
+                    self.app_log.warning("{}".format(format_exc()))
+
             return True
         except Exception as e:
             from traceback import format_exc
