@@ -22,7 +22,6 @@ from logging.handlers import RotatingFileHandler
 from os import path
 from sys import exit, stdout
 from time import time
-from traceback import format_exc
 
 import webbrowser
 import pyrx
@@ -170,11 +169,11 @@ class NodeApplication(Application):
         except Exception as e:
             self.config.app_log.error(format_exc())
 
-    async def background_block_sender(self):
+    async def background_message_sender(self):
         if self.config.block_sender_busy:
             return
         self.config.block_sender_busy = True
-        for x, message in self.config.nodeServer.retry_blocks.items():
+        for x, message in self.config.nodeServer.retry_messages.items():
             for peer_cls in self.config.nodeServer.inbound_streams.keys():
                 if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                     if len(x) > 3:
@@ -182,7 +181,7 @@ class NodeApplication(Application):
                     else:
                         await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
-        for x, message in self.config.nodeClient.retry_blocks.items():
+        for x, message in self.config.nodeClient.retry_messages.items():
             for peer_cls in self.config.nodeClient.outbound_streams.keys():
                 if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                     if len(x) > 3:
@@ -382,7 +381,7 @@ class NodeApplication(Application):
             tornado.ioloop.PeriodicCallback(self.background_transaction_sender, 10000).start()
             self.config.transaction_sender_busy = False
 
-            tornado.ioloop.PeriodicCallback(self.background_block_sender, 10000).start()
+            tornado.ioloop.PeriodicCallback(self.background_message_sender, 10000).start()
             self.config.block_sender_busy = False
 
             tornado.ioloop.PeriodicCallback(self.background_block_inserter, 1000).start()
@@ -505,7 +504,7 @@ class NodeApplication(Application):
             'http_host': self.config.ssl['common_name'] if isinstance(self.config.ssl, dict) else self.config.peer_host,
             'http_port': self.config.ssl['port'] if isinstance(self.config.ssl, dict) else self.config.serve_port,
             'secure': isinstance(self.config.ssl, dict),
-            'protocol_version': 2
+            'protocol_version': 3
         }
 
         if my_peer.get('peer_type') == 'seed':

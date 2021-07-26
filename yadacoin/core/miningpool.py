@@ -1,3 +1,4 @@
+from traceback import format_exc
 import uuid
 import random
 from time import time
@@ -436,7 +437,7 @@ class MiningPool(object):
                 self.mongo.db.failed_transactions.insert({'reason': 'TotalValueMismatchException', 'txn': transaction_obj.to_dict()})
 
             except Exception as e:
-                self.config.app_log.warning('TotalValueMismatchException: transaction removed')
+                self.config.app_log.warning(format_exc())
 
         return transaction_objs
 

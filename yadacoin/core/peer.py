@@ -26,7 +26,7 @@ class Peer:
         http_host=None,
         http_port=None,
         secure=None,
-        protocol_version=2
+        protocol_version=3
     ):
         self.host = host
         self.port = port

@@ -393,6 +393,7 @@ class Transaction(object):
         total_input = 0
         exclude_recovered_ids = []
         async for txn in self.get_inputs(self.inputs):
+            txn_input = None
             input_txn = self.config.BU.get_transaction_by_id(txn.id)
             if input_txn:
                 txn_input = Transaction.from_dict(input_txn)

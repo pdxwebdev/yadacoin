@@ -19,7 +19,7 @@ from yadacoin.core.blockchain import Blockchain
 
 
 class NodeRPC(BaseRPC):
-    retry_blocks = {}
+    retry_messages = {}
     def __init__(self):
         super(NodeRPC, self).__init__()
         self.config = get_config()
@@ -57,7 +57,7 @@ class NodeRPC(BaseRPC):
             body['id']
         )
         if stream.peer.protocol_version > 1:
-            self.retry_blocks[(stream.peer.rid, 'blocksresponse', start_index, body['id'])] = message
+            self.retry_messages[(stream.peer.rid, 'blocksresponse', start_index, body['id'])] = message
 
     async def service_provider_request(self, body, stream):
         payload = body.get('params', {})
@@ -112,15 +112,13 @@ class NodeRPC(BaseRPC):
         except:
             return
 
-        to_store = txn.to_dict()
-        to_store['sent_to'] = [stream.peer.to_dict()]
-        await self.config.mongo.async_db.miner_transactions.replace_one(
-            {
-                'id': txn.transaction_signature
-            },
-            to_store,
-            upsert=True,
-        )
+        if stream.peer.protocol_version > 2:
+            await self.write_result(
+                stream,
+                'newtxn_confirmed',
+                body.get('params', {}),
+                body['id']
+            )
 
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:
@@ -130,6 +128,13 @@ class NodeRPC(BaseRPC):
                 'newtxn',
                 payload
             )
+
+    async def newtxn_confirmed(self, body, stream):
+        result = body.get('result', {})
+        transaction = await Transaction.from_dict(result.get('transaction'))
+
+        if (stream.peer.rid, 'newtxn', transaction.transaction_signature) in self.retry_messages:
+            del self.retry_messages[(stream.peer.rid, 'newtxn', transaction.transaction_signature)]
 
     async def newblock(self, body, stream):
         from yadacoin.core.consensus import ProcessingQueueItem
@@ -163,14 +168,14 @@ class NodeRPC(BaseRPC):
                 body.get('params', {})
             )
             if peer_stream.peer.protocol_version > 1:
-                self.retry_blocks[(peer_stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
+                self.retry_messages[(peer_stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
 
     async def newblock_confirmed(self, body, stream):
         payload = body.get('result', {}).get('payload')
         block = await Block.from_dict(payload.get('block'))
 
-        if (stream.peer.rid, 'newblock', block.hash) in self.retry_blocks:
-            del self.retry_blocks[(stream.peer.rid, 'newblock', block.hash)]
+        if (stream.peer.rid, 'newblock', block.hash) in self.retry_messages:
+            del self.retry_messages[(stream.peer.rid, 'newblock', block.hash)]
 
     async def ensure_previous_block(self, block, stream):
         have_prev = await self.ensure_previous_on_blockchain(block)
@@ -230,7 +235,7 @@ class NodeRPC(BaseRPC):
                 payload
             )
             if peer_stream.peer.protocol_version > 1:
-                self.retry_blocks[(peer_stream.peer.rid, 'newblock', block.hash)] = payload
+                self.retry_messages[(peer_stream.peer.rid, 'newblock', block.hash)] = payload
 
     async def get_next_block(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
@@ -265,7 +270,7 @@ class NodeRPC(BaseRPC):
                 body['id']
             )
             if stream.peer.protocol_version > 1:
-                self.retry_blocks[(stream.peer.rid, 'blockresponse', block['hash'], body['id'])] = message
+                self.retry_messages[(stream.peer.rid, 'blockresponse', block['hash'], body['id'])] = message
 
     async def blocksresponse(self, body, stream):
         from yadacoin.core.consensus import ProcessingQueueItem
@@ -303,8 +308,8 @@ class NodeRPC(BaseRPC):
     async def blocksresponse_confirmed(self, body, stream):
         params = body.get('result')
         start_index = params.get('start_index')
-        if (stream.peer.rid, 'blocksresponse', start_index, body['id']) in self.retry_blocks:
-            del self.retry_blocks[(stream.peer.rid, 'blocksresponse', start_index, body['id'])]
+        if (stream.peer.rid, 'blocksresponse', start_index, body['id']) in self.retry_messages:
+            del self.retry_messages[(stream.peer.rid, 'blocksresponse', start_index, body['id'])]
 
     async def blockresponse(self, body, stream):
         from yadacoin.core.consensus import ProcessingQueueItem
@@ -339,8 +344,8 @@ class NodeRPC(BaseRPC):
         if not result.get("block"):
             return
         block = await Block.from_dict(result.get("block"))
-        if (stream.peer.rid, 'blockresponse', block.hash, body['id']) in self.retry_blocks:
-            del self.retry_blocks[(stream.peer.rid, 'blockresponse', block.hash, body['id'])]
+        if (stream.peer.rid, 'blockresponse', block.hash, body['id']) in self.retry_messages:
+            del self.retry_messages[(stream.peer.rid, 'blockresponse', block.hash, body['id'])]
 
     async def connect(self, body, stream):
         params = body.get('params')
@@ -495,7 +500,7 @@ class NodeRPC(BaseRPC):
 
 class NodeSocketServer(RPCSocketServer, NodeRPC):
 
-    retry_blocks = {}
+    retry_messages = {}
 
     def __init__(self):
         super(NodeSocketServer, self).__init__()
@@ -504,7 +509,7 @@ class NodeSocketServer(RPCSocketServer, NodeRPC):
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
 
-    retry_blocks = {}
+    retry_messages = {}
 
     def __init__(self):
         super(NodeSocketClient, self).__init__()
