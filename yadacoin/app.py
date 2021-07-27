@@ -112,33 +112,34 @@ class NodeApplication(Application):
         self.init_ioloop()
 
     async def background_consensus(self):
-        if self.config.consensus_busy:
-            return
-        self.config.consensus_busy = True
-        again = True
-        while again:
-            again = await self.config.consensus.sync_bottom_up()
-        self.config.consensus_busy = False
+        while True:
+            again = True
+            while again:
+                again = await self.config.consensus.sync_bottom_up()
+
+            await tornado.gen.sleep(3)
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
-        try:
-            await self.config.peer.ensure_peers_connected()
-        except:
-            self.config.app_log.error(format_exc())
+        while True:
+            try:
+                await self.config.peer.ensure_peers_connected()
+            except:
+                self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(3)
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
-        try:
-            # status = {"peers": config.peers.get_status()}
-            if self.config.status_busy:
-                return
-            self.config.status_busy = True
-            status = await self.config.get_status()
-            self.config.app_log.info(json.dumps(status))
-            self.config.status_busy = False
-        except Exception as e:
-            self.config.app_log.error(format_exc())
+        while True:
+            try:
+                status = await self.config.get_status()
+                self.config.app_log.info(json.dumps(status))
+                self.config.status_busy = False
+            except Exception as e:
+                self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(30)
 
     async def background_block_checker(self):
         """Responsible for miner updates"""
@@ -147,59 +148,55 @@ class NodeApplication(Application):
         This co-routine checks if new transactions have been received, or if special_min is triggered,
         So we can update the miners.
         """
-        try:
-            if self.config.block_checker_busy:
-                return
-            self.config.block_checker_busy = True
-            last_block_height = 0
-            if LatestBlock.block:
-                last_block_height = LatestBlock.block.index
-            await LatestBlock.block_checker()
-            if last_block_height != LatestBlock.block.index:
-                self.config.app_log.info('Latest block height: %s | time: %s' % (
-                    self.config.LatestBlock.block.index,
-                    datetime.fromtimestamp(
-                        int(
-                            self.config.LatestBlock.block.time
-                        )
-                    ).strftime("%Y-%m-%d %H:%M:%S")
-                ))
+        while True:
+            try:
+                last_block_height = 0
+                if LatestBlock.block:
+                    last_block_height = LatestBlock.block.index
+                await LatestBlock.block_checker()
+                if last_block_height != LatestBlock.block.index:
+                    self.config.app_log.info('Latest block height: %s | time: %s' % (
+                        self.config.LatestBlock.block.index,
+                        datetime.fromtimestamp(
+                            int(
+                                self.config.LatestBlock.block.time
+                            )
+                        ).strftime("%Y-%m-%d %H:%M:%S")
+                    ))
 
-            self.config.block_checker_busy = False
-        except Exception as e:
-            self.config.app_log.error(format_exc())
+            except Exception as e:
+                self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(1)
 
     async def background_message_sender(self):
-        if self.config.block_sender_busy:
-            return
-        self.config.block_sender_busy = True
-        for x, message in self.config.nodeServer.retry_messages.items():
-            for peer_cls in self.config.nodeServer.inbound_streams.keys():
-                if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
-                    if len(x) > 3:
-                        await self.config.nodeShared.write_result(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message, x[3])
-                    else:
-                        await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
+        while True:
+            for x, message in self.config.nodeServer.retry_messages.items():
+                for peer_cls in self.config.nodeServer.inbound_streams.keys():
+                    if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
+                        if len(x) > 3:
+                            await self.config.nodeShared.write_result(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message, x[3])
+                        else:
+                            await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
-        for x, message in self.config.nodeClient.retry_messages.items():
-            for peer_cls in self.config.nodeClient.outbound_streams.keys():
-                if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
-                    if len(x) > 3:
-                        await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
-                    else:
-                        await self.config.nodeShared.write_params(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message)
+            for x, message in self.config.nodeClient.retry_messages.items():
+                for peer_cls in self.config.nodeClient.outbound_streams.keys():
+                    if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                        if len(x) > 3:
+                            await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
+                        else:
+                            await self.config.nodeShared.write_params(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message)
 
-        self.config.block_sender_busy = False
+            await tornado.gen.sleep(10)
 
     async def background_block_inserter(self):
-        if self.config.block_inserter_busy:
-            return
-        self.config.block_inserter_busy = True
-        try:
-            await self.config.consensus.process_block_queue()
-        except:
-            self.config.app_log.error(format_exc())
-        self.config.block_inserter_busy = False
+        while True:
+            try:
+                await self.config.consensus.process_block_queue()
+            except:
+                self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(1)
 
     async def background_pool_payer(self):
         """Responsible for paying miners"""
@@ -208,70 +205,66 @@ class NodeApplication(Application):
         This co-routine checks if new transactions have been received, or if special_min is triggered,
         So we can update the miners.
         """
-        try:
-            if self.pool_payer_busy:
-                return
-            self.pool_payer_busy = True
-            if self.config.pp:
-                await self.config.pp.do_payout()
-
-            self.pool_payer_busy = False
-        except Exception as e:
-            self.config.app_log.error(format_exc())
-
-    async def background_cache_validator(self):
-        """Responsible for validating the cache and clearing it when necessary"""
-        if self.config.cache_busy:
-            return
-        self.config.cache_busy = True
-        if not hasattr(self.config, 'cache_inited'):
-            self.cache_collections = [x for x in await self.config.mongo.async_db.list_collection_names({}) if x.endswith('_cache')]
-            self.cache_last_times = {}
+        while True:
             try:
-                async for x in self.config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
-                    self.config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
-                for cache_collection in self.cache_collections:
-                    self.cache_last_times[cache_collection] = 0
-                    await self.config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
-                self.config.cache_inited = True
+                if self.config.pp:
+                    await self.config.pp.do_payout()
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-        """
-        We check for cache items that are not currently in the blockchain
-        If not, we delete the cached item.
-        """
-        try:
-            for cache_collection in self.cache_collections:
-                if not self.cache_last_times.get(cache_collection):
-                    latest = await self.config.mongo.async_db[cache_collection].find_one({
-                        'cache_time': {'$gt': self.cache_last_times[cache_collection]}
-                    }, sort=[('height', -1)])
-                    if latest:
-                        self.cache_last_times[cache_collection] = latest['cache_time']
-                    else:
-                        self.cache_last_times[cache_collection] = 0
-                async for txn in self.config.mongo.async_db[cache_collection].find({
-                    'cache_time': {'$gt': self.cache_last_times[cache_collection]}
-                }).sort([('height', -1)]):
-                    if not await self.config.mongo.async_db.blocks.find_one({
-                        'index': txn.get('height'),
-                        'hash': txn.get('block_hash')
-                    }) and not await self.config.mongo.async_db.miner_transactions.find_one({
-                        'id': txn.get('id'),
-                    }):
-                        await self.config.mongo.async_db[cache_collection].delete_many({
-                            'height': txn.get('height')
-                        })
-                        break
-                    else:
-                        if txn['cache_time'] > self.cache_last_times[cache_collection]:
-                            self.cache_last_times[cache_collection] = txn['cache_time']
+            await tornado.gen.sleep(120)
 
-            self.config.cache_busy = False
-        except Exception as e:
-            self.config.app_log.error("error in background_cache_validator")
-            self.config.app_log.error(format_exc())
+    async def background_cache_validator(self):
+        """Responsible for validating the cache and clearing it when necessary"""
+        while True:
+            if not hasattr(self.config, 'cache_inited'):
+                self.cache_collections = [x for x in await self.config.mongo.async_db.list_collection_names({}) if x.endswith('_cache')]
+                self.cache_last_times = {}
+                try:
+                    async for x in self.config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
+                        self.config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
+                    for cache_collection in self.cache_collections:
+                        self.cache_last_times[cache_collection] = 0
+                        await self.config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
+                    self.config.cache_inited = True
+                except Exception as e:
+                    self.config.app_log.error(format_exc())
+
+            """
+            We check for cache items that are not currently in the blockchain
+            If not, we delete the cached item.
+            """
+            try:
+                for cache_collection in self.cache_collections:
+                    if not self.cache_last_times.get(cache_collection):
+                        latest = await self.config.mongo.async_db[cache_collection].find_one({
+                            'cache_time': {'$gt': self.cache_last_times[cache_collection]}
+                        }, sort=[('height', -1)])
+                        if latest:
+                            self.cache_last_times[cache_collection] = latest['cache_time']
+                        else:
+                            self.cache_last_times[cache_collection] = 0
+                    async for txn in self.config.mongo.async_db[cache_collection].find({
+                        'cache_time': {'$gt': self.cache_last_times[cache_collection]}
+                    }).sort([('height', -1)]):
+                        if not await self.config.mongo.async_db.blocks.find_one({
+                            'index': txn.get('height'),
+                            'hash': txn.get('block_hash')
+                        }) and not await self.config.mongo.async_db.miner_transactions.find_one({
+                            'id': txn.get('id'),
+                        }):
+                            await self.config.mongo.async_db[cache_collection].delete_many({
+                                'height': txn.get('height')
+                            })
+                            break
+                        else:
+                            if txn['cache_time'] > self.cache_last_times[cache_collection]:
+                                self.cache_last_times[cache_collection] = txn['cache_time']
+            except Exception as e:
+                self.config.app_log.error("error in background_cache_validator")
+                self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(30)
 
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
@@ -340,32 +333,25 @@ class NodeApplication(Application):
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
 
         if self.config.network != 'regnet' and 'node' in self.config.modes:
-            tornado.ioloop.PeriodicCallback(self.background_consensus, 3000).start()
-            self.config.consensus_busy = False
-            tornado.ioloop.PeriodicCallback(self.background_peers, 3000).start()
-            self.config.peers_busy = False
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_consensus)
 
-            tornado.ioloop.PeriodicCallback(self.background_status, 30000).start()
-            self.config.status_busy = False
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)
 
-            tornado.ioloop.PeriodicCallback(self.background_block_checker, 1000).start()
-            self.config.block_checker_busy = False
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
 
-            tornado.ioloop.PeriodicCallback(self.background_cache_validator, 30000).start()
-            self.config.cache_busy = False
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_checker)
 
-            tornado.ioloop.PeriodicCallback(self.background_message_sender, 10000).start()
-            self.config.block_sender_busy = False
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_cache_validator)
 
-            tornado.ioloop.PeriodicCallback(self.background_block_inserter, 1000).start()
-            self.config.block_inserter_busy = False
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
+
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
             self.config.pp = PoolPayer()
 
-            tornado.ioloop.PeriodicCallback(self.background_pool_payer, 120000).start()
-            self.pool_payer_busy = False
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_pool_payer)
 
         tornado.ioloop.IOLoop.current().start()
 
