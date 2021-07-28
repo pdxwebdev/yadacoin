@@ -16,6 +16,7 @@ from yadacoin.core.peer import Miner
 
 class Peer:
     address = ''
+    id_attribute = 'address'
 
     def __init__(self, address):
         self.address = address
