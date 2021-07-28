@@ -11,10 +11,10 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
 from yadacoin.tcpsocket.base import RPCSocketServer
 from yadacoin.core.miningpool import MiningPool
-from yadacoin.core.peer import Miner
+from yadacoin.core.peer import Miner as MinerBase
 
 
-class Peer:
+class Miner(MinerBase):
     address = ''
     id_attribute = 'address'
 
@@ -176,7 +176,7 @@ class StratumServer(RPCSocketServer):
         await StratumServer.block_checker()
         job = await StratumServer.config.mp.block_template()
         stream.job = job
-        stream.peer = Peer(body['params'].get('login'))
+        stream.peer = Miner(body['params'].get('login'))
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
         StratumServer.inbound_streams[Miner.__name__][stream.peer] = stream
         await StratumServer.update_miner_count()
