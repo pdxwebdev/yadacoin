@@ -477,7 +477,7 @@ var ChatPage = /** @class */ (function () {
                             alert.setSubTitle('Please wait a few minutes and try again');
                             alert.addButton('Ok');
                             alert.present();
-                            return reject();
+                            return reject('failed to create friend request');
                         });
                     }
                 }).then(function (txn) {
@@ -1034,7 +1034,7 @@ var SiaFiles = /** @class */ (function () {
                             resolve();
                         })
                             .catch(function (err) {
-                            reject();
+                            reject('failed generating transaction');
                         });
                     }
                     else {
@@ -1047,7 +1047,7 @@ var SiaFiles = /** @class */ (function () {
                             resolve();
                         })
                             .catch(function (err) {
-                            reject();
+                            reject(err);
                         });
                     }
                 })
@@ -1657,8 +1657,8 @@ var BulletinSecretService = /** @class */ (function () {
                 .then(function () {
                 return resolve();
             })
-                .catch(function () {
-                return reject();
+                .catch(function (err) {
+                return reject(err);
             });
         });
     };
@@ -1666,7 +1666,7 @@ var BulletinSecretService = /** @class */ (function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
             if (!username)
-                return reject();
+                return reject('username missing');
             _this.keyname = 'usernames-' + username;
             _this.storage.set('last-keyname', _this.keyname);
             _this.username = username;
@@ -1682,7 +1682,7 @@ var BulletinSecretService = /** @class */ (function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
             if (!username)
-                return reject();
+                return reject('username missing');
             _this.keyname = 'usernames-' + username;
             _this.storage.set('last-keyname', _this.keyname);
             _this.username = username;
@@ -1803,8 +1803,8 @@ var WalletService = /** @class */ (function () {
                 .then(function () {
                 return resolve();
             })
-                .catch(function () {
-                return reject();
+                .catch(function (err) {
+                return reject(err);
             });
         });
     };
@@ -1813,7 +1813,7 @@ var WalletService = /** @class */ (function () {
         if (amount_needed === void 0) { amount_needed = 0; }
         return new Promise(function (resolve, reject) {
             if (!_this.settingsService.remoteSettings['walletUrl']) {
-                return reject();
+                return reject('no wallet url');
             }
             if (_this.bulletinSecretService.username) {
                 var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
@@ -2015,8 +2015,9 @@ var TransactionService = /** @class */ (function () {
                             if (already_added.indexOf(unspent_transaction.id) === -1) {
                                 already_added.push(unspent_transaction.id);
                                 inputs.push({ id: unspent_transaction.id });
+                                input_sum += parseFloat(unspent_output.value);
+                                console.log(parseFloat(unspent_output.value));
                             }
-                            input_sum += parseFloat(unspent_output.value);
                             if (input_sum >= transaction_total) {
                                 _this.transaction.outputs.push({
                                     to: _this.key.getAddress(),
@@ -2219,10 +2220,10 @@ var TransactionService = /** @class */ (function () {
                     resolve();
                 }
                 catch (err) {
-                    reject();
+                    reject(err);
                 }
             }, function (err) {
-                reject();
+                reject(err);
             });
         });
     };
@@ -2241,7 +2242,7 @@ var TransactionService = /** @class */ (function () {
                 }
             }, function (error) {
                 if (_this.txnattempts.length > 0) {
-                    reject();
+                    reject(error);
                 }
             });
         });
@@ -2259,7 +2260,7 @@ var TransactionService = /** @class */ (function () {
                     resolve(JSON.parse(data['_body']));
                 }, function (error) {
                     if (_this.cbattempts.length > 0) {
-                        reject();
+                        reject('failed sendCallback');
                     }
                 });
             }
@@ -3075,7 +3076,7 @@ var HomePage = /** @class */ (function () {
             .then(function (groupinvite) {
             return new Promise(function (resolve, reject) {
                 if (!groupinvite)
-                    return reject();
+                    return reject('failed to join group');
                 var invite = JSON.parse(Base64.decode(groupinvite));
                 var raw_dh_private_key = window.crypto.getRandomValues(new Uint8Array(32));
                 var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
@@ -3227,7 +3228,7 @@ var HomePage = /** @class */ (function () {
                                 resolve();
                             }
                             catch (err) {
-                                reject();
+                                reject('sign-raw-transaction data invalid');
                                 _this.loadingModal.dismiss().catch(function () { });
                             }
                         }, function (err) {
@@ -3311,7 +3312,7 @@ var HomePage = /** @class */ (function () {
                                 resolve();
                             }
                             catch (err) {
-                                reject();
+                                reject('sign-raw-transaction data invalid');
                                 _this.loadingModal.dismiss().catch(function () { });
                             }
                         }, function (err) {
@@ -3365,7 +3366,7 @@ var HomePage = /** @class */ (function () {
                         });
                     }
                     catch (err) {
-                        reject();
+                        reject('failed to generate transaction');
                         _this.loadingModal.dismiss().catch(function () { });
                     }
                 }, function (err) {
@@ -3610,7 +3611,7 @@ var PostModal = /** @class */ (function () {
                             resolve();
                         })
                             .catch(function (err) {
-                            reject();
+                            reject('failed to generate transaction');
                         });
                     }
                     else {
@@ -3623,7 +3624,7 @@ var PostModal = /** @class */ (function () {
                             resolve();
                         })
                             .catch(function (err) {
-                            reject();
+                            reject('failed to generate transaction');
                         });
                     }
                 })
@@ -3676,7 +3677,7 @@ var PostModal = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(17);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(491);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(492);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -3879,7 +3880,7 @@ var Settings = /** @class */ (function () {
                         role: 'cancel',
                         handler: function (data) {
                             console.log('Cancel clicked');
-                            reject();
+                            reject('Cancel clicked');
                         }
                     },
                     {
@@ -3929,7 +3930,7 @@ var Settings = /** @class */ (function () {
                         role: 'cancel',
                         handler: function (data) {
                             console.log('Cancel clicked');
-                            reject();
+                            reject('Cancel clicked');
                         }
                     },
                     {
@@ -4051,7 +4052,7 @@ var Settings = /** @class */ (function () {
                 return resolve();
             }).catch(function (error) {
                 _this.serverDown = true;
-                return reject();
+                return reject(error);
             });
         });
     };
@@ -4326,13 +4327,13 @@ var StreamPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 327:
+/***/ 328:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(328);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(438);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(329);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(439);
 
 
 Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* platformBrowserDynamic */])().bootstrapModule(__WEBPACK_IMPORTED_MODULE_1__app_module__["a" /* AppModule */]);
@@ -4489,9 +4490,9 @@ var GraphService = /** @class */ (function () {
                 resolve();
             }).catch(function (err) {
                 _this.getFriendRequestsError = true;
-                reject(null);
-            }).catch(function () {
-                reject();
+                reject(err);
+            }).catch(function (err) {
+                reject(err);
             });
         });
     };
@@ -5247,7 +5248,7 @@ var GraphService = /** @class */ (function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
             if (!groupname)
-                return reject();
+                return reject('username missing');
             var key = foobar.bitcoin.ECPair.makeRandom();
             var wif = key.toWIF();
             var pubKey = key.getPublicKeyBuffer().toString('hex');
@@ -5327,7 +5328,7 @@ var GraphService = /** @class */ (function () {
             var shared_secret = args[1];
             return new Promise(function (resolve, reject) {
                 if (!username)
-                    return reject();
+                    return reject('username missing');
                 return _this.storage.get(_this.bulletinSecretService.keyname).then(function (wif) {
                     var key = foobar.bitcoin.ECPair.fromWIF(wif);
                     var pubKey = key.getPublicKeyBuffer().toString('hex');
@@ -5425,7 +5426,7 @@ var GraphService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 438:
+/***/ 439:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5435,7 +5436,7 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(44);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(480);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(481);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(303);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(304);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(53);
@@ -5448,7 +5449,7 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_status_bar__ = __webpack_require__(299);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_splash_screen__ = __webpack_require__(301);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_qr_scanner__ = __webpack_require__(308);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18_ngx_qrcode2__ = __webpack_require__(493);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18_ngx_qrcode2__ = __webpack_require__(494);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_storage__ = __webpack_require__(34);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__graph_service__ = __webpack_require__(41);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__bulletinSecret_service__ = __webpack_require__(20);
@@ -5459,10 +5460,10 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__opengraphparser_service__ = __webpack_require__(109);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__firebase_service__ = __webpack_require__(185);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__pages_sendreceive_sendreceive__ = __webpack_require__(186);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__ionic_native_clipboard__ = __webpack_require__(513);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__ionic_native_clipboard__ = __webpack_require__(514);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__ionic_native_social_sharing__ = __webpack_require__(85);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__ionic_native_badge__ = __webpack_require__(302);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_deeplinks__ = __webpack_require__(514);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_deeplinks__ = __webpack_require__(310);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_firebase__ = __webpack_require__(305);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_tools_emoji_picker__ = __webpack_require__(515);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_file__ = __webpack_require__(563);
@@ -5594,7 +5595,7 @@ var AppModule = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 480:
+/***/ 481:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5613,6 +5614,7 @@ var AppModule = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_siafiles_siafiles__ = __webpack_require__(184);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_stream_stream__ = __webpack_require__(309);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_sendreceive_sendreceive__ = __webpack_require__(186);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_deeplinks__ = __webpack_require__(310);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -5637,8 +5639,11 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 
 
+//import { ProfilePage } from '../pages/profile/profile';
+//import { SendReceive } from '../pages/sendreceive/sendreceive';
+
 var MyApp = /** @class */ (function () {
-    function MyApp(platform, statusBar, splashScreen, walletService, graphService, settingsService, bulletinSecretService, events) {
+    function MyApp(platform, statusBar, splashScreen, walletService, graphService, settingsService, bulletinSecretService, events, deeplinks) {
         var _this = this;
         this.platform = platform;
         this.statusBar = statusBar;
@@ -5648,6 +5653,7 @@ var MyApp = /** @class */ (function () {
         this.settingsService = settingsService;
         this.bulletinSecretService = bulletinSecretService;
         this.events = events;
+        this.deeplinks = deeplinks;
         events.subscribe('graph', function () {
             _this.rootPage = __WEBPACK_IMPORTED_MODULE_8__pages_home_home__["a" /* HomePage */];
         });
@@ -5659,11 +5665,7 @@ var MyApp = /** @class */ (function () {
             commentReacts: ""
         };
         this.initializeApp();
-        this.walletService.get().then(function (data) {
-            _this.rootPage = __WEBPACK_IMPORTED_MODULE_10__pages_settings_settings__["a" /* Settings */];
-        }).catch(function () {
-            _this.rootPage = __WEBPACK_IMPORTED_MODULE_10__pages_settings_settings__["a" /* Settings */];
-        });
+        this.rootPage = __WEBPACK_IMPORTED_MODULE_10__pages_settings_settings__["a" /* Settings */];
         this.pages = [
             { title: 'Home', label: 'Dashboard', component: __WEBPACK_IMPORTED_MODULE_8__pages_home_home__["a" /* HomePage */], count: false, color: '' },
             { title: 'Stream', label: 'Stream', component: __WEBPACK_IMPORTED_MODULE_12__pages_stream_stream__["a" /* StreamPage */], count: false, color: '' },
@@ -5680,6 +5682,17 @@ var MyApp = /** @class */ (function () {
     MyApp.prototype.initializeApp = function () {
         var _this = this;
         this.platform.ready().then(function () {
+            _this.deeplinks.routeWithNavController(_this.nav, {
+                '/friends': __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */]
+            }).subscribe(function (match) {
+                // match.$route - the route we matched, which is the matched entry from the arguments to route()
+                // match.$args - the args passed in the link
+                // match.$link - the full link data
+                console.log('Successfully matched route', match);
+            }, function (nomatch) {
+                // nomatch.$link - the full link data
+                console.error('Got a deeplink that didn\'t match', nomatch);
+            });
             // Okay, so the platform is ready and our plugins are available.
             // Here you can do any higher level native things you might need.
             if (_this.platform.is('android') || _this.platform.is('ios')) {
@@ -5715,7 +5728,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note style="font-size: 20px">\n            YadaCoin\n          </ion-note>\n          <ion-note style="font-size: 12px">\n             v3.5.2\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content>\n      <ion-list *ngIf="bulletinSecretService.key">\n        <ng-container *ngFor="let p of pages">\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Friend Requests\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.new_messages_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Messages\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            *ngIf="[\'Messages\', \'Friend Requests\'].indexOf(p.title) < 0"\n          >\n            {{p.label}}\n          </button>\n        </ng-container>\n      </ion-list>\n      <img src="assets/img/yadacoinlogosmall.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note style="font-size: 20px">\n            YadaCoin\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content>\n      <ion-list *ngIf="bulletinSecretService.key">\n        <ng-container *ngFor="let p of pages">\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Friend Requests\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.new_messages_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Messages\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            *ngIf="[\'Messages\', \'Friend Requests\'].indexOf(p.title) < 0"\n          >\n            {{p.label}}\n          </button>\n        </ng-container>\n      </ion-list>\n      <img src="assets/img/yadacoinlogosmall.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
@@ -5724,7 +5737,8 @@ var MyApp = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_4__graph_service__["a" /* GraphService */],
             __WEBPACK_IMPORTED_MODULE_5__settings_service__["a" /* SettingsService */],
             __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */],
+            __WEBPACK_IMPORTED_MODULE_14__ionic_native_deeplinks__["a" /* Deeplinks */]])
     ], MyApp);
     return MyApp;
 }());
@@ -5980,7 +5994,7 @@ var ListPage = /** @class */ (function () {
                         resolve();
                     }).catch(function () {
                         console.log('listpage getSignIns error');
-                        reject();
+                        reject('listpage getSignIns error');
                     });
                 }
             }
@@ -6494,5 +6508,5 @@ var ProfilePage = /** @class */ (function () {
 
 /***/ })
 
-},[327]);
+},[328]);
 //# sourceMappingURL=main.js.map

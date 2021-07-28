@@ -767,6 +767,21 @@ module.exports = [
         "clobbers": [
             "SQLitePlugin"
         ]
+    },
+    {
+        "file": "plugins/ionic-plugin-deeplinks/www/deeplink.js",
+        "id": "ionic-plugin-deeplinks.deeplink",
+        "pluginId": "ionic-plugin-deeplinks",
+        "clobbers": [
+            "IonicDeeplink"
+        ],
+        "runs": true
+    },
+    {
+        "file": "plugins/ionic-plugin-deeplinks/src/browser/DeeplinkProxy.js",
+        "id": "ionic-plugin-deeplinks.IonicDeeplinkProxy",
+        "pluginId": "ionic-plugin-deeplinks",
+        "runs": true
     }
 ];
 module.exports.metadata = 
@@ -790,7 +805,8 @@ module.exports.metadata =
     "im.ltdev.cordova.UserAgent": "1.0.1",
     "cordova-plugin-splashscreen": "5.0.3",
     "cordova-plugin-mixpanel": "4.7.0",
-    "cordova-plugin-geolocation": "4.0.2"
+    "cordova-plugin-geolocation": "4.0.2",
+    "ionic-plugin-deeplinks": "1.0.20"
 }
 // BOTTOM OF METADATA
 });
