@@ -113,11 +113,15 @@ class NodeApplication(Application):
 
     async def background_consensus(self):
         while True:
-            again = True
-            while again:
-                again = await self.config.consensus.sync_bottom_up()
+            try:
+                again = True
+                while again:
+                    again = await self.config.consensus.sync_bottom_up()
 
-            await tornado.gen.sleep(3)
+                await tornado.gen.sleep(3)
+
+            except Exception as e:
+                self.config.app_log.error(format_exc())
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
@@ -171,23 +175,27 @@ class NodeApplication(Application):
 
     async def background_message_sender(self):
         while True:
-            for x, message in self.config.nodeServer.retry_messages.items():
-                for peer_cls in self.config.nodeServer.inbound_streams.keys():
-                    if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
-                        if len(x) > 3:
-                            await self.config.nodeShared.write_result(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message, x[3])
-                        else:
-                            await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
+            try:
+                for x, message in self.config.nodeServer.retry_messages.items():
+                    for peer_cls in self.config.nodeServer.inbound_streams.keys():
+                        if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
+                            if len(x) > 3:
+                                await self.config.nodeShared.write_result(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message, x[3])
+                            else:
+                                await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
-            for x, message in self.config.nodeClient.retry_messages.items():
-                for peer_cls in self.config.nodeClient.outbound_streams.keys():
-                    if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
-                        if len(x) > 3:
-                            await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
-                        else:
-                            await self.config.nodeShared.write_params(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message)
+                for x, message in self.config.nodeClient.retry_messages.items():
+                    for peer_cls in self.config.nodeClient.outbound_streams.keys():
+                        if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                            if len(x) > 3:
+                                await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
+                            else:
+                                await self.config.nodeShared.write_params(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message)
 
-            await tornado.gen.sleep(10)
+                await tornado.gen.sleep(10)
+
+            except Exception as e:
+                self.config.app_log.error(format_exc())
 
     async def background_block_inserter(self):
         while True:

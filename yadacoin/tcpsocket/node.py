@@ -153,6 +153,9 @@ class NodeRPC(BaseRPC):
 
         block = await Block.from_dict(payload.get('block'))
 
+        if block.time > time.time():
+            return
+
         if block.index > (self.config.LatestBlock.block.index + 100) or block.index < self.config.LatestBlock.block.index:
             return
 
@@ -271,6 +274,13 @@ class NodeRPC(BaseRPC):
             )
             if stream.peer.protocol_version > 1:
                 self.retry_messages[(stream.peer.rid, 'blockresponse', block['hash'], body['id'])] = message
+        else:
+            await self.write_result(
+                stream,
+                'blockresponse',
+                {},
+                body['id']
+            )
 
     async def blocksresponse(self, body, stream):
         from yadacoin.core.consensus import ProcessingQueueItem
@@ -391,15 +401,7 @@ class NodeRPC(BaseRPC):
 
         limit = self.config.peer.__class__.type_limit(peerCls)
         if (len(NodeSocketServer.inbound_pending[peerCls.__name__]) + len(NodeSocketServer.inbound_streams[peerCls.__name__])) >= limit:
-            if self.config.peer.is_linked_peer(stream.peer):
-                if stream.peer.rid in NodeSocketServer.inbound_pending[peerCls.__name__]:
-                    NodeSocketServer.inbound_pending[peerCls.__name__][stream.peer.rid].close()
-                    del NodeSocketServer.inbound_pending[peerCls.__name__][stream.peer.rid]
-
-                if stream.peer.rid in NodeSocketServer.inbound_streams[peerCls.__name__]:
-                    NodeSocketServer.inbound_streams[peerCls.__name__][stream.peer.rid].close()
-                    del NodeSocketServer.inbound_streams[peerCls.__name__][stream.peer.rid]
-            else:
+            if not self.config.peer.is_linked_peer(stream.peer):
                 await self.write_result(stream, 'capacity', {}, body['id'])
                 stream.close()
                 return {}
