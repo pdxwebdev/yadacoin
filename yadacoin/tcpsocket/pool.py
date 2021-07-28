@@ -46,7 +46,7 @@ class StratumServer(RPCSocketServer):
             cls.config = get_config()
         streams = list(StratumServer.inbound_streams[Miner.__name__].values())
         for stream in streams:
-            cls.send_job(stream)
+            await cls.send_job(stream)
 
     @classmethod
     async def send_job(cls, stream):
