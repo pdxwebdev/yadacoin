@@ -99,6 +99,14 @@ class Blockchain(object):
 
         return {'verified': True}
 
+    async def get_txns(txns):
+        for x in txns:
+            yield x
+
+    async def get_inputs(inputs):
+        for x in inputs:
+            yield x
+
     @staticmethod
     async def test_block(block, extra_blocks=[], simulate_last_block=None):
         config = get_config()
@@ -108,17 +116,8 @@ class Blockchain(object):
             config.app_log.warning("Integrate block error 1: {}".format(e))
             return False
 
-        async def get_txns(txns):
-            for x in txns:
-                yield x
-
-        async def get_inputs(inputs):
-            for x in inputs:
-                yield x
-
         if block.index == 0:
             return True
-
         
         if simulate_last_block:
             last_block = simulate_last_block
@@ -142,7 +141,7 @@ class Blockchain(object):
 
         used_inputs = {}
         i = 0
-        async for transaction in get_txns(block.transactions):
+        async for transaction in Blockchain.get_txns(block.transactions):
             if extra_blocks:
                 transaction.extra_blocks = extra_blocks
             config.app_log.warning('verifying txn: {} block: {}'.format(i, block.index))
@@ -168,7 +167,7 @@ class Blockchain(object):
             if transaction.inputs:
                 failed = False
                 used_ids_in_this_txn = []
-                async for x in get_inputs(transaction.inputs):
+                async for x in Blockchain.get_inputs(transaction.inputs):
                     txn = config.BU.get_transaction_by_id(x.id, instance=True)
                     if not txn:
                         txn = await transaction.find_in_extra_blocks(x)

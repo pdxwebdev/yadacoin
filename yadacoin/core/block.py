@@ -411,56 +411,6 @@ class Block(object):
         if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
             print(fee_sum, coinbase_sum, reward)
             raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
-    
-    async def check_transactions(self):
-        async def get_txns(txns):
-            for x in txns:
-                yield x
-
-        async def get_inputs(inputs):
-            for x in inputs:
-                yield x
-
-        used_inputs = {}
-        i = 0
-        async for transaction in get_txns(self.transactions):
-            self.app_log.warning('verifying txn: {} block: {}'.format(i, self.index))
-            i += 1
-            try:
-                await transaction.verify()
-            except InvalidTransactionException as e:
-                self.app_log.warning(e)
-                return False
-            except InvalidTransactionSignatureException as e:
-                self.app_log.warning(e)
-                return False
-            except MissingInputTransactionException as e:
-                self.app_log.warning(e)
-            except NotEnoughMoneyException as e:
-                self.app_log.warning(e)
-                return False
-            except Exception as e:
-                self.app_log.warning(e)
-                return False
-
-            if transaction.inputs:
-                failed = False
-                used_ids_in_this_txn = []
-                async for x in get_inputs(transaction.inputs):
-                    is_input_spent = await yadacoin.core.config.CONFIG.BU.is_input_spent(x.id, transaction.public_key)
-                    if is_input_spent:
-                        failed = True
-                    if x.id in used_ids_in_this_txn:
-                        failed = True
-                    if (x.id, transaction.public_key) in used_inputs:
-                        failed = True
-                    used_inputs[(x.id, transaction.public_key)] = transaction
-                    used_ids_in_this_txn.append(x.id)
-                if failed and self.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
-                    raise MissingInputTransactionException()
-                elif failed and self.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
-                    continue
-        return True
 
     def get_transaction_hashes(self):
         """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""
