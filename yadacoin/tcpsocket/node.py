@@ -499,6 +499,9 @@ class NodeRPC(BaseRPC):
         protocol_version = peer.get('protocol_version', 1)
         stream.peer.protocol_version = protocol_version
 
+    async def disconnect(self, body, stream):
+        await self.remove_peer(stream)
+
 
 class NodeSocketServer(RPCSocketServer, NodeRPC):
 

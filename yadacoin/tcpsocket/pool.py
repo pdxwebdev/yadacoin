@@ -68,7 +68,7 @@ class StratumServer(RPCSocketServer):
                 '{}\n'.format(json.dumps(rpc_data)).encode()
             )
         except StreamClosedError:
-            await StratumServer.remove_peer(stream.peer)
+            await StratumServer.remove_peer(stream)
         except Exception:
             cls.config.app_log.warning(traceback.format_exc())
 
@@ -94,10 +94,11 @@ class StratumServer(RPCSocketServer):
         , upsert=True)
 
     @classmethod
-    async def remove_peer(self, peer):
-        if peer in StratumServer.inbound_streams[Miner.__name__]:
-            del StratumServer.inbound_streams[Miner.__name__][peer]
+    async def remove_peer(self, stream):
+        if stream.peer in StratumServer.inbound_streams[Miner.__name__]:
+            del StratumServer.inbound_streams[Miner.__name__][stream.peer]
         await StratumServer.update_miner_count()
+        stream.close()
 
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template()
