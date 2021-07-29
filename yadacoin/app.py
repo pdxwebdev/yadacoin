@@ -177,8 +177,8 @@ class NodeApplication(Application):
         retry_attempts = {}
         while True:
             try:
-                messages = self.config.nodeServer.retry_messages.items()
-                for x, message in messages:
+                for x in list(self.config.nodeServer.retry_messages):
+                    message = self.config.nodeServer.retry_messages[x]
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
@@ -193,8 +193,8 @@ class NodeApplication(Application):
                             else:
                                 await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
-                messages = self.config.nodeClient.retry_messages.items()
-                for x, message in messages:
+                for x in list(self.config.nodeClient.retry_messages):
+                    message = self.config.nodeClient.retry_messages[x]
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
