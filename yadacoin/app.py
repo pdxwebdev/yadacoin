@@ -185,7 +185,7 @@ class NodeApplication(Application):
                     for peer_cls in self.config.nodeServer.inbound_streams.keys():
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
-                                del config.nodeClient.retry_messages[x]
+                                del self.config.nodeClient.retry_messages[x]
                                 await self.config.nodeServer.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
@@ -201,7 +201,7 @@ class NodeApplication(Application):
                     for peer_cls in self.config.nodeClient.outbound_streams.keys():
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
-                                del config.nodeClient.retry_messages[x]
+                                del self.config.nodeClient.retry_messages[x]
                                 await self.config.nodeClient.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
