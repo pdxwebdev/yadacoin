@@ -177,13 +177,15 @@ class NodeApplication(Application):
         retry_attempts = {}
         while True:
             try:
-                for x, message in self.config.nodeServer.retry_messages.items():
+                messages = self.config.nodeServer.retry_messages.items()
+                for x, message in messages:
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
                     for peer_cls in self.config.nodeServer.inbound_streams.keys():
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
+                                del config.nodeClient.retry_messages[x]
                                 await self.config.nodeServer.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
@@ -191,13 +193,15 @@ class NodeApplication(Application):
                             else:
                                 await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
-                for x, message in self.config.nodeClient.retry_messages.items():
+                messages = self.config.nodeClient.retry_messages.items()
+                for x, message in messages:
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
                     for peer_cls in self.config.nodeClient.outbound_streams.keys():
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
+                                del config.nodeClient.retry_messages[x]
                                 await self.config.nodeClient.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
