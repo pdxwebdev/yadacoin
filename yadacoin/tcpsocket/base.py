@@ -119,6 +119,7 @@ class RPCSocketClient(TCPClient):
 
     async def connect(self, peer):
         try:
+            stream = None
             id_attr = getattr(peer, peer.id_attribute)
             if id_attr in self.outbound_ignore[peer.__class__.__name__]:
                 return
@@ -162,10 +163,12 @@ class RPCSocketClient(TCPClient):
             self.config.app_log.info('Connected to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
             return stream
         except StreamClosedError:
-            await self.remove_peer(stream)
+            if hasattr(stream, 'peer'):
+                await self.remove_peer(stream)
             self.config.app_log.warning('Streamed closed for {}: {}'.format(peer.__class__.__name__, peer.to_json()))
         except TimeoutError:
-            await self.remove_peer(stream)
+            if hasattr(stream, 'peer'):
+                await self.remove_peer(stream)
             self.config.app_log.warning('Timeout connecting to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
 
     async def wait_for_data(self, stream):
