@@ -335,7 +335,6 @@ class NodeRPC(BaseRPC):
                     body.get('result', {}),
                     body['id']
                 )
-                self.retry_messages[(stream.peer.rid, 'blockresponse_confirmed', '', body['id'])] = {}
             return
         block = await Block.from_dict(result.get("block"))
         if block.index > (self.config.LatestBlock.block.index + 100):
@@ -351,7 +350,6 @@ class NodeRPC(BaseRPC):
                 body.get('result', {}),
                 body['id']
             )
-            self.retry_messages[(stream.peer.rid, 'blockresponse_confirmed', block.hash, body['id'])] = {}
 
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('result')
