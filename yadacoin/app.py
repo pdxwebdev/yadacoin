@@ -182,9 +182,10 @@ class NodeApplication(Application):
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
                     for peer_cls in self.config.nodeServer.inbound_streams.keys():
-                        if retry_attempts[x] > 10:
-                            await self.config.nodeServer.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
+                            if retry_attempts[x] > 10:
+                                await self.config.nodeServer.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
+                                continue
                             if len(x) > 3:
                                 await self.config.nodeShared.write_result(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message, x[3])
                             else:
@@ -195,9 +196,10 @@ class NodeApplication(Application):
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
                     for peer_cls in self.config.nodeClient.outbound_streams.keys():
-                        if retry_attempts[x] > 10:
-                            await self.config.nodeClient.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                            if retry_attempts[x] > 10:
+                                await self.config.nodeClient.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
+                                continue
                             if len(x) > 3:
                                 await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
                             else:
