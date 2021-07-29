@@ -281,6 +281,8 @@ class NodeRPC(BaseRPC):
                 {},
                 body['id']
             )
+            if stream.peer.protocol_version > 1:
+                self.retry_messages[(stream.peer.rid, 'blockresponse', f'{block_hash}{block_index}', body['id'])] = {}
 
     async def blocksresponse(self, body, stream):
         from yadacoin.core.consensus import ProcessingQueueItem

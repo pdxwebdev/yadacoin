@@ -236,16 +236,6 @@ class Consensus(object):
         async for new_block in new_blocks:
             new_block = await Block.from_dict(new_block['block'])
             yield new_block
-
-    async def get_previous_consensus_block_from_remote(self, block):
-        # TODO: async conversion
-        retry = 0
-        peers = self.config.mongo.async_db.consensus.find({'block.prevHash': block.prev_hash, 'peer': {'$ne': 'me'}})
-        async for peer in peers:
-            #self.app_log.warning('response code: {} {}'.format(res.status_code, res.content))
-            new_block = await Block.from_dict(json.loads(res.content.decode('utf-8')))
-            await self.insert_consensus_block(new_block, Peer.from_string(peer['peer']))
-            yield new_block
     
     async def get_previous_consensus_block(self, block, stream=None):
         had_results = False
@@ -253,7 +243,7 @@ class Consensus(object):
             had_results = True
             yield local_block
         if stream and not had_results:
-            await BaseRPC().write_params(
+            await self.config.nodeShared.write_params(
                 stream,
                 'getblock',
                 {
