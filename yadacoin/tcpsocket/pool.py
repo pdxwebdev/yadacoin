@@ -19,6 +19,7 @@ class Miner(MinerBase):
     id_attribute = 'address'
 
     def __init__(self, address):
+        super(Miner, self).__init__()
         self.address = address
 
     def to_json(self):
@@ -89,15 +90,15 @@ class StratumServer(RPCSocketServer):
             'stat': 'miner_count'
         }, {
             '$set': {
-                'value': len(list(set([x.address for x in StratumServer.inbound_streams[Miner.__name__].keys()])))
+                'value': len(list(set([address for address in StratumServer.inbound_streams[Miner.__name__].keys()])))
             }
         }
         , upsert=True)
 
     @classmethod
     async def remove_peer(self, stream):
-        if stream.peer in StratumServer.inbound_streams[Miner.__name__]:
-            del StratumServer.inbound_streams[Miner.__name__][stream.peer]
+        if stream.peer.address in StratumServer.inbound_streams[Miner.__name__]:
+            del StratumServer.inbound_streams[Miner.__name__][stream.peer.address]
         await StratumServer.update_miner_count()
         stream.close()
 
@@ -178,7 +179,7 @@ class StratumServer(RPCSocketServer):
         stream.job = job
         stream.peer = Miner(body['params'].get('login'))
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
-        StratumServer.inbound_streams[Miner.__name__][stream.peer] = stream
+        StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
         await StratumServer.update_miner_count()
         result = {
             'id': job.id,
@@ -195,6 +196,6 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def status(self):
         return {
-            'miners': len(list(set([x.address for x in StratumServer.inbound_streams[Miner.__name__].keys()]))),
+            'miners': len(list(set([address for address in StratumServer.inbound_streams[Miner.__name__].keys()]))),
             'workers': len(StratumServer.inbound_streams[Miner.__name__].keys())
         }

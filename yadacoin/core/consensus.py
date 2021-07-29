@@ -291,12 +291,12 @@ class Consensus(object):
     
     async def integrate_block_with_existing_chain(self, block: Block, stream):
         self.app_log.warning('integrate_block_with_existing_chain')
-        backward_blocks, status = await self.config.consensus.build_backward_from_block_to_fork(block, [], stream)
+        backward_blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
 
         if not status:
             return
 
-        forward_blocks_chain = await self.config.consensus.build_remote_chain(block) #contains block
+        forward_blocks_chain = await self.build_remote_chain(block) #contains block
 
         inbound_blockchain = await Blockchain.init_async(sorted(backward_blocks + [x async for x in forward_blocks_chain.blocks], key=lambda x: x.index))
 
