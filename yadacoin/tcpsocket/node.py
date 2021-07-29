@@ -354,6 +354,8 @@ class NodeRPC(BaseRPC):
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('result')
         if not result.get("block"):
+            if (stream.peer.rid, 'blockresponse', {}, body['id']) in self.retry_messages:
+                del self.retry_messages[(stream.peer.rid, 'blockresponse', {}, body['id'])]
             return
         block = await Block.from_dict(result.get("block"))
         if (stream.peer.rid, 'blockresponse', block.hash, body['id']) in self.retry_messages:
