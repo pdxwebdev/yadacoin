@@ -321,6 +321,8 @@ class NodeApplication(Application):
                 self.config.network = options.network
 
         self.config.reset = options.reset
+        self.config.pyrx = pyrx.PyRX()
+        self.config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
 
     def init_consensus(self):
         tornado.ioloop.IOLoop.current().run_sync(self.config.consensus.async_init)
@@ -501,8 +503,6 @@ class NodeApplication(Application):
         self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(Consensus.init_async)
         self.config.cipher = Crypt(self.config.wif)
         if 'node' in self.config.modes:
-            self.config.pyrx = pyrx.PyRX()
-            self.config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
             self.config.nodeServer = NodeSocketServer
             self.config.nodeShared = NodeRPC()
             self.config.nodeClient = NodeSocketClient()

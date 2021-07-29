@@ -134,7 +134,7 @@ class Consensus(object):
 
     async def sync_bottom_up(self):
         #bottom up syncing
-        
+
         last_latest = self.latest_block
         self.latest_block = self.config.LatestBlock.block
         if last_latest:
@@ -163,7 +163,9 @@ class Consensus(object):
                     block = await Block.from_dict(record['block'])
                 except:
                     continue
-                self.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block)))
+                stream = await self.config.peer.get_peer_by_id(record['peer']['rid'])
+                if stream and hasattr(stream, 'peer') and stream.peer.authenticated:
+                    self.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
         else:
             #  this path is for syncing only.
             #  Stack:
@@ -305,6 +307,14 @@ class Consensus(object):
         )
 
         if not await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
+            final_block = await inbound_blockchain.final_block
+            await self.config.nodeShared.write_params(
+                stream,
+                'getblock',
+                {
+                    'index': final_block.index + 1
+                }
+            )
             return
 
         await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)

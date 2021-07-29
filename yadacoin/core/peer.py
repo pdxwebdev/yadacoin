@@ -39,6 +39,7 @@ class Peer:
         self.config = get_config()
         self.app_log = getLogger("tornado.application")
         self.protocol_version = protocol_version
+        self.authenticated = False
 
     @classmethod
     def from_dict(cls, peer, is_me=False):
@@ -286,6 +287,16 @@ class Seed(Peer):
         for x, y in peers:
             yield y
 
+    async def get_peer_by_id(self, id_attr):
+        if self.config.nodeServer.inbound_streams[SeedGateway.__name__].get(id_attr):
+            return self.config.nodeServer.inbound_streams[SeedGateway.__name__].get(id_attr)
+
+        if self.config.nodeServer.inbound_streams[Seed.__name__].get(id_attr):
+            return self.config.nodeServer.inbound_streams[Seed.__name__].get(id_attr)
+
+        if self.config.nodeClient.outbound_streams[Seed.__name__].get(id_attr):
+            return self.config.nodeClient.outbound_streams[Seed.__name__].get(id_attr)
+
     def is_linked_peer(self, peer):
         if self.seed_gateway == peer.identity.username_signature:
             return True
@@ -345,6 +356,13 @@ class SeedGateway(Peer):
         streams = self.config.nodeClient.outbound_streams[Seed.__name__].items()
         for x, y in streams:
             yield y
+
+    async def get_peer_by_id(self, id_attr):
+        if self.config.nodeServer.inbound_streams[ServiceProvider.__name__].get(id_attr):
+            return self.config.nodeServer.inbound_streams[ServiceProvider.__name__].get(id_attr)
+
+        if self.config.nodeClient.outbound_streams[Seed.__name__].get(id_attr):
+            return self.config.nodeClient.outbound_streams[Seed.__name__].get(id_attr)
 
     def is_linked_peer(self, peer):
         return False
@@ -462,6 +480,13 @@ class ServiceProvider(Peer):
         for x, y in streams:
             yield y
 
+    async def get_peer_by_id(self, id_attr):
+        if self.config.nodeServer.inbound_streams[User.__name__].get(id_attr):
+            return self.config.nodeServer.inbound_streams[User.__name__].get(id_attr)
+
+        if self.config.nodeClient.outbound_streams[SeedGateway.__name__].get(id_attr):
+            return self.config.nodeClient.outbound_streams[SeedGateway.__name__].get(id_attr)
+
     def is_linked_peer(self, peer):
         return False
 
@@ -521,6 +546,9 @@ class User(Peer):
         peers = self.config.nodeClient.outbound_streams[ServiceProvider.__name__].items()
         for x, y in peers:
             yield y
+
+    async def get_peer_by_id(self, id_attr):
+        return self.config.nodeClient.outbound_streams[ServiceProvider.__name__].get(id_attr)
 
     async def get_route_peers(self, peer, payload):
         peers = self.config.nodeClient.outbound_streams[User.__name__].items()

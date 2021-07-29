@@ -34,6 +34,7 @@ REQUEST_ONLY = [
     'disconnect',
 ]
 
+
 class BaseRPC:
     def __init__(self):
         self.config = get_config()
@@ -55,9 +56,37 @@ class BaseRPC:
         if rpc_type == 'params':
             if method not in stream.message_queue:
                 stream.message_queue[method] = {}
+            if len(stream.message_queue[method].keys()) > 25:
+                queue_key = list(stream.message_queue[method].keys())[0]
+                del stream.message_queue[method][queue_key]
             stream.message_queue[method][rpc_data['id']] = rpc_data
-        await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
+        try:
+            await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
+        except:
+            if hasattr(stream, 'peer'):
+                await self.remove_peer(stream)
+            else:
+                stream.close()
+            self.config.app_log.debug(format_exc())
+            return
         self.config.app_log.debug(f'SENT {stream.peer.host} {method} {data} {rpc_type} {req_id}')
+
+    async def remove_peer(self, stream):
+        id_attr = getattr(stream.peer, stream.peer.id_attribute)
+        if id_attr in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]:
+            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][id_attr]
+
+        if id_attr in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]:
+            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][id_attr]
+
+        if id_attr in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]:
+            del self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__][id_attr]
+
+        if id_attr in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]:
+            del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][id_attr]
+
+        stream.close()
+
 
 class RPCSocketServer(TCPServer, BaseRPC):
     inbound_streams = {}
@@ -111,6 +140,13 @@ class RPCSocketServer(TCPServer, BaseRPC):
         stream.close()
 
 
+class DummyStream:
+    peer = None
+
+    def close(self):
+        return
+
+
 class RPCSocketClient(TCPClient):
     outbound_streams = {}
     outbound_pending = {}
@@ -155,7 +191,7 @@ class RPCSocketClient(TCPClient):
                 self.config.app_log.info('new {} peer is valid'.format(peer.__class__.__name__))
             except:
                 self.config.app_log.warning('invalid peer identity signature')
-                stream.close()
+                await self.remove_peer(stream)
                 return
             if id_attr in self.outbound_pending[peer.__class__.__name__]:
                 del self.outbound_pending[peer.__class__.__name__][id_attr]
@@ -163,12 +199,20 @@ class RPCSocketClient(TCPClient):
             self.config.app_log.info('Connected to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
             return stream
         except StreamClosedError:
-            if hasattr(stream, 'peer'):
-                await self.remove_peer(stream)
+            if not stream:
+                stream = DummyStream()
+
+            stream.peer = peer
+
+            await self.remove_peer(stream)
             self.config.app_log.warning('Streamed closed for {}: {}'.format(peer.__class__.__name__, peer.to_json()))
         except TimeoutError:
-            if hasattr(stream, 'peer'):
-                await self.remove_peer(stream)
+            if not stream:
+                stream = DummyStream()
+
+            stream.peer = peer
+
+            await self.remove_peer(stream)
             self.config.app_log.warning('Timeout connecting to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
 
     async def wait_for_data(self, stream):
@@ -181,13 +225,15 @@ class RPCSocketClient(TCPClient):
                             del stream.message_queue[REQUEST_RESPONSE_MAP[body['method']]][body['id']]
                 if hasattr(stream, 'peer'):
                     self.config.app_log.debug(f'RECEIVED {stream.peer.host} {body["method"]} {body}')
-                    id_attr = getattr(stream.peer, stream.peer.id_attribute)
-                    if id_attr not in self.outbound_streams[stream.peer.__class__.__name__]:
-                        await self.remove_peer(stream)
+                else:
+                    stream.close()
                 stream.last_activity = int(time.time())
                 await getattr(self, body.get('method'))(body, stream)
             except StreamClosedError:
-                del self.outbound_streams[stream.peer.__class__.__name__][stream.peer.rid]
+                if hasattr(stream, 'peer'):
+                    await self.remove_peer(stream)
+                else:
+                    stream.close()
                 break
 
     async def remove_peer(self, stream):
