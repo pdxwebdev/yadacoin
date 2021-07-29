@@ -186,7 +186,7 @@ class NodeApplication(Application):
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
                                 del self.config.nodeServer.retry_messages[x]
-                                await self.config.nodeServer.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
+                                await self.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
                                 await self.config.nodeShared.write_result(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message, x[3])
@@ -202,7 +202,7 @@ class NodeApplication(Application):
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
                                 del self.config.nodeClient.retry_messages[x]
-                                await self.config.nodeClient.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
+                                await self.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
                                 await self.config.nodeShared.write_result(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message, x[3])
@@ -213,6 +213,22 @@ class NodeApplication(Application):
 
             except Exception as e:
                 self.config.app_log.error(format_exc())
+
+    async def remove_peer(self, stream):
+        id_attr = getattr(stream.peer, stream.peer.id_attribute)
+        if id_attr in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]:
+            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][id_attr]
+
+        if id_attr in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]:
+            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][id_attr]
+
+        if id_attr in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]:
+            del self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__][id_attr]
+
+        if id_attr in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]:
+            del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][id_attr]
+
+        stream.close()
 
     async def background_block_inserter(self):
         while True:
