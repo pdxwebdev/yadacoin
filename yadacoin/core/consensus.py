@@ -140,7 +140,7 @@ class Consensus(object):
         if last_latest:
             if self.latest_block.index > last_latest.index:
                 self.app_log.info('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
-
+        self.config.health.consensus.last_activity = time()
         latest_consensus = await self.mongo.async_db.consensus.find_one({
             'index': self.latest_block.index + 1,
             'block.version': CHAIN.get_version_for_height(self.latest_block.index + 1),
@@ -165,7 +165,9 @@ class Consensus(object):
                     continue
                 stream = await self.config.peer.get_peer_by_id(record['peer']['rid'])
                 if stream and hasattr(stream, 'peer') and stream.peer.authenticated:
-                    self.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
+                    await self.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
+
+            return True
         else:
             #  this path is for syncing only.
             #  Stack:
@@ -193,6 +195,7 @@ class Consensus(object):
                 peer.close()
             except Exception as e:
                 self.config.app_log.warning(e)
+            self.config.health.consensus.last_activity = time()
     
     async def request_blocks(self, peer):
         await self.config.nodeShared.write_params(peer, 'getblocks', {
@@ -282,7 +285,7 @@ class Consensus(object):
         return backward_blocks, status
     
     async def integrate_block_with_existing_chain(self, block: Block, stream):
-        self.app_log.warning('integrate_block_with_existing_chain')
+        self.app_log.debug('integrate_block_with_existing_chain')
         backward_blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
 
         if not status:
@@ -336,7 +339,7 @@ class Consensus(object):
             stream.syncing = False
 
     async def insert_block(self, block, stream):
-        self.app_log.warning('insert_block')
+        self.app_log.debug('insert_block')
         try:
             await self.mongo.async_db.blocks.delete_many({'index': {"$gte": block.index}})
 
@@ -392,10 +395,15 @@ class ProcessingQueueItem:
 
 class ProcessingQueue:
     def __init__(self):
-        self.queue = []
+        self.queue = {}
 
-    def add(self, item: ProcessingQueueItem):
-        self.queue.append(item)
+    async def add(self, item: ProcessingQueueItem):
+        first_block = await item.blockchain.first_block
+        final_block = await item.blockchain.final_block
+        self.queue.setdefault((first_block.hash, final_block.hash), item)
 
     def pop(self):
-        return self.queue.pop() if self.queue else None
+        if not self.queue:
+            return None
+        key, value = self.queue.popitem()
+        return value

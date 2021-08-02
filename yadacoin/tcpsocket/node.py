@@ -160,7 +160,7 @@ class NodeRPC(BaseRPC):
             return
 
         await self.config.consensus.insert_consensus_block(block, stream.peer)
-        self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
+        await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
 
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:
@@ -314,7 +314,7 @@ class NodeRPC(BaseRPC):
             self.config.consensus.syncing = False
             return False
 
-        self.config.consensus.block_queue.add(ProcessingQueueItem(inbound_blockchain, stream))
+        await self.config.consensus.block_queue.add(ProcessingQueueItem(inbound_blockchain, stream))
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
@@ -341,7 +341,7 @@ class NodeRPC(BaseRPC):
             return
 
         await self.config.consensus.insert_consensus_block(block, stream.peer)
-        self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
+        await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
 
         if stream.peer.protocol_version > 1:
             await self.write_result(

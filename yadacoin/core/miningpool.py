@@ -179,7 +179,6 @@ class MiningPool(object):
             await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok')
-            self.app_log.error('^^ ^^ ^^')
 
             return {
                 'hash': block_candidate.hash,
@@ -210,7 +209,6 @@ class MiningPool(object):
             await self.accept_block(block_candidate)
             # Conversion to dict is important, or the object may change
             self.app_log.debug('block ok - special_min')
-            self.app_log.error('^^ ^^ ^^')
 
             return {
                 'hash': block_candidate.hash,
@@ -452,7 +450,7 @@ class MiningPool(object):
 
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 
-        self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block)))
+        await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block)))
 
         await self.config.nodeShared.send_block(block)
 

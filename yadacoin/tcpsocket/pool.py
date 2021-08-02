@@ -96,11 +96,13 @@ class StratumServer(RPCSocketServer):
         , upsert=True)
 
     @classmethod
-    async def remove_peer(self, stream):
+    async def remove_peer(cls, stream):
+        stream.close()
+        if not hasattr(stream, 'peer'):
+            return
         if stream.peer.address in StratumServer.inbound_streams[Miner.__name__]:
             del StratumServer.inbound_streams[Miner.__name__][stream.peer.address]
         await StratumServer.update_miner_count()
-        stream.close()
 
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template()

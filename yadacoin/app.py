@@ -51,6 +51,7 @@ from yadacoin.core.peer import (
     Peer, Seed, SeedGateway, ServiceProvider, User, Miner, Peers, Group
 )
 from yadacoin.core.identity import Identity
+from yadacoin.core.health import Health
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
@@ -75,6 +76,7 @@ define("config", default='config/config.json', help="Config file location, defau
 define("verify", default=False, help="Verify chain, default False", type=bool)
 define("server", default=False, help="Is server for testing", type=bool)
 define("client", default=False, help="Is client for testing", type=bool)
+
 
 class NodeApplication(Application):
 
@@ -118,7 +120,7 @@ class NodeApplication(Application):
                 while again:
                     again = await self.config.consensus.sync_bottom_up()
 
-                await tornado.gen.sleep(3)
+                await tornado.gen.sleep(30)
 
             except Exception as e:
                 self.config.app_log.error(format_exc())
@@ -128,6 +130,7 @@ class NodeApplication(Application):
         while True:
             try:
                 await self.config.peer.ensure_peers_connected()
+                self.config.health.peer.last_activity = int(time())
             except:
                 self.config.app_log.error(format_exc())
 
@@ -138,7 +141,9 @@ class NodeApplication(Application):
         while True:
             try:
                 status = await self.config.get_status()
-                self.config.app_log.info(json.dumps(status))
+                await self.config.health.check_health()
+                status['health'] = self.config.health.to_dict()
+                self.config.app_log.info(json.dumps(status, indent=4))
                 self.config.status_busy = False
             except Exception as e:
                 self.config.app_log.error(format_exc())
@@ -178,7 +183,9 @@ class NodeApplication(Application):
         while True:
             try:
                 for x in list(self.config.nodeServer.retry_messages):
-                    message = self.config.nodeServer.retry_messages[x]
+                    message = self.config.nodeServer.retry_messages.get(x)
+                    if not message:
+                        continue
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
@@ -194,7 +201,9 @@ class NodeApplication(Application):
                                 await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
                 for x in list(self.config.nodeClient.retry_messages):
-                    message = self.config.nodeClient.retry_messages[x]
+                    message = self.config.nodeClient.retry_messages.get(x)
+                    if not message:
+                        continue
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
@@ -215,6 +224,9 @@ class NodeApplication(Application):
                 self.config.app_log.error(format_exc())
 
     async def remove_peer(self, stream):
+        stream.close()
+        if not hasattr(stream, 'peer'):
+            return
         id_attr = getattr(stream.peer, stream.peer.id_attribute)
         if id_attr in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]:
             del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][id_attr]
@@ -227,8 +239,6 @@ class NodeApplication(Application):
 
         if id_attr in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]:
             del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][id_attr]
-
-        stream.close()
 
     async def background_block_inserter(self):
         while True:
@@ -395,8 +405,8 @@ class NodeApplication(Application):
             self.config.pp = PoolPayer()
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_pool_payer)
-
-        tornado.ioloop.IOLoop.current().start()
+        while True:
+            tornado.ioloop.IOLoop.current().start()
 
     def init_jwt(self):
         jwt_key = EccKey(curve='p256', d=int(self.config.private_key, 16))
@@ -478,18 +488,20 @@ class NodeApplication(Application):
         )
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
-        self.listen(self.config.serve_port, self.config.serve_host)
+        self.config.application = self
+        self.config.http_server = tornado.httpserver.HTTPServer(self)
+        self.config.http_server.listen(self.config.serve_port, self.config.serve_host)
         if self.config.ssl:
             ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.get('cafile'))
             ssl_ctx.load_cert_chain(self.config.ssl.get('certfile'), keyfile=self.config.ssl.get('keyfile'))
-            http_server = tornado.httpserver.HTTPServer(self, ssl_options=ssl_ctx)
-            http_server.listen(self.config.ssl['port'])
+            self.config.https_server = tornado.httpserver.HTTPServer(self, ssl_options=ssl_ctx)
+            self.config.https_server.listen(self.config.ssl['port'])
 
     def init_pool(self):
         self.config.app_log.info("Pool: {}:{}".format(self.config.peer_host, self.config.stratum_pool_port))
         StratumServer.inbound_streams[Miner.__name__] = {}
-        self.config.poolServer = StratumServer()
-        self.config.poolServer.listen(self.config.stratum_pool_port)
+        self.config.pool_server = StratumServer()
+        self.config.pool_server.listen(self.config.stratum_pool_port)
 
     def init_peer(self):
         Peer.create_upnp_mapping(self.config)
@@ -525,6 +537,7 @@ class NodeApplication(Application):
             self.config.peer = User.from_dict(my_peer, is_me=True)
 
     def init_config_properties(self):
+        self.config.health = Health()
         self.config.mongo = Mongo()
         self.config.http_client = AsyncHTTPClient()
         self.config.BU = yadacoin.core.blockchainutils.BlockChainUtils()
@@ -552,9 +565,9 @@ class NodeApplication(Application):
                     self.config.nodeServer.inbound_pending[x.__name__] = {}
                 if x.__name__ not in self.config.nodeServer.inbound_streams:
                     self.config.nodeServer.inbound_streams[x.__name__] = {}
-            server = self.config.nodeServer()
-            server.bind(self.config.peer_port, family=socket.AF_INET)
-            server.start(1)
+            self.config.node_server_instance = self.config.nodeServer()
+            self.config.node_server_instance.bind(self.config.peer_port, family=socket.AF_INET)
+            self.config.node_server_instance.start(1)
 
         self.config.websocketServer = RCPWebSocketServer
         self.config.app_log = logging.getLogger('tornado.application')

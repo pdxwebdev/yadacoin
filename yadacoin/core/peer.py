@@ -1,6 +1,7 @@
 import json
 import hashlib
 import time
+import tornado.ioloop
 from collections import OrderedDict
 from logging import getLogger
 
@@ -111,6 +112,38 @@ class Peer:
     async def get_outbound_peers(self):
         raise NotImplementedError()
 
+    async def get_inbound_streams(self):
+        raise NotImplementedError()
+
+    async def get_outbound_streams(self):
+        raise NotImplementedError()
+
+    async def get_inbound_pending(self):
+        raise NotImplementedError()
+
+    async def get_outbound_pending(self):
+        raise NotImplementedError()
+
+    async def get_all_inbound_streams(self):
+        return (
+            await self.get_inbound_streams() +
+            await self.get_inbound_pending()
+        )
+
+    async def get_all_outbound_streams(self):
+        return (
+            await self.get_outbound_streams() +
+            await self.get_outbound_pending()
+        )
+
+    async def get_all_streams(self):
+        return (
+            await self.get_inbound_streams() +
+            await self.get_outbound_streams() +
+            await self.get_inbound_pending() +
+            await self.get_outbound_pending()
+        )
+
     async def calculate_seed_gateway(self, nonce=None):
         if self.__class__ not in [Group, ServiceProvider]:
             raise Exception('Should not calculate a seed gateway for anything other than groups or service providers')
@@ -146,9 +179,6 @@ class Peer:
         outbound_class = await self.get_outbound_class()
         limit = self.__class__.type_limit(outbound_class)
         streams = self.config.nodeClient.outbound_streams[outbound_class.__name__].items()
-        for idx, stream in streams:
-            if (int(time.time()) - stream.last_activity) > 600:
-                stream.close()
 
         stream_collection = {**self.config.nodeClient.outbound_streams[outbound_class.__name__], **self.config.nodeClient.outbound_pending[outbound_class.__name__]}
         await self.connect(stream_collection, limit, peers)
@@ -156,7 +186,7 @@ class Peer:
     async def connect(self, stream_collection, limit, peers):
         if limit and len(stream_collection) < limit:
             for peer in set(peers) - set(stream_collection):
-                await self.config.nodeClient.connect(peers[peer])
+                tornado.ioloop.IOLoop.current().spawn_callback(self.config.nodeClient.connect, peers[peer])
 
     def to_dict(self):
         return {
@@ -198,6 +228,14 @@ class Seed(Peer):
         if self.config.username_signature in self.config.seeds:
             del self.config.seeds[self.config.username_signature]
         return self.config.seeds
+
+    async def get_inbound_peers(self):
+        if self.config.username_signature in self.config.seeds:
+            del self.config.seeds[self.config.username_signature]
+        peers = {}
+        peers.update(self.config.seeds)
+        peers.update({self.config.seed_gateways[self.seed_gateway].identity.username_signature: self.config.seed_gateways[self.seed_gateway]})
+        return peers
 
     @classmethod
     def type_limit(cls, peer):
@@ -302,6 +340,24 @@ class Seed(Peer):
             return True
         return False
 
+    async def get_inbound_streams(self):
+        return list(
+            self.config.nodeServer.inbound_streams[Seed.__name__].values() +
+            self.config.nodeServer.inbound_streams[ServiceProvider.__name__].values()
+        )
+
+    async def get_outbound_streams(self):
+        return list(self.config.nodeClient.outbound_streams[Seed.__name__].values())
+
+    async def get_inbound_pending(self):
+        return list(
+            self.config.nodeServer.inbound_pending[Seed.__name__].values() +
+            self.config.nodeServer.inbound_pending[ServiceProvider.__name__].values()
+        )
+
+    async def get_outbound_pending(self):
+        return list(self.config.nodeClient.outbound_pending[Seed.__name__].values())
+
 
 class SeedGateway(Peer):
     id_attribute = 'rid'
@@ -314,6 +370,21 @@ class SeedGateway(Peer):
 
     async def get_outbound_peers(self):
         return {self.config.seeds[self.seed].identity.username_signature: self.config.seeds[self.seed]}
+
+    async def get_inbound_peers(self):
+        return {}
+
+    async def get_inbound_streams(self):
+        return list(self.config.nodeServer.inbound_streams[ServiceProvider.__name__].values())
+
+    async def get_outbound_streams(self):
+        return list(self.config.nodeClient.outbound_streams[Seed.__name__].values())
+
+    async def get_inbound_pending(self):
+        return list(self.config.nodeServer.inbound_pending[ServiceProvider.__name__].values())
+
+    async def get_outbound_pending(self):
+        return list(self.config.nodeClient.outbound_pending[Seed.__name__].values())
 
     @classmethod
     def type_limit(cls, peer):
@@ -365,6 +436,8 @@ class SeedGateway(Peer):
             return self.config.nodeClient.outbound_streams[Seed.__name__].get(id_attr)
 
     def is_linked_peer(self, peer):
+        if self.seed == peer.identity.username_signature:
+            return True
         return False
 
 
@@ -383,6 +456,18 @@ class ServiceProvider(Peer):
         if not seed_gateway:
             return None
         return {seed_gateway.identity.username_signature: seed_gateway}
+
+    async def get_inbound_streams(self):
+        return list(self.config.nodeServer.inbound_streams[User.__name__].values())
+
+    async def get_outbound_streams(self):
+        return list(self.config.nodeClient.outbound_streams[SeedGateway.__name__].values())
+
+    async def get_inbound_pending(self):
+        return list(self.config.nodeServer.inbound_pending[User.__name__].values())
+
+    async def get_outbound_pending(self):
+        return list(self.config.nodeClient.outbound_pending[SeedGateway.__name__].values())
 
     @classmethod
     def type_limit(cls, peer):
@@ -528,6 +613,18 @@ class User(Peer):
 
     async def get_outbound_peers(self):
         return self.config.service_providers
+
+    async def get_inbound_streams(self):
+        return list(self.config.nodeServer.inbound_streams[User.__name__].values())
+
+    async def get_outbound_streams(self):
+        return list(self.config.nodeClient.outbound_streams[ServiceProvider.__name__].values())
+
+    async def get_inbound_pending(self):
+        return list(self.config.nodeServer.inbound_pending[User.__name__].values())
+
+    async def get_outbound_pending(self):
+        return list(self.config.nodeClient.outbound_pending[ServiceProvider.__name__].values())
 
     @classmethod
     def type_limit(cls, peer):
