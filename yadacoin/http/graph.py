@@ -225,6 +225,8 @@ class GraphTransactionHandler(BaseGraphHandler):
                     'newtxn',
                     {'transaction': x.to_dict()}
                 )
+                if peer_stream.peer.protocol_version > 1:
+                    self.config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', x.transaction_signature)] = {'transaction': x.to_dict()}
 
         return self.render_as_json(items)
 
