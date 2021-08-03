@@ -354,8 +354,8 @@ class Seed(Peer):
 
     async def get_inbound_streams(self):
         return list(
-            self.config.nodeServer.inbound_streams[Seed.__name__].values() +
-            self.config.nodeServer.inbound_streams[ServiceProvider.__name__].values()
+            list(self.config.nodeServer.inbound_streams[Seed.__name__].values()) +
+            list(self.config.nodeServer.inbound_streams[ServiceProvider.__name__].values())
         )
 
     async def get_outbound_streams(self):
@@ -363,8 +363,8 @@ class Seed(Peer):
 
     async def get_inbound_pending(self):
         return list(
-            self.config.nodeServer.inbound_pending[Seed.__name__].values() +
-            self.config.nodeServer.inbound_pending[ServiceProvider.__name__].values()
+            list(self.config.nodeServer.inbound_pending[Seed.__name__].values()) +
+            list(self.config.nodeServer.inbound_pending[ServiceProvider.__name__].values())
         )
 
     async def get_outbound_pending(self):
