@@ -112,6 +112,8 @@ class NodeRPC(BaseRPC):
         except:
             return
 
+        await self.config.mongo.async_db.miner_transactions.insert_one(txn.to_dict())
+
         if stream.peer.protocol_version > 2:
             await self.write_result(
                 stream,
