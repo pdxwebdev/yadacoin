@@ -128,6 +128,8 @@ class NodeRPC(BaseRPC):
                 'newtxn',
                 payload
             )
+            if peer_stream.peer.protocol_version > 1:
+                self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = body.get('params', {})
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get('result', {})

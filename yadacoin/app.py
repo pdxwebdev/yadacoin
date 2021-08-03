@@ -143,7 +143,10 @@ class NodeApplication(Application):
                 status = await self.config.get_status()
                 await self.config.health.check_health()
                 status['health'] = self.config.health.to_dict()
-                self.config.app_log.info(json.dumps(status, indent=4))
+                if status['health']['status']:
+                    self.config.app_log.info(json.dumps(status, indent=4))
+                else:
+                    self.config.app_log.warning(json.dumps(status, indent=4))
                 self.config.status_busy = False
             except Exception as e:
                 self.config.app_log.error(format_exc())
@@ -173,6 +176,7 @@ class NodeApplication(Application):
                         ).strftime("%Y-%m-%d %H:%M:%S")
                     ))
 
+                self.config.health.block_checker.last_activity = int(time())
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
@@ -218,6 +222,7 @@ class NodeApplication(Application):
                             else:
                                 await self.config.nodeShared.write_params(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message)
 
+                self.config.health.message_sender.last_activity = int(time())
                 await tornado.gen.sleep(10)
 
             except Exception as e:
@@ -244,6 +249,7 @@ class NodeApplication(Application):
         while True:
             try:
                 await self.config.consensus.process_block_queue()
+                self.config.health.block_inserter.last_activity = int(time())
             except:
                 self.config.app_log.error(format_exc())
 
@@ -260,6 +266,8 @@ class NodeApplication(Application):
             try:
                 if self.config.pp:
                     await self.config.pp.do_payout()
+
+                self.config.health.pool_payer.last_activity = int(time())
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
@@ -311,6 +319,8 @@ class NodeApplication(Application):
                         else:
                             if txn['cache_time'] > self.cache_last_times[cache_collection]:
                                 self.cache_last_times[cache_collection] = txn['cache_time']
+
+                self.config.health.cache_validator.last_activity = int(time())
             except Exception as e:
                 self.config.app_log.error("error in background_cache_validator")
                 self.config.app_log.error(format_exc())
@@ -553,14 +563,14 @@ class NodeApplication(Application):
             self.config.nodeShared = NodeRPC()
             self.config.nodeClient = NodeSocketClient()
 
-            for x in [Seed, SeedGateway, ServiceProvider, User]:
+            for x in [Seed, SeedGateway, ServiceProvider, User, Miner]:
                 if x.__name__ not in self.config.nodeClient.outbound_streams:
                     self.config.nodeClient.outbound_ignore[x.__name__] = {}
                 if x.__name__ not in self.config.nodeClient.outbound_streams:
                     self.config.nodeClient.outbound_pending[x.__name__] = {}
                 if x.__name__ not in self.config.nodeClient.outbound_streams:
                     self.config.nodeClient.outbound_streams[x.__name__] = {}
-            for x in [Seed, SeedGateway, ServiceProvider, User]:
+            for x in [Seed, SeedGateway, ServiceProvider, User, Miner]:
                 if x.__name__ not in self.config.nodeServer.inbound_pending:
                     self.config.nodeServer.inbound_pending[x.__name__] = {}
                 if x.__name__ not in self.config.nodeServer.inbound_streams:

@@ -311,13 +311,14 @@ class Consensus(object):
 
         if not await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
             final_block = await inbound_blockchain.final_block
-            await self.config.nodeShared.write_params(
-                stream,
-                'getblock',
-                {
-                    'index': final_block.index + 1
-                }
-            )
+            if stream:
+                await self.config.nodeShared.write_params(
+                    stream,
+                    'getblock',
+                    {
+                        'index': final_block.index + 1
+                    }
+                )
             return
 
         await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)

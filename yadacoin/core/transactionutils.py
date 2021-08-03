@@ -104,5 +104,14 @@ class TU(object):  # Transaction Utilities
 
         if not dry_run:
             await config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
-
+            async for peer_stream in config.peer.get_sync_peers():
+                await config.nodeShared.write_params(
+                    peer_stream,
+                    'newtxn',
+                    {
+                        'transaction': transaction.to_dict()
+                    }
+                )
+                if peer_stream.peer.protocol_version > 1:
+                    config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', transaction.transaction_signature)] = {'transaction': transaction.to_dict()}
         return transaction.to_dict()

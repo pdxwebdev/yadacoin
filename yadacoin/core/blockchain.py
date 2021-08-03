@@ -144,7 +144,7 @@ class Blockchain(object):
         async for transaction in Blockchain.get_txns(block.transactions):
             if extra_blocks:
                 transaction.extra_blocks = extra_blocks
-            config.app_log.warning('verifying txn: {} block: {}'.format(i, block.index))
+            config.app_log.info('verifying txn: {} block: {}'.format(i, block.index))
             i += 1
             try:
                 await transaction.verify()
@@ -207,19 +207,19 @@ class Blockchain(object):
 
         checks_passed = False
         if (block.index >= CHAIN.BLOCK_V5_FORK) and int(block.little_hash(), 16) < target:
-            config.app_log.warning('5')
+            config.app_log.debug('5')
             checks_passed = True
         elif (int(block.hash, 16) < target):
-            config.app_log.warning('6')
+            config.app_log.debug('6')
             checks_passed = True
         elif (block.special_min and int(block.hash, 16) < special_target):
-            config.app_log.warning('7')
+            config.app_log.debug('7')
             checks_passed = True
         elif (block.special_min and block.index < 35200):
-            config.app_log.warning('8')
+            config.app_log.debug('8')
             checks_passed = True
         elif (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time):
-            config.app_log.warning('9')
+            config.app_log.debug('9')
             checks_passed = True
         else:
             config.app_log.warning("Integrate block error - target too high, possible fork")

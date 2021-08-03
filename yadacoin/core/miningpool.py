@@ -137,7 +137,6 @@ class MiningPool(object):
           )
         ):
             # submit share only now, not to slow down if we had a block
-            self.app_log.warning('{} {}'.format(hash1, address))
             await self.mongo.async_db.shares.update_one(
                 {
                     'hash': block_candidate.hash

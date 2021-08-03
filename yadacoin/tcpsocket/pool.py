@@ -31,6 +31,10 @@ class StratumServer(RPCSocketServer):
     current_header = ''
     config = None
 
+    def __init__(self):
+        super(StratumServer, self).__init__()
+        self.config = get_config()
+
     @classmethod
     async def block_checker(cls):
         if not cls.config:
