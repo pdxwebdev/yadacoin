@@ -99,11 +99,6 @@ class Config(object):
         if self.mp:
             await self.mp.refresh()
 
-    def debug_log(self, string: str):
-        # Helper to write temp string to a debug file
-        with open("debug.log", "a") as fp:
-            fp.write(str(int(time())) + ' - ' + string + "\n")
-
     async def get_status(self):
         pool_status = 'N/A'
         if hasattr(self, 'poolServer'):

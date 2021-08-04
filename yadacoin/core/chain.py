@@ -203,11 +203,12 @@ class CHAIN(object):
     
     @classmethod
     async def get_target_10min(
-        self,
+        cls,
         last_block,  # This is the latest on chain block we have in db
         block,  # This is the block we are currently mining, not on chain yet, with current time in it.
         extra_blocks=None
     ):
+        cls.config = get_config()
         if extra_blocks is None:
             extra_blocks = []
         from yadacoin.core.block import Block
@@ -218,7 +219,7 @@ class CHAIN(object):
         target_time = 10 * 60  # 10 min
         # That should not happen
         if int(block.time) - int(last_block.time) > 3600:
-            get_config().debug_log("Block time over max. Max target set.")
+            cls.config.app_log.debug("Block time over max. Max target set.")
             return int(max_target)
         # decrease after 2x target - can be 3 as well
         current_block_time = int(block.time) - int(last_block.time)
@@ -305,8 +306,8 @@ class CHAIN(object):
             if adjusted > target:
                 target = adjusted
 
-        get_config().debug_log("average block time {}".format(average_block_time))
-        get_config().debug_log("average target {:02x} target {:02x}".format(int(average_target), int(target)))
+        cls.config.app_log.debug("average block time {}".format(average_block_time))
+        cls.config.app_log.debug("average target {:02x} target {:02x}".format(int(average_target), int(target)))
         if target < 1:
             target = 1
             block.special_min = False
@@ -318,6 +319,7 @@ class CHAIN(object):
     @classmethod
     async def get_target(cls, height, last_block, block, extra_blocks=None) -> int:
         from yadacoin.core.block import Block
+        cls.config = get_config()
         # change target
         max_target = CHAIN.MAX_TARGET
         if get_config().network in ['regnet', 'testnet']:
@@ -336,7 +338,7 @@ class CHAIN(object):
             max_seconds = CHAIN.MAX_SECONDS_V2  # seconds
             min_seconds = CHAIN.MIN_SECONDS_V2  # seconds
         if height > 0 and height % retarget_period == 0:
-            get_config().debug_log(
+            cls.config.app_log.debug(
                 "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
             block_data = get_config().BU.get_block_by_index(height - retarget_period)
             block_from_2016_ago = None
@@ -350,18 +352,18 @@ class CHAIN(object):
                 if not block_from_2016_ago:
                     return False
 
-            get_config().debug_log(
+            cls.config.app_log.debug(
                 "Block_from_2016_ago - block {}/time {}".format(block_from_2016_ago.index, block_from_2016_ago.time))
             two_weeks_ago_time = block_from_2016_ago.time
             elapsed_time_from_2016_ago = int(last_block.time) - int(two_weeks_ago_time)
-            get_config().debug_log("elapsed_time_from_2016_ago {} s {} days".format(int(elapsed_time_from_2016_ago), elapsed_time_from_2016_ago/(60*60*24)))
+            cls.config.app_log.debug("elapsed_time_from_2016_ago {} s {} days".format(int(elapsed_time_from_2016_ago), elapsed_time_from_2016_ago/(60*60*24)))
             # greater than two weeks?
             if elapsed_time_from_2016_ago > max_seconds:
                 time_for_target = max_seconds
-                get_config().debug_log("gt max")
+                cls.config.app_log.debug("gt max")
             elif elapsed_time_from_2016_ago < min_seconds:
                 time_for_target = min_seconds
-                get_config().debug_log("lt min")
+                cls.config.app_log.debug("lt min")
             else:
                 time_for_target = int(elapsed_time_from_2016_ago)
 
@@ -369,7 +371,7 @@ class CHAIN(object):
 
             start_index = last_block.index
 
-            get_config().debug_log("start_index {}".format(start_index))
+            cls.config.app_log.debug("start_index {}".format(start_index))
             if block_to_check.special_min or block_to_check.target == max_target or not block_to_check.target:
                 block_data = await get_config().mongo.async_db.blocks.find_one({
                     '$and': [
@@ -396,10 +398,10 @@ class CHAIN(object):
                         return False
 
             target = block_to_check.target
-            get_config().debug_log("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
+            cls.config.app_log.debug("start_index2 {}, target {}".format(block_to_check.index, hex(int(target))[2:].rjust(64, '0')))
 
             new_target = int((time_for_target * target) / max_seconds)
-            get_config().debug_log("new_target {}".format(hex(int(new_target))[2:].rjust(64, '0')))
+            cls.config.app_log.debug("new_target {}".format(hex(int(new_target))[2:].rjust(64, '0')))
 
             if new_target > max_target:
                 target = max_target
