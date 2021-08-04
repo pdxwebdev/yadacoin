@@ -101,8 +101,8 @@ class Config(object):
 
     async def get_status(self):
         pool_status = 'N/A'
-        if hasattr(self, 'poolServer'):
-            pool_status = await self.poolServer.status()
+        if hasattr(self, 'pool_server'):
+            pool_status = await self.pool_server.status()
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
         num_peers = 0
