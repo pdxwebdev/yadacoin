@@ -54,6 +54,10 @@ class TCPClientHealth(HealthItem):
 
     async def check_health(self):
 
+        streams = await self.config.peer.get_all_outbound_streams()
+        if not streams:
+            return self.report_status(True, ignore=True)
+
         if time.time() - self.last_activity > self.timeout:
 
             self.report_bad_health('TCP Client health check failed')
