@@ -324,6 +324,7 @@ class Consensus(object):
         await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)
 
     async def integrate_blocks_with_existing_chain(self, blockchain, stream):
+        self.app_log.debug('integrate_blocks_with_existing_chain')
         extra_blocks = [x async for x in blockchain.blocks]
         prev_block = None
         async for block in blockchain.blocks:

@@ -173,7 +173,7 @@ class Blockchain(object):
                         txn = await transaction.find_in_extra_blocks(x)
                         if not txn:
                             failed = True
-                    is_input_spent = await config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index)
+                    is_input_spent = await config.BU.is_input_spent(x.id, transaction.public_key, from_index=block.index, extra_blocks=extra_blocks)
                     if is_input_spent:
                         failed = True
                     if x.id in used_ids_in_this_txn:
@@ -183,6 +183,7 @@ class Blockchain(object):
                     used_inputs[(x.id, transaction.public_key)] = transaction
                     used_ids_in_this_txn.append(x.id)
                 if failed and block.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
+                    config.app_log.warning(f'double spend detected {block.index} {transaction.public_key} {x.id}')
                     return False
                 elif failed and block.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
                     continue

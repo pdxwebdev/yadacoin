@@ -497,7 +497,8 @@ class BlockChainUtils(object):
       give_block=False,
       include_fastgraph=False,
       inc_mempool=False,
-      from_index=None
+      from_index=None,
+      extra_blocks=None
     ):
         from yadacoin.core.transaction import Transaction
         if not isinstance(input_ids, list):
@@ -529,12 +530,23 @@ class BlockChainUtils(object):
             }
         ]
         if from_index:
+            self.config.app_log.debug(f'from_index {from_index}')
             query.insert(0, {
                 '$match': {
                     "index": {'$lt': from_index}
                 }
             })
         async for x in self.mongo.async_db.blocks.aggregate(query, allowDiskUse=True):
+            if extra_blocks:
+                for block in extra_blocks:
+                    if block.index == x['index']:
+                        for txn in block.transactions:
+                            for txn_input in txn.inputs:
+                                for input_id in input_ids:
+                                    self.config.app_log.debug(f'{input_id} {txn_input.id}')
+                                    if input_id == txn_input.id:
+                                        return True
+                return False
             return True
         
         if inc_mempool:
