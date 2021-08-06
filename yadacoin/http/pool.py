@@ -43,7 +43,8 @@ class PoolHashRateHandler(BaseHandler):
 
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):
-        await self.config.pp.do_payout({'index': 0})
+        start_index = self.get_query_argument('start_index')
+        await self.config.pp.do_payout({'index': int(start_index)})
         self.render_as_json({'status': True})
 
 
