@@ -41,8 +41,15 @@ class PoolHashRateHandler(BaseHandler):
         self.render_as_json({'miner_hashrate': int(miner_hashrate)})
 
 
+class PoolScanMissedPayoutsHandler(BaseHandler):
+    async def get(self):
+        await self.config.pp.do_payout()
+        self.render_as_json({'status': True})
+
+
 POOL_HANDLERS = [
     (r'/shares-for-address', PoolSharesHandler),
     (r'/payouts-for-address', PoolPayoutsHandler),
     (r'/hashrate-for-address', PoolHashRateHandler),
+    (r'/scan-missed-payouts', PoolScanMissedPayoutsHandler),
 ]
