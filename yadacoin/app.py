@@ -116,11 +116,11 @@ class NodeApplication(Application):
     async def background_consensus(self):
         while True:
             try:
-                again = True
-                while again:
-                    again = await self.config.consensus.sync_bottom_up()
-
-                await tornado.gen.sleep(30)
+                if self.config.consensus.block_queue.queue:
+                    await tornado.gen.sleep(3)
+                    continue
+                await self.config.consensus.sync_bottom_up()
+                await tornado.gen.sleep(3)
 
             except Exception as e:
                 self.config.app_log.error(format_exc())

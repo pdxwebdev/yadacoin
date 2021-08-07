@@ -86,9 +86,23 @@ class Consensus(object):
             self.config.BU.latest_block = None
 
     async def process_block_queue(self):
-        item = self.block_queue.pop()
+        item = await self.block_queue.pop()
 
         if not item:
+            return
+
+        first_block = await item.blockchain.first_block
+        final_block = await item.blockchain.final_block
+
+        first_existing = await self.mongo.async_db.blocks.find_one({
+            'hash': first_block.hash,
+        })
+
+        final_existing = await self.mongo.async_db.blocks.find_one({
+            'hash': final_block.hash,
+        })
+
+        if first_existing and final_existing:
             return
 
         count = await item.blockchain.count
@@ -398,14 +412,20 @@ class ProcessingQueueItem:
 class ProcessingQueue:
     def __init__(self):
         self.queue = {}
+        self.last_popped = ()
 
     async def add(self, item: ProcessingQueueItem):
         first_block = await item.blockchain.first_block
         final_block = await item.blockchain.final_block
+        if (first_block.hash, final_block.hash) == self.last_popped:
+            return
         self.queue.setdefault((first_block.hash, final_block.hash), item)
 
-    def pop(self):
+    async def pop(self):
         if not self.queue:
             return None
-        key, value = self.queue.popitem()
-        return value
+        key, item = self.queue.popitem()
+        first_block = await item.blockchain.first_block
+        final_block = await item.blockchain.final_block
+        self.last_popped = (first_block.hash, final_block.hash)
+        return item
