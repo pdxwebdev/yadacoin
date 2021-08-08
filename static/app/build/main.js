@@ -1365,7 +1365,7 @@ var SendReceive = /** @class */ (function () {
                 .subscribe(function (res) {
                 _this.sentPendingLoading = false;
                 _this.past_sent_pending_transactions = res.json()['past_pending_transactions'].sort(_this.sortFunc);
-                _this.getOutputValue(_this.past_sent_pending_transactions);
+                _this.getSentOutputValue(_this.past_sent_pending_transactions);
                 _this.past_sent_pending_page_cache[_this.sentPendingPage] = _this.past_sent_pending_transactions;
                 resolve(res);
             }, function (err) {
@@ -1382,7 +1382,7 @@ var SendReceive = /** @class */ (function () {
                 .subscribe(function (res) {
                 _this.sentLoading = false;
                 _this.past_sent_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
-                _this.getOutputValue(_this.past_sent_transactions);
+                _this.getSentOutputValue(_this.past_sent_transactions);
                 _this.past_sent_page_cache[_this.sentPage] = _this.past_sent_transactions;
                 resolve(res);
             }, function (err) {
@@ -1399,7 +1399,7 @@ var SendReceive = /** @class */ (function () {
                 .subscribe(function (res) {
                 _this.receivedPendingLoading = false;
                 _this.past_received_pending_transactions = res.json()['past_pending_transactions'].sort(_this.sortFunc);
-                _this.getOutputValue(_this.past_received_pending_transactions);
+                _this.getReceivedOutputValue(_this.past_received_pending_transactions);
                 _this.past_received_pending_page_cache[_this.receivedPendingPage] = _this.past_received_pending_transactions;
                 resolve(res);
             }, function (err) {
@@ -1416,7 +1416,7 @@ var SendReceive = /** @class */ (function () {
                 .subscribe(function (res) {
                 _this.receivedLoading = false;
                 _this.past_received_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
-                _this.getOutputValue(_this.past_received_transactions);
+                _this.getReceivedOutputValue(_this.past_received_transactions);
                 _this.past_received_page_cache[_this.receivedPage] = _this.past_received_transactions;
                 resolve(res);
             }, function (err) {
@@ -1424,7 +1424,7 @@ var SendReceive = /** @class */ (function () {
             });
         });
     };
-    SendReceive.prototype.getOutputValue = function (array) {
+    SendReceive.prototype.getReceivedOutputValue = function (array) {
         for (var i = 0; i < array.length; i++) {
             var txn = array[i];
             if (!array[i]['value']) {
@@ -1433,6 +1433,21 @@ var SendReceive = /** @class */ (function () {
             for (var j = 0; j < txn['outputs'].length; j++) {
                 var output = txn['outputs'][j];
                 if (this.bulletinSecretService.key.getAddress() === output.to) {
+                    array[i]['value'] += parseFloat(output.value);
+                }
+            }
+            array[i]['value'] = array[i]['value'].toFixed(8);
+        }
+    };
+    SendReceive.prototype.getSentOutputValue = function (array) {
+        for (var i = 0; i < array.length; i++) {
+            var txn = array[i];
+            if (!array[i]['value']) {
+                array[i]['value'] = 0;
+            }
+            for (var j = 0; j < txn['outputs'].length; j++) {
+                var output = txn['outputs'][j];
+                if (this.bulletinSecretService.key.getAddress() !== output.to) {
                     array[i]['value'] += parseFloat(output.value);
                 }
             }
