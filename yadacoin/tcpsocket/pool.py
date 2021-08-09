@@ -1,6 +1,9 @@
 import json
 import traceback
 import time
+import base58
+import hashlib
+import binascii
 
 import tornado.ioloop
 from tornado.iostream import StreamClosedError
@@ -183,10 +186,6 @@ class StratumServer(RPCSocketServer):
         await StratumServer.block_checker()
         job = await StratumServer.config.mp.block_template()
         stream.job = job
-        stream.peer = Miner(body['params'].get('login'))
-        self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
-        StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
-        await StratumServer.update_miner_count()
         result = {
             'id': job.id,
             'job': job.to_dict()
@@ -197,6 +196,13 @@ class StratumServer(RPCSocketServer):
             'jsonrpc': body.get('jsonrpc'),
             'result': result
         }
+        address = body['params'].get('login').split('.')[0]
+        if not self.config.address_is_valid(address):
+            rpc_data['error'] = {'message': 'Invalid wallet address'}
+        stream.peer = Miner(body['params'].get('login'))
+        self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
+        StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
+        await StratumServer.update_miner_count()
         await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
 
     @classmethod

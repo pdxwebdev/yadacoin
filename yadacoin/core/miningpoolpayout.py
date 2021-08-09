@@ -37,11 +37,16 @@ class PoolPayer(object):
         total_difficulty = self.get_difficulty([x for x in raw_shares])
         shares = {}
         for share in raw_shares:
-            if share['address'] not in shares:
-                shares[share['address']] = {
+            address = share['address'].split('.')[0]
+            if not self.config.address_is_valid(address):
+                self.app_log.debug('get_share_list_for_height skipping invalid address: {}'.format(address))
+                continue
+
+            if address not in shares:
+                shares[address] = {
                     'blocks': [],
                 }
-            shares[share['address']]['blocks'].append(share)
+            shares[address]['blocks'].append(share)
 
         add_up = 0
         for address, item in shares.items():

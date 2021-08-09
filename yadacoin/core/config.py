@@ -256,6 +256,24 @@ class Config(object):
         cls.pool_take = config.get('pool_take', .01)
         cls.payout_frequency = config.get('payout_frequency', 6)
 
+    @staticmethod
+    def address_is_valid(address):
+        try:
+            base58_decoded = base58.b58decode(address).hex()
+            prefix_Hash = base58_decoded[:len(base58_decoded)-8]
+            checksum = base58_decoded[len(base58_decoded)-8:]
+            hash = prefix_Hash
+
+            for x in range(1,3):
+                hash = hashlib.sha256(binascii.unhexlify(hash)).hexdigest()
+
+            if(checksum == hash[:8]):
+                return True
+            else:
+                return False
+        except:
+            return False
+
     def get_username_signature(self):
         from yadacoin.core.transactionutils import TU
         return TU.generate_deterministic_signature(self, self.username, self.private_key)
