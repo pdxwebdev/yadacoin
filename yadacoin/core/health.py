@@ -42,7 +42,7 @@ class TCPServerHealth(HealthItem):
         status = True
         for stream in streams:
             if time.time() - stream.last_activity > self.timeout:
-                await self.config.nodeServer.remove_peer(stream)
+                await self.config.node_server_instance.remove_peer(stream)
                 self.report_bad_health('Stale stream detected in TCPServer, peer removed')
                 status = False
 
