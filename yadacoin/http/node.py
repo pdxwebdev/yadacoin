@@ -3,12 +3,13 @@ Handlers required by the core chain operations
 """
 
 import json
-from time import time
+from time import sleep, time
 from tornado import escape
 
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.common import ts_to_utc
 from yadacoin.core.chain import CHAIN
+from yadacoin.core.transaction import Transaction
 
 
 class GetLatestBlockHandler(BaseHandler):
@@ -152,20 +153,20 @@ class GetPendingTransactionIdsHandler(BaseHandler):
         return self.render_as_json({'txn_ids': [x['id'] for x in txns]})
 
 
-class RebroadcastTransaction(BaseHandler):
+class RebroadcastTransactions(BaseHandler):
     async def get(self):
-        from yadacoin.transaction import Transaction
-        from yadacoin.transactionbroadcaster import TxnBroadcaster
-        tb = TxnBroadcaster(self.config)
-        tb2 = TxnBroadcaster(self.config, self.config.SIO.namespace_handlers['/chat'])
-        txn_id = self.get_query_argument('id').replace(' ', '+')
-        txn = await self.config.mongo.async_db.miner_transactions.find_one({'id': txn_id})
-        if txn:
-            txn = Transaction.from_dict(txn)
-            await tb.txn_broadcast_job(txn)
-            await tb2.txn_broadcast_job(txn)
-            return self.render_as_json({'status': 'success'})
-        return self.render_as_json({'status': 'failed', 'message': 'transaction not found'})
+        async for txn in self.config.mongo.async_db.miner_transactions.find({}):
+            x = Transaction.from_dict(txn)
+            async for peer_stream in self.config.peer.get_sync_peers():
+                await self.config.nodeShared.write_params(
+                    peer_stream,
+                    'newtxn',
+                    {'transaction': x.to_dict()}
+                )
+                if peer_stream.peer.protocol_version > 1:
+                    self.config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', x.transaction_signature)] = {'transaction': x.to_dict()}
+                sleep(.1)
+        return self.render_as_json({'status': 'success'})
 
 
 NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
@@ -177,4 +178,4 @@ NODE_HANDLERS = [(r'/get-latest-block', GetLatestBlockHandler),
                  (r'/get-status', GetStatusHandler),
                  (r'/get-pending-transaction', GetPendingTransactionHandler),
                  (r'/get-pending-transaction-ids', GetPendingTransactionIdsHandler),
-                 (r'/rebroadcast-transaction', RebroadcastTransaction),]
+                 (r'/rebroadcast-transactions', RebroadcastTransactions),]
