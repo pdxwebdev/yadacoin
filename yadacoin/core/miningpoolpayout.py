@@ -204,3 +204,17 @@ class PoolPayer(object):
         self.app_log.debug('transaction verified')
         await self.config.mongo.async_db.miner_transactions.insert_one(transaction.to_dict())
         await self.config.mongo.async_db.share_payout.insert_one({'index': block.index, 'txn': transaction.to_dict()})
+        await self.broadcast_transaction(transaction)
+
+    async def broadcast_transaction(self, transaction):
+        self.app_log.debug(f'broadcast_transaction {transaction.transaction_signature}')
+        async for peer_stream in self.config.peer.get_sync_peers():
+            await self.config.nodeShared.write_params(
+                peer_stream,
+                'newtxn',
+                {
+                    'transaction': transaction.to_dict()
+                }
+            )
+            if peer_stream.peer.protocol_version > 1:
+                self.config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', transaction.transaction_signature)] = {'transaction': transaction.to_dict()}
