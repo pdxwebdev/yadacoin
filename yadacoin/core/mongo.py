@@ -36,7 +36,12 @@ class Mongo(object):
             ("public_key", ASCENDING),
             ("time", ASCENDING),
         ], name="__public_key_time")
-        __public_key = IndexModel([("index", ASCENDING)], name="__public_key")
+        __public_key = IndexModel([("public_key", ASCENDING)], name="__public_key")
+        __prev_hash = IndexModel([("prevHash", ASCENDING)], name="__prev_hash")
+        __txn_public_key_inputs_id = IndexModel([
+            ("transactions.public_key", ASCENDING),
+            ("transactions.inputs.id", ASCENDING)
+        ], name="__txn_public_key_inputs_id")
 
         try:
             self.db.blocks.create_indexes([
@@ -51,7 +56,9 @@ class Mongo(object):
                 __txn_inputs_address,
                 __txn_public_key_inputs_public_key_address,
                 __public_key_time,
-                __public_key
+                __public_key,
+                __prev_hash,
+                __txn_public_key_inputs_id
             ])
         except:
             pass
