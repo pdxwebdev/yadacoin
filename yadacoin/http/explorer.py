@@ -100,6 +100,17 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
+            base64.b64decode(term.replace(' ', '+'))
+            res = self.config.mongo.db.blocks.find({'transactions.inputs.id': term.replace(' ', '+')}, {'_id': 0})
+            if res.count():
+                return self.render_as_json({
+                    'resultType': 'txn_inputs_id',
+                    'result': [changetime(x) for x in res]
+                })
+        except:
+            pass
+
+        try:
             re.search(r'[A-Fa-f0-9]+', term).group(0)
             res = self.config.mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
             if res.count():
