@@ -90,21 +90,16 @@ class ExplorerSearchHandler(BaseHandler):
 
         try:
             base64.b64decode(term.replace(' ', '+'))
-            res = self.config.mongo.db.blocks.find({'transactions.id': term.replace(' ', '+')}, {'_id': 0})
+            res = self.config.mongo.db.blocks.find({
+                '$or': [
+                    {'transactions.id': term.replace(' ', '+')},
+                    {'transactions.inputs.id': term.replace(' ', '+')}
+                ]},
+                {'_id': 0}
+            )
             if res.count():
                 return self.render_as_json({
                     'resultType': 'txn_id',
-                    'result': [changetime(x) for x in res]
-                })
-        except:
-            pass
-
-        try:
-            base64.b64decode(term.replace(' ', '+'))
-            res = self.config.mongo.db.blocks.find({'transactions.inputs.id': term.replace(' ', '+')}, {'_id': 0})
-            if res.count():
-                return self.render_as_json({
-                    'resultType': 'txn_inputs_id',
                     'result': [changetime(x) for x in res]
                 })
         except:
