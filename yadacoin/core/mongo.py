@@ -115,3 +115,14 @@ class Mongo(object):
         for block in blocks_to_convert:
             self.config.app_log.warning(f'Converting block time to int for block: {block["index"]}')
             self.db.blocks.update({'index': block['index']}, {'$set': {'time': int(block['time'])}})
+
+        too_high_reward_blocks = self.db.blocks.find({'index': {'$gte': 210000}})
+        for block in too_high_reward_blocks:
+            for txn in block['transactions']:
+                if txn['public_key'] == block['public_key'] and len(txn['inputs']) == 0:
+                    total_output = 0
+                    for txn_out in txn['outputs']:
+                        total_output += txn_out['value']
+                    if total_output >= 50:
+                        self.config.app_log.warning(f'Removing block with too high of reward: {block["index"]}')
+                        self.db.blocks.delete_one({'index': block['index']})

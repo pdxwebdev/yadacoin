@@ -197,7 +197,7 @@ class CHAIN(object):
         """Returns the reward matching a given block height, next block if None is provided"""
         if block_index is None:
             block_index = get_config().LatestBlock.block.index + 1
-        index = block_index // 2100000
+        index = block_index // 210000
         reward = int(50.0 * 1e8 / 2 ** index) / 1e8
         return reward
     

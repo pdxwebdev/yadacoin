@@ -28,6 +28,8 @@ from yadacoin.core.config import get_config
 
 
 def quantize_eight(value):
+    if value == -0.0:
+        value = 0.0
     value = Decimal(value)
     value = value.quantize(Decimal('0.00000000'))
     return value
