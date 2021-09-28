@@ -310,6 +310,7 @@ class SentTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
+                    'transactions.inputs.1': {'$exists': True},
                     '$or': [
                         {'transactions.public_key': public_key},
                         {'transactions.inputs.public_key': public_key},
@@ -322,6 +323,7 @@ class SentTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
+                    'transactions.inputs.1': {'$exists': True},
                     '$or': [
                         {'transactions.public_key': public_key},
                         {'transactions.inputs.public_key': public_key},
@@ -371,8 +373,14 @@ class ReceivedTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
-                    'transactions.public_key': {'$ne': public_key},
-                    'transactions.inputs.public_key': {'$ne': public_key}
+                    '$or': [
+                        {'transactions.public_key': {'$ne': public_key}},
+                        {'transactions.inputs.public_key': {'$ne': public_key}},
+                        {
+                          'public_key': public_key,
+                          'transactions.inputs.1': {'$exists': False}
+                        },
+                    ]
                 }
             },
             {
@@ -381,8 +389,14 @@ class ReceivedTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
-                    'transactions.public_key': {'$ne': public_key},
-                    'transactions.inputs.public_key': {'$ne': public_key}
+                    '$or': [
+                        {'transactions.public_key': {'$ne': public_key}},
+                        {'transactions.inputs.public_key': {'$ne': public_key}},
+                        {
+                          'public_key': public_key,
+                          'transactions.inputs.1': {'$exists': False}
+                        },
+                    ]
                 }
             },
             {
