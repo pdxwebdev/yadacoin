@@ -29,7 +29,9 @@ class Config(object):
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
         self.use_pnp = config.get('use_pnp', False)
-        self.ssl = config.get('ssl', False)
+        ssl = config.get('ssl', False)
+        if ssl:
+            self.ssl = SSLConfig.from_dict(ssl)
         self.origin = config.get('origin', False)
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
@@ -84,6 +86,13 @@ class Config(object):
         self.pool_payout = config.get('pool_payout', False)
         self.pool_take = config.get('pool_take', .01)
         self.payout_frequency = config.get('payout_frequency', 6)
+
+        self.restrict_graph_api = config.get('restrict_graph_api', False)
+
+        email = config.get('email', False)
+        if email:
+            self.email = EmailConfig.from_dict(email)
+
         for key, val in config.items():
             if not hasattr(self, key):
                 setattr(self, key, val)
@@ -124,6 +133,13 @@ class Config(object):
         # TODO: add uptime in human readable format
         return status
 
+    def get_identity(self):
+        return {
+          'username': self.username,
+          'username_signature': self.username_signature,
+          'public_key': self.public_key
+        }
+
     @classmethod
     def generate(cls, xprv=None, prv=None, seed=None, child=None, username=None, mongodb_host=None, db_name=None):
         mnemonic = Mnemonic('english')
@@ -153,7 +169,7 @@ class Config(object):
             extended_key = key.ExtendedKey()
             public_key = PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex()
             address = str(key.Address())
-        
+
         if xprv and child:
             for x in child:
                 key = key.ChildKey(int(x))
@@ -163,7 +179,7 @@ class Config(object):
 
         if not private_key:
             raise Exception('No key')
-        
+
         try:
             u = UPnP(None, None, 200, 0)
             u.discover()
@@ -211,7 +227,9 @@ class Config(object):
             "shares_required": False,
             "pool_payout": False,
             "pool_take": .01,
-            "payout_frequency": 6
+            "payout_frequency": 6,
+            "restrict_graph_api": False,
+            "email": False
         })
 
     @classmethod
@@ -222,7 +240,9 @@ class Config(object):
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
         cls.use_pnp = config.get('use_pnp', False)
-        cls.ssl = config.get('ssl', False)
+        ssl = config.get('ssl', False)
+        if ssl:
+            cls.ssl = SSLConfig.from_dict(ssl)
         cls.origin = config.get('origin', True)
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
@@ -255,6 +275,12 @@ class Config(object):
         cls.pool_payout = config.get('pool_payout', False)
         cls.pool_take = config.get('pool_take', .01)
         cls.payout_frequency = config.get('payout_frequency', 6)
+
+        cls.restrict_graph_api = config.get('restrict_graph_api', False)
+
+        email = config.get('email', False)
+        if email:
+            cls.email = EmailConfig.from_dict(email)
 
     @staticmethod
     def address_is_valid(address):
@@ -320,7 +346,7 @@ class Config(object):
             'serve_host': self.serve_host,
             'serve_port': self.serve_port,
             'use_pnp': self.use_pnp,
-            'ssl': self.ssl,
+            'ssl': self.ssl.to_dict(),
             'origin': self.origin,
             'fcm_key': self.fcm_key,
             'sia_api_key': self.sia_api_key,
@@ -331,8 +357,49 @@ class Config(object):
             'shares_required': self.shares_required,
             'pool_payout': self.pool_payout,
             'pool_take': self.pool_take,
-            'payout_frequency': self.payout_frequency
+            'payout_frequency': self.payout_frequency,
+            'restrict_graph_api': self.restrict_graph_api,
+            'email': self.email.to_dict(),
         }
 
     def to_json(self):
         return json.dumps(self.to_dict(), indent=4)
+
+
+class EmailConfig():
+    @staticmethod
+    def from_dict(email_config):
+        inst = EmailConfig()
+        inst.username = email_config.get('username')
+        inst.password = email_config.get('password')
+        inst.smtp_server = email_config.get('smtp_server')
+        inst.smtp_port = email_config.get('smtp_port')
+        return inst
+
+    def to_dict(self):
+        return {
+            'username': self.username,
+            'password': self.password,
+            'smtp_server': self.smtp_server,
+            'smtp_port': self.smtp_port
+        }
+
+
+class SSLConfig():
+    @staticmethod
+    def from_dict(ssl_config):
+        inst = EmailConfig()
+        inst.ca_file = ssl_config.get('cafile')
+        inst.cert_file = ssl_config.get('certfile')
+        inst.key_file = ssl_config.get('keyfile')
+        inst.ssl_port = ssl_config.get('port')
+        inst.common_name = ssl_config.get('common_name')
+        return inst
+
+    def to_dict(self):
+        return {
+            'cafile': self.ca_file,
+            'certfile': self.cert_file,
+            'keyfile': self.key_file,
+            'port': self.ssl_port
+        }
