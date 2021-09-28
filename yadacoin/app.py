@@ -52,6 +52,7 @@ from yadacoin.core.peer import (
 )
 from yadacoin.core.identity import Identity
 from yadacoin.core.health import Health
+from yadacoin.core.smtp import Email
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
@@ -296,13 +297,14 @@ class NodeApplication(Application):
             try:
                 for cache_collection in self.cache_collections:
                     if not self.cache_last_times.get(cache_collection):
-                        latest = await self.config.mongo.async_db[cache_collection].find_one({
-                            'cache_time': {'$gt': self.cache_last_times[cache_collection]}
-                        }, sort=[('height', -1)])
-                        if latest:
-                            self.cache_last_times[cache_collection] = latest['cache_time']
-                        else:
-                            self.cache_last_times[cache_collection] = 0
+                        self.cache_last_times[cache_collection] = 0
+                    latest = await self.config.mongo.async_db[cache_collection].find_one({
+                        'cache_time': {'$gt': self.cache_last_times[cache_collection]}
+                    }, sort=[('height', -1)])
+                    if latest:
+                        self.cache_last_times[cache_collection] = latest['cache_time']
+                    else:
+                        self.cache_last_times[cache_collection] = 0
                     async for txn in self.config.mongo.async_db[cache_collection].find({
                         'cache_time': {'$gt': self.cache_last_times[cache_collection]}
                     }).sort([('height', -1)]):
@@ -502,10 +504,12 @@ class NodeApplication(Application):
         self.config.http_server = tornado.httpserver.HTTPServer(self)
         self.config.http_server.listen(self.config.serve_port, self.config.serve_host)
         if self.config.ssl:
-            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.get('cafile'))
-            ssl_ctx.load_cert_chain(self.config.ssl.get('certfile'), keyfile=self.config.ssl.get('keyfile'))
+            ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.ca_file)
+            ssl_ctx.load_cert_chain(self.config.ssl.cert_file, keyfile=self.config.ssl.key_file)
             self.config.https_server = tornado.httpserver.HTTPServer(self, ssl_options=ssl_ctx)
-            self.config.https_server.listen(self.config.ssl['port'])
+            self.config.https_server.listen(self.config.ssl.port)
+        if self.config.email:
+            self.config.emailer = Email()
 
     def init_pool(self):
         self.config.app_log.info("Pool: {}:{}".format(self.config.peer_host, self.config.stratum_pool_port))
@@ -525,8 +529,8 @@ class NodeApplication(Application):
                 "public_key": self.config.public_key
             },
             'peer_type': self.config.peer_type,
-            'http_host': self.config.ssl['common_name'] if isinstance(self.config.ssl, dict) else self.config.peer_host,
-            'http_port': self.config.ssl['port'] if isinstance(self.config.ssl, dict) else self.config.serve_port,
+            'http_host': self.config.ssl.common_name if isinstance(self.config.ssl, dict) else self.config.peer_host,
+            'http_port': self.config.ssl.port if isinstance(self.config.ssl, dict) else self.config.serve_port,
             'secure': isinstance(self.config.ssl, dict),
             'protocol_version': 3
         }
