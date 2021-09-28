@@ -100,7 +100,7 @@ class Transaction(object):
     @classmethod
     async def generate(
         cls,
-        bulletin_secret='',
+        username_signature='',
         username='',
         value=0,
         fee=0.0,
@@ -125,7 +125,7 @@ class Transaction(object):
         cls_inst.config = get_config()
         cls_inst.mongo = cls_inst.config.mongo
         cls_inst.app_log = getLogger('tornado.application')
-        cls_inst.bulletin_secret = bulletin_secret
+        cls_inst.username_signature = username_signature
         cls_inst.username = username
         cls_inst.rid = rid
         cls_inst.requester_rid = requester_rid
@@ -157,7 +157,7 @@ class Transaction(object):
 
         inputs_concat = ''.join([x.id for x in sorted(cls_inst.inputs, key=lambda x: x.id.lower())])
         outputs_concat = cls_inst.get_output_hashes()
-        if bulletin_secret or rid:
+        if username_signature or rid:
             if not cls_inst.rid:
                 cls_inst.rid = cls_inst.generate_rid()
             if cls_inst.chattext:
@@ -387,7 +387,7 @@ class Transaction(object):
                 raise InvalidTransactionSignatureException("transaction signature did not verify")
 
         if len(self.relationship) > 20480:
-            raise MaxRelationshipSizeExceeded('Relationship field cannot be greater than 2048 bytes')
+            raise MaxRelationshipSizeExceeded('Relationship field cannot be greater than 20480 bytes')
 
         # verify spend
         total_input = 0
@@ -728,9 +728,9 @@ class Relationship(object):
     def __init__(
         self,
         dh_private_key=None,
-        their_bulletin_secret=None,
+        their_username_signature=None,
         their_username=None,
-        my_bulletin_secret=None,
+        my_username_signature=None,
         my_username=None,
         their_public_key=None,
         their_address=None,
@@ -740,9 +740,9 @@ class Relationship(object):
         my_public_key=None
     ):
         self.dh_private_key = dh_private_key
-        self.their_bulletin_secret = their_bulletin_secret
+        self.their_username_signature = their_username_signature
         self.their_username = their_username
-        self.my_bulletin_secret = my_bulletin_secret
+        self.my_username_signature = my_username_signature
         self.my_username = my_username
         self.their_public_key = their_public_key
         self.their_address = their_address
@@ -754,9 +754,9 @@ class Relationship(object):
     def to_dict(self):
         return {
             'dh_private_key': self.dh_private_key,
-            'their_bulletin_secret': self.their_bulletin_secret,
+            'their_username_signature': self.their_username_signature,
             'their_username': self.their_username,
-            'my_bulletin_secret': self.my_bulletin_secret,
+            'my_username_signature': self.my_username_signature,
             'my_username': self.my_username,
             'their_public_key': self.their_public_key,
             'their_address': self.their_address,

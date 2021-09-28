@@ -37,20 +37,24 @@ class GraphConfigHandler(BaseHandler):
             "loginUrl": "{}/login".format(peer),
             "registerUrl": "{}/create-relationship".format(peer),
             "authenticatedUrl": "{}/authenticated".format(peer),
-            "logoData": ''
+            "logoData": '',
+            "identity": self.config.get_identity(),
+            "restricted": self.config.restrict_graph_api
         }
         return self.render_as_json(yada_config)
 
 @jwtauth
 class BaseGraphHandler(BaseHandler):
     def get_base_graph(self):
-        self.bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
+        self.username_signature = self.get_query_argument('username_signature').replace(' ', '+')
         self.to = self.get_query_argument('to', None)
         self.username = self.get_query_argument('username', None)
-        self.rid = self.generate_rid(self.config.username_signature, self.bulletin_secret)
+        self.rid = self.generate_rid(self.config.username_signature, self.username_signature)
         if self.request.body:
             ids = json.loads(self.request.body.decode('utf-8')).get('ids')
             rids = json.loads(self.request.body.decode('utf-8')).get('rids')
+            if not isinstance(rids, list):
+                rids = [rids]
         else:
             ids = []
             rids = []
@@ -63,12 +67,12 @@ class BaseGraphHandler(BaseHandler):
                 key_or_wif = self.jwt.get('key_or_wif')
             except:
                 key_or_wif = None
-        return Graph(self.config, self.config.mongo, self.bulletin_secret, ids, rids, key_or_wif)
+        return Graph(self.config, self.config.mongo, self.username_signature, ids, rids, key_or_wif)
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
-    def generate_rid(self, first_bulletin_secret, second_bulletin_secret):
-        bulletin_secrets = sorted([str(first_bulletin_secret), str(second_bulletin_secret)], key=str.lower)
-        return hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
+    def generate_rid(self, first_username_signature, second_username_signature, collection = ''):
+        username_signatures = sorted([str(first_username_signature), str(second_username_signature)], key=str.lower)
+        return hashlib.sha256((str(username_signatures[0]) + str(username_signatures[1]) + str(collection)).encode('utf-8')).digest().hex()
 
 
 class GraphInfoHandler(BaseGraphHandler):
@@ -85,7 +89,7 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         amount_needed = self.get_query_argument('amount_needed', None)
         if amount_needed:
             amount_needed = float(amount_needed)
-        
+
         regular_txns = []
         chain_balance = 0
         async for txn in self.config.BU.get_wallet_unspent_transactions(address, no_zeros=True):
@@ -97,7 +101,7 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                 if output['to'] == address:
                     chain_balance += float(output['value'])
             self.app_log.warning(chain_balance)
-    
+
         wallet = {
             'chain_balance': "{0:.8f}".format(chain_balance),
             'balance': "{0:.8f}".format(chain_balance),
@@ -129,7 +133,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         self.render_as_json(list(transactions))
 
     async def post(self):
-        self.get_base_graph()  # TODO: did this to set bulletin_secret, refactor this
+        self.get_base_graph()  # TODO: did this to set username_signature, refactor this
         items = json.loads(self.request.body.decode('utf-8'))
         if not isinstance(items, list):
             items = [items, ]
@@ -165,46 +169,36 @@ class GraphTransactionHandler(BaseGraphHandler):
         for x in transactions:
             if x.rid == self.rid and x.dh_public_key:
                 me_pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
-                    'public_key': self.config.public_key, 
-                    'rid': self.rid, 
+                    'public_key': self.config.public_key,
+                    'rid': self.rid,
+                    'requester_rid': x.requester_rid,
+                    'requested_rid': x.requested_rid,
                     'dh_public_key': {'$exists': True}
                 })
                 me_blockchain_exists = await self.config.mongo.async_db.blocks.find_one({
-                    'public_key': self.config.public_key, 
-                    'rid': self.rid, 
+                    'public_key': self.config.public_key,
+                    'rid': self.rid,
+                    'requester_rid': x.requester_rid,
+                    'requested_rid': x.requested_rid,
                     'dh_public_key': {'$exists': True}
                 })
-                if not me_pending_exists and not me_blockchain_exists:
-                    created_relationship = await self.create_relationship(self.bulletin_secret, self.username, self.to)
-                    if isinstance(created_relationship, Transaction):
-                        await self.config.mongo.async_db.miner_transactions.insert_one(created_relationship.to_dict())
-                        created_relationship.relationship = created_relationship.relationship
-                        await self.config.mongo.async_db.name_server.insert_one({
-                            'rid': created_relationship.rid,
-                            'requester_rid': created_relationship.requester_rid,
-                            'requested_rid': created_relationship.requested_rid,
-                            'peer_str': 'me',
-                            'peer': {'host': 'me', 'port': 0},
-                            'txn': created_relationship.to_dict()
-                        })
-                        tb = NSBroadcaster(self.config)
-                        await tb.ns_broadcast_job(created_relationship)
-                    else:
-                        self.app_log.debug('relationship creation failed for NS: {}'.format(created_relationship))
-                
                 pending_exists = await self.config.mongo.async_db.miner_transactions.find_one({
-                    'public_key': x.public_key, 
-                    'rid': self.rid, 
+                    'public_key': x.public_key,
+                    'rid': self.rid,
+                    'requester_rid': x.requester_rid,
+                    'requested_rid': x.requested_rid,
                     'dh_public_key': {'$exists': True}
                 })
                 blockchain_exists = await self.config.mongo.async_db.blocks.find_one({
-                    'public_key': x.public_key, 
-                    'rid': self.rid, 
+                    'public_key': x.public_key,
+                    'rid': self.rid,
+                    'requester_rid': x.requester_rid,
+                    'requested_rid': x.requested_rid,
                     'dh_public_key': {'$exists': True}
                 })
                 if pending_exists or blockchain_exists:
                     continue
-            
+
             if x.dh_public_key:
                 dup_check_count = await self.config.mongo.async_db.miner_transactions.count_documents({
                     'dh_public_key': {'$exists': True},
@@ -215,7 +209,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                 })
                 if dup_check_count:
                     self.app_log.debug('found duplicate tx for rid set {}'.format(x.transaction_signature))
-                    return
+                    return self.render_as_json({'status': True, 'message': 'dup rid'})
 
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
@@ -230,19 +224,19 @@ class GraphTransactionHandler(BaseGraphHandler):
 
         return self.render_as_json(items)
 
-    async def create_relationship(self, bulletin_secret, username, to):
+    async def create_relationship(self, username_signature, username, to):
         config = self.config
         mongo = self.config.mongo
 
-        if not bulletin_secret:
-            return 'error: "bulletin_secret" missing', 400
+        if not username_signature:
+            return 'error: "username_signature" missing', 400
 
         if not username:
             return 'error: "username" missing', 400
 
         if not to:
             return 'error: "to" missing', 400
-        rid = TU.generate_rid(config, bulletin_secret)
+        rid = TU.generate_rid(config, username_signature)
         dup = mongo.db.blocks.find({'transactions.rid': rid})
         if dup.count():
             found_a = False
@@ -270,7 +264,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         dh_private_key = a.encode('latin1').hex()
 
         transaction = await Transaction.generate(
-            bulletin_secret=bulletin_secret,
+            username_signature=username_signature,
             username=username,
             fee=0.00,
             public_key=config.public_key,
@@ -288,16 +282,20 @@ class GraphTransactionHandler(BaseGraphHandler):
 
 
 class GraphSentFriendRequestsHandler(BaseGraphHandler):
-    async def get(self):
+    async def post(self):
+        req_body = json.loads(self.request.body)
+        search_rid = req_body.get('rids')[0]
         graph = self.get_base_graph()
-        await graph.get_sent_friend_requests()
+        await graph.get_sent_friend_requests(search_rid)
         self.render_as_json(graph.to_dict())
 
 
 class GraphFriendRequestsHandler(BaseGraphHandler):
-    async def get(self):
+    async def post(self):
+        req_body = json.loads(self.request.body)
+        search_rid = req_body.get('rids')[0]
         graph = self.get_base_graph()
-        await graph.get_friend_requests()
+        await graph.get_friend_requests(search_rid)
         self.render_as_json(graph.to_dict())
 
 
@@ -307,10 +305,10 @@ class GraphFriendsHandler(BaseGraphHandler):
         self.render_as_json(graph.to_dict())
 
 
-class GraphMessagesHandler(BaseGraphHandler):
+class GraphSentMessagesHandler(BaseGraphHandler):
     async def post(self):
         graph = self.get_base_graph()
-        await graph.get_messages()
+        await graph.get_sent_messages()
         self.render_as_json(graph.to_dict())
 
 
@@ -340,6 +338,65 @@ class GraphReactsHandler(BaseGraphHandler):
         graph = self.get_base_graph()
         await graph.get_reacts()
         self.render_as_json(graph.to_dict())
+
+
+class GraphCollectionHandler(BaseGraphHandler):
+    async def post(self):
+        graph = self.get_base_graph()
+        data = json.loads(self.request.body.decode())
+        result = await self.has_access(data.get('rids'), data.get('collection'))
+        if result:
+            await graph.get_collection()
+        self.render_as_json(graph.to_dict())
+
+    async def has_access(self, rids, collection):
+        if not isinstance(rids, list):
+            rids = [rids]
+        username_signature = self.get_query_argument('username_signature')
+        if self.config.username_signature == username_signature or not self.config.restrict_graph_api:
+            return True
+
+        organzation = await self.config.mongo.async_site_db.organizations.find_one({'username_signature': username_signature})
+        if organzation:
+            parent_username_signature = self.config.username_signature
+            child_username_signatures = [x.get('user', {}).get('username_signature') async for x in self.config.mongo.async_site_db.organization_members.find({'organization_username_signature': organzation.get('username_signature')})]
+        else:
+            organzation_member = await self.config.mongo.async_site_db.organization_members.find_one({'user.username_signature': username_signature})
+            if organzation_member:
+                parent_username_signature = organzation_member.get('organization_username_signature')
+                child_username_signatures = [x.get('user', {}).get('username_signature') async for x in self.config.mongo.async_site_db.member_contacts.find({'member_username_signature': organzation_member.get('user', {}).get('username_signature')})]
+            else:
+                member_contact = await self.config.mongo.async_site_db.member_contacts.find_one({'user.username_signature': username_signature})
+                if member_contact:
+                    parent_username_signature = member_contact.get('member_username_signature')
+                    child_username_signatures = []
+                else:
+                    return False
+
+        base_groups = []
+        collections = [
+          '',
+          'group',
+          'file',
+          'mail',
+          'contract',
+          'contract_signed',
+          'event_meeting',
+          'group_mail',
+          'event_meeting',
+        ]
+        for collection in collections:
+            base_groups.append(self.generate_rid(parent_username_signature, parent_username_signature, collection))
+            base_groups.append(self.generate_rid(username_signature, username_signature, collection))
+            base_groups.append(self.generate_rid(parent_username_signature, username_signature, collection))
+            for child_username_signature in child_username_signatures:
+                base_groups.append(self.generate_rid(child_username_signature, child_username_signature, collection))
+                base_groups.append(self.generate_rid(username_signature, child_username_signature, collection))
+
+        if len(set(base_groups) & set(rids)) == len(set(rids)):
+            return True
+        else:
+            return False
 
 
 class NSLookupHandler(BaseGraphHandler):
@@ -375,11 +432,11 @@ class SignRawTransactionHandler(BaseHandler):
         if res:
             return 'no', 400
         try:
-            rid = TU.generate_rid(config, body.get('bulletin_secret'))
+            rid = TU.generate_rid(config, body.get('username_signature'))
             my_entry_for_relationship = GU().get_transaction_by_rid(rid, config.wif, rid=True, my=True, public_key=config.public_key)
             their_entry_for_relationship = GU().get_transaction_by_rid(rid, rid=True, raw=True, theirs=True, public_key=config.public_key)
             verified = verify_signature(
-                base64.b64decode(body.get('bulletin_secret')),
+                base64.b64decode(body.get('username_signature')),
                 my_entry_for_relationship['relationship']['their_username'].encode(),
                 bytes.fromhex(their_entry_for_relationship['public_key'])
             )
@@ -395,7 +452,7 @@ class SignRawTransactionHandler(BaseHandler):
             async for x in self.config.BU.get_wallet_unspent_transactions(address, [body.get('input')]):
                 if body.get('input') == x['id']:
                     found = True
-            
+
             if not found:
                 for x in self.config.BU.get_wallet_unspent_fastgraph_transactions(address):
                     if body.get('input') == x['id']:
@@ -442,7 +499,7 @@ class SignRawTransactionHandler(BaseHandler):
                 signature = {
                     'signature': transaction_signature,
                     'hash': body.get('hash'),
-                    'bulletin_secret': body.get('bulletin_secret'),
+                    'username_signature': body.get('username_signature'),
                     'input': body.get('input'),
                     'id': body.get('id'),
                     'txn': body.get('txn')
@@ -489,7 +546,7 @@ class FastGraphHandler(BaseGraphHandler):
         #fastgraph.broadcast()
         self.render_as_json(fastgraph.to_dict())
         try:
-            await self.config.push_service.do_push(fastgraph.to_dict(), self.bulletin_secret, self.app_log)
+            await self.config.push_service.do_push(fastgraph.to_dict(), self.username_signature, self.app_log)
         except Exception as e:
             self.app_log.debug(e)
 
@@ -505,10 +562,10 @@ class NSHandler(BaseGraphHandler):
         complete = bool(self.get_query_argument('complete', False))
         if not phrase and not requester_rid and not requested_rid:
             return 'phrase required', 400
-        bulletin_secret = self.get_query_argument('bulletin_secret').replace(' ', '+')
-        if not bulletin_secret:
-            return 'bulletin_secret required', 400
-        my_bulletin_secret = config.get_bulletin_secret()
+        username_signature = self.get_query_argument('username_signature').replace(' ', '+')
+        if not username_signature:
+            return 'username_signature required', 400
+        my_username_signature = config.get_username_signature()
 
         if requester_rid:
             query = {
@@ -526,30 +583,30 @@ class NSHandler(BaseGraphHandler):
                 ns_record = ns_record['txn']
             else:
                 ns_record = await graph.resolve_ns(requester_rid, username=True)
-                
+
             if ns_record:
                 requester_rid = ns_record['rid']
-                rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+                rids = sorted([str(my_username_signature), str(username_signature)], key=str.lower)
                 requested_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
-            
+
                 address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(ns_record['public_key'])))
                 filter_address = [x['to'] for x in ns_record['outputs'] if x['to'] != address]
                 to = address if not filter_address else filter_address[0]
             else:
                 return '{}', 404
-            
+
             if complete:
                 return self.render_as_json(ns_record)
             else:
                 return self.render_as_json({
-                    'bulletin_secret': ns_record['relationship']['their_bulletin_secret'],
+                    'username_signature': ns_record['relationship']['their_username_signature'],
                     'requested_rid': requested_rid,
                     'requester_rid': requester_rid,
                     'to': to,
                     'username': ns_record['relationship']['their_username']
                 })
 
-        rids = sorted([str(my_bulletin_secret), str(bulletin_secret)], key=str.lower)
+        rids = sorted([str(my_username_signature), str(username_signature)], key=str.lower)
         requester_rid = hashlib.sha256(rids[0].encode() + rids[1].encode()).hexdigest()
         if requested_rid:
             query = {
@@ -601,7 +658,7 @@ class NSHandler(BaseGraphHandler):
                 'rid': nstxn.rid,
                 'requester_rid': nstxn.requester_rid,
                 'requested_rid': nstxn.requested_rid,
-                'peer_str': peer.to_string(), 
+                'peer_str': peer.to_string(),
                 'peer': peer.to_dict(),
                 'txn': nstxn.to_dict()
             })
@@ -620,7 +677,7 @@ class SiaFileHandler(BaseGraphHandler):
             res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
             fileData = json.loads(res.content.decode())
             files = fileData.get('files') or []
-            
+
             return self.render_as_json({
                 'status': 'success',
                 'files': [
@@ -801,7 +858,7 @@ class SiaDeleteHandler(BaseGraphHandler):
 
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
-    (r'/yada_config.json', GraphConfigHandler), # first the config is requested
+    (r'/yada-config', GraphConfigHandler), # first the config is requested
     (r'/get-graph-info', GraphInfoHandler), # then basic graph info is requested. Giving existing relationship information, if present.
     (r'/get-graph-wallet', GraphRIDWalletHandler), # request balance and UTXOs
     (r'/register', RegistrationHandler), # if a relationship is not present, we "register." client requests information necessary to generate a friend request transaction
@@ -809,10 +866,11 @@ GRAPH_HANDLERS = [
     (r'/get-graph-sent-friend-requests', GraphSentFriendRequestsHandler), # get all friend requests I've sent
     (r'/get-graph-friend-requests', GraphFriendRequestsHandler), # get all friend requests sent to me
     (r'/get-graph-friends', GraphFriendsHandler), # get client/server relationship. Same as get-graph-info, but here for symantic purposes
-    (r'/get-graph-messages', GraphMessagesHandler), # get messages from friends
+    (r'/get-graph-sent-messages', GraphSentMessagesHandler), # get new messages that are newer than a given timestamp
     (r'/get-graph-new-messages', GraphNewMessagesHandler), # get new messages that are newer than a given timestamp
     (r'/get-graph-reacts', GraphReactsHandler), # get reacts for posts and comments
     (r'/get-graph-comments', GraphCommentsHandler), # get comments for posts
+    (r'/get-graph-collection', GraphCollectionHandler), # get calendar of events
     (r'/ns-lookup', NSLookupHandler), # search by username for ns name server.
     (r'/sign-raw-transaction', SignRawTransactionHandler), # server signs the client transaction
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client

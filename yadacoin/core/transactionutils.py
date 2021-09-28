@@ -38,9 +38,9 @@ class TU(object):  # Transaction Utilities
         return base64.b64encode(signature).decode('utf-8')
 
     @classmethod
-    def generate_rid(cls, config, bulletin_secret):
-        bulletin_secrets = sorted([str(config.username_signature), str(bulletin_secret)], key=str.lower)
-        return hashlib.sha256((str(bulletin_secrets[0]) + str(bulletin_secrets[1])).encode('utf-8')).digest().hex()
+    def generate_rid(cls, config, username_signature):
+        username_signatures = sorted([str(config.username_signature), str(username_signature)], key=str.lower)
+        return hashlib.sha256((str(username_signatures[0]) + str(username_signatures[1])).encode('utf-8')).digest().hex()
     
     @classmethod
     def check_rid_txn_fully_spent(cls, config, rid_txn, address, index):

@@ -54,7 +54,7 @@ class GraphUtils(object):
         )
 
     async def search_ns_username(self, ns_username, ns_requested_rid=None, id_type=None):
-        
+
         regx = bson.regex.Regex('^{}'.format(ns_username), 'i')
         query = {
             '$or': [
@@ -69,7 +69,7 @@ class GraphUtils(object):
         return await self.config.mongo.async_db.name_server.find(query, {'_id': 0}).to_list(100)
 
     async def search_ns_requested_rid(self, ns_requested_rid, ns_username=None, id_type=None):
-        
+
         query = {
             'txn.requested_rid': ns_requested_rid
         }
@@ -81,7 +81,7 @@ class GraphUtils(object):
         return await self.config.mongo.async_db.name_server.find(query, {'_id': 0}).to_list(100)
 
     async def search_ns_requester_rid(self, ns_requester_rid, ns_username=None, id_type=None):
-        
+
         query = {
             'txn.requester_rid': ns_requester_rid
         }
@@ -161,16 +161,16 @@ class GraphUtils(object):
         transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
-        mutual_bulletin_secrets = self.get_mutual_bulletin_secrets(rids)
+        mutual_username_signatures = self.get_mutual_username_signatures(rids)
         friends = []
         for friend in self.get_transactions_by_rid(rids, self.config.username_signature, rid=True):
-            if 'their_bulletin_secret' in friend['relationship']:
-                friends.append(friend['relationship']['their_bulletin_secret'])
+            if 'their_username_signature' in friend['relationship']:
+                friends.append(friend['relationship']['their_username_signature'])
         friends = list(set(friends))
         had_txns = False
 
         if friends:
-            mutual_bulletin_secrets.extend(friends)
+            mutual_username_signatures.extend(friends)
             for i, x in enumerate(transactions):
                 res = self.mongo.db.posts_cache.find_one({
                     'rid': {'$in': rids},
@@ -178,7 +178,7 @@ class GraphUtils(object):
                 })
                 if res:
                     continue
-                for bs in mutual_bulletin_secrets:
+                for bs in mutual_username_signatures:
                     try:
                         crypt = Crypt(bs)
                         decrypted = crypt.decrypt(x['txn']['relationship'])
@@ -196,14 +196,14 @@ class GraphUtils(object):
                                     'rid': rid,
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
-                                    'bulletin_secret': bs
+                                    'username_signature': bs
                                 },
                                 {
                                     'rid': rid,
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
-                                    'bulletin_secret': bs,
+                                    'username_signature': bs,
                                     'success': True,
                                     'cache_time': time()
                                 },
@@ -214,14 +214,14 @@ class GraphUtils(object):
                                 'rid': rid,
                                 'height': x.get('height', 0),
                                 'id': x['txn']['id'],
-                                'bulletin_secret': bs
+                                'username_signature': bs
                             },
                             {
                                 'rid': rid,
                                 'height': x.get('height', 0),
                                 'id': x['txn']['id'],
                                 'txn': x['txn'],
-                                'bulletin_secret': bs,
+                                'username_signature': bs,
                                 'success': False,
                                 'cache_time': time()
                             },
@@ -250,7 +250,7 @@ class GraphUtils(object):
         for x in self.mongo.db.posts_cache.find({'rid': {'$in': rids}, 'success': True}):
             if 'txn' in x:
                 x['txn']['height'] = x['height']
-                x['txn']['bulletin_secret'] = x['bulletin_secret']
+                x['txn']['username_signature'] = x['username_signature']
                 yield x['txn']
 
     def get_reacts(self, rids, ids):
@@ -312,16 +312,16 @@ class GraphUtils(object):
         transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
-        mutual_bulletin_secrets = self.get_mutual_bulletin_secrets(rids)
+        mutual_username_signatures = self.get_mutual_username_signatures(rids)
         friends = []
         for friend in self.get_transactions_by_rid(rids, self.config.username_signature, rid=True):
-            if 'their_bulletin_secret' in friend['relationship']:
-                friends.append(friend['relationship']['their_bulletin_secret'])
+            if 'their_username_signature' in friend['relationship']:
+                friends.append(friend['relationship']['their_username_signature'])
         friends = list(set(friends))
         had_txns = False
 
         if friends:
-            mutual_bulletin_secrets.extend(friends)
+            mutual_username_signatures.extend(friends)
             for i, x in enumerate(transactions):
                 res = self.mongo.db.reacts_cache.find_one({
                     'rid': {'$in': rids},
@@ -329,7 +329,7 @@ class GraphUtils(object):
                 })
                 if res:
                     continue
-                for bs in mutual_bulletin_secrets:
+                for bs in mutual_username_signatures:
                     try:
                         crypt = Crypt(bs)
                         decrypted = crypt.decrypt(x['txn']['relationship'])
@@ -347,14 +347,14 @@ class GraphUtils(object):
                                     'rid': rid,
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
-                                    'bulletin_secret': bs
+                                    'username_signature': bs
                                 },
                                 {
                                     'rid': rid,
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
-                                    'bulletin_secret': bs,
+                                    'username_signature': bs,
                                     'success': True,
                                     'cache_time': time()
                                 },
@@ -365,14 +365,14 @@ class GraphUtils(object):
                                 'rid': rid,
                                 'height': x.get('height', 0),
                                 'id': x['txn']['id'],
-                                'bulletin_secret': bs
+                                'username_signature': bs
                             },
                             {
                                 'rid': rid,
                                 'height': x.get('height', 0),
                                 'id': x['txn']['id'],
                                 'txn': x['txn'],
-                                'bulletin_secret': bs,
+                                'username_signature': bs,
                                 'success': False,
                                 'cache_time': time()
                             },
@@ -389,7 +389,7 @@ class GraphUtils(object):
         for x in self.mongo.db.reacts_cache.find({'txn.relationship.id': {'$in': ids}, 'success': True}):
             if 'txn' in x and 'id' in x['txn']['relationship']:
                 x['txn']['height'] = x['height']
-                x['txn']['bulletin_secret'] = x['bulletin_secret']
+                x['txn']['username_signature'] = x['username_signature']
                 yield x['txn']
 
     def get_comments(self, rids, ids):
@@ -451,16 +451,16 @@ class GraphUtils(object):
         transactions = [x for x in transactions] + [x for x in fastgraph_transactions]
         # transactions are all posts not yet cached by this rid
         # so we want to grab all bulletin secrets for this rid
-        mutual_bulletin_secrets = self.get_mutual_bulletin_secrets(rids)
+        mutual_username_signatures = self.get_mutual_username_signatures(rids)
         friends = []
         for friend in self.get_transactions_by_rid(rids, self.config.username_signature, rid=True):
-            if 'their_bulletin_secret' in friend['relationship']:
-                friends.append(friend['relationship']['their_bulletin_secret'])
+            if 'their_username_signature' in friend['relationship']:
+                friends.append(friend['relationship']['their_username_signature'])
         friends = list(set(friends))
         had_txns = False
 
         if friends:
-            mutual_bulletin_secrets.extend(friends)
+            mutual_username_signatures.extend(friends)
             for i, x in enumerate(transactions):
                 res = self.mongo.db.comments_cache.find_one({
                     'rid': {'$in': rids},
@@ -468,7 +468,7 @@ class GraphUtils(object):
                 })
                 if res:
                     continue
-                for bs in mutual_bulletin_secrets:
+                for bs in mutual_username_signatures:
                     try:
                         crypt = Crypt(bs)
                         decrypted = crypt.decrypt(x['txn']['relationship'])
@@ -486,14 +486,14 @@ class GraphUtils(object):
                                     'rid': rid,
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
-                                    'bulletin_secret': bs
+                                    'username_signature': bs
                                 },
                                 {
                                     'rid': rid,
                                     'height': x.get('height', 0),
                                     'id': x['txn']['id'],
                                     'txn': x['txn'],
-                                    'bulletin_secret': bs,
+                                    'username_signature': bs,
                                     'success': True,
                                     'cache_time': time()
                                 },
@@ -504,14 +504,14 @@ class GraphUtils(object):
                                 'rid': rid,
                                 'height': x.get('height', 0),
                                 'id': x['txn']['id'],
-                                'bulletin_secret': bs
+                                'username_signature': bs
                             },
                             {
                                 'rid': rid,
                                 'height': x.get('height', 0),
                                 'id': x['txn']['id'],
                                 'txn': x['txn'],
-                                'bulletin_secret': bs,
+                                'username_signature': bs,
                                 'success': False,
                                 'cache_time': time()
                             },
@@ -528,7 +528,7 @@ class GraphUtils(object):
         for x in self.mongo.db.comments_cache.find({'txn.relationship.id': {'$in': ids}, 'success': True}):
             if 'txn' in x and 'id' in x['txn']['relationship']:
                 x['txn']['height'] = x['height']
-                x['txn']['bulletin_secret'] = x['bulletin_secret']
+                x['txn']['username_signature'] = x['username_signature']
                 yield x['txn']
 
     def get_relationships(self, wif):
@@ -549,13 +549,13 @@ class GraphUtils(object):
                     continue
         return relationships
 
-    def get_transaction_by_rid(self, selector, wif=None, bulletin_secret=None, rid=False, raw=False,
+    def get_transaction_by_rid(self, selector, wif=None, username_signature=None, rid=False, raw=False,
                                theirs=False, my=False, public_key=None):
         # from block import Block
         # from transaction import Transaction
         from yadacoin.core.crypt import Crypt
         if not rid:
-            ds = bulletin_secret
+            ds = username_signature
             selectors = [
                 TU.hash(ds + selector),
                 TU.hash(selector + ds)
@@ -566,14 +566,14 @@ class GraphUtils(object):
             else:
                 selectors = selector
 
-            
-                    
+
+
         def txn_gen():
             res = self.mongo.db.blocks.find(
                 {"transactions": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}})
             for x in res:
                 yield x
-        
+
             res = self.mongo.db.fastgraph_transactions.find(
                 {"txn": {"$elemMatch": {"relationship": {"$ne": ""}, "rid": {"$in": selectors}}}})
             for x in res:
@@ -628,7 +628,7 @@ class GraphUtils(object):
     def get_transactions_by_rid(
         self,
         selector,
-        bulletin_secret,
+        username_signature,
         wif=None,
         rid=False,
         raw=False,
@@ -644,7 +644,7 @@ class GraphUtils(object):
         # from transaction import Transaction
 
         if not rid:
-            ds = bulletin_secret
+            ds = username_signature
             selectors = [
                 TU.hash(ds + selector),
                 TU.hash(selector + ds)
@@ -657,7 +657,7 @@ class GraphUtils(object):
 
         cipher = None
         for selector in selectors:
-            for txn in self.get_transactions_by_rid_worker(selector, bulletin_secret, wif, rid, raw,
+            for txn in self.get_transactions_by_rid_worker(selector, username_signature, wif, rid, raw,
                                 returnheight, lt_block_height, requested_rid):
                 yield txn
             if inc_mempool:
@@ -677,7 +677,7 @@ class GraphUtils(object):
                 for txn in res:
                     res1 = self.config.mongo.db.miner_transactions_cache.find_one({
                         'id': txn['id'],
-                        'bulletin_secret': bulletin_secret,
+                        'username_signature': username_signature,
                         'selector': selector
                     }, {
                         '_id': 0
@@ -693,7 +693,7 @@ class GraphUtils(object):
                                     cipher = Crypt(wif)
                                 else:
                                     cipher = self.config.cipher
-                            txn['bulletin_secret'] = bulletin_secret
+                            txn['username_signature'] = username_signature
                             txn['selector'] = selector
                             if shared_decrypt:
                                 decrypted = cipher.shared_decrypt(txn['relationship'])
@@ -718,8 +718,8 @@ class GraphUtils(object):
                             }, upsert=True)
                             continue
                     yield txn
-    
-    def get_transactions_by_rid_worker(self, selector, bulletin_secret, wif=None, rid=False, raw=False,
+
+    def get_transactions_by_rid_worker(self, selector, username_signature, wif=None, rid=False, raw=False,
                                 returnheight=True, lt_block_height=None, requested_rid=False, shared_decrypt=False):
         from yadacoin.core.crypt import Crypt
 
@@ -727,7 +727,7 @@ class GraphUtils(object):
             {
                 'raw': raw,
                 'rid': rid,
-                'bulletin_secret': bulletin_secret,
+                'username_signature': username_signature,
                 'returnheight': returnheight,
                 'selector': selector,
                 'requested_rid': requested_rid
@@ -748,7 +748,7 @@ class GraphUtils(object):
                 block_height = transactions_by_rid_cache['height']
             else:
                 block_height = 0
-                
+
             query = {"transactions.rid": selector, "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
                  'index': {'$gt': block_height}}
             if requested_rid:
@@ -814,7 +814,7 @@ class GraphUtils(object):
                         {
                             'raw': raw,
                             'rid': rid,
-                            'bulletin_secret': bulletin_secret,
+                            'username_signature': username_signature,
                             'returnheight': returnheight,
                             'selector': selector,
                             'txn': transaction,
@@ -830,7 +830,7 @@ class GraphUtils(object):
                 {
                     'raw': raw,
                     'rid': rid,
-                    'bulletin_secret': bulletin_secret,
+                    'username_signature': username_signature,
                     'returnheight': returnheight,
                     'selector': selector,
                     'height': latest_block.index,
@@ -948,7 +948,7 @@ class GraphUtils(object):
             if 'txn' in x:
                 yield x['txn']
 
-        for x in self.mongo.db.friend_requests_cache.find({'requested_rid': {'$in': rids}}):
+        for x in self.mongo.db.friend_requests_cache.find({'txn': {'$exists': True}, 'requested_rid': {'$in': rids}}):
             if 'txn' in x:
                 yield x['txn']
 
@@ -1025,7 +1025,7 @@ class GraphUtils(object):
         for x in self.mongo.db.sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}):
             yield x['txn']
 
-    def get_messages(self, rids):
+    def get_collection(self, rids=[]):
         if not isinstance(rids, list):
             rids = [rids, ]
 
@@ -1037,6 +1037,29 @@ class GraphUtils(object):
         else:
             block_height = 0
 
+        if rids:
+            match1 = {
+                "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                "transactions.dh_public_key": '',
+                "transactions.rid": {'$in': rids}
+            }
+            match2 = {
+                "txn.relationship": {"$ne": ""},
+                "txn.dh_public_key": '',
+                "txn.rid": {'$in': rids}
+            }
+        else:
+            match1 = {
+                "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
+                "transactions.dh_public_key": '',
+                "transactions.rid": {"$ne": ""}
+            }
+            match2 = {
+                "txn.relationship": {"$ne": ""},
+                "txn.dh_public_key": '',
+                "txn.rid": {"$ne": ""}
+            }
+
         transactions = self.mongo.db.blocks.aggregate([
             {
                 "$match": {
@@ -1044,11 +1067,7 @@ class GraphUtils(object):
                 }
             },
             {
-                "$match": {
-                    "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
-                    "transactions.dh_public_key": '',
-                    "transactions.rid": {'$in': rids}
-                }
+                "$match": match1
             },
             {"$unwind": "$transactions"},
             {
@@ -1060,11 +1079,7 @@ class GraphUtils(object):
                 }
             },
             {
-                "$match": {
-                    "txn.relationship": {"$ne": ""},
-                    "txn.dh_public_key": '',
-                    "txn.rid": {'$in': rids}
-                }
+                "$match": match2
             },
             {
                 "$sort": {"height": 1}
@@ -1088,18 +1103,12 @@ class GraphUtils(object):
             },
             upsert=True)
 
-        i = 1
-        for x in self.mongo.db.fastgraph_transactions.find({
-            'txn.dh_public_key': '',
-            'txn.relationship': {'$ne': ''},
-            'txn.rid': {'$in': rids}
-        }):
-            if 'txn' in x:
-                x['txn']['height'] = block_height + i
-                yield x['txn']
-            i += 1
+        if rids:
+            query = {'rid': {'$in': rids}}
+        else:
+            query = {}
 
-        for x in self.mongo.db.messages_cache.find({'rid': {'$in': rids}}):
+        for x in self.mongo.db.messages_cache.find(query):
             x['txn']['height'] = x['height']
             yield x['txn']
 
@@ -1111,14 +1120,14 @@ class GraphUtils(object):
         rids = list(rids)
         return rids
 
-    def get_mutual_bulletin_secrets(self, rid, at_block_height=None):
+    def get_mutual_username_signatures(self, rid, at_block_height=None):
         # Get the mutual relationships, then get the bulleting secrets for those relationships
-        mutual_bulletin_secrets = set()
+        mutual_username_signatures = set()
         rids = self.get_mutual_rids(rid)
         for transaction in self.get_transactions_by_rid(rids, self.config.username_signature, rid=True):
-            if 'their_bulletin_secret' in transaction['relationship']:
-                mutual_bulletin_secrets.add(transaction['relationship']['their_bulletin_secret'])
-        return list(mutual_bulletin_secrets)
+            if 'their_username_signature' in transaction['relationship']:
+                mutual_username_signatures.add(transaction['relationship']['their_username_signature'])
+        return list(mutual_username_signatures)
 
     def get_shared_secrets_by_rid(self, rid):
         shared_secrets = []
