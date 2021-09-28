@@ -266,7 +266,8 @@ class Consensus(object):
                 stream,
                 'getblock',
                 {
-                    'hash': block.prev_hash
+                    'hash': block.prev_hash,
+                    'index': block.index - 1
                 }
             )
     
@@ -297,7 +298,7 @@ class Consensus(object):
         )
         backward_blocks.append(retrace_consensus_block)
         return backward_blocks, status
-    
+
     async def integrate_block_with_existing_chain(self, block: Block, stream):
         self.app_log.debug('integrate_block_with_existing_chain')
         backward_blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
