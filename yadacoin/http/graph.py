@@ -49,7 +49,7 @@ class BaseGraphHandler(BaseHandler):
         self.username_signature = self.get_query_argument('username_signature').replace(' ', '+')
         self.to = self.get_query_argument('to', None)
         self.username = self.get_query_argument('username', None)
-        self.rid = self.generate_rid(self.config.username_signature, self.username_signature)
+        self.rid = self.generate_rid(self.config.get_identity().get('username_signature'), self.username_signature)
         if self.request.body:
             ids = json.loads(self.request.body.decode('utf-8')).get('ids')
             rids = json.loads(self.request.body.decode('utf-8')).get('rids')
@@ -114,8 +114,8 @@ class RegistrationHandler(BaseHandler):
 
     async def get(self):
         data = {
-            'username_signature': self.config.username_signature,
-            'username': self.config.username,
+            'username_signature': self.config.get_identity().get('username_signature'),
+            'username': self.config.get_identity().get('username'),
             'callbackurl': self.config.callbackurl,
             'to': self.config.address
         }
@@ -127,7 +127,7 @@ class GraphTransactionHandler(BaseGraphHandler):
     async def get(self):
         rid = self.request.args.get('rid')
         if rid:
-            transactions = GU().get_transactions_by_rid(rid, self.config.username_signature, rid=True, raw=True)
+            transactions = GU().get_transactions_by_rid(rid, self.config.get_identity().get('username_signature'), rid=True, raw=True)
         else:
             transactions = []
         self.render_as_json(list(transactions))
@@ -353,12 +353,12 @@ class GraphCollectionHandler(BaseGraphHandler):
         if not isinstance(rids, list):
             rids = [rids]
         username_signature = self.get_query_argument('username_signature')
-        if self.config.username_signature == username_signature or not self.config.restrict_graph_api:
+        if self.config.get_identity().get('username_signature') == username_signature or not self.config.restrict_graph_api:
             return True
 
         organzation = await self.config.mongo.async_site_db.organizations.find_one({'username_signature': username_signature})
         if organzation:
-            parent_username_signature = self.config.username_signature
+            parent_username_signature = self.config.get_identity().get('username_signature')
             child_username_signatures = [x.get('user', {}).get('username_signature') async for x in self.config.mongo.async_site_db.organization_members.find({'organization_username_signature': organzation.get('username_signature')})]
         else:
             organzation_member = await self.config.mongo.async_site_db.organization_members.find_one({'user.username_signature': username_signature})
