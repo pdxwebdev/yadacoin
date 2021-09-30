@@ -398,7 +398,7 @@ class EmailConfig():
 class SSLConfig():
     @staticmethod
     def from_dict(ssl_config):
-        inst = EmailConfig()
+        inst = SSLConfig()
         inst.ca_file = ssl_config.get('cafile')
         inst.cert_file = ssl_config.get('certfile')
         inst.key_file = ssl_config.get('keyfile')
