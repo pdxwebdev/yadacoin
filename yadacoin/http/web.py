@@ -295,7 +295,6 @@ WEB_HANDLERS = [
     (r'/rmfa', RemoteMultifactorAuthHandler),
     (r'/2fa', TwoFactorAuthHandler),
     (r'/logout', LogoutHandler),
-    (r'/api-stats', HashrateAPIHandler),
     (r'/app', AppHandler),
     (r'/app2fa', App2FAHandler),
     (r'/get-recovery-transaction', GetRecoveryTransaction),
