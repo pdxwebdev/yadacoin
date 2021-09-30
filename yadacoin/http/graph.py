@@ -772,6 +772,18 @@ class SiaUploadHandler(BaseGraphHandler):
         return self.render_as_json({'status': 'success', 'skylink': utils.strip_prefix(skylink)})
 
 
+class SiaDownloadHandler(BaseGraphHandler):
+    async def get(self):
+        from siaskynet import SkynetClient, utils
+        sc = SkynetClient(self.config.skynet_url)
+        skylink = '/skynet/skylink/' + self.get_query_argument('skylink')
+        response = sc.download_file_request(skylink)
+        for key, header in response.headers.items():
+          self.set_header(key, header)
+        self.write(response.content)
+        self.finish()
+
+
 class SiaUploadDirectoryHandler(BaseGraphHandler):
     async def post(self):
         import zipfile
@@ -898,4 +910,5 @@ GRAPH_HANDLERS = [
     (r'/sia-share-file', SiaShareFileHandler), # share a file or list files from the local sia renter and return the .sia data base 64 encoded
     (r'/sia-delete', SiaDeleteHandler),
     (r'/ns', NSHandler), # name server endpoints
+    (r'/sia-download', SiaDownloadHandler),
 ]
