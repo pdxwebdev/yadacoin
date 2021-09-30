@@ -508,7 +508,7 @@ class NodeApplication(Application):
             ssl_ctx.load_cert_chain(self.config.ssl.cert_file, keyfile=self.config.ssl.key_file)
             self.config.https_server = tornado.httpserver.HTTPServer(self, ssl_options=ssl_ctx)
             self.config.https_server.listen(self.config.ssl.port)
-        if self.config.email:
+        if hasattr(self.config, 'email'):
             self.config.emailer = Email()
 
     def init_pool(self):
