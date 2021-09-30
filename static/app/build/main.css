@@ -25771,6 +25771,10 @@ ion-auto-complete ul li:hover {
   background-color: #636a74;
 }
 
+ion-segment {
+  margin-bottom: 10px;
+}
+
 page-chat .speech-bubble-right {
   position: relative;
   background: #29eafe;
@@ -25871,6 +25875,40 @@ page-chat .speech-bubble-left:after {
 
 .greenToast .toast-wrapper {
   background-color: green;
+}
+
+.success {
+  color: #32db64;
+}
+
+.sender {
+  font-weight: bold;
+  margin-bottom: 5px;
+}
+
+.subject {
+  margin-bottom: 5px;
+}
+
+.datetime {
+  color: gray;
+  font-size: 12px;
+  float: right;
+  margin-bottom: 5px;
+}
+
+.body {
+  text-overflow: ellipsis;
+  font-size: 12px;
+  margin-bottom: 5px;
+}
+
+.success {
+  color: #32db64;
+}
+
+.success {
+  color: #32db64;
 }
 
 .qrcode {

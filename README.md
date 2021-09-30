@@ -188,3 +188,11 @@ https://yadacoin.io/download
       - type: string
       - default: undefined
       - description: The password of your email account.
+- skynet_url
+  - type: string
+  - default: ''
+  - description: Specify the url of your skynet server.
+- skynet_api_key
+  - type: string
+  - default: ''
+  - description: Specify the api password for your skynet server.
