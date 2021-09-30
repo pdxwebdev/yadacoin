@@ -627,7 +627,7 @@ var SettingsService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(221);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(62);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(135);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(106);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(22);
@@ -1160,7 +1160,7 @@ var HomePage = /** @class */ (function () {
     };
     HomePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="!settingsService.remoteSettings.restricted || (settingsService.remoteSettings.restricted && settingsService.remoteSettings.identity.username_signature === bulletinSecretService.identity.username_signature)">\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'error\'">\n      Something went wrong with your registration, contact info@centeridentity.com for assistance.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'pending\'">\n      Registration is pending approval.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'complete\' && settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="!settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n      <h4>Public identity (share this with everyone) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n      <ion-item *ngIf="settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n      </ion-item>\n      <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows=5></ion-textarea>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'admin\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite organizations</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="organizationIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganization()" [disabled]="!organizationIdentifier || inviteBusy">\n          Add organization&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite members</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="memberIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganizationMember()" [disabled]="!memberIdentifier || inviteBusy">\n          Add organization member&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Admin</h3>\n      <ion-item>\n        <button ion-button large secondary (click)="signInToDashboard()">\n          Sign-in to Dashboard&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization_member\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite contacts</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="contactIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addMemberContact()" [disabled]="!contactIdentifier || inviteBusy">\n          Add contact&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
+            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="!settingsService.remoteSettings.restricted || (settingsService.remoteSettings.restricted && settingsService.remoteSettings.identity.username_signature === bulletinSecretService.identity.username_signature)">\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'error\'">\n      Something went wrong with your registration, contact info@centeridentity.com for assistance.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'pending\'">\n      Registration is pending approval.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'complete\' && settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="!settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n      <h4>Public identity (share this with everyone) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n      <ion-item *ngIf="settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n      </ion-item>\n      <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows=5></ion-textarea>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'admin\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite organizations</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="organizationIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganization()" [disabled]="!organizationIdentifier || inviteBusy">\n          Add organization&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.email}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite members</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="memberIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganizationMember()" [disabled]="!memberIdentifier || inviteBusy">\n          Add organization member&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Admin</h3>\n      <ion-item>\n        <button ion-button large secondary (click)="signInToDashboard()">\n          Sign-in to Dashboard&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization_member\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite contacts</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="contactIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addMemberContact()" [disabled]="!contactIdentifier || inviteBusy">\n          Add contact&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["j" /* NavParams */],
@@ -1320,7 +1320,7 @@ var PeerService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(22);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(62);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(21);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -1529,7 +1529,7 @@ var ChatPage = /** @class */ (function () {
     };
     ChatPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite">{{item.relationship.chatText}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true">Invite to join {{item.relationship.chatText.username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/skynet/skylink/{{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()"></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()" [disabled]="busy">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
+            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite">{{item.relationship.chatText}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true">Invite to join {{item.relationship.chatText.username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship.chatText.group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()"></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()" [disabled]="busy">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
             queries: {
                 content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
             }
@@ -1698,7 +1698,7 @@ var FirebaseService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(24);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__compose__ = __webpack_require__(134);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__profile_profile__ = __webpack_require__(62);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__profile_profile__ = __webpack_require__(68);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -1837,7 +1837,7 @@ var MailItemPage = /** @class */ (function () {
     };
     MailItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'mail-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{item.subject}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <button ion-button secondary (click)="replyMail(item)" *ngIf="graphService.isAdded(item.sender)">Reply</button>\n  <button ion-button secondary (click)="addFriend(item)" *ngIf="!graphService.isAdded(item.sender)">Add sender as contact</button>\n  <button *ngIf="item.group" ion-button secondary (click)="replyToAllMail(item)">Reply to all</button>\n  <button ion-button secondary (click)="forwardMail(item)">Forward</button>\n  <button *ngIf="item.message_type == \'contract\'" ion-button secondary (click)="signMail(item)">Sign</button>\n  <button *ngIf="item.message_type == \'event_meeting\'" ion-button secondary (click)="addToCalendar(item)">Add to calendar</button>\n  <div title="Verified" class="sender">\n    <span (click)="viewProfile(item.sender)">{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    <span *ngIf="item.group" (click)="viewProfile(item.group)">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n  </div>\n  <div *ngIf="item.message_type == \'contract_signed\'"><strong>Contract signed</strong> <ion-icon name="checkmark-circle" class="success"></ion-icon></div>\n  <ion-item>{{item.datetime}}</ion-item>\n  <ion-item *ngIf="item.event_datetime">{{item.event_datetime}}</ion-item>\n  <ion-item><pre>{{item.body}}</pre></ion-item>\n  <ion-item *ngIf="item.skylink"><a href="https://centeridentity.com/skynet/skylink/{{item.skylink}}" target="_blank">Download {{item.filename}}</a></ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/
+            selector: 'mail-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{item.subject}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <button ion-button secondary (click)="replyMail(item)" *ngIf="graphService.isAdded(item.sender)">Reply</button>\n  <button ion-button secondary (click)="addFriend(item)" *ngIf="!graphService.isAdded(item.sender)">Add sender as contact</button>\n  <button *ngIf="item.group" ion-button secondary (click)="replyToAllMail(item)">Reply to all</button>\n  <button ion-button secondary (click)="forwardMail(item)">Forward</button>\n  <button *ngIf="item.message_type == \'contract\'" ion-button secondary (click)="signMail(item)">Sign</button>\n  <button *ngIf="item.message_type == \'event_meeting\'" ion-button secondary (click)="addToCalendar(item)">Add to calendar</button>\n  <div title="Verified" class="sender">\n    <span (click)="viewProfile(item.sender)">{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    <span *ngIf="item.group" (click)="viewProfile(item.group)">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n  </div>\n  <div *ngIf="item.message_type == \'contract_signed\'"><strong>Contract signed</strong> <ion-icon name="checkmark-circle" class="success"></ion-icon></div>\n  <ion-item>{{item.datetime}}</ion-item>\n  <ion-item *ngIf="item.event_datetime">{{item.event_datetime}}</ion-item>\n  <ion-item><pre>{{item.body}}</pre></ion-item>\n  <ion-item *ngIf="item.skylink"><a href="https://centeridentity.com/sia-download?skylink={{item.skylink}}" target="_blank">Download {{item.filename}}</a></ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -1868,7 +1868,7 @@ var MailItemPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(62);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3779,7 +3779,7 @@ var GraphService = /** @class */ (function () {
     GraphService.prototype.identityFromSkylink = function (skylink) {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            _this.ahttp.get('https://centeridentity.com/skynet/skylink/' + skylink)
+            _this.ahttp.get('https://centeridentity.com/sia-download?skylink=' + skylink)
                 .subscribe(function (res) {
                 try {
                     return resolve(JSON.parse(res.text()));
@@ -5150,7 +5150,7 @@ var Settings = /** @class */ (function () {
     };
     Settings = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-settings',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button ion-button secondary (click)="createWallet()" *ngIf="!settingsService.remoteSettings.restricted">Create identity</button>\n  <button ion-button secondary (click)="createWalletFromInvite()" *ngIf="settingsService.remoteSettings.restricted">Create identity from Code</button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button *ngFor="let key of keys" ion-item (click)="selectIdentity(key.username)" [color]="key.active ? \'primary\' : \'light\'">\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && !centerIdentityExportEnabled">\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">Enable</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled">\n    <ion-item style="background: linear-gradient(90deg, rgba(255,255,255,1) 0%, #191919 75%); color: black;"><img src="assets/center-identity-logo1024x500.png" height="65" style="vertical-align:middle"></ion-item>\n    <ion-item>\n      <ion-input type="text" placeholder="Public username" [(ngModel)]="identity.username" disabled></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very memorable)\n      <div id="map-export" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">Save to blockchain</button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button ion-button primary (click)="saveKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname">\n    <hr/>\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">Export active identity</button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>Public identity (share this with your friends) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">Choose location</button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner></button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <ion-label floating>WIF</ion-label>\n    <ion-input type="text" [(ngModel)]="importedKey"></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/
+            selector: 'page-settings',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button ion-button secondary (click)="createWallet()" *ngIf="!settingsService.remoteSettings.restricted">Create identity</button>\n  <button ion-button secondary (click)="createWalletFromInvite()" *ngIf="settingsService.remoteSettings.restricted">Create identity from Code</button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button *ngFor="let key of keys" ion-item (click)="selectIdentity(key.username)" [color]="key.active ? \'primary\' : settingsService.remoteSettings.restricted ? \'light\' : \'dark\'">\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && !centerIdentityExportEnabled">\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">Enable</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled">\n    <ion-item style="background: linear-gradient(90deg, rgba(255,255,255,1) 0%, #191919 75%); color: black;"><img src="assets/center-identity-logo1024x500.png" height="65" style="vertical-align:middle"></ion-item>\n    <ion-item>\n      <ion-input type="text" placeholder="Public username" [(ngModel)]="identity.username" disabled></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very memorable)\n      <div id="map-export" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">Save to blockchain</button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button ion-button primary (click)="saveKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname">\n    <hr/>\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">Export active identity</button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>Public identity (share this with your friends) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">Choose location</button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner></button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <ion-label floating>WIF</ion-label>\n    <ion-input type="text" [(ngModel)]="importedKey"></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -5956,7 +5956,7 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(388);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(62);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_group_group__ = __webpack_require__(667);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__ = __webpack_require__(390);
@@ -6148,9 +6148,8 @@ var AppModule = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(390);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(391);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_profile_profile__ = __webpack_require__(62);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_mail_mail__ = __webpack_require__(393);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_deeplinks__ = __webpack_require__(394);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(394);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -6171,7 +6170,6 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-
 
 
 
@@ -6232,8 +6230,8 @@ var MyApp = /** @class */ (function () {
         }
         else if (this.settingsService.menu == 'mail') {
             this.pages = [
-                { title: 'Inbox', label: 'Inbox', component: __WEBPACK_IMPORTED_MODULE_16__pages_mail_mail__["a" /* MailPage */], count: false, color: '', root: true },
-                { title: 'Sent', label: 'Sent', component: __WEBPACK_IMPORTED_MODULE_16__pages_mail_mail__["a" /* MailPage */], count: false, color: '', root: true },
+                { title: 'Inbox', label: 'Inbox', component: __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__["a" /* MailPage */], count: false, color: '', root: true },
+                { title: 'Sent', label: 'Sent', component: __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__["a" /* MailPage */], count: false, color: '', root: true },
             ];
         }
         else if (this.settingsService.menu == 'chat') {
@@ -6276,7 +6274,6 @@ var MyApp = /** @class */ (function () {
         else if (this.settingsService.menu == 'settings') {
             this.pages = [
                 { title: 'Settings', label: 'Identity', component: __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__["a" /* Settings */], count: false, color: '', root: true },
-                { title: 'Profile', label: 'Profile', component: __WEBPACK_IMPORTED_MODULE_15__pages_profile_profile__["a" /* ProfilePage */], count: false, color: '', root: true }
             ];
         }
         this.openPage(this.pages[0]);
@@ -6286,9 +6283,7 @@ var MyApp = /** @class */ (function () {
         this.platform.ready()
             .then(function () {
             if (_this.platform.is('cordova')) {
-                _this.deeplinks.routeWithNavController(_this.nav, {
-                    '/app': __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__["a" /* Settings */]
-                }).subscribe(function (match) {
+                _this.deeplinks.routeWithNavController(_this.nav, {}).subscribe(function (match) {
                     // match.$route - the route we matched, which is the matched entry from the arguments to route()
                     // match.$args - the args passed in the link
                     // match.$link - the full link data
@@ -6352,7 +6347,7 @@ var MyApp = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_5__settings_service__["a" /* SettingsService */],
             __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__["a" /* BulletinSecretService */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */],
-            __WEBPACK_IMPORTED_MODULE_17__ionic_native_deeplinks__["a" /* Deeplinks */]])
+            __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__["a" /* Deeplinks */]])
     ], MyApp);
     return MyApp;
 }());
@@ -6390,7 +6385,7 @@ var MyApp = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(22);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(106);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(62);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(21);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -7007,219 +7002,6 @@ var ListPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 62:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ProfilePage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(9);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(24);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(22);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(134);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-var ProfilePage = /** @class */ (function () {
-    function ProfilePage(navCtrl, navParams, storage, walletService, graphService, bulletinSecretService, ahttp, loadingCtrl, settingsService, alertCtrl, transactionService, toastCtrl, events) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.storage = storage;
-        this.walletService = walletService;
-        this.graphService = graphService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.ahttp = ahttp;
-        this.loadingCtrl = loadingCtrl;
-        this.settingsService = settingsService;
-        this.alertCtrl = alertCtrl;
-        this.transactionService = transactionService;
-        this.toastCtrl = toastCtrl;
-        this.events = events;
-        this.subgroups = [];
-        this.identity = this.navParams.get('identity');
-        var rids = this.graphService.generateRids(this.identity);
-        this.rid = rids.rid;
-        this.requested_rid = rids.requested_rid;
-        this.requester_rid = rids.requester_rid;
-        if (this.settingsService.remoteSettings.restricted) {
-            this.busy = true;
-            this.graphService.identityToSkylink(this.identity)
-                .then(function (skylink) {
-                _this.identitySkylink = skylink;
-                _this.busy = false;
-            });
-        }
-        else {
-            this.identityJson = JSON.stringify(this.graphService.toIdentity(this.identity), null, 4);
-        }
-        this.isAdded = this.graphService.isAdded(this.identity);
-        this.group = this.graphService.isGroup(this.identity);
-    }
-    ProfilePage_1 = ProfilePage;
-    ProfilePage.prototype.invite = function () {
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Invite');
-        alert.setSubTitle('Select a friend to invite.');
-        alert.addButton('Confirm');
-        alert.addInput({
-            name: 'radio1',
-            type: 'radio',
-            label: 'Radio 1',
-            value: 'value1',
-            checked: true
-        });
-        this.graphService.graph.friends.map(function (friend) {
-            return friend;
-        });
-        alert.present();
-    };
-    ProfilePage.prototype.addFriend = function () {
-        var _this = this;
-        var info;
-        var buttons = [];
-        buttons.push({
-            text: 'Add',
-            handler: function (data) {
-                return _this.graphService.addFriend(_this.identity)
-                    .then(function (txn) {
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Contact Request Sent');
-                    alert.setSubTitle('Your Friend Request has been sent successfully.');
-                    alert.addButton('Ok');
-                    alert.present();
-                }).catch(function (err) {
-                    console.log(err);
-                });
-            }
-        });
-        var alert = this.alertCtrl.create({
-            buttons: buttons
-        });
-        alert.setTitle('Add contact');
-        alert.setSubTitle('Do you want to add ' + this.identity.username + '?');
-        alert.present();
-    };
-    ProfilePage.prototype.createSubGroup = function () {
-        var _this = this;
-        this.graphService.getInfo()
-            .then(function () {
-            return new Promise(function (resolve, reject) {
-                var alert = _this.alertCtrl.create({
-                    title: 'Sub-group name',
-                    inputs: [
-                        {
-                            name: 'groupname',
-                            placeholder: 'Sub-group name'
-                        }
-                    ],
-                    buttons: [
-                        {
-                            text: 'Save',
-                            handler: function (data) {
-                                var toast = _this.toastCtrl.create({
-                                    message: 'Sub-group created',
-                                    duration: 2000
-                                });
-                                toast.present();
-                                resolve(data.groupname);
-                            }
-                        }
-                    ]
-                });
-                alert.present();
-            });
-        })
-            .then(function (groupName) {
-            return _this.graphService.createGroup(groupName, _this.item);
-        })
-            .then(function (hash) {
-            if (_this.settingsService.remoteSettings['walletUrl']) {
-                return _this.graphService.getInfo();
-            }
-        });
-    };
-    ProfilePage.prototype.message = function () {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__chat_chat__["a" /* ChatPage */], {
-            identity: this.identity
-        });
-    };
-    ProfilePage.prototype.openSubGroup = function (subGroup) {
-        this.navCtrl.push(ProfilePage_1, {
-            item: subGroup,
-            group: true
-        });
-    };
-    ProfilePage.prototype.compose = function () {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_11__mail_compose__["a" /* ComposePage */], {
-            item: {
-                recipient: this.identity
-            }
-        });
-    };
-    ProfilePage.prototype.showFriendRequests = function () {
-        var item = { pageTitle: { title: "Friend Requests" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_7__list_list__["a" /* ListPage */], item);
-    };
-    ProfilePage.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    var ProfilePage_1;
-    ProfilePage = ProfilePage_1 = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-row>\n    <ion-col text-center>\n      <ion-item>\n        <h1>{{identity.username}}</h1></ion-item>\n    </ion-col>\n    <ion-col>\n      <button ion-button large secondary (click)="addFriend()" *ngIf="isAdded === false && group !== true">\n        Add contact&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="createSubGroup()" *ngIf="isAdded === true && group === true">\n        Create sub-group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="compose()" *ngIf="isAdded === true">\n        Compose message&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && !group">\n        Chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && group === true">\n        Group chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <a href="https://centeridentity.com/skynet/skylink/{{identity.skylink}}" *ngIf="identity.skylink" target="_blank">\n        <button ion-button large secondary>\n          Download&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </a>\n    </ion-col>\n  </ion-row>\n  <ion-row>\n    <h4>Manage access</h4>\n    <ion-list>\n      <ion-item>\n\n      </ion-item>\n    </ion-list>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted">\n    <h4>Public identity <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item>\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows="1"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <ion-row *ngIf="!settingsService.remoteSettings.restricted">\n    <h4>Public identity</h4>\n    <ion-item>\n      <ion-textarea type="text" [value]="identityJson" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <ion-row>\n    <ion-list>\n      <ng-container *ngFor="let group of graphService.graph.groups">\n        <ion-item *ngIf="group.relationship.parent && group.relationship.parent.username_signature === item.relationship.username_signature" (click)="openSubGroup(group)">\n            {{group.relationship.username}}\n        </ion-item>\n      </ng-container>\n    </ion-list>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
-            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
-            __WEBPACK_IMPORTED_MODULE_10__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
-    ], ProfilePage);
-    return ProfilePage;
-}());
-
-//# sourceMappingURL=profile.js.map
-
-/***/ }),
-
 /***/ 666:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -7398,7 +7180,7 @@ var PostModal = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(22);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(62);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(21);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -7734,6 +7516,219 @@ var GroupPage = /** @class */ (function () {
 }());
 
 //# sourceMappingURL=group.js.map
+
+/***/ }),
+
+/***/ 68:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ProfilePage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(9);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(24);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(29);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(61);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(222);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(22);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(134);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var ProfilePage = /** @class */ (function () {
+    function ProfilePage(navCtrl, navParams, storage, walletService, graphService, bulletinSecretService, ahttp, loadingCtrl, settingsService, alertCtrl, transactionService, toastCtrl, events) {
+        var _this = this;
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.storage = storage;
+        this.walletService = walletService;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.ahttp = ahttp;
+        this.loadingCtrl = loadingCtrl;
+        this.settingsService = settingsService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.toastCtrl = toastCtrl;
+        this.events = events;
+        this.subgroups = [];
+        this.identity = this.navParams.get('identity');
+        var rids = this.graphService.generateRids(this.identity);
+        this.rid = rids.rid;
+        this.requested_rid = rids.requested_rid;
+        this.requester_rid = rids.requester_rid;
+        if (this.settingsService.remoteSettings.restricted) {
+            this.busy = true;
+            this.graphService.identityToSkylink(this.identity)
+                .then(function (skylink) {
+                _this.identitySkylink = skylink;
+                _this.busy = false;
+            });
+        }
+        else {
+            this.identityJson = JSON.stringify(this.graphService.toIdentity(this.identity), null, 4);
+        }
+        this.isAdded = this.graphService.isAdded(this.identity);
+        this.group = this.graphService.isGroup(this.identity);
+    }
+    ProfilePage_1 = ProfilePage;
+    ProfilePage.prototype.invite = function () {
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Invite');
+        alert.setSubTitle('Select a friend to invite.');
+        alert.addButton('Confirm');
+        alert.addInput({
+            name: 'radio1',
+            type: 'radio',
+            label: 'Radio 1',
+            value: 'value1',
+            checked: true
+        });
+        this.graphService.graph.friends.map(function (friend) {
+            return friend;
+        });
+        alert.present();
+    };
+    ProfilePage.prototype.addFriend = function () {
+        var _this = this;
+        var info;
+        var buttons = [];
+        buttons.push({
+            text: 'Add',
+            handler: function (data) {
+                return _this.graphService.addFriend(_this.identity)
+                    .then(function (txn) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Contact Request Sent');
+                    alert.setSubTitle('Your Friend Request has been sent successfully.');
+                    alert.addButton('Ok');
+                    alert.present();
+                }).catch(function (err) {
+                    console.log(err);
+                });
+            }
+        });
+        var alert = this.alertCtrl.create({
+            buttons: buttons
+        });
+        alert.setTitle('Add contact');
+        alert.setSubTitle('Do you want to add ' + this.identity.username + '?');
+        alert.present();
+    };
+    ProfilePage.prototype.createSubGroup = function () {
+        var _this = this;
+        this.graphService.getInfo()
+            .then(function () {
+            return new Promise(function (resolve, reject) {
+                var alert = _this.alertCtrl.create({
+                    title: 'Sub-group name',
+                    inputs: [
+                        {
+                            name: 'groupname',
+                            placeholder: 'Sub-group name'
+                        }
+                    ],
+                    buttons: [
+                        {
+                            text: 'Save',
+                            handler: function (data) {
+                                var toast = _this.toastCtrl.create({
+                                    message: 'Sub-group created',
+                                    duration: 2000
+                                });
+                                toast.present();
+                                resolve(data.groupname);
+                            }
+                        }
+                    ]
+                });
+                alert.present();
+            });
+        })
+            .then(function (groupName) {
+            return _this.graphService.createGroup(groupName, _this.item);
+        })
+            .then(function (hash) {
+            if (_this.settingsService.remoteSettings['walletUrl']) {
+                return _this.graphService.getInfo();
+            }
+        });
+    };
+    ProfilePage.prototype.message = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__chat_chat__["a" /* ChatPage */], {
+            identity: this.identity
+        });
+    };
+    ProfilePage.prototype.openSubGroup = function (subGroup) {
+        this.navCtrl.push(ProfilePage_1, {
+            item: subGroup,
+            group: true
+        });
+    };
+    ProfilePage.prototype.compose = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_11__mail_compose__["a" /* ComposePage */], {
+            item: {
+                recipient: this.identity
+            }
+        });
+    };
+    ProfilePage.prototype.showFriendRequests = function () {
+        var item = { pageTitle: { title: "Friend Requests" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_7__list_list__["a" /* ListPage */], item);
+    };
+    ProfilePage.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    var ProfilePage_1;
+    ProfilePage = ProfilePage_1 = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'page-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-row>\n    <ion-col text-center>\n      <ion-item>\n        <h1>{{identity.username}}</h1></ion-item>\n    </ion-col>\n    <ion-col>\n      <button ion-button large secondary (click)="addFriend()" *ngIf="isAdded === false && group !== true">\n        Add contact&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="createSubGroup()" *ngIf="isAdded === true && group === true">\n        Create sub-group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="compose()" *ngIf="isAdded === true">\n        Compose message&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && !group">\n        Chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && group === true">\n        Group chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <a href="https://centeridentity.com/skynet/skylink/{{identity.skylink}}" *ngIf="identity.skylink" target="_blank">\n        <button ion-button large secondary>\n          Download&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </a>\n    </ion-col>\n  </ion-row>\n  <ion-row>\n    <h4>Manage access</h4>\n    <ion-list>\n      <ion-item>\n\n      </ion-item>\n    </ion-list>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted">\n    <h4>Public identity <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item>\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows="1"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <ion-row *ngIf="!settingsService.remoteSettings.restricted">\n    <h4>Public identity</h4>\n    <ion-item>\n      <ion-textarea type="text" [value]="identityJson" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <ion-row>\n    <ion-list>\n      <ng-container *ngFor="let group of graphService.graph.groups">\n        <ion-item *ngIf="group.relationship.parent && group.relationship.parent.username_signature === item.relationship.username_signature" (click)="openSubGroup(group)">\n            {{group.relationship.username}}\n        </ion-item>\n      </ng-container>\n    </ion-list>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
+            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
+            __WEBPACK_IMPORTED_MODULE_10__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
+    ], ProfilePage);
+    return ProfilePage;
+}());
+
+//# sourceMappingURL=profile.js.map
 
 /***/ })
 
