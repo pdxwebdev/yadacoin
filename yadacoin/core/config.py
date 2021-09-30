@@ -402,7 +402,7 @@ class SSLConfig():
         inst.ca_file = ssl_config.get('cafile')
         inst.cert_file = ssl_config.get('certfile')
         inst.key_file = ssl_config.get('keyfile')
-        inst.ssl_port = ssl_config.get('port')
+        inst.port = ssl_config.get('port')
         inst.common_name = ssl_config.get('common_name')
         return inst
 
