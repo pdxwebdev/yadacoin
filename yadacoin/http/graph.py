@@ -754,11 +754,21 @@ class SiaUploadHandler(BaseGraphHandler):
                 'extra_path': self.get_query_argument('filename')
             })
         except Exception as e:
-            self.set_status(400)
-            return self.render_as_json({
-                'status': 'error',
-                'message': 'sia node not responding'
-            })
+            try:
+                skylink = sc.upload({
+                    self.get_query_argument('filename'): base64.b64decode(json_body['file'])
+                },
+                {
+                    'custom_user_agent': 'Sia-Agent',
+                    'api_key': self.config.skynet_api_key,
+                    'extra_path': self.get_query_argument('filename') + '?dryrun=true'
+                })
+            except Exception as e:
+                self.set_status(400)
+                return self.render_as_json({
+                    'status': 'error',
+                    'message': 'sia node not responding'
+                })
         return self.render_as_json({'status': 'success', 'skylink': utils.strip_prefix(skylink)})
 
 
