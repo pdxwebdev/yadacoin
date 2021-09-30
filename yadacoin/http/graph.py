@@ -742,10 +742,17 @@ class SiaUploadHandler(BaseGraphHandler):
     async def post(self):
         from requests.auth import HTTPBasicAuth
         from siaskynet import SkynetClient, utils
-        sc = SkynetClient()
+        sc = SkynetClient(self.config.skynet_url)
         json_body = json.loads(self.request.body)
         try:
-            skylink = sc.upload({self.get_query_argument('filename'): base64.b64decode(json_body['file'])})
+            skylink = sc.upload({
+                self.get_query_argument('filename'): base64.b64decode(json_body['file'])
+            },
+            {
+                'custom_user_agent': 'Sia-Agent',
+                'api_key': self.config.skynet_api_key,
+                'extra_path': self.get_query_argument('filename')
+            })
         except Exception as e:
             self.set_status(400)
             return self.render_as_json({

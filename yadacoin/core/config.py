@@ -89,6 +89,9 @@ class Config(object):
 
         self.restrict_graph_api = config.get('restrict_graph_api', False)
 
+        self.skynet_url = config.get('skynet_url', '')
+        self.skynet_api_key = config.get('skynet_api_key', '')
+
         email = config.get('email', False)
         if email:
             self.email = EmailConfig.from_dict(email)
@@ -229,7 +232,9 @@ class Config(object):
             "pool_take": .01,
             "payout_frequency": 6,
             "restrict_graph_api": False,
-            "email": False
+            "email": False,
+            "skynet_url": '',
+            "skynet_api_key": ''
         })
 
     @classmethod
@@ -277,6 +282,9 @@ class Config(object):
         cls.payout_frequency = config.get('payout_frequency', 6)
 
         cls.restrict_graph_api = config.get('restrict_graph_api', False)
+
+        cls.skynet_url = config.get('skynet_url', '')
+        cls.skynet_api_key = config.get('skynet_api_key', '')
 
         email = config.get('email', False)
         if email:
@@ -360,6 +368,8 @@ class Config(object):
             'payout_frequency': self.payout_frequency,
             'restrict_graph_api': self.restrict_graph_api,
             'email': self.email.to_dict(),
+            'skynet_url': self.skynet_url,
+            'skynet_api_key': self.skynet_api_key
         }
 
     def to_json(self):

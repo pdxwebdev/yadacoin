@@ -1039,50 +1039,62 @@ class GraphUtils(object):
 
         if rids:
             match1 = {
-                "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
-                "transactions.dh_public_key": '',
-                "transactions.rid": {'$in': rids}
+                'transactions': {'$elemMatch': {'relationship': {'$ne': ''}}},
+                '$or': [
+                    {'transactions.rid': {'$in': rids}},
+                    {'transactions.requester_rid': {'$in': rids}},
+                    {'transactions.requested_rid': {'$in': rids}}
+                ]
             }
             match2 = {
-                "txn.relationship": {"$ne": ""},
-                "txn.dh_public_key": '',
-                "txn.rid": {'$in': rids}
+                'txn.relationship': {'$ne': ''},
+                '$or': [
+                    {'txn.rid': {'$in': rids}},
+                    {'txn.requester_rid': {'$in': rids}},
+                    {'txn.requested_rid': {'$in': rids}}
+                ]
             }
         else:
             match1 = {
-                "transactions": {"$elemMatch": {"relationship": {"$ne": ""}}},
-                "transactions.dh_public_key": '',
-                "transactions.rid": {"$ne": ""}
+                'transactions': {'$elemMatch': {'relationship': {'$ne': ''}}},
+                '$or': [
+                    {'transactions.rid': {'$ne': ''}},
+                    {'transactions.requester_rid': {'$ne': ''}},
+                    {'transactions.requested_rid': {'$ne': ''}}
+                ]
             }
             match2 = {
-                "txn.relationship": {"$ne": ""},
-                "txn.dh_public_key": '',
-                "txn.rid": {"$ne": ""}
+                'txn.relationship': {'$ne': ''},
+                '$or': [
+                    {'txn.rid': {'$ne': ''}},
+                    {'txn.requester_rid': {'$ne': ''}},
+                    {'txn.requested_rid': {'$ne': ''}}
+                ]
             }
 
         transactions = self.mongo.db.blocks.aggregate([
             {
-                "$match": {
-                    "index": {'$gt': block_height}
+                '$match': {
+                    'index': {'$gt': block_height}
                 }
             },
             {
-                "$match": match1
+                '$match': match1
             },
-            {"$unwind": "$transactions"},
+            {'$unwind': '$transactions'},
             {
-                "$project": {
-                    "_id": 0,
-                    "txn": "$transactions",
-                    "height": "$index",
-                    "block_hash": "$hash"
+                '$project': {
+                    '_id': 0,
+                    'txn': '$transactions',
+                    'height': '$index',
+                    'block_hash': '$hash'
                 }
             },
             {
-                "$match": match2
+                '$match': match2
             },
             {
-                "$sort": {"height": 1}
+                '$sort': {'height': 1}
             }
         ])
 
@@ -1090,11 +1102,15 @@ class GraphUtils(object):
             self.app_log.debug('caching messages at height: {}'.format(x['height']))
             self.mongo.db.messages_cache.update({
                 'rid': x['txn']['rid'],
+                'requester_rid': x['txn']['requester_rid'],
+                'requested_rid': x['txn']['requested_rid'],
                 'height': x['height'],
                 'id': x['txn']['id']
             },
             {
                 'rid': x['txn']['rid'],
+                'requester_rid': x['txn']['requester_rid'],
+                'requested_rid': x['txn']['requested_rid'],
                 'height': x['height'],
                 'block_hash': x['block_hash'],
                 'id': x['txn']['id'],
@@ -1104,7 +1120,13 @@ class GraphUtils(object):
             upsert=True)
 
         if rids:
-            query = {'rid': {'$in': rids}}
+            query = {
+                '$or': [
+                    {'rid': {'$in': rids}},
+                    {'requester_rid': {'$in': rids}},
+                    {'requested_rid': {'$in': rids}}
+                ]
+            }
         else:
             query = {}
 
