@@ -12,7 +12,7 @@ class Identity:
         inst.username_signature = data['username_signature']
         return inst
 
-    def generate_rid(self, username_signature):
+    def generate_rid(self, username_signature, collection=''):
         username_signatures = sorted(
             [
                 str(self.username_signature),
@@ -21,7 +21,7 @@ class Identity:
             key=str.lower
         )
         return hashlib.sha256((
-            str(username_signatures[0]) + str(username_signatures[1])
+            str(username_signatures[0]) + str(username_signatures[1] + collection)
         ).encode('utf-8')).digest().hex()
 
     @property

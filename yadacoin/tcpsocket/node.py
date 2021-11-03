@@ -45,7 +45,7 @@ class NodeRPC(BaseRPC):
                 ]
             }, {'_id': 0}).sort([('index',1)])
             result = await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE)
-        
+
         message = {
             'blocks': result,
             'start_index': start_index
@@ -73,7 +73,7 @@ class NodeRPC(BaseRPC):
             service_provider = None
             for x, service_provider in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
                 break
-            
+
             if not service_provider:
                 return
             payload[service_provider.peer.source_property] = service_provider.peer.to_dict()
@@ -138,6 +138,25 @@ class NodeRPC(BaseRPC):
             )
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = body.get('params', {})
+
+            return
+
+        if 'web' not in self.config.modes:
+            return
+
+        ws_users = self.config.websocketServer.inbound_streams[User.__name__]
+        peer_stream = None
+        if txn.requested_rid in ws_users:
+            peer_stream = ws_users[txn.requested_rid]
+
+        if txn.requester_rid in ws_users:
+            peer_stream = ws_users[txn.requester_rid]
+
+        if txn.rid in ws_users:
+            peer_stream = ws_users[txn.rid]
+
+        if peer_stream:
+            await peer_stream.newtxn(body, source='tcpsocket')
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get('result', {})
@@ -562,7 +581,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             await self.wait_for_data(stream)
         except StreamClosedError:
             get_config().app_log.error('Cannot connect to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
-    
+
     async def challenge(self, body, stream):
         self.ensure_protocol_version(body, stream)
         params = body.get('params', {})
@@ -587,7 +606,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 },
                 body['id']
             )
-    
+
     async def capacity(self, body, stream):
         NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][stream.peer.rid] = stream.peer
         self.config.app_log.warning('{} at full capacity: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))

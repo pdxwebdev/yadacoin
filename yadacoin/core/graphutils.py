@@ -1101,21 +1101,23 @@ class GraphUtils(object):
         for x in transactions:
             self.app_log.debug('caching messages at height: {}'.format(x['height']))
             self.mongo.db.messages_cache.update({
-                'rid': x['txn']['rid'],
-                'requester_rid': x['txn']['requester_rid'],
-                'requested_rid': x['txn']['requested_rid'],
+                'rid': x['txn'].get('rid'),
+                'requester_rid': x['txn'].get('requester_rid'),
+                'requested_rid': x['txn'].get('requested_rid'),
                 'height': x['height'],
                 'id': x['txn']['id']
             },
             {
-                'rid': x['txn']['rid'],
-                'requester_rid': x['txn']['requester_rid'],
-                'requested_rid': x['txn']['requested_rid'],
-                'height': x['height'],
-                'block_hash': x['block_hash'],
-                'id': x['txn']['id'],
-                'txn': x['txn'],
-                'cache_time': time()
+                '$set': {
+                    'rid': x['txn'].get('rid'),
+                    'requester_rid': x['txn'].get('requester_rid'),
+                    'requested_rid': x['txn'].get('requested_rid'),
+                    'height': x['height'],
+                    'block_hash': x['block_hash'],
+                    'id': x['txn']['id'],
+                    'txn': x['txn'],
+                    'cache_time': time()
+                }
             },
             upsert=True)
 

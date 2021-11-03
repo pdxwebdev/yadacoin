@@ -13,7 +13,7 @@ from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.transaction import Transaction, NotEnoughMoneyException
-from yadacoin.decorators.jwtauth import jwtauth
+from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.core.transactionutils import TU
 
 
@@ -29,7 +29,7 @@ class GenerateWalletHandler(BaseHandler):
         return self.render_as_json("TODO: Implement")
 
 
-@jwtauth
+@jwtauthwallet
 class GenerateChildWalletHandler(BaseHandler):
 
     async def post(self):
@@ -103,7 +103,7 @@ class GetBalanceSum(BaseHandler):
         return self.render_as_json("{0:.8f}".format(balance))
 
 
-@jwtauth
+@jwtauthwallet
 class CreateTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
@@ -136,7 +136,7 @@ class CreateTransactionView(BaseHandler):
         return self.render_as_json(txn.to_dict())
 
 
-@jwtauth
+@jwtauthwallet
 class CreateRawTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
@@ -168,7 +168,7 @@ class CreateRawTransactionView(BaseHandler):
         return self.render_as_json(txn.to_dict())
 
 
-@jwtauth
+@jwtauthwallet
 class SendTransactionView(BaseHandler):
     async def post(self):
         key_or_wif = self.get_secure_cookie("key_or_wif")
@@ -196,7 +196,7 @@ class SendTransactionView(BaseHandler):
         return self.render_as_json(txn)
 
 
-@jwtauth
+@jwtauthwallet
 class UnlockedHandler(BaseHandler):
 
     async def prepare(self):
@@ -268,9 +268,7 @@ class UnlockHandler(BaseHandler):
                 {
                     '$set': {
                         'key':'jwt',
-                        'value': {
-                            'timestamp': payload['timestamp']
-                        }
+                        'value': payload
                     }
                 }, 
                 upsert=True

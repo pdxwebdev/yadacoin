@@ -196,3 +196,7 @@ https://yadacoin.io/download
   - type: string
   - default: ''
   - description: Specify the api password for your skynet server.
+- web_jwt_expiry
+  - type: string
+  - default: 23040
+  - description: Specify the validity period for a json web token in seconds.

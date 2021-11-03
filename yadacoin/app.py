@@ -81,13 +81,15 @@ define("client", default=False, help="Is client for testing", type=bool)
 
 class NodeApplication(Application):
 
-    def __init__(self):
+    def __init__(self, test=False):
 
         options.parse_command_line(final=False)
 
         self.init_config(options)
         self.configure_logging()
-        self.init_config_properties()
+        self.init_config_properties(test=test)
+        if test:
+            return
         if 'node' in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
@@ -98,12 +100,19 @@ class NodeApplication(Application):
             if 'pool' in self.config.modes:
                 self.init_pool()
         if 'web' in self.config.modes:
-            if os.path.exists(path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')):
-                static_path = path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')
+            if os.path.exists(path.join(path.dirname(__file__), '..', 'static')):
+                static_path = path.join(path.dirname(__file__), '..', 'static')
             else:
-                static_path = path.join(path.join(path.dirname(__file__), 'static'), 'app') # probably running from binary
+                static_path = path.join(path.dirname(__file__), 'static') # probably running from binary
+
+            if os.path.exists(path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')):
+                static_app_path = path.join(path.join(path.dirname(__file__), '..', 'static'), 'app')
+            else:
+                static_app_path = path.join(path.join(path.dirname(__file__), 'static'), 'app') # probably running from binary
+
             self.default_handlers = [
-              (r"/app/(.*)", StaticFileHandler, {"path": static_path}),
+              (r"/app/(.*)", StaticFileHandler, {"path": static_app_path}),
+              (r"/yadacoinstatic/(.*)", StaticFileHandler, {"path": static_path}),
             ]
             self.default_handlers.extend(handlers.HANDLERS)
             self.init_websocket()
@@ -282,7 +291,7 @@ class NodeApplication(Application):
                 self.cache_last_times = {}
                 try:
                     async for x in self.config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
-                        self.config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
+                        await self.config.mongo.async_db.blocks.update_one({'index': x['index']}, {'$set': {'updated_at': time()}})
                     for cache_collection in self.cache_collections:
                         self.cache_last_times[cache_collection] = 0
                         await self.config.mongo.async_db[cache_collection].delete_many({'cache_time': {'$exists': False}})
@@ -550,7 +559,7 @@ class NodeApplication(Application):
         elif my_peer.get('peer_type') == 'user' or True: # default if not specified
             self.config.peer = User.from_dict(my_peer, is_me=True)
 
-    def init_config_properties(self):
+    def init_config_properties(self, test=False):
         self.config.health = Health()
         self.config.mongo = Mongo()
         self.config.http_client = AsyncHTTPClient()
@@ -559,6 +568,8 @@ class NodeApplication(Application):
         yadacoin.core.blockchainutils.set_BU(self.config.BU)  # To be removed
         self.config.GU = GraphUtils()
         self.config.LatestBlock = LatestBlock
+        if test:
+            return
         tornado.ioloop.IOLoop.current().run_sync(self.config.LatestBlock.block_checker)
         self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(Consensus.init_async)
         self.config.cipher = Crypt(self.config.wif)
@@ -589,8 +600,6 @@ class NodeApplication(Application):
             for x in [User, Group]:
                 if x.__name__ not in self.config.websocketServer.inbound_streams:
                     self.config.websocketServer.inbound_streams[x.__name__] = {}
-        if 'test' in self.config.modes:
-            return
 
 if __name__ == "__main__":
     NodeApplication()

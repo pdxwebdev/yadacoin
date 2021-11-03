@@ -7,9 +7,13 @@ import os
 import json
 import time
 import hashlib
+import datetime
+import jwt
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.graphutils import GraphUtils as GU
 from yadacoin.core.blockchainutils import BU
+from yadacoin.core.identity import Identity
+from yadacoin.core.config import Config
 
 
 class BaseWebHandler(BaseHandler):
@@ -86,6 +90,27 @@ class MultifactorAuthHandler(BaseHandler):
             'authenticated': False
         })
 
+
+class GenerateChallengeHandler(BaseHandler):
+    async def get(self):
+        challenge = uuid.uuid4()
+        await self.config.mongo.async_site_db.challenges.update_one(
+            {
+                'rid': self.get_query_argument('rid')
+            },
+            {
+                '$set': {
+                    'rid': self.get_query_argument('rid'),
+                    'challenge': challenge
+                }
+            },
+            upsert=True
+        )
+
+        return self.render_as_json({'challenge': challenge})
+
+
+
 class LoginHandler(BaseHandler):
 
     async def get(self):
@@ -101,16 +126,42 @@ class LoginHandler(BaseHandler):
         self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
 
-        cookie = self.get_secure_cookie("signin_code")
-        if cookie:
-            cookie = cookie.decode('utf-8')
-        else:
-            cookie = str(uuid.uuid4())
-            self.set_secure_cookie("signin_code", cookie)
+        challenge = await self.config.mongo.async_site_db.challenges.find_one(
+            {
+                'rid': self.get_query_argument('rid')
+            }
+        )
 
-        self.render_as_json({
-            'signin_code': cookie
-        })
+        alias = Config.generate(username=challenge)
+        alias_identity = alias.get_identity()
+
+        payload = {
+            'timestamp': time.time(),
+            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=int(self.config.web_jwt_expiry)),
+            'alias': alias_identity
+        }
+
+        self.encoded = jwt.encode(
+            payload,
+            self.config.jwt_secret_key,
+            algorithm='ES256'
+        )
+        await self.config.mongo.async_site_db.web_tokens.update_one(
+            {
+                'token': self.encoded,
+                'rid': self.get_query_argument('rid')
+            },
+            {
+                '$set': {
+                    'token': self.encoded,
+                    'rid': self.get_query_argument('rid'),
+                    'payload': payload
+                }
+            },
+            upsert=True
+        )
+
+        self.render_as_json({'token': self.encoded, 'wif': alias.wif})
 
 class RemoteMultifactorAuthHandler(BaseHandler):
     async def post(self):

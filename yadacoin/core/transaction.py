@@ -597,11 +597,7 @@ class Transaction(object):
                         {
                             '$match': {
                                 'transactions.inputs.id': txn['id'],
-                                '$or': [
-                                    {'transactions.public_key': self.public_key},
-                                    {'transactions.inputs.public_key': self.public_key},
-                                    {'transactions.inputs.address': address},
-                                ]
+                                'transactions.public_key': self.public_key
                             }
                         },
                         {
@@ -610,11 +606,7 @@ class Transaction(object):
                         {
                             '$match': {
                                 'transactions.inputs.id': txn['id'],
-                                '$or': [
-                                    {'transactions.public_key': self.public_key},
-                                    {'transactions.inputs.public_key': self.public_key},
-                                    {'transactions.inputs.address': address},
-                                ]
+                                'transactions.public_key': self.public_key
                             }
                         },
                     ])

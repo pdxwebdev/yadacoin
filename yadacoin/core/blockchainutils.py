@@ -146,7 +146,7 @@ class BlockChainUtils(object):
                     "transaction.outputs.to": address
                 }
             },
-        ], allowDiskUse=True)
+        ], allowDiskUse=True, hint='__to')
 
         reverse_public_key = ''
         async for public_key_address_pair in public_key_address_pairs:
@@ -168,11 +168,7 @@ class BlockChainUtils(object):
         spent_txns_query.extend([
             {
                 "$match": {
-                    "$or": [
-                        {"transactions.public_key": reverse_public_key},
-                        {"transactions.inputs.public_key": reverse_public_key},
-                        {"transactions.inputs.address": address}
-                    ]
+                    "transactions.public_key": reverse_public_key
                 }
             },
             {"$unwind": "$transactions" },
@@ -185,11 +181,7 @@ class BlockChainUtils(object):
             },
             {
                 "$match": {
-                    "$or": [
-                        {"txn.public_key": reverse_public_key},
-                        {"txn.inputs.public_key": reverse_public_key},
-                        {"txn.inputs.address": address}
-                    ]
+                    "txn.public_key": reverse_public_key
                 }
             },
             {
@@ -202,7 +194,7 @@ class BlockChainUtils(object):
             }
         ])
 
-        spent = self.mongo.async_db.blocks.aggregate(spent_txns_query, allowDiskUse=True)
+        spent = self.mongo.async_db.blocks.aggregate(spent_txns_query, allowDiskUse=True, hint='__txn_public_key')
 
         # here we're assuming block/transaction validation ensures the inputs used are valid for this address
         spent_ids = set()
@@ -253,7 +245,7 @@ class BlockChainUtils(object):
             }
         ])
 
-        async for unspent_txn in self.config.mongo.async_db.blocks.aggregate(unspent_txns_query, allowDiskUse=True):
+        async for unspent_txn in self.config.mongo.async_db.blocks.aggregate(unspent_txns_query, allowDiskUse=True, hint='__to'):
             unspent_txn['transactions']['height'] = unspent_txn['index']
             unspent_txn['transactions']['outputs'] = [unspent_txn['transactions']['outputs']]
             yield unspent_txn['transactions']

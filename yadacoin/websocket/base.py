@@ -18,24 +18,34 @@ class RCPWebSocketServer(WebSocketHandler):
     inbound_streams = {}
     inbound_pending = {}
     config = None
+    collections = {
+        'CALENDAR': 'event_meeting',
+        'CHAT': 'chat',
+        'CHAT_FILE': 'chat_file',
+        'CONTRACT': 'contract',
+        'CONTRACT_SIGNED': 'contract_signed',
+        'GROUP_CHAT': 'group_chat',
+        'GROUP_CHAT_FILE_NAME': 'group_chat_file_name',
+        'GROUP_CHAT_FILE': 'group_chat_file',
+        'GROUP_MAIL': 'group_mail',
+        'MAIL': 'mail',
+        'PERMISSION_REQUEST': 'permission_request',
+        'SIGNATURE_REQUEST': 'signature_request',
+        'WEB_CHALLENGE_REQUEST': 'web_challenge_request',
+        'WEB_CHALLENGE_RESPONSE': 'web_challenge_response',
+        'WEB_PAGE': 'web_page',
+        'WEB_PAGE_REQUEST': 'web_page_request',
+        'WEB_PAGE_RESPONSE': 'web_page_response',
+        'WEB_SIGNIN_REQUEST': 'web_signin_request',
+        'WEB_SIGNIN_RESPONSE': 'web_signin_response'
+    }
 
     def __init__(self, application, request):
         super(RCPWebSocketServer, self).__init__(application, request)
         self.config = get_config()
 
     async def open(self):
-        user = User.from_dict({
-            'host': None,
-            'port': None,
-            'identity': {
-                'username': self.get_secure_cookie('username'),
-                'username_signature': self.get_secure_cookie('username_signature'),
-                'public_key': self.get_secure_cookie('public_key')
-            }
-        })
-        RCPWebSocketServer.inbound_streams[User.__name__][user.rid] = self
-        self.peer = user
-        self.peer.groups = {}
+        pass # removing cookies! Yada does not do cookies or sessions! EVER!
 
     async def on_message(self, data):
         if not data:
@@ -43,10 +53,11 @@ class RCPWebSocketServer(WebSocketHandler):
         body = json.loads(data)
         method = body.get('method')
         await getattr(self, method)(body)
+        self.config.app_log.debug(f'RECEIVED {self.peer.identity.username} {method} {data}')
 
     def on_close(self):
         self.remove_peer(self.peer)
-    
+
     def check_origin(self, origin):
         return True
 
@@ -64,6 +75,9 @@ class RCPWebSocketServer(WebSocketHandler):
         self.peer = peer
         self.peer.groups = {}
         RCPWebSocketServer.inbound_streams[User.__name__][peer.rid] = self
+        for key, collection in self.collections.items():
+            rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
+            RCPWebSocketServer.inbound_streams[User.__name__][rid] = self
 
         try:
             result = verify_signature(
@@ -98,11 +112,11 @@ class RCPWebSocketServer(WebSocketHandler):
             '_id': 0
         }).sort([('time', -1)]).to_list(100)
         await self.write_result('chat_history_response', {'chats': sorted(results, key=lambda x: x['time']), 'to': body.get('params', {}).get('to')}, body=body)
-    
+
     async def route_confirm(self, body):
         credit_balance = await self.get_credit_balance()
         await self.write_result('route_server_confirm', {'credit_balance': credit_balance}, body=body)
-    
+
     async def route(self, body):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
         route_server_confirm_out = {}
@@ -161,7 +175,7 @@ class RCPWebSocketServer(WebSocketHandler):
                 peer_stream = self.config.websocketServer.inbound_streams[User.__name__][transaction.requested_rid]
                 if peer_stream.peer.rid != transaction.requester_rid:
                     await peer_stream.write_params('route', params)
-            
+
             if 'group' in params:
                 group = Group.from_dict({
                     'host': None,
@@ -190,6 +204,40 @@ class RCPWebSocketServer(WebSocketHandler):
             return {}
         await self.write_result('route_server_confirm', route_server_confirm_out, body=body)
 
+    async def newtxn(self, body, source='websocket'):
+        params = body.get('params')
+        if (
+            not params.get('transaction')
+        ):
+            return
+
+        txn = Transaction.from_dict(params.get('transaction'))
+        try:
+            await txn.verify()
+        except:
+            return
+
+        await self.config.mongo.async_db.miner_transactions.replace_one(
+            {
+                'id': txn.transaction_signature
+            },
+            txn.to_dict(),
+            upsert=True
+        )
+        if self.peer.identity.public_key == params.get('transaction', {}).get('public_key') and source == 'websocket':
+            if isinstance(self.config.peer, ServiceProvider):
+                for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
+                    await BaseRPC().write_params(peer_stream, 'newtxn', params)
+
+                for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
+                    await BaseRPC().write_params(peer_stream, 'newtxn', params)
+            return
+
+        await self.write_params('newtxn', params)
+
+    async def newtxn_confirm(self, body):
+        pass
+
     async def get_credit_balance(self):
       address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.peer.identity.public_key))
 
@@ -200,9 +248,9 @@ class RCPWebSocketServer(WebSocketHandler):
       credit_balance = shares - (txns_routed * .1)
 
       return credit_balance if credit_balance > 0 else 0.00
-    
+
     async def join_group(self, body):
-        
+
         # for rid, group in self.peer.groups.items():
         #     group_id_attr = getattr(group, group.id_attribute)
         #     if group_id_attr in self.inbound_streams[Group.__name__]:
@@ -240,7 +288,7 @@ class RCPWebSocketServer(WebSocketHandler):
                 self.remove_peer(peer_stream.peer)
             except:
                 self.config.app_log.warning(format_exc())
-    
+
     async def service_provider_request(self, body):
         if not body.get('params').get('group'):
             self.config.app_log.error('Group not provided')
@@ -262,7 +310,7 @@ class RCPWebSocketServer(WebSocketHandler):
         for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
             await BaseRPC().write_params(peer_stream, 'service_provider_request', params)
         await self.write_result('service_provider_request_confirm', {}, body=body)
-    
+
     async def online(self, body):
         rids = body.get('params').get('rids')
         matching_rids = set(rids) & set(self.config.websocketServer.inbound_streams[User.__name__].keys())
@@ -272,7 +320,7 @@ class RCPWebSocketServer(WebSocketHandler):
         id_attr = getattr(peer, peer.id_attribute)
         if id_attr in self.inbound_streams[peer.__class__.__name__]:
             del self.inbound_streams[peer.__class__.__name__][id_attr]
-        
+
         loop = ioloop.IOLoop.current()
         for rid, group in peer.groups.items():
             group_id_attr = getattr(group, group.id_attribute)
@@ -297,15 +345,19 @@ class RCPWebSocketServer(WebSocketHandler):
         await self.write_as_json(method, data, 'params', body)
 
     async def write_as_json(self, method, data, rpc_type, body=None):
+        req_id = body.get('id') if body else 1
         rpc_data = {
-            'id': body.get('id') if body else 1,
+            'id': req_id,
             'method': method,
             'jsonrpc': 2.0,
             rpc_type: data
         }
+
         try:
             await self.write_message('{}'.format(json.dumps(rpc_data)).encode())
         except:
             self.config.app_log.warning('message did not send')
+
+        self.config.app_log.debug(f'SENT {self.peer.identity.username} {method} {data} {rpc_type} {req_id}')
 
 WEBSOCKET_HANDLERS = [(r'/websocket', RCPWebSocketServer),]

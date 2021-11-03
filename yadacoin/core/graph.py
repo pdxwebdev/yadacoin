@@ -306,8 +306,7 @@ class Graph(object):
         self.reacts = out
 
     async def get_collection(self):
-        rids = self.get_lookup_rids() + self.rids
-        self.collection = [x for x in GU().get_collection(rids)]
+        self.collection = [x for x in GU().get_collection(self.rids)]
         res = await self.config.mongo.async_db.miner_transactions.find({
             'relationship': {'$ne': ''},
             '$or': [

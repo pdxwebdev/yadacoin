@@ -21,7 +21,7 @@ from yadacoin.core.graph import Graph
 from yadacoin.core.transaction import Transaction, InvalidTransactionException, \
     InvalidTransactionSignatureException, MissingInputTransactionException
 from yadacoin.core.transactionutils import TU
-from yadacoin.decorators.jwtauth import jwtauth
+from yadacoin.decorators.jwtauth import jwtauthwallet
 
 
 class GraphConfigHandler(BaseHandler):
@@ -34,16 +34,18 @@ class GraphConfigHandler(BaseHandler):
             "fastgraphUrl": "{}/post-fastgraph-transaction".format(peer),
             "graphUrl": "{}".format(peer),
             "walletUrl": "{}/get-graph-wallet".format(peer),
+            "websocketUrl": "{}/websocket".format(self.config.websocket_host_port),
             "loginUrl": "{}/login".format(peer),
             "registerUrl": "{}/create-relationship".format(peer),
             "authenticatedUrl": "{}/authenticated".format(peer),
+            "webSignInUrl": "{}/web-signin".format(peer),
             "logoData": '',
             "identity": self.config.get_identity(),
             "restricted": self.config.restrict_graph_api
         }
         return self.render_as_json(yada_config)
 
-@jwtauth
+@jwtauthwallet
 class BaseGraphHandler(BaseHandler):
     def get_base_graph(self):
         self.username_signature = self.get_query_argument('username_signature').replace(' ', '+')
@@ -885,6 +887,17 @@ class SiaDeleteHandler(BaseGraphHandler):
         })
 
 
+class WebSignInHandler(BaseGraphHandler):
+    async def get(self):
+        return self.render('web-sign-in.html')
+
+    async def post(self):
+        #self.config.app_log.info(self.request.body)
+        return self.render_as_json({
+          'success': False
+        })
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r'/yada-config', GraphConfigHandler), # first the config is requested
@@ -911,4 +924,5 @@ GRAPH_HANDLERS = [
     (r'/sia-delete', SiaDeleteHandler),
     (r'/ns', NSHandler), # name server endpoints
     (r'/sia-download', SiaDownloadHandler),
+    (r'/web-signin', WebSignInHandler),
 ]

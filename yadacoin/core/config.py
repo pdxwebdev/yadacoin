@@ -80,7 +80,8 @@ class Config(object):
         self.mp = None
         self.pp = None
         self.stratum_pool_port = config.get('stratum_pool_port', 3333)
-        self.wallet_host_port = config.get('wallet_host_port', 'http://localhost:{}'.format(config['peer_port']))
+        self.wallet_host_port = config.get('wallet_host_port', 'http://localhost:{}'.format(config['serve_port']))
+        self.websocket_host_port = config.get('websocket_host_port', 'ws://localhost:{}'.format(config['serve_port']))
         self.credits_per_share = config.get('credits_per_share', 5)
         self.shares_required = config.get('shares_required', False)
         self.pool_payout = config.get('pool_payout', False)
@@ -91,6 +92,8 @@ class Config(object):
 
         self.skynet_url = config.get('skynet_url', '')
         self.skynet_api_key = config.get('skynet_api_key', '')
+
+        self.web_jwt_expiry = config.get('web_jwt_expiry', 23040)
 
         email = config.get('email', False)
         if email:
@@ -226,6 +229,7 @@ class Config(object):
             "username": username or '',
             "network": "mainnet",
             "wallet_host_port": 'http://localhost:8001',
+            "websocket_host_port": 'ws://localhost:8001',
             "credits_per_share": 5,
             "shares_required": False,
             "pool_payout": False,
@@ -234,7 +238,8 @@ class Config(object):
             "restrict_graph_api": False,
             "email": False,
             "skynet_url": '',
-            "skynet_api_key": ''
+            "skynet_api_key": '',
+            "web_jwt_expiry": 23040
         })
 
     @classmethod
@@ -275,6 +280,7 @@ class Config(object):
         cls.jwt_public_key = config.get('jwt_public_key')
         cls.sia_api_key = config.get('sia_api_key')
         cls.wallet_host_port = config.get('wallet_host_port')
+        cls.websocket_host_port = config.get('websocket_host_port')
         cls.credits_per_share = config.get('credits_per_share', 5)
         cls.shares_required = config.get('shares_required', False)
         cls.pool_payout = config.get('pool_payout', False)
@@ -285,6 +291,8 @@ class Config(object):
 
         cls.skynet_url = config.get('skynet_url', '')
         cls.skynet_api_key = config.get('skynet_api_key', '')
+
+        cls.web_jwt_expiry = config.get('web_jwt_expiry', 23040)
 
         email = config.get('email', False)
         if email:
@@ -361,6 +369,7 @@ class Config(object):
             'jwt_public_key': self.jwt_public_key,
             'callbackurl': self.callbackurl,
             'wallet_host_port': self.wallet_host_port,
+            'websocket_host_port': self.websocket_host_port,
             'credits_per_share': self.credits_per_share,
             'shares_required': self.shares_required,
             'pool_payout': self.pool_payout,
@@ -369,7 +378,8 @@ class Config(object):
             'restrict_graph_api': self.restrict_graph_api,
             'email': self.email.to_dict(),
             'skynet_url': self.skynet_url,
-            'skynet_api_key': self.skynet_api_key
+            'skynet_api_key': self.skynet_api_key,
+            'web_jwt_expiry': self.web_jwt_expiry
         }
 
     def to_json(self):
