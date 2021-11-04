@@ -200,3 +200,7 @@ https://yadacoin.io/download
   - type: string
   - default: 23040
   - description: Specify the validity period for a json web token in seconds.
+- websocket_host_port
+  - type: string
+  - default: 'ws://localhost:8000/websocket'
+  - description: Specify the host and port of your websocket
