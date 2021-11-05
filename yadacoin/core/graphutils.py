@@ -23,6 +23,7 @@ class GraphUtils(object):
 
     database = None
     COLLECTIONS = {
+        'CONTACTS': '',
         'CALENDAR': 'event_meeting',
         'CHAT': 'chat',
         'CHAT_FILE': 'chat_file',
