@@ -15,6 +15,7 @@ from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
 from logging import getLogger
 from threading import Thread
+from yadacoin.core.graphutils import GraphUtils
 
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.graph import Graph
@@ -376,18 +377,7 @@ class GraphCollectionHandler(BaseGraphHandler):
                     return False
 
         base_groups = []
-        collections = [
-          '',
-          'group',
-          'file',
-          'mail',
-          'contract',
-          'contract_signed',
-          'event_meeting',
-          'group_mail',
-          'event_meeting',
-        ]
-        for collection in collections:
+        for key, collection in GraphUtils.COLLECTIONS.items():
             base_groups.append(self.generate_rid(parent_username_signature, parent_username_signature, collection))
             base_groups.append(self.generate_rid(username_signature, username_signature, collection))
             base_groups.append(self.generate_rid(parent_username_signature, username_signature, collection))

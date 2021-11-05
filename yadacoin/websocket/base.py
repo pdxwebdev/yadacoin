@@ -7,6 +7,7 @@ from tornado import gen, ioloop
 from tornado.websocket import WebSocketHandler, WebSocketClosedError
 from coincurve import verify_signature
 from bitcoin.wallet import P2PKHBitcoinAddress
+from yadacoin.core.graphutils import GraphUtils
 
 from yadacoin.core.identity import Identity
 from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Group
@@ -18,27 +19,6 @@ class RCPWebSocketServer(WebSocketHandler):
     inbound_streams = {}
     inbound_pending = {}
     config = None
-    collections = {
-        'CALENDAR': 'event_meeting',
-        'CHAT': 'chat',
-        'CHAT_FILE': 'chat_file',
-        'CONTRACT': 'contract',
-        'CONTRACT_SIGNED': 'contract_signed',
-        'GROUP_CHAT': 'group_chat',
-        'GROUP_CHAT_FILE_NAME': 'group_chat_file_name',
-        'GROUP_CHAT_FILE': 'group_chat_file',
-        'GROUP_MAIL': 'group_mail',
-        'MAIL': 'mail',
-        'PERMISSION_REQUEST': 'permission_request',
-        'SIGNATURE_REQUEST': 'signature_request',
-        'WEB_CHALLENGE_REQUEST': 'web_challenge_request',
-        'WEB_CHALLENGE_RESPONSE': 'web_challenge_response',
-        'WEB_PAGE': 'web_page',
-        'WEB_PAGE_REQUEST': 'web_page_request',
-        'WEB_PAGE_RESPONSE': 'web_page_response',
-        'WEB_SIGNIN_REQUEST': 'web_signin_request',
-        'WEB_SIGNIN_RESPONSE': 'web_signin_response'
-    }
 
     def __init__(self, application, request):
         super(RCPWebSocketServer, self).__init__(application, request)
@@ -75,7 +55,7 @@ class RCPWebSocketServer(WebSocketHandler):
         self.peer = peer
         self.peer.groups = {}
         RCPWebSocketServer.inbound_streams[User.__name__][peer.rid] = self
-        for key, collection in self.collections.items():
+        for key, collection in GraphUtils.COLLECTIONS.items():
             rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
             RCPWebSocketServer.inbound_streams[User.__name__][rid] = self
 
