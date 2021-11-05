@@ -16,6 +16,7 @@ from eccsnacks.curve25519 import scalarmult_base
 from logging import getLogger
 from threading import Thread
 from yadacoin.core.graphutils import GraphUtils
+from yadacoin.core.peer import User
 
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.graph import Graph
@@ -213,6 +214,20 @@ class GraphTransactionHandler(BaseGraphHandler):
                 if dup_check_count:
                     self.app_log.debug('found duplicate tx for rid set {}'.format(x.transaction_signature))
                     return self.render_as_json({'status': True, 'message': 'dup rid'})
+
+            stream = None
+            if x.rid in self.config.websocketServer.inbound_streams[User.__name__]:
+                stream = self.config.websocketServer.inbound_streams[User.__name__][x.rid]
+            if x.requester_rid in self.config.websocketServer.inbound_streams[User.__name__]:
+                stream = self.config.websocketServer.inbound_streams[User.__name__][x.requester_rid]
+            if x.requested_rid in self.config.websocketServer.inbound_streams[User.__name__]:
+                stream = self.config.websocketServer.inbound_streams[User.__name__][x.requested_rid]
+
+            if stream:
+                await stream.write_params(
+                    'newtxn',
+                    {'transaction': x.to_dict()}
+                )
 
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
