@@ -3908,6 +3908,11 @@ html, body {
   height: 1000px;
 }
 
+tooltip-box, [_nghost-c0] {
+  border-radius: 5px;
+  background-color: black !important;
+}
+
 ion-action-sheet {
   left: 0;
   top: 0;
@@ -25773,6 +25778,19 @@ ion-auto-complete ul li:hover {
 
 ion-segment {
   margin-bottom: 10px;
+}
+
+.split-pane-visible > ion-menu {
+  max-width: 304px !important;
+}
+
+.navbutton {
+  width: 40px;
+  height: 46px;
+}
+
+.subnavbutton {
+  margin-bottom: 8px;
 }
 
 page-chat .speech-bubble-right {

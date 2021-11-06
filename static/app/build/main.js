@@ -69,15 +69,22 @@ var WebSocketService = /** @class */ (function () {
                 var collection = this.getNewTxnCollection(msg);
                 if (collection) {
                     switch (collection) {
+                        case this.settingsService.collections.CONTACT:
+                            this.graphService.parseFriendRequests([msg.params.transaction]);
+                            this.graphService.refreshFriendsAndGroups()
+                                .then(function () {
+                                return _this.graphService.addNotification(msg.params.transaction, _this.settingsService.collections.CONTACT);
+                            });
+                            break;
                         case this.settingsService.collections.CALENDAR:
                             var calendar = this.graphService.parseCalendar([msg.params.transaction]);
-                            return this.graphService.addNotification(calendar);
+                            return this.graphService.addNotification(calendar, this.settingsService.collections.CALENDAR);
                             break;
                         case this.settingsService.collections.CHAT:
                             this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
                                 .then(function (item) {
                                 _this.settingsService.menu === 'chat' && _this.events.publish('newchat');
-                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0]);
+                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.CHAT);
                             });
                             break;
                         case this.settingsService.collections.CONTRACT:
@@ -88,7 +95,7 @@ var WebSocketService = /** @class */ (function () {
                             this.graphService.parseMail([msg.params.transaction], 'new_sent_mail_counts', 'new_sent_mail_count', undefined, this.settingsService.collections.MAIL, 'last_sent_mail_height')
                                 .then(function (item) {
                                 _this.events.publish('newmail');
-                                return _this.graphService.addNotification(item);
+                                return _this.graphService.addNotification(item, _this.settingsService.collections.GROUP_MAIL);
                             });
                             break;
                         case this.settingsService.collections.MAIL:
@@ -97,7 +104,7 @@ var WebSocketService = /** @class */ (function () {
                             this.graphService.parseMail([msg.params.transaction], mailCount, mailCounts, msg.params.transaction.rid, this.settingsService.collections.MAIL)
                                 .then(function (item) {
                                 _this.events.publish('newmail');
-                                return _this.graphService.addNotification(item);
+                                return _this.graphService.addNotification(item, _this.settingsService.collections.MAIL);
                             });
                             break;
                         case this.settingsService.collections.PERMISSION_REQUEST:
@@ -107,7 +114,7 @@ var WebSocketService = /** @class */ (function () {
                             var permissionRequestCounts = void 0;
                             this.graphService.parseMessages([msg.params.transaction], permissionRequestCount, permissionRequestCounts, msg.params.transaction.rid, this.settingsService.collections.SIGNATURE_REQUEST)
                                 .then(function (item) {
-                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0]);
+                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.SIGNATURE_REQUEST);
                             });
                             break;
                         case this.settingsService.collections.WEB_CHALLENGE_REQUEST:
@@ -141,7 +148,7 @@ var WebSocketService = /** @class */ (function () {
                             break;
                         case this.settingsService.collections.WEB_PAGE:
                             var webpage = this.graphService.parseMyPages([msg.params.transaction]);
-                            this.graphService.addNotification(webpage);
+                            this.graphService.addNotification(webpage, this.settingsService.collections.WEB_PAGE);
                             break;
                         case this.settingsService.collections.WEB_PAGE_REQUEST:
                             var webRequestCount = void 0;
@@ -322,7 +329,7 @@ var WebSocketService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_autocomplete_provider__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_forms__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(383);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(386);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_wallet_service__ = __webpack_require__(26);
@@ -556,7 +563,7 @@ var ComposePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(661);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(665);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -923,11 +930,13 @@ var SettingsService = /** @class */ (function () {
         this.tokens = {};
         this.menu = '';
         this.collections = {
+            CONTACT: 'contact',
             CALENDAR: 'event_meeting',
             CHAT: 'chat',
             CHAT_FILE: 'chat_file',
             CONTRACT: 'contract',
             CONTRACT_SIGNED: 'contract_signed',
+            GROUP: 'group',
             GROUP_CHAT: 'group_chat',
             GROUP_CHAT_FILE_NAME: 'group_chat_file_name',
             GROUP_CHAT_FILE: 'group_chat_file',
@@ -1057,6 +1066,9 @@ var BulletinSecretService = /** @class */ (function () {
                 return resolve();
             });
         });
+    };
+    BulletinSecretService.prototype.cloneIdentity = function () {
+        return JSON.parse(this.identityJson());
     };
     BulletinSecretService.prototype.identityJson = function () {
         return JSON.stringify(this.identity, null, 4);
@@ -1188,13 +1200,13 @@ var BulletinSecretService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(382);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(385);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_rxjs_operators__ = __webpack_require__(51);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(222);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(345);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(348);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_11_eciesjs__);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -1248,7 +1260,7 @@ var GraphService = /** @class */ (function () {
             mail: [],
             mypages: []
         };
-        this.notifications = [];
+        this.notifications = {};
         this.getGraphError = false;
         this.getSentFriendRequestsError = false;
         this.getGroupsRequestsError = false;
@@ -1293,6 +1305,14 @@ var GraphService = /** @class */ (function () {
         };
         this.groups_indexed = {};
         this.friends_indexed = {};
+        this.notifications = {};
+        for (var i = 0; i < Object.keys(this.settingsService.collections).length; i++) {
+            var collectionKey = Object.keys(this.settingsService.collections)[i];
+            if (!this.notifications[this.settingsService.collections[collectionKey]])
+                this.notifications[this.settingsService.collections[collectionKey]] = [];
+        }
+        if (!this.notifications['notifications'])
+            this.notifications['notifications'] = [];
     };
     GraphService.prototype.refreshFriendsAndGroups = function () {
         var _this = this;
@@ -1361,12 +1381,22 @@ var GraphService = /** @class */ (function () {
             });
         });
     };
-    GraphService.prototype.addNotification = function (item) {
+    GraphService.prototype.addNotification = function (item, collection) {
+        if (!this.notifications[collection])
+            this.notifications[collection] = [];
         if (Array.isArray(item)) {
-            this.notifications = this.notifications.concat(item);
+            this.notifications[collection] = this.notifications[collection].concat(item);
         }
         else {
-            this.notifications.push(item);
+            this.notifications[collection].push(item);
+        }
+        if (!this.notifications['notifications'])
+            this.notifications['notifications'] = [];
+        if (Array.isArray(item)) {
+            this.notifications['notifications'] = this.notifications['notifications'].concat(item);
+        }
+        else {
+            this.notifications['notifications'].push(item);
         }
         this.events.publish('notification');
     };
@@ -1390,7 +1420,7 @@ var GraphService = /** @class */ (function () {
     GraphService.prototype.getFriendRequests = function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            _this.endpointRequest('get-graph-collection', null, [_this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature)])
+            _this.endpointRequest('get-graph-collection', null, [_this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CONTACT)])
                 .then(function (data) {
                 _this.parseFriendRequests(data.collection);
                 _this.getFriendRequestsError = false;
@@ -1832,12 +1862,12 @@ var GraphService = /** @class */ (function () {
             try {
                 var decrypted = this.publicDecrypt(friend_request.relationship);
                 var relationship = JSON.parse(decrypted);
-                this.graph.friends.push(friend_request);
                 friend_request.relationship = relationship;
-                this.friends_indexed[friend_request.rid] = friend_request;
                 if (sent_friend_requestsObj[friend_request.rid]) {
                     delete friend_requestsObj[friend_request.rid];
                     delete sent_friend_requestsObj[friend_request.rid];
+                    this.graph.friends.push(friend_request);
+                    this.friends_indexed[friend_request.rid] = friend_request;
                 }
                 else {
                     friend_requestsObj[friend_request.rid] = friend_request;
@@ -1848,6 +1878,8 @@ var GraphService = /** @class */ (function () {
             }
             catch (err) {
                 if (friend_requestsObj[friend_request.rid]) {
+                    this.graph.friends.push(friend_requestsObj[friend_request.rid]);
+                    this.friends_indexed[friend_request.rid] = friend_requestsObj[friend_request.rid];
                     delete friend_requestsObj[friend_request.rid];
                     delete sent_friend_requestsObj[friend_request.rid];
                 }
@@ -1882,7 +1914,7 @@ var GraphService = /** @class */ (function () {
         if (arr_friend_requests.length > 0) {
             var arr_friend_request_keys = Array.from(friend_requests_diff.keys());
             for (i = 0; i < arr_friend_request_keys.length; i++) {
-                friend_requests.push(this.friends_indexed[arr_friend_request_keys[i]]);
+                friend_requests.push(friend_requestsObj[arr_friend_request_keys[i]]);
             }
         }
         this.friend_request_count = friend_requests.length;
@@ -1891,6 +1923,7 @@ var GraphService = /** @class */ (function () {
         }
         this.graph.friend_requests = friend_requests;
         this.graph.sent_friend_requests = sent_friend_requests;
+        return friend_requests;
     };
     GraphService.prototype.parseFriends = function (friends) {
         var _this = this;
@@ -2424,12 +2457,13 @@ var GraphService = /** @class */ (function () {
             if (messageJson[this.settingsService.collections.MAIL]) {
                 event_1.relationship = messageJson;
                 event_1.relationship[this.settingsService.collections.MAIL].event_datetime = new Date(event_1.relationship[this.settingsService.collections.MAIL].event_datetime);
+                eventsOut.push(event_1);
             }
             else if (messageJson.event) {
                 event_1.relationship = messageJson;
                 event_1.relationship.event.event_datetime = new Date(event_1.relationship.event.event_datetime);
+                eventsOut.push(event_1);
             }
-            eventsOut.push(event_1);
         }
         return eventsOut;
     };
@@ -2673,8 +2707,8 @@ var GraphService = /** @class */ (function () {
         if (requester_rid === void 0) { requester_rid = ''; }
         if (requested_rid === void 0) { requested_rid = ''; }
         rid = rid || this.generateRid(this.bulletinSecretService.identity.username_signature, identity.username_signature);
-        requester_rid = requester_rid || this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature);
-        requested_rid = requested_rid || this.generateRid(identity.username_signature, identity.username_signature);
+        requester_rid = requester_rid || this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CONTACT);
+        requested_rid = requested_rid || this.generateRid(identity.username_signature, identity.username_signature, this.settingsService.collections.CONTACT);
         if (requester_rid && requested_rid) {
             // get rid from bulletin secrets
         }
@@ -2686,10 +2720,12 @@ var GraphService = /** @class */ (function () {
         var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
         var dh_private_key = this.toHex(raw_dh_private_key);
         var dh_public_key = this.toHex(raw_dh_public_key);
+        var myIdentity = this.bulletinSecretService.cloneIdentity();
+        myIdentity.collection = this.settingsService.collections.CONTACT;
         return this.transactionService.generateTransaction({
             relationship: {
                 dh_private_key: dh_private_key,
-                identity: this.bulletinSecretService.identity
+                identity: myIdentity
             },
             dh_public_key: dh_public_key,
             requested_rid: requested_rid,
@@ -2715,7 +2751,7 @@ var GraphService = /** @class */ (function () {
         if (rid === void 0) { rid = ''; }
         if (requester_rid === void 0) { requester_rid = ''; }
         if (requested_rid === void 0) { requested_rid = ''; }
-        identity.collection = identity.collection || 'group';
+        identity.collection = identity.collection || this.settingsService.collections.GROUP;
         rid = rid || this.generateRid(this.bulletinSecretService.identity.username_signature, identity.username_signature);
         requester_rid = requester_rid || this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, identity.collection);
         requested_rid = requested_rid || this.generateRid(identity.username_signature, identity.username_signature, identity.collection);
@@ -2744,8 +2780,8 @@ var GraphService = /** @class */ (function () {
     };
     GraphService.prototype.generateRids = function (identity) {
         var rid = this.generateRid(identity.username_signature, this.bulletinSecretService.identity.username_signature);
-        var requested_rid = this.isGroup(identity) ? this.generateRid(identity.username_signature, identity.username_signature, identity.collection) : this.generateRid(identity.username_signature, identity.username_signature);
-        var requester_rid = this.isGroup(identity) ? this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, identity.collection) : this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature);
+        var requested_rid = this.generateRid(identity.username_signature, identity.username_signature, identity.collection);
+        var requester_rid = this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, identity.collection);
         return {
             rid: rid,
             requested_rid: requested_rid,
@@ -2774,7 +2810,7 @@ var GraphService = /** @class */ (function () {
     GraphService.prototype.isGroup = function (identity) {
         if (!identity)
             return false;
-        return !!identity.collection;
+        return identity.collection && identity.collection !== this.settingsService.collections.CONTACT;
     };
     GraphService.prototype.isChild = function (identity) {
         if (!identity)
@@ -3479,7 +3515,7 @@ var HomePage = /** @class */ (function () {
     };
     HomePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="!settingsService.remoteSettings.restricted || (settingsService.remoteSettings.restricted && settingsService.remoteSettings.identity.username_signature === bulletinSecretService.identity.username_signature)">\n      <button ion-button large secondary (click)="createGroup()">\n        Create Group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'error\'">\n      Something went wrong with your registration, contact info@centeridentity.com for assistance.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'pending\'">\n      Registration is pending approval.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'complete\' && settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="!settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n      <h4>Public identity (share this with everyone) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n      <ion-item *ngIf="settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n      </ion-item>\n      <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows=5></ion-textarea>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'admin\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite organizations</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="organizationIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganization()" [disabled]="!organizationIdentifier || inviteBusy">\n          Add organization&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.email}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite members</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="memberIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganizationMember()" [disabled]="!memberIdentifier || inviteBusy">\n          Add organization member&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Admin</h3>\n      <ion-item>\n        <button ion-button large secondary (click)="signInToDashboard()">\n          Sign-in to Dashboard&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization_member\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite contacts</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="contactIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addMemberContact()" [disabled]="!contactIdentifier || inviteBusy">\n          Add contact&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
+            selector: 'page-home',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-row>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'error\'">\n      Something went wrong with your registration, contact info@centeridentity.com for assistance.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'pending\'">\n      Registration is pending approval.\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="graphService.registrationStatus() === \'complete\' && settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n    </ion-col>\n    <ion-col col-lg-12 col-md-12 col-sm-12 *ngIf="!settingsService.remoteSettings.restricted">\n      <h1>Welcome!</h1>\n      <h4>Public identity (share this with everyone) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n      <ion-item *ngIf="settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n      </ion-item>\n      <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n        <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows=5></ion-textarea>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'admin\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite organizations</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="organizationIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganization()" [disabled]="!organizationIdentifier || inviteBusy">\n          Add organization&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.email}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite members</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="memberIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addOrganizationMember()" [disabled]="!memberIdentifier || inviteBusy">\n          Add organization member&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Admin</h3>\n      <ion-item>\n        <button ion-button large secondary (click)="signInToDashboard()">\n          Sign-in to Dashboard&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted && bulletinSecretService.identity.type === \'organization_member\'">\n    <ion-col col-lg-6 col-md-6 col-sm-12>\n      <h3>Invite contacts</h3>\n      <ion-item>\n        <ion-label floating>Identifier <ion-spinner *ngIf="inviteBusy"></ion-spinner></ion-label>\n        <ion-input type="text" [(ngModel)]="contactIdentifier"></ion-input>\n      </ion-item>\n      <ion-item>\n        <button ion-button large secondary (click)="addMemberContact()" [disabled]="!contactIdentifier || inviteBusy">\n          Add contact&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </ion-item>\n    </ion-col>\n    <ion-col col-lg-6 col-md-6 col-sm-12 *ngIf="invites">\n      <h3>Invites</h3>\n      <ion-list *ngFor="let invite of invites">\n        <ion-item ion-item>\n          <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n          {{invite.user.username}}\n        </ion-item>\n        <ion-item>\n          <ion-label floating>Invite code</ion-label>\n          <ion-input type="text" [value]="invite.skylink"></ion-input>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/home.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["j" /* NavParams */],
@@ -3901,7 +3937,7 @@ var ChatPage = /** @class */ (function () {
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return FirebaseService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(390);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(393);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(21);
@@ -4295,6 +4331,8 @@ var WebPage = /** @class */ (function () {
             document.body.appendChild(iframe);
             iframe.onload = function () {
                 window.frames['myFrame'].contentWindow.postMessage(identity, urlObject.origin);
+                window.open(urlObject.href, '_blank');
+                iframe.parentNode.removeChild(iframe);
             };
         });
     };
@@ -4387,7 +4425,7 @@ var BuildPagePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(345);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(348);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_eciesjs__);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -4991,7 +5029,7 @@ var WalletService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 260:
+/***/ 263:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -5004,11 +5042,11 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 260;
+webpackEmptyAsyncContext.id = 263;
 
 /***/ }),
 
-/***/ 301:
+/***/ 304:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -5021,11 +5059,11 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 301;
+webpackEmptyAsyncContext.id = 304;
 
 /***/ }),
 
-/***/ 389:
+/***/ 392:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5074,7 +5112,7 @@ var SignatureRequestPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 391:
+/***/ 394:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5221,7 +5259,7 @@ var CalendarPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 392:
+/***/ 395:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5241,7 +5279,7 @@ var CalendarPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(223);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(396);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(107);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -5629,17 +5667,26 @@ var Settings = /** @class */ (function () {
             content: 'initializing...'
         });
         this.loadingModal.present();
-        promise = this.getUsername()
-            .then(function (username) {
+        return this.graphService.refreshFriendsAndGroups()
+            .then(function () {
+            return _this.getUsername();
+        })
+            .then(function (uname) {
+            username = uname;
             return _this.createKey(username);
+        })
+            .then(function () {
+            return _this.refresh(null);
+        })
+            .then(function () {
+            return _this.selectIdentity(username, false);
         })
             .then(function () {
             _this.loadingModal.dismiss();
         })
             .catch(function () {
             _this.loadingModal.dismiss();
-        });
-        promise
+        })
             .then(function () {
             var toast = _this.toastCtrl.create({
                 message: 'Identity created',
@@ -5720,7 +5767,7 @@ var Settings = /** @class */ (function () {
                     _this.loadingModal.dismiss();
                 }
                 _this.settingsService.menu = 'home';
-                _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], { pageTitle: { title: 'Home', label: 'Home', component: __WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], count: false, color: '' } });
+                _this.events.publish('menu', [{ title: 'Home', label: 'Home', component: __WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], count: false, color: '', root: true }]);
             })
                 .catch(function (err) {
                 console.log(err);
@@ -5739,7 +5786,7 @@ var Settings = /** @class */ (function () {
                     _this.loadingModal.dismiss();
                 }
                 _this.settingsService.menu = 'home';
-                _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], { pageTitle: { title: 'Home', label: 'Home', component: __WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], count: false, color: '' } });
+                _this.events.publish('menu', [{ title: 'Home', label: 'Home', component: __WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], count: false, color: '', root: true }]);
             })
                 .then(function () {
                 return _this.websocketService.connect();
@@ -5889,7 +5936,7 @@ var Settings = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 394:
+/***/ 397:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5903,7 +5950,7 @@ var Settings = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(55);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(53);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6113,7 +6160,7 @@ var StreamPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 395:
+/***/ 398:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6123,7 +6170,7 @@ var StreamPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(396);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(399);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(106);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
@@ -6515,7 +6562,7 @@ var SendReceive = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 397:
+/***/ 400:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6613,7 +6660,7 @@ var MailPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 399:
+/***/ 402:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6696,13 +6743,13 @@ var MyPagesPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 412:
+/***/ 416:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(413);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(523);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(417);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(527);
 
 
 Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* platformBrowserDynamic */])().bootstrapModule(__WEBPACK_IMPORTED_MODULE_1__app_module__["a" /* AppModule */]);
@@ -6710,33 +6757,33 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 
 /***/ }),
 
-/***/ 523:
+/***/ 527:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return AppModule; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(55);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(53);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(565);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(569);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(223);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(671);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(675);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(392);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(395);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_group_group__ = __webpack_require__(672);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_group_group__ = __webpack_require__(676);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__ = __webpack_require__(394);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(397);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__ = __webpack_require__(397);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_mail_compose__ = __webpack_require__(135);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__pages_calendar_calendar__ = __webpack_require__(391);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_status_bar__ = __webpack_require__(341);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_splash_screen__ = __webpack_require__(344);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__ionic_native_qr_scanner__ = __webpack_require__(396);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21_ngx_qrcode2__ = __webpack_require__(673);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__pages_calendar_calendar__ = __webpack_require__(394);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_status_bar__ = __webpack_require__(344);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_splash_screen__ = __webpack_require__(347);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__ionic_native_qr_scanner__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21_ngx_qrcode2__ = __webpack_require__(677);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__ionic_storage__ = __webpack_require__(42);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__bulletinSecret_service__ = __webpack_require__(16);
@@ -6747,29 +6794,33 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__opengraphparser_service__ = __webpack_require__(138);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__firebase_service__ = __webpack_require__(226);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__pages_sendreceive_sendreceive__ = __webpack_require__(395);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_clipboard__ = __webpack_require__(693);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__pages_sendreceive_sendreceive__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_clipboard__ = __webpack_require__(697);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_social_sharing__ = __webpack_require__(106);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_badge__ = __webpack_require__(382);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_deeplinks__ = __webpack_require__(398);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_firebase__ = __webpack_require__(390);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_tools_emoji_picker__ = __webpack_require__(694);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39__ionic_native_file__ = __webpack_require__(736);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40_ionic2_auto_complete__ = __webpack_require__(383);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_badge__ = __webpack_require__(385);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_deeplinks__ = __webpack_require__(401);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_firebase__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_tools_emoji_picker__ = __webpack_require__(698);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39__ionic_native_file__ = __webpack_require__(740);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40_ionic2_auto_complete__ = __webpack_require__(386);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__autocomplete_provider__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__ionic_native_google_maps__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__ionic_native_google_maps__ = __webpack_require__(396);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_mail_mailitem__ = __webpack_require__(137);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_signaturerequest_signaturerequest__ = __webpack_require__(389);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_signaturerequest_signaturerequest__ = __webpack_require__(392);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_web__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_mypages__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_mypages__ = __webpack_require__(402);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_48__pages_web_buildpage__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_49_ionic_tooltips__ = __webpack_require__(741);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__angular_platform_browser_animations__ = __webpack_require__(743);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+
+
 
 
 
@@ -6858,7 +6909,9 @@ var AppModule = /** @class */ (function () {
                 __WEBPACK_IMPORTED_MODULE_21_ngx_qrcode2__["a" /* NgxQRCodeModule */],
                 __WEBPACK_IMPORTED_MODULE_3__angular_http__["c" /* HttpModule */],
                 __WEBPACK_IMPORTED_MODULE_38__ionic_tools_emoji_picker__["a" /* EmojiPickerModule */].forRoot(),
-                __WEBPACK_IMPORTED_MODULE_4__angular_common__["b" /* CommonModule */]
+                __WEBPACK_IMPORTED_MODULE_4__angular_common__["b" /* CommonModule */],
+                __WEBPACK_IMPORTED_MODULE_49_ionic_tooltips__["a" /* TooltipsModule */].forRoot(),
+                __WEBPACK_IMPORTED_MODULE_50__angular_platform_browser_animations__["a" /* BrowserAnimationsModule */]
             ],
             bootstrap: [__WEBPACK_IMPORTED_MODULE_2_ionic_angular__["c" /* IonicApp */]],
             entryComponents: [
@@ -6917,31 +6970,31 @@ var AppModule = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 565:
+/***/ 569:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MyApp; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(341);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(344);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(344);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(347);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(223);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(391);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(392);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(394);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(395);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(394);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(395);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(397);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(397);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(401);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(402);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(229);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -7002,16 +7055,13 @@ var MyApp = /** @class */ (function () {
             _this.rootPage = __WEBPACK_IMPORTED_MODULE_8__pages_home_home__["a" /* HomePage */];
         });
         events.subscribe('menu', function (options) {
-            _this.root = _this.pages[0].root;
             _this.setMenu(options);
+            _this.root = _this.pages[0].root;
             _this.openPage(_this.pages[0]);
         });
         events.subscribe('menuonly', function (options) {
-            _this.root = _this.pages[0].root;
             _this.setMenu(options);
-        });
-        events.subscribe('notification', function () {
-            _this.notificationCount = _this.graphService.notifications.length;
+            _this.root = _this.pages[0].root;
         });
         this.rootPage = __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__["a" /* Settings */];
     }
@@ -7089,7 +7139,6 @@ var MyApp = /** @class */ (function () {
                 { title: 'Create page', label: 'Create page', component: __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__["a" /* BuildPagePage */], count: false, color: '', root: true },
             ];
         }
-        this.openPage(this.pages[0]);
     };
     MyApp.prototype.initializeApp = function () {
         var _this = this;
@@ -7125,8 +7174,10 @@ var MyApp = /** @class */ (function () {
         }
     };
     MyApp.prototype.segmentChanged = function (e) {
-        this.settingsService.menu = e.value;
+        this.settingsService.menu = e.currentTarget.value;
         this.setMenu();
+        this.root = this.pages[0].root;
+        this.openPage(this.pages[0]);
     };
     MyApp.prototype.decrypt = function (message) {
         var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.bulletinSecretService.key.toWIF()).digest().toHex(), 'salt', 400, 32);
@@ -7150,7 +7201,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content>\n      <ion-list *ngIf="bulletinSecretService.key">\n        <ng-container>\n          <ion-segment (ionChange)="segmentChanged($event)" [(ngModel)]="settingsService.menu">\n            <ion-segment-button value="home" title="home">\n              <ion-icon name="home"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="wallet" title="wallet">\n              <ion-icon name="cash"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="mail" title="mail">\n              <ion-icon name="mail"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="chat" title="private messages">\n              <ion-icon name="chatboxes"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="community" title="community chat">\n              <ion-icon name="people"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="calendar" title="calendar">\n              <ion-icon name="calendar"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="contacts" title="contacts">\n              <ion-icon name="contacts"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="files" title="files" *ngIf="settingsService.remoteSettings.restricted">\n              <ion-icon name="folder"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="settings" title="identity">\n              <ion-icon name="contact"></ion-icon>\n            </ion-segment-button>\n            <ion-segment-button value="notifications" title="notifications">\n              <ion-icon name="notifications"></ion-icon>\n              <ion-badge *ngIf="graphService.notifications.length > 0" color="secondary" style="vertical-align:top;position:absolute;" item-right>{{graphService.notifications.length}}</ion-badge>\n            </ion-segment-button>\n            <ion-segment-button value="web" title="web">\n              <ion-icon name="globe"></ion-icon>\n            </ion-segment-button>\n          </ion-segment>\n        </ng-container>\n        <ng-container *ngFor="let p of pages">\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n            *ngIf="p.title == \'Contact Requests\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            [color]="\'grey\'"\n            *ngIf="p.title == \'Messages\'"\n          >\n            {{p.label}}\n          </button>\n          <button \n            menuClose \n            ion-item \n            (click)="openPage(p)"\n            *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n          >\n            {{p.label}}\n          </button>\n        </ng-container>\n      </ion-list>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MAIL].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="people"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CALENDAR].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\'].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[\'notifications\'].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col col-lg-10 col-md-10 col-sm-10 style="padding-right: 7px; margin-top: 4px;">\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
@@ -7186,7 +7237,7 @@ var MyApp = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(106);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(389);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(392);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(137);
 var __assign = (this && this.__assign) || function () {
@@ -7246,11 +7297,11 @@ var ListPage = /** @class */ (function () {
             content: 'Please wait...'
         });
         this.refresh(null)
-            .catch(function () {
-            console.log('error refreshing listpage');
+            .catch(function (e) {
+            console.log(e);
         });
         events.subscribe('notification', function () {
-            _this.refresh(null);
+            _this.settingsService.menu === 'notifications' && _this.choosePage();
         });
     }
     ListPage_1 = ListPage;
@@ -7391,7 +7442,7 @@ var ListPage = /** @class */ (function () {
                     public_key = _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex');
                     var notifications = _this.graphService.getNotifications();
                     _this.loading = false;
-                    notifications.sort(function (a, b) {
+                    notifications['notifications'].sort(function (a, b) {
                         try {
                             if (parseInt(a.time) < parseInt(b.time))
                                 return 1;
@@ -7403,23 +7454,40 @@ var ListPage = /** @class */ (function () {
                             return 0;
                         }
                     });
-                    notifications.map(function (item) {
+                    notifications['notifications'].map(function (item) {
                         if (item.relationship[_this.settingsService.collections.MAIL]) {
                             item.component = __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__["a" /* MailItemPage */];
                             item.item = _this.graphService.prepareMailItem(item, 'Inbox');
-                            item.label = item.relationship[_this.settingsService.collections.MAIL].subject;
+                            var identity = _this.graphService.getIdentityFromMessageTransaction(item);
+                            item.label = 'Mail from ' + identity.username;
                         }
                         else if (item.relationship[_this.settingsService.collections.CHAT]) {
                             item.component = __WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */];
                             var identity = _this.graphService.getIdentityFromMessageTransaction(item);
                             item.identity = identity;
-                            item.label = 'New chat from ' + identity.username;
+                            item.label = 'Chat from ' + identity.username;
+                        }
+                        else if (_this.graphService.graph.friend_requests.filter(function (fr) { return fr.rid === item.rid; }).length > 0) {
+                            item.component = ListPage_1;
+                            var identity = item.relationship.identity;
+                            item.identity = identity;
+                            item.label = 'Contact request from ' + identity.username;
+                            item.pageTitle = 'Contact Requests';
+                            item.item = item;
+                        }
+                        else if (_this.graphService.graph.friends.filter(function (f) { return f.rid === item.rid; }).length > 0) {
+                            item.component = __WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */];
+                            var identity = _this.graphService.getIdentityFromMessageTransaction(item);
+                            item.identity = identity;
+                            item.label = 'Contact ' + identity.username + ' accepted your request ';
+                            item.pageTitle = 'Contacts';
+                            item.item = item;
                         }
                         else if (item.relationship.signature_request) {
                             item.component = __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__["a" /* SignatureRequestPage */];
                         }
                     });
-                    return _this.makeList(notifications, '', { title: 'Notifications', component: __WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */] })
+                    return _this.makeList(notifications['notifications'], '', { title: 'Notifications', component: __WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */] })
                         .then(function (pages) {
                         pages.length > 0 && _this.events.publish('menu', pages);
                     });
@@ -7666,7 +7734,7 @@ var ListPage = /** @class */ (function () {
                 else {
                     _this.items.push({
                         pageTitle: pageTitle,
-                        identity: item.relationship
+                        identity: item.relationship.identity ? item.relationship.identity : item.relationship
                     });
                 }
             }
@@ -7688,7 +7756,7 @@ var ListPage = /** @class */ (function () {
             this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */], __assign({}, item));
         }
         else if (this.pageTitle == 'Contacts') {
-            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */], __assign({}, item.identity));
+            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */], __assign({}, item));
         }
         else if (this.pageTitle == 'Notifications') {
             if (item.relationship[this.settingsService.collections.SIGNATURE_REQUEST]) {
@@ -7706,9 +7774,9 @@ var ListPage = /** @class */ (function () {
     };
     ListPage.prototype.accept = function () {
         var _this = this;
-        var rids = this.graphService.generateRids(this.friend_request.identity);
-        return this.graphService.addFriend(this.friend_request.identity, rids.rid, rids.requester_rid, rids.requested_rid).then(function (txn) {
-            return _this.graphService.getFriendRequests();
+        var rids = this.graphService.generateRids(this.friend_request);
+        return this.graphService.addFriend(this.friend_request, rids.rid, rids.requester_rid, rids.requested_rid).then(function (txn) {
+            return _this.graphService.refreshFriendsAndGroups();
         })
             .then(function () {
             var alert = _this.alertCtrl.create();
@@ -7840,7 +7908,7 @@ var ListPage = /** @class */ (function () {
     var ListPage_1;
     ListPage = ListPage_1 = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-list',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/list/list.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title *ngIf="loading">Loading...</ion-title>\n    <ion-title *ngIf="!loading">{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n\n<ion-content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <button *ngIf="pageTitle ==\'Contacts\'" ion-button secondary (click)="addFriend()">Add contact</button>\n  <button *ngIf="pageTitle ==\'Groups\'" ion-button secondary (click)="addGroup()">Add group</button>\n  <button *ngIf="pageTitle ==\'Groups\'" ion-button secondary (click)="createGroup()">Create group</button>\n  <ion-card *ngIf="items && items.length == 0">\n      <ion-card-content>\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          No items to display.\n      </ion-card-title>\n    </ion-card-content>\n  </ion-card>\n  <ion-list>\n    <button ion-item *ngFor="let item of items" (click)="itemTapped($event, item)">\n      <span *ngIf="pageTitle ==\'Groups\'">{{item.identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Contact Requests\'">{{item.identity.identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Messages\' && !identity.new && !identity.parent && identity.username">{{ identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Messages\' && !identity.new && identity.parent"><ion-note>&nbsp;&nbsp;&nbsp;&nbsp;{{identity.username}}</ion-note></span>\n      <span *ngIf="pageTitle ==\'Community\' && !identity.new && !identity.parent && identity.username">{{ identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Community\' && !identity.new && identity.parent"><ion-note>&nbsp;&nbsp;&nbsp;&nbsp;{{identity.username}}</ion-note></span>\n      <span *ngIf="pageTitle ==\'Chat\' && identity.new"><strong>{{identity.username}}</strong></span>\n      <span *ngIf="pageTitle ==\'Contacts\'">{{item.identity.identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Contacts\'">{{item.relationship.identity.username}}</span>\n    </button>\n  </ion-list>\n  <div *ngIf="selectedItem && pageTitle ==\'Sent Requests\'" padding>\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Contact Requests\'" padding>\n\n    <ion-card *ngIf="friend_request">\n      <ion-card-header>\n        <p><strong>New contact request from {{friend_request.identity.username}}</strong> </p>\n      </ion-card-header>\n      <ion-card-content>\n        <p>{{friend_request.identity.username}} would like to be added as a contact</p>\n        <button ion-button secondary (click)="accept()">Accept</button>\n      </ion-card-content>\n    </ion-card>\n    <!-- for now, we can\'t do p2p on WKWebView\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="accept(selectedItem.transaction)">Accept Request</button>\n\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="send_receipt(selectedItem.transaction)">Send Receipt</button>\n    -->\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Contacts\'" padding>\n    You navigated here from <b>{{selectedItem.transaction.rid}}</b>\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Posts\'" padding>\n    <a href="{{selectedItem.transaction.relationship.postText}}" target="_blank">{{selectedItem.transaction.relationship.postText}}</a>\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Sign Ins\'" padding>\n\n    <ion-card>\n      <ion-card-header>\n        <p><strong>{{selectedItem.transaction.identity.username}}</strong> has sent you an authorization offer. Accept offer with the \'Sign in\' button.</p>\n      </ion-card-header>\n      <ion-card-content>\n        <button ion-button secondary (click)="sendSignIn()">Sign in</button>\n        Sign in code: {{signInText}}\n      </ion-card-content>\n    </ion-card>\n    <!-- for now, we can\'t do p2p on WKWebView\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="accept(selectedItem.transaction)">Accept Request</button>\n\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="send_receipt(selectedItem.transaction)">Send Receipt</button>\n    -->\n  </div>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/list/list.html"*/
+            selector: 'page-list',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/list/list.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title *ngIf="loading">Loading...</ion-title>\n    <ion-title *ngIf="!loading">{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n\n<ion-content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <button *ngIf="pageTitle ==\'Contacts\'" ion-button secondary (click)="addFriend()">Add contact</button>\n  <button *ngIf="pageTitle ==\'Groups\'" ion-button secondary (click)="addGroup()">Add group</button>\n  <button *ngIf="pageTitle ==\'Groups\'" ion-button secondary (click)="createGroup()">Create group</button>\n  <ion-card *ngIf="items && items.length == 0">\n      <ion-card-content>\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          No items to display.\n      </ion-card-title>\n    </ion-card-content>\n  </ion-card>\n  <ion-list>\n    <button ion-item *ngFor="let item of items" (click)="itemTapped($event, item)">\n      <span *ngIf="pageTitle ==\'Groups\'">{{item.identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Contact Requests\'">{{item.identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Messages\' && !identity.new && !identity.parent && identity.username">{{ identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Messages\' && !identity.new && identity.parent"><ion-note>&nbsp;&nbsp;&nbsp;&nbsp;{{identity.username}}</ion-note></span>\n      <span *ngIf="pageTitle ==\'Community\' && !identity.new && !identity.parent && identity.username">{{ identity.username}}</span>\n      <span *ngIf="pageTitle ==\'Community\' && !identity.new && identity.parent"><ion-note>&nbsp;&nbsp;&nbsp;&nbsp;{{identity.username}}</ion-note></span>\n      <span *ngIf="pageTitle ==\'Chat\' && identity.new"><strong>{{item.identity.username}}</strong></span>\n      <span *ngIf="pageTitle ==\'Contacts\'">{{item.identity.username}}</span>\n    </button>\n  </ion-list>\n  <div *ngIf="selectedItem && pageTitle ==\'Sent Requests\'" padding>\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Contact Requests\'" padding>\n\n    <ion-card *ngIf="friend_request">\n      <ion-card-header>\n        <p><strong>New contact request from {{friend_request.username}}</strong> </p>\n      </ion-card-header>\n      <ion-card-content>\n        <p>{{friend_request.username}} would like to be added as a contact</p>\n        <button ion-button secondary (click)="accept()">Accept</button>\n      </ion-card-content>\n    </ion-card>\n    <!-- for now, we can\'t do p2p on WKWebView\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="accept(selectedItem.transaction)">Accept Request</button>\n\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="send_receipt(selectedItem.transaction)">Send Receipt</button>\n    -->\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Contacts\'" padding>\n    You navigated here from <b>{{selectedItem.transaction.rid}}</b>\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Posts\'" padding>\n    <a href="{{selectedItem.transaction.relationship.postText}}" target="_blank">{{selectedItem.transaction.relationship.postText}}</a>\n  </div>\n  <div *ngIf="selectedItem && pageTitle ==\'Sign Ins\'" padding>\n\n    <ion-card>\n      <ion-card-header>\n        <p><strong>{{selectedItem.transaction.identity.username}}</strong> has sent you an authorization offer. Accept offer with the \'Sign in\' button.</p>\n      </ion-card-header>\n      <ion-card-content>\n        <button ion-button secondary (click)="sendSignIn()">Sign in</button>\n        Sign in code: {{signInText}}\n      </ion-card-content>\n    </ion-card>\n    <!-- for now, we can\'t do p2p on WKWebView\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="accept(selectedItem.transaction)">Accept Request</button>\n\n    <button *ngIf="pageTitle == \'Contact Requests\'" ion-button secondary (click)="send_receipt(selectedItem.transaction)">Send Receipt</button>\n    -->\n  </div>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/list/list.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -7864,21 +7932,21 @@ var ListPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 611:
+/***/ 615:
 /***/ (function(module, exports) {
 
 /* (ignored) */
 
 /***/ }),
 
-/***/ 612:
+/***/ 616:
 /***/ (function(module, exports) {
 
 /* (ignored) */
 
 /***/ }),
 
-/***/ 671:
+/***/ 675:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8042,7 +8110,7 @@ var PostModal = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 672:
+/***/ 676:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8609,5 +8677,5 @@ var ProfilePage = /** @class */ (function () {
 
 /***/ })
 
-},[412]);
+},[416]);
 //# sourceMappingURL=main.js.map
