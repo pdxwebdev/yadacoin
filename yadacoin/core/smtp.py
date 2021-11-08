@@ -2,6 +2,7 @@ import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from yadacoin.core.config import get_config
+from traceback import format_exc
 
 
 class Email():
@@ -22,6 +23,15 @@ class Email():
         mimemsg.attach(MIMEText(mail_body, 'plain'))
         connection = smtplib.SMTP(host=self.config.email.smtp_server, port=self.config.email.smtp_port)
         connection.starttls()
-        connection.login(self.config.email.username, self.config.email.password)
-        connection.send_message(mimemsg)
-        connection.quit()
+        try:
+            connection.login(self.config.email.username, self.config.email.password)
+            connection.send_message(mimemsg)
+            connection.quit()
+        except Exception as e:
+            await self.config.mongo.async_site_db.failed_emails.insert_one({
+                'from': mail_from,
+                'to': mail_to,
+                'subject': mail_subject,
+                'body': mail_body,
+                'exception': format_exc()
+            })
