@@ -413,7 +413,7 @@ class GraphCollectionHandler(BaseGraphHandler):
     async def has_access(self, rids, collection):
         if not isinstance(rids, list):
             rids = [rids]
-        username_signature = self.get_query_argument('username_signature')
+        username_signature = self.get_query_argument('username_signature').replace(' ', '+')
         if self.config.get_identity().get('username_signature') == username_signature or not self.config.restrict_graph_api:
             return True
 
