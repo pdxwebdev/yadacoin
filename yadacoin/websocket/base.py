@@ -242,32 +242,19 @@ class RCPWebSocketServer(WebSocketHandler):
         #                     'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr])
         #                 }, body=body)
 
-        if body.get('params').get('username_signature') in self.config.groups:
-            group = self.config.groups[body.get('params').get('username_signature')]
-        else:
-            group = Group.from_dict({
-                'host': None,
-                'port': None,
-                'identity': body.get('params')
-            })
-        if group.rid not in RCPWebSocketServer.inbound_streams[Group.__name__]:
-            RCPWebSocketServer.inbound_streams[Group.__name__][group.rid] = {}
-        RCPWebSocketServer.inbound_streams[Group.__name__][group.rid][self.peer.rid] = self
-        self.peer.groups[group.rid] = group
+        group = Identity.from_dict(body.get('params'))
 
-        await self.write_result('join_confirmed', {
-            'rid': group.rid,
-            'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
-        }, body=body)
-        for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group.rid].items():
-            try:
-                await peer_stream.write_result('group_user_count', {
-                    'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group.rid])
-                }, body=body)
-            except WebSocketClosedError:
-                self.remove_peer(peer_stream.peer)
-            except:
-                self.config.app_log.warning(format_exc())
+        self.append_to_group(group, GraphUtils.COLLECTIONS['GROUP_CHAT'])
+        self.append_to_group(group, GraphUtils.COLLECTIONS['GROUP_MAIL'])
+
+        await self.write_result('join_confirmed', {}, body=body)
+
+    def append_to_group(self, group, collection):
+        group_rid = group.generate_rid(group.username_signature, collection)
+        if group_rid not in RCPWebSocketServer.inbound_streams[Group.__name__]:
+            RCPWebSocketServer.inbound_streams[Group.__name__][group_rid] = {}
+        peer_rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
+        RCPWebSocketServer.inbound_streams[Group.__name__][group_rid][peer_rid] = self
 
     async def service_provider_request(self, body):
         if not body.get('params').get('group'):

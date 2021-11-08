@@ -1,325 +1,5 @@
 webpackJsonp([0],{
 
-/***/ 107:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WebSocketService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(25);
-var __assign = (this && this.__assign) || function () {
-    __assign = Object.assign || function(t) {
-        for (var s, i = 1, n = arguments.length; i < n; i++) {
-            s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-                t[p] = s[p];
-        }
-        return t;
-    };
-    return __assign.apply(this, arguments);
-};
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-var WebSocketService = /** @class */ (function () {
-    function WebSocketService(ahttp, bulletinSecretService, settingsService, graphService, transactionService, events) {
-        this.ahttp = ahttp;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.graphService = graphService;
-        this.transactionService = transactionService;
-        this.events = events;
-    }
-    WebSocketService.prototype.init = function () {
-        if (this.websocket)
-            return;
-        this.websocket = new WebSocket(this.settingsService.remoteSettings.websocketUrl);
-        this.websocket.onopen = this.onOpen.bind(this);
-        this.websocket.onmessage = this.onMessage.bind(this);
-    };
-    WebSocketService.prototype.onOpen = function (event) {
-        console.log(event.data);
-    };
-    WebSocketService.prototype.onMessage = function (event) {
-        var _this = this;
-        var directMessageResponseCount;
-        var directMessageResponseCounts;
-        var msg = JSON.parse(event.data);
-        console.log(msg);
-        switch (msg.method) {
-            case 'newtxn':
-                var collection = this.getNewTxnCollection(msg);
-                if (collection) {
-                    switch (collection) {
-                        case this.settingsService.collections.CONTACT:
-                            this.graphService.parseFriendRequests([msg.params.transaction]);
-                            this.graphService.refreshFriendsAndGroups()
-                                .then(function () {
-                                return _this.graphService.addNotification(msg.params.transaction, _this.settingsService.collections.CONTACT);
-                            });
-                            break;
-                        case this.settingsService.collections.CALENDAR:
-                            var calendar = this.graphService.parseCalendar([msg.params.transaction]);
-                            return this.graphService.addNotification(calendar, this.settingsService.collections.CALENDAR);
-                            break;
-                        case this.settingsService.collections.CHAT:
-                            this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
-                                .then(function (item) {
-                                _this.settingsService.menu === 'chat' && _this.events.publish('newchat');
-                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.CHAT);
-                            });
-                            break;
-                        case this.settingsService.collections.CONTRACT:
-                            break;
-                        case this.settingsService.collections.CONTRACT_SIGNED:
-                            break;
-                        case this.settingsService.collections.GROUP_MAIL:
-                            this.graphService.parseMail([msg.params.transaction], 'new_sent_mail_counts', 'new_sent_mail_count', undefined, this.settingsService.collections.MAIL, 'last_sent_mail_height')
-                                .then(function (item) {
-                                _this.events.publish('newmail');
-                                return _this.graphService.addNotification(item, _this.settingsService.collections.GROUP_MAIL);
-                            });
-                            break;
-                        case this.settingsService.collections.MAIL:
-                            var mailCount = void 0;
-                            var mailCounts = void 0;
-                            this.graphService.parseMail([msg.params.transaction], mailCount, mailCounts, msg.params.transaction.rid, this.settingsService.collections.MAIL)
-                                .then(function (item) {
-                                _this.events.publish('newmail');
-                                return _this.graphService.addNotification(item, _this.settingsService.collections.MAIL);
-                            });
-                            break;
-                        case this.settingsService.collections.PERMISSION_REQUEST:
-                            break;
-                        case this.settingsService.collections.SIGNATURE_REQUEST:
-                            var permissionRequestCount = void 0;
-                            var permissionRequestCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], permissionRequestCount, permissionRequestCounts, msg.params.transaction.rid, this.settingsService.collections.SIGNATURE_REQUEST)
-                                .then(function (item) {
-                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.SIGNATURE_REQUEST);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_CHALLENGE_REQUEST:
-                            var directMessageRequestCount = void 0;
-                            var directMessageRequestCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_REQUEST)
-                                .then(function (items) {
-                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_CHALLENGE_RESPONSE, {
-                                    challenge: uuid4(),
-                                    url: _this.settingsService.remoteSettings.webSignInUrl
-                                });
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_CHALLENGE_RESPONSE:
-                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_RESPONSE)
-                                .then(function (items) {
-                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_SIGNIN_REQUEST:
-                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_REQUEST)
-                                .then(function (items) {
-                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_SIGNIN_RESPONSE, items[msg.params.transaction.rid][0].relationship[_this.settingsService.collections.WEB_SIGNIN_REQUEST]);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_SIGNIN_RESPONSE:
-                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_RESPONSE)
-                                .then(function (items) {
-                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_PAGE:
-                            var webpage = this.graphService.parseMyPages([msg.params.transaction]);
-                            this.graphService.addNotification(webpage, this.settingsService.collections.WEB_PAGE);
-                            break;
-                        case this.settingsService.collections.WEB_PAGE_REQUEST:
-                            var webRequestCount = void 0;
-                            var webRequestCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], webRequestCount, webRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_REQUEST)
-                                .then(function (items) {
-                                var myRids2 = [_this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.WEB_PAGE)];
-                                return _this.graphService.getMyPages(myRids2);
-                            })
-                                .then(function (items) {
-                                var request = msg.params.transaction;
-                                var myPages = _this.graphService.graph.mypages.filter(function (item2) {
-                                    return item2.relationship[_this.settingsService.collections.WEB_PAGE].resource === request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource;
-                                });
-                                var webResponse;
-                                if (myPages[0]) {
-                                    webResponse = {
-                                        resource: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].resource,
-                                        content: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].content
-                                    };
-                                }
-                                else {
-                                    webResponse = {
-                                        resource: request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource,
-                                        content: 'Page not found for resource.'
-                                    };
-                                }
-                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_PAGE_RESPONSE, webResponse);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_PAGE_RESPONSE:
-                            var webResponseCount = void 0;
-                            var webResponseCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], webResponseCount, webResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_RESPONSE)
-                                .then(function (items) {
-                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
-                            });
-                            break;
-                    }
-                }
-                break;
-        }
-    };
-    WebSocketService.prototype.getNewTxnCollection = function (msg) {
-        for (var i = 0; i < Object.keys(this.settingsService.collections).length; i++) {
-            var collection = this.settingsService.collections[Object.keys(this.settingsService.collections)[i]];
-            var rid = this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, collection);
-            if (msg.params.transaction.rid === rid ||
-                msg.params.transaction.requester_rid === rid ||
-                msg.params.transaction.requested_rid === rid) {
-                return collection;
-            }
-        }
-        return false;
-    };
-    WebSocketService.prototype.connect = function () {
-        this.websocket.send(JSON.stringify({
-            id: '',
-            jsonrpc: 2.0,
-            method: 'connect',
-            params: {
-                identity: this.graphService.toIdentity(this.bulletinSecretService.identity)
-            }
-        }));
-    };
-    WebSocketService.prototype.webpage = function (mypage) {
-        var _this = this;
-        var identity = this.graphService.toIdentity(JSON.parse(this.bulletinSecretService.identityJson()));
-        identity.collection = this.settingsService.collections.WEB_PAGE;
-        var rids = this.graphService.generateRids(identity);
-        var request = __assign({}, rids, { relationship: {}, shared_secret: this.bulletinSecretService.identity.username_signature });
-        request.relationship[this.settingsService.collections.WEB_PAGE] = mypage;
-        this.transactionService.generateTransaction(request)
-            .then(function () {
-            return _this.websocket.send(JSON.stringify({
-                id: '',
-                jsonrpc: 2.0,
-                method: 'newtxn',
-                params: {
-                    transaction: _this.transactionService.transaction
-                }
-            }));
-        });
-    };
-    WebSocketService.prototype.directMessageRequest = function (identity, collection, relationship, resolve) {
-        var _this = this;
-        this.directMessageRequestResolve = resolve;
-        identity.collection = collection;
-        var rids = this.graphService.generateRids(identity);
-        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
-        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
-        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
-        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
-        request.relationship[collection] = relationship;
-        this.transactionService.generateTransaction(request)
-            .then(function () {
-            _this.websocket.send(JSON.stringify({
-                id: '',
-                jsonrpc: 2.0,
-                method: 'newtxn',
-                params: {
-                    transaction: _this.transactionService.transaction
-                }
-            }));
-        });
-    };
-    WebSocketService.prototype.directMessageResponse = function (rid, collection, relationship) {
-        var _this = this;
-        var myRids = this.graphService.generateRids(this.bulletinSecretService.identity);
-        var recipient;
-        if (this.graphService.friends_indexed[rid]) {
-            recipient = this.graphService.friends_indexed[rid].relationship.identity;
-        }
-        if (myRids.rid == rid) {
-            recipient = this.bulletinSecretService.identity;
-        }
-        if (!recipient)
-            return;
-        recipient.collection = collection;
-        var rids = this.graphService.generateRids(recipient);
-        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
-        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
-        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
-        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
-        request.relationship[collection] = relationship;
-        return this.transactionService.generateTransaction(request)
-            .then(function () {
-            _this.websocket.send(JSON.stringify({
-                id: '',
-                jsonrpc: 2.0,
-                method: 'newtxn',
-                params: {
-                    transaction: _this.transactionService.transaction
-                }
-            }));
-        });
-    };
-    WebSocketService.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    WebSocketService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_2__settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_5__graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_6__transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_4_ionic_angular__["b" /* Events */]])
-    ], WebSocketService);
-    return WebSocketService;
-}());
-
-//# sourceMappingURL=websocket.service.js.map
-
-/***/ }),
-
 /***/ 135:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -1336,16 +1016,16 @@ var GraphService = /** @class */ (function () {
             var options = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
             var promise = null;
             if (ids) {
-                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + '/' + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { ids: ids }, options);
+                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { ids: ids }, options);
             }
             else if (rids) {
-                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + '/' + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { rids: rids }, options);
+                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { rids: rids }, options);
             }
             else if (post_data) {
-                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + '/' + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), post_data, options);
+                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), post_data, options);
             }
             else {
-                promise = _this.ahttp.get(_this.settingsService.remoteSettings['graphUrl'] + '/' + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), options);
+                promise = _this.ahttp.get(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), options);
             }
             promise
                 .pipe(Object(__WEBPACK_IMPORTED_MODULE_8_rxjs_operators__["timeout"])(30000))
@@ -1451,13 +1131,7 @@ var GraphService = /** @class */ (function () {
         })
             .then(function (friends) {
             //sort list alphabetically by username
-            friends.sort(function (a, b) {
-                if (a.username < b.username)
-                    return -1;
-                if (a.username > b.username)
-                    return 1;
-                return 0;
-            });
+            _this.sortAlpha(friends, 'username');
             _this.graph.friends = friends;
         });
     };
@@ -1478,23 +1152,19 @@ var GraphService = /** @class */ (function () {
             _this.getGroupsRequestsError = false;
         });
     };
-    GraphService.prototype.getMail = function (rid) {
+    GraphService.prototype.getMail = function (rid, collection) {
         var _this = this;
+        if (collection === void 0) { collection = this.settingsService.collections.MAIL; }
         //get messages for a specific friend
         return new Promise(function (resolve, reject) {
             _this.endpointRequest('get-graph-collection', null, rid)
                 .then(function (data) {
-                return _this.parseMail(data.collection, 'new_mail_counts', 'new_mail_count', undefined, _this.settingsService.collections.MAIL, 'last_mail_height');
+                return _this.parseMail(data.collection, 'new_mail_counts', 'new_mail_count', undefined, collection, 'last_mail_height');
             })
                 .then(function (mail) {
-                _this.graph.mail = mail;
-                _this.graph.mail.sort(function (a, b) {
-                    if (parseInt(a.time) > parseInt(b.time))
-                        return -1;
-                    if (parseInt(a.time) < parseInt(b.time))
-                        return 1;
-                    return 0;
-                });
+                _this.graph.mail = _this.graph.mail.concat(mail);
+                _this.graph.mail = _this.toDistinct(_this.graph.mail, 'id');
+                _this.sortInt(_this.graph.mail, 'time');
                 _this.getMailError = false;
                 return resolve(mail);
             }).catch(function (err) {
@@ -1513,13 +1183,7 @@ var GraphService = /** @class */ (function () {
             })
                 .then(function (mail) {
                 _this.graph.mail = mail;
-                _this.graph.mail.sort(function (a, b) {
-                    if (parseInt(a.time) > parseInt(b.time))
-                        return -1;
-                    if (parseInt(a.time) < parseInt(b.time))
-                        return 1;
-                    return 0;
-                });
+                _this.sortInt(_this.graph.mail, 'time');
                 _this.getMailError = false;
                 return resolve(mail);
             }).catch(function (err) {
@@ -1543,9 +1207,10 @@ var GraphService = /** @class */ (function () {
         var group = this.groups_indexed[item.requested_rid];
         var indexedItem = this.groups_indexed[item.requested_rid] || this.friends_indexed[item.rid];
         var identity = indexedItem.relationship.identity || indexedItem.relationship;
+        var collection = group ? this.settingsService.collections.GROUP_MAIL : this.settingsService.collections.MAIL;
         var sender;
-        if (item.relationship[this.settingsService.collections.MAIL].sender) {
-            sender = item.relationship[this.settingsService.collections.MAIL].sender;
+        if (item.relationship[collection].sender) {
+            sender = item.relationship[collection].sender;
         }
         else if (item.public_key === this.bulletinSecretService.identity.public_key && label === 'Inbox') {
             sender = this.bulletinSecretService.identity;
@@ -1557,29 +1222,31 @@ var GraphService = /** @class */ (function () {
                 public_key: identity.public_key
             };
         }
+        var datetime = new Date(parseInt(item.time) * 1000);
         return {
             sender: sender,
             group: group ? group.relationship : null,
-            subject: item.relationship[this.settingsService.collections.MAIL].subject,
-            body: item.relationship[this.settingsService.collections.MAIL].body,
-            datetime: new Date(parseInt(item.time) * 1000).toISOString().slice(0, 19).replace('T', ' '),
+            subject: item.relationship[collection].subject,
+            body: item.relationship[collection].body,
+            datetime: datetime.toLocaleDateString() + ' ' + datetime.toLocaleTimeString(),
             id: item.id,
             thread: item.relationship.thread,
-            message_type: item.relationship[this.settingsService.collections.MAIL].message_type,
-            event_datetime: item.relationship[this.settingsService.collections.MAIL].event_datetime,
-            skylink: item.relationship[this.settingsService.collections.MAIL].skylink,
-            filename: item.relationship[this.settingsService.collections.MAIL].filename
+            message_type: item.relationship[collection].message_type,
+            event_datetime: item.relationship[collection].event_datetime,
+            skylink: item.relationship[collection].skylink,
+            filename: item.relationship[collection].filename
         };
     };
-    GraphService.prototype.getMessages = function (rid) {
+    GraphService.prototype.getMessages = function (rid, collection) {
         var _this = this;
+        if (collection === void 0) { collection = this.settingsService.collections.CHAT; }
         if (typeof rid === 'string')
             rid = [rid];
         //get messages for a specific friend
         return new Promise(function (resolve, reject) {
             _this.endpointRequest('get-graph-collection', null, rid)
                 .then(function (data) {
-                return _this.parseMessages(data.collection, 'new_messages_counts', 'new_messages_count', rid, _this.settingsService.collections.CHAT, 'last_message_height');
+                return _this.parseMessages(data.collection, 'new_messages_counts', 'new_messages_count', rid, collection, 'last_message_height');
             })
                 .then(function (chats) {
                 _this.graph.messages = chats;
@@ -1654,13 +1321,7 @@ var GraphService = /** @class */ (function () {
                 }
                 if (choice_rid && chats[choice_rid]) {
                     _this.graph.messages[choice_rid] = chats[choice_rid];
-                    _this.graph.messages[choice_rid].sort(function (a, b) {
-                        if (parseInt(a.time) > parseInt(b.time))
-                            return 1;
-                        if (parseInt(a.time) < parseInt(b.time))
-                            return -1;
-                        return 0;
-                    });
+                    _this.sortInt(_this.graph.messages[choice_rid], 'time', true);
                 }
                 _this.getMessagesError = false;
                 return resolve(chats[choice_rid]);
@@ -2076,6 +1737,7 @@ var GraphService = /** @class */ (function () {
                     group.relationship.public_key = key.getPublicKeyBuffer().toString('hex');
                     group.relationship.username_signature = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(group.relationship.username)).toDER());
                 }
+                _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_CHAT)] = group;
                 _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_MAIL)] = group;
                 _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.CALENDAR)] = group;
                 _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, relationship.username_signature)] = group;
@@ -2611,6 +2273,14 @@ var GraphService = /** @class */ (function () {
             return _this.transactionService.sendTransaction();
         }).then(function () {
             return _this.getGroups(null, relationship.collection, true);
+        }).then(function () {
+            return new Promise(function (resolve, reject) {
+                return resolve({
+                    username: groupname,
+                    username_signature: username_signature,
+                    public_key: pubKey
+                });
+            });
         });
     };
     GraphService.prototype.checkInvite = function (identity) {
@@ -2772,6 +2442,10 @@ var GraphService = /** @class */ (function () {
             return _this.transactionService.sendTransaction();
         }).then(function () {
             return _this.getGroups(null, identity.collection, true);
+        }).then(function () {
+            return new Promise(function (resolve, reject) {
+                return resolve(identity);
+            });
         });
     };
     GraphService.prototype.publicDecrypt = function (message) {
@@ -2816,6 +2490,37 @@ var GraphService = /** @class */ (function () {
         if (!identity)
             return false;
         return !!identity.parent;
+    };
+    GraphService.prototype.sortInt = function (list, key, reverse) {
+        if (reverse === void 0) { reverse = false; }
+        list.sort(function (a, b) {
+            if (parseInt(a[key]) > parseInt(b[key]))
+                return reverse ? 1 : -1;
+            if (parseInt(a[key]) < parseInt(b[key]))
+                return reverse ? -1 : 1;
+            return 0;
+        });
+    };
+    GraphService.prototype.sortAlpha = function (list, key, reverse) {
+        if (reverse === void 0) { reverse = false; }
+        list.sort(function (a, b) {
+            if (a[key] < b[key])
+                return reverse ? 1 : -1;
+            if (a[key] > b[key])
+                return reverse ? -1 : 1;
+            return 0;
+        });
+    };
+    GraphService.prototype.toDistinct = function (list, key) {
+        var hashMap = {};
+        for (var i = 0; i < list.length; i++) {
+            hashMap[list[i][key]] = list[i];
+        }
+        var newList = [];
+        for (var i = 0; i < Object.keys(hashMap).length; i++) {
+            newList.push(hashMap[Object.keys(hashMap)[i]]);
+        }
+        return newList;
     };
     GraphService.prototype.toIdentity = function (identity) {
         if (!identity)
@@ -2984,7 +2689,7 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(106);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(21);
@@ -3623,6 +3328,15 @@ var PeerService = /** @class */ (function () {
             _this.ahttp.get(_this.settingsService.remoteSettingsUrl + '/yada-config').pipe(Object(__WEBPACK_IMPORTED_MODULE_3_rxjs_operators__["timeout"])(1000)).subscribe(function (res) {
                 _this.loading = false;
                 var remoteSettings = res.json();
+                for (var i = 0; i < Object.keys(remoteSettings).length; i++) {
+                    try {
+                        var url = new URL(remoteSettings[Object.keys(remoteSettings)[i]]);
+                        remoteSettings[Object.keys(remoteSettings)[i]] = url.protocol + '//' + location.host + url.pathname;
+                    }
+                    catch (e) {
+                        continue;
+                    }
+                }
                 _this.settingsService.remoteSettings = remoteSettings;
                 resolve();
             }, function (err) {
@@ -3678,6 +3392,7 @@ var PeerService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_websocket_service__ = __webpack_require__(69);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3699,8 +3414,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 
 
+
 var ChatPage = /** @class */ (function () {
-    function ChatPage(navCtrl, navParams, storage, walletService, transactionService, alertCtrl, graphService, loadingCtrl, bulletinSecretService, settingsService, ahttp, toastCtrl, events) {
+    function ChatPage(navCtrl, navParams, storage, walletService, transactionService, alertCtrl, graphService, loadingCtrl, bulletinSecretService, settingsService, ahttp, toastCtrl, events, websocketService) {
         var _this = this;
         this.navCtrl = navCtrl;
         this.navParams = navParams;
@@ -3715,6 +3431,7 @@ var ChatPage = /** @class */ (function () {
         this.ahttp = ahttp;
         this.toastCtrl = toastCtrl;
         this.events = events;
+        this.websocketService = websocketService;
         this.identity = this.navParams.get('identity');
         this.label = this.identity.username;
         var identity = JSON.parse(JSON.stringify(this.graphService.toIdentity(this.identity))); //deep copy
@@ -3741,18 +3458,13 @@ var ChatPage = /** @class */ (function () {
         var rid = group ? this.requested_rid : this.rid;
         if (this.graphService.graph.messages[rid]) {
             this.chats = this.graphService.graph.messages[rid];
-            this.chats.sort(function (a, b) {
-                if (parseInt(a.time) > parseInt(b.time))
-                    return 1;
-                if (parseInt(a.time) < parseInt(b.time))
-                    return -1;
-                return 0;
-            });
+            this.graphService.sortInt(this.chats, 'time', true);
             for (var i = 0; i < this.chats.length; i++) {
                 if (!group) {
                     this.chats[i].relationship.identity = this.chats[i].public_key === this.bulletinSecretService.identity.public_key ? this.bulletinSecretService.identity : this.graphService.friends_indexed[rid].relationship.identity;
                 }
-                this.chats[i].time = new Date(parseInt(this.chats[i].time) * 1000).toISOString().slice(0, 19).replace('T', ' ');
+                var datetime = new Date(parseInt(this.chats[i].time) * 1000);
+                this.chats[i].time = datetime.toLocaleDateString() + ' ' + datetime.toLocaleTimeString();
             }
         }
         else {
@@ -3765,7 +3477,14 @@ var ChatPage = /** @class */ (function () {
         if (showLoading) {
             this.loading = true;
         }
-        return this.graphService.getMessages([this.rid, this.requested_rid])
+        var collection;
+        if (this.graphService.isGroup(this.identity)) {
+            collection = this.settingsService.collections.GROUP_CHAT;
+        }
+        else {
+            collection = this.settingsService.collections.CHAT;
+        }
+        return this.graphService.getMessages([this.rid, this.requested_rid], collection)
             .then(function () {
             _this.loading = false;
             if (refresher)
@@ -3827,7 +3546,7 @@ var ChatPage = /** @class */ (function () {
                             group: true,
                             group_username_signature: _this.graphService.groups_indexed[_this.requested_rid].relationship.username_signature
                         };
-                        info.relationship[_this.settingsService.collections.CHAT] = _this.chatText;
+                        info.relationship[_this.settingsService.collections.GROUP_CHAT] = _this.chatText;
                         return _this.transactionService.generateTransaction(info);
                     }
                     else {
@@ -3905,7 +3624,7 @@ var ChatPage = /** @class */ (function () {
     };
     ChatPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()"></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()" [disabled]="busy">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
+            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.CHAT]">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.GROUP_CHAT]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()"></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()" [disabled]="busy">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
             queries: {
                 content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
             }
@@ -3922,7 +3641,8 @@ var ChatPage = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
             __WEBPACK_IMPORTED_MODULE_10__angular_http__["b" /* Http */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */],
+            __WEBPACK_IMPORTED_MODULE_11__app_websocket_service__["a" /* WebSocketService */]])
     ], ChatPage);
     return ChatPage;
 }());
@@ -4251,7 +3971,7 @@ var SiaFiles = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(107);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_forms__ = __webpack_require__(33);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_autocomplete_provider__ = __webpack_require__(136);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -4365,7 +4085,7 @@ var WebPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(107);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -5275,12 +4995,12 @@ var CalendarPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__ = __webpack_require__(106);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(223);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_geolocation__ = __webpack_require__(222);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(396);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(107);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(69);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -6172,7 +5892,7 @@ var StreamPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(399);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(106);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(21);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -6628,7 +6348,10 @@ var MailPage = /** @class */ (function () {
     }
     MailPage.prototype.refresh = function () {
         var _this = this;
-        this.graphService.getMail(this.rids)
+        return this.graphService.getMail(this.rids, this.settingsService.collections.MAIL)
+            .then(function () {
+            return _this.graphService.getMail(_this.rids, _this.settingsService.collections.GROUP_MAIL);
+        })
             .then(function () {
             _this.items = _this.graphService.prepareMailItems(_this.navParams.data.pageTitle.label);
             _this.loading = false;
@@ -6790,13 +6513,13 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__peer_service__ = __webpack_require__(224);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__websocket_service__ = __webpack_require__(107);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__websocket_service__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__opengraphparser_service__ = __webpack_require__(138);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__firebase_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__pages_sendreceive_sendreceive__ = __webpack_require__(398);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_clipboard__ = __webpack_require__(697);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_social_sharing__ = __webpack_require__(106);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_badge__ = __webpack_require__(385);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_deeplinks__ = __webpack_require__(401);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_firebase__ = __webpack_require__(393);
@@ -6992,7 +6715,7 @@ var AppModule = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(398);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(107);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(402);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(229);
@@ -7234,12 +6957,13 @@ var MyApp = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(106);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(392);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(137);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(69);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -7276,8 +7000,9 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 
 
+
 var ListPage = /** @class */ (function () {
-    function ListPage(navCtrl, navParams, storage, graphService, bulletinSecretService, walletService, transactionService, socialSharing, alertCtrl, loadingCtrl, events, ahttp, settingsService, toastCtrl) {
+    function ListPage(navCtrl, navParams, storage, graphService, bulletinSecretService, walletService, transactionService, socialSharing, alertCtrl, loadingCtrl, events, ahttp, settingsService, toastCtrl, websocketService) {
         var _this = this;
         this.navCtrl = navCtrl;
         this.navParams = navParams;
@@ -7293,6 +7018,7 @@ var ListPage = /** @class */ (function () {
         this.ahttp = ahttp;
         this.settingsService = settingsService;
         this.toastCtrl = toastCtrl;
+        this.websocketService = websocketService;
         this.loadingModal = this.loadingCtrl.create({
             content: 'Please wait...'
         });
@@ -7363,7 +7089,8 @@ var ListPage = /** @class */ (function () {
             .then(function (groupName) {
             return _this.graphService.createGroup(groupName);
         })
-            .then(function (hash) {
+            .then(function (identity) {
+            _this.websocketService.joinGroup(identity);
             if (_this.settingsService.remoteSettings['walletUrl']) {
                 return _this.graphService.getInfo();
             }
@@ -7840,7 +7567,8 @@ var ListPage = /** @class */ (function () {
                     promise = _this.graphService.addGroup(JSON.parse(data.identity));
                 }
                 promise
-                    .then(function () {
+                    .then(function (identity) {
+                    _this.websocketService.joinGroup(identity);
                     var alert = _this.alertCtrl.create();
                     alert.setTitle('Group added');
                     alert.setSubTitle('Your group was added successfully');
@@ -7923,7 +7651,8 @@ var ListPage = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */],
             __WEBPACK_IMPORTED_MODULE_12__angular_http__["b" /* Http */],
             __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */]])
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
+            __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__["a" /* WebSocketService */]])
     ], ListPage);
     return ListPage;
 }());
@@ -8674,6 +8403,367 @@ var ProfilePage = /** @class */ (function () {
 }());
 
 //# sourceMappingURL=profile.js.map
+
+/***/ }),
+
+/***/ 69:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WebSocketService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(25);
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+var WebSocketService = /** @class */ (function () {
+    function WebSocketService(ahttp, bulletinSecretService, settingsService, graphService, transactionService, events) {
+        this.ahttp = ahttp;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.graphService = graphService;
+        this.transactionService = transactionService;
+        this.events = events;
+    }
+    WebSocketService.prototype.init = function () {
+        if (this.websocket)
+            return;
+        this.websocket = new WebSocket(this.settingsService.remoteSettings.websocketUrl);
+        this.websocket.onopen = this.onOpen.bind(this);
+        this.websocket.onmessage = this.onMessage.bind(this);
+    };
+    WebSocketService.prototype.onOpen = function (event) {
+        console.log(event.data);
+    };
+    WebSocketService.prototype.onMessage = function (event) {
+        var _this = this;
+        var directMessageResponseCount;
+        var directMessageResponseCounts;
+        var msg = JSON.parse(event.data);
+        console.log(msg);
+        switch (msg.method) {
+            case 'connect_confirm':
+                for (var i = 0; i < Object.keys(this.graphService.groups_indexed).length; i++) {
+                    var group = this.graphService.groups_indexed[Object.keys(this.graphService.groups_indexed)[i]];
+                    this.joinGroup(group.relationship);
+                }
+                break;
+            case 'newtxn':
+                var collection = this.getNewTxnCollection(msg);
+                if (collection) {
+                    switch (collection) {
+                        case this.settingsService.collections.CONTACT:
+                            this.graphService.parseFriendRequests([msg.params.transaction]);
+                            this.graphService.refreshFriendsAndGroups()
+                                .then(function () {
+                                return _this.graphService.addNotification(msg.params.transaction, _this.settingsService.collections.CONTACT);
+                            });
+                            break;
+                        case this.settingsService.collections.CALENDAR:
+                            var calendar = this.graphService.parseCalendar([msg.params.transaction]);
+                            return this.graphService.addNotification(calendar, this.settingsService.collections.CALENDAR);
+                            break;
+                        case this.settingsService.collections.CHAT:
+                            this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
+                                .then(function (item) {
+                                _this.settingsService.menu === 'chat' && _this.events.publish('newchat');
+                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.CHAT);
+                            });
+                            break;
+                        case this.settingsService.collections.CONTRACT:
+                            break;
+                        case this.settingsService.collections.CONTRACT_SIGNED:
+                            break;
+                        case this.settingsService.collections.GROUP_CHAT:
+                            this.graphService.parseMessages([msg.params.transaction], 'new_group_messages_counts', 'new_group_messages_count', msg.params.transaction.rid, this.settingsService.collections.GROUP_CHAT, 'last_group_message_height')
+                                .then(function (item) {
+                                if (!_this.graphService.graph.messages[msg.params.transaction.requested_rid]) {
+                                    _this.graphService.graph.messages[msg.params.transaction.requested_rid] = [];
+                                }
+                                _this.graphService.graph.messages[msg.params.transaction.requested_rid].push(item[msg.params.transaction.requested_rid][0]);
+                                _this.settingsService.menu === 'community' && _this.events.publish('newchat');
+                                return _this.graphService.addNotification(item[msg.params.transaction.requested_rid][0], _this.settingsService.collections.GROUP_CHAT);
+                            });
+                            break;
+                        case this.settingsService.collections.GROUP_MAIL:
+                            this.graphService.parseMail([msg.params.transaction], 'new_sent_mail_counts', 'new_sent_mail_count', undefined, this.settingsService.collections.MAIL, 'last_sent_mail_height')
+                                .then(function (item) {
+                                _this.events.publish('newmail');
+                                return _this.graphService.addNotification(item, _this.settingsService.collections.GROUP_MAIL);
+                            });
+                            break;
+                        case this.settingsService.collections.MAIL:
+                            var mailCount = void 0;
+                            var mailCounts = void 0;
+                            this.graphService.parseMail([msg.params.transaction], mailCount, mailCounts, msg.params.transaction.rid, this.settingsService.collections.MAIL)
+                                .then(function (item) {
+                                _this.events.publish('newmail');
+                                return _this.graphService.addNotification(item, _this.settingsService.collections.MAIL);
+                            });
+                            break;
+                        case this.settingsService.collections.PERMISSION_REQUEST:
+                            break;
+                        case this.settingsService.collections.SIGNATURE_REQUEST:
+                            var permissionRequestCount = void 0;
+                            var permissionRequestCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], permissionRequestCount, permissionRequestCounts, msg.params.transaction.rid, this.settingsService.collections.SIGNATURE_REQUEST)
+                                .then(function (item) {
+                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.SIGNATURE_REQUEST);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_CHALLENGE_REQUEST:
+                            var directMessageRequestCount = void 0;
+                            var directMessageRequestCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_REQUEST)
+                                .then(function (items) {
+                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_CHALLENGE_RESPONSE, {
+                                    challenge: uuid4(),
+                                    url: _this.settingsService.remoteSettings.webSignInUrl
+                                });
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_CHALLENGE_RESPONSE:
+                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_RESPONSE)
+                                .then(function (items) {
+                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_SIGNIN_REQUEST:
+                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_REQUEST)
+                                .then(function (items) {
+                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_SIGNIN_RESPONSE, items[msg.params.transaction.rid][0].relationship[_this.settingsService.collections.WEB_SIGNIN_REQUEST]);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_SIGNIN_RESPONSE:
+                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_RESPONSE)
+                                .then(function (items) {
+                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_PAGE:
+                            var webpage = this.graphService.parseMyPages([msg.params.transaction]);
+                            this.graphService.addNotification(webpage, this.settingsService.collections.WEB_PAGE);
+                            break;
+                        case this.settingsService.collections.WEB_PAGE_REQUEST:
+                            var webRequestCount = void 0;
+                            var webRequestCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], webRequestCount, webRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_REQUEST)
+                                .then(function (items) {
+                                var myRids2 = [_this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.WEB_PAGE)];
+                                return _this.graphService.getMyPages(myRids2);
+                            })
+                                .then(function (items) {
+                                var request = msg.params.transaction;
+                                var myPages = _this.graphService.graph.mypages.filter(function (item2) {
+                                    return item2.relationship[_this.settingsService.collections.WEB_PAGE].resource === request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource;
+                                });
+                                var webResponse;
+                                if (myPages[0]) {
+                                    webResponse = {
+                                        resource: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].resource,
+                                        content: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].content
+                                    };
+                                }
+                                else {
+                                    webResponse = {
+                                        resource: request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource,
+                                        content: 'Page not found for resource.'
+                                    };
+                                }
+                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_PAGE_RESPONSE, webResponse);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_PAGE_RESPONSE:
+                            var webResponseCount = void 0;
+                            var webResponseCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], webResponseCount, webResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_RESPONSE)
+                                .then(function (items) {
+                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
+                            });
+                            break;
+                    }
+                }
+                break;
+        }
+    };
+    WebSocketService.prototype.getNewTxnCollection = function (msg) {
+        for (var i = 0; i < Object.keys(this.settingsService.collections).length; i++) {
+            var collection = this.settingsService.collections[Object.keys(this.settingsService.collections)[i]];
+            var rid = this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, collection);
+            if (msg.params.transaction.rid === rid ||
+                msg.params.transaction.requester_rid === rid ||
+                msg.params.transaction.requested_rid === rid) {
+                return collection;
+            }
+        }
+        var collections = [
+            this.settingsService.collections.GROUP_CHAT,
+            this.settingsService.collections.GROUP_MAIL
+        ];
+        for (var j = 0; j < Object.keys(this.graphService.groups_indexed).length; j++) {
+            var group = this.graphService.groups_indexed[Object.keys(this.graphService.groups_indexed)[j]];
+            for (var i = 0; i < collections.length; i++) {
+                var collection = collections[i];
+                var rid = this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, collection);
+                if (msg.params.transaction.rid === rid ||
+                    msg.params.transaction.requester_rid === rid ||
+                    msg.params.transaction.requested_rid === rid) {
+                    return collection;
+                }
+            }
+        }
+        return false;
+    };
+    WebSocketService.prototype.connect = function () {
+        this.websocket.send(JSON.stringify({
+            id: '',
+            jsonrpc: 2.0,
+            method: 'connect',
+            params: {
+                identity: this.graphService.toIdentity(this.bulletinSecretService.identity)
+            }
+        }));
+    };
+    WebSocketService.prototype.joinGroup = function (identity) {
+        return this.websocket.send(JSON.stringify({
+            id: '',
+            jsonrpc: 2.0,
+            method: 'join_group',
+            params: identity
+        }));
+    };
+    WebSocketService.prototype.webpage = function (mypage) {
+        var _this = this;
+        var identity = this.graphService.toIdentity(JSON.parse(this.bulletinSecretService.identityJson()));
+        identity.collection = this.settingsService.collections.WEB_PAGE;
+        var rids = this.graphService.generateRids(identity);
+        var request = __assign({}, rids, { relationship: {}, shared_secret: this.bulletinSecretService.identity.username_signature });
+        request.relationship[this.settingsService.collections.WEB_PAGE] = mypage;
+        this.transactionService.generateTransaction(request)
+            .then(function () {
+            return _this.websocket.send(JSON.stringify({
+                id: '',
+                jsonrpc: 2.0,
+                method: 'newtxn',
+                params: {
+                    transaction: _this.transactionService.transaction
+                }
+            }));
+        });
+    };
+    WebSocketService.prototype.directMessageRequest = function (identity, collection, relationship, resolve) {
+        var _this = this;
+        this.directMessageRequestResolve = resolve;
+        identity.collection = collection;
+        var rids = this.graphService.generateRids(identity);
+        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
+        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
+        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
+        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
+        request.relationship[collection] = relationship;
+        this.transactionService.generateTransaction(request)
+            .then(function () {
+            _this.websocket.send(JSON.stringify({
+                id: '',
+                jsonrpc: 2.0,
+                method: 'newtxn',
+                params: {
+                    transaction: _this.transactionService.transaction
+                }
+            }));
+        });
+    };
+    WebSocketService.prototype.directMessageResponse = function (rid, collection, relationship) {
+        var _this = this;
+        var myRids = this.graphService.generateRids(this.bulletinSecretService.identity);
+        var recipient;
+        if (this.graphService.friends_indexed[rid]) {
+            recipient = this.graphService.friends_indexed[rid].relationship.identity;
+        }
+        if (myRids.rid == rid) {
+            recipient = this.bulletinSecretService.identity;
+        }
+        if (!recipient)
+            return;
+        recipient.collection = collection;
+        var rids = this.graphService.generateRids(recipient);
+        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
+        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
+        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
+        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
+        request.relationship[collection] = relationship;
+        return this.transactionService.generateTransaction(request)
+            .then(function () {
+            _this.websocket.send(JSON.stringify({
+                id: '',
+                jsonrpc: 2.0,
+                method: 'newtxn',
+                params: {
+                    transaction: _this.transactionService.transaction
+                }
+            }));
+        });
+    };
+    WebSocketService.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    WebSocketService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_2__settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_5__graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_6__transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_4_ionic_angular__["b" /* Events */]])
+    ], WebSocketService);
+    return WebSocketService;
+}());
+
+//# sourceMappingURL=websocket.service.js.map
 
 /***/ })
 

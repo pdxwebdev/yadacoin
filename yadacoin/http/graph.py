@@ -16,7 +16,7 @@ from eccsnacks.curve25519 import scalarmult_base
 from logging import getLogger
 from threading import Thread
 from yadacoin.core.graphutils import GraphUtils
-from yadacoin.core.peer import User
+from yadacoin.core.peer import Group, User
 
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.graph import Graph
@@ -216,18 +216,61 @@ class GraphTransactionHandler(BaseGraphHandler):
                     return self.render_as_json({'status': True, 'message': 'dup rid'})
 
             stream = None
-            if x.rid in self.config.websocketServer.inbound_streams[User.__name__]:
-                stream = self.config.websocketServer.inbound_streams[User.__name__][x.rid]
-            if x.requester_rid in self.config.websocketServer.inbound_streams[User.__name__]:
-                stream = self.config.websocketServer.inbound_streams[User.__name__][x.requester_rid]
-            if x.requested_rid in self.config.websocketServer.inbound_streams[User.__name__]:
-                stream = self.config.websocketServer.inbound_streams[User.__name__][x.requested_rid]
+            websocket_streams = self.config.websocketServer.inbound_streams[User.__name__]
+            if (
+              x.rid in websocket_streams and
+              websocket_streams[x.rid].peer.identity.username_signature != self.username_signature
+            ):
+                stream = websocket_streams[x.rid]
+
+            if (
+              x.requester_rid in websocket_streams and
+              websocket_streams[x.requester_rid].peer.identity.username_signature != self.username_signature
+            ):
+                stream = websocket_streams[x.requester_rid]
+
+            if (
+              x.requested_rid in websocket_streams and
+              websocket_streams[x.requested_rid].peer.identity.username_signature != self.username_signature
+            ):
+                stream = websocket_streams[x.requested_rid]
 
             if stream:
                 await stream.write_params(
                     'newtxn',
                     {'transaction': x.to_dict()}
                 )
+
+            websocket_group_streams = self.config.websocketServer.inbound_streams[Group.__name__]
+            if (
+              x.requester_rid in websocket_group_streams
+            ):
+                for rid, stream in websocket_group_streams[x.requester_rid].items():
+                    if (
+                        x.requester_rid == self.peer.identity.generate_rid(
+                          self.peer.identity.username_signature,
+                          GraphUtils.COLLECTIONS['GROUP_CHAT']
+                        ) or
+                        x.requester_rid == self.peer.identity.generate_rid(
+                          self.peer.identity.username_signature,
+                          GraphUtils.COLLECTIONS['GROUP_MAIL']
+                        )
+                    ):
+                        continue
+
+                    await stream.write_params(
+                        'newtxn',
+                        {'transaction': x.to_dict()}
+                    )
+
+            if (
+              x.requested_rid in websocket_group_streams
+            ):
+                for rid, stream in websocket_group_streams[x.requested_rid].items():
+                    await stream.write_params(
+                        'newtxn',
+                        {'transaction': x.to_dict()}
+                    )
 
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
