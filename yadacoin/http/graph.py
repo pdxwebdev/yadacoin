@@ -15,6 +15,7 @@ from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
 from logging import getLogger
 from threading import Thread
+from yadacoin.core.collections import Collections
 from yadacoin.core.graphutils import GraphUtils
 from yadacoin.core.peer import Group, User
 
@@ -249,11 +250,11 @@ class GraphTransactionHandler(BaseGraphHandler):
                     if (
                         x.requester_rid == self.peer.identity.generate_rid(
                           self.peer.identity.username_signature,
-                          GraphUtils.COLLECTIONS['GROUP_CHAT']
+                          Collections.GROUP_CHAT.value
                         ) or
                         x.requester_rid == self.peer.identity.generate_rid(
                           self.peer.identity.username_signature,
-                          GraphUtils.COLLECTIONS['GROUP_MAIL']
+                          Collections.GROUP_MAIL.value
                         )
                     ):
                         continue
@@ -435,13 +436,13 @@ class GraphCollectionHandler(BaseGraphHandler):
                     return False
 
         base_groups = []
-        for key, collection in GraphUtils.COLLECTIONS.items():
-            base_groups.append(self.generate_rid(parent_username_signature, parent_username_signature, collection))
-            base_groups.append(self.generate_rid(username_signature, username_signature, collection))
-            base_groups.append(self.generate_rid(parent_username_signature, username_signature, collection))
+        for collection in Collections:
+            base_groups.append(self.generate_rid(parent_username_signature, parent_username_signature, collection.value))
+            base_groups.append(self.generate_rid(username_signature, username_signature, collection.value))
+            base_groups.append(self.generate_rid(parent_username_signature, username_signature, collection.value))
             for child_username_signature in child_username_signatures:
-                base_groups.append(self.generate_rid(child_username_signature, child_username_signature, collection))
-                base_groups.append(self.generate_rid(username_signature, child_username_signature, collection))
+                base_groups.append(self.generate_rid(child_username_signature, child_username_signature, collection.value))
+                base_groups.append(self.generate_rid(username_signature, child_username_signature, collection.value))
 
         if len(set(base_groups) & set(rids)) == len(set(rids)):
             return True

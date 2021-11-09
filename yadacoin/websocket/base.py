@@ -7,6 +7,7 @@ from tornado import gen, ioloop
 from tornado.websocket import WebSocketHandler, WebSocketClosedError
 from coincurve import verify_signature
 from bitcoin.wallet import P2PKHBitcoinAddress
+from yadacoin.core.collections import Collections
 from yadacoin.core.graphutils import GraphUtils
 
 from yadacoin.core.identity import Identity
@@ -55,8 +56,8 @@ class RCPWebSocketServer(WebSocketHandler):
         self.peer = peer
         self.peer.groups = {}
         RCPWebSocketServer.inbound_streams[User.__name__][peer.rid] = self
-        for key, collection in GraphUtils.COLLECTIONS.items():
-            rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
+        for collection in Collections:
+            rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection.value)
             RCPWebSocketServer.inbound_streams[User.__name__][rid] = self
 
         try:
@@ -244,8 +245,8 @@ class RCPWebSocketServer(WebSocketHandler):
 
         group = Identity.from_dict(body.get('params'))
 
-        self.append_to_group(group, GraphUtils.COLLECTIONS['GROUP_CHAT'])
-        self.append_to_group(group, GraphUtils.COLLECTIONS['GROUP_MAIL'])
+        self.append_to_group(group, Collections.GROUP_CHAT.value)
+        self.append_to_group(group, Collections.GROUP_MAIL.value)
 
         await self.write_result('join_confirmed', {}, body=body)
 
