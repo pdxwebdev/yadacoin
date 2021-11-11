@@ -247,6 +247,7 @@ class RCPWebSocketServer(WebSocketHandler):
 
         self.append_to_group(group, Collections.GROUP_CHAT.value)
         self.append_to_group(group, Collections.GROUP_MAIL.value)
+        self.append_to_group(group, Collections.GROUP_CALENDAR.value)
 
         await self.write_result('join_confirmed', {}, body=body)
 

@@ -1,6 +1,6 @@
 webpackJsonp([0],{
 
-/***/ 135:
+/***/ 108:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -9,7 +9,7 @@ webpackJsonp([0],{
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_autocomplete_provider__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_forms__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(386);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(387);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_wallet_service__ = __webpack_require__(26);
@@ -61,31 +61,45 @@ var ComposePage = /** @class */ (function () {
             this.recipient = this.item.sender;
             this.subject = this.item.subject;
             this.prevBody = this.item.body;
-            this.message_type = this.settingsService.collections.MAIL;
+            this.collection = this.item.collection;
         }
         else if (this.mode === 'replyToAll') {
             this.recipient = this.item.group;
             this.subject = this.item.subject;
             this.prevBody = this.item.body;
-            this.message_type = this.settingsService.collections.GROUP_MAIL;
+            this.collection = this.item.collection;
         }
         else if (this.mode === 'forward') {
             this.subject = this.item.subject;
             this.body = this.item.body;
-        }
-        else if (this.mode === 'sign') {
-            this.recipient = this.item.sender;
-            this.subject = this.item.subject;
-            this.body = this.item.body;
-            this.message_type = this.settingsService.collections.CONTRACT_SIGNED;
-            this.submit();
+            this.collection = this.item.collection;
         }
         else if (this.item && this.item.recipient) {
             this.recipient = this.item.recipient;
-            this.message_type = this.graphService.isGroup(this.recipient) ? this.settingsService.collections.GROUP_MAIL : this.settingsService.collections.MAIL;
+        }
+        if (this.recipient) {
+            this.collection = this.graphService.isGroup(this.recipient) ? this.settingsService.collections.GROUP_MAIL : this.settingsService.collections.MAIL;
+        }
+        if (this.item && this.item.message_type) {
+            this.message_type = this.item.message_type;
         }
         else {
-            this.message_type = this.settingsService.collections.MAIL;
+            if (this.collection === this.settingsService.collections.MAIL || this.collection === this.settingsService.collections.GROUP_MAIL) {
+                this.message_type = 'mail';
+            }
+            else if (this.collection === this.settingsService.collections.CALENDAR || this.collection === this.settingsService.collections.GROUP_CALENDAR) {
+                this.message_type = 'calendar';
+            }
+            this.message_type = this.message_type || 'mail';
+        }
+    };
+    ComposePage.prototype.segmentChanged = function (e) {
+        this.message_type = e.value;
+        if (this.message_type === 'mail') {
+            this.collection = this.graphService.isGroup(this.recipient) ? this.settingsService.collections.GROUP_MAIL : this.settingsService.collections.MAIL;
+        }
+        else if (this.message_type === 'calendar') {
+            this.collection = this.graphService.isGroup(this.recipient) ? this.settingsService.collections.GROUP_CALENDAR : this.settingsService.collections.CALENDAR;
         }
     };
     ComposePage.prototype.changeListener = function ($event) {
@@ -109,6 +123,12 @@ var ComposePage = /** @class */ (function () {
     };
     ComposePage.prototype.submit = function () {
         var _this = this;
+        if (this.message_type === 'mail') {
+            this.collection = this.graphService.isGroup(this.recipient) ? this.settingsService.collections.GROUP_MAIL : this.settingsService.collections.MAIL;
+        }
+        else if (this.message_type === 'calendar') {
+            this.collection = this.graphService.isGroup(this.recipient) ? this.settingsService.collections.GROUP_CALENDAR : this.settingsService.collections.CALENDAR;
+        }
         var alert = this.alertCtrl.create();
         alert.setTitle('Send mail confirmation');
         alert.setSubTitle('Are you sure?');
@@ -119,9 +139,9 @@ var ComposePage = /** @class */ (function () {
                 _this.walletService.get()
                     .then(function () {
                     var rid = _this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.recipient.username_signature);
-                    var requester_rid = _this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.message_type);
-                    var requested_rid = _this.graphService.generateRid(_this.recipient.username_signature, _this.recipient.username_signature, _this.message_type);
                     if (_this.graphService.isGroup(_this.recipient)) {
+                        var requester_rid = _this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.collection);
+                        var requested_rid = _this.graphService.generateRid(_this.recipient.username_signature, _this.recipient.username_signature, _this.collection);
                         var info = {
                             relationship: {},
                             rid: rid,
@@ -130,12 +150,11 @@ var ComposePage = /** @class */ (function () {
                             group: true,
                             group_username_signature: _this.recipient.username_signature
                         };
-                        info.relationship[_this.settingsService.collections.GROUP_MAIL] = {
+                        info.relationship[_this.collection] = {
                             sender: _this.bulletinSecretService.identity,
                             subject: _this.subject,
                             body: _this.body,
                             thread: _this.thread,
-                            message_type: _this.message_type,
                             event_datetime: _this.event_datetime,
                             skylink: _this.skylink,
                             filename: _this.filepath
@@ -143,6 +162,8 @@ var ComposePage = /** @class */ (function () {
                         return _this.transactionService.generateTransaction(info);
                     }
                     else {
+                        var requester_rid = _this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.collection);
+                        var requested_rid = _this.graphService.generateRid(_this.recipient.username_signature, _this.recipient.username_signature, _this.collection);
                         var dh_public_key = _this.graphService.keys[rid].dh_public_keys[0];
                         var dh_private_key = _this.graphService.keys[rid].dh_private_keys[0];
                         if (dh_public_key && dh_private_key) {
@@ -163,11 +184,10 @@ var ComposePage = /** @class */ (function () {
                                 requester_rid: requester_rid,
                                 requested_rid: requested_rid
                             };
-                            info.relationship[_this.settingsService.collections.MAIL] = {
+                            info.relationship[_this.collection] = {
                                 subject: _this.subject,
                                 body: _this.body,
                                 thread: _this.thread,
-                                message_type: _this.message_type,
                                 event_datetime: _this.event_datetime,
                                 skylink: _this.skylink,
                                 filename: _this.filepath
@@ -214,7 +234,7 @@ var ComposePage = /** @class */ (function () {
     ], ComposePage.prototype, "searchbar", void 0);
     ComposePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'compose-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  What type of message is this?\n  <ion-segment [(ngModel)]="message_type">\n    <ion-segment-button [value]="settingsService.collections.MAIL" *ngIf="!graphService.isGroup(recipient)">\n      Mail\n    </ion-segment-button>\n    <ion-segment-button [value]="settingsService.collections.GROUP_MAIL" *ngIf="graphService.isGroup(recipient)">\n      Mail\n    </ion-segment-button>\n    <ion-segment-button [value]="settingsService.collections.CONTRACT">\n      Contract\n    </ion-segment-button>\n    <ion-segment-button [value]="settingsService.collections.CALENDAR">\n      Event / Meeting\n    </ion-segment-button>\n  </ion-segment>\n  <button ion-button secondary (click)="submit()" [disabled]="busy">Send \n    <ion-spinner *ngIf="busy"></ion-spinner>\n  </button>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="message_type === settingsService.collections.CALENDAR">\n    <ion-label floating>Date &amp; time</ion-label>\n    <ion-datetime displayFormat="D MMM YYYY H:mm" [(ngModel)]="event_datetime"></ion-datetime>\n  </ion-item>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item>\n    <ion-label floating>Subject</ion-label>\n    <ion-input type="text" [(ngModel)]="subject"></ion-input>\n  </ion-item>\n  <ion-item>\n    <ion-label floating>Body</ion-label>\n    <ion-textarea type="text" [(ngModel)]="body" rows="5" autoGrow="true"></ion-textarea>\n  </ion-item>\n  <ion-item *ngIf="settingsService.remoteSettings.restricted">\n    <ion-label id="profile_image" color="primary"></ion-label>\n    <ion-input type="file" (change)="changeListener($event)"></ion-input>\n  </ion-item>\n  <br>\n  <ion-item *ngIf="item && item.sender">\n    Previous message\n    <div title="Verified" class="sender">\n      <span>{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n      <span *ngIf="item.group">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    </div>\n    <div class="subject">{{item.subject}}</div>\n    <div class="datetime">{{item.datetime}}</div>\n    <div class="body">{{item.body}}</div>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/
+            selector: 'compose-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  What type of message is this?\n  <ion-segment (ionChange)="segmentChanged($event)" [(ngModel)]="message_type" value="mail">\n    <ion-segment-button value="mail">\n      {{graphService.isGroup(recipient) ? \'Group \': \'\'}}Mail\n    </ion-segment-button>\n    <ion-segment-button value="calendar">\n      {{graphService.isGroup(recipient) ? \'Group \': \'\'}}Event / Meeting\n    </ion-segment-button>\n  </ion-segment>\n  <button ion-button secondary (click)="submit()" [disabled]="busy || !recipient || (message_type === \'calendar\' && !event_datetime)">Send \n    <ion-spinner *ngIf="busy"></ion-spinner>\n  </button>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item *ngIf="message_type === \'calendar\'">\n    <ion-label floating>Date &amp; time</ion-label>\n    <ion-datetime displayFormat="D MMM YYYY H:mm" [(ngModel)]="event_datetime"></ion-datetime>\n  </ion-item>\n  <ion-item>\n    <ion-label floating>Subject</ion-label>\n    <ion-input type="text" [(ngModel)]="subject"></ion-input>\n  </ion-item>\n  <ion-item>\n    <ion-label floating>Body</ion-label>\n    <ion-textarea type="text" [(ngModel)]="body" rows="5" autoGrow="true"></ion-textarea>\n  </ion-item>\n  <ion-item *ngIf="settingsService.remoteSettings.restricted">\n    <ion-label id="profile_image" color="primary"></ion-label>\n    <ion-input type="file" (change)="changeListener($event)"></ion-input>\n  </ion-item>\n  <br>\n  <ion-item *ngIf="item && item.sender">\n    Previous message\n    <div title="Verified" class="sender">\n      <span>{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n      <span *ngIf="item.group">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    </div>\n    <div class="subject">{{item.subject}}</div>\n    <div class="datetime">{{item.datetime}}</div>\n    <div class="body">{{item.body}}</div>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -271,13 +291,20 @@ var CompleteTestService = /** @class */ (function () {
         this.formValueAttribute = "value";
     }
     CompleteTestService.prototype.getResults = function (searchTerm) {
-        return this.graphService.graph.friends.map(function (item) {
+        return this.graphService.graph.friends.concat(this.graphService.graph.groups)
+            .filter(function (item) {
+            var username = item.relationship.username || item.relationship.identity.username;
+            return username.toLowerCase().indexOf(searchTerm.toLowerCase()) > -1;
+        })
+            .map(function (item) {
+            var identity = item.relationship.identity || item.relationship;
             var value = {
-                username: item.relationship.identity.username,
-                username_signature: item.relationship.identity.username_signature,
-                public_key: item.relationship.identity.public_key
+                username: identity.username,
+                username_signature: identity.username_signature,
+                public_key: identity.public_key,
+                collection: identity.collection
             };
-            return { name: item.relationship.identity.username, value: value };
+            return { name: identity.username, value: value };
         });
     };
     CompleteTestService = __decorate([
@@ -305,7 +332,7 @@ var CompleteTestService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__compose__ = __webpack_require__(135);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__compose__ = __webpack_require__(108);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_settings_service__ = __webpack_require__(14);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -367,48 +394,6 @@ var MailItemPage = /** @class */ (function () {
             thread: item.thread || item.id
         });
     };
-    MailItemPage.prototype.addToCalendar = function (item) {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Send mail confirmation');
-        alert.setSubTitle('Are you sure?');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                _this.walletService.get()
-                    .then(function () {
-                    var rid = _this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CALENDAR);
-                    return _this.transactionService.generateTransaction({
-                        relationship: {
-                            event: {
-                                sender: _this.item.sender,
-                                subject: _this.item.subject,
-                                body: _this.item.body,
-                                thread: _this.item.thread,
-                                message_type: _this.item.message_type,
-                                event_datetime: _this.item.event_datetime
-                            }
-                        },
-                        rid: rid
-                    });
-                }).then(function (txn) {
-                    return _this.transactionService.sendTransaction();
-                }).then(function () {
-                    _this.navCtrl.pop();
-                })
-                    .catch(function (err) {
-                    console.log(err);
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Message error');
-                    alert.setSubTitle(err);
-                    alert.addButton('Ok');
-                    alert.present();
-                });
-            }
-        });
-        alert.present();
-    };
     MailItemPage.prototype.addFriend = function () {
         var _this = this;
         var info;
@@ -448,7 +433,7 @@ var MailItemPage = /** @class */ (function () {
     };
     MailItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'mail-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{item.subject}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <button ion-button secondary (click)="replyMail(item)" *ngIf="graphService.isAdded(item.sender)">Reply</button>\n  <button ion-button secondary (click)="addFriend(item)" *ngIf="!graphService.isAdded(item.sender)">Add sender as contact</button>\n  <button *ngIf="item.group" ion-button secondary (click)="replyToAllMail(item)">Reply to all</button>\n  <button ion-button secondary (click)="forwardMail(item)">Forward</button>\n  <button *ngIf="item.message_type == settingsService.collections.CONTRACT" ion-button secondary (click)="signMail(item)">Sign</button>\n  <button *ngIf="item.message_type == settingsService.collections.CALENDAR" ion-button secondary (click)="addToCalendar(item)">Add to calendar</button>\n  <div title="Verified" class="sender">\n    <span (click)="viewProfile(item.sender)">{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    <span *ngIf="item.group" (click)="viewProfile(item.group)">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n  </div>\n  <div *ngIf="item.message_type == settingsService.collections.CONTRACT_SIGNED"><strong>Contract signed</strong> <ion-icon name="checkmark-circle" class="success"></ion-icon></div>\n  <ion-item>{{item.datetime}}</ion-item>\n  <ion-item *ngIf="item.event_datetime">{{item.event_datetime}}</ion-item>\n  <ion-item><pre>{{item.body}}</pre></ion-item>\n  <ion-item *ngIf="item.skylink"><a href="https://centeridentity.com/sia-download?skylink={{item.skylink}}" target="_blank">Download {{item.filename}}</a></ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/
+            selector: 'mail-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{item.subject}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <button ion-button secondary (click)="replyMail(item)" *ngIf="graphService.isAdded(item.sender)">Reply</button>\n  <button ion-button secondary (click)="addFriend(item)" *ngIf="!graphService.isAdded(item.sender) && !graphService.isMe(item.sender)">Add sender as contact</button>\n  <button *ngIf="item.group" ion-button secondary (click)="replyToAllMail(item)">Reply to all</button>\n  <button ion-button secondary (click)="forwardMail(item)">Forward</button>\n  <button *ngIf="item.message_type == settingsService.collections.CONTRACT" ion-button secondary (click)="signMail(item)">Sign</button>\n  <div title="Verified" class="sender">\n    <span (click)="viewProfile(item.sender)">{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    <span *ngIf="item.group" (click)="viewProfile(item.group)">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n  </div>\n  <div *ngIf="item.message_type == settingsService.collections.CONTRACT_SIGNED"><strong>Contract signed</strong> <ion-icon name="checkmark-circle" class="success"></ion-icon></div>\n  <ion-item>{{item.datetime}}</ion-item>\n  <ion-item *ngIf="item.event_datetime">{{item.event_datetime}}</ion-item>\n  <ion-item><pre>{{item.body}}</pre></ion-item>\n  <ion-item *ngIf="item.skylink"><a href="https://centeridentity.com/sia-download?skylink={{item.skylink}}" target="_blank">Download {{item.filename}}</a></ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -617,6 +602,7 @@ var SettingsService = /** @class */ (function () {
             CONTRACT: 'contract',
             CONTRACT_SIGNED: 'contract_signed',
             GROUP: 'group',
+            GROUP_CALENDAR: 'group_event_meeting',
             GROUP_CHAT: 'group_chat',
             GROUP_CHAT_FILE_NAME: 'group_chat_file_name',
             GROUP_CHAT_FILE: 'group_chat_file',
@@ -880,13 +866,13 @@ var BulletinSecretService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(385);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(386);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_rxjs_operators__ = __webpack_require__(51);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(222);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(348);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(349);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_11_eciesjs__);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -1003,6 +989,9 @@ var GraphService = /** @class */ (function () {
         })
             .then(function () {
             return _this.getFriendRequests();
+        })
+            .then(function () {
+            return _this.getSharedSecrets();
         });
     };
     GraphService.prototype.endpointRequest = function (endpoint, ids, rids, post_data) {
@@ -1011,6 +1000,9 @@ var GraphService = /** @class */ (function () {
         if (rids === void 0) { rids = null; }
         if (post_data === void 0) { post_data = null; }
         return new Promise(function (resolve, reject) {
+            if (endpoint.substr(0, 1) !== '/') {
+                endpoint = '/' + endpoint;
+            }
             var headers = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["a" /* Headers */]();
             headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
             var options = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
@@ -1036,7 +1028,7 @@ var GraphService = /** @class */ (function () {
                     _this.graph.username_signature = info.username_signature;
                     _this.graph.registered = info.registered;
                     _this.graph.pending_registration = info.pending_registration;
-                    resolve(info);
+                    return resolve(info);
                 }
                 catch (err) {
                     console.log(err);
@@ -1054,7 +1046,7 @@ var GraphService = /** @class */ (function () {
             _this.endpointRequest('get-graph-info')
                 .then(function (data) {
                 _this.getGraphError = false;
-                resolve(data);
+                return resolve(data);
             }).catch(function (err) {
                 _this.getGraphError = true;
                 reject(null);
@@ -1090,7 +1082,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (data) {
                 _this.graph.sent_friend_requests = _this.parseSentFriendRequests(data.sent_friend_requests);
                 _this.getSentFriendRequestsError = false;
-                resolve();
+                return resolve();
             }).catch(function (err) {
                 _this.getSentFriendRequestsError = true;
                 reject(null);
@@ -1104,7 +1096,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (data) {
                 _this.parseFriendRequests(data.collection);
                 _this.getFriendRequestsError = false;
-                resolve();
+                return resolve();
             }).catch(function (err) {
                 _this.getFriendRequestsError = true;
                 reject(err);
@@ -1234,7 +1226,8 @@ var GraphService = /** @class */ (function () {
             message_type: item.relationship[collection].message_type,
             event_datetime: item.relationship[collection].event_datetime,
             skylink: item.relationship[collection].skylink,
-            filename: item.relationship[collection].filename
+            filename: item.relationship[collection].filename,
+            rid: item.rid
         };
     };
     GraphService.prototype.getMessages = function (rid, collection) {
@@ -1243,18 +1236,15 @@ var GraphService = /** @class */ (function () {
         if (typeof rid === 'string')
             rid = [rid];
         //get messages for a specific friend
-        return new Promise(function (resolve, reject) {
-            _this.endpointRequest('get-graph-collection', null, rid)
-                .then(function (data) {
-                return _this.parseMessages(data.collection, 'new_messages_counts', 'new_messages_count', rid, collection, 'last_message_height');
-            })
-                .then(function (chats) {
+        return this.endpointRequest('get-graph-collection', null, rid)
+            .then(function (data) {
+            return _this.parseMessages(data.collection, 'new_messages_counts', 'new_messages_count', rid, collection, 'last_message_height');
+        })
+            .then(function (chats) {
+            return new Promise(function (resolve, reject) {
                 _this.graph.messages = chats;
                 _this.getMessagesError = false;
                 return resolve(chats[rid]);
-            }).catch(function (err) {
-                _this.getMessagesError = true;
-                reject(err);
             });
         });
     };
@@ -1269,7 +1259,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (newChats) {
                 _this.graph.newMessages = newChats;
                 _this.getNewMessagesError = false;
-                resolve(newChats);
+                return resolve(newChats);
             }).catch(function (err) {
                 _this.getNewMessagesError = true;
                 reject(err);
@@ -1342,7 +1332,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (newChats) {
                 _this.graph.newGroupMessages = newChats;
                 _this.getNewMessagesError = false;
-                resolve(newChats);
+                return resolve(newChats);
             }).catch(function (err) {
                 _this.getNewMessagesError = true;
                 reject(err);
@@ -1368,7 +1358,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (newSignIns) {
                 _this.graph.newSignIns = newSignIns;
                 _this.getNewSignInsError = false;
-                resolve(newSignIns);
+                return resolve(newSignIns);
             }).catch(function (err) {
                 _this.getNewSignInsError = true;
                 reject(err);
@@ -1383,7 +1373,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (data) {
                 _this.graph.reacts = _this.parseMessages(data.reacts, 'new_reacts_counts', 'new_reacts_count', rid, _this.settingsService.collections.CHAT, 'last_react_height');
                 _this.getReactsError = false;
-                resolve(data.reacts);
+                return resolve(data.reacts);
             }).catch(function () {
                 _this.getReactsError = true;
                 reject(null);
@@ -1398,7 +1388,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (data) {
                 _this.graph.comments = _this.parseMessages(data.reacts, 'new_comments_counts', 'new_comments_count', rid, _this.settingsService.collections.CHAT, 'last_comment_height');
                 _this.getCommentsError = false;
-                resolve(data.comments);
+                return resolve(data.comments);
             }).catch(function () {
                 _this.getCommentsError = true;
                 reject(null);
@@ -1413,7 +1403,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (data) {
                 _this.graph.commentReacts = _this.parseMessages(data.reacts, 'new_comment_reacts_counts', 'new_comment_reacts_count', rid, _this.settingsService.collections.CHAT, 'last_comment_react_height');
                 _this.getcommentReactsError = false;
-                resolve(data.comment_reacts);
+                return resolve(data.comment_reacts);
             }).catch(function () {
                 _this.getcommentReactsError = true;
                 reject(null);
@@ -1428,7 +1418,7 @@ var GraphService = /** @class */ (function () {
                 .then(function (data) {
                 _this.graph.commentReplies = _this.parseMessages(data.reacts, 'new_comment_comments_counts', 'new_comment_comments_count', rid, _this.settingsService.collections.CHAT, 'last_comment_comment_height');
                 _this.getcommentRepliesError = false;
-                resolve(data.comments);
+                return resolve(data.comments);
             }).catch(function () {
                 _this.getcommentRepliesError = true;
                 reject(null);
@@ -1664,7 +1654,7 @@ var GraphService = /** @class */ (function () {
                     friends.push(friendsObj[arr_friends_keys[i]].friend_request || friendsObj[arr_friends_keys[i]].friend);
                 }
             }
-            resolve(friends);
+            return resolve(friends);
         });
     };
     GraphService.prototype.parseGroups = function (groups, root, collectionName) {
@@ -1740,6 +1730,7 @@ var GraphService = /** @class */ (function () {
                 _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_CHAT)] = group;
                 _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_MAIL)] = group;
                 _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.CALENDAR)] = group;
+                _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_CALENDAR)] = group;
                 _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, relationship.username_signature)] = group;
                 try {
                     promises.push(_this.getGroups(_this.generateRid(relationship.username_signature, relationship.username_signature, relationship.username_signature)));
@@ -1777,284 +1768,20 @@ var GraphService = /** @class */ (function () {
         if (messageHeightType === void 0) { messageHeightType = null; }
         this[graphCount] = 0;
         return new Promise(function (resolve, reject) {
-            _this.getSharedSecrets().then(function () {
-                return _this.getMessageHeights(graphCounts, messageHeightType);
-            })
-                .then(function () {
-                var chats = [];
-                dance: for (var i = 0; i < messages.length; i++) {
-                    var message = messages[i];
-                    if (!rid && chats[message.rid])
-                        continue;
-                    if (!message.rid)
-                        continue;
-                    if (message.dh_public_key)
-                        continue;
-                    //hopefully we've prepared the stored_secrets option before getting here
-                    //by calling getSentFriendRequests and getFriendRequests
-                    if (_this.groups_indexed[message.requested_rid]) {
-                        try {
-                            var decrypted = _this.shared_decrypt(_this.groups_indexed[message.requested_rid].relationship.username_signature, message.relationship);
-                        }
-                        catch (error) {
-                            continue;
-                        }
-                        try {
-                            var messageJson = JSON.parse(decrypted);
-                        }
-                        catch (err) {
-                            continue;
-                        }
-                        if (messageJson[messageType]) {
-                            message.relationship = messageJson;
-                            messages[message.requested_rid] = message;
-                            try {
-                                message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
-                                message.relationship.isInvite = true;
-                            }
-                            catch (err) {
-                                //not an invite, do nothing
-                            }
-                            chats.push(message);
-                            if (_this[graphCounts][message.rid]) {
-                                if (message.height > _this[graphCounts][message.rid]) {
-                                    _this[graphCount]++;
-                                    if (!_this[graphCounts][message.rid]) {
-                                        _this[graphCounts][message.rid] = 0;
-                                    }
-                                    _this[graphCounts][message.rid]++;
-                                }
-                            }
-                            else {
-                                _this[graphCounts][message.rid] = 1;
-                                _this[graphCount]++;
-                            }
-                        }
-                        continue dance;
-                    }
-                    else {
-                        if (!_this.stored_secrets[message.rid])
-                            continue;
-                        for (var j = 0; j < _this.stored_secrets[message.rid].length; j++) {
-                            var shared_secret = _this.stored_secrets[message.rid][j];
-                            try {
-                                var decrypted = _this.shared_decrypt(shared_secret.shared_secret, message.relationship);
-                            }
-                            catch (error) {
-                                continue;
-                            }
-                            try {
-                                var messageJson = JSON.parse(decrypted);
-                            }
-                            catch (err) {
-                                continue;
-                            }
-                            if (messageJson[messageType]) {
-                                message.relationship = messageJson;
-                                message.shared_secret = shared_secret.shared_secret;
-                                message.dh_public_key = shared_secret.dh_public_key;
-                                message.dh_private_key = shared_secret.dh_private_key;
-                                messages[message.rid] = message;
-                                try {
-                                    message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
-                                    message.relationship.isInvite = true;
-                                }
-                                catch (err) {
-                                    //not an invite, do nothing
-                                }
-                                chats.push(message);
-                                if (_this[graphCounts][message.rid]) {
-                                    if (message.height > _this[graphCounts][message.rid]) {
-                                        _this[graphCount]++;
-                                        if (!_this[graphCounts][message.rid]) {
-                                            _this[graphCounts][message.rid] = 0;
-                                        }
-                                        _this[graphCounts][message.rid]++;
-                                    }
-                                }
-                                else {
-                                    _this[graphCounts][message.rid] = 1;
-                                    _this[graphCount]++;
-                                }
-                            }
-                            continue dance;
-                        }
-                    }
-                }
-                resolve(chats);
-            });
-        });
-    };
-    GraphService.prototype.parseMessages = function (messages, graphCounts, graphCount, rid, messageType, messageHeightType) {
-        var _this = this;
-        if (rid === void 0) { rid = null; }
-        if (messageType === void 0) { messageType = null; }
-        if (messageHeightType === void 0) { messageHeightType = null; }
-        this[graphCount] = 0;
-        return new Promise(function (resolve, reject) {
-            _this.getSharedSecrets().then(function () {
-                return _this.getMessageHeights(graphCounts, messageHeightType);
-            })
-                .then(function () {
-                var chats = {};
-                dance: for (var i = 0; i < messages.length; i++) {
-                    var message = messages[i];
-                    if (!rid && chats[message.rid])
-                        continue;
-                    if (rid && message.rid !== rid && rid.indexOf(message.rid) === -1 && rid.indexOf(message.requested_rid) === -1)
-                        continue;
-                    if (!message.rid && !message.requested_rid)
-                        continue;
-                    if (message.dh_public_key)
-                        continue;
-                    if (_this.groups_indexed[message.requested_rid]) {
-                        try {
-                            var decrypted = _this.shared_decrypt(_this.groups_indexed[message.requested_rid].relationship.username_signature, message.relationship);
-                        }
-                        catch (error) {
-                            continue;
-                        }
-                        try {
-                            var messageJson = JSON.parse(decrypted);
-                        }
-                        catch (err) {
-                            continue;
-                        }
-                        if (messageJson[messageType]) {
-                            message.relationship = messageJson;
-                            messages[message.requested_rid] = message;
-                            if (!chats[message.requested_rid]) {
-                                chats[message.requested_rid] = [];
-                            }
-                            try {
-                                message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
-                                message.relationship.isInvite = true;
-                            }
-                            catch (err) {
-                                //not an invite, do nothing
-                            }
-                            chats[message.requested_rid].push(message);
-                            if (_this[graphCounts][message.requested_rid]) {
-                                if (message.height > _this[graphCounts][message.requested_rid]) {
-                                    _this[graphCount]++;
-                                    if (!_this[graphCounts][message.requested_rid]) {
-                                        _this[graphCounts][message.requested_rid] = 0;
-                                    }
-                                    _this[graphCounts][message.requested_rid]++;
-                                }
-                            }
-                            else {
-                                _this[graphCounts][message.requested_rid] = 1;
-                                _this[graphCount]++;
-                            }
-                        }
-                        continue dance;
-                    }
-                    else {
-                        if (!_this.stored_secrets[message.rid])
-                            continue;
-                        var shared_secret = _this.stored_secrets[message.rid][j];
-                        //hopefully we've prepared the stored_secrets option before getting here
-                        //by calling getSentFriendRequests and getFriendRequests
-                        for (var j = 0; j < _this.stored_secrets[message.rid].length; j++) {
-                            var shared_secret = _this.stored_secrets[message.rid][j];
-                            try {
-                                var decrypted = _this.shared_decrypt(shared_secret.shared_secret, message.relationship);
-                            }
-                            catch (error) {
-                                continue;
-                            }
-                            try {
-                                var messageJson = JSON.parse(decrypted);
-                            }
-                            catch (err) {
-                                continue;
-                            }
-                            if (messageJson[messageType]) {
-                                message.relationship = messageJson;
-                                message.shared_secret = shared_secret.shared_secret;
-                                message.dh_public_key = shared_secret.dh_public_key;
-                                message.dh_private_key = shared_secret.dh_private_key;
-                                messages[message.rid] = message;
-                                if (!chats[message.rid]) {
-                                    chats[message.rid] = [];
-                                }
-                                try {
-                                    message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
-                                    message.relationship.isInvite = true;
-                                }
-                                catch (err) {
-                                    //not an invite, do nothing
-                                }
-                                chats[message.rid].push(message);
-                                if (_this[graphCounts][message.rid]) {
-                                    if (message.height > _this[graphCounts][message.rid]) {
-                                        _this[graphCount]++;
-                                        if (!_this[graphCounts][message.rid]) {
-                                            _this[graphCounts][message.rid] = 0;
-                                        }
-                                        _this[graphCounts][message.rid]++;
-                                    }
-                                }
-                                else {
-                                    _this[graphCounts][message.rid] = 1;
-                                    _this[graphCount]++;
-                                }
-                            }
-                            continue dance;
-                        }
-                    }
-                }
-                resolve(chats);
-            });
-        });
-    };
-    GraphService.prototype.parseNewMessages = function (messages, graphCounts, graphCount, heightType) {
-        var _this = this;
-        this[graphCount] = 0;
-        this[graphCounts] = {};
-        var public_key = this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex');
-        return new Promise(function (resolve, reject) {
-            return _this.getMessageHeights(graphCounts, heightType)
-                .then(function () {
-                var new_messages = [];
-                for (var i = 0; i < messages.length; i++) {
-                    var message = messages[i];
-                    if (message.public_key != public_key) {
-                        if (_this[graphCounts][message.rid]) {
-                            if (parseInt(message.time) > _this[graphCounts][message.rid]) {
-                                _this[graphCounts][message.rid] = message.time;
-                                _this[graphCount]++;
-                            }
-                        }
-                        else {
-                            _this[graphCounts][message.rid] = parseInt(message.time);
-                            _this[graphCount]++;
-                        }
-                        new_messages.push(message);
-                    }
-                }
-                return resolve(new_messages);
-            });
-        });
-    };
-    GraphService.prototype.parseGroupMessages = function (key, messages, graphCounts, graphCount, rid, messageType, messageHeightType) {
-        var _this = this;
-        if (rid === void 0) { rid = null; }
-        if (messageType === void 0) { messageType = null; }
-        if (messageHeightType === void 0) { messageHeightType = null; }
-        this[graphCount] = 0;
-        return new Promise(function (resolve, reject) {
-            _this.getGroupMessageHeights(graphCounts, messageHeightType)
-                .then(function () {
-                var chats = {};
-                for (var i = 0; i < messages.length; i++) {
-                    var message = messages[i];
-                    //hopefully we've prepared the stored_secrets option before getting here
-                    //by calling getSentFriendRequests and getFriendRequests
+            var chats = [];
+            dance: for (var i = 0; i < messages.length; i++) {
+                var message = messages[i];
+                if (!rid && chats[message.rid])
+                    continue;
+                if (!message.rid)
+                    continue;
+                if (message.dh_public_key)
+                    continue;
+                //hopefully we've prepared the stored_secrets option before getting here
+                //by calling getSentFriendRequests and getFriendRequests
+                if (_this.groups_indexed[message.requested_rid]) {
                     try {
-                        var decrypted = _this.shared_decrypt(key, message.relationship);
-                        console.log(decrypted);
+                        var decrypted = _this.shared_decrypt(_this.groups_indexed[message.requested_rid].relationship.username_signature, message.relationship);
                     }
                     catch (error) {
                         continue;
@@ -2065,31 +1792,203 @@ var GraphService = /** @class */ (function () {
                     catch (err) {
                         continue;
                     }
-                    var group_message_rid = message.requested_rid || message.rid;
-                    if (messageJson[messageType[0]] || messageJson[messageType[1]]) {
+                    if (messageJson[messageType]) {
                         message.relationship = messageJson;
-                        messages[group_message_rid] = message;
-                        if (!chats[group_message_rid]) {
-                            chats[group_message_rid] = [];
+                        messages[message.requested_rid] = message;
+                        try {
+                            message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
+                            message.relationship.isInvite = true;
                         }
-                        chats[group_message_rid].push(message);
-                        if (_this[graphCounts][group_message_rid]) {
-                            if (message.height > _this[graphCounts][group_message_rid]) {
-                                _this[graphCount]++;
-                                if (!_this[graphCounts][group_message_rid]) {
-                                    _this[graphCounts][group_message_rid] = 0;
-                                }
-                                _this[graphCounts][group_message_rid]++;
+                        catch (err) {
+                            //not an invite, do nothing
+                        }
+                        chats.push(message);
+                    }
+                    continue dance;
+                }
+                else {
+                    if (!_this.stored_secrets[message.rid])
+                        continue;
+                    for (var j = 0; j < _this.stored_secrets[message.rid].length; j++) {
+                        var shared_secret = _this.stored_secrets[message.rid][j];
+                        try {
+                            var decrypted = _this.shared_decrypt(shared_secret.shared_secret, message.relationship);
+                        }
+                        catch (error) {
+                            continue;
+                        }
+                        try {
+                            var messageJson = JSON.parse(decrypted);
+                        }
+                        catch (err) {
+                            continue;
+                        }
+                        if (messageJson[messageType]) {
+                            message.relationship = messageJson;
+                            message.shared_secret = shared_secret.shared_secret;
+                            message.dh_public_key = shared_secret.dh_public_key;
+                            message.dh_private_key = shared_secret.dh_private_key;
+                            messages[message.rid] = message;
+                            try {
+                                message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
+                                message.relationship.isInvite = true;
                             }
+                            catch (err) {
+                                //not an invite, do nothing
+                            }
+                            chats.push(message);
                         }
-                        else {
-                            _this[graphCounts][group_message_rid] = 1;
-                            _this[graphCount]++;
-                        }
+                        continue dance;
                     }
                 }
-                resolve(chats);
-            });
+            }
+            return resolve(chats);
+        });
+    };
+    GraphService.prototype.parseMessages = function (messages, graphCounts, graphCount, rid, messageType, messageHeightType) {
+        var _this = this;
+        if (rid === void 0) { rid = null; }
+        if (messageType === void 0) { messageType = null; }
+        if (messageHeightType === void 0) { messageHeightType = null; }
+        this[graphCount] = 0;
+        return new Promise(function (resolve, reject) {
+            var chats = {};
+            dance: for (var i = 0; i < messages.length; i++) {
+                var message = messages[i];
+                if (!rid && chats[message.rid])
+                    continue;
+                if (rid && message.rid !== rid && rid.indexOf(message.rid) === -1 && rid.indexOf(message.requested_rid) === -1)
+                    continue;
+                if (!message.rid && !message.requested_rid)
+                    continue;
+                if (message.dh_public_key)
+                    continue;
+                if (_this.groups_indexed[message.requested_rid]) {
+                    try {
+                        var decrypted = _this.shared_decrypt(_this.groups_indexed[message.requested_rid].relationship.username_signature, message.relationship);
+                    }
+                    catch (error) {
+                        continue;
+                    }
+                    try {
+                        var messageJson = JSON.parse(decrypted);
+                    }
+                    catch (err) {
+                        continue;
+                    }
+                    if (messageJson[messageType]) {
+                        message.relationship = messageJson;
+                        messages[message.requested_rid] = message;
+                        if (!chats[message.requested_rid]) {
+                            chats[message.requested_rid] = [];
+                        }
+                        try {
+                            message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
+                            message.relationship.isInvite = true;
+                        }
+                        catch (err) {
+                            //not an invite, do nothing
+                        }
+                        chats[message.requested_rid].push(message);
+                    }
+                    continue dance;
+                }
+                else {
+                    if (!_this.stored_secrets[message.rid])
+                        continue;
+                    var shared_secret = _this.stored_secrets[message.rid][j];
+                    //hopefully we've prepared the stored_secrets option before getting here
+                    //by calling getSentFriendRequests and getFriendRequests
+                    for (var j = 0; j < _this.stored_secrets[message.rid].length; j++) {
+                        var shared_secret = _this.stored_secrets[message.rid][j];
+                        try {
+                            var decrypted = _this.shared_decrypt(shared_secret.shared_secret, message.relationship);
+                        }
+                        catch (error) {
+                            continue;
+                        }
+                        try {
+                            var messageJson = JSON.parse(decrypted);
+                        }
+                        catch (err) {
+                            continue;
+                        }
+                        if (messageJson[messageType]) {
+                            message.relationship = messageJson;
+                            message.shared_secret = shared_secret.shared_secret;
+                            message.dh_public_key = shared_secret.dh_public_key;
+                            message.dh_private_key = shared_secret.dh_private_key;
+                            messages[message.rid] = message;
+                            if (!chats[message.rid]) {
+                                chats[message.rid] = [];
+                            }
+                            try {
+                                message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
+                                message.relationship.isInvite = true;
+                            }
+                            catch (err) {
+                                //not an invite, do nothing
+                            }
+                            chats[message.rid].push(message);
+                        }
+                        continue dance;
+                    }
+                }
+            }
+            return resolve(chats);
+        });
+    };
+    GraphService.prototype.parseNewMessages = function (messages, graphCounts, graphCount, heightType) {
+        this[graphCount] = 0;
+        this[graphCounts] = {};
+        var public_key = this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex');
+        return new Promise(function (resolve, reject) {
+            var new_messages = [];
+            for (var i = 0; i < messages.length; i++) {
+                var message = messages[i];
+                if (message.public_key != public_key) {
+                    new_messages.push(message);
+                }
+            }
+            return resolve(new_messages);
+        });
+    };
+    GraphService.prototype.parseGroupMessages = function (key, messages, graphCounts, graphCount, rid, messageType, messageHeightType) {
+        var _this = this;
+        if (rid === void 0) { rid = null; }
+        if (messageType === void 0) { messageType = null; }
+        if (messageHeightType === void 0) { messageHeightType = null; }
+        this[graphCount] = 0;
+        return new Promise(function (resolve, reject) {
+            var chats = {};
+            for (var i = 0; i < messages.length; i++) {
+                var message = messages[i];
+                //hopefully we've prepared the stored_secrets option before getting here
+                //by calling getSentFriendRequests and getFriendRequests
+                try {
+                    var decrypted = _this.shared_decrypt(key, message.relationship);
+                    console.log(decrypted);
+                }
+                catch (error) {
+                    continue;
+                }
+                try {
+                    var messageJson = JSON.parse(decrypted);
+                }
+                catch (err) {
+                    continue;
+                }
+                var group_message_rid = message.requested_rid || message.rid;
+                if (messageJson[messageType[0]] || messageJson[messageType[1]]) {
+                    message.relationship = messageJson;
+                    messages[group_message_rid] = message;
+                    if (!chats[group_message_rid]) {
+                        chats[group_message_rid] = [];
+                    }
+                    chats[group_message_rid].push(message);
+                }
+            }
+            return resolve(chats);
         });
     };
     GraphService.prototype.parseCalendar = function (events) {
@@ -2102,6 +2001,12 @@ var GraphService = /** @class */ (function () {
             try {
                 if (this.groups_indexed[event_1.requested_rid]) {
                     decrypted = this.shared_decrypt(this.groups_indexed[event_1.requested_rid].relationship.username_signature, event_1.relationship);
+                }
+                else if (this.friends_indexed[event_1.rid]) {
+                    if (!this.stored_secrets[event_1.rid])
+                        continue;
+                    var shared_secret = this.stored_secrets[event_1.rid][0].shared_secret;
+                    decrypted = this.shared_decrypt(shared_secret, event_1.relationship);
                 }
                 else {
                     decrypted = this.decrypt(event_1.relationship);
@@ -2116,9 +2021,14 @@ var GraphService = /** @class */ (function () {
             catch (err) {
                 continue;
             }
-            if (messageJson[this.settingsService.collections.MAIL]) {
+            if (messageJson[this.settingsService.collections.CALENDAR]) {
                 event_1.relationship = messageJson;
-                event_1.relationship[this.settingsService.collections.MAIL].event_datetime = new Date(event_1.relationship[this.settingsService.collections.MAIL].event_datetime);
+                event_1.relationship[this.settingsService.collections.CALENDAR].event_datetime = new Date(event_1.relationship[this.settingsService.collections.CALENDAR].event_datetime);
+                eventsOut.push(event_1);
+            }
+            else if (messageJson[this.settingsService.collections.GROUP_CALENDAR]) {
+                event_1.relationship = messageJson;
+                event_1.relationship[this.settingsService.collections.GROUP_CALENDAR].event_datetime = new Date(event_1.relationship[this.settingsService.collections.GROUP_CALENDAR].event_datetime);
                 eventsOut.push(event_1);
             }
             else if (messageJson.event) {
@@ -2194,7 +2104,7 @@ var GraphService = /** @class */ (function () {
                     }
                 }
             }
-            resolve();
+            return resolve();
         });
     };
     GraphService.prototype.getSharedSecretForRid = function (rid) {
@@ -2203,41 +2113,11 @@ var GraphService = /** @class */ (function () {
             _this.getSharedSecrets()
                 .then(function () {
                 if (_this.stored_secrets[rid] && _this.stored_secrets[rid].length > 0) {
-                    resolve(_this.stored_secrets[rid][0]);
+                    return resolve(_this.stored_secrets[rid][0]);
                 }
                 else {
                     reject('no shared secret found for rid: ' + rid);
                 }
-            });
-        });
-    };
-    GraphService.prototype.getMessageHeights = function (graphCounts, heightType) {
-        var _this = this;
-        this[graphCounts] = {};
-        return new Promise(function (resolve, reject) {
-            _this.storage.forEach(function (value, key) {
-                if (key.indexOf(heightType) === 0) {
-                    var rid = key.slice(heightType + '-'.length);
-                    _this[graphCounts][rid] = parseInt(value);
-                }
-            })
-                .then(function () {
-                resolve();
-            });
-        });
-    };
-    GraphService.prototype.getGroupMessageHeights = function (graphCounts, heightType) {
-        var _this = this;
-        this[graphCounts] = {};
-        return new Promise(function (resolve, reject) {
-            _this.storage.forEach(function (value, key) {
-                if (key.indexOf(heightType) === 0) {
-                    var rid = key.slice(heightType + '-'.length);
-                    _this[graphCounts][rid] = parseInt(value);
-                }
-            })
-                .then(function () {
-                resolve();
             });
         });
     };
@@ -2329,7 +2209,7 @@ var GraphService = /** @class */ (function () {
                     var pubKey = key.getPublicKeyBuffer().toString('hex');
                     var address = key.getAddress();
                     var username_signature = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(username)).toDER());
-                    resolve({
+                    return resolve({
                         public_key: pubKey,
                         username_signature: username_signature,
                         username: username,
@@ -2461,6 +2341,11 @@ var GraphService = /** @class */ (function () {
             requested_rid: requested_rid,
             requester_rid: requester_rid
         };
+    };
+    GraphService.prototype.isMe = function (identity) {
+        if (!identity)
+            return false;
+        return identity.username_signature === this.bulletinSecretService.identity.username_signature;
     };
     GraphService.prototype.isAdded = function (identity) {
         if (!identity)
@@ -2691,7 +2576,7 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(138);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_autocomplete_provider__ = __webpack_require__(136);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -3331,7 +3216,7 @@ var PeerService = /** @class */ (function () {
                 for (var i = 0; i < Object.keys(remoteSettings).length; i++) {
                     try {
                         var url = new URL(remoteSettings[Object.keys(remoteSettings)[i]]);
-                        remoteSettings[Object.keys(remoteSettings)[i]] = url.protocol + '//' + location.host + url.pathname;
+                        remoteSettings[Object.keys(remoteSettings)[i]] = url.protocol + '//' + location.host + (url.pathname === '/' ? '' : url.pathname);
                     }
                     catch (e) {
                         continue;
@@ -3492,7 +3377,10 @@ var ChatPage = /** @class */ (function () {
             return _this.parseChats();
         })
             .then(function () {
-            setTimeout(function () { return _this.content.scrollToBottom(1000); }, 500);
+            setTimeout(function () {
+                _this.content && _this.content.scrollToBottom(400);
+                _this.input.setFocus();
+            }, 500);
         });
     };
     ChatPage.prototype.changeListener = function ($event) {
@@ -3523,90 +3411,87 @@ var ChatPage = /** @class */ (function () {
         });
     };
     ChatPage.prototype.send = function () {
+        if (this.busy || !this.chatText)
+            return;
+        this.busy = true;
+        return this.sendMessagePromise();
+    };
+    ChatPage.prototype.sendMessagePromise = function () {
         var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Send message');
-        alert.setSubTitle('You are about to send a message.');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                _this.walletService.get()
-                    .then(function () {
-                    if (_this.graphService.isGroup(_this.identity)) {
-                        var info = {
-                            relationship: {
-                                identity: _this.bulletinSecretService.identity,
-                                skylink: _this.skylink,
-                                filename: _this.filepath
-                            },
-                            rid: _this.rid,
-                            requester_rid: _this.requester_rid,
-                            requested_rid: _this.requested_rid,
-                            group: true,
-                            group_username_signature: _this.graphService.groups_indexed[_this.requested_rid].relationship.username_signature
-                        };
-                        info.relationship[_this.settingsService.collections.GROUP_CHAT] = _this.chatText;
-                        return _this.transactionService.generateTransaction(info);
-                    }
-                    else {
-                        var dh_public_key = _this.graphService.keys[_this.rid].dh_public_keys[0];
-                        var dh_private_key = _this.graphService.keys[_this.rid].dh_private_keys[0];
-                        if (dh_public_key && dh_private_key) {
-                            var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-                                return parseInt(h, 16);
-                            }));
-                            var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-                                return parseInt(h, 16);
-                            }));
-                            var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
-                            // camera permission was granted
-                            var info = {
-                                dh_public_key: dh_public_key,
-                                dh_private_key: dh_private_key,
-                                relationship: {
-                                    skylink: _this.skylink,
-                                    filename: _this.filepath
-                                },
-                                shared_secret: shared_secret,
-                                rid: _this.rid,
-                                requester_rid: _this.requester_rid,
-                                requested_rid: _this.requested_rid,
-                            };
-                            info.relationship[_this.settingsService.collections.CHAT] = _this.chatText;
-                            return _this.transactionService.generateTransaction(info);
-                        }
-                        else {
-                            return new Promise(function (resolve, reject) {
-                                var alert = _this.alertCtrl.create();
-                                alert.setTitle('Friendship not yet processed');
-                                alert.setSubTitle('Please wait a few minutes and try again');
-                                alert.addButton('Ok');
-                                alert.present();
-                                return reject('failed to create friend request');
-                            });
-                        }
-                    }
-                }).then(function (txn) {
-                    return _this.transactionService.sendTransaction();
-                }).then(function () {
-                    _this.chatText = '';
-                    _this.skylink = null;
-                    _this.filedata = null;
-                    _this.filepath = null;
-                    _this.refresh(null);
-                })
-                    .catch(function (err) {
-                    console.log(err);
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Message error');
-                    alert.setSubTitle(err);
-                    alert.addButton('Ok');
-                    alert.present();
-                });
+        return this.walletService.get()
+            .then(function () {
+            if (_this.graphService.isGroup(_this.identity)) {
+                var info = {
+                    relationship: {
+                        identity: _this.bulletinSecretService.identity,
+                        skylink: _this.skylink,
+                        filename: _this.filepath
+                    },
+                    rid: _this.rid,
+                    requester_rid: _this.requester_rid,
+                    requested_rid: _this.requested_rid,
+                    group: true,
+                    group_username_signature: _this.graphService.groups_indexed[_this.requested_rid].relationship.username_signature
+                };
+                info.relationship[_this.settingsService.collections.GROUP_CHAT] = _this.chatText;
+                return _this.transactionService.generateTransaction(info);
             }
+            else {
+                var dh_public_key = _this.graphService.keys[_this.rid].dh_public_keys[0];
+                var dh_private_key = _this.graphService.keys[_this.rid].dh_private_keys[0];
+                if (dh_public_key && dh_private_key) {
+                    var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+                        return parseInt(h, 16);
+                    }));
+                    var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+                        return parseInt(h, 16);
+                    }));
+                    var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
+                    // camera permission was granted
+                    var info = {
+                        dh_public_key: dh_public_key,
+                        dh_private_key: dh_private_key,
+                        relationship: {
+                            skylink: _this.skylink,
+                            filename: _this.filepath
+                        },
+                        shared_secret: shared_secret,
+                        rid: _this.rid,
+                        requester_rid: _this.requester_rid,
+                        requested_rid: _this.requested_rid,
+                    };
+                    info.relationship[_this.settingsService.collections.CHAT] = _this.chatText;
+                    return _this.transactionService.generateTransaction(info);
+                }
+                else {
+                    return new Promise(function (resolve, reject) {
+                        var alert = _this.alertCtrl.create();
+                        alert.setTitle('Friendship not yet processed');
+                        alert.setSubTitle('Please wait a few minutes and try again');
+                        alert.addButton('Ok');
+                        alert.present();
+                        return reject('failed to create friend request');
+                    });
+                }
+            }
+        }).then(function (txn) {
+            return _this.transactionService.sendTransaction();
+        }).then(function () {
+            _this.busy = false;
+            _this.chatText = '';
+            _this.skylink = null;
+            _this.filedata = null;
+            _this.filepath = null;
+            _this.refresh(null);
+        })
+            .catch(function (err) {
+            console.log(err);
+            var alert = _this.alertCtrl.create();
+            alert.setTitle('Message error');
+            alert.setSubTitle(err);
+            alert.addButton('Ok');
+            alert.present();
         });
-        alert.present();
     };
     ChatPage.prototype.showChat = function () {
         var item = { pageTitle: { title: "Chat" } };
@@ -3624,9 +3509,10 @@ var ChatPage = /** @class */ (function () {
     };
     ChatPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.CHAT]">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.GROUP_CHAT]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()"></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()" [disabled]="busy">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
+            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n	<ion-list>\n	  <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.CHAT]">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.GROUP_CHAT]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n	  </ion-item>\n	</ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item>\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()" #input></ion-input>\n  </ion-item>\n  <button ion-button (click)="send()" [disabled]="busy || !chatText">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
             queries: {
-                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
+                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content'),
+                input: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('input')
             }
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
@@ -3655,9 +3541,168 @@ var ChatPage = /** @class */ (function () {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CalendarPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__mail_compose__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mail_mailitem__ = __webpack_require__(137);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+var CalendarPage = /** @class */ (function () {
+    function CalendarPage(navCtrl, graphService, bulletinSecretService, settingsService) {
+        this.navCtrl = navCtrl;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.getCalendar({});
+    }
+    CalendarPage.prototype.addZeros = function (date) {
+        return ('00' + date).substr(-2, 2);
+    };
+    CalendarPage.prototype.ionViewDidEnter = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.loading = true;
+            var rids = [_this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CALENDAR)];
+            var group_rids = [];
+            for (var i = 0; i < _this.graphService.graph.groups.length; i++) {
+                var group = _this.graphService.graph.groups[i];
+                group_rids.push(_this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, _this.settingsService.collections.CALENDAR));
+                group_rids.push(_this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, _this.settingsService.collections.GROUP_CALENDAR));
+            }
+            var file_rids = [];
+            for (var i = 0; i < _this.graphService.graph.files.length; i++) {
+                var file = _this.graphService.graph.files[i];
+                file_rids.push(_this.graphService.generateRid(file.relationship.username_signature, file.relationship.username_signature, _this.settingsService.collections.CALENDAR));
+                file_rids.push(_this.graphService.generateRid(file.relationship.username_signature, file.relationship.username_signature, _this.settingsService.collections.GROUP_CALENDAR));
+            }
+            if (group_rids.length > 0) {
+                rids = rids.concat(group_rids);
+            }
+            if (file_rids.length > 0) {
+                rids = rids.concat(file_rids);
+            }
+            return resolve(rids);
+        })
+            .then(function (rids) {
+            return _this.graphService.getCalendar(rids);
+        })
+            .then(function (data) {
+            var events = {};
+            _this.graphService.graph.calendar.map(function (txn) {
+                var group = _this.graphService.groups_indexed[txn.requested_rid];
+                var event = txn.relationship[_this.settingsService.collections.CALENDAR] ||
+                    txn.relationship[_this.settingsService.collections.GROUP_CALENDAR];
+                var eventDate = event.event_datetime;
+                var index = eventDate.getFullYear() + _this.addZeros(eventDate.getMonth()) + _this.addZeros(eventDate.getDate());
+                if (!events[index]) {
+                    events[index] = [];
+                }
+                events[index].push({
+                    group: group ? group.relationship : null,
+                    sender: event.sender || _this.graphService.friends_indexed[txn.rid].relationship.identity,
+                    subject: event.subject,
+                    body: event.body,
+                    datetime: new Date(parseInt(txn.time) * 1000).toISOString().slice(0, 19).replace('T', ' '),
+                    id: txn.id,
+                    message_type: event.message_type,
+                    event_datetime: event.event_datetime
+                });
+            });
+            _this.getCalendar(events);
+            _this.loading = false;
+        });
+    };
+    CalendarPage.prototype.itemTapped = function (event, item) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__mail_mailitem__["a" /* MailItemPage */], {
+            item: item
+        });
+    };
+    CalendarPage.prototype.createEvent = function (event, item) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_5__mail_compose__["a" /* ComposePage */], {
+            item: {
+                message_type: 'calendar'
+            }
+        });
+    };
+    CalendarPage.prototype.getCalendar = function (events) {
+        this.calendar = {
+            rows: [
+                {
+                    days: [{}]
+                }
+            ]
+        };
+        var date = new Date();
+        var month = date.getMonth();
+        var year = date.getFullYear();
+        var fistDay = new Date(year, month);
+        var day = fistDay.getDay();
+        for (var i = 0; i < 100; i++) {
+            if (i < day) {
+                if (this.calendar.rows.length === 0) {
+                    this.calendar.rows.push({
+                        days: []
+                    });
+                }
+                this.calendar.rows[0].days.push({});
+                continue;
+            }
+            var calDate = new Date(year, month, fistDay.getDate() + i - day);
+            if (calDate.getMonth() > month)
+                break;
+            var index = calDate.getFullYear() + this.addZeros(calDate.getMonth()) + this.addZeros(calDate.getDate());
+            if (this.calendar.rows[this.calendar.rows.length - 1].days.length >= 8) {
+                this.calendar.rows.push({
+                    days: [{}]
+                });
+            }
+            this.calendar.rows[this.calendar.rows.length - 1].days.push({
+                date: calDate,
+                events: events[index]
+            });
+        }
+    };
+    CalendarPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'page-calendar',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/calendar/calendar.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <button ion-button secondary (click)="createEvent()">Create new event</button>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <table width="100%" height="100%" *ngIf="calendar">\n    <tr>\n      <th width="12.5%"></th>\n      <th width="12.5%">Sunday</th>\n      <th width="12.5%">Monday</th>\n      <th width="12.5%">Tuesday</th>\n      <th width="12.5%">Wednesday</th>\n      <th width="12.5%">Thursday</th>\n      <th width="12.5%">Friday</th>\n      <th width="12.5%">Saturday</th>\n    </tr>\n    <tr *ngFor="let row of calendar.rows">\n      <td *ngFor="let day of row.days">\n        <div *ngIf="day.date">{{day.date.getDate()}}</div>\n        <div *ngIf="day.events">\n          <div *ngFor="let event of day.events">\n            <div (click)="itemTapped($event, event)">{{event.subject}}</div>\n          </div>\n        </div>\n      </td>\n    </tr>\n  </table>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/calendar/calendar.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */]])
+    ], CalendarPage);
+    return CalendarPage;
+}());
+
+//# sourceMappingURL=calendar.js.map
+
+/***/ }),
+
+/***/ 227:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return FirebaseService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(394);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(21);
@@ -3723,7 +3768,7 @@ var FirebaseService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 227:
+/***/ 228:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -3961,7 +4006,7 @@ var SiaFiles = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 228:
+/***/ 229:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4058,7 +4103,7 @@ var WebPage = /** @class */ (function () {
     };
     WebPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-web',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Url</h1>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item>\n    <ion-input type="text" [(ngModel)]="resource"></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="go()">Go</button>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="signIn()">Sign in</button>\n  </ion-item>\n  <ion-item>\n    {{content}}\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/
+            selector: 'page-web',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Web</h1>\n  <ion-item>Select a contact and enter a resource.</ion-item>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item>\n    <ion-input type="text" [(ngModel)]="resource"></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="go()" [disabled]="!recipient">Go</button>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="signIn()" [disabled]="!recipient">Sign in</button>\n  </ion-item>\n  <ion-item>\n    {{content}}\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -4075,7 +4120,7 @@ var WebPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 229:
+/***/ 230:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4104,7 +4149,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 
 var BuildPagePage = /** @class */ (function () {
-    function BuildPagePage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, websocketService, transactionService) {
+    function BuildPagePage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, websocketService, transactionService, alertCtrl) {
         this.navCtrl = navCtrl;
         this.navParams = navParams;
         this.graphService = graphService;
@@ -4112,13 +4157,29 @@ var BuildPagePage = /** @class */ (function () {
         this.settingsService = settingsService;
         this.websocketService = websocketService;
         this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
     }
     BuildPagePage.prototype.save = function () {
-        this.websocketService.webpage({ resource: this.resource, content: this.pageText });
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Create web page');
+        alert.setSubTitle('Are you sure you want to save this page?');
+        alert.addButton({
+            text: 'Continue editing'
+        });
+        alert.addButton({
+            text: 'Save',
+            handler: function (data) {
+                _this.resource = '';
+                _this.pageText = '';
+                _this.websocketService.webpage({ resource: _this.resource, content: _this.pageText });
+            }
+        });
+        alert.present();
     };
     BuildPagePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-buildpage',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/web/buildpage.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Page resource identifier</h1>\n  <ion-item>\n    <ion-input type="text" [(ngModel)]="resource"></ion-input>\n  </ion-item>\n  <h1>Page content</h1>\n  <ion-item>\n    <ion-textarea type="text" [(ngModel)]="pageText"></ion-textarea>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="save()">Save</button>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/web/buildpage.html"*/
+            selector: 'page-buildpage',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/web/buildpage.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Page resource identifier</h1>\n  <ion-item>\n    <ion-input type="text" [(ngModel)]="resource"></ion-input>\n  </ion-item>\n  <h1>Page content</h1>\n  <ion-item>\n    <ion-textarea type="text" [(ngModel)]="pageText"></ion-textarea>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="save()" [disabled]="!resource || !pageText">Save</button>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/web/buildpage.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -4126,7 +4187,8 @@ var BuildPagePage = /** @class */ (function () {
             __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__["a" /* BulletinSecretService */],
             __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */],
             __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__["a" /* WebSocketService */],
-            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */]])
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */]])
     ], BuildPagePage);
     return BuildPagePage;
 }());
@@ -4145,7 +4207,7 @@ var BuildPagePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(348);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(349);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_eciesjs__);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -4383,7 +4445,12 @@ var TransactionService = /** @class */ (function () {
                     inputs_hashes_concat +
                     outputs_hashes_concat).toString('hex');
             }
-            else if (_this.info.relationship[_this.settingsService.collections.CHAT] || _this.info.relationship[_this.settingsService.collections.MAIL]) {
+            else if (_this.info.relationship[_this.settingsService.collections.CALENDAR] ||
+                _this.info.relationship[_this.settingsService.collections.CHAT] ||
+                _this.info.relationship[_this.settingsService.collections.GROUP_CALENDAR] ||
+                _this.info.relationship[_this.settingsService.collections.GROUP_CHAT] ||
+                _this.info.relationship[_this.settingsService.collections.GROUP_MAIL] ||
+                _this.info.relationship[_this.settingsService.collections.MAIL]) {
                 // chat
                 _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
                 hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
@@ -4749,7 +4816,7 @@ var WalletService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 263:
+/***/ 264:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -4762,11 +4829,11 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 263;
+webpackEmptyAsyncContext.id = 264;
 
 /***/ }),
 
-/***/ 304:
+/***/ 305:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -4779,11 +4846,11 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 304;
+webpackEmptyAsyncContext.id = 305;
 
 /***/ }),
 
-/***/ 392:
+/***/ 393:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4832,153 +4899,6 @@ var SignatureRequestPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 394:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CalendarPage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__mail_mailitem__ = __webpack_require__(137);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-var CalendarPage = /** @class */ (function () {
-    function CalendarPage(navCtrl, graphService, bulletinSecretService, settingsService) {
-        this.navCtrl = navCtrl;
-        this.graphService = graphService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.getCalendar({});
-    }
-    CalendarPage.prototype.addZeros = function (date) {
-        return ('00' + date).substr(-2, 2);
-    };
-    CalendarPage.prototype.ionViewDidEnter = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.loading = true;
-            var rids = [_this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CALENDAR)];
-            var group_rids = [];
-            for (var i = 0; i < _this.graphService.graph.groups.length; i++) {
-                var group = _this.graphService.graph.groups[i];
-                group_rids.push(_this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, _this.settingsService.collections.CALENDAR));
-            }
-            var file_rids = [];
-            for (var i = 0; i < _this.graphService.graph.files.length; i++) {
-                var file = _this.graphService.graph.files[i];
-                file_rids.push(_this.graphService.generateRid(file.relationship.username_signature, file.relationship.username_signature, _this.settingsService.collections.CALENDAR));
-            }
-            if (group_rids.length > 0) {
-                rids = rids.concat(group_rids);
-            }
-            if (file_rids.length > 0) {
-                rids = rids.concat(file_rids);
-            }
-            return resolve(rids);
-        })
-            .then(function (rids) {
-            return _this.graphService.getCalendar(rids);
-        })
-            .then(function (data) {
-            var events = {};
-            _this.graphService.graph.calendar.map(function (txn) {
-                var group = _this.graphService.groups_indexed[txn.requested_rid];
-                var event = txn.relationship[_this.settingsService.collections.MAIL] || txn.relationship.event;
-                var eventDate = event.event_datetime;
-                var index = eventDate.getFullYear() + _this.addZeros(eventDate.getMonth()) + _this.addZeros(eventDate.getDate());
-                if (!events[index]) {
-                    events[index] = [];
-                }
-                events[index].push({
-                    group: group ? group.relationship : null,
-                    sender: event.sender,
-                    subject: event.subject,
-                    body: event.body,
-                    datetime: new Date(parseInt(txn.time) * 1000).toISOString().slice(0, 19).replace('T', ' '),
-                    id: txn.id,
-                    message_type: event.message_type,
-                    event_datetime: event.event_datetime,
-                });
-            });
-            _this.getCalendar(events);
-            _this.loading = false;
-        });
-    };
-    CalendarPage.prototype.itemTapped = function (event, item) {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_5__mail_mailitem__["a" /* MailItemPage */], {
-            item: item
-        });
-    };
-    CalendarPage.prototype.getCalendar = function (events) {
-        this.calendar = {
-            rows: [
-                {
-                    days: [{}]
-                }
-            ]
-        };
-        var date = new Date();
-        var month = date.getMonth();
-        var year = date.getFullYear();
-        var fistDay = new Date(year, month);
-        var day = fistDay.getDay();
-        for (var i = 0; i < 100; i++) {
-            if (i < day) {
-                if (this.calendar.rows.length === 0) {
-                    this.calendar.rows.push({
-                        days: []
-                    });
-                }
-                this.calendar.rows[0].days.push({});
-                continue;
-            }
-            var calDate = new Date(year, month, fistDay.getDate() + i - day);
-            if (calDate.getMonth() > month)
-                break;
-            var index = calDate.getFullYear() + this.addZeros(calDate.getMonth()) + this.addZeros(calDate.getDate());
-            if (this.calendar.rows[this.calendar.rows.length - 1].days.length >= 8) {
-                this.calendar.rows.push({
-                    days: [{}]
-                });
-            }
-            this.calendar.rows[this.calendar.rows.length - 1].days.push({
-                date: calDate,
-                events: events[index]
-            });
-        }
-    };
-    CalendarPage = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-calendar',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/calendar/calendar.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <table width="100%" height="100%" *ngIf="calendar">\n    <tr>\n      <th width="12.5%"></th>\n      <th width="12.5%">Sunday</th>\n      <th width="12.5%">Monday</th>\n      <th width="12.5%">Tuesday</th>\n      <th width="12.5%">Wednesday</th>\n      <th width="12.5%">Thursday</th>\n      <th width="12.5%">Friday</th>\n      <th width="12.5%">Saturday</th>\n    </tr>\n    <tr *ngFor="let row of calendar.rows">\n      <td *ngFor="let day of row.days">\n        <div *ngIf="day.date">{{day.date.getDate()}}</div>\n        <div *ngIf="day.events">\n          <div *ngFor="let event of day.events">\n            <div (click)="itemTapped($event, event)">{{event.subject}}</div>\n          </div>\n        </div>\n      </td>\n    </tr>\n  </table>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/calendar/calendar.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */]])
-    ], CalendarPage);
-    return CalendarPage;
-}());
-
-//# sourceMappingURL=calendar.js.map
-
-/***/ }),
-
 /***/ 395:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -4990,7 +4910,7 @@ var CalendarPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(224);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(26);
@@ -6292,7 +6212,7 @@ var SendReceive = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__compose__ = __webpack_require__(135);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__compose__ = __webpack_require__(108);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mailitem__ = __webpack_require__(137);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -6367,7 +6287,7 @@ var MailPage = /** @class */ (function () {
     };
     MailPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'mail-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <button ion-button secondary (click)="composeMail()">Compose</button>\n  <ion-card *ngIf="items && items.length == 0">\n      <ion-card-content>\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          No items to display.\n      </ion-card-title>\n    </ion-card-content>\n  </ion-card>\n  <ion-list>\n    <button ion-item *ngFor="let item of items" (click)="itemTapped($event, item)">\n      <ion-item>\n        <div title="Verified" class="sender">\n          <span>{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n          <span *ngIf="item.group">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n        </div>\n        <div class="subject">{{item.subject}}</div>\n        <div class="datetime">{{item.datetime}}</div>\n        <div class="body">{{item.body}}</div>\n      </ion-item>\n    </button>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/
+            selector: 'mail-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <button ion-button secondary (click)="composeMail()">Compose</button>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-card *ngIf="items && items.length == 0">\n      <ion-card-content>\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          No items to display.\n      </ion-card-title>\n    </ion-card-content>\n  </ion-card>\n  <ion-list>\n    <button ion-item *ngFor="let item of items" (click)="itemTapped($event, item)">\n      <ion-item>\n        <div title="Verified" class="sender">\n          <span>{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n          <span *ngIf="item.group">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n        </div>\n        <div class="subject">{{item.subject}}</div>\n        <div class="datetime">{{item.datetime}}</div>\n        <div class="body">{{item.body}}</div>\n      </ion-item>\n    </button>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -6393,8 +6313,8 @@ var MailPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(229);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(229);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6498,13 +6418,13 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_group_group__ = __webpack_require__(676);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__ = __webpack_require__(397);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_mail_compose__ = __webpack_require__(135);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__pages_calendar_calendar__ = __webpack_require__(394);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_status_bar__ = __webpack_require__(344);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_splash_screen__ = __webpack_require__(347);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_mail_compose__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__pages_calendar_calendar__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_status_bar__ = __webpack_require__(345);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_splash_screen__ = __webpack_require__(348);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__ionic_native_qr_scanner__ = __webpack_require__(399);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_21_ngx_qrcode2__ = __webpack_require__(677);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__ionic_storage__ = __webpack_require__(42);
@@ -6516,24 +6436,24 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__websocket_service__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__transaction_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__firebase_service__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__firebase_service__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__pages_sendreceive_sendreceive__ = __webpack_require__(398);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_clipboard__ = __webpack_require__(697);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_badge__ = __webpack_require__(385);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_badge__ = __webpack_require__(386);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_deeplinks__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_firebase__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_firebase__ = __webpack_require__(394);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_tools_emoji_picker__ = __webpack_require__(698);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_39__ionic_native_file__ = __webpack_require__(740);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40_ionic2_auto_complete__ = __webpack_require__(386);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40_ionic2_auto_complete__ = __webpack_require__(387);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__autocomplete_provider__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__ionic_native_geolocation__ = __webpack_require__(222);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__ionic_native_google_maps__ = __webpack_require__(396);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_mail_mailitem__ = __webpack_require__(137);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_signaturerequest_signaturerequest__ = __webpack_require__(392);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_web__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_signaturerequest_signaturerequest__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_web__ = __webpack_require__(229);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_mypages__ = __webpack_require__(402);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_48__pages_web_buildpage__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_48__pages_web_buildpage__ = __webpack_require__(230);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_49_ionic_tooltips__ = __webpack_require__(741);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__angular_platform_browser_animations__ = __webpack_require__(743);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -6700,25 +6620,25 @@ var AppModule = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MyApp; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(344);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(347);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(345);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(348);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(223);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(394);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(395);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(397);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(398);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(401);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(229);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(402);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(230);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -6779,6 +6699,10 @@ var MyApp = /** @class */ (function () {
         });
         events.subscribe('menu', function (options) {
             _this.setMenu(options);
+            if (!_this.pages)
+                return;
+            if (_this.pages.length === 0)
+                return;
             _this.root = _this.pages[0].root;
             _this.openPage(_this.pages[0]);
         });
@@ -6858,8 +6782,8 @@ var MyApp = /** @class */ (function () {
         else if (this.settingsService.menu == 'web') {
             this.pages = [
                 { title: 'Web', label: 'Web', component: __WEBPACK_IMPORTED_MODULE_18__pages_web_web__["a" /* WebPage */], count: false, color: '', root: true },
-                { title: 'My pages', label: 'My pages', component: __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__["a" /* MyPagesPage */], count: false, color: '', root: true },
                 { title: 'Create page', label: 'Create page', component: __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__["a" /* BuildPagePage */], count: false, color: '', root: true },
+                { title: 'My pages', label: 'My pages', component: __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__["a" /* MyPagesPage */], count: false, color: '', root: true },
             ];
         }
     };
@@ -6924,7 +6848,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MAIL].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="people"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CALENDAR].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\'].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[\'notifications\'].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col col-lg-10 col-md-10 col-sm-10 style="padding-right: 7px; margin-top: 4px;">\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="graphService.friend_request_count > 0 ? \'primary\' : \'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL].length > 0 || graphService.notifications[settingsService.collections.GROUP_MAIL].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MAIL].length + graphService.notifications[settingsService.collections.GROUP_MAIL].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="people"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR].length > 0 || graphService.notifications[settingsService.collections.GROUP_CALENDAR].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CALENDAR].length + graphService.notifications[settingsService.collections.GROUP_CALENDAR].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <!-- <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button> -->\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\'].length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[\'notifications\'].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col col-lg-10 col-md-10 col-sm-10 style="padding-right: 7px; margin-top: 4px;">\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="graphService.graph.friend_requests">{{graphService.graph.friend_requests.length}}</ion-note>\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
@@ -6960,10 +6884,11 @@ var MyApp = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(392);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(393);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(137);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__ = __webpack_require__(226);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -6984,6 +6909,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -7091,9 +7017,7 @@ var ListPage = /** @class */ (function () {
         })
             .then(function (identity) {
             _this.websocketService.joinGroup(identity);
-            if (_this.settingsService.remoteSettings['walletUrl']) {
-                return _this.graphService.getInfo();
-            }
+            return _this.choosePage();
         });
     };
     ListPage.prototype.choosePage = function () {
@@ -7182,17 +7106,26 @@ var ListPage = /** @class */ (function () {
                         }
                     });
                     notifications['notifications'].map(function (item) {
-                        if (item.relationship[_this.settingsService.collections.MAIL]) {
+                        if (item.relationship[_this.settingsService.collections.MAIL] ||
+                            item.relationship[_this.settingsService.collections.GROUP_MAIL]) {
                             item.component = __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__["a" /* MailItemPage */];
                             item.item = _this.graphService.prepareMailItem(item, 'Inbox');
                             var identity = _this.graphService.getIdentityFromMessageTransaction(item);
                             item.label = 'Mail from ' + identity.username;
                         }
-                        else if (item.relationship[_this.settingsService.collections.CHAT]) {
+                        else if (item.relationship[_this.settingsService.collections.CHAT] ||
+                            item.relationship[_this.settingsService.collections.GROUP_CHAT]) {
                             item.component = __WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */];
                             var identity = _this.graphService.getIdentityFromMessageTransaction(item);
                             item.identity = identity;
                             item.label = 'Chat from ' + identity.username;
+                        }
+                        else if (item.relationship[_this.settingsService.collections.CALENDAR] ||
+                            item.relationship[_this.settingsService.collections.GROUP_CALENDAR]) {
+                            item.component = __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__["a" /* CalendarPage */];
+                            var identity = _this.graphService.getIdentityFromMessageTransaction(item);
+                            item.identity = identity;
+                            item.label = 'Calendar entry from ' + identity.username;
                         }
                         else if (_this.graphService.graph.friend_requests.filter(function (fr) { return fr.rid === item.rid; }).length > 0) {
                             item.component = ListPage_1;
@@ -7447,7 +7380,7 @@ var ListPage = /** @class */ (function () {
                     var label = item.relationship.identity ? item.relationship.identity.username : item.relationship.username;
                     items.push({
                         title: page.title,
-                        label: label || item.label,
+                        label: item.label || label,
                         component: component,
                         count: false,
                         color: '',
@@ -7502,10 +7435,12 @@ var ListPage = /** @class */ (function () {
     ListPage.prototype.accept = function () {
         var _this = this;
         var rids = this.graphService.generateRids(this.friend_request);
+        this.loading = true;
         return this.graphService.addFriend(this.friend_request, rids.rid, rids.requester_rid, rids.requested_rid).then(function (txn) {
             return _this.graphService.refreshFriendsAndGroups();
         })
             .then(function () {
+            _this.loading = false;
             var alert = _this.alertCtrl.create();
             alert.setTitle('Friend Accept Sent');
             alert.setSubTitle('Your Friend Request acceptance has been submitted successfully.');
@@ -7854,7 +7789,7 @@ var PostModal = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(21);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -8015,7 +7950,7 @@ var GroupPage = /** @class */ (function () {
             return _this.parseChats();
         })
             .then(function () {
-            setTimeout(function () { return _this.content.scrollToBottom(1000); }, 500);
+            setTimeout(function () { return _this.content && _this.content.scrollToBottom(1000); }, 500);
         })
             .then(function () {
             return _this.getSiaFiles();
@@ -8209,7 +8144,7 @@ var GroupPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(21);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(135);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(108);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -8492,6 +8427,10 @@ var WebSocketService = /** @class */ (function () {
                             var calendar = this.graphService.parseCalendar([msg.params.transaction]);
                             return this.graphService.addNotification(calendar, this.settingsService.collections.CALENDAR);
                             break;
+                        case this.settingsService.collections.GROUP_CALENDAR:
+                            var group_calendar = this.graphService.parseCalendar([msg.params.transaction]);
+                            return this.graphService.addNotification(group_calendar, this.settingsService.collections.GROUP_CALENDAR);
+                            break;
                         case this.settingsService.collections.CHAT:
                             this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
                                 .then(function (item) {
@@ -8515,7 +8454,7 @@ var WebSocketService = /** @class */ (function () {
                             });
                             break;
                         case this.settingsService.collections.GROUP_MAIL:
-                            this.graphService.parseMail([msg.params.transaction], 'new_sent_mail_counts', 'new_sent_mail_count', undefined, this.settingsService.collections.MAIL, 'last_sent_mail_height')
+                            this.graphService.parseMail([msg.params.transaction], 'new_sent_mail_counts', 'new_sent_mail_count', undefined, this.settingsService.collections.GROUP_MAIL, 'last_sent_mail_height')
                                 .then(function (item) {
                                 _this.events.publish('newmail');
                                 return _this.graphService.addNotification(item, _this.settingsService.collections.GROUP_MAIL);
@@ -8627,7 +8566,8 @@ var WebSocketService = /** @class */ (function () {
         }
         var collections = [
             this.settingsService.collections.GROUP_CHAT,
-            this.settingsService.collections.GROUP_MAIL
+            this.settingsService.collections.GROUP_MAIL,
+            this.settingsService.collections.GROUP_CALENDAR
         ];
         for (var j = 0; j < Object.keys(this.graphService.groups_indexed).length; j++) {
             var group = this.graphService.groups_indexed[Object.keys(this.graphService.groups_indexed)[j]];

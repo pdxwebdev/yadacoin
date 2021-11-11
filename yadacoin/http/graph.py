@@ -255,6 +255,10 @@ class GraphTransactionHandler(BaseGraphHandler):
                         x.requester_rid == self.peer.identity.generate_rid(
                           self.peer.identity.username_signature,
                           Collections.GROUP_MAIL.value
+                        ) or
+                        x.requester_rid == self.peer.identity.generate_rid(
+                          self.peer.identity.username_signature,
+                          Collections.GROUP_CALENDAR.value
                         )
                     ):
                         continue
