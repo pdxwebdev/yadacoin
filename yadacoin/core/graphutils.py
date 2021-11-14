@@ -1024,61 +1024,35 @@ class GraphUtils(object):
         for x in self.mongo.db.sent_friend_requests_cache.find({'requester_rid': {'$in': rids}}):
             yield x['txn']
 
-    def get_collection(self, rids=[]):
+    async def get_collection(self, rids=[]):
+        if not rids:
+            return
         if not isinstance(rids, list):
             rids = [rids, ]
 
-        messages_cache = self.mongo.db.messages_cache.find({'rid': {'$in': rids}}).sort([('height', -1)])
+        message_cache = await self.mongo.async_db.messages_cache.find_one({
+            '$or': [
+                {'rid': {'$in': rids}},
+                {'requester_rid': {'$in': rids}},
+                {'requested_rid': {'$in': rids}}
+            ]
+        }, sort=[('height', -1)])
 
-        if messages_cache.count():
-            messages_cache = messages_cache[0]
-            block_height = messages_cache['height']
+        if message_cache:
+            block_height = message_cache['height']
         else:
             block_height = 0
 
-        if rids:
-            match1 = {
-                'transactions': {'$elemMatch': {'relationship': {'$ne': ''}}},
-                '$or': [
-                    {'transactions.rid': {'$in': rids}},
-                    {'transactions.requester_rid': {'$in': rids}},
-                    {'transactions.requested_rid': {'$in': rids}}
-                ]
-            }
-            match2 = {
-                'txn.relationship': {'$ne': ''},
-                '$or': [
-                    {'txn.rid': {'$in': rids}},
-                    {'txn.requester_rid': {'$in': rids}},
-                    {'txn.requested_rid': {'$in': rids}}
-                ]
-            }
-        else:
-            match1 = {
-                'transactions': {'$elemMatch': {'relationship': {'$ne': ''}}},
-                '$or': [
-                    {'transactions.rid': {'$ne': ''}},
-                    {'transactions.requester_rid': {'$ne': ''}},
-                    {'transactions.requested_rid': {'$ne': ''}}
-                ]
-            }
-            match2 = {
-                'txn.relationship': {'$ne': ''},
-                '$or': [
-                    {'txn.rid': {'$ne': ''}},
-                    {'txn.requester_rid': {'$ne': ''}},
-                    {'txn.requested_rid': {'$ne': ''}}
-                ]
-            }
-
-        transactions = self.mongo.db.blocks.aggregate([
+        transactions = self.mongo.async_db.blocks.aggregate([
             {
                 '$match': {
-                    'index': {'$gt': block_height}
+                    'index': {'$gt': block_height},
+                    '$or': [
+                        {'transactions.rid': {'$in': rids}},
+                        {'transactions.requester_rid': {'$in': rids}},
+                        {'transactions.requested_rid': {'$in': rids}}
+                    ]
                 }
-            },
-            {
-                '$match': match1
             },
             {'$unwind': '$transactions'},
             {
@@ -1090,16 +1064,21 @@ class GraphUtils(object):
                 }
             },
             {
-                '$match': match2
+                '$match': { '$or': [
+                      {'txn.rid': {'$in': rids}},
+                      {'txn.requester_rid': {'$in': rids}},
+                      {'txn.requested_rid': {'$in': rids}}
+                  ]
+                }
             },
             {
                 '$sort': {'height': 1}
             }
         ])
 
-        for x in transactions:
+        async for x in transactions:
             self.app_log.debug('caching messages at height: {}'.format(x['height']))
-            self.mongo.db.messages_cache.update({
+            await self.mongo.async_db.messages_cache.update_one({
                 'rid': x['txn'].get('rid'),
                 'requester_rid': x['txn'].get('requester_rid'),
                 'requested_rid': x['txn'].get('requested_rid'),
@@ -1120,18 +1099,15 @@ class GraphUtils(object):
             },
             upsert=True)
 
-        if rids:
-            query = {
-                '$or': [
-                    {'rid': {'$in': rids}},
-                    {'requester_rid': {'$in': rids}},
-                    {'requested_rid': {'$in': rids}}
-                ]
-            }
-        else:
-            query = {}
+        query = {
+            '$or': [
+                {'rid': {'$in': rids}},
+                {'requester_rid': {'$in': rids}},
+                {'requested_rid': {'$in': rids}}
+            ]
+        }
 
-        for x in self.mongo.db.messages_cache.find(query):
+        async for x in self.mongo.async_db.messages_cache.find(query):
             x['txn']['height'] = x['height']
             yield x['txn']
 

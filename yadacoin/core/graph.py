@@ -40,37 +40,6 @@ class Graph(object):
             self.wallet_mode = True
         else:
             self.wallet_mode = False
-            nodes = GU().get_transactions_by_rid(username_signature, config.username_signature, raw=True, returnheight=True, inc_mempool=True)
-            me = None
-            them = None
-            for node in nodes:
-                if node.get('dh_public_key') and self.rid == node.get('rid'):
-                    if node.get('public_key') != self.config.public_key:
-                        them = node
-                        self.friends.append(node)
-                    elif node.get('public_key') == self.config.public_key:
-                        me = node
-                        self.friends.append(node)
-                if them and me:
-                    break
-
-            if them and me:
-                for x in self.friends:
-                    for y in x['outputs']:
-                        if y['to'] != config.address:
-                            self.mongo.site_db.usernames.update({
-                                'rid': self.rid,
-                                'username': self.username,
-                                },
-                                {
-                                'rid': self.rid,
-                                'username': self.username,
-                                'to': y['to'],
-                                'relationship': {
-                                    'username_signature': username_signature
-                                }
-                            },
-                            upsert=True)
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
@@ -157,7 +126,7 @@ class Graph(object):
                 self.messages = messages
         else:
             rids = self.get_lookup_rids() + self.rids
-            self.messages = [x for x in GU().get_collection(rids)]
+            self.messages = [x async for x in GU().get_collection(rids)]
         res = await self.config.mongo.async_db.miner_transactions.find({
             'relationship': {'$ne': ''},
             '$or': [
@@ -203,7 +172,7 @@ class Graph(object):
                 self.messages = messages
         else:
             #rids = self.get_lookup_rids() + self.rids
-            self.messages = [x for x in GU().get_collection()]
+            self.messages = [x async for x in GU().get_collection()]
         res = await self.config.mongo.async_db.miner_transactions.find({
             'relationship': {'$ne': ''},
             '$or': [
@@ -306,9 +275,8 @@ class Graph(object):
         self.reacts = out
 
     async def get_collection(self):
-        self.collection = [x for x in GU().get_collection(self.rids)]
+        self.collection = [x async for x in GU().get_collection(self.rids)]
         res = await self.config.mongo.async_db.miner_transactions.find({
-            'relationship': {'$ne': ''},
             '$or': [
                 {'rid': {'$in': self.rids}},
                 {'requester_rid': {'$in': self.rids}},

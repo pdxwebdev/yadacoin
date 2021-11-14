@@ -42,6 +42,21 @@ class Mongo(object):
             ("transactions.public_key", ASCENDING),
             ("transactions.inputs.id", ASCENDING)
         ], name="__txn_public_key_inputs_id")
+        __txn_rid = IndexModel([("transactions.rid", ASCENDING)], name="__txn_rid")
+        __txn_requested_rid = IndexModel([("transactions.requested_rid", ASCENDING)], name="__txn_requested_rid")
+        __txn_requester_rid = IndexModel([("transactions.requester_rid", ASCENDING)], name="__txn_requester_rid")
+        __txn_index_rid = IndexModel([
+          ("index", ASCENDING),
+          ("transactions.rid", ASCENDING)
+        ], name="__txn_rid")
+        __txn_index_requested_rid = IndexModel([
+          ("index", ASCENDING),
+          ("transactions.requested_rid", ASCENDING)
+        ], name="__txn_requested_rid")
+        __txn_index_requester_rid = IndexModel([
+          ("index", ASCENDING),
+          ("transactions.requester_rid", ASCENDING)
+        ], name="__txn_requester_rid")
 
         try:
             self.db.blocks.create_indexes([
@@ -58,7 +73,13 @@ class Mongo(object):
                 __public_key_time,
                 __public_key,
                 __prev_hash,
-                __txn_public_key_inputs_id
+                __txn_public_key_inputs_id,
+                __txn_rid,
+                __txn_requested_rid,
+                __txn_requester_rid,
+                __txn_index_rid,
+                __txn_index_requested_rid,
+                __txn_index_requester_rid
             ])
         except:
             pass
@@ -100,6 +121,18 @@ class Mongo(object):
         __txn_id = IndexModel([("txn.id", ASCENDING)], name="__txn_id")
         try:
             self.db.transactions_by_rid_cache.create_indexes([__txn_id])
+        except:
+            pass
+
+        __rid = IndexModel([("rid", ASCENDING)], name="__rid")
+        __requested_rid = IndexModel([("requested_rid", ASCENDING)], name="__requested_rid")
+        __requester_rid = IndexModel([("requester_rid", ASCENDING)], name="__requester_rid")
+        try:
+            self.db.miner_transactions.create_indexes([
+              __rid,
+              __requested_rid,
+              __requester_rid
+            ])
         except:
             pass
 
