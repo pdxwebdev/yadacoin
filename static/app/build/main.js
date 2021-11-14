@@ -5444,6 +5444,7 @@ var Settings = /** @class */ (function () {
             });
         }
         else {
+            var addedDefaults_1 = false;
             return this.set(key)
                 .then(function () {
                 return _this.graphService.refreshFriendsAndGroups();
@@ -5451,9 +5452,15 @@ var Settings = /** @class */ (function () {
                 .then(function () {
                 var promises = [];
                 for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].length; i++) {
-                    promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */][i], undefined, undefined, undefined, false));
+                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */][i])) {
+                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */][i], undefined, undefined, undefined, false));
+                        addedDefaults_1 = true;
+                    }
                 }
                 return Promise.all(promises);
+            })
+                .then(function () {
+                return addedDefaults_1 ? _this.graphService.refreshFriendsAndGroups() : null;
             })
                 .then(function () {
                 if (showModal) {
