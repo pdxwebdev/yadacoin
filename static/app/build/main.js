@@ -2306,7 +2306,7 @@ var GraphService = /** @class */ (function () {
         identity.collection = identity.parent ? identity.parent.username_signature : identity.collection || this.settingsService.collections.GROUP;
         rid = rid || this.generateRid(this.bulletinSecretService.identity.username_signature, identity.username_signature);
         requester_rid = requester_rid || this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, identity.collection);
-        requested_rid = requested_rid || this.generateRid(identity.username_signature, identity.username_signature, identity.collection);
+        requested_rid = requested_rid || this.generateRid(identity.parent ? identity.collection : identity.username_signature, identity.parent ? identity.collection : identity.username_signature, identity.collection);
         if (requester_rid && requested_rid) {
             // get rid from bulletin secrets
         }
@@ -2360,7 +2360,7 @@ var GraphService = /** @class */ (function () {
             return false;
         var rids = this.generateRids(identity);
         var addedToGroups = this.isChild(identity) ?
-            !!(this.groups_indexed[rids.rid] || this.groups_indexed[rids.requested_rid] || this.groups_indexed[this.generateRid(identity.username_signature, identity.username_signature, identity.parent.username_signature)])
+            !!(this.groups_indexed[rids.rid] || this.groups_indexed[rids.requested_rid] || this.groups_indexed[this.generateRid(identity.parent ? identity.parent.username_signature : identity.username_signature, identity.parent ? identity.parent.username_signature : identity.username_signature, identity.parent.username_signature)])
             :
                 !!(this.groups_indexed[rids.rid] || this.groups_indexed[rids.requested_rid]);
         var friend_requested_rid = this.generateRid(identity.username_signature, identity.username_signature);
@@ -7001,13 +7001,10 @@ var ListPage = /** @class */ (function () {
     ListPage.prototype.refresh = function (refresher) {
         var _this = this;
         this.subitems = {};
-        return this.walletService.get()
-            .then(function () {
-            _this.loading = true;
-            _this.loadingBalance = true;
-            // If we navigated to this page, we will have an item available as a nav param
-            return _this.storage.get('blockchainAddress');
-        })
+        this.loading = true;
+        this.loadingBalance = true;
+        // If we navigated to this page, we will have an item available as a nav param
+        return this.storage.get('blockchainAddress')
             .then(function (blockchainAddress) {
             _this.blockchainAddress = blockchainAddress;
             return _this.storage.get('baseUrl');
