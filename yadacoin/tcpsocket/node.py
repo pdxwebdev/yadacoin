@@ -30,21 +30,18 @@ class NodeRPC(BaseRPC):
         params = body.get('params')
         start_index = int(params.get("start_index", 0))
         end_index = min(int(params.get("end_index", 0)), start_index + CHAIN.MAX_BLOCKS_PER_MESSAGE)
-        if start_index > self.config.LatestBlock.block.index:
-            result = []
-        else:
-            blocks = self.config.mongo.async_db.blocks.find({
-                '$and': [
-                    {'index':
-                        {'$gte': start_index}
+        blocks = self.config.mongo.async_db.blocks.find({
+            '$and': [
+                {'index':
+                    {'$gte': start_index}
 
-                    },
-                    {'index':
-                        {'$lte': end_index}
-                    }
-                ]
-            }, {'_id': 0}).sort([('index',1)])
-            result = await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE)
+                },
+                {'index':
+                    {'$lte': end_index}
+                }
+            ]
+        }, {'_id': 0}).sort([('index', 1)])
+        result = await blocks.to_list(length=CHAIN.MAX_BLOCKS_PER_MESSAGE)
 
         message = {
             'blocks': result,
