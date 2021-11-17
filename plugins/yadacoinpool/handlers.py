@@ -10,7 +10,7 @@ class BaseWebHandler(BaseHandler):
 
     def prepare(self):
 
-        if self.request.protocol == 'http' and self.config.ssl:
+        if self.request.protocol == 'http' and self.config.ssl.is_valid():
             self.redirect('https://' + self.request.host + self.request.uri, permanent=False)
 
     def get_template_path(self):

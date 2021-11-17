@@ -512,12 +512,12 @@ class NodeApplication(Application):
         self.config.application = self
         self.config.http_server = tornado.httpserver.HTTPServer(self)
         self.config.http_server.listen(self.config.serve_port, self.config.serve_host)
-        if self.config.ssl:
+        if hasattr(self.config, 'ssl') and self.config.ssl.is_valid():
             ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.ca_file)
             ssl_ctx.load_cert_chain(self.config.ssl.cert_file, keyfile=self.config.ssl.key_file)
             self.config.https_server = tornado.httpserver.HTTPServer(self, ssl_options=ssl_ctx)
             self.config.https_server.listen(self.config.ssl.port)
-        if hasattr(self.config, 'email'):
+        if hasattr(self.config, 'email') and self.config.email.is_valid():
             self.config.emailer = Email()
 
     def init_pool(self):
@@ -538,9 +538,9 @@ class NodeApplication(Application):
                 "public_key": self.config.public_key
             },
             'peer_type': self.config.peer_type,
-            'http_host': self.config.ssl.common_name if isinstance(self.config.ssl, dict) else self.config.peer_host,
-            'http_port': self.config.ssl.port if isinstance(self.config.ssl, dict) else self.config.serve_port,
-            'secure': isinstance(self.config.ssl, dict),
+            'http_host': self.config.ssl.common_name or self.config.peer_host,
+            'http_port': self.config.ssl.port or self.config.serve_port,
+            'secure': self.config.ssl.is_valid(),
             'protocol_version': 3
         }
 

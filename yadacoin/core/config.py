@@ -29,9 +29,7 @@ class Config(object):
         self.username = config.get('username', '')
         self.network = config.get('network', 'mainnet')
         self.use_pnp = config.get('use_pnp', False)
-        ssl = config.get('ssl', False)
-        if ssl:
-            self.ssl = SSLConfig.from_dict(ssl)
+        self.ssl = SSLConfig.from_dict(config.get('ssl'))
         self.origin = config.get('origin', False)
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
@@ -95,9 +93,7 @@ class Config(object):
 
         self.web_jwt_expiry = config.get('web_jwt_expiry', 23040)
 
-        email = config.get('email', False)
-        if email:
-            self.email = EmailConfig.from_dict(email)
+        self.email = EmailConfig.from_dict(config.get('email'))
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -211,7 +207,7 @@ class Config(object):
             "serve_host": "0.0.0.0",
             "serve_port": 8001,
             "use_pnp": False,
-            "ssl": False,
+            "ssl": SSLConfig().to_dict(),
             "origin": '',
             "sia_api_key": '',
             "post_peer": False,
@@ -236,7 +232,7 @@ class Config(object):
             "pool_take": .01,
             "payout_frequency": 6,
             "restrict_graph_api": False,
-            "email": False,
+            "email": EmailConfig().to_dict(),
             "skynet_url": '',
             "skynet_api_key": '',
             "web_jwt_expiry": 23040
@@ -250,9 +246,7 @@ class Config(object):
         cls.xprv = config.get('xprv', '')
         cls.username = config.get('username', '')
         cls.use_pnp = config.get('use_pnp', False)
-        ssl = config.get('ssl', False)
-        if ssl:
-            cls.ssl = SSLConfig.from_dict(ssl)
+        cls.ssl = SSLConfig.from_dict(config.get('ssl'))
         cls.origin = config.get('origin', True)
         cls.network = config.get('network', 'mainnet')
         cls.public_key = config['public_key']
@@ -387,8 +381,23 @@ class Config(object):
 
 
 class EmailConfig():
+    username = ''
+    password = ''
+    smtp_server = ''
+    smtp_port = 587
+
+    def is_valid(self):
+        return (
+            self.username and
+            self.password and
+            self.smtp_server and
+            self.smtp_port
+        )
+
     @staticmethod
     def from_dict(email_config):
+        if not isinstance(email_config, dict):
+            email_config = {}
         inst = EmailConfig()
         inst.username = email_config.get('username')
         inst.password = email_config.get('password')
@@ -406,8 +415,24 @@ class EmailConfig():
 
 
 class SSLConfig():
+    ca_file = ''
+    cert_file = ''
+    key_file = ''
+    port = 443
+    common_name = ''
+
+    def is_valid(self):
+        return (
+            self.ca_file and
+            self.key_file and
+            self.cert_file and
+            self.port
+        )
+
     @staticmethod
     def from_dict(ssl_config):
+        if not isinstance(ssl_config, dict):
+            ssl_config = {}
         inst = SSLConfig()
         inst.ca_file = ssl_config.get('cafile')
         inst.cert_file = ssl_config.get('certfile')
@@ -421,5 +446,5 @@ class SSLConfig():
             'cafile': self.ca_file,
             'certfile': self.cert_file,
             'keyfile': self.key_file,
-            'port': self.ssl_port
+            'port': self.port
         }
