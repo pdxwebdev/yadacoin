@@ -25840,61 +25840,6 @@ page-chat .speech-bubble-left:after {
   margin-left: -1.844em;
 }
 
-page-chat .speech-bubble-right {
-  position: relative;
-  background: #29eafe;
-  border-radius: .4em;
-  margin: 5px;
-  float: right;
-  width: 80%;
-}
-
-page-chat .speech-bubble-right:after {
-  content: '';
-  position: absolute;
-  right: 0;
-  top: 50%;
-  width: 0;
-  height: 0;
-  border: 1.844em solid transparent;
-  border-left-color: #29eafe;
-  border-right: 0;
-  border-bottom: 0;
-  margin-top: -0.922em;
-  margin-right: -1.844em;
-}
-
-page-chat .speech-bubble-left {
-  position: relative;
-  background: #ff18d4;
-  border-radius: .4em;
-  margin: 5px;
-  width: 80%;
-}
-
-page-chat .speech-bubble-left:after {
-  content: '';
-  position: absolute;
-  left: 0;
-  top: 50%;
-  width: 0;
-  height: 0;
-  border: 1.844em solid transparent;
-  border-right-color: #ff18d4;
-  border-left: 0;
-  border-bottom: 0;
-  margin-top: -0.922em;
-  margin-left: -1.844em;
-}
-
-.redToast .toast-wrapper {
-  background-color: red;
-}
-
-.greenToast .toast-wrapper {
-  background-color: green;
-}
-
 .success {
   color: #32db64;
 }

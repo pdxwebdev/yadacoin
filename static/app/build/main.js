@@ -9,12 +9,12 @@ webpackJsonp([0],{
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_autocomplete_provider__ = __webpack_require__(136);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_forms__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(387);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_wallet_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(386);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_wallet_service__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(14);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -148,7 +148,7 @@ var ComposePage = /** @class */ (function () {
                             requester_rid: requester_rid,
                             requested_rid: requested_rid,
                             group: true,
-                            group_username_signature: _this.recipient.username_signature
+                            shared_secret: _this.recipient.username_signature
                         };
                         info.relationship[_this.collection] = {
                             sender: _this.bulletinSecretService.identity,
@@ -262,10 +262,10 @@ var ComposePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(665);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(20);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -291,20 +291,18 @@ var CompleteTestService = /** @class */ (function () {
         this.formValueAttribute = "value";
     }
     CompleteTestService.prototype.getResults = function (searchTerm) {
+        var _this = this;
         return this.graphService.graph.friends.concat(this.graphService.graph.groups)
             .filter(function (item) {
-            var username = item.relationship.username || item.relationship.identity.username;
-            return username.toLowerCase().indexOf(searchTerm.toLowerCase()) > -1;
+            var friend = _this.graphService.getIdentityFromTxn(item, _this.settingsService.collections.CONTACT);
+            var group = _this.graphService.getIdentityFromTxn(item, _this.settingsService.collections.GROUP);
+            return (friend || group).username.toLowerCase().indexOf(searchTerm.toLowerCase()) > -1;
         })
             .map(function (item) {
-            var identity = item.relationship.identity || item.relationship;
-            var value = {
-                username: identity.username,
-                username_signature: identity.username_signature,
-                public_key: identity.public_key,
-                collection: identity.collection
-            };
-            return { name: identity.username, value: value };
+            var friend = _this.graphService.getIdentityFromTxn(item, _this.settingsService.collections.CONTACT);
+            var group = _this.graphService.getIdentityFromTxn(item, _this.settingsService.collections.GROUP);
+            var identity = friend || group;
+            return { name: identity.username, value: _this.graphService.toIdentity(identity) };
         });
     };
     CompleteTestService = __decorate([
@@ -329,11 +327,11 @@ var CompleteTestService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__compose__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__profile_profile__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__profile_profile__ = __webpack_require__(81);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_settings_service__ = __webpack_require__(14);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -457,7 +455,7 @@ var MailItemPage = /** @class */ (function () {
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return OpenGraphParserService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(23);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -641,7 +639,7 @@ var SettingsService = /** @class */ (function () {
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return BulletinSecretService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(42);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(47);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -856,23 +854,23 @@ var BulletinSecretService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 18:
+/***/ 20:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* WEBPACK VAR INJECTION */(function(Buffer) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return GraphService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(42);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(47);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(386);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(385);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_rxjs_operators__ = __webpack_require__(51);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(349);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(348);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_11_eciesjs__);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -1197,9 +1195,9 @@ var GraphService = /** @class */ (function () {
         });
     };
     GraphService.prototype.prepareMailItem = function (item, label) {
-        var group = this.groups_indexed[item.requested_rid];
-        var indexedItem = this.groups_indexed[item.requested_rid] || this.friends_indexed[item.rid];
-        var identity = indexedItem.relationship.identity || indexedItem.relationship;
+        var group = this.getIdentityFromTxn(this.groups_indexed[item.requested_rid], this.settingsService.collections.GROUP);
+        var friend = this.getIdentityFromTxn(this.friends_indexed[item.rid], this.settingsService.collections.CONTACT);
+        var identity = group || friend;
         var collection = group ? this.settingsService.collections.GROUP_MAIL : this.settingsService.collections.MAIL;
         var sender;
         if (item.relationship[collection].sender) {
@@ -1218,7 +1216,7 @@ var GraphService = /** @class */ (function () {
         var datetime = new Date(parseInt(item.time) * 1000);
         return {
             sender: sender,
-            group: group ? group.relationship : null,
+            group: group || null,
             subject: item.relationship[collection].subject,
             body: item.relationship[collection].body,
             datetime: datetime.toLocaleDateString() + ' ' + datetime.toLocaleTimeString(),
@@ -1458,8 +1456,6 @@ var GraphService = /** @class */ (function () {
             try {
                 var decrypted = this.publicDecrypt(sent_friend_request['relationship']);
                 var relationship = JSON.parse(decrypted);
-                if (!relationship.identity.username)
-                    continue;
                 sent_friend_requestsObj[sent_friend_request.rid] = sent_friend_request;
                 //not sure how this affects the friends list yet, since we can't return friends from here
                 //friends[sent_friend_request.rid] = sent_friend_request;
@@ -1514,6 +1510,8 @@ var GraphService = /** @class */ (function () {
             try {
                 var decrypted = this.publicDecrypt(friend_request.relationship);
                 var relationship = JSON.parse(decrypted);
+                if (!relationship[this.settingsService.collections.CONTACT])
+                    continue;
                 friend_request.relationship = relationship;
                 if (sent_friend_requestsObj[friend_request.rid]) {
                     delete friend_requestsObj[friend_request.rid];
@@ -1690,6 +1688,10 @@ var GraphService = /** @class */ (function () {
                     var relationship;
                     if (!bypassDecrypt) {
                         relationship = JSON.parse(decrypted);
+                        if (!relationship[_this.settingsService.collections.GROUP])
+                            continue;
+                        if (relationship[_this.settingsService.collections.GROUP].collection !== _this.settingsService.collections.GROUP)
+                            continue;
                         group['relationship'] = relationship;
                     }
                 }
@@ -1699,15 +1701,24 @@ var GraphService = /** @class */ (function () {
                 }
                 if (failed && _this.groups_indexed[group.requester_rid]) {
                     try {
+                        var parentGroup = _this.getIdentityFromTxn(_this.groups_indexed[group.requester_rid], _this.settingsService.collections.GROUP);
+                        if (parentGroup.public_key !== group.public_key)
+                            continue;
                         if (typeof group.relationship == 'object') {
                             bypassDecrypt = true;
                         }
                         else {
-                            decrypted = _this.shared_decrypt(_this.groups_indexed[group.requester_rid].relationship.username_signature, group.relationship);
+                            decrypted = _this.shared_decrypt(parentGroup.username_signature, group.relationship);
                         }
                         var relationship;
                         if (!bypassDecrypt) {
                             relationship = JSON.parse(decrypted);
+                            if (!relationship[_this.settingsService.collections.GROUP])
+                                continue;
+                            if (!relationship[_this.settingsService.collections.GROUP].parent)
+                                continue;
+                            if (relationship[_this.settingsService.collections.GROUP].collection !== _this.settingsService.collections.GROUP)
+                                continue;
                             group['relationship'] = relationship;
                         }
                     }
@@ -1723,18 +1734,16 @@ var GraphService = /** @class */ (function () {
                     _this.graph[collectionName].push(group);
                 }
                 _this.groups_indexed[group.requested_rid] = group;
-                if (group.relationship.wif) {
-                    var key = foobar.bitcoin.ECPair.fromWIF(group.relationship.wif);
-                    group.relationship.public_key = key.getPublicKeyBuffer().toString('hex');
-                    group.relationship.username_signature = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(group.relationship.username)).toDER());
-                }
-                _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_CHAT)] = group;
-                _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_MAIL)] = group;
-                _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.CALENDAR)] = group;
-                _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, _this.settingsService.collections.GROUP_CALENDAR)] = group;
-                _this.groups_indexed[_this.generateRid(relationship.username_signature, relationship.username_signature, relationship.username_signature)] = group;
+                var group_username_signature = relationship[_this.settingsService.collections.GROUP].username_signature;
+                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_CHAT)] = group;
+                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_MAIL)] = group;
+                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.CALENDAR)] = group;
+                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_CALENDAR)] = group;
+                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, group_username_signature)] = group;
                 try {
-                    promises.push(_this.getGroups(_this.generateRid(relationship.username_signature, relationship.username_signature, relationship.username_signature), 'group', true));
+                    if (!relationship.parent) {
+                        promises.push(_this.getGroups(_this.generateRid(group_username_signature, group_username_signature, group_username_signature), 'group', true));
+                    }
                 }
                 catch (err) {
                     console.log(err);
@@ -1747,12 +1756,12 @@ var GraphService = /** @class */ (function () {
                 var used_username_signatures = [];
                 var arr_friends_keys = Array.from(friends_diff.keys());
                 for (i = 0; i < arr_friends_keys.length; i++) {
-                    if (used_username_signatures.indexOf(_this.groups_indexed[arr_friends_keys[i]].relationship.username_signature) > -1) {
+                    if (used_username_signatures.indexOf(_this.groups_indexed[arr_friends_keys[i]].relationship[_this.settingsService.collections.GROUP].username_signature) > -1) {
                         continue;
                     }
                     else {
                         groups.push(_this.groups_indexed[arr_friends_keys[i]]);
-                        used_username_signatures.push(_this.groups_indexed[arr_friends_keys[i]].relationship.username_signature);
+                        used_username_signatures.push(_this.groups_indexed[arr_friends_keys[i]].relationship[_this.settingsService.collections.GROUP].username_signature);
                     }
                 }
             }
@@ -1782,7 +1791,8 @@ var GraphService = /** @class */ (function () {
                 //by calling getSentFriendRequests and getFriendRequests
                 if (_this.groups_indexed[message.requested_rid]) {
                     try {
-                        var decrypted = _this.shared_decrypt(_this.groups_indexed[message.requested_rid].relationship.username_signature, message.relationship);
+                        var identity_1 = _this.getIdentityFromTxn(_this.groups_indexed[message.requested_rid], _this.settingsService.collections.GROUP);
+                        var decrypted = _this.shared_decrypt(identity_1.username_signature, message.relationship);
                     }
                     catch (error) {
                         continue;
@@ -1866,7 +1876,8 @@ var GraphService = /** @class */ (function () {
                     continue;
                 if (_this.groups_indexed[message.requested_rid]) {
                     try {
-                        var decrypted = _this.shared_decrypt(_this.groups_indexed[message.requested_rid].relationship.username_signature, message.relationship);
+                        var group = _this.getIdentityFromTxn(_this.groups_indexed[message.requested_rid], _this.settingsService.collections.GROUP);
+                        var decrypted = _this.shared_decrypt(group.username_signature, message.relationship);
                     }
                     catch (error) {
                         continue;
@@ -2000,8 +2011,9 @@ var GraphService = /** @class */ (function () {
             var event_1 = events[i];
             var decrypted = void 0;
             try {
-                if (this.groups_indexed[event_1.requested_rid]) {
-                    decrypted = this.shared_decrypt(this.groups_indexed[event_1.requested_rid].relationship.username_signature, event_1.relationship);
+                var group = this.getIdentityFromTxn(this.groups_indexed[event_1.requested_rid], this.settingsService.collections.GROUP);
+                if (group) {
+                    decrypted = this.shared_decrypt(group.username_signature, event_1.relationship);
                 }
                 else if (this.friends_indexed[event_1.rid]) {
                     if (!this.stored_secrets[event_1.rid])
@@ -2127,27 +2139,35 @@ var GraphService = /** @class */ (function () {
         if (parentGroup === void 0) { parentGroup = null; }
         if (extraData === void 0) { extraData = {}; }
         if (collectionName === void 0) { collectionName = 'group'; }
+        var parentIdentity = this.getIdentityFromTxn(parentGroup);
         if (!groupname)
             return new Promise(function (resolve, reject) { reject('username missing'); });
-        var key = foobar.bitcoin.ECPair.makeRandom();
-        var wif = key.toWIF();
-        var pubKey = key.getPublicKeyBuffer().toString('hex');
-        var address = key.getAddress();
-        var username_signature = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(groupname)).toDER());
-        var relationship = __assign({ username: groupname, wif: wif, collection: collectionName }, extraData);
-        if (parentGroup) {
+        if (parentIdentity && parentIdentity.public_key !== this.bulletinSecretService.identity.public_key)
+            return new Promise(function (resolve, reject) { reject('you cannot create a subgroup unless you are the owner of the group.'); });
+        if (parentIdentity && parentIdentity.username === groupname)
+            return new Promise(function (resolve, reject) { reject('you cannot create a subgroup with the same name as the parent group.'); });
+        var username_signature = foobar.base64.fromByteArray(this.bulletinSecretService.key.sign(foobar.bitcoin.crypto.sha256(groupname)).toDER());
+        var relationship = {
+            username: groupname,
+            username_signature: username_signature,
+            public_key: this.bulletinSecretService.identity.public_key,
+            collection: this.settingsService.collections.GROUP
+        };
+        var info = __assign({}, extraData);
+        info[collectionName] = relationship;
+        if (parentIdentity) {
             relationship.parent = {
-                username: parentGroup.username,
-                username_signature: parentGroup.username_signature,
-                public_key: parentGroup.public_key,
-                collection: collectionName
+                username: parentIdentity.username,
+                username_signature: parentIdentity.username_signature,
+                public_key: parentIdentity.public_key,
+                collection: this.settingsService.collections.GROUP
             };
         }
         return this.transactionService.generateTransaction({
-            relationship: relationship,
-            to: this.bulletinSecretService.publicKeyToAddress(pubKey),
-            requester_rid: this.generateRid(parentGroup ? parentGroup.username_signature : this.bulletinSecretService.identity.username_signature, parentGroup ? parentGroup.username_signature : this.bulletinSecretService.identity.username_signature, parentGroup ? parentGroup.username_signature : collectionName),
-            requested_rid: this.generateRid(username_signature, username_signature, parentGroup ? parentGroup.username_signature : collectionName),
+            relationship: info,
+            to: this.bulletinSecretService.publicKeyToAddress(this.bulletinSecretService.identity.public_key),
+            requester_rid: this.generateRid(parentIdentity ? parentIdentity.username_signature : this.bulletinSecretService.identity.username_signature, parentIdentity ? parentIdentity.username_signature : this.bulletinSecretService.identity.username_signature, parentIdentity ? parentIdentity.username_signature : collectionName),
+            requested_rid: this.generateRid(username_signature, username_signature, parentIdentity ? parentIdentity.username_signature : collectionName),
             rid: this.generateRid(this.bulletinSecretService.identity.username_signature, username_signature),
             group: true
         }).then(function (txn) {
@@ -2159,7 +2179,7 @@ var GraphService = /** @class */ (function () {
                 return resolve({
                     username: groupname,
                     username_signature: username_signature,
-                    public_key: pubKey
+                    public_key: _this.bulletinSecretService.identity.public_key,
                 });
             });
         });
@@ -2273,11 +2293,12 @@ var GraphService = /** @class */ (function () {
         var dh_public_key = this.toHex(raw_dh_public_key);
         var myIdentity = this.bulletinSecretService.cloneIdentity();
         myIdentity.collection = this.settingsService.collections.CONTACT;
+        var info = {
+            dh_private_key: dh_private_key
+        };
+        info[this.settingsService.collections.CONTACT] = myIdentity;
         return this.transactionService.generateTransaction({
-            relationship: {
-                dh_private_key: dh_private_key,
-                identity: myIdentity
-            },
+            relationship: info,
             dh_public_key: dh_public_key,
             requested_rid: requested_rid,
             requester_rid: requester_rid,
@@ -2319,9 +2340,11 @@ var GraphService = /** @class */ (function () {
                 return resolve(identity);
             });
         }
+        var info = {};
+        info[this.settingsService.collections.GROUP] = identity;
         return this.transactionService.generateTransaction({
             rid: rid,
-            relationship: identity,
+            relationship: info,
             requested_rid: requested_rid,
             requester_rid: requester_rid,
             to: this.bulletinSecretService.publicKeyToAddress(identity.public_key)
@@ -2404,11 +2427,13 @@ var GraphService = /** @class */ (function () {
             return 0;
         });
     };
-    GraphService.prototype.sortTxnsByUsername = function (list, reverse) {
+    GraphService.prototype.sortTxnsByUsername = function (list, reverse, collection) {
+        var _this = this;
         if (reverse === void 0) { reverse = false; }
+        if (collection === void 0) { collection = null; }
         list.sort(function (a, b) {
-            var ausername = a.relationship.identity ? a.relationship.identity.username : a.relationship.username;
-            var busername = b.relationship.identity ? b.relationship.identity.username : b.relationship.username;
+            var ausername = _this.getIdentityFromTxn(a, collection);
+            var busername = _this.getIdentityFromTxn(b, collection);
             if (ausername < busername)
                 return reverse ? 1 : -1;
             if (ausername > busername)
@@ -2447,9 +2472,61 @@ var GraphService = /** @class */ (function () {
         return iden;
     };
     GraphService.prototype.getIdentityFromMessageTransaction = function (item) {
+        if (!item)
+            return;
         var group = this.groups_indexed[item.requested_rid];
-        var indexedItem = this.groups_indexed[item.requested_rid] || this.friends_indexed[item.rid];
-        return indexedItem.relationship.identity || indexedItem.relationship;
+        if (group) {
+            return this.getIdentityFromTxn(group, this.settingsService.collections.GROUP);
+        }
+        var friend = this.friends_indexed[item.rid];
+        if (friend) {
+            return this.getIdentityFromTxn(friend, this.settingsService.collections.CONTACT);
+        }
+    };
+    GraphService.prototype.getIdentityFromTxn = function (item, collection) {
+        if (collection === void 0) { collection = null; }
+        if (!item)
+            return;
+        var col = collection || this.getNewTxnCollection(item);
+        return item.relationship[col];
+    };
+    GraphService.prototype.getParentIdentityFromTxn = function (item, collection) {
+        if (collection === void 0) { collection = null; }
+        if (!item)
+            return;
+        var identity = this.getIdentityFromTxn(item, collection);
+        return identity && identity.parent;
+    };
+    GraphService.prototype.getNewTxnCollection = function (txn) {
+        for (var i = 0; i < Object.keys(this.settingsService.collections).length; i++) {
+            var collection = this.settingsService.collections[Object.keys(this.settingsService.collections)[i]];
+            var rid = this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, collection);
+            if (txn.rid === rid ||
+                txn.requester_rid === rid ||
+                txn.requested_rid === rid) {
+                return collection;
+            }
+            if (txn.relationship[collection])
+                return collection;
+        }
+        var collections = [
+            this.settingsService.collections.GROUP_CHAT,
+            this.settingsService.collections.GROUP_MAIL,
+            this.settingsService.collections.GROUP_CALENDAR
+        ];
+        for (var j = 0; j < Object.keys(this.groups_indexed).length; j++) {
+            var group = this.getIdentityFromTxn(this.groups_indexed[Object.keys(this.groups_indexed)[j]], this.settingsService.collections.GROUP);
+            for (var i = 0; i < collections.length; i++) {
+                var collection = collections[i];
+                var rid = this.generateRid(group.username_signature, group.username_signature, collection);
+                if (txn.rid === rid ||
+                    txn.requester_rid === rid ||
+                    txn.requested_rid === rid) {
+                    return collection;
+                }
+            }
+        }
+        return false;
     };
     GraphService.prototype.identityToSkylink = function (identity) {
         var _this = this;
@@ -2588,19 +2665,19 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_forms__ = __webpack_require__(33);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_storage__ = __webpack_require__(42);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_storage__ = __webpack_require__(47);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(224);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(67);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(81);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(138);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_autocomplete_provider__ = __webpack_require__(136);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -3164,12 +3241,12 @@ var HomePage = /** @class */ (function () {
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PeerService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(51);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__settings_service__ = __webpack_require__(14);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -3292,16 +3369,16 @@ var PeerService = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ChatPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_websocket_service__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(67);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(81);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_websocket_service__ = __webpack_require__(68);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3359,7 +3436,7 @@ var ChatPage = /** @class */ (function () {
         });
         this.refresh(null, true);
         this.events.subscribe('newchat', function () {
-            _this.refresh(null);
+            _this.navCtrl.getActive().component.name === 'ChatPage' && _this.refresh(null);
         });
     }
     ChatPage.prototype.parseChats = function () {
@@ -3370,7 +3447,9 @@ var ChatPage = /** @class */ (function () {
             this.graphService.sortInt(this.chats, 'time', true);
             for (var i = 0; i < this.chats.length; i++) {
                 if (!group) {
-                    this.chats[i].relationship.identity = this.chats[i].public_key === this.bulletinSecretService.identity.public_key ? this.bulletinSecretService.identity : this.graphService.friends_indexed[rid].relationship.identity;
+                    this.chats[i].relationship.identity = (this.chats[i].public_key === this.bulletinSecretService.identity.public_key ?
+                        this.bulletinSecretService.identity :
+                        this.graphService.getIdentityFromTxn(this.graphService.friends_indexed[rid], this.settingsService.collections.CONTACT));
                 }
                 var datetime = new Date(parseInt(this.chats[i].time) * 1000);
                 this.chats[i].time = datetime.toLocaleDateString() + ' ' + datetime.toLocaleTimeString();
@@ -3428,10 +3507,11 @@ var ChatPage = /** @class */ (function () {
         reader.onerror = function () { };
     };
     ChatPage.prototype.viewProfile = function (item) {
-        var rid = this.graphService.generateRid(item.relationship.identity.username_signature, this.bulletinSecretService.identity.username_signature);
-        var identity = this.graphService.friends_indexed[rid];
+        var identity = item.relationship.identity;
+        var rid = this.graphService.generateRid(identity.username_signature, this.bulletinSecretService.identity.username_signature);
+        var cached_identity = this.graphService.friends_indexed[rid];
         this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
-            identity: identity ? identity.relationship : item.relationship.identity
+            identity: this.graphService.getIdentityFromTxn(cached_identity) || identity
         });
     };
     ChatPage.prototype.send = function () {
@@ -3445,6 +3525,7 @@ var ChatPage = /** @class */ (function () {
         return this.walletService.get()
             .then(function () {
             if (_this.graphService.isGroup(_this.identity)) {
+                var group = _this.graphService.getIdentityFromTxn(_this.graphService.groups_indexed[_this.requested_rid], _this.settingsService.collections.GROUP);
                 var info = {
                     relationship: {
                         identity: _this.bulletinSecretService.identity,
@@ -3455,7 +3536,7 @@ var ChatPage = /** @class */ (function () {
                     requester_rid: _this.requester_rid,
                     requested_rid: _this.requested_rid,
                     group: true,
-                    group_username_signature: _this.graphService.groups_indexed[_this.requested_rid].relationship.username_signature
+                    shared_secret: group.username_signature
                 };
                 info.relationship[_this.settingsService.collections.GROUP_CHAT] = _this.chatText;
                 return _this.transactionService.generateTransaction(info);
@@ -3569,7 +3650,7 @@ var ChatPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__mail_compose__ = __webpack_require__(108);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mail_mailitem__ = __webpack_require__(137);
@@ -3607,15 +3688,15 @@ var CalendarPage = /** @class */ (function () {
             var rids = [_this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CALENDAR)];
             var group_rids = [];
             for (var i = 0; i < _this.graphService.graph.groups.length; i++) {
-                var group = _this.graphService.graph.groups[i];
-                group_rids.push(_this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, _this.settingsService.collections.CALENDAR));
-                group_rids.push(_this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, _this.settingsService.collections.GROUP_CALENDAR));
+                var group = _this.graphService.getIdentityFromTxn(_this.graphService.graph.groups[i], _this.settingsService.collections.GROUP);
+                group_rids.push(_this.graphService.generateRid(group.username_signature, group.username_signature, _this.settingsService.collections.CALENDAR));
+                group_rids.push(_this.graphService.generateRid(group.username_signature, group.username_signature, _this.settingsService.collections.GROUP_CALENDAR));
             }
             var file_rids = [];
             for (var i = 0; i < _this.graphService.graph.files.length; i++) {
-                var file = _this.graphService.graph.files[i];
-                file_rids.push(_this.graphService.generateRid(file.relationship.username_signature, file.relationship.username_signature, _this.settingsService.collections.CALENDAR));
-                file_rids.push(_this.graphService.generateRid(file.relationship.username_signature, file.relationship.username_signature, _this.settingsService.collections.GROUP_CALENDAR));
+                var file = _this.graphService.getIdentityFromTxn(_this.graphService.graph.files[i]);
+                file_rids.push(_this.graphService.generateRid(file.username_signature, file.username_signature, _this.settingsService.collections.CALENDAR));
+                file_rids.push(_this.graphService.generateRid(file.username_signature, file.username_signature, _this.settingsService.collections.GROUP_CALENDAR));
             }
             if (group_rids.length > 0) {
                 rids = rids.concat(group_rids);
@@ -3631,7 +3712,7 @@ var CalendarPage = /** @class */ (function () {
             .then(function (data) {
             var events = {};
             _this.graphService.graph.calendar.map(function (txn) {
-                var group = _this.graphService.groups_indexed[txn.requested_rid];
+                var group = _this.graphService.getIdentityFromTxn(_this.graphService.groups_indexed[txn.requested_rid], _this.settingsService.collections.GROUP);
                 var event = txn.relationship[_this.settingsService.collections.CALENDAR] ||
                     txn.relationship[_this.settingsService.collections.GROUP_CALENDAR];
                 var eventDate = event.event_datetime;
@@ -3639,9 +3720,10 @@ var CalendarPage = /** @class */ (function () {
                 if (!events[index]) {
                     events[index] = [];
                 }
+                var altSender = _this.graphService.getIdentityFromTxn(_this.graphService.friends_indexed[txn.rid], _this.settingsService.collections.CONTACT);
                 events[index].push({
-                    group: group ? group.relationship : null,
-                    sender: event.sender || _this.graphService.friends_indexed[txn.rid].relationship.identity,
+                    group: group || null,
+                    sender: event.sender || altSender,
                     subject: event.subject,
                     body: event.body,
                     datetime: new Date(parseInt(txn.time) * 1000).toISOString().slice(0, 19).replace('T', ' '),
@@ -3726,10 +3808,10 @@ var CalendarPage = /** @class */ (function () {
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return FirebaseService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(394);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(23);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3796,251 +3878,13 @@ var FirebaseService = /** @class */ (function () {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SiaFiles; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-
-var SiaFiles = /** @class */ (function () {
-    function SiaFiles(navParams, viewCtrl, walletService, alertCtrl, transactionService, openGraphParserService, settingsService, bulletinSecretService, ahttp, graphService, navCtrl, events) {
-        this.navParams = navParams;
-        this.viewCtrl = viewCtrl;
-        this.walletService = walletService;
-        this.alertCtrl = alertCtrl;
-        this.transactionService = transactionService;
-        this.openGraphParserService = openGraphParserService;
-        this.settingsService = settingsService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.ahttp = ahttp;
-        this.graphService = graphService;
-        this.navCtrl = navCtrl;
-        this.events = events;
-        this.logicalParent = null;
-        this.mode = '';
-        this.postText = null;
-        this.post = {};
-        this.files = null;
-        this.selectedFile = null;
-        this.group = null;
-        this.error = '';
-        this.group = navParams.data.group;
-        this.mode = navParams.data.mode || 'page';
-        this.logicalParent = navParams.data.logicalParent;
-        var files = [];
-        for (var i = 0; i < this.graphService.graph.files.length; i++) {
-            var file = this.graphService.graph.files[i];
-            files.push({
-                title: 'Messages',
-                label: file.relationship.username,
-                component: __WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */],
-                count: false,
-                color: '',
-                kwargs: { identity: file.relationship },
-                root: false
-            });
-        }
-        this.events.publish('menuonly', files);
-    }
-    SiaFiles.prototype.changeListener = function ($event) {
-        var _this = this;
-        this.filepath = $event.target.files[0].name;
-        var reader = new FileReader();
-        reader.readAsDataURL($event.target.files[0]);
-        reader.onload = function () {
-            _this.filedata = reader.result.toString().substr(22);
-        };
-        reader.onerror = function () { };
-    };
-    SiaFiles.prototype.upload = function () {
-        var _this = this;
-        this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/sia-upload?filename=' + encodeURIComponent(this.filepath), { file: this.filedata })
-            .subscribe(function (res) {
-            var data = res.json();
-            if (!data.skylink)
-                return;
-            _this.graphService.createGroup(_this.filepath, null, { skylink: data.skylink }, 'file');
-        });
-    };
-    SiaFiles.prototype.delete = function (siapath) {
-        var _this = this;
-        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-delete?siapath=' + encodeURIComponent(siapath))
-            .subscribe(function (res) {
-            _this.files = res.json()['files'];
-        });
-    };
-    SiaFiles.prototype.submit = function () {
-        var _this = this;
-        this.walletService.get().then(function () {
-            return new Promise(function (resolve, reject) {
-                if (_this.selectedFile) {
-                    _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/sia-share-file?siapath=' + _this.selectedFile)
-                        .subscribe(function (res) {
-                        var sharefiledata = res.json()['filedata'];
-                        _this.approveTxn(sharefiledata, resolve);
-                    });
-                }
-                else {
-                    _this.approveTxn(null, resolve);
-                }
-                console.log(status);
-            }).then(function () {
-                _this.dismiss();
-            });
-        });
-    };
-    SiaFiles.prototype.approveTxn = function (sharefiledata, resolve) {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Approve Transaction');
-        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                // camera permission was granted
-                new Promise(function (resolve, reject) {
-                    if (sharefiledata) {
-                        var info = {
-                            relationship: {
-                                my_username_signature: _this.bulletinSecretService.generate_username_signature(),
-                                my_username: _this.bulletinSecretService.username
-                            },
-                            username_signature: _this.group.username_signature,
-                            rid: _this.group.rid,
-                            requester_rid: _this.group.requester_rid,
-                            requested_rid: _this.group.requested_rid
-                        };
-                        info.relationship[_this.settingsService.collections.GROUP_CHAT] = _this.postText;
-                        info.relationship[_this.settingsService.collections.GROUP_CHAT_FILE] = sharefiledata;
-                        info.relationship[_this.settingsService.collections.GROUP_CHAT_FILE_NAME] = _this.selectedFile;
-                        return _this.transactionService.generateTransaction(info)
-                            .then(function () {
-                            resolve();
-                        })
-                            .catch(function (err) {
-                            reject('failed generating transaction');
-                        });
-                    }
-                    else {
-                        return _this.transactionService.generateTransaction({
-                            relationship: {
-                                postText: _this.postText
-                            }
-                        })
-                            .then(function () {
-                            resolve();
-                        })
-                            .catch(function (err) {
-                            reject(err);
-                        });
-                    }
-                })
-                    .then(function (hash) {
-                    return _this.transactionService.sendTransaction();
-                })
-                    .then(function () {
-                    _this.dismiss();
-                })
-                    .catch(function (err) {
-                    console.log('could not generate hash');
-                });
-            }
-        });
-        alert.present();
-    };
-    SiaFiles.prototype.openProfile = function (item) {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
-            identity: item.relationship,
-        });
-    };
-    SiaFiles.prototype.import = function () {
-        var _this = this;
-        var buttons = [];
-        buttons.push({
-            text: 'Import',
-            handler: function (data) {
-                var identity = JSON.parse(data.identity);
-                _this.graphService.addGroup(identity, null, null, null);
-            }
-        });
-        var alert = this.alertCtrl.create({
-            inputs: [
-                {
-                    name: 'identity',
-                    placeholder: 'Paste file code...'
-                }
-            ],
-            buttons: buttons
-        });
-        alert.setTitle('Import file');
-        alert.setSubTitle('Paste the code of your file below');
-        alert.present();
-    };
-    SiaFiles.prototype.dismiss = function () {
-        this.logicalParent.refresh();
-        this.viewCtrl.dismiss();
-    };
-    SiaFiles = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'modal-files',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/'<ion-header>\n  <ion-toolbar>\n    <ion-title>\n      Files\n    </ion-title>\n    <ion-buttons start *ngIf="mode == \'modal\'">\n      <button ion-button (click)="dismiss()">\n        <span ion-text color="primary" showWhen="ios">Cancel</span>\n        <ion-icon name="md-close" showWhen="android,windows,core"></ion-icon>\n      </button>\n    </ion-buttons>\n  </ion-toolbar>\n</ion-header>\n<ion-content>\n  <ion-item *ngIf="mode == \'modal\' && !error">\n    <ion-label>Files</ion-label>\n    <ion-select [(ngModel)]="selectedFile">\n      <ion-option *ngFor="let file of files" value="{{file.siapath}}">{{file.siapath}}</ion-option>\n    </ion-select>\n  </ion-item>\n  <ion-item>\n    <ion-label id="profile_image" color="primary"></ion-label>\n    <ion-input type="file" (change)="changeListener($event)"></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!error">\n    <button ion-button secondary (click)="upload()" *ngIf="mode == \'page\' && !error" [disabled]="!filepath">Upload</button>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="import()">Import</button>\n  </ion-item>\n  <button ion-button secondary (click)="submit()" *ngIf="mode == \'modal\'">Post</button>\n  <ion-card *ngIf="post.title">\n    <img src="{{post.image}}" *ngIf="post.image" />\n    <ion-card-content>\n      <ion-card-title>\n        {{post.title}}\n      </ion-card-title>\n      <p *ngIf="post.description">\n        {{post.description}}\n      </p>\n    </ion-card-content>\n  </ion-card>\n  <ion-item *ngIf="error">You must download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">full node</a> to store and share files.</ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["m" /* ViewController */],
-            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__["a" /* OpenGraphParserService */],
-            __WEBPACK_IMPORTED_MODULE_5__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_7__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_8__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
-    ], SiaFiles);
-    return SiaFiles;
-}());
-
-//# sourceMappingURL=siafiles.js.map
-
-/***/ }),
-
-/***/ 229:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WebPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_forms__ = __webpack_require__(33);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_autocomplete_provider__ = __webpack_require__(136);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -4144,18 +3988,18 @@ var WebPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 230:
+/***/ 229:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return BuildPagePage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4221,17 +4065,17 @@ var BuildPagePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 25:
+/***/ 26:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* WEBPACK VAR INJECTION */(function(Buffer) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return TransactionService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(349);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(348);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_eciesjs__);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -4261,7 +4105,6 @@ var TransactionService = /** @class */ (function () {
         this.rid = null;
         this.callbackurl = null;
         this.blockchainurl = null;
-        this.group_username_signature = null;
         this.shared_secret = null;
         this.to = null;
         this.txnattempts = null;
@@ -4284,7 +4127,6 @@ var TransactionService = /** @class */ (function () {
             _this.txnattempts = [12, 5, 4];
             _this.cbattempts = [12, 5, 4];
             _this.info = info;
-            _this.group_username_signature = _this.info.group_username_signature;
             _this.unspent_transaction_override = _this.info.unspent_transaction;
             _this.blockchainurl = _this.info.blockchainurl;
             _this.callbackurl = _this.info.callbackurl;
@@ -4417,58 +4259,6 @@ var TransactionService = /** @class */ (function () {
                     inputs_hashes_concat +
                     outputs_hashes_concat).toString('hex');
             }
-            else if (_this.info.group && !_this.info.relationship.wif) {
-                // group chat
-                _this.transaction.relationship = _this.shared_encrypt(_this.group_username_signature, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.postText) {
-                // group post
-                _this.transaction.relationship = _this.shared_encrypt(_this.group_username_signature, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.comment) {
-                // group comment
-                _this.transaction.relationship = _this.shared_encrypt(_this.group_username_signature, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.react) {
-                // group react
-                _this.transaction.relationship = _this.shared_encrypt(_this.group_username_signature, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
             else if (_this.info.relationship[_this.settingsService.collections.CALENDAR] ||
                 _this.info.relationship[_this.settingsService.collections.CHAT] ||
                 _this.info.relationship[_this.settingsService.collections.GROUP_CALENDAR] ||
@@ -4500,7 +4290,7 @@ var TransactionService = /** @class */ (function () {
                     inputs_hashes_concat +
                     outputs_hashes_concat).toString('hex');
             }
-            else if (_this.info.relationship.wif && !_this.info.group) {
+            else if (_this.info.relationship.wif) {
                 // recovery
                 _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
                 hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
@@ -4513,23 +4303,10 @@ var TransactionService = /** @class */ (function () {
                     inputs_hashes_concat +
                     outputs_hashes_concat).toString('hex');
             }
-            else if (_this.info.relationship.event) {
-                // calendar event
-                _this.transaction.relationship = _this.encrypt();
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.username || _this.info.relationship.wif) {
-                // join or create group or contact
-                if (_this.info.relationship.parent) {
-                    _this.transaction.relationship = _this.shared_encrypt(_this.info.relationship.parent.username_signature, JSON.stringify(_this.info.relationship));
+            else if (_this.info.relationship[_this.settingsService.collections.GROUP]) {
+                // join or create group
+                if (_this.info.relationship[_this.settingsService.collections.GROUP].parent) {
+                    _this.transaction.relationship = _this.shared_encrypt(_this.info.relationship[_this.settingsService.collections.GROUP].parent.username_signature, JSON.stringify(_this.info.relationship));
                 }
                 else {
                     _this.transaction.relationship = _this.encrypt();
@@ -4740,7 +4517,24 @@ var TransactionService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 26:
+/***/ 263:
+/***/ (function(module, exports) {
+
+function webpackEmptyAsyncContext(req) {
+	// Here Promise.resolve().then() is used instead of new Promise() to prevent
+	// uncatched exception popping up in devtools
+	return Promise.resolve().then(function() {
+		throw new Error("Cannot find module '" + req + "'.");
+	});
+}
+webpackEmptyAsyncContext.keys = function() { return []; };
+webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
+module.exports = webpackEmptyAsyncContext;
+webpackEmptyAsyncContext.id = 263;
+
+/***/ }),
+
+/***/ 27:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4748,7 +4542,7 @@ var TransactionService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(51);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -4841,7 +4635,7 @@ var WalletService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 264:
+/***/ 304:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -4854,35 +4648,18 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 264;
+webpackEmptyAsyncContext.id = 304;
 
 /***/ }),
 
-/***/ 305:
-/***/ (function(module, exports) {
-
-function webpackEmptyAsyncContext(req) {
-	// Here Promise.resolve().then() is used instead of new Promise() to prevent
-	// uncatched exception popping up in devtools
-	return Promise.resolve().then(function() {
-		throw new Error("Cannot find module '" + req + "'.");
-	});
-}
-webpackEmptyAsyncContext.keys = function() { return []; };
-webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
-module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 305;
-
-/***/ }),
-
-/***/ 393:
+/***/ 392:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SignatureRequestPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -4924,29 +4701,28 @@ var SignatureRequestPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 395:
+/***/ 394:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return Settings; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(224);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(67);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(223);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(396);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_groups__ = __webpack_require__(675);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(395);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(68);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -4967,7 +4743,6 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
-
 
 
 
@@ -5135,13 +4910,14 @@ var Settings = /** @class */ (function () {
     };
     Settings.prototype.importKey = function () {
         var _this = this;
-        new Promise(function (resolve, reject) {
+        var wif;
+        return new Promise(function (resolve, reject) {
             var alert = _this.alertCtrl.create({
-                title: 'Set username',
+                title: 'Set WIF',
                 inputs: [
                     {
-                        name: 'username',
-                        placeholder: 'Username'
+                        name: 'wif',
+                        placeholder: 'WIF'
                     }
                 ],
                 buttons: [
@@ -5154,24 +4930,55 @@ var Settings = /** @class */ (function () {
                         }
                     },
                     {
-                        text: 'Save',
+                        text: 'Continue',
                         handler: function (data) {
-                            var toast = _this.toastCtrl.create({
-                                message: 'Identity created',
-                                duration: 2000
-                            });
-                            toast.present();
-                            resolve(data.username);
+                            resolve(data.wif);
                         }
                     }
                 ]
             });
             alert.present();
         })
-            .then(function (username) {
-            return _this.bulletinSecretService.import(_this.importedKey, username);
+            .then(function (wifkey) {
+            return new Promise(function (resolve, reject) {
+                wif = wifkey;
+                var alert = _this.alertCtrl.create({
+                    title: 'Set username',
+                    inputs: [
+                        {
+                            name: 'username',
+                            placeholder: 'Username'
+                        }
+                    ],
+                    buttons: [
+                        {
+                            text: 'Cancel',
+                            role: 'cancel',
+                            handler: function (data) {
+                                console.log('Cancel clicked');
+                                reject('Cancel clicked');
+                            }
+                        },
+                        {
+                            text: 'Save',
+                            handler: function (data) {
+                                resolve(data.username);
+                            }
+                        }
+                    ]
+                });
+                alert.present();
+            });
         })
-            .then(function () {
+            .then(function (username) {
+            return _this.bulletinSecretService.import(wif, username);
+        })
+            .then(function (wif) {
+            var toast = _this.toastCtrl.create({
+                message: 'Identity created',
+                duration: 2000
+            });
+            toast.present();
             _this.importedKey = '';
             return _this.refresh(null);
         })
@@ -5444,24 +5251,24 @@ var Settings = /** @class */ (function () {
             });
         }
         else {
-            var addedDefaults_1 = false;
+            var addedDefaults = false;
             return this.set(key)
                 .then(function () {
                 return _this.graphService.refreshFriendsAndGroups();
             })
-                .then(function () {
-                var promises = [];
-                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].length; i++) {
-                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */][i])) {
-                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */][i], undefined, undefined, undefined, false));
-                        addedDefaults_1 = true;
-                    }
-                }
-                return Promise.all(promises);
-            })
-                .then(function () {
-                return addedDefaults_1 ? _this.graphService.refreshFriendsAndGroups() : null;
-            })
+                // .then(() => {
+                //   const promises = [];
+                //   for (let i=0; i < DefaultGroups.length; i++) {
+                //     if(!this.graphService.isAdded(DefaultGroups[i])) {
+                //       promises.push(this.graphService.addGroup(DefaultGroups[i], undefined, undefined, undefined, false));
+                //       addedDefaults = true
+                //     }
+                //   }
+                //   return Promise.all(promises)
+                // })
+                // .then(() => {
+                //   return addedDefaults ? this.graphService.refreshFriendsAndGroups() : null;
+                // })
                 .then(function () {
                 if (showModal) {
                     _this.loadingModal.dismiss();
@@ -5588,7 +5395,7 @@ var Settings = /** @class */ (function () {
     };
     Settings = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-settings',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button ion-button secondary (click)="createWallet()" *ngIf="!settingsService.remoteSettings.restricted">Create identity</button>\n  <button ion-button secondary (click)="createWalletFromInvite()" *ngIf="settingsService.remoteSettings.restricted">Create identity from Code</button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button *ngFor="let key of keys" ion-item (click)="selectIdentity(key.username)" [color]="key.active ? \'primary\' : settingsService.remoteSettings.restricted ? \'light\' : \'dark\'">\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && !centerIdentityExportEnabled">\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">Enable</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled">\n    <ion-item style="background: linear-gradient(90deg, rgba(255,255,255,1) 0%, #191919 75%); color: black;"><img src="assets/center-identity-logo1024x500.png" height="65" style="vertical-align:middle"></ion-item>\n    <ion-item>\n      <ion-input type="text" placeholder="Public username" [(ngModel)]="bulletinSecretService.identity.username" disabled></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very memorable)\n      <div id="map-export" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">Save to blockchain</button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button ion-button primary (click)="saveKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname">\n    <hr/>\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">Export active identity</button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>Public identity (share this with your friends) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">Choose location</button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner></button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <ion-label floating>WIF</ion-label>\n    <ion-input type="text" [(ngModel)]="importedKey"></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/
+            selector: 'page-settings',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Sign-in</h1>\n  <h3>Create an identity</h3>\n  <button ion-button secondary (click)="createWallet()" *ngIf="!settingsService.remoteSettings.restricted">Create identity</button>\n  <button ion-button secondary (click)="createWalletFromInvite()" *ngIf="settingsService.remoteSettings.restricted">Create identity from Code</button>\n  <h3 *ngIf="keys && keys.length > 0">Select an identity</h3>\n  <ion-list>\n    <button *ngFor="let key of keys" ion-item (click)="selectIdentity(key.username)" [color]="key.active ? \'primary\' : settingsService.remoteSettings.restricted ? \'light\' : \'dark\'">\n      <ion-icon name="person" item-start [color]="\'dark\'"></ion-icon>\n      {{key.username}}\n    </button>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && !centerIdentityExportEnabled">\n    <ion-item>\n      Make the active identity available anywhere using the YadaCoin blockchain and maps provided by Center Identity\n      <button ion-button secondary (click)="enableCenterIdentityExport()">Enable</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname && centerIdentityExportEnabled">\n    <ion-item style="background: linear-gradient(90deg, rgba(255,255,255,1) 0%, #191919 75%); color: black;"><img src="assets/center-identity-logo1024x500.png" height="65" style="vertical-align:middle"></ion-item>\n    <ion-item>\n      <ion-input type="text" placeholder="Public username" [(ngModel)]="bulletinSecretService.identity.username" disabled></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n    </ion-item>\n    <ion-item>\n      Pick a private username that nobody knows except for you (must be very memorable)\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Pick a private location that nobody knows except for you (must be very memorable)\n      <div id="map-export" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentitySaveSuccess">\n      <button ion-button secondary (click)="saveKeyUsingCenterIdentity()">Save to blockchain</button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentitySaveSuccess">\n      <button ion-button primary (click)="saveKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <ion-list *ngIf="bulletinSecretService.keyname">\n    <hr/>\n    <h4>Export wif (private, do not share)</h4>\n    <ion-item *ngIf="!exportKeyEnabled">\n      <button ion-button secondary (click)="exportKey()">Export active identity</button>\n    </ion-item>\n    <ion-item *ngIf="exportKeyEnabled">\n      <ion-input type="text" [(ngModel)]="activeKey"></ion-input>\n    </ion-item>\n    <h4>Public identity (share this with your friends) <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item *ngIf="settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows=1></ion-textarea>\n    </ion-item>\n    <ion-item *ngIf="!settingsService.remoteSettings.restricted">\n      <ion-textarea type="text" [value]="bulletinSecretService.identityJson()" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-list>\n  <h4>Import using location</h4>\n  <ion-item *ngIf="!centerIdentityImportEnabled">\n    <button ion-button secondary (click)="enableCenterIdentityImport()">Choose location</button>\n  </ion-item>\n  <ion-list *ngIf="centerIdentityImportEnabled">\n    <ion-item>\n      Enter your private username\n      <ion-input type="text" placeholder="Private username" [(ngModel)]="centerIdentityPrivateUsername"></ion-input>\n    </ion-item>\n    <ion-item>\n      Select your private location\n      <div id="map-import" style="width:500px;height:500px;"></div>\n    </ion-item>\n    <ion-item *ngIf="!centerIdentityImportSuccess">\n      <button ion-button secondary (click)="getKeyUsingCenterIdentity()">Get from blockchain <ion-spinner *ngIf="CIBusy"></ion-spinner></button>\n    </ion-item>\n    <ion-item *ngIf="centerIdentityImportSuccess">\n      <button ion-button primary (click)="getKeyUsingCenterIdentity()" disabled>Success!</button>\n    </ion-item>\n  </ion-list>\n  <h4>Import WIF</h4>\n  <ion-item>\n    <button ion-button secondary (click)="importKey()">Import identity</button>\n  </ion-item>\n</ion-content>\n'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/settings/settings.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -5617,6 +5424,244 @@ var Settings = /** @class */ (function () {
 
 /***/ }),
 
+/***/ 396:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SiaFiles; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(81);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+
+var SiaFiles = /** @class */ (function () {
+    function SiaFiles(navParams, viewCtrl, walletService, alertCtrl, transactionService, openGraphParserService, settingsService, bulletinSecretService, ahttp, graphService, navCtrl, events) {
+        this.navParams = navParams;
+        this.viewCtrl = viewCtrl;
+        this.walletService = walletService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.openGraphParserService = openGraphParserService;
+        this.settingsService = settingsService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.ahttp = ahttp;
+        this.graphService = graphService;
+        this.navCtrl = navCtrl;
+        this.events = events;
+        this.logicalParent = null;
+        this.mode = '';
+        this.postText = null;
+        this.post = {};
+        this.files = null;
+        this.selectedFile = null;
+        this.group = null;
+        this.error = '';
+        this.group = navParams.data.group;
+        this.mode = navParams.data.mode || 'page';
+        this.logicalParent = navParams.data.logicalParent;
+        var files = [];
+        for (var i = 0; i < this.graphService.graph.files.length; i++) {
+            var file = this.graphService.graph.files[i];
+            files.push({
+                title: 'Messages',
+                label: file.relationship.username,
+                component: __WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */],
+                count: false,
+                color: '',
+                kwargs: { identity: file.relationship },
+                root: false
+            });
+        }
+        this.events.publish('menuonly', files);
+    }
+    SiaFiles.prototype.changeListener = function ($event) {
+        var _this = this;
+        this.filepath = $event.target.files[0].name;
+        var reader = new FileReader();
+        reader.readAsDataURL($event.target.files[0]);
+        reader.onload = function () {
+            _this.filedata = reader.result.toString().substr(22);
+        };
+        reader.onerror = function () { };
+    };
+    SiaFiles.prototype.upload = function () {
+        var _this = this;
+        this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/sia-upload?filename=' + encodeURIComponent(this.filepath), { file: this.filedata })
+            .subscribe(function (res) {
+            var data = res.json();
+            if (!data.skylink)
+                return;
+            _this.graphService.createGroup(_this.filepath, null, { skylink: data.skylink }, 'file');
+        });
+    };
+    SiaFiles.prototype.delete = function (siapath) {
+        var _this = this;
+        this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-delete?siapath=' + encodeURIComponent(siapath))
+            .subscribe(function (res) {
+            _this.files = res.json()['files'];
+        });
+    };
+    SiaFiles.prototype.submit = function () {
+        var _this = this;
+        this.walletService.get().then(function () {
+            return new Promise(function (resolve, reject) {
+                if (_this.selectedFile) {
+                    _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/sia-share-file?siapath=' + _this.selectedFile)
+                        .subscribe(function (res) {
+                        var sharefiledata = res.json()['filedata'];
+                        _this.approveTxn(sharefiledata, resolve);
+                    });
+                }
+                else {
+                    _this.approveTxn(null, resolve);
+                }
+                console.log(status);
+            }).then(function () {
+                _this.dismiss();
+            });
+        });
+    };
+    SiaFiles.prototype.approveTxn = function (sharefiledata, resolve) {
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Approve Transaction');
+        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
+        alert.addButton('Cancel');
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                // camera permission was granted
+                new Promise(function (resolve, reject) {
+                    if (sharefiledata) {
+                        var info = {
+                            relationship: {
+                                my_username_signature: _this.bulletinSecretService.generate_username_signature(),
+                                my_username: _this.bulletinSecretService.username
+                            },
+                            username_signature: _this.group.username_signature,
+                            rid: _this.group.rid,
+                            requester_rid: _this.group.requester_rid,
+                            requested_rid: _this.group.requested_rid
+                        };
+                        info.relationship[_this.settingsService.collections.GROUP_CHAT] = _this.postText;
+                        info.relationship[_this.settingsService.collections.GROUP_CHAT_FILE] = sharefiledata;
+                        info.relationship[_this.settingsService.collections.GROUP_CHAT_FILE_NAME] = _this.selectedFile;
+                        return _this.transactionService.generateTransaction(info)
+                            .then(function () {
+                            resolve();
+                        })
+                            .catch(function (err) {
+                            reject('failed generating transaction');
+                        });
+                    }
+                    else {
+                        return _this.transactionService.generateTransaction({
+                            relationship: {
+                                postText: _this.postText
+                            }
+                        })
+                            .then(function () {
+                            resolve();
+                        })
+                            .catch(function (err) {
+                            reject(err);
+                        });
+                    }
+                })
+                    .then(function (hash) {
+                    return _this.transactionService.sendTransaction();
+                })
+                    .then(function () {
+                    _this.dismiss();
+                })
+                    .catch(function (err) {
+                    console.log('could not generate hash');
+                });
+            }
+        });
+        alert.present();
+    };
+    SiaFiles.prototype.openProfile = function (item) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
+            identity: item.relationship,
+        });
+    };
+    SiaFiles.prototype.import = function () {
+        var _this = this;
+        var buttons = [];
+        buttons.push({
+            text: 'Import',
+            handler: function (data) {
+                var identity = JSON.parse(data.identity);
+                _this.graphService.addGroup(identity, null, null, null);
+            }
+        });
+        var alert = this.alertCtrl.create({
+            inputs: [
+                {
+                    name: 'identity',
+                    placeholder: 'Paste file code...'
+                }
+            ],
+            buttons: buttons
+        });
+        alert.setTitle('Import file');
+        alert.setSubTitle('Paste the code of your file below');
+        alert.present();
+    };
+    SiaFiles.prototype.dismiss = function () {
+        this.logicalParent.refresh();
+        this.viewCtrl.dismiss();
+    };
+    SiaFiles = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'modal-files',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/'<ion-header>\n  <ion-toolbar>\n    <ion-title>\n      Files\n    </ion-title>\n    <ion-buttons start *ngIf="mode == \'modal\'">\n      <button ion-button (click)="dismiss()">\n        <span ion-text color="primary" showWhen="ios">Cancel</span>\n        <ion-icon name="md-close" showWhen="android,windows,core"></ion-icon>\n      </button>\n    </ion-buttons>\n  </ion-toolbar>\n</ion-header>\n<ion-content>\n  <ion-item *ngIf="mode == \'modal\' && !error">\n    <ion-label>Files</ion-label>\n    <ion-select [(ngModel)]="selectedFile">\n      <ion-option *ngFor="let file of files" value="{{file.siapath}}">{{file.siapath}}</ion-option>\n    </ion-select>\n  </ion-item>\n  <ion-item>\n    <ion-label id="profile_image" color="primary"></ion-label>\n    <ion-input type="file" (change)="changeListener($event)"></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!error">\n    <button ion-button secondary (click)="upload()" *ngIf="mode == \'page\' && !error" [disabled]="!filepath">Upload</button>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="import()">Import</button>\n  </ion-item>\n  <button ion-button secondary (click)="submit()" *ngIf="mode == \'modal\'">Post</button>\n  <ion-card *ngIf="post.title">\n    <img src="{{post.image}}" *ngIf="post.image" />\n    <ion-card-content>\n      <ion-card-title>\n        {{post.title}}\n      </ion-card-title>\n      <p *ngIf="post.description">\n        {{post.description}}\n      </p>\n    </ion-card-content>\n  </ion-card>\n  <ion-item *ngIf="error">You must download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">full node</a> to store and share files.</ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/siafiles/siafiles.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["m" /* ViewController */],
+            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__["a" /* OpenGraphParserService */],
+            __WEBPACK_IMPORTED_MODULE_5__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_7__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_8__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
+    ], SiaFiles);
+    return SiaFiles;
+}());
+
+//# sourceMappingURL=siafiles.js.map
+
+/***/ }),
+
 /***/ 397:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -5624,13 +5669,13 @@ var Settings = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return StreamPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(53);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -5814,7 +5859,7 @@ var StreamPage = /** @class */ (function () {
     };
     StreamPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-stream',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/stream/stream.html"*/'<ion-header>\n    <ion-navbar>\n        <button ion-button menuToggle color="{{color}}">\n            <ion-icon name="menu"></ion-icon>\n        </button>\n        <ion-title>{{label}}</ion-title>\n    </ion-navbar>\n</ion-header>\n<ion-content>\n    <ion-list *ngIf="!error">\n        <button ion-item *ngFor="let group of groups" (click)="selectGroup(group.requested_rid || group.rid)">{{group.relationship.identity.username}}</button>\n    </ion-list>\n    <iframe [src]="sanitize(streamUrl)" width="100%" height="100%" border="0" *ngIf="streamUrl && !error" id="iframe"></iframe>\n    <ion-item *ngIf="error">You must download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">full node</a> to stream content from the blockchain.</ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/stream/stream.html"*/,
+            selector: 'page-stream',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/stream/stream.html"*/'<ion-header>\n    <ion-navbar>\n        <button ion-button menuToggle color="{{color}}">\n            <ion-icon name="menu"></ion-icon>\n        </button>\n        <ion-title>{{label}}</ion-title>\n    </ion-navbar>\n</ion-header>\n<ion-content>\n    <ion-list *ngIf="!error">\n        <button ion-item *ngFor="let group of groups" (click)="selectGroup(group.requested_rid || group.rid)">{{graphService.getIdentityFromTxn(group).username}}</button>\n    </ion-list>\n    <iframe [src]="sanitize(streamUrl)" width="100%" height="100%" border="0" *ngIf="streamUrl && !error" id="iframe"></iframe>\n    <ion-item *ngIf="error">You must download the <a href="https://github.com/pdxwebdev/yadacoin/releases/latest" target="_blank">full node</a> to stream content from the blockchain.</ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/stream/stream.html"*/,
             queries: {
                 content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
             }
@@ -5848,14 +5893,14 @@ var StreamPage = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SendReceive; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(399);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(67);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(23);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6251,7 +6296,7 @@ var SendReceive = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__compose__ = __webpack_require__(108);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mailitem__ = __webpack_require__(137);
@@ -6289,13 +6334,13 @@ var MailPage = /** @class */ (function () {
             this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CALENDAR)];
         var group_rids = [];
         for (var i = 0; i < this.graphService.graph.groups.length; i++) {
-            var group = this.graphService.graph.groups[i];
-            group_rids.push(this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, this.settingsService.collections.GROUP_MAIL));
+            var group = this.graphService.getIdentityFromTxn(this.graphService.graph.groups[i]);
+            group_rids.push(this.graphService.generateRid(group.username_signature, group.username_signature, this.settingsService.collections.GROUP_MAIL));
         }
         var file_rids = [];
         for (var i = 0; i < this.graphService.graph.files.length; i++) {
-            var group = this.graphService.graph.files[i];
-            file_rids.push(this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, this.settingsService.collections.GROUP_MAIL));
+            var group = this.graphService.getIdentityFromTxn(this.graphService.graph.files[i]);
+            file_rids.push(this.graphService.generateRid(group.username_signature, group.username_signature, this.settingsService.collections.GROUP_MAIL));
         }
         if (group_rids.length > 0) {
             rids = rids.concat(group_rids);
@@ -6352,10 +6397,10 @@ var MailPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(230);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(228);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6449,61 +6494,59 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(53);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(569);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(223);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(676);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(395);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(675);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(67);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(394);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(225);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_group_group__ = __webpack_require__(677);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__ = __webpack_require__(397);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_mail_compose__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__pages_calendar_calendar__ = __webpack_require__(226);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_status_bar__ = __webpack_require__(345);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_splash_screen__ = __webpack_require__(348);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__ionic_native_qr_scanner__ = __webpack_require__(399);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21_ngx_qrcode2__ = __webpack_require__(678);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__peer_service__ = __webpack_require__(224);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__websocket_service__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__transaction_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__firebase_service__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__pages_sendreceive_sendreceive__ = __webpack_require__(398);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_clipboard__ = __webpack_require__(698);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_badge__ = __webpack_require__(386);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_deeplinks__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_native_firebase__ = __webpack_require__(394);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_tools_emoji_picker__ = __webpack_require__(699);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39__ionic_native_file__ = __webpack_require__(741);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40_ionic2_auto_complete__ = __webpack_require__(387);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__autocomplete_provider__ = __webpack_require__(136);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__ionic_native_google_maps__ = __webpack_require__(396);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_mail_mailitem__ = __webpack_require__(137);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_signaturerequest_signaturerequest__ = __webpack_require__(393);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_web__ = __webpack_require__(229);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_mypages__ = __webpack_require__(402);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_48__pages_web_buildpage__ = __webpack_require__(230);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_49_ionic_tooltips__ = __webpack_require__(742);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__angular_platform_browser_animations__ = __webpack_require__(744);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(81);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(396);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(397);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_mail_mail__ = __webpack_require__(400);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_compose__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_calendar_calendar__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__ = __webpack_require__(344);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_splash_screen__ = __webpack_require__(347);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_qr_scanner__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__ = __webpack_require__(676);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ionic_storage__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__bulletinSecret_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__peer_service__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__websocket_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__transaction_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__firebase_service__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__ = __webpack_require__(696);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_social_sharing__ = __webpack_require__(107);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__ = __webpack_require__(385);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_deeplinks__ = __webpack_require__(401);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_firebase__ = __webpack_require__(393);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_tools_emoji_picker__ = __webpack_require__(697);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_native_file__ = __webpack_require__(739);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__ = __webpack_require__(386);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40__autocomplete_provider__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__ionic_native_geolocation__ = __webpack_require__(222);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__ionic_native_google_maps__ = __webpack_require__(395);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__pages_mail_mailitem__ = __webpack_require__(137);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__ = __webpack_require__(392);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_web_web__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__ = __webpack_require__(402);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_48_ionic_tooltips__ = __webpack_require__(740);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_49__angular_platform_browser_animations__ = __webpack_require__(742);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
-
 
 
 
@@ -6565,37 +6608,36 @@ var AppModule = /** @class */ (function () {
                 __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__["a" /* PostModal */],
                 __WEBPACK_IMPORTED_MODULE_8__pages_list_list__["a" /* ListPage */],
                 __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__["a" /* Settings */],
-                __WEBPACK_IMPORTED_MODULE_32__pages_sendreceive_sendreceive__["a" /* SendReceive */],
+                __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__["a" /* SendReceive */],
                 __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__["a" /* ChatPage */],
                 __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__["a" /* ProfilePage */],
-                __WEBPACK_IMPORTED_MODULE_12__pages_group_group__["a" /* GroupPage */],
-                __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__["a" /* SiaFiles */],
-                __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__["a" /* StreamPage */],
-                __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__["a" /* MailPage */],
-                __WEBPACK_IMPORTED_MODULE_16__pages_mail_compose__["a" /* ComposePage */],
-                __WEBPACK_IMPORTED_MODULE_17__pages_calendar_calendar__["a" /* CalendarPage */],
-                __WEBPACK_IMPORTED_MODULE_44__pages_mail_mailitem__["a" /* MailItemPage */],
-                __WEBPACK_IMPORTED_MODULE_45__pages_signaturerequest_signaturerequest__["a" /* SignatureRequestPage */],
-                __WEBPACK_IMPORTED_MODULE_46__pages_web_web__["a" /* WebPage */],
-                __WEBPACK_IMPORTED_MODULE_47__pages_web_mypages__["a" /* MyPagesPage */],
-                __WEBPACK_IMPORTED_MODULE_48__pages_web_buildpage__["a" /* BuildPagePage */]
+                __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__["a" /* SiaFiles */],
+                __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__["a" /* StreamPage */],
+                __WEBPACK_IMPORTED_MODULE_14__pages_mail_mail__["a" /* MailPage */],
+                __WEBPACK_IMPORTED_MODULE_15__pages_mail_compose__["a" /* ComposePage */],
+                __WEBPACK_IMPORTED_MODULE_16__pages_calendar_calendar__["a" /* CalendarPage */],
+                __WEBPACK_IMPORTED_MODULE_43__pages_mail_mailitem__["a" /* MailItemPage */],
+                __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__["a" /* SignatureRequestPage */],
+                __WEBPACK_IMPORTED_MODULE_45__pages_web_web__["a" /* WebPage */],
+                __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__["a" /* MyPagesPage */],
+                __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__["a" /* BuildPagePage */]
             ],
             imports: [
                 __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__["a" /* BrowserModule */],
-                __WEBPACK_IMPORTED_MODULE_40_ionic2_auto_complete__["b" /* AutoCompleteModule */],
+                __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__["b" /* AutoCompleteModule */],
                 __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["e" /* IonicModule */].forRoot(__WEBPACK_IMPORTED_MODULE_5__app_component__["a" /* MyApp */], {}, {
                     links: []
                 }),
-                __WEBPACK_IMPORTED_MODULE_22__ionic_storage__["a" /* IonicStorageModule */].forRoot({
+                __WEBPACK_IMPORTED_MODULE_21__ionic_storage__["a" /* IonicStorageModule */].forRoot({
                     name: '__mydb',
                     driverOrder: ['websql', 'sqlite', 'indexeddb']
                 }),
-                __WEBPACK_IMPORTED_MODULE_21_ngx_qrcode2__["a" /* NgxQRCodeModule */],
+                __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__["a" /* NgxQRCodeModule */],
                 __WEBPACK_IMPORTED_MODULE_3__angular_http__["c" /* HttpModule */],
-                __WEBPACK_IMPORTED_MODULE_38__ionic_tools_emoji_picker__["a" /* EmojiPickerModule */].forRoot(),
+                __WEBPACK_IMPORTED_MODULE_37__ionic_tools_emoji_picker__["a" /* EmojiPickerModule */].forRoot(),
                 __WEBPACK_IMPORTED_MODULE_4__angular_common__["b" /* CommonModule */],
-                __WEBPACK_IMPORTED_MODULE_49_ionic_tooltips__["a" /* TooltipsModule */].forRoot(),
-                __WEBPACK_IMPORTED_MODULE_50__angular_platform_browser_animations__["a" /* BrowserAnimationsModule */]
+                __WEBPACK_IMPORTED_MODULE_48_ionic_tooltips__["a" /* TooltipsModule */].forRoot(),
+                __WEBPACK_IMPORTED_MODULE_49__angular_platform_browser_animations__["a" /* BrowserAnimationsModule */]
             ],
             bootstrap: [__WEBPACK_IMPORTED_MODULE_2_ionic_angular__["c" /* IonicApp */]],
             entryComponents: [
@@ -6604,46 +6646,45 @@ var AppModule = /** @class */ (function () {
                 __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__["a" /* PostModal */],
                 __WEBPACK_IMPORTED_MODULE_8__pages_list_list__["a" /* ListPage */],
                 __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__["a" /* Settings */],
-                __WEBPACK_IMPORTED_MODULE_32__pages_sendreceive_sendreceive__["a" /* SendReceive */],
+                __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__["a" /* SendReceive */],
                 __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__["a" /* ChatPage */],
                 __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__["a" /* ProfilePage */],
-                __WEBPACK_IMPORTED_MODULE_12__pages_group_group__["a" /* GroupPage */],
-                __WEBPACK_IMPORTED_MODULE_13__pages_siafiles_siafiles__["a" /* SiaFiles */],
-                __WEBPACK_IMPORTED_MODULE_14__pages_stream_stream__["a" /* StreamPage */],
-                __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__["a" /* MailPage */],
-                __WEBPACK_IMPORTED_MODULE_16__pages_mail_compose__["a" /* ComposePage */],
-                __WEBPACK_IMPORTED_MODULE_17__pages_calendar_calendar__["a" /* CalendarPage */],
-                __WEBPACK_IMPORTED_MODULE_44__pages_mail_mailitem__["a" /* MailItemPage */],
-                __WEBPACK_IMPORTED_MODULE_45__pages_signaturerequest_signaturerequest__["a" /* SignatureRequestPage */],
-                __WEBPACK_IMPORTED_MODULE_46__pages_web_web__["a" /* WebPage */],
-                __WEBPACK_IMPORTED_MODULE_47__pages_web_mypages__["a" /* MyPagesPage */],
-                __WEBPACK_IMPORTED_MODULE_48__pages_web_buildpage__["a" /* BuildPagePage */]
+                __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__["a" /* SiaFiles */],
+                __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__["a" /* StreamPage */],
+                __WEBPACK_IMPORTED_MODULE_14__pages_mail_mail__["a" /* MailPage */],
+                __WEBPACK_IMPORTED_MODULE_15__pages_mail_compose__["a" /* ComposePage */],
+                __WEBPACK_IMPORTED_MODULE_16__pages_calendar_calendar__["a" /* CalendarPage */],
+                __WEBPACK_IMPORTED_MODULE_43__pages_mail_mailitem__["a" /* MailItemPage */],
+                __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__["a" /* SignatureRequestPage */],
+                __WEBPACK_IMPORTED_MODULE_45__pages_web_web__["a" /* WebPage */],
+                __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__["a" /* MyPagesPage */],
+                __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__["a" /* BuildPagePage */]
             ],
             providers: [
-                __WEBPACK_IMPORTED_MODULE_18__ionic_native_status_bar__["a" /* StatusBar */],
-                __WEBPACK_IMPORTED_MODULE_19__ionic_native_splash_screen__["a" /* SplashScreen */],
+                __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__["a" /* StatusBar */],
+                __WEBPACK_IMPORTED_MODULE_18__ionic_native_splash_screen__["a" /* SplashScreen */],
                 { provide: __WEBPACK_IMPORTED_MODULE_1__angular_core__["v" /* ErrorHandler */], useClass: __WEBPACK_IMPORTED_MODULE_2_ionic_angular__["d" /* IonicErrorHandler */] },
-                __WEBPACK_IMPORTED_MODULE_20__ionic_native_qr_scanner__["a" /* QRScanner */],
-                __WEBPACK_IMPORTED_MODULE_21_ngx_qrcode2__["a" /* NgxQRCodeModule */],
-                __WEBPACK_IMPORTED_MODULE_23__graph_service__["a" /* GraphService */],
-                __WEBPACK_IMPORTED_MODULE_24__bulletinSecret_service__["a" /* BulletinSecretService */],
-                __WEBPACK_IMPORTED_MODULE_25__peer_service__["a" /* PeerService */],
-                __WEBPACK_IMPORTED_MODULE_26__settings_service__["a" /* SettingsService */],
-                __WEBPACK_IMPORTED_MODULE_27__wallet_service__["a" /* WalletService */],
-                __WEBPACK_IMPORTED_MODULE_28__websocket_service__["a" /* WebSocketService */],
-                __WEBPACK_IMPORTED_MODULE_29__transaction_service__["a" /* TransactionService */],
-                __WEBPACK_IMPORTED_MODULE_30__opengraphparser_service__["a" /* OpenGraphParserService */],
-                __WEBPACK_IMPORTED_MODULE_33__ionic_native_clipboard__["a" /* Clipboard */],
-                __WEBPACK_IMPORTED_MODULE_34__ionic_native_social_sharing__["a" /* SocialSharing */],
-                __WEBPACK_IMPORTED_MODULE_35__ionic_native_badge__["a" /* Badge */],
-                __WEBPACK_IMPORTED_MODULE_36__ionic_native_deeplinks__["a" /* Deeplinks */],
-                __WEBPACK_IMPORTED_MODULE_37__ionic_native_firebase__["a" /* Firebase */],
-                __WEBPACK_IMPORTED_MODULE_31__firebase_service__["a" /* FirebaseService */],
-                __WEBPACK_IMPORTED_MODULE_39__ionic_native_file__["a" /* File */],
-                __WEBPACK_IMPORTED_MODULE_41__autocomplete_provider__["a" /* CompleteTestService */],
-                __WEBPACK_IMPORTED_MODULE_40_ionic2_auto_complete__["a" /* AutoCompleteComponent */],
-                __WEBPACK_IMPORTED_MODULE_42__ionic_native_geolocation__["a" /* Geolocation */],
-                __WEBPACK_IMPORTED_MODULE_43__ionic_native_google_maps__["a" /* GoogleMaps */]
+                __WEBPACK_IMPORTED_MODULE_19__ionic_native_qr_scanner__["a" /* QRScanner */],
+                __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__["a" /* NgxQRCodeModule */],
+                __WEBPACK_IMPORTED_MODULE_22__graph_service__["a" /* GraphService */],
+                __WEBPACK_IMPORTED_MODULE_23__bulletinSecret_service__["a" /* BulletinSecretService */],
+                __WEBPACK_IMPORTED_MODULE_24__peer_service__["a" /* PeerService */],
+                __WEBPACK_IMPORTED_MODULE_25__settings_service__["a" /* SettingsService */],
+                __WEBPACK_IMPORTED_MODULE_26__wallet_service__["a" /* WalletService */],
+                __WEBPACK_IMPORTED_MODULE_27__websocket_service__["a" /* WebSocketService */],
+                __WEBPACK_IMPORTED_MODULE_28__transaction_service__["a" /* TransactionService */],
+                __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__["a" /* OpenGraphParserService */],
+                __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__["a" /* Clipboard */],
+                __WEBPACK_IMPORTED_MODULE_33__ionic_native_social_sharing__["a" /* SocialSharing */],
+                __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__["a" /* Badge */],
+                __WEBPACK_IMPORTED_MODULE_35__ionic_native_deeplinks__["a" /* Deeplinks */],
+                __WEBPACK_IMPORTED_MODULE_36__ionic_native_firebase__["a" /* Firebase */],
+                __WEBPACK_IMPORTED_MODULE_30__firebase_service__["a" /* FirebaseService */],
+                __WEBPACK_IMPORTED_MODULE_38__ionic_native_file__["a" /* File */],
+                __WEBPACK_IMPORTED_MODULE_40__autocomplete_provider__["a" /* CompleteTestService */],
+                __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__["a" /* AutoCompleteComponent */],
+                __WEBPACK_IMPORTED_MODULE_41__ionic_native_geolocation__["a" /* Geolocation */],
+                __WEBPACK_IMPORTED_MODULE_42__ionic_native_google_maps__["a" /* GoogleMaps */]
             ]
         })
     ], AppModule);
@@ -6661,25 +6702,25 @@ var AppModule = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MyApp; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(345);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(348);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(344);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(347);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(27);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(223);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(61);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(67);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(226);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(395);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(394);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(396);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(397);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(398);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(402);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(229);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -6762,65 +6803,65 @@ var MyApp = /** @class */ (function () {
             this.pages = pages;
             return;
         }
-        if (this.settingsService.menu == 'home') {
+        if (this.settingsService.menu === 'home') {
             this.pages = [
                 { title: 'Home', label: 'Home', component: __WEBPACK_IMPORTED_MODULE_8__pages_home_home__["a" /* HomePage */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'mail') {
+        else if (this.settingsService.menu === 'mail') {
             this.pages = [
                 { title: 'Inbox', label: 'Inbox', component: __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__["a" /* MailPage */], count: false, color: '', root: true },
                 { title: 'Sent', label: 'Sent', component: __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__["a" /* MailPage */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'chat') {
+        else if (this.settingsService.menu === 'chat') {
             this.pages = [
                 { title: 'Messages', label: 'Chat', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'community') {
+        else if (this.settingsService.menu === 'community') {
             this.pages = [
                 { title: 'Community', label: 'Community', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'calendar') {
+        else if (this.settingsService.menu === 'calendar') {
             this.pages = [
                 { title: 'Calendar', label: 'Calendar', component: __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__["a" /* CalendarPage */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'contacts') {
+        else if (this.settingsService.menu === 'contacts') {
             this.pages = [
                 { title: 'Contacts', label: 'Contacts', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
                 { title: 'Contact Requests', label: 'Contact Requests', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
                 { title: 'Groups', label: 'Groups', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'files') {
+        else if (this.settingsService.menu === 'files') {
             this.pages = [
                 { title: 'Files', label: 'Files', component: __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__["a" /* SiaFiles */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'wallet') {
+        else if (this.settingsService.menu === 'wallet') {
             this.pages = [
                 { title: 'Send / Receive', label: 'Send / Receive', component: __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__["a" /* SendReceive */], count: false, color: '', root: true }
             ];
         }
-        else if (this.settingsService.menu == 'stream') {
+        else if (this.settingsService.menu === 'stream') {
             this.pages = [
                 { title: 'Stream', label: 'Stream', component: __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__["a" /* StreamPage */], count: false, color: '', root: true }
             ];
         }
-        else if (this.settingsService.menu == 'settings') {
+        else if (this.settingsService.menu === 'settings') {
             this.pages = [
                 { title: 'Settings', label: 'Identity', component: __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__["a" /* Settings */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'notifications') {
+        else if (this.settingsService.menu === 'notifications') {
             this.pages = [
                 { title: 'Notifications', label: 'Notifications', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
             ];
         }
-        else if (this.settingsService.menu == 'web') {
+        else if (this.settingsService.menu === 'web') {
             this.pages = [
                 { title: 'Web', label: 'Web', component: __WEBPACK_IMPORTED_MODULE_18__pages_web_web__["a" /* WebPage */], count: false, color: '', root: true },
                 { title: 'Create page', label: 'Create page', component: __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__["a" /* BuildPagePage */], count: false, color: '', root: true },
@@ -6909,26 +6950,40 @@ var MyApp = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 61:
+/***/ 615:
+/***/ (function(module, exports) {
+
+/* (ignored) */
+
+/***/ }),
+
+/***/ 616:
+/***/ (function(module, exports) {
+
+/* (ignored) */
+
+/***/ }),
+
+/***/ 67:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ListPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(107);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(225);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(393);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(81);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(392);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(137);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__ = __webpack_require__(226);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -7070,39 +7125,30 @@ var ListPage = /** @class */ (function () {
                 var public_key = '';
                 var graphArray = [];
                 if (_this.pageTitle == 'Contacts') {
-                    graphArray = _this.graphService.graph.friends.filter(function (item) { return !!item.relationship.identity; });
+                    graphArray = _this.graphService.graph.friends.filter(function (item) { return !!item.relationship[_this.settingsService.collections.CONTACT]; });
                     graphArray = _this.getDistinctFriends(graphArray).friend_list;
-                    graphArray.sort(function (a, b) {
-                        if (a.relationship.identity.username.toLowerCase() < b.relationship.identity.username.toLowerCase())
-                            return -1;
-                        if (a.relationship.identity.username.toLowerCase() > b.relationship.identity.username.toLowerCase())
-                            return 1;
-                        return 0;
-                    });
+                    _this.graphService.sortTxnsByUsername(graphArray, false, _this.settingsService.collections.CONTACT);
                     _this.makeList(graphArray, 'Contacts', null);
                     _this.loading = false;
                 }
                 else if (_this.pageTitle == 'Groups') {
                     for (var i = 0; i < _this.graphService.graph.groups.length; i++) {
                         var item = _this.graphService.graph.groups[i];
-                        if (item.relationship.parent) {
-                            _this.subitems[item.relationship.parent.username_signature] = _this.subitems[item.relationship.parent.username_signature] || [];
-                            _this.subitems[item.relationship.parent.username_signature].push({
+                        var parentIdentity = _this.graphService.getParentIdentityFromTxn(item, _this.settingsService.collections.GROUP);
+                        var itemIdentity = _this.graphService.getIdentityFromTxn(item, _this.settingsService.collections.GROUP);
+                        if (parentIdentity) {
+                            _this.subitems[parentIdentity.username_signature] = _this.subitems[parentIdentity.username_signature] || [];
+                            _this.subitems[parentIdentity.username_signature].push({
                                 pageTitle: _this.pageTitle,
-                                identity: item.relationship.identity ? item.relationship.identity : item.relationship
+                                identity: itemIdentity,
+                                item: item
                             });
                         }
                         else {
                             graphArray.push(item);
                         }
                     }
-                    graphArray.sort(function (a, b) {
-                        if (a.relationship.username.toLowerCase() < b.relationship.username.toLowerCase())
-                            return -1;
-                        if (a.relationship.username.toLowerCase() > b.relationship.username.toLowerCase())
-                            return 1;
-                        return 0;
-                    });
+                    _this.graphService.sortTxnsByUsername(graphArray, false, _this.settingsService.collections.GROUP);
                     _this.makeList(graphArray, 'Groups', null);
                     _this.loading = false;
                 }
@@ -7114,20 +7160,7 @@ var ListPage = /** @class */ (function () {
                         var friendsWithMessagesList = _this.getDistinctFriends(messages);
                         _this.populateRemainingFriends(friendsWithMessagesList.friend_list, friendsWithMessagesList.used_rids);
                         _this.loading = false;
-                        friendsWithMessagesList.friend_list.sort(function (a, b) {
-                            try {
-                                var ausername = a.relationship.identity ? a.relationship.identity.username : a.relationship.username;
-                                var busername = b.relationship.identity ? b.relationship.identity.username : b.relationship.username;
-                                if (ausername.toLowerCase() < busername.toLowerCase())
-                                    return -1;
-                                if (ausername.toLowerCase() > busername.toLowerCase())
-                                    return 1;
-                                return 0;
-                            }
-                            catch (err) {
-                                return 0;
-                            }
-                        });
+                        _this.graphService.sortTxnsByUsername(friendsWithMessagesList.friend_list, false, _this.settingsService.collections.CONTACT);
                         return _this.makeList(friendsWithMessagesList.friend_list, '', { title: 'Messages', component: __WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */] })
                             .then(function (pages) {
                             _this.events.publish('menu', pages);
@@ -7176,7 +7209,7 @@ var ListPage = /** @class */ (function () {
                         }
                         else if (_this.graphService.graph.friend_requests.filter(function (fr) { return fr.rid === item.rid; }).length > 0) {
                             item.component = ListPage_1;
-                            var identity = item.relationship.identity;
+                            var identity = _this.graphService.getIdentityFromTxn(item);
                             item.identity = identity;
                             item.label = 'Contact request from ' + identity.username;
                             item.pageTitle = 'Contact Requests';
@@ -7204,23 +7237,25 @@ var ListPage = /** @class */ (function () {
                     _this.loading = false;
                     _this.graphService.sortTxnsByUsername(_this.graphService.graph.groups);
                     var groupList = _this.graphService.graph.groups.filter(function (item) {
-                        if (item.relationship.parent) {
-                            _this.subitems[item.relationship.parent.username_signature] = _this.subitems[item.relationship.parent.username_signature] || [];
-                            _this.subitems[item.relationship.parent.username_signature].push({
+                        var parentIdentity = _this.graphService.getParentIdentityFromTxn(item, _this.settingsService.collections.GROUP);
+                        if (parentIdentity) {
+                            _this.subitems[parentIdentity.username_signature] = _this.subitems[parentIdentity.username_signature] || [];
+                            var identity = _this.graphService.getIdentityFromTxn(item, _this.settingsService.collections.GROUP);
+                            _this.subitems[parentIdentity.username_signature].push({
                                 title: 'Community',
-                                label: item.relationship.username,
+                                label: identity.username,
                                 component: __WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */],
                                 count: false,
                                 color: '',
                                 kwargs: {
                                     item: item,
-                                    identity: item.identity || item.relationship.identity || item.relationship,
+                                    identity: identity,
                                     subitems: _this.subitems
                                 },
                                 root: true
                             });
                         }
-                        return !item.relationship.parent;
+                        return !parentIdentity;
                     });
                     return _this.makeList(groupList, '', { title: 'Community', component: __WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */] })
                         .then(function (pages) {
@@ -7236,13 +7271,7 @@ var ListPage = /** @class */ (function () {
                         var friendsWithMessagesList = _this.getDistinctFriends(messages);
                         _this.populateRemainingFriends(friendsWithMessagesList.friend_list, friendsWithMessagesList.used_rids);
                         _this.loading = false;
-                        friendsWithMessagesList.friend_list.sort(function (a, b) {
-                            if (a.relationship.identity.username.toLowerCase() < b.relationship.identity.username.toLowerCase())
-                                return -1;
-                            if (a.relationship.identity.username.toLowerCase() > b.relationship.identity.username.toLowerCase())
-                                return 1;
-                            return 0;
-                        });
+                        _this.graphService.sortTxnsByUsername(friendsWithMessagesList.friend_list, false, _this.settingsService.collections.CONTACT);
                         return _this.makeList(friendsWithMessagesList.friend_list, 'Messages', null);
                     }).catch(function (err) {
                         console.log(err);
@@ -7263,13 +7292,7 @@ var ListPage = /** @class */ (function () {
                     return _this.graphService.getFriendRequests()
                         .then(function () {
                         var graphArray = _this.graphService.graph.friend_requests;
-                        graphArray.sort(function (a, b) {
-                            if (a.relationship.identity.username.toLowerCase() < b.relationship.identity.username.toLowerCase())
-                                return -1;
-                            if (a.relationship.identity.username.toLowerCase() > b.relationship.identity.username.toLowerCase())
-                                return 1;
-                            return 0;
-                        });
+                        _this.graphService.sortTxnsByUsername(graphArray, false, _this.settingsService.collections.CONTACT);
                         _this.loading = false;
                         return _this.makeList(graphArray, 'Contact Requests', null);
                     });
@@ -7278,13 +7301,7 @@ var ListPage = /** @class */ (function () {
                     return _this.graphService.getSentFriendRequests()
                         .then(function () {
                         var graphArray = _this.graphService.graph.sent_friend_requests;
-                        graphArray.sort(function (a, b) {
-                            if (a.relationship.identity.username.toLowerCase() < b.relationship.identity.username.toLowerCase())
-                                return -1;
-                            if (a.relationship.identity.username.toLowerCase() > b.relationship.identity.username.toLowerCase())
-                                return 1;
-                            return 0;
-                        });
+                        _this.graphService.sortTxnsByUsername(graphArray, false, _this.settingsService.collections.CONTACT);
                         _this.loading = false;
                         return _this.makeList(graphArray, 'Sent Requests', null);
                     });
@@ -7398,9 +7415,10 @@ var ListPage = /** @class */ (function () {
             _this.items = [];
             for (var i = 0; i < graphArray.length; i++) {
                 var item = graphArray[i];
+                var identity = item.identity || _this.graphService.getIdentityFromTxn(item);
                 if (page) {
                     var component = item.component || page.component;
-                    var label = item.relationship.identity ? item.relationship.identity.username : item.relationship.username;
+                    var label = identity && identity.username;
                     items.push({
                         title: page.title,
                         label: item.label || label,
@@ -7409,7 +7427,7 @@ var ListPage = /** @class */ (function () {
                         color: '',
                         kwargs: {
                             item: item.item || item,
-                            identity: item.identity || item.relationship.identity || item.relationship,
+                            identity: identity,
                             subitems: _this.subitems
                         },
                         root: true
@@ -7418,7 +7436,8 @@ var ListPage = /** @class */ (function () {
                 else {
                     _this.items.push({
                         pageTitle: pageTitle,
-                        identity: item.relationship.identity ? item.relationship.identity : item.relationship
+                        identity: identity,
+                        item: item
                     });
                 }
             }
@@ -7620,66 +7639,18 @@ var ListPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 615:
-/***/ (function(module, exports) {
-
-/* (ignored) */
-
-/***/ }),
-
-/***/ 616:
-/***/ (function(module, exports) {
-
-/* (ignored) */
-
-/***/ }),
-
 /***/ 675:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony default export */ __webpack_exports__["a"] = ([
-    {
-        "username": "Text Channels",
-        "username_signature": "MEQCIBnBj2TTVH7nNCIOsJxbhyKTKl/tMYErBwHnDVGEHlPAAiA2scfrrughyVpwfbzHXrGy0mv2yMFibthFjgqGiFwBOw==",
-        "public_key": "035d0535af1c3f419340b7ca275a804b355f91aad8984544c3ee10d0d773154496",
-        "collection": "group"
-    },
-    {
-        "username": "Yada Protocol",
-        "username_signature": "MEQCIEaKMo8CUL2gib2xj/vlIWSHPGuI2wfSXB8WLCb2saStAiAvIvALHRsRJjRfzXbkmyXNUIHF/tjcXUXtrTU1fO4bNQ==",
-        "public_key": "02c757def602fa906e4d2b776cb0bceeb59683ffb1640ffd3c9ba6fd5378fa833f",
-        "collection": "group"
-    },
-    {
-        "username": "Yada App",
-        "username_signature": "MEQCIEsBxY9EhC9SsVnaqCpckOFDRGB5yMuj6A9Lq6EhvrHBAiAZZwFZw6XIk067OFUWMMSPhLmnUowRpshlazWOSES/3w==",
-        "public_key": "03e103f6d5c43cc1d14de00710d7369dbdf7f8885f4e909b384a64bfd272dab506",
-        "collection": "group"
-    },
-    {
-        "username": "YadaCoin",
-        "username_signature": "MEQCID2Kio1OSNG2pIB/8id8G8yo+Vfuj2rAB2K3BurAyTeTAiAQ3Wmd4ayXtxrgQGRBaFfKuZGxb2DVIwy0UY0LARG4cQ==",
-        "public_key": "03cebd3b8b38d28a4d032b38e3aadc3f8a06e78c27f1fe06b73ac7bb682f03949e",
-        "collection": "group"
-    },
-]);
-//# sourceMappingURL=groups.js.map
-
-/***/ }),
-
-/***/ 676:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PostModal; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(26);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(138);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(23);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -7832,574 +7803,7 @@ var PostModal = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 677:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return GroupPage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__angular_http__ = __webpack_require__(21);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-var GroupPage = /** @class */ (function () {
-    function GroupPage(navCtrl, navParams, storage, walletService, transactionService, alertCtrl, graphService, loadingCtrl, bulletinSecretService, settingsService, ahttp, modalCtrl, toastCtrl) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.storage = storage;
-        this.walletService = walletService;
-        this.transactionService = transactionService;
-        this.alertCtrl = alertCtrl;
-        this.graphService = graphService;
-        this.loadingCtrl = loadingCtrl;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.ahttp = ahttp;
-        this.modalCtrl = modalCtrl;
-        this.toastCtrl = toastCtrl;
-        this.extraInfo = {};
-        this.wallet_mode = true;
-        this.item = navParams.data.item.transaction;
-        this.rid = navParams.data.item.transaction.rid;
-        this.requester_rid = navParams.data.item.transaction.requester_rid;
-        this.requested_rid = navParams.data.item.transaction.requested_rid;
-        this.their_address = navParams.data.item.transaction.relationship.their_address;
-        this.public_key = navParams.data.item.transaction.relationship.identity.public_key;
-        this.username_signature = navParams.data.item.transaction.relationship.identity.username_signature;
-        this.username = navParams.data.item.transaction.relationship.identity.username;
-        var key = 'last_message_height-' + navParams.data.item.transaction.rid;
-        if (navParams.data.item.transaction.height)
-            this.storage.set(key, navParams.data.item.transaction.time);
-        this.storage.get('blockchainAddress').then(function (blockchainAddress) {
-            _this.blockchainAddress = blockchainAddress;
-        });
-        this.refresh(null, true);
-    }
-    GroupPage.prototype.showInvite = function () {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Invite');
-        alert.setSubTitle('Select a friend to invite.');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                _this.walletService.get()
-                    .then(function () {
-                    var dh_public_key = _this.graphService.keys[data.rid].dh_public_keys[0];
-                    var dh_private_key = _this.graphService.keys[data.rid].dh_private_keys[0];
-                    if (dh_public_key && dh_private_key) {
-                        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-                            return parseInt(h, 16);
-                        }));
-                        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-                            return parseInt(h, 16);
-                        }));
-                        var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
-                    }
-                    var myAddress = _this.bulletinSecretService.key.getAddress();
-                    var to = false;
-                    for (var h = 0; h < data.outputs.length; h++) {
-                        if (data.outputs[h].to != myAddress) {
-                            to = data.outputs[h].to;
-                        }
-                    }
-                    var info = {
-                        relationship: {},
-                        rid: data.rid,
-                        requester_rid: data.requester_rid,
-                        requested_rid: data.requested_rid,
-                        shared_secret: shared_secret,
-                        to: to
-                    };
-                    info.relationship[_this.settingsService.collections.CHAT] = Base64.encode(JSON.stringify({
-                        public_key: _this.item.public_key,
-                        username_signature: _this.item.relationship.identity.username_signature,
-                        username: _this.item.relationship.identity.username,
-                        group: true,
-                        requested_rid: _this.requested_rid
-                    }));
-                    return _this.transactionService.generateTransaction(info);
-                }).then(function (txn) {
-                    return _this.transactionService.sendTransaction();
-                }).then(function () {
-                    var toast = _this.toastCtrl.create({
-                        message: "Group invite sent!",
-                        duration: 2000,
-                    });
-                    toast.present();
-                    _this.groupChatText = '';
-                    _this.refresh(null);
-                })
-                    .catch(function (err) {
-                    console.log(err);
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Message error');
-                    alert.setSubTitle(err);
-                    alert.addButton('Ok');
-                    alert.present();
-                });
-            }
-        });
-        for (var i = 0; i < this.graphService.graph.friends.length; i++) {
-            var friend = this.graphService.graph.friends[i];
-            alert.addInput({
-                name: 'username',
-                type: 'radio',
-                label: friend.relationship.identity.username,
-                value: friend,
-                checked: false
-            });
-        }
-        alert.present();
-    };
-    GroupPage.prototype.parseChats = function () {
-        var rid_to_use = this.requested_rid || this.rid;
-        if (this.graphService.graph.messages[rid_to_use]) {
-            this.chats = this.graphService.graph.messages[rid_to_use];
-            for (var i = 0; i < this.chats.length; i++) {
-                this.chats[i].time = new Date(parseInt(this.chats[i].time) * 1000).toISOString().slice(0, 19).replace('T', ' ');
-            }
-        }
-        else {
-            this.chats = [];
-        }
-    };
-    GroupPage.prototype.refresh = function (refresher, showLoading) {
-        var _this = this;
-        if (showLoading === void 0) { showLoading = true; }
-        if (showLoading) {
-            this.loading = true;
-        }
-        this.graphService.getGroupMessages(this.username_signature, this.requested_rid, this.rid)
-            .then(function () {
-            _this.loading = false;
-            if (refresher)
-                refresher.complete();
-            return _this.parseChats();
-        })
-            .then(function () {
-            setTimeout(function () { return _this.content && _this.content.scrollToBottom(1000); }, 500);
-        })
-            .then(function () {
-            return _this.getSiaFiles();
-        })
-            .catch(function (err) {
-            console.log(err);
-        });
-    };
-    GroupPage.prototype.presentModal = function () {
-        var modal = this.modalCtrl.create(__WEBPACK_IMPORTED_MODULE_10__siafiles_siafiles__["a" /* SiaFiles */], {
-            mode: 'modal',
-            logicalParent: this,
-            group: {
-                username_signature: this.username_signature,
-                rid: this.rid,
-                requester_rid: this.requester_rid,
-                requested_rid: this.requested_rid
-            }
-        });
-        modal.present();
-    };
-    GroupPage.prototype.import = function (relationship) {
-        return this.ahttp.post(this.settingsService.remoteSettings['baseUrl'] + '/sia-share-file?origin=' + encodeURIComponent(window.location.origin), relationship)
-            .subscribe(function (res) {
-            var files = res.json();
-        });
-    };
-    GroupPage.prototype.getSiaFiles = function () {
-        return this.ahttp.get(this.settingsService.remoteSettings['baseUrl'] + '/sia-files')
-            .subscribe(function (res) {
-            var files = res.json();
-        });
-    };
-    GroupPage.prototype.toggleExtraInfo = function (pending) {
-        var toast = this.toastCtrl.create({
-            message: pending ? "Not yet saved on the blockchain" : "Saved on the blockchain",
-            duration: 2000,
-            cssClass: pending ? 'redToast' : 'greenToast',
-            position: 'top'
-        });
-        toast.present();
-    };
-    GroupPage.prototype.viewProfile = function (item) {
-        var username_signatures = [this.bulletinSecretService.username_signature, item.relationship.identity.username_signature].sort(function (a, b) {
-            return a.toLowerCase().localeCompare(b.toLowerCase());
-        });
-        if (username_signatures[0] === username_signatures[1])
-            return;
-        var rid = foobar.bitcoin.crypto.sha256(username_signatures[0] + username_signatures[1]).toString('hex');
-        for (var i = 0; i < this.graphService.graph.friends.length; i++) {
-            var friend = this.graphService.graph.friends[i];
-            if (friend.rid === rid) {
-                item = friend;
-            }
-        }
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
-            item: item
-        });
-    };
-    GroupPage.prototype.send = function () {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Approve transaction');
-        alert.setSubTitle('You are about to spend 0.00 coins ( 0.00 fee). Everything is free for now.');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                var info = {
-                    relationship: {
-                        username_signature: _this.bulletinSecretService.generate_username_signature(),
-                        username: _this.bulletinSecretService.username
-                    },
-                    username_signature: _this.username_signature,
-                    rid: _this.rid,
-                    requester_rid: _this.requester_rid,
-                    requested_rid: _this.requested_rid
-                };
-                info.relationship[_this.settingsService.collections.GROUP_CHAT];
-                _this.walletService.get()
-                    .then(function () {
-                    return _this.transactionService.generateTransaction(info);
-                }).then(function (hash) {
-                    return new Promise(function (resolve, reject) {
-                        if (_this.wallet_mode) {
-                            return resolve();
-                        }
-                        _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
-                            hash: hash,
-                            username_signature: _this.bulletinSecretService.username_signature,
-                            input: _this.transactionService.transaction.inputs[0].id,
-                            id: _this.transactionService.transaction.id,
-                            txn: _this.transactionService.transaction
-                        })
-                            .subscribe(function (res) {
-                            //this.loadingModal2.dismiss();
-                            try {
-                                var data_1 = res.json();
-                                _this.transactionService.transaction.signatures = [data_1.signature];
-                                return resolve();
-                            }
-                            catch (err) {
-                                return reject(err);
-                                //this.loadingModal.dismiss().catch(() => {});
-                            }
-                        }, function (err) {
-                            return reject(err);
-                        });
-                    });
-                }).then(function (txn) {
-                    return _this.transactionService.sendTransaction();
-                }).then(function () {
-                    _this.groupChatText = '';
-                    _this.refresh(null);
-                })
-                    .catch(function (err) {
-                    console.log(err);
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Message error');
-                    alert.setSubTitle(err);
-                    alert.addButton('Ok');
-                    alert.present();
-                });
-            }
-        });
-        alert.present();
-    };
-    GroupPage.prototype.showChat = function () {
-        var item = { pageTitle: { title: "Chat" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    GroupPage.prototype.showFriendRequests = function () {
-        var item = { pageTitle: { title: "Friend Requests" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__list_list__["a" /* ListPage */], item);
-    };
-    GroupPage.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    GroupPage.prototype.hexToBytes = function (s) {
-        var arr = [];
-        for (var i = 0; i < s.length; i += 2) {
-            var c = s.substr(i, 2);
-            arr.push(parseInt(c, 16));
-        }
-        return String.fromCharCode.apply(null, arr);
-    };
-    GroupPage = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-group',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/group/group.html"*/'<ion-header>\n    <ion-navbar>\n      <button ion-button menuToggle color="{{color}}">\n        <ion-icon name="menu"></ion-icon>\n      </button>\n      <button ion-button color="{{chatColor}}" title="Create invite" (click)="showInvite()">\n        Invite&nbsp;<ion-icon name="contacts"></ion-icon>\n      </button>\n    </ion-navbar>\n  </ion-header>\n  <ion-content #content>\n    <ion-refresher (ionRefresh)="refresh($event)">\n      <ion-refresher-content></ion-refresher-content>\n    </ion-refresher>\n    <ion-spinner *ngIf="loading"></ion-spinner>\n      <ion-list>\n        <ion-item *ngFor="let item of chats" text-wrap (click)="toggleExtraInfo(item.pending)">\n          <strong><span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity.username || \'Anonymous\'}}</span> </strong><span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n          <h3 *ngIf="!item.relationship[settingsService.collections.GROUP_CHAT_FILE_NAME]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n          <h3 *ngIf="item.relationship[settingsService.collections.GROUP_CHAT_FILE_NAME]" (click)="receive(item.relationship)">{{item.relationship[settingsService.collections.GROUP_CHAT_FILE_NAME]}}</h3>\n          <button *ngIf="item.relationship[settingsService.collections.GROUP_CHAT_FILE_NAME]" ion-button (click)="import(item.relationship)">Import</button>\n          <ion-note color="primary">{{item.fee}} YADA</ion-note>\n          <ion-note *ngIf="item.pending" color="danger">Pending</ion-note>\n          <ion-note *ngIf="!item.pending" color="secondary">Saved</ion-note>\n          <hr />\n        </ion-item>\n      </ion-list>\n  </ion-content>\n  <ion-footer>\n    <ion-item>\n      <ion-label floating>Group text</ion-label>\n      <ion-input [(ngModel)]="groupChatText" (keyup.enter)="send()"></ion-input>\n    </ion-item>\n    <button ion-button (click)="send()">Send</button>\n    <button ion-button (click)="presentModal()">Share file</button>\n  </ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/group/group.html"*/,
-            queries: {
-                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content')
-            }
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
-            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
-            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_11__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["g" /* ModalController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */]])
-    ], GroupPage);
-    return GroupPage;
-}());
-
-//# sourceMappingURL=group.js.map
-
-/***/ }),
-
 /***/ 68:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ProfilePage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(42);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(61);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(225);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(21);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(108);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-var ProfilePage = /** @class */ (function () {
-    function ProfilePage(navCtrl, navParams, storage, walletService, graphService, bulletinSecretService, ahttp, loadingCtrl, settingsService, alertCtrl, transactionService, toastCtrl, events) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.storage = storage;
-        this.walletService = walletService;
-        this.graphService = graphService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.ahttp = ahttp;
-        this.loadingCtrl = loadingCtrl;
-        this.settingsService = settingsService;
-        this.alertCtrl = alertCtrl;
-        this.transactionService = transactionService;
-        this.toastCtrl = toastCtrl;
-        this.events = events;
-        this.subgroups = [];
-        this.identity = this.navParams.get('identity');
-        var rids = this.graphService.generateRids(this.identity);
-        this.rid = rids.rid;
-        this.requested_rid = rids.requested_rid;
-        this.requester_rid = rids.requester_rid;
-        if (this.settingsService.remoteSettings.restricted) {
-            this.busy = true;
-            this.graphService.identityToSkylink(this.identity)
-                .then(function (skylink) {
-                _this.identitySkylink = skylink;
-                _this.busy = false;
-            });
-        }
-        else {
-            this.identityJson = JSON.stringify(this.graphService.toIdentity(this.identity), null, 4);
-        }
-        this.isAdded = this.graphService.isAdded(this.identity);
-        this.group = this.graphService.isGroup(this.identity);
-    }
-    ProfilePage_1 = ProfilePage;
-    ProfilePage.prototype.invite = function () {
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Invite');
-        alert.setSubTitle('Select a friend to invite.');
-        alert.addButton('Confirm');
-        alert.addInput({
-            name: 'radio1',
-            type: 'radio',
-            label: 'Radio 1',
-            value: 'value1',
-            checked: true
-        });
-        this.graphService.graph.friends.map(function (friend) {
-            return friend;
-        });
-        alert.present();
-    };
-    ProfilePage.prototype.addFriend = function () {
-        var _this = this;
-        var info;
-        var buttons = [];
-        buttons.push({
-            text: 'Add',
-            handler: function (data) {
-                return _this.graphService.addFriend(_this.identity)
-                    .then(function (txn) {
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Contact Request Sent');
-                    alert.setSubTitle('Your Friend Request has been sent successfully.');
-                    alert.addButton('Ok');
-                    alert.present();
-                }).catch(function (err) {
-                    console.log(err);
-                });
-            }
-        });
-        var alert = this.alertCtrl.create({
-            buttons: buttons
-        });
-        alert.setTitle('Add contact');
-        alert.setSubTitle('Do you want to add ' + this.identity.username + '?');
-        alert.present();
-    };
-    ProfilePage.prototype.createSubGroup = function () {
-        var _this = this;
-        this.graphService.getInfo()
-            .then(function () {
-            return new Promise(function (resolve, reject) {
-                var alert = _this.alertCtrl.create({
-                    title: 'Sub-group name',
-                    inputs: [
-                        {
-                            name: 'groupname',
-                            placeholder: 'Sub-group name'
-                        }
-                    ],
-                    buttons: [
-                        {
-                            text: 'Save',
-                            handler: function (data) {
-                                var toast = _this.toastCtrl.create({
-                                    message: 'Sub-group created',
-                                    duration: 2000
-                                });
-                                toast.present();
-                                resolve(data.groupname);
-                            }
-                        }
-                    ]
-                });
-                alert.present();
-            });
-        })
-            .then(function (groupName) {
-            return _this.graphService.createGroup(groupName, _this.identity);
-        })
-            .then(function (hash) {
-            if (_this.settingsService.remoteSettings['walletUrl']) {
-                return _this.graphService.getInfo();
-            }
-        });
-    };
-    ProfilePage.prototype.message = function () {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__chat_chat__["a" /* ChatPage */], {
-            identity: this.identity
-        });
-    };
-    ProfilePage.prototype.openSubGroup = function (subGroup) {
-        this.navCtrl.push(ProfilePage_1, {
-            identity: subGroup.relationship,
-            group: true
-        });
-    };
-    ProfilePage.prototype.compose = function () {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_11__mail_compose__["a" /* ComposePage */], {
-            item: {
-                recipient: this.identity
-            }
-        });
-    };
-    ProfilePage.prototype.showFriendRequests = function () {
-        var item = { pageTitle: { title: "Friend Requests" } };
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_7__list_list__["a" /* ListPage */], item);
-    };
-    ProfilePage.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    var ProfilePage_1;
-    ProfilePage = ProfilePage_1 = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-row>\n    <ion-col text-center>\n      <ion-item>\n        <h1>{{identity.username}}</h1></ion-item>\n    </ion-col>\n    <ion-col>\n      <button ion-button large secondary (click)="addFriend()" *ngIf="isAdded === false && group !== true">\n        Add contact&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="createSubGroup()" *ngIf="isAdded === true && group === true">\n        Create sub-group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="compose()" *ngIf="isAdded === true">\n        Compose message&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && !group">\n        Chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && group === true">\n        Group chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <a href="https://centeridentity.com/sia-download?skylink={{identity.skylink}}" *ngIf="identity.skylink" target="_blank">\n        <button ion-button large secondary>\n          Download&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </a>\n    </ion-col>\n  </ion-row>\n  <h4>Manage access</h4>\n  <ion-row>\n    <ion-list>\n      <ion-item>\n\n      </ion-item>\n    </ion-list>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted">\n    <h4>Public identity <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item>\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows="1"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <ion-row *ngIf="!settingsService.remoteSettings.restricted">\n    <h4>Public identity</h4>\n    <ion-item>\n      <ion-textarea type="text" [value]="identityJson" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <h4>Sub groups</h4>\n  <ion-row>\n    <ion-list>\n      <ng-container *ngFor="let group of graphService.graph.groups">\n        <ion-item *ngIf="group.relationship.parent && group.relationship.parent.username_signature === identity.username_signature" (click)="openSubGroup(group)">\n            {{group.relationship.username}}\n        </ion-item>\n      </ng-container>\n    </ion-list>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
-            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
-            __WEBPACK_IMPORTED_MODULE_10__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
-    ], ProfilePage);
-    return ProfilePage;
-}());
-
-//# sourceMappingURL=profile.js.map
-
-/***/ }),
-
-/***/ 69:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -8407,10 +7811,10 @@ var ProfilePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(21);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(18);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(26);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -8466,12 +7870,12 @@ var WebSocketService = /** @class */ (function () {
         switch (msg.method) {
             case 'connect_confirm':
                 for (var i = 0; i < this.graphService.graph.groups.length; i++) {
-                    var group = this.graphService.graph.groups[i];
-                    this.joinGroup(group.relationship);
+                    var group = this.graphService.getIdentityFromTxn(this.graphService.graph.groups[i], this.settingsService.collections.GROUP);
+                    this.joinGroup(group);
                 }
                 break;
             case 'newtxn':
-                var collection = this.getNewTxnCollection(msg);
+                var collection = this.graphService.getNewTxnCollection(msg.params.transaction);
                 if (collection) {
                     switch (collection) {
                         case this.settingsService.collections.CONTACT:
@@ -8492,7 +7896,7 @@ var WebSocketService = /** @class */ (function () {
                         case this.settingsService.collections.CHAT:
                             this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
                                 .then(function (item) {
-                                _this.settingsService.menu === 'chat' && _this.events.publish('newchat');
+                                _this.events.publish('newchat');
                                 return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.CHAT);
                             });
                             break;
@@ -8507,7 +7911,7 @@ var WebSocketService = /** @class */ (function () {
                                     _this.graphService.graph.messages[msg.params.transaction.requested_rid] = [];
                                 }
                                 _this.graphService.graph.messages[msg.params.transaction.requested_rid].push(item[msg.params.transaction.requested_rid][0]);
-                                _this.settingsService.menu === 'community' && _this.events.publish('newchat');
+                                _this.events.publish('newchat');
                                 return _this.graphService.addNotification(item[msg.params.transaction.requested_rid][0], _this.settingsService.collections.GROUP_CHAT);
                             });
                             break;
@@ -8612,35 +8016,6 @@ var WebSocketService = /** @class */ (function () {
                 break;
         }
     };
-    WebSocketService.prototype.getNewTxnCollection = function (msg) {
-        for (var i = 0; i < Object.keys(this.settingsService.collections).length; i++) {
-            var collection = this.settingsService.collections[Object.keys(this.settingsService.collections)[i]];
-            var rid = this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, collection);
-            if (msg.params.transaction.rid === rid ||
-                msg.params.transaction.requester_rid === rid ||
-                msg.params.transaction.requested_rid === rid) {
-                return collection;
-            }
-        }
-        var collections = [
-            this.settingsService.collections.GROUP_CHAT,
-            this.settingsService.collections.GROUP_MAIL,
-            this.settingsService.collections.GROUP_CALENDAR
-        ];
-        for (var j = 0; j < Object.keys(this.graphService.groups_indexed).length; j++) {
-            var group = this.graphService.groups_indexed[Object.keys(this.graphService.groups_indexed)[j]];
-            for (var i = 0; i < collections.length; i++) {
-                var collection = collections[i];
-                var rid = this.graphService.generateRid(group.relationship.username_signature, group.relationship.username_signature, collection);
-                if (msg.params.transaction.rid === rid ||
-                    msg.params.transaction.requester_rid === rid ||
-                    msg.params.transaction.requested_rid === rid) {
-                    return collection;
-                }
-            }
-        }
-        return false;
-    };
     WebSocketService.prototype.connect = function () {
         this.websocket.send(JSON.stringify({
             id: '',
@@ -8711,7 +8086,7 @@ var WebSocketService = /** @class */ (function () {
         var myRids = this.graphService.generateRids(this.bulletinSecretService.identity);
         var recipient;
         if (this.graphService.friends_indexed[rid]) {
-            recipient = this.graphService.friends_indexed[rid].relationship.identity;
+            recipient = this.graphService.getIdentityFromTxn(this.graphService.friends_indexed[rid], this.settingsService.collections.CONTACT);
         }
         if (myRids.rid == rid) {
             recipient = this.bulletinSecretService.identity;
@@ -8762,6 +8137,221 @@ var WebSocketService = /** @class */ (function () {
 }());
 
 //# sourceMappingURL=websocket.service.js.map
+
+/***/ }),
+
+/***/ 81:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ProfilePage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(67);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(108);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+var ProfilePage = /** @class */ (function () {
+    function ProfilePage(navCtrl, navParams, storage, walletService, graphService, bulletinSecretService, ahttp, loadingCtrl, settingsService, alertCtrl, transactionService, toastCtrl, events) {
+        var _this = this;
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.storage = storage;
+        this.walletService = walletService;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.ahttp = ahttp;
+        this.loadingCtrl = loadingCtrl;
+        this.settingsService = settingsService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.toastCtrl = toastCtrl;
+        this.events = events;
+        this.subgroups = [];
+        this.item = this.navParams.get('item');
+        this.identity = this.navParams.get('identity');
+        var rids = this.graphService.generateRids(this.identity);
+        this.rid = rids.rid;
+        this.requested_rid = rids.requested_rid;
+        this.requester_rid = rids.requester_rid;
+        if (this.settingsService.remoteSettings.restricted) {
+            this.busy = true;
+            this.graphService.identityToSkylink(this.identity)
+                .then(function (skylink) {
+                _this.identitySkylink = skylink;
+                _this.busy = false;
+            });
+        }
+        else {
+            this.identityJson = JSON.stringify(this.graphService.toIdentity(this.identity), null, 4);
+        }
+        this.isAdded = this.graphService.isAdded(this.identity);
+        this.group = this.graphService.isGroup(this.identity);
+        this.isMe = this.graphService.isMe(this.identity);
+    }
+    ProfilePage_1 = ProfilePage;
+    ProfilePage.prototype.invite = function () {
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Invite');
+        alert.setSubTitle('Select a friend to invite.');
+        alert.addButton('Confirm');
+        alert.addInput({
+            name: 'radio1',
+            type: 'radio',
+            label: 'Radio 1',
+            value: 'value1',
+            checked: true
+        });
+        this.graphService.graph.friends.map(function (friend) {
+            return friend;
+        });
+        alert.present();
+    };
+    ProfilePage.prototype.addFriend = function () {
+        var _this = this;
+        var info;
+        var buttons = [];
+        buttons.push({
+            text: 'Add',
+            handler: function (data) {
+                return _this.graphService.addFriend(_this.identity)
+                    .then(function (txn) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Contact Request Sent');
+                    alert.setSubTitle('Your Friend Request has been sent successfully.');
+                    alert.addButton('Ok');
+                    alert.present();
+                }).catch(function (err) {
+                    console.log(err);
+                });
+            }
+        });
+        var alert = this.alertCtrl.create({
+            buttons: buttons
+        });
+        alert.setTitle('Add contact');
+        alert.setSubTitle('Do you want to add ' + this.identity.username + '?');
+        alert.present();
+    };
+    ProfilePage.prototype.createSubGroup = function () {
+        var _this = this;
+        this.graphService.getInfo()
+            .then(function () {
+            return new Promise(function (resolve, reject) {
+                var alert = _this.alertCtrl.create({
+                    title: 'Sub-group name',
+                    inputs: [
+                        {
+                            name: 'groupname',
+                            placeholder: 'Sub-group name'
+                        }
+                    ],
+                    buttons: [
+                        {
+                            text: 'Save',
+                            handler: function (data) {
+                                var toast = _this.toastCtrl.create({
+                                    message: 'Sub-group created',
+                                    duration: 2000
+                                });
+                                toast.present();
+                                resolve(data.groupname);
+                            }
+                        }
+                    ]
+                });
+                alert.present();
+            });
+        })
+            .then(function (groupName) {
+            return _this.graphService.createGroup(groupName, _this.item);
+        })
+            .then(function (hash) {
+            if (_this.settingsService.remoteSettings['walletUrl']) {
+                return _this.graphService.getInfo();
+            }
+        });
+    };
+    ProfilePage.prototype.message = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_8__chat_chat__["a" /* ChatPage */], {
+            identity: this.identity
+        });
+    };
+    ProfilePage.prototype.openSubGroup = function (subGroup) {
+        this.navCtrl.push(ProfilePage_1, {
+            identity: subGroup.relationship[this.settingsService.collections.GROUP],
+            group: true
+        });
+    };
+    ProfilePage.prototype.compose = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_11__mail_compose__["a" /* ComposePage */], {
+            item: {
+                recipient: this.identity
+            }
+        });
+    };
+    ProfilePage.prototype.showFriendRequests = function () {
+        var item = { pageTitle: { title: "Friend Requests" } };
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_7__list_list__["a" /* ListPage */], item);
+    };
+    ProfilePage.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    var ProfilePage_1;
+    ProfilePage = ProfilePage_1 = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'page-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-row>\n    <ion-col text-center>\n      <ion-item>\n        <h1>{{identity.username}}</h1></ion-item>\n    </ion-col>\n    <ion-col>\n      <button ion-button large secondary (click)="addFriend()" *ngIf="isAdded === false && group !== true && isMe === false">\n        Add contact&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="createSubGroup()" *ngIf="isAdded === true && group === true && !identity.parent && identity.public_key === bulletinSecretService.identity.public_key">\n        Create sub-group&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="compose()" *ngIf="isAdded === true">\n        Compose message&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && !group">\n        Chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <button ion-button large secondary (click)="message()" *ngIf="isAdded === true && group === true">\n        Group chat&nbsp;<ion-icon name="create"></ion-icon>\n      </button>\n      <a href="https://centeridentity.com/sia-download?skylink={{identity.skylink}}" *ngIf="identity.skylink" target="_blank">\n        <button ion-button large secondary>\n          Download&nbsp;<ion-icon name="create"></ion-icon>\n        </button>\n      </a>\n    </ion-col>\n  </ion-row>\n  <h4>Manage access</h4>\n  <ion-row>\n    <ion-list>\n      <ion-item>\n\n      </ion-item>\n    </ion-list>\n  </ion-row>\n  <ion-row *ngIf="settingsService.remoteSettings.restricted">\n    <h4>Public identity <ion-spinner *ngIf="busy"></ion-spinner></h4>\n    <ion-item>\n      <ion-textarea type="text" [(ngModel)]="identitySkylink" autoGrow="true" rows="1"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <ion-row *ngIf="!settingsService.remoteSettings.restricted">\n    <h4>Public identity</h4>\n    <ion-item>\n      <ion-textarea type="text" [value]="identityJson" autoGrow="true" rows="5"></ion-textarea>\n    </ion-item>\n  </ion-row>\n  <h4 *ngIf="identity.collection === settingsService.collections.GROUP">Sub groups</h4>\n  <ion-row>\n    <ion-list>\n      <ng-container *ngFor="let group of graphService.graph.groups">\n        <ion-item *ngIf="group.relationship[settingsService.collections.GROUP].parent && group.relationship[settingsService.collections.GROUP].parent.username_signature === identity.username_signature" (click)="openSubGroup(group)">\n            {{group.relationship[settingsService.collections.GROUP].username}}\n        </ion-item>\n      </ng-container>\n    </ion-list>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/profile/profile.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__ionic_storage__["b" /* Storage */],
+            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_9__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["f" /* LoadingController */],
+            __WEBPACK_IMPORTED_MODULE_10__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["l" /* ToastController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
+    ], ProfilePage);
+    return ProfilePage;
+}());
+
+//# sourceMappingURL=profile.js.map
 
 /***/ })
 
