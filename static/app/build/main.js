@@ -7132,6 +7132,7 @@ var ListPage = /** @class */ (function () {
                     _this.loading = false;
                 }
                 else if (_this.pageTitle == 'Groups') {
+                    _this.subitems = {};
                     for (var i = 0; i < _this.graphService.graph.groups.length; i++) {
                         var item = _this.graphService.graph.groups[i];
                         var parentIdentity = _this.graphService.getParentIdentityFromTxn(item, _this.settingsService.collections.GROUP);
