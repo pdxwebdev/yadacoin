@@ -48,15 +48,15 @@ class Mongo(object):
         __txn_index_rid = IndexModel([
           ("index", ASCENDING),
           ("transactions.rid", ASCENDING)
-        ], name="__txn_rid")
+        ], name="__txn_index_rid")
         __txn_index_requested_rid = IndexModel([
           ("index", ASCENDING),
           ("transactions.requested_rid", ASCENDING)
-        ], name="__txn_requested_rid")
+        ], name="__txn_index_requested_rid")
         __txn_index_requester_rid = IndexModel([
           ("index", ASCENDING),
           ("transactions.requester_rid", ASCENDING)
-        ], name="__txn_requester_rid")
+        ], name="__txn_index_requester_rid")
 
         try:
             self.db.blocks.create_indexes([
