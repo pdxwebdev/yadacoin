@@ -4910,10 +4910,12 @@ var Settings = /** @class */ (function () {
         });
         alert.present();
     };
-    Settings.prototype.importKey = function () {
+    Settings.prototype.importKey = function (wif) {
         var _this = this;
-        var wif;
+        if (wif === void 0) { wif = null; }
         return new Promise(function (resolve, reject) {
+            if (wif)
+                return resolve(wif);
             var alert = _this.alertCtrl.create({
                 title: 'Set WIF',
                 inputs: [
@@ -5368,7 +5370,7 @@ var Settings = /** @class */ (function () {
             .then(function (identity) {
             _this.CIBusy = false;
             _this.importedKey = identity.wif;
-            return _this.importKey();
+            return _this.importKey(identity.wif);
         });
     };
     Settings.prototype.saveKeyUsingCenterIdentity = function () {
