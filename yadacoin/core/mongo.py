@@ -57,6 +57,7 @@ class Mongo(object):
           ("index", ASCENDING),
           ("transactions.requester_rid", ASCENDING)
         ], name="__txn_index_requester_rid")
+        __txn_time = IndexModel([("transactions.time", DESCENDING)], name="__txn_time")
 
         try:
             self.db.blocks.create_indexes([
@@ -79,7 +80,8 @@ class Mongo(object):
                 __txn_requester_rid,
                 __txn_index_rid,
                 __txn_index_requested_rid,
-                __txn_index_requester_rid
+                __txn_index_requester_rid,
+                __txn_time
             ])
         except:
             pass
@@ -127,11 +129,30 @@ class Mongo(object):
         __rid = IndexModel([("rid", ASCENDING)], name="__rid")
         __requested_rid = IndexModel([("requested_rid", ASCENDING)], name="__requested_rid")
         __requester_rid = IndexModel([("requester_rid", ASCENDING)], name="__requester_rid")
+        __time = IndexModel([("time", DESCENDING)], name="__time")
         try:
             self.db.miner_transactions.create_indexes([
-              __rid,
-              __requested_rid,
-              __requester_rid
+                __rid,
+                __requested_rid,
+                __requester_rid,
+                __time
+            ])
+        except:
+            pass
+
+        __time = IndexModel([("time", ASCENDING)], name="__time")
+        __rid = IndexModel([("rid", ASCENDING)], name="__rid")
+        __username_signature = IndexModel([("username_signature", ASCENDING)], name="__username_signature")
+        __rid_username_signature = IndexModel([
+            ("rid", ASCENDING),
+            ("username_signature", ASCENDING)
+        ], name="__rid_username_signature")
+        try:
+            self.db.user_collection_last_activity.create_indexes([
+                __time,
+                __rid,
+                __username_signature,
+                __rid_username_signature
             ])
         except:
             pass

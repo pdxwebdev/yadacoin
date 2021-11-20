@@ -944,7 +944,6 @@ var GraphService = /** @class */ (function () {
         this.getMyPagesError = false;
         this.usernames = {};
         this.username_signature = '';
-        this.groups_indexed = {};
         this.stored_secrets = {};
         this.stored_secrets_by_rid = {};
         this.accepted_friend_requests = [];
@@ -957,10 +956,13 @@ var GraphService = /** @class */ (function () {
         this.new_sign_ins_counts = {};
         this.friend_request_count = this.friend_request_count || 0;
         this.friends_indexed = {};
+        this.groups_indexed = {};
+        this.counts = {};
+        this.getMessagesForAllFriendsAndGroupsCalled = false;
     }
     GraphService.prototype.resetGraph = function () {
         this.graph = {
-            messages: [],
+            messages: {},
             friends: [],
             groups: [],
             files: [],
@@ -970,6 +972,7 @@ var GraphService = /** @class */ (function () {
         this.groups_indexed = {};
         this.friends_indexed = {};
         this.notifications = {};
+        this.getMessagesForAllFriendsAndGroupsCalled = false;
         for (var i = 0; i < Object.keys(this.settingsService.collections).length; i++) {
             var collectionKey = Object.keys(this.settingsService.collections)[i];
             if (!this.notifications[this.settingsService.collections[collectionKey]])
@@ -992,11 +995,27 @@ var GraphService = /** @class */ (function () {
             return _this.getSharedSecrets();
         });
     };
-    GraphService.prototype.endpointRequest = function (endpoint, ids, rids, post_data) {
+    GraphService.prototype.getMessagesForAllFriendsAndGroups = function () {
+        if (this.getMessagesForAllFriendsAndGroupsCalled)
+            return;
+        this.getMessagesForAllFriendsAndGroupsCalled = true;
+        var promises = [];
+        for (var i = 0; i < this.graph.friends.length; i++) {
+            promises.push(this.getMessages([this.graph.friends[i].rid], this.settingsService.collections.CHAT, false));
+        }
+        for (var i = 0; i < this.graph.groups.length; i++) {
+            var group = this.getIdentityFromTxn(this.graph.groups[i]);
+            var rid = this.generateRid(group.username_signature, group.username_signature, this.settingsService.collections.GROUP_CHAT);
+            promises.push(this.getMessages([rid], this.settingsService.collections.GROUP_CHAT, false));
+        }
+        return Promise.all(promises);
+    };
+    GraphService.prototype.endpointRequest = function (endpoint, ids, rids, post_data, updateLastCollectionTime) {
         var _this = this;
         if (ids === void 0) { ids = null; }
         if (rids === void 0) { rids = null; }
         if (post_data === void 0) { post_data = null; }
+        if (updateLastCollectionTime === void 0) { updateLastCollectionTime = false; }
         return new Promise(function (resolve, reject) {
             if (endpoint.substr(0, 1) !== '/') {
                 endpoint = '/' + endpoint;
@@ -1006,10 +1025,10 @@ var GraphService = /** @class */ (function () {
             var options = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
             var promise = null;
             if (ids) {
-                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { ids: ids }, options);
+                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { ids: ids, update_last_collection_time: updateLastCollectionTime }, options);
             }
             else if (rids) {
-                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { rids: rids }, options);
+                promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), { rids: rids, update_last_collection_time: updateLastCollectionTime }, options);
             }
             else if (post_data) {
                 promise = _this.ahttp.post(_this.settingsService.remoteSettings['graphUrl'] + endpoint + '?origin=' + encodeURIComponent(window.location.origin) + '&username_signature=' + encodeURIComponent(_this.bulletinSecretService.username_signature), post_data, options);
@@ -1229,21 +1248,22 @@ var GraphService = /** @class */ (function () {
             rid: item.rid
         };
     };
-    GraphService.prototype.getMessages = function (rid, collection) {
+    GraphService.prototype.getMessages = function (rid, collection, updateLastCollectionTime) {
         var _this = this;
         if (collection === void 0) { collection = this.settingsService.collections.CHAT; }
+        if (updateLastCollectionTime === void 0) { updateLastCollectionTime = false; }
         if (typeof rid === 'string')
             rid = [rid];
         //get messages for a specific friend
-        return this.endpointRequest('get-graph-collection', null, rid)
+        return this.endpointRequest('get-graph-collection', null, rid, null, updateLastCollectionTime)
             .then(function (data) {
-            return _this.parseMessages(data.collection, 'new_messages_counts', 'new_messages_count', rid, collection, 'last_message_height');
+            return _this.parseMessages(data.collection, data.new_count, 'new_messages_count', rid, collection, 'last_message_height');
         })
             .then(function (chats) {
             return new Promise(function (resolve, reject) {
-                _this.graph.messages = chats;
+                _this.graph.messages[rid] = chats;
                 _this.getMessagesError = false;
-                return resolve(chats[rid]);
+                return resolve(chats);
             });
         });
     };
@@ -1856,18 +1876,16 @@ var GraphService = /** @class */ (function () {
             return resolve(chats);
         });
     };
-    GraphService.prototype.parseMessages = function (messages, graphCounts, graphCount, rid, messageType, messageHeightType) {
+    GraphService.prototype.parseMessages = function (messages, newCount, graphCount, rid, messageType, messageHeightType) {
         var _this = this;
         if (rid === void 0) { rid = null; }
         if (messageType === void 0) { messageType = null; }
         if (messageHeightType === void 0) { messageHeightType = null; }
         this[graphCount] = 0;
         return new Promise(function (resolve, reject) {
-            var chats = {};
+            var chats = [];
             dance: for (var i = 0; i < messages.length; i++) {
                 var message = messages[i];
-                if (!rid && chats[message.rid])
-                    continue;
                 if (rid && message.rid !== rid && rid.indexOf(message.rid) === -1 && rid.indexOf(message.requested_rid) === -1)
                     continue;
                 if (!message.rid && !message.requested_rid)
@@ -1875,25 +1893,27 @@ var GraphService = /** @class */ (function () {
                 if (message.dh_public_key)
                     continue;
                 if (_this.groups_indexed[message.requested_rid]) {
+                    var group = _this.getIdentityFromTxn(_this.groups_indexed[message.requested_rid], _this.settingsService.collections.GROUP);
+                    if (i === 0)
+                        _this.counts[group.username_signature] = newCount;
                     try {
-                        var group = _this.getIdentityFromTxn(_this.groups_indexed[message.requested_rid], _this.settingsService.collections.GROUP);
+                        _this.counts[group.username_signature] = typeof _this.counts[group.username_signature] === 'number' && _this.counts[group.username_signature] > 0 ? _this.counts[group.username_signature] : newCount;
                         var decrypted = _this.shared_decrypt(group.username_signature, message.relationship);
                     }
                     catch (error) {
+                        _this.counts[group.username_signature]--;
                         continue;
                     }
                     try {
                         var messageJson = JSON.parse(decrypted);
                     }
                     catch (err) {
+                        _this.counts[group.username_signature]--;
                         continue;
                     }
                     if (messageJson[messageType]) {
                         message.relationship = messageJson;
                         messages[message.requested_rid] = message;
-                        if (!chats[message.requested_rid]) {
-                            chats[message.requested_rid] = [];
-                        }
                         try {
                             message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
                             message.relationship.isInvite = true;
@@ -1901,11 +1921,14 @@ var GraphService = /** @class */ (function () {
                         catch (err) {
                             //not an invite, do nothing
                         }
-                        chats[message.requested_rid].push(message);
+                        chats.push(message);
                     }
                     continue dance;
                 }
                 else {
+                    var friend = _this.getIdentityFromMessageTransaction(message);
+                    if (i === 0)
+                        _this.counts[friend.username_signature] = newCount;
                     if (!_this.stored_secrets[message.rid])
                         continue;
                     var shared_secret = _this.stored_secrets[message.rid][j];
@@ -1914,15 +1937,18 @@ var GraphService = /** @class */ (function () {
                     for (var j = 0; j < _this.stored_secrets[message.rid].length; j++) {
                         var shared_secret = _this.stored_secrets[message.rid][j];
                         try {
+                            _this.counts[friend.username_signature] = typeof _this.counts[friend.username_signature] === 'number' && _this.counts[friend.username_signature] > 0 ? _this.counts[friend.username_signature] : newCount;
                             var decrypted = _this.shared_decrypt(shared_secret.shared_secret, message.relationship);
                         }
                         catch (error) {
+                            friend && _this.counts[friend.username_signature]--;
                             continue;
                         }
                         try {
                             var messageJson = JSON.parse(decrypted);
                         }
                         catch (err) {
+                            friend && _this.counts[friend.username_signature]--;
                             continue;
                         }
                         if (messageJson[messageType]) {
@@ -1931,9 +1957,6 @@ var GraphService = /** @class */ (function () {
                             message.dh_public_key = shared_secret.dh_public_key;
                             message.dh_private_key = shared_secret.dh_private_key;
                             messages[message.rid] = message;
-                            if (!chats[message.rid]) {
-                                chats[message.rid] = [];
-                            }
                             try {
                                 message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
                                 message.relationship.isInvite = true;
@@ -1941,7 +1964,7 @@ var GraphService = /** @class */ (function () {
                             catch (err) {
                                 //not an invite, do nothing
                             }
-                            chats[message.rid].push(message);
+                            chats.push(message);
                         }
                         continue dance;
                     }
@@ -3472,7 +3495,7 @@ var ChatPage = /** @class */ (function () {
         else {
             collection = this.settingsService.collections.CHAT;
         }
-        return this.graphService.getMessages([this.rid, this.requested_rid], collection)
+        return this.graphService.getMessages([this.graphService.groups_indexed[this.requested_rid] ? this.requested_rid : this.rid], collection, true)
             .then(function () {
             _this.loading = false;
             if (refresher)
@@ -6819,11 +6842,13 @@ var MyApp = /** @class */ (function () {
             ];
         }
         else if (this.settingsService.menu === 'chat') {
+            this.graphService.getMessagesForAllFriendsAndGroups();
             this.pages = [
                 { title: 'Messages', label: 'Chat', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
             ];
         }
         else if (this.settingsService.menu === 'community') {
+            this.graphService.getMessagesForAllFriendsAndGroups();
             this.pages = [
                 { title: 'Community', label: 'Community', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
             ];
@@ -6934,7 +6959,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_MAIL]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MAIL].length + graphService.notifications[settingsService.collections.GROUP_MAIL].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatbubbles"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_CALENDAR]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CALENDAR].length + graphService.notifications[settingsService.collections.GROUP_CALENDAR].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <!-- <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button> -->\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\']?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[\'notifications\'].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col col-lg-10 col-md-10 col-sm-10 style="padding-right: 7px; margin-top: 4px;">\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="graphService.graph.friend_requests">{{graphService.graph.friend_requests.length}}</ion-note>\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <ng-container *ngIf="p.kwargs && p.kwargs.identity && p.kwargs.subitems && p.kwargs.subitems[p.kwargs.identity.username_signature]">\n              <button\n                menuClose\n                ion-item\n                (click)="openPage(subitem)"\n                class="subnavbutton"\n                *ngFor="let subitem of p.kwargs.subitems[p.kwargs.identity.username_signature]"\n              >\n                &nbsp;&nbsp;&nbsp;&nbsp;{{subitem.kwargs.identity.username}}\n              </button>\n            </ng-container>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_MAIL]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MAIL].length + graphService.notifications[settingsService.collections.GROUP_MAIL].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatbubbles"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_CALENDAR]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CALENDAR].length + graphService.notifications[settingsService.collections.GROUP_CALENDAR].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <!-- <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button> -->\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\']?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[\'notifications\'].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col col-lg-10 col-md-10 col-sm-10 style="padding-right: 7px; margin-top: 4px;">\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="graphService.graph.friend_requests">{{graphService.graph.friend_requests.length}}</ion-note>\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="p.kwargs && p.kwargs.identity && graphService.counts[p.kwargs.identity.username_signature] && graphService.counts[p.kwargs.identity.username_signature] > 0">{{graphService.counts[p.kwargs.identity.username_signature]}}</ion-note>\n            </button>\n            <ng-container *ngIf="p.kwargs && p.kwargs.identity && p.kwargs.subitems && p.kwargs.subitems[p.kwargs.identity.username_signature]">\n              <button\n                menuClose\n                ion-item\n                (click)="openPage(subitem)"\n                class="subnavbutton"\n                *ngFor="let subitem of p.kwargs.subitems[p.kwargs.identity.username_signature]"\n              >\n                &nbsp;&nbsp;&nbsp;&nbsp;{{subitem.kwargs.identity.username}} <ion-note *ngIf="graphService.counts[subitem.kwargs.identity.username_signature] && graphService.counts[subitem.kwargs.identity.username_signature] > 0">{{graphService.counts[subitem.kwargs.identity.username_signature]}}</ion-note>\n              </button>\n            </ng-container>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
@@ -7914,6 +7939,8 @@ var WebSocketService = /** @class */ (function () {
                 }
                 break;
             case 'newtxn':
+                if (msg.params.transaction.public_key === this.bulletinSecretService.identity.public_key)
+                    return;
                 var collection = this.graphService.getNewTxnCollection(msg.params.transaction);
                 if (collection) {
                     switch (collection) {

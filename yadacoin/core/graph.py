@@ -11,7 +11,7 @@ from yadacoin.core.crypt import Crypt
 
 class Graph(object):
 
-    def __init__(self, config, mongo, username_signature, ids, rids, key_or_wif=None):
+    async def async_init(self, config, mongo, username_signature, ids, rids, key_or_wif=None, update_last_collection_time=False):
         self.config = config
         self.mongo = mongo
         self.app_log = logging.getLogger('tornado.application')
@@ -35,11 +35,44 @@ class Graph(object):
         rid = hashlib.sha256((str(username_signatures[0]) + str(username_signatures[1])).encode('utf-8')).digest().hex()
         self.rid = rid
         self.username = self.config.username
+        self.new_count = 0
+        self.last_collection_time = 0
+        self.update_last_collection_time = update_last_collection_time
 
         if key_or_wif in [config.private_key, config.wif]:
             self.wallet_mode = True
         else:
             self.wallet_mode = False
+        return self
+
+    async def update_collection_last_activity(self):
+
+        last_collection_time = await self.config.mongo.async_db.user_collection_last_activity.find_one({
+            'username_signature': self.username_signature,
+            'rid': {
+                '$in': self.rids
+            }
+        }, sort=[('time', 1)])
+
+        self.last_collection_time = last_collection_time['time'] if last_collection_time else 0
+
+        if not self.update_last_collection_time:
+            return
+
+        for rid in self.rids:
+            await self.config.mongo.async_db.user_collection_last_activity.update_one({
+                    'username_signature': self.username_signature,
+                    'rid': rid
+                },
+                {
+                    '$set': {
+                        'username_signature': self.username_signature,
+                        'rid': rid,
+                        'time': time.time()
+                    }
+                },
+                upsert=True
+            )
 
     def get_lookup_rids(self):
         lookup_rids = [self.rid,]
@@ -275,8 +308,16 @@ class Graph(object):
         self.reacts = out
 
     async def get_collection(self):
-        self.collection = [x async for x in GU().get_collection(self.rids)]
-        res = await self.config.mongo.async_db.miner_transactions.find({
+        if not self.rids:
+            return
+        await self.update_collection_last_activity()
+        self.collection = []
+        async for x in GU().get_collection(self.rids):
+            if int(x['time']) > self.last_collection_time:
+                x['new'] = True
+                self.new_count += 1
+            self.collection.append(x)
+        res = self.config.mongo.async_db.miner_transactions.find({
             '$or': [
                 {'rid': {'$in': self.rids}},
                 {'requester_rid': {'$in': self.rids}},
@@ -284,8 +325,11 @@ class Graph(object):
             ]
         }, {
             '_id': 0
-        }).to_list(length=1000)
-        for txn in res:
+        }).limit(1000)
+        async for txn in res:
+            if int(txn['time']) > self.last_collection_time:
+                txn['new'] = True
+                self.new_count += 1
             txn['pending'] = True
             self.collection.append(txn)
 
@@ -314,7 +358,8 @@ class Graph(object):
             'reacts': self.reacts,
             'comments': self.comments,
             'comment_reacts': self.comment_reacts,
-            'collection': self.collection
+            'collection': self.collection,
+            'new_count': self.new_count
         }
 
     def to_json(self):

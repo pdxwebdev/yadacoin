@@ -50,16 +50,18 @@ class GraphConfigHandler(BaseHandler):
 
 @jwtauthwallet
 class BaseGraphHandler(BaseHandler):
-    def get_base_graph(self):
+    async def get_base_graph(self):
         self.username_signature = self.get_query_argument('username_signature').replace(' ', '+')
         self.to = self.get_query_argument('to', None)
         self.username = self.get_query_argument('username', None)
         self.rid = self.generate_rid(self.config.get_identity().get('username_signature'), self.username_signature)
         if self.request.body:
-            ids = json.loads(self.request.body.decode('utf-8')).get('ids')
-            rids = json.loads(self.request.body.decode('utf-8')).get('rids')
+            body = json.loads(self.request.body.decode('utf-8'))
+            ids = body.get('ids')
+            rids = body.get('rids')
             if not isinstance(rids, list):
                 rids = [rids]
+            update_last_collection_time = body.get('update_last_collection_time')
         else:
             ids = []
             rids = []
@@ -72,7 +74,15 @@ class BaseGraphHandler(BaseHandler):
                 key_or_wif = self.jwt.get('key_or_wif')
             except:
                 key_or_wif = None
-        return Graph(self.config, self.config.mongo, self.username_signature, ids, rids, key_or_wif)
+        return await Graph().async_init(
+            self.config,
+            self.config.mongo,
+            self.username_signature,
+            ids,
+            rids,
+            key_or_wif,
+            update_last_collection_time
+        )
         # TODO: should have a self.render here instead, not sure what is supposed to be returned here
 
     def generate_rid(self, first_username_signature, second_username_signature, collection = ''):
@@ -83,7 +93,7 @@ class BaseGraphHandler(BaseHandler):
 class GraphInfoHandler(BaseGraphHandler):
 
     async def get(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         self.render_as_json(graph.to_dict())
 
 
@@ -138,7 +148,7 @@ class GraphTransactionHandler(BaseGraphHandler):
         self.render_as_json(list(transactions))
 
     async def post(self):
-        self.get_base_graph()  # TODO: did this to set username_signature, refactor this
+        await self.get_base_graph()  # TODO: did this to set username_signature, refactor this
         items = json.loads(self.request.body.decode('utf-8'))
         if not isinstance(items, list):
             items = [items, ]
@@ -351,7 +361,7 @@ class GraphSentFriendRequestsHandler(BaseGraphHandler):
     async def post(self):
         req_body = json.loads(self.request.body)
         search_rid = req_body.get('rids')[0]
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         await graph.get_sent_friend_requests(search_rid)
         self.render_as_json(graph.to_dict())
 
@@ -360,55 +370,55 @@ class GraphFriendRequestsHandler(BaseGraphHandler):
     async def post(self):
         req_body = json.loads(self.request.body)
         search_rid = req_body.get('rids')[0]
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         await graph.get_friend_requests(search_rid)
         self.render_as_json(graph.to_dict())
 
 
 class GraphFriendsHandler(BaseGraphHandler):
     async def get(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         self.render_as_json(graph.to_dict())
 
 
 class GraphSentMessagesHandler(BaseGraphHandler):
     async def post(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         await graph.get_sent_messages()
         self.render_as_json(graph.to_dict())
 
 
 class GraphGroupMessagesHandler(BaseGraphHandler):
     async def post(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         graph.get_group_messages()
         self.render_as_json(graph.to_dict())
 
 
 class GraphNewMessagesHandler(BaseGraphHandler):
     async def get(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         await graph.get_new_messages()
         self.render_as_json(graph.to_dict())
 
 
 class GraphCommentsHandler(BaseGraphHandler):
     async def post(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         await graph.get_comments()
         self.render_as_json(graph.to_dict())
 
 
 class GraphReactsHandler(BaseGraphHandler):
     async def post(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         await graph.get_reacts()
         self.render_as_json(graph.to_dict())
 
 
 class GraphCollectionHandler(BaseGraphHandler):
     async def post(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         data = json.loads(self.request.body.decode())
         result = await self.has_access(data.get('rids'), data.get('collection'))
         if result:
@@ -577,7 +587,7 @@ class FastGraphHandler(BaseGraphHandler):
     async def post(self):
         # after the necessary signatures are gathered, the transaction is sent here.
         mongo = self.config.mongo
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         fastgraph = json.loads(self.request.body.decode('utf-8'))
         fastgraph = FastGraph.from_dict(0, fastgraph)
         try:
@@ -608,7 +618,7 @@ class FastGraphHandler(BaseGraphHandler):
 
 class NSHandler(BaseGraphHandler):
     async def get(self):
-        graph = self.get_base_graph()
+        graph = await self.get_base_graph()
         config = self.config
         phrase = self.get_query_argument('searchTerm', None)
         requester_rid = self.get_query_argument('requester_rid', None)
