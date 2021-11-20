@@ -55,6 +55,9 @@ class BaseGraphHandler(BaseHandler):
         self.to = self.get_query_argument('to', None)
         self.username = self.get_query_argument('username', None)
         self.rid = self.generate_rid(self.config.get_identity().get('username_signature'), self.username_signature)
+        ids = []
+        rids = []
+        update_last_collection_time = None
         if self.request.body:
             body = json.loads(self.request.body.decode('utf-8'))
             ids = body.get('ids')
@@ -62,9 +65,6 @@ class BaseGraphHandler(BaseHandler):
             if not isinstance(rids, list):
                 rids = [rids]
             update_last_collection_time = body.get('update_last_collection_time')
-        else:
-            ids = []
-            rids = []
         try:
             key_or_wif = self.get_secure_cookie('key_or_wif').decode()
         except:
