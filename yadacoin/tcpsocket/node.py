@@ -136,8 +136,6 @@ class NodeRPC(BaseRPC):
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = body.get('params', {})
 
-            return
-
         if 'web' not in self.config.modes:
             return
 

@@ -958,7 +958,6 @@ var GraphService = /** @class */ (function () {
         this.friends_indexed = {};
         this.groups_indexed = {};
         this.counts = {};
-        this.getMessagesForAllFriendsAndGroupsCalled = false;
     }
     GraphService.prototype.resetGraph = function () {
         this.graph = {
@@ -972,7 +971,6 @@ var GraphService = /** @class */ (function () {
         this.groups_indexed = {};
         this.friends_indexed = {};
         this.notifications = {};
-        this.getMessagesForAllFriendsAndGroupsCalled = false;
         for (var i = 0; i < Object.keys(this.settingsService.collections).length; i++) {
             var collectionKey = Object.keys(this.settingsService.collections)[i];
             if (!this.notifications[this.settingsService.collections[collectionKey]])
@@ -996,9 +994,6 @@ var GraphService = /** @class */ (function () {
         });
     };
     GraphService.prototype.getMessagesForAllFriendsAndGroups = function () {
-        if (this.getMessagesForAllFriendsAndGroupsCalled)
-            return;
-        this.getMessagesForAllFriendsAndGroupsCalled = true;
         var promises = [];
         for (var i = 0; i < this.graph.friends.length; i++) {
             promises.push(this.getMessages([this.graph.friends[i].rid], this.settingsService.collections.CHAT, false));
