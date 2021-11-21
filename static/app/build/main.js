@@ -7957,8 +7957,12 @@ var WebSocketService = /** @class */ (function () {
                         case this.settingsService.collections.CHAT:
                             this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
                                 .then(function (item) {
+                                if (!_this.graphService.graph.messages[msg.params.transaction.rid]) {
+                                    _this.graphService.graph.messages[msg.params.transaction.rid] = [];
+                                }
+                                _this.graphService.graph.messages[msg.params.transaction.rid].push(item[0]);
                                 _this.events.publish('newchat');
-                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.CHAT);
+                                return _this.graphService.addNotification(item[0], _this.settingsService.collections.CHAT);
                             });
                             break;
                         case this.settingsService.collections.CONTRACT:
@@ -7971,9 +7975,9 @@ var WebSocketService = /** @class */ (function () {
                                 if (!_this.graphService.graph.messages[msg.params.transaction.requested_rid]) {
                                     _this.graphService.graph.messages[msg.params.transaction.requested_rid] = [];
                                 }
-                                _this.graphService.graph.messages[msg.params.transaction.requested_rid].push(item[msg.params.transaction.requested_rid][0]);
+                                _this.graphService.graph.messages[msg.params.transaction.requested_rid].push(item[0]);
                                 _this.events.publish('newchat');
-                                return _this.graphService.addNotification(item[msg.params.transaction.requested_rid][0], _this.settingsService.collections.GROUP_CHAT);
+                                return _this.graphService.addNotification(item[0], _this.settingsService.collections.GROUP_CHAT);
                             });
                             break;
                         case this.settingsService.collections.GROUP_MAIL:
