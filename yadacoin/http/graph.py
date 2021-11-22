@@ -105,19 +105,41 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         if amount_needed:
             amount_needed = float(amount_needed)
 
+
+        mempool_txns = self.config.mongo.async_db.miner_transactions.find({
+            'outputs.to': address
+        })
+
+        pending_used_inputs = {}
+        pending_balance = 0
+        async for mempool_txn in mempool_txns:
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(mempool_txn['public_key'])))
+            if address == xaddress and mempool_txn.get('inputs'):
+                for x in mempool_txn.get('inputs'):
+                    pending_used_inputs[x['id']] = mempool_txn
+            if mempool_txn.get('outputs'):
+                for x in mempool_txn.get('outputs'):
+                    if x['to'] == address:
+                        pending_balance += float(x['value'])
+
+
         regular_txns = []
         chain_balance = 0
         async for txn in self.config.BU.get_wallet_unspent_transactions(address, no_zeros=True):
+            if txn['id'] in pending_used_inputs:
+                continue
             if amount_needed and chain_balance < amount_needed:
                 for output in txn['outputs']:
                     if output['to'] == address and float(output['value']) > 0.0:
                         regular_txns.append(txn)
+
             for output in txn['outputs']:
                 if output['to'] == address:
                     chain_balance += float(output['value'])
             self.app_log.warning(chain_balance)
 
         wallet = {
+            'pending_balance': "{0:.8f}".format(pending_balance),
             'chain_balance': "{0:.8f}".format(chain_balance),
             'balance': "{0:.8f}".format(chain_balance),
             'unspent_transactions': regular_txns if amount_needed else []
