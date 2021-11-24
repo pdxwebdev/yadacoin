@@ -500,11 +500,7 @@ class BlockChainUtils(object):
             {
                 '$match': {
                     "transactions.inputs.id": {'$in': input_ids},
-                    "$or": [
-                        {"transactions.public_key": public_key},
-                        {"transactions.inputs.public_key": public_key},
-                        {"transactions.inputs.address": address}
-                    ]
+                    "transactions.public_key": public_key
                 }
             },
             {
@@ -513,11 +509,7 @@ class BlockChainUtils(object):
             {
                 '$match': {
                     "transactions.inputs.id": {'$in': input_ids},
-                    "$or": [
-                        {"transactions.public_key": public_key},
-                        {"transactions.inputs.public_key": public_key},
-                        {"transactions.inputs.address": address}
-                    ]
+                    "transactions.public_key": public_key
                 }
             }
         ]
@@ -544,11 +536,7 @@ class BlockChainUtils(object):
         if inc_mempool:
             res2 = self.mongo.async_db.miner_transactions.find_one({
                 "inputs.id": {'$in': input_ids},
-                "$or": [
-                    {"public_key": public_key},
-                    {"inputs.public_key": public_key},
-                    {"inputs.address": address}
-                ]
+                "public_key": public_key
             })
             if res2:
                 return True

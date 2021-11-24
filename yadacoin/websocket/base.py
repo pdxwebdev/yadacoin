@@ -245,11 +245,24 @@ class RCPWebSocketServer(WebSocketHandler):
 
         group = Identity.from_dict(body.get('params'))
 
-        self.append_to_group(group, Collections.GROUP_CHAT.value)
-        self.append_to_group(group, Collections.GROUP_MAIL.value)
-        self.append_to_group(group, Collections.GROUP_CALENDAR.value)
+        members = {}
+        members.update(self.append_to_group(group, Collections.GROUP_CHAT.value))
+        members.update(self.append_to_group(group, Collections.GROUP_MAIL.value))
+        members.update(self.append_to_group(group, Collections.GROUP_CALENDAR.value))
 
-        await self.write_result('join_confirmed', {}, body=body)
+        await self.write_result('join_confirmed', {
+          'members': members
+        }, body=body)
+
+    def append_to_private(self, group, collection):
+        group_rid = group.generate_rid(group.username_signature, collection)
+        if group_rid not in RCPWebSocketServer.inbound_streams[Group.__name__]:
+            RCPWebSocketServer.inbound_streams[Group.__name__][group_rid] = {}
+        peer_rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
+        RCPWebSocketServer.inbound_streams[Group.__name__][group_rid][peer_rid] = self
+        return {
+            group_rid: [x.peer.identity.to_dict for y, x in RCPWebSocketServer.inbound_streams[Group.__name__][group_rid].items()]
+        }
 
     def append_to_group(self, group, collection):
         group_rid = group.generate_rid(group.username_signature, collection)
@@ -257,6 +270,9 @@ class RCPWebSocketServer(WebSocketHandler):
             RCPWebSocketServer.inbound_streams[Group.__name__][group_rid] = {}
         peer_rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
         RCPWebSocketServer.inbound_streams[Group.__name__][group_rid][peer_rid] = self
+        return {
+            group_rid: [x.peer.identity.to_dict for y, x in RCPWebSocketServer.inbound_streams[Group.__name__][group_rid].items()]
+        }
 
     async def service_provider_request(self, body):
         if not body.get('params').get('group'):

@@ -230,11 +230,7 @@ class Transaction(object):
             return
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         miner_transactions = self.mongo.db.miner_transactions.find({
-            '$or': [
-                {"public_key": self.public_key},
-                {"inputs.public_key": self.public_key},
-                {"inputs.address": my_address}
-            ]
+            "public_key": self.public_key
         })
         mtxn_ids = []
         for mtxn in miner_transactions:

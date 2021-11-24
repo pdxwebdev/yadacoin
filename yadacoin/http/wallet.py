@@ -288,10 +288,7 @@ class SentPendingTransactionsView(BaseHandler):
 
         pending_txns = await self.config.mongo.async_db.miner_transactions.find({
             'outputs.to': address,
-            '$or': [
-                {'public_key': public_key},
-                {'inputs.public_key': public_key},
-            ]
+            'public_key': public_key
         }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
 
         return self.render_as_json({
@@ -308,11 +305,8 @@ class SentTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
-                    'transactions.inputs.1': {'$exists': True},
-                    '$or': [
-                        {'transactions.public_key': public_key},
-                        {'transactions.inputs.public_key': public_key},
-                    ]
+                    'transactions.inputs.0': {'$exists': True},
+                    'transactions.public_key': public_key
                 }
             },
             {
@@ -321,11 +315,8 @@ class SentTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
-                    'transactions.inputs.1': {'$exists': True},
-                    '$or': [
-                        {'transactions.public_key': public_key},
-                        {'transactions.inputs.public_key': public_key},
-                    ]
+                    'transactions.inputs.0': {'$exists': True},
+                    'transactions.public_key': public_key
                 }
             },
             {
@@ -352,8 +343,7 @@ class ReceivedPendingTransactionsView(BaseHandler):
 
         pending_txns = await self.config.mongo.async_db.miner_transactions.find({
             'outputs.to': address,
-            'public_key': {'$ne': public_key},
-            'inputs.public_key': {'$ne': public_key}
+            'public_key': {'$ne': public_key}
         }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
 
         return self.render_as_json({
@@ -373,10 +363,9 @@ class ReceivedTransactionsView(BaseHandler):
                     'transactions.outputs.to': address,
                     '$or': [
                         {'transactions.public_key': {'$ne': public_key}},
-                        {'transactions.inputs.public_key': {'$ne': public_key}},
                         {
                           'public_key': public_key,
-                          'transactions.inputs.1': {'$exists': False}
+                          'transactions.inputs.0': {'$exists': False}
                         },
                     ]
                 }
@@ -389,10 +378,9 @@ class ReceivedTransactionsView(BaseHandler):
                     'transactions.outputs.to': address,
                     '$or': [
                         {'transactions.public_key': {'$ne': public_key}},
-                        {'transactions.inputs.public_key': {'$ne': public_key}},
                         {
                           'public_key': public_key,
-                          'transactions.inputs.1': {'$exists': False}
+                          'transactions.inputs.0': {'$exists': False}
                         },
                     ]
                 }

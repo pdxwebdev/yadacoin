@@ -10,6 +10,8 @@ class Identity:
         inst.public_key = data['public_key']
         inst.username = data['username']
         inst.username_signature = data['username_signature']
+        inst.collection = data.get('collection', '')
+        inst.parent = data.get('parent', '')
         return inst
 
     def generate_rid(self, username_signature, collection=''):
@@ -25,35 +27,13 @@ class Identity:
         ).encode('utf-8')).digest().hex()
 
     @property
-    def user_dict(self):
-        return {
-            'user_public_key': self.public_key_hex,
-            'user_username_signature': self.username_signature,
-            'user_username': self.username
-        }
-
-    @property
-    def their_dict(self):
-        return {
-            'their_public_key': self.public_key_hex,
-            'their_username_signature': self.username_signature,
-            'their_username': self.username
-        }
-
-    @property
-    def my_dict(self):
-        return {
-            'my_public_key': self.public_key_hex,
-            'my_username_signature': self.username_signature,
-            'my_username': self.username
-        }
-
-    @property
     def to_dict(self):
         return {
             'public_key': self.public_key_hex,
             'username_signature': self.username_signature,
-            'username': self.username
+            'username': self.username,
+            'collection': self.collection,
+            'parent': self.parent
         }
 
     @property
