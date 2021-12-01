@@ -1231,7 +1231,7 @@ class GraphUtils(object):
         filename = quote(quote(filename, safe=''), safe='')
         try:
             skylink = sc.upload({
-                filename: base64.b64decode(file)
+                filename: file
             },
             {
                 'custom_user_agent': 'Sia-Agent',
@@ -1243,7 +1243,7 @@ class GraphUtils(object):
             pass
 
         skylink = sc.upload({
-            filename: base64.b64decode(file)
+            filename: file
         },
         {
             'custom_user_agent': 'Sia-Agent',
