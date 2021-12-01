@@ -1222,3 +1222,32 @@ class GraphUtils(object):
                     }
                     , upsert=True)
         return sent, received
+
+    async def sia_upload(self, filename, file):
+        from requests.auth import HTTPBasicAuth
+        from siaskynet import SkynetClient, utils
+        from urllib.parse import quote
+        sc = SkynetClient(self.config.skynet_url)
+        filename = quote(quote(filename, safe=''), safe='')
+        try:
+            skylink = sc.upload({
+                filename: base64.b64decode(file)
+            },
+            {
+                'custom_user_agent': 'Sia-Agent',
+                'api_key': self.config.skynet_api_key,
+                'extra_path': filename
+            })
+            return utils.strip_prefix(skylink)
+        except Exception as e:
+            pass
+
+        skylink = sc.upload({
+            filename: base64.b64decode(file)
+        },
+        {
+            'custom_user_agent': 'Sia-Agent',
+            'api_key': self.config.skynet_api_key,
+            'extra_path': filename + '?dryrun=true'
+        })
+        return utils.strip_prefix(skylink)

@@ -827,36 +827,19 @@ class SiaStreamFileHandler(BaseGraphHandler):
 
 class SiaUploadHandler(BaseGraphHandler):
     async def post(self):
-        from requests.auth import HTTPBasicAuth
-        from siaskynet import SkynetClient, utils
-        sc = SkynetClient(self.config.skynet_url)
         json_body = json.loads(self.request.body)
         try:
-            skylink = sc.upload({
-                self.get_query_argument('filename'): base64.b64decode(json_body['file'])
-            },
-            {
-                'custom_user_agent': 'Sia-Agent',
-                'api_key': self.config.skynet_api_key,
-                'extra_path': self.get_query_argument('filename')
-            })
+            skylink = await self.config.GU.sia_upload(
+                filename=self.get_query_argument('filename'),
+                file=json_body['file']
+            )
         except Exception as e:
-            try:
-                skylink = sc.upload({
-                    self.get_query_argument('filename'): base64.b64decode(json_body['file'])
-                },
-                {
-                    'custom_user_agent': 'Sia-Agent',
-                    'api_key': self.config.skynet_api_key,
-                    'extra_path': self.get_query_argument('filename') + '?dryrun=true'
-                })
-            except Exception as e:
-                self.set_status(400)
-                return self.render_as_json({
-                    'status': 'error',
-                    'message': 'sia node not responding'
-                })
-        return self.render_as_json({'status': 'success', 'skylink': utils.strip_prefix(skylink)})
+            self.set_status(400)
+            return self.render_as_json({
+                'status': 'error',
+                'message': 'sia node not responding'
+            })
+        return self.render_as_json({'status': 'success', 'skylink': skylink})
 
 
 class SiaDownloadHandler(BaseGraphHandler):
@@ -866,7 +849,7 @@ class SiaDownloadHandler(BaseGraphHandler):
         skylink = '/skynet/skylink/' + self.get_query_argument('skylink')
         response = sc.download_file_request(skylink)
         for key, header in response.headers.items():
-          self.set_header(key, header)
+            self.set_header(key, header)
         self.write(response.content)
         self.finish()
 
