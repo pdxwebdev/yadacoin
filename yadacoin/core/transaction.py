@@ -73,7 +73,7 @@ class Transaction(object):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.time = txn_time
+        self.time = int(txn_time)
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
@@ -137,7 +137,7 @@ class Transaction(object):
         cls_inst.fee = float(fee)
         cls_inst.dh_private_key = dh_private_key
         cls_inst.to = to
-        cls_inst.time = str(int(time.time()))
+        cls_inst.time = int(time.time())
         cls_inst.outputs = []
         cls_inst.relationship = relationship
         cls_inst.no_relationship = no_relationship
@@ -336,7 +336,7 @@ class Transaction(object):
             relationship = txn.get('relationship', '')
         
         return cls(
-            txn_time=txn.get('time', ''),
+            txn_time=txn.get('time'),
             transaction_signature=txn.get('id'),
             rid=txn.get('rid', ''),
             relationship=relationship,
@@ -449,7 +449,7 @@ class Transaction(object):
         if self.time:
             hashout = hashlib.sha256((
                 self.public_key +
-                self.time +
+                str(self.time) +
                 self.dh_public_key +
                 self.rid +
                 self.relationship +

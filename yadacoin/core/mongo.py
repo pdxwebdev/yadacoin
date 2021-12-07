@@ -130,12 +130,14 @@ class Mongo(object):
         __requested_rid = IndexModel([("requested_rid", ASCENDING)], name="__requested_rid")
         __requester_rid = IndexModel([("requester_rid", ASCENDING)], name="__requester_rid")
         __time = IndexModel([("time", DESCENDING)], name="__time")
+        __inputs_id = IndexModel([("inputs.id", ASCENDING)], name="__inputs_id")
         try:
             self.db.miner_transactions.create_indexes([
                 __rid,
                 __requested_rid,
                 __requester_rid,
-                __time
+                __time,
+                __inputs_id
             ])
         except:
             pass
@@ -169,6 +171,12 @@ class Mongo(object):
         for block in blocks_to_convert:
             self.config.app_log.warning(f'Converting block time to int for block: {block["index"]}')
             self.db.blocks.update({'index': block['index']}, {'$set': {'time': int(block['time'])}})
+
+        # convert mempool transaction time from string to number
+        txns_to_convert = self.db.miner_transactions.find({'time': {'$type': 2}})
+        for txn in txns_to_convert:
+            self.config.app_log.warning(f'Converting txn time to int for txn: {txn["id"]}')
+            self.db.miner_transactions.update({'id': txn['id']}, {'$set': {'time': int(txn['time'])}})
 
         too_high_reward_blocks = self.db.blocks.find({'index': {'$gte': 210000}})
         for block in too_high_reward_blocks:
