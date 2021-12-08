@@ -53,7 +53,7 @@ class Transaction(object):
 
     def __init__(
         self,
-        txn_time='',
+        txn_time=0,
         rid='',
         transaction_signature='',
         relationship='',
