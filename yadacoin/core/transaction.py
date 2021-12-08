@@ -73,7 +73,9 @@ class Transaction(object):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
         self.mongo = self.config.mongo
-        self.time = int(txn_time)
+        if not txn_time:
+            txn_time = 0
+        self.time = txn_time if isinstance(txn_time, int) else int(txn_time)
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
