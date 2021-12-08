@@ -192,7 +192,7 @@ class Transaction(object):
         
         cls_inst.header = (
             cls_inst.public_key +
-            cls_inst.time +
+            str(cls_inst.time) +
             cls_inst.dh_public_key +
             cls_inst.rid +
             cls_inst.encrypted_relationship +
