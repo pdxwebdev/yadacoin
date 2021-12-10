@@ -349,7 +349,7 @@ class NodeApplication(Application):
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(120)
+            await tornado.gen.sleep(1200)
 
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
