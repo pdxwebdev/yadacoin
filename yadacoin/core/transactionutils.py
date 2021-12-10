@@ -135,3 +135,20 @@ class TU(object):  # Transaction Utilities
             })
 
         config.last_mempool_clean = time.time()
+    
+    @classmethod
+    async def rebroadcast_mempool(cls, config):
+        from yadacoin.core.transaction import Transaction
+        async for txn in config.mongo.async_db.miner_transactions.find({
+            'outputs.value': {'$gt': 0}
+        }):
+            x = Transaction.from_dict(txn)
+            async for peer_stream in config.peer.get_sync_peers():
+                await config.nodeShared.write_params(
+                    peer_stream,
+                    'newtxn',
+                    {'transaction': x.to_dict()}
+                )
+                if peer_stream.peer.protocol_version > 1:
+                    config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', x.transaction_signature)] = {'transaction': x.to_dict()}
+                time.sleep(.1)

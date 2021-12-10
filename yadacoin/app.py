@@ -344,6 +344,7 @@ class NodeApplication(Application):
         while True:
             try:
                 await self.config.TU.clean_mempool(self.config)
+                await self.config.TU.rebroadcast_mempool(self.config)
                 self.config.health.mempool_cleaner.last_activity = int(time())
             except Exception as e:
                 self.config.app_log.error(format_exc())
