@@ -288,7 +288,8 @@ class SentPendingTransactionsView(BaseHandler):
 
         pending_txns = await self.config.mongo.async_db.miner_transactions.find({
             'outputs.to': address,
-            'public_key': public_key
+            'public_key': public_key,
+            'outputs.value': {'$gt': 0}
         }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
 
         return self.render_as_json({
@@ -306,7 +307,8 @@ class SentTransactionsView(BaseHandler):
                 '$match': {
                     'transactions.outputs.to': address,
                     'transactions.inputs.0': {'$exists': True},
-                    'transactions.public_key': public_key
+                    'transactions.public_key': public_key,
+                    'transactions.outputs.value': {'$gt': 0}
                 }
             },
             {
@@ -316,7 +318,8 @@ class SentTransactionsView(BaseHandler):
                 '$match': {
                     'transactions.outputs.to': address,
                     'transactions.inputs.0': {'$exists': True},
-                    'transactions.public_key': public_key
+                    'transactions.public_key': public_key,
+                    'transactions.outputs.value': {'$gt': 0}
                 }
             },
             {
@@ -343,7 +346,8 @@ class ReceivedPendingTransactionsView(BaseHandler):
 
         pending_txns = await self.config.mongo.async_db.miner_transactions.find({
             'outputs.to': address,
-            'public_key': {'$ne': public_key}
+            'public_key': {'$ne': public_key},
+            'outputs.value': {'$gt': 0}
         }, {'_id': 0}).sort([('time', -1)]).skip(page * 10).limit(10).to_list(10)
 
         return self.render_as_json({
@@ -361,6 +365,7 @@ class ReceivedTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
+                    'transactions.outputs.value': {'$gt': 0},
                     '$or': [
                         {'transactions.public_key': {'$ne': public_key}},
                         {
@@ -376,6 +381,7 @@ class ReceivedTransactionsView(BaseHandler):
             {
                 '$match': {
                     'transactions.outputs.to': address,
+                    'transactions.outputs.value': {'$gt': 0},
                     '$or': [
                         {'transactions.public_key': {'$ne': public_key}},
                         {
