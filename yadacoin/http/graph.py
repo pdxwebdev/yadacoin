@@ -105,23 +105,6 @@ class GraphRIDWalletHandler(BaseGraphHandler):
         if amount_needed:
             amount_needed = float(amount_needed)
 
-        if not hasattr(self.config, 'last_mempool_clean'):
-            self.config.last_mempool_clean = 0
-
-        to_delete = []
-        txns_to_clean = self.config.mongo.async_db.miner_transactions.find({'time': {'$gte': self.config.last_mempool_clean}})
-        async for txn_to_clean in txns_to_clean:
-            for x in txn_to_clean.get('inputs'):
-                if await self.config.BU.is_input_spent(x['id'], txn_to_clean['public_key']):
-                    to_delete.append(txn_to_clean['id'])
-
-        for txn_id in to_delete:
-            await self.config.mongo.async_db.miner_transactions.delete_many({
-                'id': txn_id
-            })
-
-        self.config.last_mempool_clean = time.time()
-
         mempool_txns = self.config.mongo.async_db.miner_transactions.find({
             'outputs.to': address
         })

@@ -2,6 +2,7 @@ import hashlib
 import base64
 import random
 import sys
+import time
 from coincurve.keys import PrivateKey
 from coincurve._libsecp256k1 import ffi
 from bitcoin.wallet import P2PKHBitcoinAddress
@@ -115,3 +116,22 @@ class TU(object):  # Transaction Utilities
                 if peer_stream.peer.protocol_version > 1:
                     config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', transaction.transaction_signature)] = {'transaction': transaction.to_dict()}
         return transaction.to_dict()
+
+    @classmethod
+    async def clean_mempool(cls, config):
+        if not hasattr(config, 'last_mempool_clean'):
+            config.last_mempool_clean = 0
+
+        to_delete = []
+        txns_to_clean = config.mongo.async_db.miner_transactions.find({'time': {'$gte': config.last_mempool_clean}})
+        async for txn_to_clean in txns_to_clean:
+            for x in txn_to_clean.get('inputs'):
+                if await config.BU.is_input_spent(x['id'], txn_to_clean['public_key']):
+                    to_delete.append(txn_to_clean['id'])
+
+        for txn_id in to_delete:
+            await config.mongo.async_db.miner_transactions.delete_many({
+                'id': txn_id
+            })
+
+        config.last_mempool_clean = time.time()

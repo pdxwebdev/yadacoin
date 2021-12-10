@@ -338,6 +338,17 @@ class NodeApplication(Application):
 
             await tornado.gen.sleep(30)
 
+    async def background_mempool_cleaner(self):
+        """Responsible for removing failed transactions from the mempool"""
+
+        while True:
+            try:
+                await self.config.TU.clean_mempool(self.config)
+            except Exception as e:
+                self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(120)
+
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
         self.config.app_log = logging.getLogger("tornado.application")
@@ -420,6 +431,8 @@ class NodeApplication(Application):
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
+
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
