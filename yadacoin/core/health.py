@@ -146,6 +146,16 @@ class CacheValidatorHealth(HealthItem):
         return self.report_status(True)
 
 
+class MempoolCleanerHealth(HealthItem):
+
+    async def check_health(self):
+        if time.time() - self.last_activity > self.timeout:
+            self.report_bad_health('Background mempool cleaner health check failed')
+            return self.report_status(False)
+
+        return self.report_status(True)
+
+
 class Health:
     def __init__(self):
         self.config = get_config()
@@ -159,6 +169,7 @@ class Health:
         self.block_inserter = BlockInserterHealth()
         self.pool_payer = PoolPayerHealth()
         self.cache_validator = CacheValidatorHealth()
+        self.mempool_cleaner = MempoolCleanerHealth()
         self.health_items = [
             self.consensus,
             self.tcp_server,
@@ -168,7 +179,8 @@ class Health:
             self.message_sender,
             self.block_inserter,
             self.pool_payer,
-            self.cache_validator
+            self.cache_validator,
+            self.mempool_cleaner
         ]
 
     async def check_health(self):
