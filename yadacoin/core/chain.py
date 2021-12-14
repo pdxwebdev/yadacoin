@@ -200,6 +200,18 @@ class CHAIN(object):
         index = block_index // 210000
         reward = int(50.0 * 1e8 / 2 ** index) / 1e8
         return reward
+
+    @classmethod
+    def get_circulating_supply(cls, current_index):
+        circulating = 0
+        index = 0
+        while True:
+            i = current_index - index
+            if i < 0:
+                break
+            circulating += (210000 if i > 210000 else i) * CHAIN.get_block_reward(index)
+            index += 210000
+        return circulating
     
     @classmethod
     async def get_target_10min(
