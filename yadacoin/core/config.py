@@ -373,7 +373,8 @@ class Config(object):
             'email': self.email.to_dict(),
             'skynet_url': self.skynet_url,
             'skynet_api_key': self.skynet_api_key,
-            'web_jwt_expiry': self.web_jwt_expiry
+            'web_jwt_expiry': self.web_jwt_expiry,
+            'stratum_pool_port': self.stratum_pool_port
         }
 
     def to_json(self):
