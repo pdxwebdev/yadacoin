@@ -137,11 +137,15 @@ class TU(object):  # Transaction Utilities
         config.last_mempool_clean = time.time()
     
     @classmethod
-    async def rebroadcast_mempool(cls, config):
+    async def rebroadcast_mempool(cls, config, include_zero=False):
         from yadacoin.core.transaction import Transaction
-        async for txn in config.mongo.async_db.miner_transactions.find({
+        query = {
             'outputs.value': {'$gt': 0}
-        }):
+        }
+        if include_zero:
+            query = {}
+
+        async for txn in config.mongo.async_db.miner_transactions.find(query):
             x = Transaction.from_dict(txn)
             async for peer_stream in config.peer.get_sync_peers():
                 await config.nodeShared.write_params(
