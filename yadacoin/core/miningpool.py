@@ -32,6 +32,7 @@ class Job:
         inst.seed_hash = job['seed_hash']
         inst.index = job['height']
         inst.extra_nonce = job['extra_nonce']
+        inst.algo = job['algo']
         return inst
 
     def to_dict(self):
@@ -43,6 +44,7 @@ class Job:
             'seed_hash': self.seed_hash,
             'height': self.index,
             'extra_nonce': self.extra_nonce,
+            'algo': self.algo,
         }
 
 
@@ -276,17 +278,17 @@ class MiningPool(object):
         }
         return res
 
-    async def block_template(self):
+    async def block_template(self, agent):
         """Returns info for current block to mine"""
         if self.block_factory is None:
             await self.refresh()
         if not self.block_factory.target:
             await self.set_target_from_last_non_special_min(self.config.LatestBlock.block)
 
-        job = await self.generate_job()
+        job = await self.generate_job(agent)
         return job
 
-    async def generate_job(self):
+    async def generate_job(self, agent):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
@@ -295,11 +297,12 @@ class MiningPool(object):
         res = {
             'job_id': job_id,
             'difficulty': difficulty,
-            'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', #hex(int(self.block_factory.target))[2:].rjust(64, '0')[:14],
+            'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' if 'XMRigCC' in agent else '0000FFFFFFFFFFFF', # can only be 16 characters long
             'blob': header.encode().hex(),
             'seed_hash': seed_hash,
             'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
-            'extra_nonce': extra_nonce
+            'extra_nonce': extra_nonce,
+            'algo': 'rx/yada'
         }
         return await Job.from_dict(res)
 

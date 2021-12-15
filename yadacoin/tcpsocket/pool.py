@@ -59,7 +59,7 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def send_job(cls, stream):
-        job = await cls.config.mp.block_template()
+        job = await cls.config.mp.block_template(stream.peer.agent)
         stream.job = job
         cls.current_header = cls.config.mp.block_factory.header
         result = {
@@ -68,7 +68,7 @@ class StratumServer(RPCSocketServer):
         }
         rpc_data = {
             'id': 1,
-            'method': 'login',
+            'method': 'job',
             'jsonrpc': 2.0,
             'result': result
         }
@@ -112,10 +112,10 @@ class StratumServer(RPCSocketServer):
         await StratumServer.update_miner_count()
 
     async def getblocktemplate(self, body, stream):
-        return await StratumServer.config.mp.block_template()
+        return await StratumServer.config.mp.block_template(stream.peer.info)
 
     async def get_info(self, body, stream):
-        return await StratumServer.config.mp.block_template()
+        return await StratumServer.config.mp.block_template(stream.peer.info)
 
     async def get_balance(self, body, stream):
         balance = StratumServer.config.BU.get_wallet_balance(StratumServer.config.address)
@@ -184,7 +184,7 @@ class StratumServer(RPCSocketServer):
         if not StratumServer.config.mp:
             StratumServer.config.mp = await MiningPool.init_async()
         await StratumServer.block_checker()
-        job = await StratumServer.config.mp.block_template()
+        job = await StratumServer.config.mp.block_template(body['params'].get('agent'))
         stream.job = job
         result = {
             'id': job.id,
@@ -200,6 +200,7 @@ class StratumServer(RPCSocketServer):
         if not self.config.address_is_valid(address):
             rpc_data['error'] = {'message': 'Invalid wallet address'}
         stream.peer = Miner(body['params'].get('login'))
+        stream.peer.agent = body['params'].get('agent')
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
         StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
         await StratumServer.update_miner_count()
