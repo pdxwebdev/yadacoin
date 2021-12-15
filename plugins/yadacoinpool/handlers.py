@@ -115,7 +115,7 @@ class PoolInfoHandler(BaseWebHandler):
             },
             'coin': {
                 'algo': 'randomx YDA',
-                'circulating': self.config.LatestBlock.block.index * 50,
+                'circulating': CHAIN.get_circulating_supply(self.config.LatestBlock.block.index),
                 'max_supply': 21000000
             }
         })
