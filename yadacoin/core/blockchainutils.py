@@ -459,10 +459,7 @@ class BlockChainUtils(object):
                 for txn in block['transactions']:
                     if txn['id'] == id:
                         if instance:
-                            try:
-                                return FastGraph.from_dict(block['index'], txn)
-                            except:
-                                return Transaction.from_dict(txn)
+                            return Transaction.from_dict(txn)
                         else:
                             return txn
         if inc_mempool:
