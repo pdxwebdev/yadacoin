@@ -155,17 +155,7 @@ class GetPendingTransactionIdsHandler(BaseHandler):
 
 class RebroadcastTransactions(BaseHandler):
     async def get(self):
-        async for txn in self.config.mongo.async_db.miner_transactions.find({}):
-            x = Transaction.from_dict(txn)
-            async for peer_stream in self.config.peer.get_sync_peers():
-                await self.config.nodeShared.write_params(
-                    peer_stream,
-                    'newtxn',
-                    {'transaction': x.to_dict()}
-                )
-                if peer_stream.peer.protocol_version > 1:
-                    self.config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', x.transaction_signature)] = {'transaction': x.to_dict()}
-                sleep(.1)
+        await self.config.TU.rebroadcast_mempool(self.config)
         return self.render_as_json({'status': 'success'})
 
 
