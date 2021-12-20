@@ -128,6 +128,9 @@ class TU(object):  # Transaction Utilities
             for x in txn_to_clean.get('inputs'):
                 if await config.BU.is_input_spent(x['id'], txn_to_clean['public_key']):
                     to_delete.append(txn_to_clean['id'])
+                    continue
+            if config.mongo.async_db.blocks.find_one({'transactions.id': txn_to_clean['id']}):
+                to_delete.append(txn_to_clean['id'])
 
         for txn_id in to_delete:
             await config.mongo.async_db.miner_transactions.delete_many({
