@@ -297,7 +297,7 @@ class MiningPool(object):
         res = {
             'job_id': job_id,
             'difficulty': difficulty,
-            'target': '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF' if 'XMRigCC' in agent else '0000FFFFFFFFFFFF', # can only be 16 characters long
+            'target': '0000FFFFFFFFFFFF' if 'XMRigCC/3' in agent or 'XMRig/3' in agent else '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', # can only be 16 characters long
             'blob': header.encode().hex(),
             'seed_hash': seed_hash,
             'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
