@@ -133,9 +133,9 @@ class MiningPool(object):
         accepted = False
 
         if self.config.network == 'mainnet':
-            target = 0x0000F00000000000000000000000000000000000000000000000000000000000
+            target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
         elif self.config.network == 'regnet':
-            target = 0x00F0000000000000000000000000000000000000000000000000000000000000
+            target = 0x00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
         if (
           (int(block_candidate.target) + target) > int(hash1, 16) or
           (
@@ -319,7 +319,7 @@ class MiningPool(object):
         header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
 
         if self.config.network == 'regnet':
-            target = '0000FFFFFFFFFFFF'
+            target = '00FFFFFFFFFFFFFF'
         elif 'XMRigCC/3' in agent or 'XMRig/3' in agent:
             target = '0000FFFFFFFFFFFF'
         else:
