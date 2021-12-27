@@ -419,22 +419,23 @@ class NodeApplication(Application):
     def init_ioloop(self):
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
 
+        tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
+
+        tornado.ioloop.IOLoop.current().spawn_callback(self.background_consensus)
+
+        tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_checker)
+
+        tornado.ioloop.IOLoop.current().spawn_callback(self.background_cache_validator)
+
+        tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
+
+        tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
+
         if self.config.network != 'regnet' and 'node' in self.config.modes:
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_consensus)
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)
 
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
-
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_checker)
-
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_cache_validator)
-
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
-
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
-
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
@@ -539,6 +540,8 @@ class NodeApplication(Application):
         self.config.app_log.info("Pool: {}:{}".format(self.config.peer_host, self.config.stratum_pool_port))
         StratumServer.inbound_streams[Miner.__name__] = {}
         self.config.pool_server = StratumServer()
+        StratumServer.config = self.config
+        StratumServer.config.mp = tornado.ioloop.IOLoop.current().run_sync(MiningPool.init_async)
         self.config.pool_server.listen(self.config.stratum_pool_port)
 
     def init_peer(self):

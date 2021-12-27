@@ -180,10 +180,6 @@ class StratumServer(RPCSocketServer):
         await StratumServer.block_checker()
 
     async def login(self, body, stream):
-        if not StratumServer.config:
-            StratumServer.config = get_config()
-        if not StratumServer.config.mp:
-            StratumServer.config.mp = await MiningPool.init_async()
         await StratumServer.block_checker()
         job = await StratumServer.config.mp.block_template(body['params'].get('agent'))
         if not hasattr(stream, 'jobs'):
