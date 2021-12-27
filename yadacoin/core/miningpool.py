@@ -84,11 +84,11 @@ class MiningPool(object):
 
         return str_little
 
-    async def on_miner_nonce(self, nonce: str, job: Job, address: str='') -> bool:
+    async def on_miner_nonce(self, nonce: str, job: Job, address: str='', miner_hash: str='') -> bool:
         nonce = nonce + job.extra_nonce.encode().hex()
         hash1 = self.block_factory.generate_hash_from_header(
-            self.block_factory.index,
-            self.block_factory.header,
+            job.index,
+            binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}').replace(job.extra_nonce, ''),
             nonce
         )
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
@@ -120,7 +120,8 @@ class MiningPool(object):
         if (
             block_candidate.index >= 35200 and
             (int(block_candidate.time) - int(self.last_block_time)) < 600 and 
-            block_candidate.special_min
+            block_candidate.special_min and
+            self.config.network == 'mainnet'
         ):
             self.app_log.warning("Special min block too soon: hash {} header {} nonce {}".format(
                 block_candidate.hash,
@@ -131,11 +132,15 @@ class MiningPool(object):
 
         accepted = False
 
+        if self.config.network == 'mainnet':
+            target = 0x0000F00000000000000000000000000000000000000000000000000000000000
+        elif self.config.network == 'regnet':
+            target = 0x00F0000000000000000000000000000000000000000000000000000000000000
         if (
-          (int(block_candidate.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(hash1, 16) or
+          (int(block_candidate.target) + target) > int(hash1, 16) or
           (
             block_candidate.index >= CHAIN.BLOCK_V5_FORK and
-            (int(block_candidate.target) + 0x0000F00000000000000000000000000000000000000000000000000000000000) > int(block_candidate.little_hash(), 16)
+            (int(block_candidate.target) + target) > int(block_candidate.little_hash(), 16)
           )
         ):
             # submit share only now, not to slow down if we had a block
@@ -162,6 +167,10 @@ class MiningPool(object):
           (
             block_candidate.index >= CHAIN.BLOCK_V5_FORK and
             int(block_candidate.target) > int(block_candidate.little_hash(), 16)
+          ) or
+          (
+            self.config.network == 'regnet' and
+            target > int(block_candidate.little_hash(), 16)
           )
         ):
             block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
@@ -169,6 +178,13 @@ class MiningPool(object):
             try:
                 block_candidate.verify()
             except Exception as e:
+                if accepted:
+                    return {
+                        'hash': hash1,
+                        'nonce': nonce,
+                        'height': job.index,
+                        'id': block_candidate.signature
+                    }
                 self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
                     e,
                     block_candidate.hash,
@@ -199,6 +215,13 @@ class MiningPool(object):
             try:
                 block_candidate.verify()
             except Exception as e:
+                if accepted:
+                    return {
+                        'hash': hash1,
+                        'nonce': nonce,
+                        'height': job.index,
+                        'id': block_candidate.signature
+                    }
                 self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
                     e,
                     block_candidate.hash,
@@ -294,10 +317,18 @@ class MiningPool(object):
         job_id = str(uuid.uuid4())
         extra_nonce = hex(random.randrange(1000000,1000000000000000))[2:]
         header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
+
+        if self.config.network == 'regnet':
+            target = '0000FFFFFFFFFFFF'
+        elif 'XMRigCC/3' in agent or 'XMRig/3' in agent:
+            target = '0000FFFFFFFFFFFF'
+        else:
+            target = '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+
         res = {
             'job_id': job_id,
             'difficulty': difficulty,
-            'target': '0000FFFFFFFFFFFF' if 'XMRigCC/3' in agent or 'XMRig/3' in agent else '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF', # can only be 16 characters long
+            'target': target,  # can only be 16 characters long
             'blob': header.encode().hex(),
             'seed_hash': seed_hash,
             'height': self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
@@ -438,7 +469,7 @@ class MiningPool(object):
 
             except Exception as e:
                 self.config.app_log.warning(format_exc())
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.miner_transactions.remove({'id': txn['id']})
                 self.mongo.db.failed_transactions.insert({'reason': 'Unhandled exception', 'error': format_exc()})
 
         return transaction_objs

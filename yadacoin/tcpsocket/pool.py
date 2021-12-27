@@ -60,7 +60,7 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def send_job(cls, stream):
         job = await cls.config.mp.block_template(stream.peer.agent)
-        stream.job = job
+        stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
         result = {
             'id': job.id,
@@ -163,8 +163,9 @@ class StratumServer(RPCSocketServer):
         try:
             data['result'] = await StratumServer.config.mp.on_miner_nonce(
                 nonce,
-                stream.job,
+                stream.jobs[body['params']['id']],
                 address=stream.peer.address,
+                miner_hash=body['params']['result']
             )
             if not data['result']:
                 data['error'] = {'message': 'Invalid hash for current block'}
@@ -185,7 +186,9 @@ class StratumServer(RPCSocketServer):
             StratumServer.config.mp = await MiningPool.init_async()
         await StratumServer.block_checker()
         job = await StratumServer.config.mp.block_template(body['params'].get('agent'))
-        stream.job = job
+        if not hasattr(stream, 'jobs'):
+            stream.jobs = {}
+        stream.jobs[job.id] = job
         result = {
             'id': job.id,
             'job': job.to_dict()

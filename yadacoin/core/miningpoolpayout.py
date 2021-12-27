@@ -39,8 +39,8 @@ class PoolPayer(object):
         for share in raw_shares:
             address = share['address'].split('.')[0]
             if not self.config.address_is_valid(address):
-                self.app_log.debug('get_share_list_for_height skipping invalid address: {}'.format(address))
-                continue
+                await self.config.mongo.async_db.shares.delete_many({'address': address})
+                raise Exception('get_share_list_for_height invalid address: {}, removing related shares'.format(address))
 
             if address not in shares:
                 shares[address] = {
