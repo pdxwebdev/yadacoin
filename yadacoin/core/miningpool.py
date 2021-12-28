@@ -19,6 +19,37 @@ from yadacoin.core.transaction import (
     TransactionInputOutputMismatchException,
     TotalValueMismatchException
 )
+from yadacoin.core.peer import Miner as MinerBase
+
+
+class Miner(MinerBase):
+    address = ''
+    address_only = ''
+    agent = ''
+    id_attribute = 'address'
+
+    def __init__(self, address, agent=''):
+        super(Miner, self).__init__()
+        if '.' in address:
+            self.address = address
+            self.address_only = address.split('.')[0]
+            if not self.config.address_is_valid(self.address_only):
+                raise InvalidAddressException()
+        else:
+            self.address = address
+            self.address_only = address
+            if not self.config.address_is_valid(self.address):
+                raise InvalidAddressException()
+        self.agent = agent
+
+    def to_json(self):
+        return {
+            'address': self.address
+        }
+
+
+class InvalidAddressException(Exception):
+    pass
 
 
 class Job:
@@ -84,7 +115,7 @@ class MiningPool(object):
 
         return str_little
 
-    async def on_miner_nonce(self, nonce: str, job: Job, address: str='', miner_hash: str='') -> bool:
+    async def on_miner_nonce(self, nonce: str, job: Job, miner: Miner='', miner_hash: str='') -> bool:
         nonce = nonce + job.extra_nonce.encode().hex()
         hash1 = self.block_factory.generate_hash_from_header(
             job.index,
@@ -150,7 +181,8 @@ class MiningPool(object):
                 },
                 {
                     '$set': {
-                        'address': address,
+                        'address': miner.address,
+                        'address_only': miner.address_only,
                         'index': block_candidate.index,
                         'hash': block_candidate.hash,
                         'nonce': nonce,

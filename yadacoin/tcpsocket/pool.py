@@ -13,22 +13,8 @@ from yadacoin.core.config import Config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
 from yadacoin.tcpsocket.base import RPCSocketServer
-from yadacoin.core.miningpool import MiningPool
-from yadacoin.core.peer import Miner as MinerBase
+from yadacoin.core.miningpool import MiningPool, InvalidAddressException, Miner
 
-
-class Miner(MinerBase):
-    address = ''
-    id_attribute = 'address'
-
-    def __init__(self, address):
-        super(Miner, self).__init__()
-        self.address = address
-
-    def to_json(self):
-        return {
-            'address': self.address
-        }
 
 class StratumServer(RPCSocketServer):
     current_header = ''
@@ -164,7 +150,7 @@ class StratumServer(RPCSocketServer):
             data['result'] = await StratumServer.config.mp.on_miner_nonce(
                 nonce,
                 stream.jobs[body['params']['id']],
-                address=stream.peer.address,
+                miner=stream.peer,
                 miner_hash=body['params']['result']
             )
             if not data['result']:
@@ -195,11 +181,14 @@ class StratumServer(RPCSocketServer):
             'jsonrpc': body.get('jsonrpc'),
             'result': result
         }
-        address = body['params'].get('login').split('.')[0]
-        if not self.config.address_is_valid(address):
-            rpc_data['error'] = {'message': 'Invalid wallet address'}
-        stream.peer = Miner(body['params'].get('login'))
-        stream.peer.agent = body['params'].get('agent')
+
+        try:
+            stream.peer = Miner(
+                address=body['params'].get('login'),
+                agent=body['params'].get('agent')
+            )
+        except:
+            rpc_data['error'] = {'message': 'Invalid wallet address or invalid format'}
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
         StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
         await StratumServer.update_miner_count()

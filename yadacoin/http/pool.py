@@ -18,13 +18,28 @@ from yadacoin.http.base import BaseHandler
 class PoolSharesHandler(BaseHandler):
     async def get(self):
         address = self.get_query_argument('address')
-        results = await self.config.mongo.async_db.shares.find({'address': address}, {'_id': 0}).sort([('index', -1)]).to_list(100)
+        query = {'address': address}
+        if '.' not in address:
+            query = {
+                '$or': [
+                    {
+                        'address': address
+                    },
+                    {
+                        'address_only': address
+                    },
+                ]
+            }
+        results = await self.config.mongo.async_db.shares.find(query, {'_id': 0}).sort([('index', -1)]).to_list(100)
         self.render_as_json({'results': results})
 
 
 class PoolPayoutsHandler(BaseHandler):
     async def get(self):
         address = self.get_query_argument('address')
+        query = {'address': address}
+        if '.' in address:
+            query = {'address': address.split('.')[0]}
         results = await self.config.mongo.async_db.share_payout.find({'txn.outputs.to': address}, {'_id': 0}).sort([('index', -1)]).to_list(100)
         self.render_as_json({'results': results})
 
@@ -32,11 +47,36 @@ class PoolPayoutsHandler(BaseHandler):
 class PoolHashRateHandler(BaseHandler):
     async def get(self):
         address = self.get_query_argument('address')
-        last_share = await self.config.mongo.async_db.shares.find_one({'address': address}, {'_id': 0}, sort=[('time', -1)])
+        query = {'address': address}
+        if '.' not in address:
+            query = {
+                '$or': [
+                    {
+                        'address': address
+                    },
+                    {
+                        'address_only': address
+                    },
+                ]
+            }
+        last_share = await self.config.mongo.async_db.shares.find_one(query, {'_id': 0}, sort=[('time', -1)])
         if not last_share:
             return self.render_as_json({'result': 0})
         miner_hashrate_seconds = self.config.miner_hashrate_seconds if hasattr(self.config, 'miner_hashrate_seconds') else 600
-        number_of_shares = await self.config.mongo.async_db.shares.count_documents({'address': address, 'time': { '$gt': last_share['time'] - miner_hashrate_seconds}})
+
+        query = {'time': { '$gt': last_share['time'] - miner_hashrate_seconds}}
+        if '.' in address:
+            query['address'] = address
+        else:
+            query['$or'] = [
+                {
+                    'address': address
+                },
+                {
+                    'address_only': address
+                },
+            ]
+        number_of_shares = await self.config.mongo.async_db.shares.count_documents(query)
         miner_hashrate = (number_of_shares * 69905) / miner_hashrate_seconds
         self.render_as_json({'miner_hashrate': int(miner_hashrate)})
 

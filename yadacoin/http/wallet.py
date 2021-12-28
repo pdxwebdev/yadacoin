@@ -367,7 +367,7 @@ class ReceivedTransactionsView(BaseHandler):
                     'transactions.outputs.to': address,
                     'transactions.outputs.value': {'$gt': 0},
                     '$or': [
-                        {'transactions.public_key': {'$ne': public_key}},
+                        {'transactions': {'$elemMatch': {'public_key': {'$ne': public_key}}}},
                         {
                           'public_key': public_key,
                           'transactions.inputs.0': {'$exists': False}
