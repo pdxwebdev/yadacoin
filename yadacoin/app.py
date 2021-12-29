@@ -521,7 +521,8 @@ class NodeApplication(Application):
             yadacoin_config=self.config,
             mp=None,
             BU=yadacoin.core.blockchainutils.GLOBAL_BU,
-            TU=yadacoin.core.transactionutils.TU
+            TU=yadacoin.core.transactionutils.TU,
+            compiled_template_cache=False
         )
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
