@@ -108,6 +108,9 @@ class NodeRPC(BaseRPC):
             await txn.verify()
         except:
             return
+        
+        if await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn.transaction_signature}):
+            return
 
         await self.config.mongo.async_db.miner_transactions.replace_one(
             {
