@@ -58,6 +58,8 @@ class Mongo(object):
           ("transactions.requester_rid", ASCENDING)
         ], name="__txn_index_requester_rid")
         __txn_time = IndexModel([("transactions.time", DESCENDING)], name="__txn_time")
+        __txn_contract_rid = IndexModel([("transactions.contract.rid", ASCENDING)], name="__txn_contract_rid")
+        __txn_rel_contract_identity_public_key = IndexModel([("transactions.relationship.smart_contract.identity.public_key", ASCENDING)], name="__txn_rel_contract_identity_public_key")
 
         try:
             self.db.blocks.create_indexes([
@@ -81,7 +83,9 @@ class Mongo(object):
                 __txn_index_rid,
                 __txn_index_requested_rid,
                 __txn_index_requester_rid,
-                __txn_time
+                __txn_time,
+                __txn_contract_rid,
+                __txn_rel_contract_identity_public_key
             ])
         except:
             pass
@@ -132,13 +136,18 @@ class Mongo(object):
         __requester_rid = IndexModel([("requester_rid", ASCENDING)], name="__requester_rid")
         __time = IndexModel([("time", DESCENDING)], name="__time")
         __inputs_id = IndexModel([("inputs.id", ASCENDING)], name="__inputs_id")
+        __fee_time = IndexModel([
+            ("fee", DESCENDING),
+            ("time", ASCENDING)
+        ], name="__fee_time")
         try:
             self.db.miner_transactions.create_indexes([
                 __rid,
                 __requested_rid,
                 __requester_rid,
                 __time,
-                __inputs_id
+                __inputs_id,
+                __fee_time
             ])
         except:
             pass
