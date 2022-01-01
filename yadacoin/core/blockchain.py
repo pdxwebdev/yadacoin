@@ -111,7 +111,7 @@ class Blockchain(object):
     async def test_block(block, extra_blocks=[], simulate_last_block=None):
         config = get_config()
         try:
-            block.verify()
+            await block.verify()
         except Exception as e:
             config.app_log.warning("Integrate block error 1: {}".format(e))
             return False
@@ -247,7 +247,7 @@ class Blockchain(object):
     async def find_error_block(self):
         last_block = None
         async for block in self.blocks:
-            block.verify()
+            await block.verify()
             for txn in block.transactions:
                 await txn.verify()
             if last_block:

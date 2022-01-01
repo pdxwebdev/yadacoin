@@ -130,7 +130,7 @@ class Consensus(object):
         if existing:
             return False
         try:
-            block.verify()
+            await block.verify()
         except:
             return False
         self.app_log.info('inserting new consensus block for height and peer: %s %s' % (block.index, peer.to_string()))
@@ -343,12 +343,14 @@ class Consensus(object):
         extra_blocks = [x async for x in blockchain.blocks]
         prev_block = None
         async for block in blockchain.blocks:
+            if self.config.network == 'regnet':
+                break
             if not await Blockchain.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block):
                 return
             prev_block = block
 
         async for block in blockchain.blocks:
-            if not await Blockchain.test_block(block):
+            if not await Blockchain.test_block(block) and self.config.network == 'mainnet':
                 return
             await self.insert_block(block, stream)
 

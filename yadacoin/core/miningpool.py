@@ -8,6 +8,7 @@ from logging import getLogger
 from threading import Thread
 
 from yadacoin.core.chain import CHAIN
+from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
@@ -208,7 +209,7 @@ class MiningPool(object):
             block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
 
             try:
-                block_candidate.verify()
+                await block_candidate.verify()
             except Exception as e:
                 if accepted:
                     return {
@@ -245,7 +246,7 @@ class MiningPool(object):
             block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
 
             try:
-                block_candidate.verify()
+                await block_candidate.verify()
             except Exception as e:
                 if accepted:
                     return {
@@ -433,78 +434,158 @@ class MiningPool(object):
             yield x
 
     async def get_pending_transactions(self):
+        mempool_smart_contract_objs = {}
         transaction_objs = []
         used_sigs = []
-        async for txn in self.mongo.async_db.miner_transactions.find().sort([('fee', -1)]):
+        async for txn in self.mongo.async_db.miner_transactions.find({'relationship.smart_contract': {'$exists': True}}).sort([('fee', -1), ('time', 1)]):
+            transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
+            if not isinstance(transaction_obj, Transaction):
+                continue
+
+            if (
+                transaction_obj.requested_rid in mempool_smart_contract_objs and
+                int(transaction_obj.time) > int(mempool_smart_contract_objs[transaction_obj.requested_rid].time)
+            ):
+                continue
+
+            mempool_smart_contract_objs[transaction_obj.requested_rid] = transaction_obj
+
+        blockchain_smart_contract_objs = {}
+        async for txn in self.mongo.async_db.miner_transactions.find({'relationship.smart_contract': {'$exists': False}}).sort([('fee', -1), ('time', 1)]):
+            transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
+            if not isinstance(transaction_obj, Transaction):
+                continue
+
+            smart_contract_obj = await self.get_smart_contract(transaction_obj)
+            if smart_contract_obj:
+                blockchain_smart_contract_objs[smart_contract_obj.requested_rid] = smart_contract_obj
+
+            transaction_objs.append(transaction_obj)
+
+        for smart_contract_obj in blockchain_smart_contract_objs.values():
             try:
-                if isinstance(txn, Transaction):
-                    transaction_obj = txn
-                elif isinstance(txn, dict):
-                    transaction_obj = Transaction.from_dict(txn)
-                else:
-                    self.config.app_log.warning('transaction unrecognizable, skipping')
-                    continue
-                
-                await transaction_obj.verify()
-                
-                if transaction_obj.transaction_signature in used_sigs:
-                    self.config.app_log.warning('duplicate transaction found and removed')
-                    continue
-                used_sigs.append(transaction_obj.transaction_signature)
-
-                failed1 = False
-                failed2 = False
-                used_ids_in_this_txn = []
-
-                async for x in self.get_inputs(transaction_obj.inputs):
-                    is_input_spent = await self.config.BU.is_input_spent(x.id, transaction_obj.public_key)
-                    if is_input_spent:
-                        failed1 = True
-                    if x.id in used_ids_in_this_txn:
-                        failed2 = True
-                    used_ids_in_this_txn.append(x.id)
-                if failed1:
-                    self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                    self.config.app_log.warning('transaction removed: input presumably spent already, not in unspent outputs {}'.format(transaction_obj.transaction_signature))
-                    self.mongo.db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction_obj.to_dict()})
-                elif failed2:
-                    self.config.app_log.warning('transaction removed: using an input used by another transaction in this block {}'.format(transaction_obj.transaction_signature))
-                    self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                    self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
-                else:
-                    transaction_objs.append(transaction_obj)
-
-            except MissingInputTransactionException as e:
-                self.config.app_log.warning('MissingInputTransactionException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'MissingInputTransactionException', 'txn': transaction_obj.to_dict()})
-
-            except InvalidTransactionSignatureException as e:
-                self.config.app_log.warning('InvalidTransactionSignatureException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction_obj.to_dict()})
-
-            except InvalidTransactionException as e:
-                self.config.app_log.warning('InvalidTransactionException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
-
-            except TransactionInputOutputMismatchException as e:
-                self.config.app_log.warning('TransactionInputOutputMismatchException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'TransactionInputOutputMismatchException', 'txn': transaction_obj.to_dict()})
-
-            except TotalValueMismatchException as e:
-                self.config.app_log.warning('TotalValueMismatchException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'TotalValueMismatchException', 'txn': transaction_obj.to_dict()})
-
+                payout_txn = await smart_contract_obj.relationship.process(smart_contract_obj, transaction_obj, transaction_objs)
+                transaction_objs.append(payout_txn)
             except Exception as e:
                 self.config.app_log.warning(format_exc())
-                self.mongo.db.miner_transactions.remove({'id': txn['id']})
-                self.mongo.db.failed_transactions.insert({'reason': 'Unhandled exception', 'error': format_exc()})
 
-        return transaction_objs
+
+        return mempool_smart_contract_objs.values() + transaction_objs
+
+    async def verify_pending_transaction(self, txn, used_sigs):
+        try:
+            if isinstance(txn, Transaction):
+                transaction_obj = txn
+            elif isinstance(txn, dict):
+                transaction_obj = Transaction.from_dict(txn)
+            else:
+                self.config.app_log.warning('transaction unrecognizable, skipping')
+                return
+
+            await transaction_obj.verify()
+
+            if transaction_obj.transaction_signature in used_sigs:
+                self.config.app_log.warning('duplicate transaction found and removed')
+                return
+            used_sigs.append(transaction_obj.transaction_signature)
+
+            failed1 = False
+            failed2 = False
+            used_ids_in_this_txn = []
+
+            async for x in self.get_inputs(transaction_obj.inputs):
+                is_input_spent = await self.config.BU.is_input_spent(x.id, transaction_obj.public_key)
+                if is_input_spent:
+                    failed1 = True
+                if x.id in used_ids_in_this_txn:
+                    failed2 = True
+                used_ids_in_this_txn.append(x.id)
+            if failed1:
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.config.app_log.warning('transaction removed: input spent already {}'.format(transaction_obj.transaction_signature))
+                self.mongo.db.failed_transactions.insert({'reason': 'input spent already', 'txn': transaction_obj.to_dict()})
+            elif failed2:
+                self.config.app_log.warning('transaction removed: using an input used by another transaction in this block {}'.format(transaction_obj.transaction_signature))
+                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+                self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
+            else:
+                return transaction_obj
+
+        except MissingInputTransactionException as e:
+            self.config.app_log.warning('MissingInputTransactionException: transaction removed')
+            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+            self.mongo.db.failed_transactions.insert({'reason': 'MissingInputTransactionException', 'txn': transaction_obj.to_dict()})
+
+        except InvalidTransactionSignatureException as e:
+            self.config.app_log.warning('InvalidTransactionSignatureException: transaction removed')
+            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+            self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction_obj.to_dict()})
+
+        except InvalidTransactionException as e:
+            self.config.app_log.warning('InvalidTransactionException: transaction removed')
+            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+            self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
+
+        except TransactionInputOutputMismatchException as e:
+            self.config.app_log.warning('TransactionInputOutputMismatchException: transaction removed')
+            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+            self.mongo.db.failed_transactions.insert({'reason': 'TransactionInputOutputMismatchException', 'txn': transaction_obj.to_dict()})
+
+        except TotalValueMismatchException as e:
+            self.config.app_log.warning('TotalValueMismatchException: transaction removed')
+            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
+            self.mongo.db.failed_transactions.insert({'reason': 'TotalValueMismatchException', 'txn': transaction_obj.to_dict()})
+
+        except Exception as e:
+            self.config.app_log.warning(format_exc())
+            self.mongo.db.miner_transactions.remove({'id': txn['id']})
+            self.mongo.db.failed_transactions.insert({'reason': 'Unhandled exception', 'error': format_exc()})
+
+    async def get_smart_contract(self, transaction_obj):
+        smart_contract_block = await self.config.mongo.async_db.blocks.find_one({
+            'transactions.requested_rid': transaction_obj.requested_rid,
+            'transactions.relationship.smart_contract': {'$exists': True},
+            'transactions.id': {'$ne': transaction_obj.transaction_signature}
+        }, sort=[('index', 1)])
+        if not smart_contract_block:
+            return
+        for smart_contract in smart_contract_block.get('transactions'):
+            if (
+                smart_contract.get('relationship') and
+                isinstance(smart_contract.get('relationship'), dict) and
+                Collections.SMART_CONTRACT.value in smart_contract['relationship']
+            ):
+                smart_contract_obj = Transaction.from_dict(smart_contract)
+                return smart_contract_obj
+
+    async def get_purchase_txn(self, transaction_obj):
+        purchase_txn_blocks = self.config.mongo.async_db.blocks.find({
+            'transactions.requested_rid': transaction_obj.requested_rid,
+            'transactions.id': {'$ne': transaction_obj.transaction_signature}
+        })
+        smart_contract_obj = None
+        highest_amount = 0
+        winning_purchase_txn = None
+        async for purchase_txn_block in purchase_txn_blocks:
+            for purchase_txn in purchase_txn_block.get('transactions'):
+                purchase_txn_obj = Transaction.from_dict(purchase_txn)
+                if transaction_obj.requested_rid != purchase_txn_obj.requested_rid:
+                    continue
+                smart_contract_obj = await self.get_smart_contract(purchase_txn_obj)
+                if not smart_contract_obj:
+                    continue
+                purchase_amount = await self.get_amount(smart_contract_obj, purchase_txn_obj)
+                if purchase_amount > highest_amount:
+                    winning_purchase_txn = purchase_txn_obj
+        return smart_contract_obj, winning_purchase_txn
+    
+    async def get_amount(self, smart_contract_obj, purchase_txn_obj):
+        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(smart_contract_obj.relationship.identity.public_key))
+        amount = 0
+        for output in purchase_txn_obj.outputs:
+            if output.to == address:
+                amount += output.value
+        return amount
 
     async def accept_block(self, block):
         from yadacoin.core.consensus import ProcessingQueueItem

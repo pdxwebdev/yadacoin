@@ -700,6 +700,8 @@ class Peers:
     @classmethod
     def get_seeds(cls):
         config = get_config()
+        if config.network != 'mainnet':
+            return OrderedDict()
         if hasattr(config, 'network_seeds'):
             seeds = [Seed.from_dict(x) for x in config.network_seeds]
         else:
@@ -720,6 +722,8 @@ class Peers:
     @classmethod
     def get_seed_gateways(cls):
         config = get_config()
+        if config.network != 'mainnet':
+            return OrderedDict()
         if hasattr(config, 'network_seed_gateways'):
             seed_gateways = [SeedGateway.from_dict(x) for x in config.network_seed_gateways]
         else:
@@ -740,6 +744,8 @@ class Peers:
     @classmethod
     def get_service_providers(cls):
         config = get_config()
+        if config.network != 'mainnet':
+            return OrderedDict()
         if hasattr(config, 'network_service_providers'):
             service_providers = [ServiceProvider.from_dict(x) for x in config.network_service_providers]
         else:
@@ -759,6 +765,8 @@ class Peers:
     @classmethod
     def get_groups(cls):
         config = get_config()
+        if config.network != 'mainnet':
+            return OrderedDict()
         if hasattr(config, 'network_groups'):
             groups = [Group.from_dict(x) for x in config.network_groups]
         else:

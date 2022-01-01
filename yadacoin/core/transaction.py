@@ -4,16 +4,23 @@ import os
 import base64
 import time
 from logging import getLogger
+from enum import Enum
 
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
+from yadacoin.core.collections import Collections
 
 from yadacoin.core.crypt import Crypt
+from yadacoin.core.identity import Identity
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.config import get_config
 from yadacoin.core.chain import CHAIN
+from yadacoin.contracts.base import Contract
+from yadacoin.contracts.changeownership import (
+    ChangeOwnershipContract
+)
 
 
 def fix_float1(value):
@@ -49,6 +56,10 @@ class TotalValueMismatchException(Exception):
     pass
 
 
+class TransactionConsts(Enum):
+    RELATIONSHIP_MAX_SIZE = 20480
+
+
 class Transaction(object):
 
     def __init__(
@@ -68,7 +79,10 @@ class Transaction(object):
         coinbase=False,
         extra_blocks=None,
         seed_gateway_rid='',
-        seed_rid=''
+        seed_rid='',
+        version=None,
+        miner_signature=None,
+        contract_generated=False
     ):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
@@ -89,15 +103,29 @@ class Transaction(object):
         self.extra_blocks = extra_blocks
         self.seed_gateway_rid = seed_gateway_rid,
         self.seed_rid = seed_rid
+
+        if version:
+            self.version = version
+        else:
+            self.version = 1
+            if self.time:
+                self.version = 2
+
+        if isinstance(self.relationship, dict) and Collections.SMART_CONTRACT.value in self.relationship:
+            self.relationship = ChangeOwnershipContract.from_dict(self.relationship[Collections.SMART_CONTRACT.value])
+
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
+
         self.inputs = []
         for x in inputs:
             if 'signature' in x and 'public_key' in x and 'address' in x:
                 self.inputs.append(ExternalInput.from_dict(x))
             else:
                 self.inputs.append(Input.from_dict(x))
+
         self.coinbase = coinbase
+        self.contract_generated = contract_generated
 
     @classmethod
     async def generate(
@@ -121,7 +149,10 @@ class Transaction(object):
         signin=None,
         relationship='',
         no_relationship=False,
-        exact_match=False
+        exact_match=False,
+        version=3,
+        miner_signature=None,
+        contract_generated=False
     ):
         cls_inst = cls()
         cls_inst.config = get_config()
@@ -144,36 +175,29 @@ class Transaction(object):
         cls_inst.relationship = relationship
         cls_inst.no_relationship = no_relationship
         cls_inst.exact_match = exact_match
+        cls_inst.version = version
+        cls_inst.miner_signature = miner_signature
+
         for x in outputs:
             cls_inst.outputs.append(Output.from_dict(x))
+
         cls_inst.inputs = []
         for x in inputs:
             if 'signature' in x and 'public_key' in x and 'address' in x:
                 cls_inst.inputs.append(ExternalInput.from_dict(x))
             else:
                 cls_inst.inputs.append(Input.from_dict(x))
+
         cls_inst.coinbase = coinbase
-        cls_inst.chattext = chattext
-        cls_inst.signin = signin
+        cls_inst.contract_generated = contract_generated
+
         await cls_inst.do_money()
 
-        inputs_concat = ''.join([x.id for x in sorted(cls_inst.inputs, key=lambda x: x.id.lower())])
-        outputs_concat = cls_inst.get_output_hashes()
         if username_signature or rid:
             if not cls_inst.rid:
                 cls_inst.rid = cls_inst.generate_rid()
-            if cls_inst.chattext:
-                cls_inst.relationship = json.dumps({
-                    "chatText": cls_inst.chattext
-                })
-                cls_inst.encrypted_relationship = cls_inst.config.cipher.encrypt(cls_inst.relationship)
-            elif cls_inst.signin:
-                for shared_secret in cls_inst.config.GU.get_shared_secrets_by_rid(cls_inst.rid):
-                    cls_inst.relationship = SignIn(cls_inst.signin)
-                    cls_inst.cipher = Crypt(shared_secret.hex(), shared=True)
-                    cls_inst.encrypted_relationship = cls_inst.cipher.shared_encrypt(cls_inst.relationship.to_json())
-                    break
-            elif cls_inst.relationship:
+
+            if cls_inst.relationship:
                 cls_inst.encrypted_relationship = cls_inst.relationship
             elif cls_inst.no_relationship:
                 cls_inst.encrypted_relationship = ''
@@ -182,27 +206,17 @@ class Transaction(object):
                     a = os.urandom(32).decode('latin1')
                     cls_inst.dh_public_key = scalarmult_base(a).encode('latin1').hex()
                     cls_inst.dh_private_key = a.encode().hex()
+
                 cls_inst.relationship = cls_inst.generate_relationship()
+
                 if not private_key:
                     raise Exception('missing private key')
                 cls_inst.encrypted_relationship = cls_inst.config.cipher.encrypt(cls_inst.relationship.to_json().encode())
         else:
             cls_inst.rid = ''
             cls_inst.encrypted_relationship = ''
-        
-        cls_inst.header = (
-            cls_inst.public_key +
-            str(cls_inst.time) +
-            cls_inst.dh_public_key +
-            cls_inst.rid +
-            cls_inst.encrypted_relationship +
-            "{0:.8f}".format(cls_inst.fee) +
-            cls_inst.requester_rid +
-            cls_inst.requested_rid +
-            inputs_concat +
-            outputs_concat
-        )
-        cls_inst.hash = hashlib.sha256(cls_inst.header.encode('utf-8')).digest().hex()
+
+        cls_inst.hash = await cls_inst.generate_hash()
         if cls_inst.private_key:
             cls_inst.transaction_signature = TU.generate_signature_with_private_key(private_key, cls_inst.hash)
         else:
@@ -220,7 +234,9 @@ class Transaction(object):
             cls_inst.hash,
             inputs=[x.to_dict() for x in cls_inst.inputs],
             outputs=[x.to_dict() for x in cls_inst.outputs],
-            coinbase=cls_inst.coinbase
+            coinbase=cls_inst.coinbase,
+            version=cls_inst.version,
+            contract_generated=cls_inst.contract_generated
         )
 
     async def do_money(self):
@@ -332,16 +348,12 @@ class Transaction(object):
 
     @classmethod
     def from_dict(cls, txn):
-        if isinstance(txn.get('relationship'), dict):
-            relationship = Relationship(**txn.get('relationship'))
-        else:
-            relationship = txn.get('relationship', '')
         
         return cls(
             txn_time=txn.get('time'),
             transaction_signature=txn.get('id'),
             rid=txn.get('rid', ''),
-            relationship=relationship,
+            relationship=txn.get('relationship', ''),
             public_key=txn.get('public_key'),
             dh_public_key=txn.get('dh_public_key'),
             fee=float(txn.get('fee')),
@@ -350,7 +362,10 @@ class Transaction(object):
             txn_hash=txn.get('hash', ''),
             inputs=txn.get('inputs', []),
             outputs=txn.get('outputs', []),
-            coinbase=txn.get('coinbase', '')
+            coinbase=txn.get('coinbase', ''),
+            version=txn.get('version'),
+            miner_signature=txn.get('miner_signature'),
+            contract_generated=txn.get('contract_generated')
         )
 
     def in_the_future(self):
@@ -360,6 +375,20 @@ class Transaction(object):
     async def get_inputs(self, inputs):
         for x in inputs:
             yield x
+
+    async def is_contract_generated(self):
+        if await self.get_generating_contract():
+            return True
+        return False
+
+    async def get_generating_contract(self):
+        smart_contract_txn_block = await self.config.mongo.async_db.blocks.find_one({
+            'transactions.relationship.smart_contract.identity.public_key': self.public_key
+        }, sort=[('time', 1)])
+        for txn in smart_contract_txn_block.get('transactions'):
+            txn_obj = Transaction.from_dict(txn)
+            if isinstance(txn_obj.relationship, Contract) and txn_obj.relationship.smart_contract.identity.public_key == self.public_key:
+                return txn_obj
 
     async def verify(self):
         verify_hash = await self.generate_hash()
@@ -384,8 +413,12 @@ class Transaction(object):
                 print("t verify3")
                 raise InvalidTransactionSignatureException("transaction signature did not verify")
 
-        if len(self.relationship) > 20480:
-            raise MaxRelationshipSizeExceeded('Relationship field cannot be greater than 20480 bytes')
+        relationship = self.relationship
+        if isinstance(self.relationship, Contract):
+            relationship = self.relationship.to_string()
+
+        if len(relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value:
+            raise MaxRelationshipSizeExceeded(f'Relationship field cannot be greater than {TransactionConsts.RELATIONSHIP_MAX_SIZE.value} bytes')
 
         # verify spend
         total_input = 0
@@ -393,8 +426,10 @@ class Transaction(object):
         async for txn in self.get_inputs(self.inputs):
             txn_input = None
             input_txn = self.config.BU.get_transaction_by_id(txn.id)
+
             if input_txn:
                 txn_input = Transaction.from_dict(input_txn)
+
             if not input_txn:
                 if self.extra_blocks:
                     txn_input = await self.find_in_extra_blocks(txn)
@@ -435,7 +470,7 @@ class Transaction(object):
                 else:
                     raise InvalidTransactionException("using inputs from a transaction where you were not one of the recipients.")
 
-        if self.coinbase:
+        if self.coinbase or self.miner_signature:
             return
 
         total_output = 0
@@ -448,13 +483,17 @@ class Transaction(object):
     async def generate_hash(self):
         inputs_concat = await self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
+        if isinstance(self.relationship, Contract):
+            relationship = self.relationship.to_string()
+        else:
+            relationship = self.relationship
         if self.time:
             hashout = hashlib.sha256((
                 self.public_key +
                 str(self.time) +
                 self.dh_public_key +
                 self.rid +
-                self.relationship +
+                relationship +
                 "{0:.8f}".format(self.fee) +
                 self.requester_rid +
                 self.requested_rid +
@@ -499,6 +538,17 @@ class Transaction(object):
                 if inp['id'] == input_id:
                     output_txn = txn
                     return output_txn
+
+    async def get_coinbase_origin(self, txn_input):
+        from yadacoin.core.block import Block
+        blocks = await self.config.mongo.async_db.blocks.find({
+            'transactions.id': txn_input.id
+        })
+        async for b in blocks:
+            b = await Block.async_init(b)
+            cb = b.get_coinbase()
+            if cb.id == txn_input.id:
+                return cb
 
     async def recover_missing_transaction(self, txn_id, exclude_ids=[]):
         return False
@@ -620,7 +670,7 @@ class Transaction(object):
         if hasattr(relationship, 'to_dict'):
             relationship = relationship.to_dict()
         ret = {
-            'time': self.time,
+            'time': int(self.time),
             'rid': self.rid,
             'id': self.transaction_signature,  # Beware: changing name between object/dict view is very error prone
             'relationship': relationship,
@@ -754,19 +804,6 @@ class Relationship(object):
             'reply': self.reply,
             'topic': self.topic,
             'my_public_key': self.my_public_key
-        }
-
-    def to_json(self):
-        return json.dumps(self.to_dict())
-
-
-class SignIn(object):
-    def __init__(self, signin):
-        self.signin = signin
-
-    def to_dict(self):
-        return {
-            "signIn": self.signin
         }
 
     def to_json(self):

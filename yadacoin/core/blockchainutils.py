@@ -110,7 +110,7 @@ class BlockChainUtils(object):
         return balance
 
     async def get_wallet_unspent_transactions(self, address, ids=None, no_zeros=False):
-        
+
         #### fine above ####
 
 
@@ -531,7 +531,7 @@ class BlockChainUtils(object):
             return True
         
         if inc_mempool:
-            res2 = self.mongo.async_db.miner_transactions.find_one({
+            res2 = await self.mongo.async_db.miner_transactions.find_one({
                 "inputs.id": {'$in': input_ids},
                 "public_key": public_key
             })
