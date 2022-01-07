@@ -17,10 +17,6 @@ from yadacoin.core.identity import Identity
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.config import get_config
 from yadacoin.core.chain import CHAIN
-from yadacoin.contracts.base import Contract
-from yadacoin.contracts.changeownership import (
-    ChangeOwnershipContract
-)
 
 
 def fix_float1(value):
@@ -112,7 +108,8 @@ class Transaction(object):
                 self.version = 2
 
         if isinstance(self.relationship, dict) and Collections.SMART_CONTRACT.value in self.relationship:
-            self.relationship = ChangeOwnershipContract.from_dict(self.relationship[Collections.SMART_CONTRACT.value])
+            from yadacoin.contracts.base import Contract
+            self.relationship = Contract.from_dict(self.relationship[Collections.SMART_CONTRACT.value])
 
         for x in outputs:
             self.outputs.append(Output.from_dict(x))
@@ -125,6 +122,7 @@ class Transaction(object):
                 self.inputs.append(Input.from_dict(x))
 
         self.coinbase = coinbase
+        self.miner_signature = miner_signature
         self.contract_generated = contract_generated
 
     @classmethod
@@ -179,14 +177,19 @@ class Transaction(object):
         cls_inst.miner_signature = miner_signature
 
         for x in outputs:
-            cls_inst.outputs.append(Output.from_dict(x))
+            if isinstance(x, Output):
+                out = x
+            else:
+                out = Output.from_dict(x)
+            cls_inst.outputs.append(out)
 
         cls_inst.inputs = []
         for x in inputs:
-            if 'signature' in x and 'public_key' in x and 'address' in x:
-                cls_inst.inputs.append(ExternalInput.from_dict(x))
+            if isinstance(x, Input):
+                inp = x
             else:
-                cls_inst.inputs.append(Input.from_dict(x))
+                inp = x
+            cls_inst.inputs.append(inp)
 
         cls_inst.coinbase = coinbase
         cls_inst.contract_generated = contract_generated
@@ -221,23 +224,7 @@ class Transaction(object):
             cls_inst.transaction_signature = TU.generate_signature_with_private_key(private_key, cls_inst.hash)
         else:
             cls_inst.transaction_signature = ''
-        return cls(
-            cls_inst.time,
-            cls_inst.rid,
-            cls_inst.transaction_signature,
-            cls_inst.encrypted_relationship,
-            cls_inst.public_key,
-            cls_inst.dh_public_key,
-            float(cls_inst.fee),
-            cls_inst.requester_rid,
-            cls_inst.requested_rid,
-            cls_inst.hash,
-            inputs=[x.to_dict() for x in cls_inst.inputs],
-            outputs=[x.to_dict() for x in cls_inst.outputs],
-            coinbase=cls_inst.coinbase,
-            version=cls_inst.version,
-            contract_generated=cls_inst.contract_generated
-        )
+        return cls_inst
 
     async def do_money(self):
         if self.coinbase:
@@ -382,15 +369,19 @@ class Transaction(object):
         return False
 
     async def get_generating_contract(self):
+        from yadacoin.contracts.base import Contract
         smart_contract_txn_block = await self.config.mongo.async_db.blocks.find_one({
             'transactions.relationship.smart_contract.identity.public_key': self.public_key
         }, sort=[('time', 1)])
+        if not smart_contract_txn_block:
+            return
         for txn in smart_contract_txn_block.get('transactions'):
             txn_obj = Transaction.from_dict(txn)
             if isinstance(txn_obj.relationship, Contract) and txn_obj.relationship.smart_contract.identity.public_key == self.public_key:
                 return txn_obj
 
     async def verify(self):
+        from yadacoin.contracts.base import Contract
         verify_hash = await self.generate_hash()
         address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
 
@@ -481,6 +472,7 @@ class Transaction(object):
             raise TotalValueMismatchException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))
 
     async def generate_hash(self):
+        from yadacoin.contracts.base import Contract
         inputs_concat = await self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
         if isinstance(self.relationship, Contract):

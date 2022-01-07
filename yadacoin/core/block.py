@@ -29,6 +29,7 @@ from yadacoin.core.config import get_config
 
 
 def quantize_eight(value):
+    getcontext().prec = len(str(value)) + 8
     if value == -0.0:
         value = 0.0
     value = Decimal(value)
@@ -324,7 +325,7 @@ class Block(object):
         if block.get('special_target', 0) == 0:
             block['special_target'] = block.get('target')
 
-        block = await cls.init_async(
+        block_inst = await cls.init_async(
             version=block.get('version'),
             block_time=block.get('time'),
             block_index=block.get('index'),
@@ -344,11 +345,15 @@ class Block(object):
 
         for txn in block.get('transactions'):
             transaction = Transaction.from_dict(txn)
-            transaction.coinbase = Block.is_coinbase(block, transaction)
-            transaction.contract_generated = await Block.is_contract_generated(block, transaction)
+            try:
+                transaction.coinbase = Block.is_coinbase(block_inst, transaction)
+            except:
+                print('no')
+            transaction.contract_generated = await transaction.is_contract_generated()
             transactions.append(transaction)
         
-        block.transactions = transactions
+        block_inst.transactions = transactions
+        return block_inst
 
     @classmethod
     async def from_json(cls, block_json):

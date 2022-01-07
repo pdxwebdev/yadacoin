@@ -6,6 +6,7 @@ import binascii
 from bitcoin.wallet import P2PKHBitcoinAddress
 from logging import getLogger
 from threading import Thread
+from yadacoin.contracts.base import Contract
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
@@ -456,7 +457,7 @@ class MiningPool(object):
             if not isinstance(transaction_obj, Transaction):
                 continue
 
-            smart_contract_obj = await self.get_smart_contract(transaction_obj)
+            smart_contract_obj = await Contract.get_smart_contract(transaction_obj)
             if smart_contract_obj:
                 blockchain_smart_contract_objs[smart_contract_obj.requested_rid] = smart_contract_obj
 
@@ -469,8 +470,7 @@ class MiningPool(object):
             except Exception as e:
                 self.config.app_log.warning(format_exc())
 
-
-        return mempool_smart_contract_objs.values() + transaction_objs
+        return list(mempool_smart_contract_objs.values()) + transaction_objs
 
     async def verify_pending_transaction(self, txn, used_sigs):
         try:
@@ -541,23 +541,6 @@ class MiningPool(object):
             self.mongo.db.miner_transactions.remove({'id': txn['id']})
             self.mongo.db.failed_transactions.insert({'reason': 'Unhandled exception', 'error': format_exc()})
 
-    async def get_smart_contract(self, transaction_obj):
-        smart_contract_block = await self.config.mongo.async_db.blocks.find_one({
-            'transactions.requested_rid': transaction_obj.requested_rid,
-            'transactions.relationship.smart_contract': {'$exists': True},
-            'transactions.id': {'$ne': transaction_obj.transaction_signature}
-        }, sort=[('index', 1)])
-        if not smart_contract_block:
-            return
-        for smart_contract in smart_contract_block.get('transactions'):
-            if (
-                smart_contract.get('relationship') and
-                isinstance(smart_contract.get('relationship'), dict) and
-                Collections.SMART_CONTRACT.value in smart_contract['relationship']
-            ):
-                smart_contract_obj = Transaction.from_dict(smart_contract)
-                return smart_contract_obj
-
     async def get_purchase_txn(self, transaction_obj):
         purchase_txn_blocks = self.config.mongo.async_db.blocks.find({
             'transactions.requested_rid': transaction_obj.requested_rid,
@@ -571,7 +554,7 @@ class MiningPool(object):
                 purchase_txn_obj = Transaction.from_dict(purchase_txn)
                 if transaction_obj.requested_rid != purchase_txn_obj.requested_rid:
                     continue
-                smart_contract_obj = await self.get_smart_contract(purchase_txn_obj)
+                smart_contract_obj = await Contract.get_smart_contract(purchase_txn_obj)
                 if not smart_contract_obj:
                     continue
                 purchase_amount = await self.get_amount(smart_contract_obj, purchase_txn_obj)
