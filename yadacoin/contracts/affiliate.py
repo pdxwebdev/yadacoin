@@ -142,57 +142,54 @@ class AffiliateContract(Contract):
         value_sent_to_address = sum([x.value for x in trigger_txn.outputs if x.to == address])
 
         referrer = await self.get_referrer(trigger_txn)
+        if not referrer:
+            return
 
         outputs = []
         if self.referrer.active:
+            to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(referrer.public_key)))
+            if self.referrer.operator == PayoutOperators.PERCENT.value:
+                value = self.referrer.amount * value_sent_to_address
+            if self.referrer.operator == PayoutOperators.FIXED.value:
+                value = self.referrer.amount
+
             output = Output(
-                to=str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(referrer.public_key)))
+                to=to,
+                value=value
             )
-            if self.referrer.operator == PayoutOperators.PERCENT:
-                output.value = self.referrer.amount * value_sent_to_address
-            if self.referrer.operator == PayoutOperators.FIXED:
-                output.value = self.referrer.amount
             outputs.append(output)
 
         if self.referee.active:
+            to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(trigger_txn.public_key)))
+            if self.referee.operator == PayoutOperators.PERCENT.value:
+                value = self.referee.amount * value_sent_to_address
+            if self.referee.operator == PayoutOperators.FIXED.value:
+                value = self.referee.amount
+
             output = Output(
-                to=str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(trigger_txn.public_key)))
+                to=to,
+                value=value
             )
-            if self.referee.operator == PayoutOperators.PERCENT:
-                output.value = self.referee.amount * value_sent_to_address
-            if self.referee.operator == PayoutOperators.FIXED:
-                output.value = self.referee.amount
             outputs.append(output)
 
         total_payout = sum([x.value for x in outputs])
 
-        return_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(referrer.public_key)))
-
-        funding_txns = await getattr(self, f'get_{self.affiliate_proof_type}_funds')(contract_txn, total_payout)
-
-        payout_txn = Transaction.from_dict({
-            'value': value_sent_to_address,
-            'inputs': [{'id': funding_txn.transaction_signature} for funding_txn in funding_txns],
-            'fee': 0,
-            'outputs': outputs,
-            'time': int(time.time()),
-            'public_key': self.identity.public_key,
-            'requester_rid': contract_txn.requester_rid,
-            'requested_rid': contract_txn.requested_rid,
-            'rid': contract_txn.rid
-        })
-        payout_txn.hash = await payout_txn.generate_hash()
-        payout_txn.transaction_signature = TU.generate_signature_with_private_key(
-            binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode(),
-            payout_txn.hash
+        payout_txn = await Transaction.generate(
+            fee=0,
+            outputs=outputs,
+            public_key=self.identity.public_key,
+            requester_rid=contract_txn.requester_rid,
+            requested_rid=contract_txn.requested_rid,
+            rid=contract_txn.rid,
+            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
         )
         payout_txn.miner_signature = TU.generate_signature_with_private_key(
             self.config.private_key,
-            hashlib.sha256(payout_txn.transaction_signature).hexdigest().encode('utf-8')
+            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
         )
         return payout_txn
 
-    async def verify_affiliate(self, contract_txn, trigger_txn):
+    async def verify_honor(self, contract_txn, trigger_txn):
         referrer = await self.get_referrer(trigger_txn)
         if not referrer:
             raise Exception('Referrer not found')
@@ -200,9 +197,9 @@ class AffiliateContract(Contract):
         if trigger_txn.requested_rid != contract_txn.requested_rid:
             raise Exception('Referee is not for this contract')
 
-    async def get_affiliate_funds(self, contract_txn, total_payout):
+    async def get_honor_funds(self, contract_txn, total_payout):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
-        funds = self.get_funds(self, contract_txn)
+        funds = self.get_funds(contract_txn)
         total_output_to_contract = 0
         selected_funds = []
         async for fund in funds:
@@ -214,18 +211,19 @@ class AffiliateContract(Contract):
         return selected_funds
 
     async def get_referrer(self, trigger_txn):
+        from yadacoin.core.transaction import Transaction
         referrers = self.config.mongo.async_db.blocks.aggregate([
             {
                 '$match': {
-                    'transactions.referrer_rid': trigger_txn.referrer_rid
+                    'transactions.rid': trigger_txn.requester_rid
                 }
             },
             {
-                '$unwind': 'transactions'
+                '$unwind': '$transactions'
             },
             {
                 '$match': {
-                    'transactions.referrer_rid': trigger_txn.referrer_rid
+                    'transactions.rid': trigger_txn.requester_rid
                 }
             },
             {
@@ -237,7 +235,7 @@ class AffiliateContract(Contract):
         ])
         results = [referrer async for referrer in referrers]
         if results:
-            return results[0]
+            return Transaction.from_dict(results[0]['transactions'])
 
     def to_dict(self):
         return {

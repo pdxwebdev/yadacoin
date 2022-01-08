@@ -112,14 +112,15 @@ class Transaction(object):
             self.relationship = Contract.from_dict(self.relationship[Collections.SMART_CONTRACT.value])
 
         for x in outputs:
-            self.outputs.append(Output.from_dict(x))
+            if not isinstance(x, Output):
+                x = Output.from_dict(x)
+            self.outputs.append(x)
 
         self.inputs = []
         for x in inputs:
-            if 'signature' in x and 'public_key' in x and 'address' in x:
-                self.inputs.append(ExternalInput.from_dict(x))
-            else:
-                self.inputs.append(Input.from_dict(x))
+            if not isinstance(x, Input):
+                x = Input.from_dict(x)
+            self.inputs.append(x)
 
         self.coinbase = coinbase
         self.miner_signature = miner_signature
@@ -196,29 +197,6 @@ class Transaction(object):
 
         await cls_inst.do_money()
 
-        if username_signature or rid:
-            if not cls_inst.rid:
-                cls_inst.rid = cls_inst.generate_rid()
-
-            if cls_inst.relationship:
-                cls_inst.encrypted_relationship = cls_inst.relationship
-            elif cls_inst.no_relationship:
-                cls_inst.encrypted_relationship = ''
-            else:
-                if not cls_inst.dh_public_key or not cls_inst.dh_private_key:
-                    a = os.urandom(32).decode('latin1')
-                    cls_inst.dh_public_key = scalarmult_base(a).encode('latin1').hex()
-                    cls_inst.dh_private_key = a.encode().hex()
-
-                cls_inst.relationship = cls_inst.generate_relationship()
-
-                if not private_key:
-                    raise Exception('missing private key')
-                cls_inst.encrypted_relationship = cls_inst.config.cipher.encrypt(cls_inst.relationship.to_json().encode())
-        else:
-            cls_inst.rid = ''
-            cls_inst.encrypted_relationship = ''
-
         cls_inst.hash = await cls_inst.generate_hash()
         if cls_inst.private_key:
             cls_inst.transaction_signature = TU.generate_signature_with_private_key(private_key, cls_inst.hash)
@@ -241,7 +219,7 @@ class Transaction(object):
         for mtxn in miner_transactions:
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
-        
+
         input_sum = 0
         inputs = []
         enough = False
@@ -335,7 +313,7 @@ class Transaction(object):
 
     @classmethod
     def from_dict(cls, txn):
-        
+
         return cls(
             txn_time=txn.get('time'),
             transaction_signature=txn.get('id'),
@@ -377,13 +355,13 @@ class Transaction(object):
             return
         for txn in smart_contract_txn_block.get('transactions'):
             txn_obj = Transaction.from_dict(txn)
-            if isinstance(txn_obj.relationship, Contract) and txn_obj.relationship.smart_contract.identity.public_key == self.public_key:
+            if isinstance(txn_obj.relationship, Contract) and txn_obj.relationship.identity.public_key == self.public_key:
                 return txn_obj
 
     async def verify(self):
         from yadacoin.contracts.base import Contract
         verify_hash = await self.generate_hash()
-        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
         if verify_hash != self.hash:
             raise InvalidTransactionException("transaction is invalid")
@@ -448,13 +426,13 @@ class Transaction(object):
                                     raise
                             except:
                                 raise InvalidTransactionSignatureException("external input transaction signature did not verify")
-                        
+
                         found = True
                         total_input += float(output.value)
                 elif str(output.to) == str(address):
                     found = True
                     total_input += float(output.value)
-            
+
             if not found:
                 if isinstance(txn, ExternalInput):
                     raise InvalidTransactionException("external input signing information did not match any recipients of the input transaction")
@@ -507,7 +485,7 @@ class Transaction(object):
 
     async def get_input_hashes(self):
         return ''.join(sorted([x.id async for x in self.get_inputs(self.inputs)], key=lambda v: v.lower()))
-    
+
     async def find_in_extra_blocks(self, txn_input):
         for block in self.extra_blocks:
             for xtxn in block.transactions:

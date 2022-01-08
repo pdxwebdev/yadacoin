@@ -71,7 +71,7 @@ class Block(object):
     __slots__ = ('app_log', 'config', 'mongo', 'version', 'time', 'index', 'prev_hash', 'nonce', 'transactions', 'txn_hashes',
                  'merkle_root', 'verify_merkle_root','hash', 'public_key', 'signature', 'special_min', 'target',
                  'special_target', 'header')
-    
+
     @classmethod
     async def init_async(
         cls,
@@ -181,7 +181,7 @@ class Block(object):
                     config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
                     app_log.debug("Block embeds txn too far in the future {} {}".format(xtime, transaction_obj.time))
                     continue
-                
+
                 if transaction_obj.inputs:
                     failed = False
                     input_ids = []
@@ -351,14 +351,14 @@ class Block(object):
                 print('no')
             transaction.contract_generated = await transaction.is_contract_generated()
             transactions.append(transaction)
-        
+
         block_inst.transactions = transactions
         return block_inst
 
     @classmethod
     async def from_json(cls, block_json):
         return await cls.from_dict(json.loads(block_json))
-    
+
     def get_coinbase(self):
         for txn in self.transactions:
             if Block.is_coinbase(self, txn):
@@ -416,7 +416,7 @@ class Block(object):
             getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
             raise Exception('Invalid block hash')
 
-        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         try:
             # print("address", address, "sig", self.signature, "pubkey", self.public_key)
             result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))

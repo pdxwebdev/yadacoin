@@ -15,7 +15,7 @@ from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.transaction import (
     Transaction,
-    MissingInputTransactionException, 
+    MissingInputTransactionException,
     InvalidTransactionException,
     InvalidTransactionSignatureException,
     TransactionInputOutputMismatchException,
@@ -145,14 +145,14 @@ class MiningPool(object):
             special_target = CHAIN.special_target(
                 block_candidate.index,
                 block_candidate.target,
-                delta_t, 
+                delta_t,
                 self.config.network
             )
             block_candidate.special_target = special_target
 
         if (
             block_candidate.index >= 35200 and
-            (int(block_candidate.time) - int(self.last_block_time)) < 600 and 
+            (int(block_candidate.time) - int(self.last_block_time)) < 600 and
             block_candidate.special_min and
             self.config.network == 'mainnet'
         ):
@@ -410,7 +410,7 @@ class MiningPool(object):
             },
             {
                 'target': 1
-            }, 
+            },
             sort=[('index',-1)]
         )
 
@@ -463,14 +463,16 @@ class MiningPool(object):
 
             transaction_objs.append(transaction_obj)
 
+        generated_txns = []
         for smart_contract_obj in blockchain_smart_contract_objs.values():
-            try:
-                payout_txn = await smart_contract_obj.relationship.process(smart_contract_obj, transaction_obj, transaction_objs)
-                transaction_objs.append(payout_txn)
-            except Exception as e:
-                self.config.app_log.warning(format_exc())
+            for trigger_txn in transaction_objs:
+                try:
+                    payout_txn = await smart_contract_obj.relationship.process(smart_contract_obj, trigger_txn, transaction_objs)
+                    generated_txns.append(payout_txn)
+                except Exception as e:
+                    self.config.app_log.warning(format_exc())
 
-        return list(mempool_smart_contract_objs.values()) + transaction_objs
+        return list(mempool_smart_contract_objs.values()) + transaction_objs + generated_txns
 
     async def verify_pending_transaction(self, txn, used_sigs):
         try:
@@ -561,9 +563,9 @@ class MiningPool(object):
                 if purchase_amount > highest_amount:
                     winning_purchase_txn = purchase_txn_obj
         return smart_contract_obj, winning_purchase_txn
-    
+
     async def get_amount(self, smart_contract_obj, purchase_txn_obj):
-        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(smart_contract_obj.relationship.identity.public_key))
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(smart_contract_obj.relationship.identity.public_key)))
         amount = 0
         for output in purchase_txn_obj.outputs:
             if output.to == address:
@@ -584,5 +586,5 @@ class MiningPool(object):
         await self.config.nodeShared.send_block(block)
 
         await self.refresh()
-        
+
 

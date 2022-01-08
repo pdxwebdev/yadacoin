@@ -130,9 +130,9 @@ class Contract:
         getattr(self, f'verify_{self.asset_proof_type}')(contract_txn, generated_txn)
 
     async def get_funds(self, contract_txn):
-        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.relationship.identity.public_key))
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.relationship.identity.public_key)))
         async for txn in self.config.BU.get_wallet_unspent_transactions(address, no_zeros=True):
-            yield txn
+            yield Transaction.from_dict(txn)
 
     @staticmethod
     async def get_smart_contract(transaction_obj):
