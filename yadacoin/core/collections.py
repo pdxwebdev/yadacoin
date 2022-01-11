@@ -2,6 +2,8 @@ from enum import Enum
 
 
 class Collections(Enum):
+    ASSET = 'asset'
+    BID = 'bid'
     CONTACT = 'contact'
     CALENDAR = 'event_meeting'
     CHAT = 'chat'
@@ -18,6 +20,7 @@ class Collections(Enum):
     MAIL = 'mail'
     PERMISSION_REQUEST = 'permission_request'
     SIGNATURE_REQUEST = 'signature_request'
+    SMART_CONTRACT = 'smart_contract'
     WEB_CHALLENGE_REQUEST = 'web_challenge_request'
     WEB_CHALLENGE_RESPONSE = 'web_challenge_response'
     WEB_PAGE = 'web_page'
