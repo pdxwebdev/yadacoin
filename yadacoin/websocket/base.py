@@ -220,15 +220,15 @@ class RCPWebSocketServer(WebSocketHandler):
         pass
 
     async def get_credit_balance(self):
-      address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.peer.identity.public_key))
+        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.peer.identity.public_key))
 
-      shares = await self.config.mongo.async_db.shares.count_documents({'address': str(address)})
+        shares = await self.config.mongo.async_db.shares.count_documents({'address': str(address)})
 
-      txns_routed = await self.config.mongo.async_db.miner_transactions.count_documents({'public_key': self.peer.identity.public_key})
+        txns_routed = await self.config.mongo.async_db.miner_transactions.count_documents({'public_key': self.peer.identity.public_key})
 
-      credit_balance = shares - (txns_routed * .1)
+        credit_balance = shares - (txns_routed * .1)
 
-      return credit_balance if credit_balance > 0 else 0.00
+        return credit_balance if credit_balance > 0 else 0.00
 
     async def join_group(self, body):
 
