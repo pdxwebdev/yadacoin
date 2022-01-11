@@ -1,21 +1,89 @@
 webpackJsonp([0],{
 
-/***/ 108:
+/***/ 10:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SettingsService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+var SettingsService = /** @class */ (function () {
+    function SettingsService() {
+        this.remoteSettings = {};
+        this.remoteSettingsUrl = null;
+        this.tokens = {};
+        this.menu = '';
+        this.collections = {
+            AFFILIATE: 'affiliate',
+            ASSET: 'asset',
+            BID: 'bid',
+            CONTACT: 'contact',
+            CALENDAR: 'event_meeting',
+            CHAT: 'chat',
+            CHAT_FILE: 'chat_file',
+            CONTRACT: 'contract',
+            CONTRACT_SIGNED: 'contract_signed',
+            GROUP: 'group',
+            GROUP_CALENDAR: 'group_event_meeting',
+            GROUP_CHAT: 'group_chat',
+            GROUP_CHAT_FILE_NAME: 'group_chat_file_name',
+            GROUP_CHAT_FILE: 'group_chat_file',
+            GROUP_MAIL: 'group_mail',
+            MAIL: 'mail',
+            MARKET: 'market',
+            PERMISSION_REQUEST: 'permission_request',
+            SIGNATURE_REQUEST: 'signature_request',
+            SMART_CONTRACT: 'smart_contract',
+            WEB_CHALLENGE_REQUEST: 'web_challenge_request',
+            WEB_CHALLENGE_RESPONSE: 'web_challenge_response',
+            WEB_PAGE: 'web_page',
+            WEB_PAGE_REQUEST: 'web_page_request',
+            WEB_PAGE_RESPONSE: 'web_page_response',
+            WEB_SIGNIN_REQUEST: 'web_signin_request',
+            WEB_SIGNIN_RESPONSE: 'web_signin_response'
+        };
+        this.tokens = {};
+    }
+    SettingsService.prototype.go = function () {
+        return new Promise(function (resolve, reject) {
+        });
+    };
+    SettingsService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [])
+    ], SettingsService);
+    return SettingsService;
+}());
+
+//# sourceMappingURL=settings.service.js.map
+
+/***/ }),
+
+/***/ 109:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ComposePage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_autocomplete_provider__ = __webpack_require__(136);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_forms__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(387);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_autocomplete_provider__ = __webpack_require__(110);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_forms__ = __webpack_require__(30);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(390);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(10);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -234,7 +302,7 @@ var ComposePage = /** @class */ (function () {
     ], ComposePage.prototype, "searchbar", void 0);
     ComposePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'compose-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  What type of message is this?\n  <ion-segment (ionChange)="segmentChanged($event)" [(ngModel)]="message_type" value="mail">\n    <ion-segment-button value="mail">\n      {{graphService.isGroup(recipient) ? \'Group \': \'\'}}Mail\n    </ion-segment-button>\n    <ion-segment-button value="calendar">\n      {{graphService.isGroup(recipient) ? \'Group \': \'\'}}Event / Meeting\n    </ion-segment-button>\n  </ion-segment>\n  <button ion-button secondary (click)="submit()" [disabled]="busy || !recipient || (message_type === \'calendar\' && !event_datetime)">Send \n    <ion-spinner *ngIf="busy"></ion-spinner>\n  </button>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item *ngIf="message_type === \'calendar\'">\n    <ion-label floating>Date &amp; time</ion-label>\n    <ion-datetime displayFormat="D MMM YYYY H:mm" [(ngModel)]="event_datetime"></ion-datetime>\n  </ion-item>\n  <ion-item>\n    <ion-label floating>Subject</ion-label>\n    <ion-input type="text" [(ngModel)]="subject"></ion-input>\n  </ion-item>\n  <ion-item>\n    <ion-label floating>Body</ion-label>\n    <ion-textarea type="text" [(ngModel)]="body" rows="5" autoGrow="true"></ion-textarea>\n  </ion-item>\n  <ion-item *ngIf="settingsService.remoteSettings.restricted">\n    <ion-label id="profile_image" color="primary"></ion-label>\n    <ion-input type="file" (change)="changeListener($event)"></ion-input>\n  </ion-item>\n  <br>\n  <ion-item *ngIf="item && item.sender">\n    Previous message\n    <div title="Verified" class="sender">\n      <span>{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n      <span *ngIf="item.group">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    </div>\n    <div class="subject">{{item.subject}}</div>\n    <div class="datetime">{{item.datetime}}</div>\n    <div class="body">{{item.body}}</div>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/
+            selector: 'compose-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  What type of message is this?\n  <ion-segment (ionChange)="segmentChanged($event)" [(ngModel)]="message_type" value="mail">\n    <ion-segment-button value="mail">\n      {{graphService.isGroup(recipient) ? \'Group \': \'\'}}Mail\n    </ion-segment-button>\n    <ion-segment-button value="calendar">\n      {{graphService.isGroup(recipient) ? \'Group \': \'\'}}Event / Meeting\n    </ion-segment-button>\n  </ion-segment>\n  <button ion-button secondary (click)="submit()" [disabled]="busy || !recipient || (message_type === \'calendar\' && !event_datetime)">Send \n    <ion-spinner *ngIf="busy"></ion-spinner>\n  </button>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon *ngIf="graphService.isAdded(recipient)" name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item *ngIf="message_type === \'calendar\'">\n    <ion-label floating>Date &amp; time</ion-label>\n    <ion-datetime displayFormat="D MMM YYYY H:mm" [(ngModel)]="event_datetime"></ion-datetime>\n  </ion-item>\n  <ion-item>\n    <ion-label floating>Subject</ion-label>\n    <ion-input type="text" [(ngModel)]="subject"></ion-input>\n  </ion-item>\n  <ion-item>\n    <ion-label floating>Body</ion-label>\n    <ion-textarea type="text" [(ngModel)]="body" rows="5" autoGrow="true"></ion-textarea>\n  </ion-item>\n  <ion-item *ngIf="settingsService.remoteSettings.restricted">\n    <ion-label id="profile_image" color="primary"></ion-label>\n    <ion-input type="file" (change)="changeListener($event)"></ion-input>\n  </ion-item>\n  <br>\n  <ion-item *ngIf="item && item.sender">\n    Previous message\n    <div title="Verified" class="sender">\n      <span>{{item.sender.username}} <ion-icon *ngIf="graphService.isAdded(item.sender)" name="checkmark-circle" class="success"></ion-icon></span>\n      <span *ngIf="item.group">{{item.group.username}} <ion-icon *ngIf="graphService.isAdded(item.group)" name="checkmark-circle" class="success"></ion-icon></span>\n    </div>\n    <div class="subject">{{item.subject}}</div>\n    <div class="datetime">{{item.datetime}}</div>\n    <div class="body">{{item.body}}</div>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/compose.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -254,18 +322,18 @@ var ComposePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 136:
+/***/ 110:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CompleteTestService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(665);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(673);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(16);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -319,20 +387,20 @@ var CompleteTestService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 137:
+/***/ 138:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MailItemPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__compose__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__profile_profile__ = __webpack_require__(81);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__compose__ = __webpack_require__(109);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__profile_profile__ = __webpack_require__(70);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_settings_service__ = __webpack_require__(10);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -431,7 +499,7 @@ var MailItemPage = /** @class */ (function () {
     };
     MailItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'mail-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{item.subject}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <button ion-button secondary (click)="replyMail(item)" *ngIf="graphService.isAdded(item.sender)">Reply</button>\n  <button ion-button secondary (click)="addFriend(item)" *ngIf="!graphService.isAdded(item.sender) && !graphService.isMe(item.sender)">Add sender as contact</button>\n  <button *ngIf="item.group" ion-button secondary (click)="replyToAllMail(item)">Reply to all</button>\n  <button ion-button secondary (click)="forwardMail(item)">Forward</button>\n  <button *ngIf="item.message_type == settingsService.collections.CONTRACT" ion-button secondary (click)="signMail(item)">Sign</button>\n  <div title="Verified" class="sender">\n    <span (click)="viewProfile(item.sender)">{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n    <span *ngIf="item.group" (click)="viewProfile(item.group)">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n  </div>\n  <div *ngIf="item.message_type == settingsService.collections.CONTRACT_SIGNED"><strong>Contract signed</strong> <ion-icon name="checkmark-circle" class="success"></ion-icon></div>\n  <ion-item>{{item.datetime}}</ion-item>\n  <ion-item *ngIf="item.event_datetime">{{item.event_datetime}}</ion-item>\n  <ion-item><pre>{{item.body}}</pre></ion-item>\n  <ion-item *ngIf="item.skylink"><a href="https://centeridentity.com/sia-download?skylink={{item.skylink}}" target="_blank">Download {{item.filename}}</a></ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/
+            selector: 'mail-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{item.subject}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <button ion-button secondary (click)="replyMail(item)" *ngIf="graphService.isAdded(item.sender)">Reply</button>\n  <button ion-button secondary (click)="addFriend(item)" *ngIf="!graphService.isAdded(item.sender) && !graphService.isMe(item.sender)">Add sender as contact</button>\n  <button *ngIf="item.group" ion-button secondary (click)="replyToAllMail(item)">Reply to all</button>\n  <button ion-button secondary (click)="forwardMail(item)">Forward</button>\n  <button *ngIf="item.message_type == settingsService.collections.CONTRACT" ion-button secondary (click)="signMail(item)">Sign</button>\n  <div title="Verified" class="sender">\n    <span (click)="viewProfile(item.sender)">{{item.sender.username}} <ion-icon *ngIf="graphService.isAdded(item.sender)" name="checkmark-circle" class="success"></ion-icon></span>\n    <span *ngIf="item.group" (click)="viewProfile(item.group)">{{item.group.username}} <ion-icon *ngIf="graphService.isAdded(item.group)" name="checkmark-circle" class="success"></ion-icon></span>\n  </div>\n  <div *ngIf="item.message_type == settingsService.collections.CONTRACT_SIGNED"><strong>Contract signed</strong> <ion-icon name="checkmark-circle" class="success"></ion-icon></div>\n  <ion-item>{{item.datetime}}</ion-item>\n  <ion-item *ngIf="item.event_datetime">{{item.event_datetime}}</ion-item>\n  <ion-item><pre>{{item.body}}</pre></ion-item>\n  <ion-item *ngIf="item.skylink"><a href="https://centeridentity.com/sia-download?skylink={{item.skylink}}" target="_blank">Download {{item.filename}}</a></ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mailitem.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -449,13 +517,13 @@ var MailItemPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 138:
+/***/ 139:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return OpenGraphParserService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(19);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -574,72 +642,9 @@ var OpenGraphParserService = /** @class */ (function () {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SettingsService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-var SettingsService = /** @class */ (function () {
-    function SettingsService() {
-        this.remoteSettings = {};
-        this.remoteSettingsUrl = null;
-        this.tokens = {};
-        this.menu = '';
-        this.collections = {
-            CONTACT: 'contact',
-            CALENDAR: 'event_meeting',
-            CHAT: 'chat',
-            CHAT_FILE: 'chat_file',
-            CONTRACT: 'contract',
-            CONTRACT_SIGNED: 'contract_signed',
-            GROUP: 'group',
-            GROUP_CALENDAR: 'group_event_meeting',
-            GROUP_CHAT: 'group_chat',
-            GROUP_CHAT_FILE_NAME: 'group_chat_file_name',
-            GROUP_CHAT_FILE: 'group_chat_file',
-            GROUP_MAIL: 'group_mail',
-            MAIL: 'mail',
-            PERMISSION_REQUEST: 'permission_request',
-            SIGNATURE_REQUEST: 'signature_request',
-            WEB_CHALLENGE_REQUEST: 'web_challenge_request',
-            WEB_CHALLENGE_RESPONSE: 'web_challenge_response',
-            WEB_PAGE: 'web_page',
-            WEB_PAGE_REQUEST: 'web_page_request',
-            WEB_PAGE_RESPONSE: 'web_page_response',
-            WEB_SIGNIN_REQUEST: 'web_signin_request',
-            WEB_SIGNIN_RESPONSE: 'web_signin_response'
-        };
-        this.tokens = {};
-    }
-    SettingsService.prototype.go = function () {
-        return new Promise(function (resolve, reject) {
-        });
-    };
-    SettingsService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [])
-    ], SettingsService);
-    return SettingsService;
-}());
-
-//# sourceMappingURL=settings.service.js.map
-
-/***/ }),
-
-/***/ 16:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return BulletinSecretService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(47);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(48);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -854,23 +859,23 @@ var BulletinSecretService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 20:
+/***/ 16:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* WEBPACK VAR INJECTION */(function(Buffer) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return GraphService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(386);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(389);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(19);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_rxjs_operators__ = __webpack_require__(51);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(349);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_rxjs_operators__ = __webpack_require__(52);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(223);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(352);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_11_eciesjs__);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -922,6 +927,8 @@ var GraphService = /** @class */ (function () {
             groups: [],
             files: [],
             mail: [],
+            markets: [],
+            smart_contracts: [],
             mypages: []
         };
         // online = {};
@@ -968,6 +975,8 @@ var GraphService = /** @class */ (function () {
             groups: [],
             files: [],
             mail: [],
+            markets: [],
+            smart_contracts: [],
             mypages: []
         };
         this.groups_indexed = {};
@@ -988,8 +997,23 @@ var GraphService = /** @class */ (function () {
             .then(function (results) {
             return _this.getGroups(null, 'file');
         })
+            .then(function (results) {
+            return _this.getGroups(null, _this.settingsService.collections.MARKET);
+        })
+            .then(function (results) {
+            var promises = _this.graph.markets.map(function (market) {
+                return _this.getGroups(_this.generateRid(market.relationship[_this.settingsService.collections.MARKET].username_signature, market.relationship[_this.settingsService.collections.MARKET].username_signature, _this.settingsService.collections.SMART_CONTRACT), _this.settingsService.collections.SMART_CONTRACT);
+            });
+            return Promise.all(promises);
+        })
             .then(function () {
             return _this.getFriendRequests();
+        })
+            .then(function () {
+            var promises = _this.graph.smart_contracts.map(function (smart_contract) {
+                return _this.getFriendRequests(_this.generateRid(smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, _this.settingsService.collections.SMART_CONTRACT));
+            });
+            return Promise.all(promises);
         })
             .then(function () {
             return _this.getSharedSecrets();
@@ -1092,7 +1116,11 @@ var GraphService = /** @class */ (function () {
     GraphService.prototype.getSentFriendRequests = function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            _this.endpointRequest('get-graph-sent-friend-requests', null, [_this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature)])
+            var rids = [_this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature)];
+            var more_rids = _this.graph.smart_contracts.map(function (smart_contract) {
+                return _this.generateRid(smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, _this.settingsService.collections.SMART_CONTRACT);
+            });
+            _this.endpointRequest('get-graph-sent-friend-requests', null, rids.concat(more_rids))
                 .then(function (data) {
                 _this.graph.sent_friend_requests = _this.parseSentFriendRequests(data.sent_friend_requests);
                 _this.getSentFriendRequestsError = false;
@@ -1103,10 +1131,15 @@ var GraphService = /** @class */ (function () {
             });
         });
     };
-    GraphService.prototype.getFriendRequests = function () {
+    GraphService.prototype.getFriendRequests = function (rid) {
         var _this = this;
+        if (rid === void 0) { rid = null; }
         return new Promise(function (resolve, reject) {
-            _this.endpointRequest('get-graph-collection', null, [_this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CONTACT)])
+            var rids = [rid || _this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CONTACT)];
+            var more_rids = _this.graph.smart_contracts.map(function (smart_contract) {
+                return _this.generateRid(smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, _this.settingsService.collections.SMART_CONTRACT);
+            });
+            _this.endpointRequest('get-graph-collection', null, rids.concat(more_rids))
                 .then(function (data) {
                 _this.parseFriendRequests(data.collection);
                 _this.getFriendRequestsError = false;
@@ -1153,7 +1186,7 @@ var GraphService = /** @class */ (function () {
         }
         return this.endpointRequest('get-graph-collection', null, rid)
             .then(function (data) {
-            return _this.parseGroups(data.collection, root, collectionName + 's');
+            return _this.parseGroups(data.collection, root, collectionName);
         }).then(function (groups) {
             _this.getGroupsRequestsError = false;
             return groups;
@@ -1197,6 +1230,42 @@ var GraphService = /** @class */ (function () {
                 _this.getMailError = true;
                 reject(err);
             });
+        });
+    };
+    GraphService.prototype.getAssets = function (rids) {
+        var _this = this;
+        var collection = this.settingsService.collections.ASSET;
+        return this.endpointRequest('get-graph-collection', null, rids)
+            .then(function (data) {
+            return _this.parseAssets(data.collection);
+        });
+    };
+    GraphService.prototype.getSmartContracts = function (market, rid, collectionName) {
+        var _this = this;
+        if (rid === void 0) { rid = null; }
+        if (collectionName === void 0) { collectionName = this.settingsService.collections.SMART_CONTRACT; }
+        var root = !rid;
+        rid = rid || this.generateRid(market.username_signature, market.username_signature, collectionName);
+        return this.endpointRequest('get-graph-collection', null, rid)
+            .then(function (data) {
+            return _this.parseSmartContracts(data.collection, market);
+        }).then(function (groups) {
+            _this.getGroupsRequestsError = false;
+            return groups;
+        });
+    };
+    GraphService.prototype.getBids = function (requested_rid, market) {
+        var _this = this;
+        return this.endpointRequest('get-graph-collection', null, requested_rid)
+            .then(function (data) {
+            return _this.parseBids(data.collection, market);
+        });
+    };
+    GraphService.prototype.getAffiliates = function (requested_rid, market) {
+        var _this = this;
+        return this.endpointRequest('get-graph-collection', null, requested_rid)
+            .then(function (data) {
+            return _this.parseAffiliates(data.collection, market);
         });
     };
     GraphService.prototype.prepareMailItems = function (label) {
@@ -1673,10 +1742,10 @@ var GraphService = /** @class */ (function () {
             return resolve(friends);
         });
     };
-    GraphService.prototype.parseGroups = function (groups, root, collectionName) {
+    GraphService.prototype.parseGroups = function (groups, root, collection) {
         var _this = this;
         if (root === void 0) { root = true; }
-        if (collectionName === void 0) { collectionName = 'group'; }
+        if (collection === void 0) { collection = 'group'; }
         // we must call getSentFriendRequests and getFriendRequests before getting here
         // because we need this.keys to be populated with the dh_public_keys and dh_private_keys from the requests
         // though friends really should be cached
@@ -1705,9 +1774,9 @@ var GraphService = /** @class */ (function () {
                     var relationship;
                     if (!bypassDecrypt) {
                         relationship = JSON.parse(decrypted);
-                        if (!relationship[_this.settingsService.collections.GROUP])
+                        if (!relationship[collection])
                             continue;
-                        if (relationship[_this.settingsService.collections.GROUP].collection !== _this.settingsService.collections.GROUP)
+                        if (relationship[collection].collection !== collection)
                             continue;
                         group['relationship'] = relationship;
                     }
@@ -1718,7 +1787,7 @@ var GraphService = /** @class */ (function () {
                 }
                 if (failed && _this.groups_indexed[group.requester_rid]) {
                     try {
-                        var parentGroup = _this.getIdentityFromTxn(_this.groups_indexed[group.requester_rid], _this.settingsService.collections.GROUP);
+                        var parentGroup = _this.getIdentityFromTxn(_this.groups_indexed[group.requester_rid], collection);
                         if (parentGroup.public_key !== group.public_key)
                             continue;
                         if (typeof group.relationship == 'object') {
@@ -1730,11 +1799,11 @@ var GraphService = /** @class */ (function () {
                         var relationship;
                         if (!bypassDecrypt) {
                             relationship = JSON.parse(decrypted);
-                            if (!relationship[_this.settingsService.collections.GROUP])
+                            if (!relationship[collection])
                                 continue;
-                            if (!relationship[_this.settingsService.collections.GROUP].parent)
+                            if (!relationship[collection].parent)
                                 continue;
-                            if (relationship[_this.settingsService.collections.GROUP].collection !== _this.settingsService.collections.GROUP)
+                            if (relationship[collection].collection !== collection)
                                 continue;
                             group['relationship'] = relationship;
                         }
@@ -1748,18 +1817,20 @@ var GraphService = /** @class */ (function () {
                     continue;
                 }
                 if (!_this.groups_indexed[group.requested_rid]) {
-                    _this.graph[collectionName].push(group);
+                    _this.graph[collection + 's'].push(group);
                 }
                 _this.groups_indexed[group.requested_rid] = group;
-                var group_username_signature = relationship[_this.settingsService.collections.GROUP].username_signature;
-                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_CHAT)] = group;
-                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_MAIL)] = group;
-                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.CALENDAR)] = group;
-                _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_CALENDAR)] = group;
+                var group_username_signature = group.relationship[collection].username_signature;
+                if (collection === _this.settingsService.collections.GROUP) {
+                    _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_CHAT)] = group;
+                    _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_MAIL)] = group;
+                    _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.CALENDAR)] = group;
+                    _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_CALENDAR)] = group;
+                }
                 _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, group_username_signature)] = group;
                 try {
                     if (!relationship.parent) {
-                        promises.push(_this.getGroups(_this.generateRid(group_username_signature, group_username_signature, group_username_signature), 'group', true));
+                        promises.push(_this.getGroups(_this.generateRid(group_username_signature, group_username_signature, group_username_signature), collection, true));
                     }
                 }
                 catch (err) {
@@ -1773,7 +1844,7 @@ var GraphService = /** @class */ (function () {
                 var used_username_signatures = [];
                 var arr_friends_keys = Array.from(friends_diff.keys());
                 for (i = 0; i < arr_friends_keys.length; i++) {
-                    if (used_username_signatures.indexOf(_this.groups_indexed[arr_friends_keys[i]].relationship[_this.settingsService.collections.GROUP].username_signature) > -1) {
+                    if (!_this.groups_indexed[arr_friends_keys[i]].relationship[_this.settingsService.collections.GROUP] || used_username_signatures.indexOf(_this.groups_indexed[arr_friends_keys[i]].relationship[_this.settingsService.collections.GROUP].username_signature) > -1) {
                         continue;
                     }
                     else {
@@ -1914,6 +1985,8 @@ var GraphService = /** @class */ (function () {
                         try {
                             message.relationship[messageType] = JSON.parse(Base64.decode(messageJson[messageType]));
                             message.relationship.isInvite = true;
+                            if (typeof message.relationship[messageType] !== 'string')
+                                continue dance;
                         }
                         catch (err) {
                             //not an invite, do nothing
@@ -2098,6 +2171,99 @@ var GraphService = /** @class */ (function () {
             }
         }
         return mypagesOut;
+    };
+    GraphService.prototype.parseAssets = function (assets) {
+        var assetsOut = [];
+        for (var i = 0; i < assets.length; i++) {
+            //hopefully we've prepared the stored_secrets option before getting here
+            //by calling getSentFriendRequests and getFriendRequests
+            var asset = assets[i];
+            var decrypted = void 0;
+            try {
+                decrypted = this.decrypt(asset.relationship);
+            }
+            catch (error) {
+                continue;
+            }
+            try {
+                var messageJson = JSON.parse(decrypted);
+            }
+            catch (err) {
+                continue;
+            }
+            if (messageJson[this.settingsService.collections.ASSET]) {
+                asset.relationship = messageJson;
+                assetsOut.push(asset);
+            }
+        }
+        return assetsOut;
+    };
+    GraphService.prototype.parseSmartContracts = function (smartContracts, market) {
+        var smartContractsOut = [];
+        for (var i = 0; i < smartContracts.length; i++) {
+            try {
+                var smartContractTxn = smartContracts[i];
+                var smartContract = smartContractTxn.relationship[this.settingsService.collections.SMART_CONTRACT];
+                if (!smartContract)
+                    continue;
+                if (smartContract.asset) {
+                    var asset = this.shared_decrypt(market.username_signature, smartContract.asset);
+                    smartContract.asset = JSON.parse(asset);
+                }
+                if (smartContract.target) {
+                    var target = this.shared_decrypt(market.username_signature, smartContract.target);
+                    smartContract.target = JSON.parse(target);
+                }
+                var creator = this.shared_decrypt(market.username_signature, smartContract.creator);
+                smartContract.creator = JSON.parse(creator);
+                smartContractTxn.relationship[this.settingsService.collections.SMART_CONTRACT] = smartContract;
+                smartContractsOut.push(smartContractTxn);
+            }
+            catch (err) {
+                console.log(err);
+            }
+        }
+        return smartContractsOut;
+    };
+    GraphService.prototype.parsePromotion = function (promotionTxn, market) {
+        try {
+            var target = this.shared_decrypt(market.username_signature, promotionTxn.relationship);
+            promotionTxn.relationship = JSON.parse(target);
+        }
+        catch (err) {
+            console.log(err);
+        }
+        return promotionTxn;
+    };
+    GraphService.prototype.parseBids = function (bids, market) {
+        var bidsOut = [];
+        for (var i = 0; i < bids.length; i++) {
+            try {
+                var bid = bids[i];
+                bid.relationship = this.shared_decrypt(market.username_signature, bid.relationship);
+                bid.relationship = JSON.parse(bid.relationship);
+                bidsOut.push(bid);
+            }
+            catch (err) {
+                console.log(err);
+            }
+        }
+        return bidsOut;
+    };
+    GraphService.prototype.parseAffiliates = function (affiliates, market) {
+        var affiliatesOut = [];
+        for (var i = 0; i < affiliates.length; i++) {
+            try {
+                var affiliate = affiliates[i];
+                affiliate.relationship = this.shared_decrypt(market.username_signature, affiliate.relationship);
+                affiliate.relationship = JSON.parse(affiliate.relationship);
+                affiliatesOut.push(affiliate);
+            }
+            catch (err) {
+                console.log(err);
+            }
+        }
+        return affiliatesOut;
     };
     GraphService.prototype.getSharedSecrets = function () {
         var _this = this;
@@ -2361,7 +2527,7 @@ var GraphService = /** @class */ (function () {
             });
         }
         var info = {};
-        info[this.settingsService.collections.GROUP] = identity;
+        info[identity.collection] = identity;
         return this.transactionService.generateTransaction({
             rid: rid,
             relationship: info,
@@ -2379,14 +2545,43 @@ var GraphService = /** @class */ (function () {
             });
         });
     };
+    GraphService.prototype.getPromotion = function (promo_code) {
+        var _this = this;
+        var promotion;
+        return this.endpointRequest('get-graph-collection', null, [promo_code]) //get promotion
+            .then(function (data) {
+            if (!data.collection[0])
+                throw Error('promotion does not exist');
+            promotion = data.collection[0];
+            return _this.endpointRequest('get-graph-collection', null, [data.collection[0].requested_rid]); // get smart contract
+        })
+            .then(function (data) {
+            if (!data.collection[0])
+                throw Error('smart contract does not exist');
+            var smart_contracts = data.collection.filter(function (item) {
+                return !!item.relationship[_this.settingsService.collections.SMART_CONTRACT];
+            });
+            if (!smart_contracts[0])
+                throw Error('smart contract does not exist');
+            var market_rid = smart_contracts[0].relationship[_this.settingsService.collections.SMART_CONTRACT].market;
+            var market = _this.groups_indexed[market_rid].relationship[_this.settingsService.collections.MARKET];
+            return _this.parsePromotion(promotion, market);
+        })
+            .then(function (promotion) {
+            return promotion;
+        });
+    };
     GraphService.prototype.publicDecrypt = function (message) {
         var decrypted = Object(__WEBPACK_IMPORTED_MODULE_11_eciesjs__["decrypt"])(this.bulletinSecretService.key.d.toHex(), Buffer.from(this.hexToByteArray(message))).toString();
         return decrypted;
     };
-    GraphService.prototype.generateRids = function (identity) {
-        var rid = this.generateRid(identity.username_signature, this.bulletinSecretService.identity.username_signature);
+    GraphService.prototype.generateRids = function (identity, identity2, collection) {
+        if (identity2 === void 0) { identity2 = null; }
+        if (collection === void 0) { collection = null; }
+        identity2 = identity2 || this.bulletinSecretService.identity;
+        var rid = this.generateRid(identity.username_signature, identity2.username_signature);
         var requested_rid = this.generateRid(identity.username_signature, identity.username_signature, identity.collection);
-        var requester_rid = this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, identity.collection);
+        var requester_rid = this.generateRid(identity2.username_signature, identity2.username_signature, collection || identity2.collection);
         return {
             rid: rid,
             requested_rid: requested_rid,
@@ -2677,28 +2872,532 @@ var GraphService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 223:
+/***/ 20:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* WEBPACK VAR INJECTION */(function(Buffer) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return TransactionService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(352);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_eciesjs__);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__smartContract_service__ = __webpack_require__(68);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+var TransactionService = /** @class */ (function () {
+    function TransactionService(walletService, bulletinSecretService, ahttp, settingsService, smartContractService) {
+        this.walletService = walletService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.ahttp = ahttp;
+        this.settingsService = settingsService;
+        this.smartContractService = smartContractService;
+        this.info = null;
+        this.transaction = null;
+        this.key = null;
+        this.xhr = null;
+        this.rid = null;
+        this.callbackurl = null;
+        this.blockchainurl = null;
+        this.shared_secret = null;
+        this.to = null;
+        this.txnattempts = null;
+        this.cbattempts = null;
+        this.prevTxn = null;
+        this.txns = null;
+        this.resolve = null;
+        this.unspent_transaction_override = null;
+        this.value = null;
+        this.username = null;
+        this.signatures = null;
+        this.recipient_identity = null;
+    }
+    TransactionService.prototype.generateTransaction = function (info) {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var version = 3;
+            _this.key = _this.bulletinSecretService.key;
+            _this.username = _this.bulletinSecretService.username;
+            _this.recipient_identity = info.recipient_identity;
+            _this.txnattempts = [12, 5, 4];
+            _this.cbattempts = [12, 5, 4];
+            _this.info = info;
+            _this.unspent_transaction_override = _this.info.unspent_transaction;
+            _this.blockchainurl = _this.info.blockchainurl;
+            _this.callbackurl = _this.info.callbackurl;
+            _this.to = _this.info.to;
+            _this.value = parseFloat(_this.info.value);
+            _this.transaction = {
+                version: 3,
+                rid: _this.info.rid,
+                fee: 0.00,
+                outputs: [],
+                requester_rid: typeof _this.info.requester_rid == 'undefined' ? '' : _this.info.requester_rid,
+                requested_rid: typeof _this.info.requested_rid == 'undefined' ? '' : _this.info.requested_rid,
+                time: parseInt(((+new Date()) / 1000).toString()).toString(),
+                public_key: _this.key.getPublicKeyBuffer().toString('hex')
+            };
+            if (_this.info.outputs) {
+                _this.transaction.outputs = _this.info.outputs;
+            }
+            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
+                _this.transaction.dh_public_key = _this.info.dh_public_key;
+            }
+            if (_this.to) {
+                _this.transaction.outputs.push({
+                    to: _this.to,
+                    value: _this.value || 0
+                });
+            }
+            var transaction_total = 0;
+            if (_this.transaction.outputs.length > 0) {
+                for (var i_1 = 0; i_1 < _this.transaction.outputs.length; i_1++) {
+                    transaction_total += parseFloat(_this.transaction.outputs[i_1].value);
+                }
+                transaction_total += parseFloat(_this.transaction.fee);
+            }
+            else {
+                transaction_total = parseFloat(_this.transaction.fee);
+            }
+            if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < transaction_total) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
+                reject("not enough money");
+                return;
+            }
+            else {
+                var inputs = [];
+                var input_sum = 0;
+                var unspent_transactions = void 0;
+                if (_this.unspent_transaction_override) {
+                    unspent_transactions = [_this.unspent_transaction_override];
+                }
+                else {
+                    _this.info.relationship = _this.info.relationship || {};
+                    unspent_transactions = _this.walletService.wallet.unspent_transactions;
+                    unspent_transactions.sort(function (a, b) {
+                        if (a.height < b.height)
+                            return -1;
+                        if (a.height > b.height)
+                            return 1;
+                        return 0;
+                    });
+                }
+                var already_added = [];
+                dance: for (var i = 0; i < unspent_transactions.length; i++) {
+                    var unspent_transaction = unspent_transactions[i];
+                    for (var j = 0; j < unspent_transaction.outputs.length; j++) {
+                        var unspent_output = unspent_transaction.outputs[j];
+                        if (unspent_output.to === _this.key.getAddress()) {
+                            if (already_added.indexOf(unspent_transaction.id) === -1) {
+                                already_added.push(unspent_transaction.id);
+                                inputs.push({ id: unspent_transaction.id });
+                                input_sum += parseFloat(unspent_output.value);
+                                console.log(parseFloat(unspent_output.value));
+                            }
+                            if (input_sum >= transaction_total) {
+                                _this.transaction.outputs.push({
+                                    to: _this.key.getAddress(),
+                                    value: (input_sum - transaction_total)
+                                });
+                                break dance;
+                            }
+                        }
+                    }
+                }
+            }
+            var myAddress = _this.key.getAddress();
+            var found = false;
+            for (var h = 0; h < _this.transaction.outputs.length; h++) {
+                if (_this.transaction.outputs[h].to == myAddress) {
+                    found = true;
+                }
+            }
+            if (!found) {
+                _this.transaction.outputs.push({
+                    to: _this.key.getAddress(),
+                    value: 0
+                });
+            }
+            if (input_sum < transaction_total) {
+                return reject('Insufficient funds');
+            }
+            _this.transaction.inputs = inputs;
+            var inputs_hashes = [];
+            for (i = 0; i < inputs.length; i++) {
+                inputs_hashes.push(inputs[i].id);
+            }
+            var inputs_hashes_arr = inputs_hashes.sort(function (a, b) {
+                if (a.toLowerCase() < b.toLowerCase())
+                    return -1;
+                if (a.toLowerCase() > b.toLowerCase())
+                    return 1;
+                return 0;
+            });
+            var inputs_hashes_concat = inputs_hashes_arr.join('');
+            var outputs_hashes = [];
+            for (i = 0; i < _this.transaction.outputs.length; i++) {
+                outputs_hashes.push(_this.transaction.outputs[i].to + _this.transaction.outputs[i].value.toFixed(8));
+            }
+            var outputs_hashes_arr = outputs_hashes.sort(function (a, b) {
+                if (a.toLowerCase() < b.toLowerCase())
+                    return -1;
+                if (a.toLowerCase() > b.toLowerCase())
+                    return 1;
+                return 0;
+            });
+            var outputs_hashes_concat = outputs_hashes_arr.join('');
+            if (typeof _this.info.relationship === 'string') {
+                _this.transaction.relationship = _this.info.relationship;
+            }
+            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
+                // creating new relationship
+                _this.transaction.relationship = _this.publicEncrypt(JSON.stringify(_this.info.relationship), _this.recipient_identity.public_key);
+                var hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.dh_public_key +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship[_this.settingsService.collections.SMART_CONTRACT]) {
+                //creating smart contract instance
+                _this.transaction.relationship = _this.info.relationship;
+                var smart_contract = _this.info.relationship[_this.settingsService.collections.SMART_CONTRACT];
+                if (smart_contract.asset) {
+                    smart_contract.asset = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(smart_contract.asset));
+                }
+                if (smart_contract.target) {
+                    smart_contract.target = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(smart_contract.target));
+                }
+                _this.transaction.relationship[_this.settingsService.collections.SMART_CONTRACT].creator = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.transaction.relationship[_this.settingsService.collections.SMART_CONTRACT].creator));
+                var hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.smartContractService.toString(_this.info.relationship[_this.settingsService.collections.SMART_CONTRACT]) +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship[_this.settingsService.collections.CALENDAR] ||
+                _this.info.relationship[_this.settingsService.collections.CHAT] ||
+                _this.info.relationship[_this.settingsService.collections.GROUP_CALENDAR] ||
+                _this.info.relationship[_this.settingsService.collections.GROUP_CHAT] ||
+                _this.info.relationship[_this.settingsService.collections.GROUP_MAIL] ||
+                _this.info.relationship[_this.settingsService.collections.MAIL]) {
+                // chat
+                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST]) {
+                // sign in
+                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship.wif) {
+                // recovery
+                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship[_this.settingsService.collections.GROUP]) {
+                // join or create group
+                if (_this.info.relationship[_this.settingsService.collections.GROUP].parent) {
+                    _this.transaction.relationship = _this.shared_encrypt(_this.info.relationship[_this.settingsService.collections.GROUP].parent.username_signature, JSON.stringify(_this.info.relationship));
+                }
+                else {
+                    _this.transaction.relationship = _this.encrypt();
+                }
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship[_this.settingsService.collections.MARKET]) {
+                // join or create market
+                _this.transaction.relationship = _this.encrypt();
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship[_this.settingsService.collections.AFFILIATE] ||
+                _this.info.relationship[_this.settingsService.collections.BID] ||
+                _this.info.relationship[_this.settingsService.collections.WEB_CHALLENGE_REQUEST] ||
+                _this.info.relationship[_this.settingsService.collections.WEB_CHALLENGE_RESPONSE] ||
+                _this.info.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST] ||
+                _this.info.relationship[_this.settingsService.collections.WEB_PAGE_RESPONSE] ||
+                _this.info.relationship[_this.settingsService.collections.WEB_SIGNIN_REQUEST] ||
+                _this.info.relationship[_this.settingsService.collections.WEB_SIGNIN_RESPONSE]) {
+                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE] ||
+                _this.info.relationship[_this.settingsService.collections.ASSET]) {
+                // mypage
+                _this.transaction.relationship = _this.encrypt();
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    _this.transaction.rid +
+                    _this.transaction.relationship +
+                    _this.transaction.fee.toFixed(8) +
+                    _this.transaction.requester_rid +
+                    _this.transaction.requested_rid +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            else {
+                //straight transaction
+                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                    _this.transaction.time +
+                    (_this.transaction.rid || '') +
+                    (_this.transaction.relationship || '') +
+                    _this.transaction.fee.toFixed(8) +
+                    (_this.transaction.requester_rid || '') +
+                    (_this.transaction.requested_rid || '') +
+                    inputs_hashes_concat +
+                    outputs_hashes_concat).toString('hex');
+            }
+            _this.transaction.hash = hash;
+            var attempt = _this.txnattempts.pop();
+            attempt = _this.cbattempts.pop();
+            _this.transaction.id = _this.get_transaction_id(_this.transaction.hash, attempt);
+            if (hash) {
+                resolve(_this.transaction);
+            }
+            else {
+                reject(false);
+            }
+        });
+    };
+    TransactionService.prototype.getFastGraphSignature = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
+                hash: _this.transaction.hash,
+                username_signature: _this.bulletinSecretService.generate_username_signature(),
+                input: _this.transaction.inputs[0].id,
+                id: _this.transaction.id,
+                txn: _this.transaction
+            })
+                .subscribe(function (res) {
+                try {
+                    var data = res.json();
+                    _this.transaction.signatures = [data.signature];
+                    return resolve(data);
+                }
+                catch (err) {
+                    return reject(err);
+                }
+            }, function (err) {
+                reject(err);
+            });
+        });
+    };
+    TransactionService.prototype.sendTransaction = function (txn, transactionUrlOverride) {
+        var _this = this;
+        if (txn === void 0) { txn = null; }
+        if (transactionUrlOverride === void 0) { transactionUrlOverride = undefined; }
+        return new Promise(function (resolve, reject) {
+            var url = '';
+            url = (transactionUrlOverride || _this.settingsService.remoteSettings['transactionUrl']) + '?username_signature=' + _this.bulletinSecretService.username_signature + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
+            _this.ahttp.post(url, txn || _this.transaction)
+                .subscribe(function (data) {
+                try {
+                    resolve(JSON.parse(data['_body']));
+                }
+                catch (err) {
+                    reject(err);
+                }
+            }, function (error) {
+                if (_this.txnattempts.length > 0) {
+                    reject(error);
+                }
+            });
+        });
+    };
+    TransactionService.prototype.get_transaction_id = function (hash, trynum) {
+        var combine = new Uint8Array(hash.length);
+        //combine[0] = 0;
+        //combine[1] = 64;
+        for (var i = 0; i < hash.length; i++) {
+            combine[i] = hash.charCodeAt(i);
+        }
+        var shaMessage = foobar.bitcoin.crypto.sha256(combine);
+        var signature = this.key.sign(shaMessage);
+        var der = signature.toDER();
+        return foobar.base64.fromByteArray(der);
+    };
+    TransactionService.prototype.direct_message = function (data) {
+        //placeholder
+    };
+    TransactionService.prototype.hexToBytes = function (s) {
+        var arr = [];
+        for (var i = 0; i < s.length; i += 2) {
+            var c = s.substr(i, 2);
+            arr.push(parseInt(c, 16));
+        }
+        return String.fromCharCode.apply(null, arr);
+    };
+    TransactionService.prototype.hexToByteArray = function (str) {
+        if (!str) {
+            return new Uint8Array([]);
+        }
+        var a = [];
+        for (var i = 0, len = str.length; i < len; i += 2) {
+            a.push(parseInt(str.substr(i, 2), 16));
+        }
+        return new Uint8Array(a);
+    };
+    TransactionService.prototype.byteArrayToHexString = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    TransactionService.prototype.encrypt = function () {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
+        var cipher = forge.cipher.createCipher('AES-CBC', key);
+        var iv = forge.random.getBytesSync(16);
+        cipher.start({ iv: iv });
+        cipher.update(forge.util.createBuffer(iv + JSON.stringify(this.info.relationship)));
+        cipher.finish();
+        return cipher.output.toHex();
+    };
+    TransactionService.prototype.publicEncrypt = function (message, public_key) {
+        var data = Buffer.from(message);
+        return Object(__WEBPACK_IMPORTED_MODULE_5_eciesjs__["encrypt"])(public_key, data).toString('hex');
+    };
+    TransactionService.prototype.shared_encrypt = function (shared_secret, message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
+        var cipher = forge.cipher.createCipher('AES-CBC', key);
+        var iv = forge.random.getBytesSync(16);
+        cipher.start({ iv: iv });
+        cipher.update(forge.util.createBuffer(iv + Base64.encode(message)));
+        cipher.finish();
+        return cipher.output.toHex();
+    };
+    TransactionService.prototype.decrypt = function (message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
+        var decipher = forge.cipher.createDecipher('AES-CBC', key);
+        var enc = this.hexToBytes(message);
+        decipher.start({ iv: enc.slice(0, 16) });
+        decipher.update(forge.util.createBuffer(enc.slice(16)));
+        decipher.finish();
+        return decipher.output;
+    };
+    TransactionService.prototype.publicDecrypt = function (message) {
+        var decrypted = Object(__WEBPACK_IMPORTED_MODULE_5_eciesjs__["decrypt"])(this.key.d.toHex(), Buffer.from(this.hexToByteArray(message))).toString();
+        return decrypted;
+    };
+    TransactionService.prototype.shared_decrypt = function (shared_secret, message) {
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
+        var decipher = forge.cipher.createDecipher('AES-CBC', key);
+        var enc = this.hexToBytes(message);
+        decipher.start({ iv: enc.slice(0, 16) });
+        decipher.update(forge.util.createBuffer(enc.slice(16)));
+        decipher.finish();
+        return decipher.output;
+    };
+    TransactionService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2__wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_3__settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_6__smartContract_service__["a" /* SmartContractService */]])
+    ], TransactionService);
+    return TransactionService;
+}());
+
+//# sourceMappingURL=transaction.service.js.map
+/* WEBPACK VAR INJECTION */}.call(__webpack_exports__, __webpack_require__(7).Buffer))
+
+/***/ }),
+
+/***/ 224:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return HomePage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_forms__ = __webpack_require__(33);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_forms__ = __webpack_require__(30);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(224);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(81);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_autocomplete_provider__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(70);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_autocomplete_provider__ = __webpack_require__(110);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3255,19 +3954,19 @@ var HomePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 224:
+/***/ 225:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PeerService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(51);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(52);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__settings_service__ = __webpack_require__(10);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3382,23 +4081,23 @@ var PeerService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 225:
+/***/ 226:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ChatPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(81);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_websocket_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(70);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_websocket_service__ = __webpack_require__(37);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3656,7 +4355,7 @@ var ChatPage = /** @class */ (function () {
     };
     ChatPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-list>\n    <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.CHAT]">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.GROUP_CHAT]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n        <button *ngIf="!graphService.isMe(item.relationship.identity) && !settingsService.remoteSettings.restricted" ion-button small secondary title="Send Yada Coins!" (click)="setRecipient(item.relationship.identity)" class="coin-button">\n          <ion-icon name="cash"></ion-icon>\n        </button>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n    </ion-item>\n  </ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon> <ion-icon name="close-circle" class="grey" (click)="removeRecipient()"></ion-icon></ion-item>\n  <ion-item *ngIf="recipient">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Enter an amount" [(ngModel)]="amount"></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!recipient">\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()" #input></ion-input>\n  </ion-item>\n  <button *ngIf="!recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <button *ngIf="recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send Coins<ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
+            selector: 'page-chat',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-list>\n    <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.CHAT]">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.GROUP_CHAT]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n        <button *ngIf="!graphService.isMe(item.relationship.identity) && !settingsService.remoteSettings.restricted" ion-button small secondary title="Send Yada Coins!" (click)="setRecipient(item.relationship.identity)" class="coin-button">\n          <ion-icon name="cash"></ion-icon>\n        </button>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n    </ion-item>\n  </ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon *ngIf="graphService.isAdded(recipient)" name="checkmark-circle" class="success"></ion-icon> <ion-icon name="close-circle" class="grey" (click)="removeRecipient()"></ion-icon></ion-item>\n  <ion-item *ngIf="recipient">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Enter an amount" [(ngModel)]="amount"></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!recipient">\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()" #input></ion-input>\n  </ion-item>\n  <button *ngIf="!recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <button *ngIf="recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send Coins<ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/chat/chat.html"*/,
             queries: {
                 content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content'),
                 input: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('input')
@@ -3684,21 +4383,21 @@ var ChatPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 226:
+/***/ 227:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SendReceive; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(393);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(396);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(19);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -3744,6 +4443,12 @@ var SendReceive = /** @class */ (function () {
             this.identity = this.navParams.get('identity');
             this.address = this.bulletinSecretService.publicKeyToAddress(this.identity.public_key);
         }
+        this.recipients = [
+            {
+                address: '',
+                value: 0
+            }
+        ];
         this.value = 0;
         this.createdCode = bulletinSecretService.key.getAddress();
         this.refresh();
@@ -3790,6 +4495,15 @@ var SendReceive = /** @class */ (function () {
         this.qrScanner.show();
         window.document.querySelector('ion-app').classList.add('transparentBody');
     };
+    SendReceive.prototype.addRecipient = function () {
+        this.recipients.push({
+            address: '',
+            value: 0
+        });
+    };
+    SendReceive.prototype.removeRecipient = function (index) {
+        this.recipients.splice(index, 1);
+    };
     SendReceive.prototype.submit = function () {
         var _this = this;
         var value = parseFloat(this.value);
@@ -3831,8 +4545,7 @@ var SendReceive = /** @class */ (function () {
                         throw ('insufficient funds');
                     }
                     return _this.transactionService.generateTransaction({
-                        to: _this.address,
-                        value: value
+                        outputs: _this.recipients
                     });
                 }).then(function (txn) {
                     return _this.transactionService.sendTransaction(txn);
@@ -4081,7 +4794,7 @@ var SendReceive = /** @class */ (function () {
     };
     SendReceive = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-sendreceive',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item>\n    {{walletService.wallet.balance}} YADA\n  </ion-item>\n  <h4>Pending Balance</h4><ion-note>(including funds to be returned to you from your transactions)</ion-note>\n  <ion-item>\n    {{walletService.wallet.pending_balance}} YADA\n  </ion-item>\n  <h4>Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>Scan Address</button>\n  <ion-item *ngIf="identity" title="Verified" class="sender">Recipient: {{identity.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item>\n    <ion-label color="primary" stacked>Address</ion-label>\n    <ion-input type="text" placeholder="Recipient address..." [(ngModel)]="address">\n    </ion-input>\n  </ion-item>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Amount..." [(ngModel)]="value"></ion-input>\n  </ion-item>\n  <button ion-button secondary (click)="submit()">Send</button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <button *ngIf="isDevice" ion-button outline item-end (click)="shareAddress()">share address&nbsp;<ion-icon name="share"></ion-icon></button>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPendingPage()" [disabled]="receivedPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPendingPage()" [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p><span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPendingPage()" [disabled]="sentPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPendingPage()" [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p><span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPage()" [disabled]="receivedPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPage()" [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p><span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/
+            selector: 'page-sendreceive',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item>\n    {{walletService.wallet.balance}} YADA\n  </ion-item>\n  <h4>Pending Balance</h4><ion-note>(including funds to be returned to you from your transactions)</ion-note>\n  <ion-item>\n    {{walletService.wallet.pending_balance}} YADA\n  </ion-item>\n  <h4>Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>Scan Address</button>\n  <ion-item *ngIf="identity" title="Verified" class="sender">Recipient: {{identity.username}} <ion-icon *ngIf="graphService.isAdded(identity)" name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-list>\n    <ion-row *ngFor="let recipient of recipients; let i = index">\n      <ion-col>\n        <ion-item>\n          <ion-label color="primary" stacked>Address</ion-label>\n          <ion-input type="text" placeholder="Recipient address..." [(ngModel)]="recipients[i].address">\n          </ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary" fixed>Amount</ion-label>\n          <ion-input type="number" placeholder="Amount..." [(ngModel)]="recipients[i].value"></ion-input>\n        </ion-item>\n      </ion-col>\n      <ion-col>\n        <button ion-button secondary (click)="removeRecipient(i)" *ngIf="i > 0"><ion-icon name="trash"></ion-icon></button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <button ion-button secondary (click)="addRecipient()"><ion-icon name="add"></ion-icon>&nbsp;Add recipient</button>\n  <button ion-button secondary (click)="submit()">Send&nbsp;<ion-icon name="send"></ion-icon></button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <button *ngIf="isDevice" ion-button outline item-end (click)="shareAddress()">share address&nbsp;<ion-icon name="share"></ion-icon></button>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPendingPage()" [disabled]="receivedPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPendingPage()" [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p><span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPendingPage()" [disabled]="sentPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPendingPage()" [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p><span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPage()" [disabled]="receivedPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPage()" [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p><span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="https://yadacoin.io/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -4102,18 +4815,18 @@ var SendReceive = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 227:
+/***/ 228:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CalendarPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__mail_compose__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mail_mailitem__ = __webpack_require__(137);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__mail_compose__ = __webpack_require__(109);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mail_mailitem__ = __webpack_require__(138);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4234,6 +4947,8 @@ var CalendarPage = /** @class */ (function () {
             var calDate = new Date(year, month, fistDay.getDate() + i - day);
             if (calDate.getMonth() > month)
                 break;
+            if (calDate.getFullYear() > year)
+                break;
             var index = calDate.getFullYear() + this.addZeros(calDate.getMonth()) + this.addZeros(calDate.getDate());
             if (this.calendar.rows[this.calendar.rows.length - 1].days.length >= 8) {
                 this.calendar.rows.push({
@@ -4262,16 +4977,102 @@ var CalendarPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 228:
+/***/ 229:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return AssetsPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__createasset__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__assetitem__ = __webpack_require__(400);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+var AssetsPage = /** @class */ (function () {
+    function AssetsPage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, events) {
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.events = events;
+        this.items = [];
+        this.loading = false;
+        this.loading = true;
+        var rids = [this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.ASSET)];
+        this.rids = rids;
+    }
+    AssetsPage.prototype.ionViewDidEnter = function () {
+        this.refresh();
+    };
+    AssetsPage.prototype.refresh = function () {
+        var _this = this;
+        return this.graphService.getAssets(this.rids)
+            .then(function (items) {
+            _this.loading = false;
+            _this.items = items.filter(function (item) {
+                try {
+                    return item.relationship[_this.settingsService.collections.ASSET].data.substr(0, 5) === 'data:';
+                }
+                catch (err) {
+                    return false;
+                }
+            });
+        });
+    };
+    AssetsPage.prototype.itemTapped = function (event, item) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__assetitem__["a" /* AssetItemPage */], {
+            item: item
+        });
+    };
+    AssetsPage.prototype.createAsset = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_5__createasset__["a" /* CreateAssetPage */]);
+    };
+    AssetsPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'assets',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/assets/assets.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <button ion-button secondary (click)="createAsset($event)">Create asset</button>\n  <ion-card *ngIf="items && items.length == 0">\n      <ion-card-content>\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          No items to display.\n      </ion-card-title>\n    </ion-card-content>\n  </ion-card>\n  <ion-row>\n    <ion-col col-md-3>\n      <ion-card ion-item *ngFor="let item of items" (click)="itemTapped($event, item)" style="cursor: pointer;">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="item.relationship[settingsService.collections.ASSET].data">\n        </ion-card-title>\n        <ion-card-content>\n          {{item.relationship[settingsService.collections.ASSET].identity.username}}\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/assets/assets.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
+    ], AssetsPage);
+    return AssetsPage;
+}());
+
+//# sourceMappingURL=assets.js.map
+
+/***/ }),
+
+/***/ 230:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return FirebaseService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(395);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(23);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(404);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(19);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4334,19 +5135,120 @@ var FirebaseService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 229:
+/***/ 231:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MailPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__compose__ = __webpack_require__(109);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mailitem__ = __webpack_require__(138);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+var MailPage = /** @class */ (function () {
+    function MailPage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, events) {
+        var _this = this;
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.events = events;
+        this.items = [];
+        this.loading = false;
+        this.loading = true;
+        var rids = [this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.MAIL),
+            this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CONTRACT),
+            this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CONTRACT_SIGNED),
+            this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CALENDAR)];
+        var group_rids = [];
+        for (var i = 0; i < this.graphService.graph.groups.length; i++) {
+            var group = this.graphService.getIdentityFromTxn(this.graphService.graph.groups[i]);
+            group_rids.push(this.graphService.generateRid(group.username_signature, group.username_signature, this.settingsService.collections.GROUP_MAIL));
+        }
+        var file_rids = [];
+        for (var i = 0; i < this.graphService.graph.files.length; i++) {
+            var group = this.graphService.getIdentityFromTxn(this.graphService.graph.files[i]);
+            file_rids.push(this.graphService.generateRid(group.username_signature, group.username_signature, this.settingsService.collections.GROUP_MAIL));
+        }
+        if (group_rids.length > 0) {
+            rids = rids.concat(group_rids);
+        }
+        if (file_rids.length > 0) {
+            rids = rids.concat(file_rids);
+        }
+        this.rids = rids;
+        this.events.subscribe('newmail', function () { _this.refresh(); });
+        this.refresh();
+    }
+    MailPage.prototype.refresh = function () {
+        var _this = this;
+        return this.graphService.getMail(this.rids, this.settingsService.collections.MAIL)
+            .then(function () {
+            return _this.graphService.getMail(_this.rids, _this.settingsService.collections.GROUP_MAIL);
+        })
+            .then(function () {
+            _this.items = _this.graphService.prepareMailItems(_this.navParams.data.pageTitle.label);
+            _this.loading = false;
+        });
+    };
+    MailPage.prototype.itemTapped = function (event, item) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__mailitem__["a" /* MailItemPage */], {
+            item: item
+        });
+    };
+    MailPage.prototype.composeMail = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_5__compose__["a" /* ComposePage */]);
+    };
+    MailPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'mail-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <button ion-button secondary (click)="composeMail()">Compose</button>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-card *ngIf="items && items.length == 0">\n      <ion-card-content>\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          No items to display.\n      </ion-card-title>\n    </ion-card-content>\n  </ion-card>\n  <ion-list>\n    <button ion-item *ngFor="let item of items" (click)="itemTapped($event, item)">\n      <ion-item>\n        <div title="Verified" class="sender">\n          <span>{{item.sender.username}} <ion-icon *ngIf="graphService.isAdded(item.sender)" name="checkmark-circle" class="success"></ion-icon></span>\n          <span *ngIf="item.group">{{item.group.username}} <ion-icon *ngIf="graphService.isAdded(item.group)" name="checkmark-circle" class="success"></ion-icon></span>\n        </div>\n        <div class="subject">{{item.subject}}</div>\n        <div class="datetime">{{item.datetime}}</div>\n        <div class="body">{{item.body}}</div>\n      </ion-item>\n    </button>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
+    ], MailPage);
+    return MailPage;
+}());
+
+//# sourceMappingURL=mail.js.map
+
+/***/ }),
+
+/***/ 232:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WebPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_forms__ = __webpack_require__(33);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_autocomplete_provider__ = __webpack_require__(136);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_forms__ = __webpack_require__(30);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_autocomplete_provider__ = __webpack_require__(110);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4431,7 +5333,7 @@ var WebPage = /** @class */ (function () {
     };
     WebPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-web',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Web</h1>\n  <ion-item>Select a contact and enter a resource.</ion-item>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item>\n    <ion-input type="text" [(ngModel)]="resource"></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="go()" [disabled]="!recipient">Go</button>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="signIn()" [disabled]="!recipient">Sign in</button>\n  </ion-item>\n  <ion-item>\n    {{content}}\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/
+            selector: 'page-web',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Web</h1>\n  <ion-item>Select a contact and enter a resource.</ion-item>\n  <form [formGroup]="myForm" (ngSubmit)="submit()" *ngIf="!recipient">\n    <ion-auto-complete #searchbar [(ngModel)]="recipient" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n  </form>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon *ngIf="graphService.isAdded(recipient)" name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-item>\n    <ion-input type="text" [(ngModel)]="resource"></ion-input>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="go()" [disabled]="!recipient">Go</button>\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="signIn()" [disabled]="!recipient">Sign in</button>\n  </ion-item>\n  <ion-item>\n    {{content}}\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/web/web.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -4448,18 +5350,18 @@ var WebPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 230:
+/***/ 233:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return BuildPagePage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4500,7 +5402,10 @@ var BuildPagePage = /** @class */ (function () {
             handler: function (data) {
                 _this.resource = '';
                 _this.pageText = '';
-                _this.websocketService.webpage({ resource: _this.resource, content: _this.pageText });
+                var identity = _this.graphService.toIdentity(JSON.parse(_this.bulletinSecretService.identityJson()));
+                identity.collection = _this.settingsService.collections.WEB_PAGE;
+                var rids = _this.graphService.generateRids(identity);
+                _this.websocketService.newtxn({ resource: _this.resource, content: _this.pageText }, rids, _this.settingsService.collections.WEB_PAGE);
             }
         });
         alert.present();
@@ -4525,485 +5430,16 @@ var BuildPagePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 26:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* WEBPACK VAR INJECTION */(function(Buffer) {/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return TransactionService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(349);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_eciesjs__);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-var TransactionService = /** @class */ (function () {
-    function TransactionService(walletService, bulletinSecretService, ahttp, settingsService) {
-        this.walletService = walletService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.ahttp = ahttp;
-        this.settingsService = settingsService;
-        this.info = null;
-        this.transaction = null;
-        this.key = null;
-        this.xhr = null;
-        this.rid = null;
-        this.callbackurl = null;
-        this.blockchainurl = null;
-        this.shared_secret = null;
-        this.to = null;
-        this.txnattempts = null;
-        this.cbattempts = null;
-        this.prevTxn = null;
-        this.txns = null;
-        this.resolve = null;
-        this.unspent_transaction_override = null;
-        this.value = null;
-        this.username = null;
-        this.signatures = null;
-        this.recipient_identity = null;
-    }
-    TransactionService.prototype.generateTransaction = function (info) {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.key = _this.bulletinSecretService.key;
-            _this.username = _this.bulletinSecretService.username;
-            _this.recipient_identity = info.recipient_identity;
-            _this.txnattempts = [12, 5, 4];
-            _this.cbattempts = [12, 5, 4];
-            _this.info = info;
-            _this.unspent_transaction_override = _this.info.unspent_transaction;
-            _this.blockchainurl = _this.info.blockchainurl;
-            _this.callbackurl = _this.info.callbackurl;
-            _this.to = _this.info.to;
-            _this.value = parseFloat(_this.info.value);
-            _this.transaction = {
-                rid: _this.info.rid,
-                fee: 0.00,
-                requester_rid: typeof _this.info.requester_rid == 'undefined' ? '' : _this.info.requester_rid,
-                requested_rid: typeof _this.info.requested_rid == 'undefined' ? '' : _this.info.requested_rid,
-                outputs: [],
-                time: parseInt(((+new Date()) / 1000).toString()).toString(),
-                public_key: _this.key.getPublicKeyBuffer().toString('hex')
-            };
-            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
-                _this.transaction.dh_public_key = _this.info.dh_public_key;
-            }
-            if (_this.to) {
-                _this.transaction.outputs.push({
-                    to: _this.to,
-                    value: _this.value || 0
-                });
-            }
-            if (_this.transaction.outputs.length > 0) {
-                var transaction_total = _this.transaction.outputs[0].value + _this.transaction.fee;
-            }
-            else {
-                transaction_total = _this.transaction.fee;
-            }
-            if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < transaction_total) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
-                reject("not enough money");
-                return;
-            }
-            else {
-                var inputs = [];
-                var input_sum = 0;
-                var unspent_transactions = void 0;
-                if (_this.unspent_transaction_override) {
-                    unspent_transactions = [_this.unspent_transaction_override];
-                }
-                else {
-                    _this.info.relationship = _this.info.relationship || {};
-                    unspent_transactions = _this.walletService.wallet.unspent_transactions;
-                    unspent_transactions.sort(function (a, b) {
-                        if (a.height < b.height)
-                            return -1;
-                        if (a.height > b.height)
-                            return 1;
-                        return 0;
-                    });
-                }
-                var already_added = [];
-                dance: for (var i = 0; i < unspent_transactions.length; i++) {
-                    var unspent_transaction = unspent_transactions[i];
-                    for (var j = 0; j < unspent_transaction.outputs.length; j++) {
-                        var unspent_output = unspent_transaction.outputs[j];
-                        if (unspent_output.to === _this.key.getAddress()) {
-                            if (already_added.indexOf(unspent_transaction.id) === -1) {
-                                already_added.push(unspent_transaction.id);
-                                inputs.push({ id: unspent_transaction.id });
-                                input_sum += parseFloat(unspent_output.value);
-                                console.log(parseFloat(unspent_output.value));
-                            }
-                            if (input_sum >= transaction_total) {
-                                _this.transaction.outputs.push({
-                                    to: _this.key.getAddress(),
-                                    value: (input_sum - transaction_total)
-                                });
-                                break dance;
-                            }
-                        }
-                    }
-                }
-            }
-            var myAddress = _this.key.getAddress();
-            var found = false;
-            for (var h = 0; h < _this.transaction.outputs.length; h++) {
-                if (_this.transaction.outputs[h].to == myAddress) {
-                    found = true;
-                }
-            }
-            if (!found) {
-                _this.transaction.outputs.push({
-                    to: _this.key.getAddress(),
-                    value: 0
-                });
-            }
-            if (input_sum < transaction_total) {
-                return reject('Insufficient funds');
-            }
-            _this.transaction.inputs = inputs;
-            var inputs_hashes = [];
-            for (i = 0; i < inputs.length; i++) {
-                inputs_hashes.push(inputs[i].id);
-            }
-            var inputs_hashes_arr = inputs_hashes.sort(function (a, b) {
-                if (a.toLowerCase() < b.toLowerCase())
-                    return -1;
-                if (a.toLowerCase() > b.toLowerCase())
-                    return 1;
-                return 0;
-            });
-            var inputs_hashes_concat = inputs_hashes_arr.join('');
-            var outputs_hashes = [];
-            for (i = 0; i < _this.transaction.outputs.length; i++) {
-                outputs_hashes.push(_this.transaction.outputs[i].to + _this.transaction.outputs[i].value.toFixed(8));
-            }
-            var outputs_hashes_arr = outputs_hashes.sort(function (a, b) {
-                if (a.toLowerCase() < b.toLowerCase())
-                    return -1;
-                if (a.toLowerCase() > b.toLowerCase())
-                    return 1;
-                return 0;
-            });
-            var outputs_hashes_concat = outputs_hashes_arr.join('');
-            if (typeof _this.info.relationship === 'string') {
-                _this.transaction.relationship = _this.info.relationship;
-            }
-            if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
-                // creating new relationship
-                _this.transaction.relationship = _this.publicEncrypt(JSON.stringify(_this.info.relationship), _this.recipient_identity.public_key);
-                var hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.dh_public_key +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship[_this.settingsService.collections.CALENDAR] ||
-                _this.info.relationship[_this.settingsService.collections.CHAT] ||
-                _this.info.relationship[_this.settingsService.collections.GROUP_CALENDAR] ||
-                _this.info.relationship[_this.settingsService.collections.GROUP_CHAT] ||
-                _this.info.relationship[_this.settingsService.collections.GROUP_MAIL] ||
-                _this.info.relationship[_this.settingsService.collections.MAIL]) {
-                // chat
-                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST]) {
-                // sign in
-                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship.wif) {
-                // recovery
-                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship[_this.settingsService.collections.GROUP]) {
-                // join or create group
-                if (_this.info.relationship[_this.settingsService.collections.GROUP].parent) {
-                    _this.transaction.relationship = _this.shared_encrypt(_this.info.relationship[_this.settingsService.collections.GROUP].parent.username_signature, JSON.stringify(_this.info.relationship));
-                }
-                else {
-                    _this.transaction.relationship = _this.encrypt();
-                }
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship[_this.settingsService.collections.WEB_CHALLENGE_REQUEST] ||
-                _this.info.relationship[_this.settingsService.collections.WEB_CHALLENGE_RESPONSE] ||
-                _this.info.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST] ||
-                _this.info.relationship[_this.settingsService.collections.WEB_PAGE_RESPONSE] ||
-                _this.info.relationship[_this.settingsService.collections.WEB_SIGNIN_REQUEST] ||
-                _this.info.relationship[_this.settingsService.collections.WEB_SIGNIN_RESPONSE]) {
-                _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE]) {
-                // mypage
-                _this.transaction.relationship = _this.encrypt();
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    _this.transaction.rid +
-                    _this.transaction.relationship +
-                    _this.transaction.fee.toFixed(8) +
-                    _this.transaction.requester_rid +
-                    _this.transaction.requested_rid +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            else {
-                //straight transaction
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
-                    _this.transaction.time +
-                    (_this.transaction.rid || '') +
-                    (_this.transaction.relationship || '') +
-                    _this.transaction.fee.toFixed(8) +
-                    inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
-            }
-            _this.transaction.hash = hash;
-            var attempt = _this.txnattempts.pop();
-            attempt = _this.cbattempts.pop();
-            _this.transaction.id = _this.get_transaction_id(_this.transaction.hash, attempt);
-            if (hash) {
-                resolve(_this.transaction);
-            }
-            else {
-                reject(false);
-            }
-        });
-    };
-    TransactionService.prototype.getFastGraphSignature = function () {
-        var _this = this;
-        return new Promise(function (resolve, reject) {
-            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
-                hash: _this.transaction.hash,
-                username_signature: _this.bulletinSecretService.generate_username_signature(),
-                input: _this.transaction.inputs[0].id,
-                id: _this.transaction.id,
-                txn: _this.transaction
-            })
-                .subscribe(function (res) {
-                try {
-                    var data = res.json();
-                    _this.transaction.signatures = [data.signature];
-                    return resolve(data);
-                }
-                catch (err) {
-                    return reject(err);
-                }
-            }, function (err) {
-                reject(err);
-            });
-        });
-    };
-    TransactionService.prototype.sendTransaction = function (txn, transactionUrlOverride) {
-        var _this = this;
-        if (txn === void 0) { txn = null; }
-        if (transactionUrlOverride === void 0) { transactionUrlOverride = undefined; }
-        return new Promise(function (resolve, reject) {
-            var url = '';
-            url = (transactionUrlOverride || _this.settingsService.remoteSettings['transactionUrl']) + '?username_signature=' + _this.bulletinSecretService.username_signature + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
-            _this.ahttp.post(url, txn || _this.transaction)
-                .subscribe(function (data) {
-                try {
-                    resolve(JSON.parse(data['_body']));
-                }
-                catch (err) {
-                    reject(err);
-                }
-            }, function (error) {
-                if (_this.txnattempts.length > 0) {
-                    reject(error);
-                }
-            });
-        });
-    };
-    TransactionService.prototype.get_transaction_id = function (hash, trynum) {
-        var combine = new Uint8Array(hash.length);
-        //combine[0] = 0;
-        //combine[1] = 64;
-        for (var i = 0; i < hash.length; i++) {
-            combine[i] = hash.charCodeAt(i);
-        }
-        var shaMessage = foobar.bitcoin.crypto.sha256(combine);
-        var signature = this.key.sign(shaMessage);
-        var der = signature.toDER();
-        return foobar.base64.fromByteArray(der);
-    };
-    TransactionService.prototype.direct_message = function (data) {
-        //placeholder
-    };
-    TransactionService.prototype.hexToBytes = function (s) {
-        var arr = [];
-        for (var i = 0; i < s.length; i += 2) {
-            var c = s.substr(i, 2);
-            arr.push(parseInt(c, 16));
-        }
-        return String.fromCharCode.apply(null, arr);
-    };
-    TransactionService.prototype.hexToByteArray = function (str) {
-        if (!str) {
-            return new Uint8Array([]);
-        }
-        var a = [];
-        for (var i = 0, len = str.length; i < len; i += 2) {
-            a.push(parseInt(str.substr(i, 2), 16));
-        }
-        return new Uint8Array(a);
-    };
-    TransactionService.prototype.byteArrayToHexString = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    TransactionService.prototype.encrypt = function () {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
-        var cipher = forge.cipher.createCipher('AES-CBC', key);
-        var iv = forge.random.getBytesSync(16);
-        cipher.start({ iv: iv });
-        cipher.update(forge.util.createBuffer(iv + JSON.stringify(this.info.relationship)));
-        cipher.finish();
-        return cipher.output.toHex();
-    };
-    TransactionService.prototype.publicEncrypt = function (message, public_key) {
-        var data = Buffer.from(message);
-        return Object(__WEBPACK_IMPORTED_MODULE_5_eciesjs__["encrypt"])(public_key, data).toString('hex');
-    };
-    TransactionService.prototype.shared_encrypt = function (shared_secret, message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
-        var cipher = forge.cipher.createCipher('AES-CBC', key);
-        var iv = forge.random.getBytesSync(16);
-        cipher.start({ iv: iv });
-        cipher.update(forge.util.createBuffer(iv + Base64.encode(message)));
-        cipher.finish();
-        return cipher.output.toHex();
-    };
-    TransactionService.prototype.decrypt = function (message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
-        var decipher = forge.cipher.createDecipher('AES-CBC', key);
-        var enc = this.hexToBytes(message);
-        decipher.start({ iv: enc.slice(0, 16) });
-        decipher.update(forge.util.createBuffer(enc.slice(16)));
-        decipher.finish();
-        return decipher.output;
-    };
-    TransactionService.prototype.publicDecrypt = function (message) {
-        var decrypted = Object(__WEBPACK_IMPORTED_MODULE_5_eciesjs__["decrypt"])(this.key.d.toHex(), Buffer.from(this.hexToByteArray(message))).toString();
-        return decrypted;
-    };
-    TransactionService.prototype.shared_decrypt = function (shared_secret, message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
-        var decipher = forge.cipher.createDecipher('AES-CBC', key);
-        var enc = this.hexToBytes(message);
-        decipher.start({ iv: enc.slice(0, 16) });
-        decipher.update(forge.util.createBuffer(enc.slice(16)));
-        decipher.finish();
-        return decipher.output;
-    };
-    TransactionService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_2__wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_4__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_3__settings_service__["a" /* SettingsService */]])
-    ], TransactionService);
-    return TransactionService;
-}());
-
-//# sourceMappingURL=transaction.service.js.map
-/* WEBPACK VAR INJECTION */}.call(__webpack_exports__, __webpack_require__(7).Buffer))
-
-/***/ }),
-
-/***/ 264:
-/***/ (function(module, exports) {
-
-function webpackEmptyAsyncContext(req) {
-	// Here Promise.resolve().then() is used instead of new Promise() to prevent
-	// uncatched exception popping up in devtools
-	return Promise.resolve().then(function() {
-		throw new Error("Cannot find module '" + req + "'.");
-	});
-}
-webpackEmptyAsyncContext.keys = function() { return []; };
-webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
-module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 264;
-
-/***/ }),
-
-/***/ 27:
+/***/ 25:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WalletService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(51);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(52);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -5098,7 +5534,7 @@ var WalletService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 305:
+/***/ 267:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -5111,20 +5547,380 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 305;
+webpackEmptyAsyncContext.id = 267;
 
 /***/ }),
 
-/***/ 394:
+/***/ 308:
+/***/ (function(module, exports) {
+
+function webpackEmptyAsyncContext(req) {
+	// Here Promise.resolve().then() is used instead of new Promise() to prevent
+	// uncatched exception popping up in devtools
+	return Promise.resolve().then(function() {
+		throw new Error("Cannot find module '" + req + "'.");
+	});
+}
+webpackEmptyAsyncContext.keys = function() { return []; };
+webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
+module.exports = webpackEmptyAsyncContext;
+webpackEmptyAsyncContext.id = 308;
+
+/***/ }),
+
+/***/ 37:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WebSocketService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(20);
+var __assign = (this && this.__assign) || function () {
+    __assign = Object.assign || function(t) {
+        for (var s, i = 1, n = arguments.length; i < n; i++) {
+            s = arguments[i];
+            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
+                t[p] = s[p];
+        }
+        return t;
+    };
+    return __assign.apply(this, arguments);
+};
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+var WebSocketService = /** @class */ (function () {
+    function WebSocketService(ahttp, bulletinSecretService, settingsService, graphService, transactionService, events) {
+        this.ahttp = ahttp;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.graphService = graphService;
+        this.transactionService = transactionService;
+        this.events = events;
+    }
+    WebSocketService.prototype.init = function () {
+        if (this.websocket)
+            return;
+        this.websocket = new WebSocket(this.settingsService.remoteSettings.websocketUrl);
+        this.websocket.onopen = this.onOpen.bind(this);
+        this.websocket.onmessage = this.onMessage.bind(this);
+    };
+    WebSocketService.prototype.onOpen = function (event) {
+        console.log(event.data);
+    };
+    WebSocketService.prototype.onMessage = function (event) {
+        var _this = this;
+        var directMessageResponseCount;
+        var directMessageResponseCounts;
+        var msg = JSON.parse(event.data);
+        console.log(msg);
+        switch (msg.method) {
+            case 'connect_confirm':
+                for (var i = 0; i < this.graphService.graph.groups.length; i++) {
+                    var group = this.graphService.getIdentityFromTxn(this.graphService.graph.groups[i], this.settingsService.collections.GROUP);
+                    this.joinGroup(group);
+                }
+                break;
+            case 'join_confirmed':
+                // const members = msg.result.members;
+                // for (let i=0; i < Object.keys(members).length; i++) {
+                //   let requested_rid = Object.keys(members)[i];
+                //   let group_members = members[requested_rid];
+                //   if(!this.graphService.online[requested_rid]) this.graphService.online[requested_rid] = [];
+                //   this.graphService.online[requested_rid] = this.graphService.online[requested_rid].concat(group_members)
+                // }
+                break;
+            case 'newtxn':
+                if (msg.params.transaction.public_key === this.bulletinSecretService.identity.public_key)
+                    return;
+                var collection = this.graphService.getNewTxnCollection(msg.params.transaction);
+                if (collection) {
+                    switch (collection) {
+                        case this.settingsService.collections.CONTACT:
+                            this.graphService.parseFriendRequests([msg.params.transaction]);
+                            this.graphService.refreshFriendsAndGroups()
+                                .then(function () {
+                                return _this.graphService.addNotification(msg.params.transaction, _this.settingsService.collections.CONTACT);
+                            });
+                            break;
+                        case this.settingsService.collections.CALENDAR:
+                            var calendar = this.graphService.parseCalendar([msg.params.transaction]);
+                            return this.graphService.addNotification(calendar, this.settingsService.collections.CALENDAR);
+                            break;
+                        case this.settingsService.collections.GROUP_CALENDAR:
+                            var group_calendar = this.graphService.parseCalendar([msg.params.transaction]);
+                            return this.graphService.addNotification(group_calendar, this.settingsService.collections.GROUP_CALENDAR);
+                            break;
+                        case this.settingsService.collections.CHAT:
+                            this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
+                                .then(function (item) {
+                                if (!_this.graphService.graph.messages[msg.params.transaction.rid]) {
+                                    _this.graphService.graph.messages[msg.params.transaction.rid] = [];
+                                }
+                                _this.graphService.graph.messages[msg.params.transaction.rid].push(item[0]);
+                                _this.events.publish('newchat');
+                                return _this.graphService.addNotification(item[0], _this.settingsService.collections.CHAT);
+                            });
+                            break;
+                        case this.settingsService.collections.CONTRACT:
+                            break;
+                        case this.settingsService.collections.CONTRACT_SIGNED:
+                            break;
+                        case this.settingsService.collections.GROUP_CHAT:
+                            this.graphService.parseMessages([msg.params.transaction], 'new_group_messages_counts', 'new_group_messages_count', msg.params.transaction.rid, this.settingsService.collections.GROUP_CHAT, 'last_group_message_height')
+                                .then(function (item) {
+                                if (!_this.graphService.graph.messages[msg.params.transaction.requested_rid]) {
+                                    _this.graphService.graph.messages[msg.params.transaction.requested_rid] = [];
+                                }
+                                _this.graphService.graph.messages[msg.params.transaction.requested_rid].push(item[0]);
+                                _this.events.publish('newchat');
+                                return _this.graphService.addNotification(item[0], _this.settingsService.collections.GROUP_CHAT);
+                            });
+                            break;
+                        case this.settingsService.collections.GROUP_MAIL:
+                            this.graphService.parseMail([msg.params.transaction], 'new_sent_mail_counts', 'new_sent_mail_count', undefined, this.settingsService.collections.GROUP_MAIL, 'last_sent_mail_height')
+                                .then(function (item) {
+                                _this.events.publish('newmail');
+                                return _this.graphService.addNotification(item, _this.settingsService.collections.GROUP_MAIL);
+                            });
+                            break;
+                        case this.settingsService.collections.MAIL:
+                            var mailCount = void 0;
+                            var mailCounts = void 0;
+                            this.graphService.parseMail([msg.params.transaction], mailCount, mailCounts, msg.params.transaction.rid, this.settingsService.collections.MAIL)
+                                .then(function (item) {
+                                _this.events.publish('newmail');
+                                return _this.graphService.addNotification(item, _this.settingsService.collections.MAIL);
+                            });
+                            break;
+                        case this.settingsService.collections.PERMISSION_REQUEST:
+                            break;
+                        case this.settingsService.collections.SIGNATURE_REQUEST:
+                            var permissionRequestCount = void 0;
+                            var permissionRequestCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], permissionRequestCount, permissionRequestCounts, msg.params.transaction.rid, this.settingsService.collections.SIGNATURE_REQUEST)
+                                .then(function (item) {
+                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.SIGNATURE_REQUEST);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_CHALLENGE_REQUEST:
+                            var directMessageRequestCount = void 0;
+                            var directMessageRequestCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_REQUEST)
+                                .then(function (items) {
+                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_CHALLENGE_RESPONSE, {
+                                    challenge: uuid4(),
+                                    url: _this.settingsService.remoteSettings.webSignInUrl
+                                });
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_CHALLENGE_RESPONSE:
+                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_RESPONSE)
+                                .then(function (items) {
+                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_SIGNIN_REQUEST:
+                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_REQUEST)
+                                .then(function (items) {
+                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_SIGNIN_RESPONSE, items[msg.params.transaction.rid][0].relationship[_this.settingsService.collections.WEB_SIGNIN_REQUEST]);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_SIGNIN_RESPONSE:
+                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_RESPONSE)
+                                .then(function (items) {
+                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_PAGE:
+                            var webpage = this.graphService.parseMyPages([msg.params.transaction]);
+                            this.graphService.addNotification(webpage, this.settingsService.collections.WEB_PAGE);
+                            break;
+                        case this.settingsService.collections.WEB_PAGE_REQUEST:
+                            var webRequestCount = void 0;
+                            var webRequestCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], webRequestCount, webRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_REQUEST)
+                                .then(function (items) {
+                                var myRids2 = [_this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.WEB_PAGE)];
+                                return _this.graphService.getMyPages(myRids2);
+                            })
+                                .then(function (items) {
+                                var request = msg.params.transaction;
+                                var myPages = _this.graphService.graph.mypages.filter(function (item2) {
+                                    return item2.relationship[_this.settingsService.collections.WEB_PAGE].resource === request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource;
+                                });
+                                var webResponse;
+                                if (myPages[0]) {
+                                    webResponse = {
+                                        resource: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].resource,
+                                        content: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].content
+                                    };
+                                }
+                                else {
+                                    webResponse = {
+                                        resource: request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource,
+                                        content: 'Page not found for resource.'
+                                    };
+                                }
+                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_PAGE_RESPONSE, webResponse);
+                            });
+                            break;
+                        case this.settingsService.collections.WEB_PAGE_RESPONSE:
+                            var webResponseCount = void 0;
+                            var webResponseCounts = void 0;
+                            this.graphService.parseMessages([msg.params.transaction], webResponseCount, webResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_RESPONSE)
+                                .then(function (items) {
+                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
+                            });
+                            break;
+                    }
+                }
+                break;
+        }
+    };
+    WebSocketService.prototype.connect = function () {
+        this.websocket.send(JSON.stringify({
+            id: '',
+            jsonrpc: 2.0,
+            method: 'connect',
+            params: {
+                identity: this.graphService.toIdentity(this.bulletinSecretService.identity)
+            }
+        }));
+    };
+    WebSocketService.prototype.joinGroup = function (identity) {
+        return this.websocket.send(JSON.stringify({
+            id: '',
+            jsonrpc: 2.0,
+            method: 'join_group',
+            params: identity
+        }));
+    };
+    WebSocketService.prototype.newtxn = function (item, rids, collection, shared_secret, extra_data) {
+        var _this = this;
+        if (shared_secret === void 0) { shared_secret = null; }
+        if (extra_data === void 0) { extra_data = {}; }
+        var request = __assign({}, rids, { relationship: {} }, extra_data);
+        if (shared_secret) {
+            request.shared_secret = shared_secret;
+        }
+        request.relationship[collection] = item;
+        return this.transactionService.generateTransaction(request)
+            .then(function () {
+            _this.sendnewtxn();
+        });
+    };
+    WebSocketService.prototype.directMessageRequest = function (identity, collection, relationship, resolve) {
+        var _this = this;
+        this.directMessageRequestResolve = resolve;
+        identity.collection = collection;
+        var rids = this.graphService.generateRids(identity);
+        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
+        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
+        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
+        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
+        request.relationship[collection] = relationship;
+        this.transactionService.generateTransaction(request)
+            .then(function () {
+            _this.sendnewtxn();
+        });
+    };
+    WebSocketService.prototype.directMessageResponse = function (rid, collection, relationship) {
+        var _this = this;
+        var myRids = this.graphService.generateRids(this.bulletinSecretService.identity);
+        var recipient;
+        if (this.graphService.friends_indexed[rid]) {
+            recipient = this.graphService.getIdentityFromTxn(this.graphService.friends_indexed[rid], this.settingsService.collections.CONTACT);
+        }
+        if (myRids.rid == rid) {
+            recipient = this.bulletinSecretService.identity;
+        }
+        if (!recipient)
+            return;
+        recipient.collection = collection;
+        var rids = this.graphService.generateRids(recipient);
+        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
+        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
+        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+            return parseInt(h, 16);
+        }));
+        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
+        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
+        request.relationship[collection] = relationship;
+        return this.transactionService.generateTransaction(request)
+            .then(function () {
+            _this.sendnewtxn();
+        });
+    };
+    WebSocketService.prototype.sendnewtxn = function () {
+        return this.websocket.send(JSON.stringify({
+            id: '',
+            jsonrpc: 2.0,
+            method: 'newtxn',
+            params: {
+                transaction: this.transactionService.transaction
+            }
+        }));
+    };
+    WebSocketService.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    WebSocketService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_2__settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_5__graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_6__transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_4_ionic_angular__["b" /* Events */]])
+    ], WebSocketService);
+    return WebSocketService;
+}());
+
+//# sourceMappingURL=websocket.service.js.map
+
+/***/ }),
+
+/***/ 397:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SignatureRequestPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -5164,29 +5960,828 @@ var SignatureRequestPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 396:
+/***/ 398:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MarketPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_smartContract_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__assets_assets__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__createpromo__ = __webpack_require__(402);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__marketitem__ = __webpack_require__(403);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+var MarketPage = /** @class */ (function () {
+    function MarketPage(navCtrl, navParams, graphService, settingsService, smartContractService) {
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.graphService = graphService;
+        this.settingsService = settingsService;
+        this.smartContractService = smartContractService;
+        this.item = this.navParams.get('item');
+        this.market = this.item.relationship[this.settingsService.collections.MARKET];
+    }
+    MarketPage.prototype.ionViewDidEnter = function () {
+        var _this = this;
+        this.graphService.getSmartContracts(this.market)
+            .then(function (smartContracts) {
+            _this.smartContracts = smartContracts.filter(function (item) {
+                try {
+                    var sc = item.relationship[_this.settingsService.collections.SMART_CONTRACT];
+                    if (sc.contract_type === _this.smartContractService.contractTypes.CHANGE_OWNERSHIP) {
+                        return sc.asset.data.substr(0, 5) === 'data:';
+                    }
+                }
+                catch (err) {
+                    return false;
+                }
+                return true;
+            });
+            console.log(_this.smartContracts);
+        });
+    };
+    MarketPage.prototype.sellAsset = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_5__assets_assets__["a" /* AssetsPage */]);
+    };
+    MarketPage.prototype.startPromotion = function () {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__createpromo__["a" /* CreatePromoPage */], {
+            market: this.item
+        });
+    };
+    MarketPage.prototype.itemTapped = function (e, smartContract) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_7__marketitem__["a" /* MarketItemPage */], {
+            item: smartContract,
+            market: this.item
+        });
+    };
+    MarketPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'market-page',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/market.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>{{market.username}}</h1>\n  <ion-row *ngIf="smartContracts">\n    <ion-col col-md-3 *ngIf="market.username === \'Marketplace\'">\n      <button ion-button secondary (click)="sellAsset($event)">My assets</button>\n      <ion-card *ngFor="let smartContract of smartContracts" (click)="itemTapped($event, smartContract)" style="cursor: pointer">\n        <ion-card-content>\n          <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n            <img [src]="smartContract.relationship[settingsService.collections.SMART_CONTRACT].asset.data">\n          </ion-card-title>\n          <ion-card-content>\n            <div class="resource">{{smartContract.relationship[settingsService.collections.SMART_CONTRACT].asset.identity.username}}</div>\n          </ion-card-content>\n          <ion-card-content>\n            {{smartContract.relationship[settingsService.collections.SMART_CONTRACT].price}} YDA\n          </ion-card-content>\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="market.username === \'Promotions\'">\n      <button ion-button secondary (click)="startPromotion($event)">Start promotion</button>\n      <ion-card *ngFor="let smartContract of smartContracts" (click)="itemTapped($event, smartContract)" style="cursor: pointer">\n        <ion-card-content>\n          <ion-card-content>\n            <div class="resource">{{smartContract.relationship[settingsService.collections.SMART_CONTRACT].target.username}}</div>\n          </ion-card-content>\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/market.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_smartContract_service__["a" /* SmartContractService */]])
+    ], MarketPage);
+    return MarketPage;
+}());
+
+//# sourceMappingURL=market.js.map
+
+/***/ }),
+
+/***/ 399:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CreateAssetPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(19);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+var CreateAssetPage = /** @class */ (function () {
+    function CreateAssetPage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, websocketService, transactionService, alertCtrl, ahttp) {
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.websocketService = websocketService;
+        this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
+        this.ahttp = ahttp;
+    }
+    CreateAssetPage.prototype.changeListener = function ($event) {
+        var _this = this;
+        this.busy = true;
+        if (!$event.target.files[0]) {
+            this.filedata = '';
+            return;
+        }
+        this.filepath = $event.target.files[0].name;
+        var reader = new FileReader();
+        reader.readAsDataURL($event.target.files[0]);
+        reader.onload = function () {
+            _this.data = reader.result.toString();
+            if (_this.data.length > 5000) {
+                alert('File too large. Please select a smaller file.');
+                return;
+            }
+            _this.filedata = _this.data;
+        };
+        reader.onerror = function () { };
+    };
+    CreateAssetPage.prototype.save = function () {
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Create Asset');
+        alert.setSubTitle('Are you sure you want to save this asset?');
+        alert.addButton({
+            text: 'Continue editing'
+        });
+        var key = foobar.bitcoin.ECPair.makeRandom();
+        var wif = key.toWIF();
+        var username_signature = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(this.username)).toDER());
+        var public_key = key.getPublicKeyBuffer().toString('hex');
+        var identity = {
+            username: this.username,
+            username_signature: username_signature,
+            public_key: public_key,
+            wif: wif,
+            collection: this.settingsService.collections.ASSET
+        };
+        try {
+            this.data = JSON.parse(this.data);
+        }
+        catch (err) {
+        }
+        alert.addButton({
+            text: 'Save',
+            handler: function (data) {
+                var rids = _this.graphService.generateRids(identity, null, _this.settingsService.collections.ASSET);
+                _this.websocketService.newtxn({
+                    identity: identity,
+                    data: _this.data,
+                    checksum: forge.sha256.create().update(_this.data + identity.username_signature).digest().toHex()
+                }, rids, _this.settingsService.collections.ASSET)
+                    .then(function () {
+                    _this.navCtrl.pop();
+                });
+            }
+        });
+        alert.present();
+    };
+    CreateAssetPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'create-asset',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/assets/createasset.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Asset name</h1>\n  <ion-item>\n    <ion-input type="text" [(ngModel)]="username" placeholder="Enter the name of your asset"></ion-input>\n  </ion-item>\n  <h1>Asset data</h1>\n  <ion-item>\n    <ion-input type="file" (change)="changeListener($event)"></ion-input> (20KB maximum file size)\n  </ion-item>\n  <ion-item *ngIf="filedata">\n    <img [src]="filedata">\n  </ion-item>\n  <ion-item>\n    <button ion-button secondary (click)="save()" [disabled]="!username || !data">Save</button>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/assets/createasset.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__["a" /* WebSocketService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_7__angular_http__["b" /* Http */]])
+    ], CreateAssetPage);
+    return CreateAssetPage;
+}());
+
+//# sourceMappingURL=createasset.js.map
+
+/***/ }),
+
+/***/ 400:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return AssetItemPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_smartContract_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__markets_createsale__ = __webpack_require__(401);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+var AssetItemPage = /** @class */ (function () {
+    function AssetItemPage(navCtrl, navParams, walletService, graphService, bulletinSecretService, alertCtrl, transactionService, settingsService, smartContractService, websocketService) {
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.walletService = walletService;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.settingsService = settingsService;
+        this.smartContractService = smartContractService;
+        this.websocketService = websocketService;
+        this.item = navParams.data.item;
+        this.asset = this.item.relationship[this.settingsService.collections.ASSET];
+        this.market = graphService.graph.markets.filter(function (market) { return market.relationship[settingsService.collections.MARKET].username === 'Marketplace'; })[0];
+    }
+    AssetItemPage.prototype.sell = function (e, market) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__markets_createsale__["a" /* CreateSalePage */], {
+            item: this.item,
+            market: this.market
+        });
+    };
+    AssetItemPage.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    AssetItemPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'asset-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/assets/assetitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Asset</h1>\n  <ion-item>\n    {{asset.identity.username}}\n  </ion-item>\n  <ion-item>\n    <img [src]="asset.data">\n  </ion-item>\n  <ion-item>\n    {{market.relationship[settingsService.collections.MARKET].username}} <button ion-button secondary (click)="sell($event, market)">Sell asset in this market</button>\n  </ion-item>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/assets/assetitem.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_7__app_smartContract_service__["a" /* SmartContractService */],
+            __WEBPACK_IMPORTED_MODULE_8__app_websocket_service__["a" /* WebSocketService */]])
+    ], AssetItemPage);
+    return AssetItemPage;
+}());
+
+//# sourceMappingURL=assetitem.js.map
+
+/***/ }),
+
+/***/ 401:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CreateSalePage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__ = __webpack_require__(68);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+var CreateSalePage = /** @class */ (function () {
+    function CreateSalePage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, websocketService, transactionService, alertCtrl, ahttp, smartContractService) {
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.websocketService = websocketService;
+        this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
+        this.ahttp = ahttp;
+        this.smartContractService = smartContractService;
+        var market = this.navParams.get('market');
+        this.market = market.relationship[this.settingsService.collections.MARKET];
+        this.item = this.navParams.get('item');
+        this.asset = this.item.relationship[this.settingsService.collections.ASSET];
+        this.asset_proof_type = this.smartContractService.assetProofTypes.FIRST_COME;
+    }
+    CreateSalePage.prototype.presentError = function (field) {
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Missing field');
+        alert.setSubTitle('Please enter information for ' + field + '.');
+        alert.addButton({
+            text: 'Ok'
+        });
+        alert.present();
+    };
+    CreateSalePage.prototype.save = function () {
+        var _this = this;
+        if (!this.price) {
+            this.presentError('price');
+            return;
+        }
+        if (!this.asset_proof_type) {
+            this.presentError('asset_proof_type');
+            return;
+        }
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Sell Asset');
+        alert.setSubTitle('Are you sure you want to sell this asset?');
+        alert.addButton({
+            text: 'Continue editing'
+        });
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                var contract = _this.smartContractService.generateChangeOfOwnership(_this.asset, _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), parseFloat(_this.price), _this.asset_proof_type, _this.market);
+                var rids = _this.graphService.generateRids(contract.identity, _this.market, _this.settingsService.collections.SMART_CONTRACT);
+                _this.websocketService.newtxn(contract, rids, _this.settingsService.collections.SMART_CONTRACT, _this.market.username_signature)
+                    .then(function () {
+                    _this.navCtrl.pop();
+                });
+            }
+        });
+        alert.present();
+    };
+    CreateSalePage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'create-sale',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Create new sale</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Asset info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          {{asset.identity.username}}\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n    <ion-col col-md-4>\n      <h3>Sale info</h3>\n      <ion-item>\n        <ion-label color="primary">Sale price</ion-label>\n        <ion-input type="number" [(ngModel)]="price" placeholder="What\'s the price of this asset?"></ion-input>\n      </ion-item>\n      <h3>Sale type</h3>\n      <ion-list radio-group [(ngModel)]="asset_proof_type">\n        <ion-item>\n          <ion-label>Buy now</ion-label>\n          <ion-radio value="first_come" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Auction</ion-label>\n          <ion-radio value="auction"></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ion-item>\n        <button ion-button secondary (click)="save()" [disabled]="!price">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__["a" /* WebSocketService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_7__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__["a" /* SmartContractService */]])
+    ], CreateSalePage);
+    return CreateSalePage;
+}());
+
+//# sourceMappingURL=createsale.js.map
+
+/***/ }),
+
+/***/ 402:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return CreatePromoPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_forms__ = __webpack_require__(30);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_smartContract_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_autocomplete_provider__ = __webpack_require__(110);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_wallet_service__ = __webpack_require__(25);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+
+
+var CreatePromoPage = /** @class */ (function () {
+    function CreatePromoPage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, websocketService, transactionService, alertCtrl, ahttp, smartContractService, completeTestService, walletService) {
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.settingsService = settingsService;
+        this.websocketService = websocketService;
+        this.transactionService = transactionService;
+        this.alertCtrl = alertCtrl;
+        this.ahttp = ahttp;
+        this.smartContractService = smartContractService;
+        this.completeTestService = completeTestService;
+        this.walletService = walletService;
+        this.myForm = new __WEBPACK_IMPORTED_MODULE_7__angular_forms__["b" /* FormGroup */]({
+            searchTerm: new __WEBPACK_IMPORTED_MODULE_7__angular_forms__["a" /* FormControl */]('', [__WEBPACK_IMPORTED_MODULE_7__angular_forms__["g" /* Validators */].required])
+        });
+        var market = this.navParams.get('market');
+        this.market = market.relationship[this.settingsService.collections.MARKET];
+        this.affiliate_proof_type = this.smartContractService.promoProofTypes.HONOR;
+        this.promotedIdentity = 'me';
+    }
+    CreatePromoPage.prototype.promotedIdentityChanged = function () {
+        if (this.promotedIdentity === 'me') {
+            this.selectedIdentity = this.graphService.toIdentity(this.bulletinSecretService.identity);
+        }
+        else {
+            this.selectedIdentity = '';
+        }
+    };
+    CreatePromoPage.prototype.contactSearchChanged = function () {
+        this.promotedIdentity = 'contact';
+    };
+    CreatePromoPage.prototype.presentError = function (field) {
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Missing field');
+        alert.setSubTitle('Please enter information for ' + field + '.');
+        alert.addButton({
+            text: 'Ok'
+        });
+        alert.present();
+    };
+    CreatePromoPage.prototype.save = function () {
+        var _this = this;
+        if (this.pay_referrer === true) {
+            if (!this.pay_referrer_operator) {
+                this.presentError('pay_referrer_operator');
+                return;
+            }
+            if (!this.pay_referrer_payout_type) {
+                this.presentError('pay_referrer_payout_type');
+                return;
+            }
+            if (!this.pay_referrer_amount) {
+                this.presentError('pay_referrer_amount');
+                return;
+            }
+        }
+        if (this.pay_referee === true) {
+            if (!this.pay_referee_operator) {
+                this.presentError('pay_referee_operator');
+                return;
+            }
+            if (!this.pay_referee_payout_type) {
+                this.presentError('pay_referee_payout_type');
+                return;
+            }
+            if (!this.pay_referee_amount) {
+                this.presentError('pay_referee_amount');
+                return;
+            }
+        }
+        if (!this.pay_referrer === true && !this.pay_referee === true) {
+            this.presentError('pay_referrer and pay_referee');
+            return;
+        }
+        if (!this.fund_amount) {
+            this.presentError('fund_amount');
+            return;
+        }
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Start promotion');
+        alert.setSubTitle('Are you sure you want to start this promotion?');
+        alert.addButton({
+            text: 'Continue editing'
+        });
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                var selectedIdentity;
+                if (_this.promotedIdentity === 'me') {
+                    selectedIdentity = _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity());
+                }
+                else {
+                    selectedIdentity = _this.selectedIdentityForm;
+                }
+                _this.walletService.get(_this.fund_amount)
+                    .then(function () {
+                    var contract = _this.smartContractService.generateNewRelationshipPromo(_this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), _this.affiliate_proof_type, selectedIdentity, _this.market, _this.pay_referrer, _this.pay_referrer_operator, _this.pay_referrer_payout_type, parseFloat(_this.pay_referrer_amount), _this.pay_referee, _this.pay_referee_operator, _this.pay_referee_payout_type, parseFloat(_this.pay_referee_amount));
+                    var rids = _this.graphService.generateRids(contract.identity, _this.market, _this.settingsService.collections.SMART_CONTRACT);
+                    var contractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(contract.identity.public_key, 'hex')).getAddress();
+                    var outputs = [];
+                    if ((contract.referee.active && contract.referee.operator === _this.smartContractService.payoutOperators.FIXED) ||
+                        (contract.referrer.active && contract.referrer.operator === _this.smartContractService.payoutOperators.FIXED)) {
+                        outputs.push({
+                            to: contractAddress,
+                            value: parseFloat(_this.fund_amount)
+                        });
+                    }
+                    return _this.websocketService.newtxn(contract, rids, _this.settingsService.collections.SMART_CONTRACT, _this.market.username_signature, { outputs: outputs });
+                }).then(function () {
+                    _this.navCtrl.pop();
+                });
+            }
+        });
+        alert.present();
+    };
+    CreatePromoPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'create-promo',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Start new promotion</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Promotion info</h3>\n      <h3>Identity to promote</h3>\n      <ion-list radio-group [(ngModel)]="promotedIdentity" (change)="promotedIdentityChanged()">\n        <ion-item>\n          <ion-label>Promote myself</ion-label>\n          <ion-radio value="me" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Promote a contact</ion-label>\n          <ion-radio value="contact"></ion-radio>\n        </ion-item>\n        <form [formGroup]="myForm" (change)="contactSearchChanged()">\n          <ion-auto-complete #searchbar [(ngModel)]="selectedIdentityForm" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n        </form>\n      </ion-list>\n      <h3>Referrer payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referrer">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referrer">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_amount" placeholder="How much to pay the referrer?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referrer_amount" placeholder="What percentage does the referrer get?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>Referree payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referee">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referee">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_amount" placeholder="How much to pay the referee?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referee_amount" placeholder="What percentage does the referee?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED || pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n        <h3>Contract fund</h3>\n        <ion-item>\n          <ion-label color="primary">Fund amount</ion-label>\n          <ion-input type="number" [(ngModel)]="fund_amount" placeholder="How much YDA to fund this promotion?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>&nbsp;</h3>\n      <ion-item>\n        <button ion-button secondary (click)="save()">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_2__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__["a" /* WebSocketService */],
+            __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_8__angular_http__["b" /* Http */],
+            __WEBPACK_IMPORTED_MODULE_9__app_smartContract_service__["a" /* SmartContractService */],
+            __WEBPACK_IMPORTED_MODULE_10__app_autocomplete_provider__["a" /* CompleteTestService */],
+            __WEBPACK_IMPORTED_MODULE_11__app_wallet_service__["a" /* WalletService */]])
+    ], CreatePromoPage);
+    return CreatePromoPage;
+}());
+
+//# sourceMappingURL=createpromo.js.map
+
+/***/ }),
+
+/***/ 403:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MarketItemPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__profile_profile__ = __webpack_require__(70);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_websocket_service__ = __webpack_require__(37);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+
+
+var MarketItemPage = /** @class */ (function () {
+    function MarketItemPage(navCtrl, navParams, walletService, graphService, bulletinSecretService, alertCtrl, transactionService, settingsService, smartContractService, websocketService) {
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.walletService = walletService;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.settingsService = settingsService;
+        this.smartContractService = smartContractService;
+        this.websocketService = websocketService;
+        this.item = navParams.get('item');
+        this.smartContract = this.item.relationship[this.settingsService.collections.SMART_CONTRACT];
+        this.market = navParams.get('market').relationship[this.settingsService.collections.MARKET];
+        this.bids = [];
+        this.affiliates = [];
+        this.refresh();
+        this.price = this.smartContract.price;
+        this.minPrice = this.smartContract.price;
+    }
+    MarketItemPage.prototype.refresh = function () {
+        var _this = this;
+        var identity = JSON.parse(JSON.stringify(this.smartContract.identity));
+        if (this.smartContract.contract_type === this.smartContractService.contractTypes.CHANGE_OWNERSHIP) {
+            identity.collection = this.settingsService.collections.BID;
+        }
+        else {
+            identity.collection = this.settingsService.collections.AFFILIATE;
+        }
+        var rids = this.graphService.generateRids(identity);
+        this.graphService.getBids(rids.requested_rid, this.market)
+            .then(function (bids) {
+            _this.bids = bids.sort(function (a, b) {
+                var aamount = _this.getAmount(a);
+                var bamount = _this.getAmount(b);
+                if (aamount < bamount)
+                    return 1;
+                if (aamount > bamount)
+                    return -1;
+                if (aamount === bamount)
+                    return 0;
+            });
+            if (_this.bids.slice(0).length > 0) {
+                _this.price = _this.getAmount(_this.bids[0]);
+                _this.minPrice = _this.price;
+            }
+        });
+        this.graphService.getAffiliates(rids.requested_rid, this.market)
+            .then(function (affiliates) {
+            _this.affiliates = affiliates.filter(function (item) {
+                if (item.public_key === _this.bulletinSecretService.identity.public_key)
+                    return true;
+            });
+        });
+        this.smartContractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(this.smartContract.identity.public_key, 'hex')).getAddress();
+    };
+    MarketItemPage.prototype.getAmount = function (bid) {
+        var total = 0;
+        for (var i = 0; i < bid.outputs.length; i++) {
+            if (bid.outputs[i].to === this.smartContractAddress)
+                total += bid.outputs[i].value;
+        }
+        return total;
+    };
+    MarketItemPage.prototype.openProfile = function (identity) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__profile_profile__["a" /* ProfilePage */], {
+            identity: identity
+        });
+    };
+    MarketItemPage.prototype.buy = function (e) {
+        var _this = this;
+        // generate purchase txn
+        var alert = this.alertCtrl.create();
+        var buttonText = '';
+        if (this.smartContract.asset_proof_type === this.smartContractService.assetProofTypes.FIRST_COME) {
+            alert.setTitle('Buy Asset');
+            alert.setSubTitle('Are you sure you want to buy this asset?');
+            buttonText = 'Buy';
+        }
+        else if (this.smartContract.asset_proof_type === this.smartContractService.assetProofTypes.AUCTION) {
+            alert.setTitle('Bid on Asset');
+            alert.setSubTitle('Are you sure you want to place a bid for this asset?');
+            buttonText = 'Bid';
+        }
+        alert.addButton({
+            text: 'Cancel'
+        });
+        alert.addButton({
+            text: buttonText,
+            handler: function (data) {
+                _this.walletService.get(_this.price)
+                    .then(function () {
+                    var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.BID);
+                    return _this.websocketService.newtxn(_this.graphService.toIdentity(_this.bulletinSecretService.identity), rids, _this.settingsService.collections.BID, _this.market.username_signature, {
+                        to: _this.bulletinSecretService.publicKeyToAddress(_this.smartContract.identity.public_key),
+                        value: _this.price
+                    });
+                })
+                    .then(function () {
+                    return _this.refresh();
+                })
+                    .catch(function (err) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Transaction failed');
+                    alert.setSubTitle(err);
+                    alert.addButton({
+                        text: 'Ok'
+                    });
+                    alert.present();
+                });
+            }
+        });
+        alert.present();
+    };
+    MarketItemPage.prototype.joinPromotion = function (e) {
+        var _this = this;
+        // generate purchase txn
+        var alert = this.alertCtrl.create();
+        var buttonText = '';
+        alert.setTitle('Join promotion');
+        alert.setSubTitle('Are you sure you want to join this promotion?');
+        buttonText = 'Join';
+        alert.addButton({
+            text: 'Cancel'
+        });
+        alert.addButton({
+            text: buttonText,
+            handler: function (data) {
+                var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.AFFILIATE);
+                _this.websocketService.newtxn({
+                    referrer: _this.graphService.toIdentity(_this.bulletinSecretService.identity),
+                    target: _this.smartContract.target
+                }, rids, _this.settingsService.collections.AFFILIATE, _this.market.username_signature)
+                    .then(function () {
+                    return _this.refresh();
+                })
+                    .catch(function (err) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Transaction failed');
+                    alert.setSubTitle(err);
+                    alert.addButton({
+                        text: 'Ok'
+                    });
+                    alert.present();
+                });
+            }
+        });
+        alert.present();
+    };
+    MarketItemPage.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    MarketItemPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.asset_proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.asset_proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.asset_proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="smartContract.asset_proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="bids.length === 0 && smartContract.asset_proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="bids.length > 0 && smartContract.asset_proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.asset_proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount}} YDA\n        </ion-item>\n      </ng-container>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__["a" /* SmartContractService */],
+            __WEBPACK_IMPORTED_MODULE_9__app_websocket_service__["a" /* WebSocketService */]])
+    ], MarketItemPage);
+    return MarketItemPage;
+}());
+
+//# sourceMappingURL=marketitem.js.map
+
+/***/ }),
+
+/***/ 405:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return Settings; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(224);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(223);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(397);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_groups__ = __webpack_require__(675);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_geolocation__ = __webpack_require__(223);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(406);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_groups__ = __webpack_require__(683);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__mail_mail__ = __webpack_require__(231);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -5207,6 +6802,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -5519,6 +7115,37 @@ var Settings = /** @class */ (function () {
             return _this.graphService.identityFromSkylink(skylink);
         });
     };
+    Settings.prototype.getPromo = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var alert = _this.alertCtrl.create({
+                title: 'Set promo code',
+                inputs: [
+                    {
+                        name: 'promo',
+                        placeholder: 'Promo code'
+                    }
+                ],
+                buttons: [
+                    {
+                        text: 'Cancel',
+                        role: 'cancel',
+                        handler: function (data) {
+                            console.log('Cancel clicked');
+                            reject('Cancel clicked');
+                        }
+                    },
+                    {
+                        text: 'confirm',
+                        handler: function (data) {
+                            resolve(data.promo);
+                        }
+                    }
+                ]
+            });
+            alert.present();
+        });
+    };
     Settings.prototype.createWalletFromInvite = function () {
         var _this = this;
         var promise;
@@ -5526,11 +7153,15 @@ var Settings = /** @class */ (function () {
         var userType;
         var userParent;
         var invite;
+        var promo;
         this.loadingModal = this.loadingCtrl.create({
             content: 'initializing...'
         });
         this.loadingModal.present();
         promise = this.getInvite()
+            .then(function () {
+            return _this.getPromo();
+        })
             .then(function (inv) {
             invite = inv;
             return _this.graphService.checkInvite(invite);
@@ -5704,8 +7335,11 @@ var Settings = /** @class */ (function () {
                 if (showModal) {
                     _this.loadingModal.dismiss();
                 }
-                _this.settingsService.menu = 'home';
-                _this.events.publish('menu', [{ title: 'Home', label: 'Home', component: __WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], count: false, color: '', root: true }]);
+                _this.settingsService.menu = 'mail';
+                _this.events.publish('menu', [
+                    { title: 'Inbox', label: 'Inbox', component: __WEBPACK_IMPORTED_MODULE_18__mail_mail__["a" /* MailPage */], count: false, color: '', root: true },
+                    { title: 'Sent', label: 'Sent', component: __WEBPACK_IMPORTED_MODULE_18__mail_mail__["a" /* MailPage */], count: false, color: '', root: true }
+                ]);
             })
                 .catch(function (err) {
                 console.log(err);
@@ -5722,9 +7356,15 @@ var Settings = /** @class */ (function () {
             })
                 .then(function () {
                 var promises = [];
-                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].length; i++) {
-                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */][i])) {
-                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */][i], undefined, undefined, undefined, false));
+                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups.length; i++) {
+                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups[i])) {
+                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_groups[i], undefined, undefined, undefined, false));
+                        addedDefaults_1 = true;
+                    }
+                }
+                for (var i = 0; i < __WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets.length; i++) {
+                    if (!_this.graphService.isAdded(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets[i])) {
+                        promises.push(_this.graphService.addGroup(__WEBPACK_IMPORTED_MODULE_17__app_groups__["a" /* default */].default_markets[i], undefined, undefined, undefined, false));
                         addedDefaults_1 = true;
                     }
                 }
@@ -5888,21 +7528,21 @@ var Settings = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 398:
+/***/ 407:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SiaFiles; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(81);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(70);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6126,21 +7766,21 @@ var SiaFiles = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 399:
+/***/ 408:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return StreamPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(54);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6350,119 +7990,18 @@ var StreamPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 400:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MailPage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__compose__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__mailitem__ = __webpack_require__(137);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-var MailPage = /** @class */ (function () {
-    function MailPage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, events) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.graphService = graphService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.events = events;
-        this.items = [];
-        this.loading = false;
-        this.loading = true;
-        var rids = [this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.MAIL),
-            this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CONTRACT),
-            this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CONTRACT_SIGNED),
-            this.graphService.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CALENDAR)];
-        var group_rids = [];
-        for (var i = 0; i < this.graphService.graph.groups.length; i++) {
-            var group = this.graphService.getIdentityFromTxn(this.graphService.graph.groups[i]);
-            group_rids.push(this.graphService.generateRid(group.username_signature, group.username_signature, this.settingsService.collections.GROUP_MAIL));
-        }
-        var file_rids = [];
-        for (var i = 0; i < this.graphService.graph.files.length; i++) {
-            var group = this.graphService.getIdentityFromTxn(this.graphService.graph.files[i]);
-            file_rids.push(this.graphService.generateRid(group.username_signature, group.username_signature, this.settingsService.collections.GROUP_MAIL));
-        }
-        if (group_rids.length > 0) {
-            rids = rids.concat(group_rids);
-        }
-        if (file_rids.length > 0) {
-            rids = rids.concat(file_rids);
-        }
-        this.rids = rids;
-        this.events.subscribe('newmail', function () { _this.refresh(); });
-        this.refresh();
-    }
-    MailPage.prototype.refresh = function () {
-        var _this = this;
-        return this.graphService.getMail(this.rids, this.settingsService.collections.MAIL)
-            .then(function () {
-            return _this.graphService.getMail(_this.rids, _this.settingsService.collections.GROUP_MAIL);
-        })
-            .then(function () {
-            _this.items = _this.graphService.prepareMailItems(_this.navParams.data.pageTitle.label);
-            _this.loading = false;
-        });
-    };
-    MailPage.prototype.itemTapped = function (event, item) {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__mailitem__["a" /* MailItemPage */], {
-            item: item
-        });
-    };
-    MailPage.prototype.composeMail = function () {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_5__compose__["a" /* ComposePage */]);
-    };
-    MailPage = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'mail-profile',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <button ion-button secondary (click)="composeMail()">Compose</button>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-card *ngIf="items && items.length == 0">\n      <ion-card-content>\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          No items to display.\n      </ion-card-title>\n    </ion-card-content>\n  </ion-card>\n  <ion-list>\n    <button ion-item *ngFor="let item of items" (click)="itemTapped($event, item)">\n      <ion-item>\n        <div title="Verified" class="sender">\n          <span>{{item.sender.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n          <span *ngIf="item.group">{{item.group.username}} <ion-icon name="checkmark-circle" class="success"></ion-icon></span>\n        </div>\n        <div class="subject">{{item.subject}}</div>\n        <div class="datetime">{{item.datetime}}</div>\n        <div class="body">{{item.body}}</div>\n      </ion-item>\n    </button>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/mail/mail.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_4__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["b" /* Events */]])
-    ], MailPage);
-    return MailPage;
-}());
-
-//# sourceMappingURL=mail.js.map
-
-/***/ }),
-
-/***/ 402:
+/***/ 410:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MyPagesPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(230);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(233);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(232);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6534,13 +8073,13 @@ var MyPagesPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 416:
+/***/ 424:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 Object.defineProperty(__webpack_exports__, "__esModule", { value: true });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(417);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(527);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__ = __webpack_require__(425);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__app_module__ = __webpack_require__(535);
 
 
 Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* platformBrowserDynamic */])().bootstrapModule(__WEBPACK_IMPORTED_MODULE_1__app_module__["a" /* AppModule */]);
@@ -6548,67 +8087,83 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 
 /***/ }),
 
-/***/ 527:
+/***/ 535:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return AppModule; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(54);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(569);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(223);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(676);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(396);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(225);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(81);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(398);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(399);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_mail_mail__ = __webpack_require__(400);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_compose__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_calendar_calendar__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__ = __webpack_require__(345);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_splash_screen__ = __webpack_require__(348);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_qr_scanner__ = __webpack_require__(393);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__ = __webpack_require__(677);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__peer_service__ = __webpack_require__(224);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__websocket_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__firebase_service__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(226);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__ = __webpack_require__(697);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__ = __webpack_require__(386);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_deeplinks__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_firebase__ = __webpack_require__(395);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_tools_emoji_picker__ = __webpack_require__(698);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_native_file__ = __webpack_require__(740);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__ = __webpack_require__(387);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40__autocomplete_provider__ = __webpack_require__(136);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__ionic_native_geolocation__ = __webpack_require__(222);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__ionic_native_google_maps__ = __webpack_require__(397);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__pages_mail_mailitem__ = __webpack_require__(137);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__ = __webpack_require__(394);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_web_web__ = __webpack_require__(229);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__ = __webpack_require__(402);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__ = __webpack_require__(230);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_48_ionic_tooltips__ = __webpack_require__(741);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_49__angular_platform_browser_animations__ = __webpack_require__(743);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(53);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(577);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(684);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(405);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(70);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(407);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(408);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_mail_mail__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_compose__ = __webpack_require__(109);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_calendar_calendar__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__ = __webpack_require__(348);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_splash_screen__ = __webpack_require__(351);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_qr_scanner__ = __webpack_require__(396);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__ = __webpack_require__(685);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__firebase_service__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__ = __webpack_require__(705);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_social_sharing__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__ = __webpack_require__(389);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_deeplinks__ = __webpack_require__(409);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_firebase__ = __webpack_require__(404);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_tools_emoji_picker__ = __webpack_require__(706);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_native_file__ = __webpack_require__(748);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__ = __webpack_require__(390);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_40__autocomplete_provider__ = __webpack_require__(110);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__ionic_native_geolocation__ = __webpack_require__(223);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__ionic_native_google_maps__ = __webpack_require__(406);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__pages_mail_mailitem__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__ = __webpack_require__(397);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_web_web__ = __webpack_require__(232);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__ = __webpack_require__(410);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__ = __webpack_require__(233);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_48_ionic_tooltips__ = __webpack_require__(749);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_49__angular_platform_browser_animations__ = __webpack_require__(751);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__pages_assets_assets__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_51__pages_assets_assetitem__ = __webpack_require__(400);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_52__pages_assets_createasset__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_53__smartContract_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_54__pages_markets_market__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_55__pages_markets_marketitem__ = __webpack_require__(403);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_56__pages_markets_createsale__ = __webpack_require__(401);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_57__pages_markets_createpromo__ = __webpack_require__(402);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
     else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
     return c > 3 && r && Object.defineProperty(target, key, r), r;
 };
+
+
+
+
+
+
+
+
 
 
 
@@ -6682,7 +8237,14 @@ var AppModule = /** @class */ (function () {
                 __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__["a" /* SignatureRequestPage */],
                 __WEBPACK_IMPORTED_MODULE_45__pages_web_web__["a" /* WebPage */],
                 __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__["a" /* MyPagesPage */],
-                __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__["a" /* BuildPagePage */]
+                __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__["a" /* BuildPagePage */],
+                __WEBPACK_IMPORTED_MODULE_50__pages_assets_assets__["a" /* AssetsPage */],
+                __WEBPACK_IMPORTED_MODULE_51__pages_assets_assetitem__["a" /* AssetItemPage */],
+                __WEBPACK_IMPORTED_MODULE_54__pages_markets_market__["a" /* MarketPage */],
+                __WEBPACK_IMPORTED_MODULE_55__pages_markets_marketitem__["a" /* MarketItemPage */],
+                __WEBPACK_IMPORTED_MODULE_52__pages_assets_createasset__["a" /* CreateAssetPage */],
+                __WEBPACK_IMPORTED_MODULE_56__pages_markets_createsale__["a" /* CreateSalePage */],
+                __WEBPACK_IMPORTED_MODULE_57__pages_markets_createpromo__["a" /* CreatePromoPage */]
             ],
             imports: [
                 __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__["a" /* BrowserModule */],
@@ -6720,7 +8282,14 @@ var AppModule = /** @class */ (function () {
                 __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__["a" /* SignatureRequestPage */],
                 __WEBPACK_IMPORTED_MODULE_45__pages_web_web__["a" /* WebPage */],
                 __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__["a" /* MyPagesPage */],
-                __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__["a" /* BuildPagePage */]
+                __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__["a" /* BuildPagePage */],
+                __WEBPACK_IMPORTED_MODULE_50__pages_assets_assets__["a" /* AssetsPage */],
+                __WEBPACK_IMPORTED_MODULE_51__pages_assets_assetitem__["a" /* AssetItemPage */],
+                __WEBPACK_IMPORTED_MODULE_54__pages_markets_market__["a" /* MarketPage */],
+                __WEBPACK_IMPORTED_MODULE_55__pages_markets_marketitem__["a" /* MarketItemPage */],
+                __WEBPACK_IMPORTED_MODULE_52__pages_assets_createasset__["a" /* CreateAssetPage */],
+                __WEBPACK_IMPORTED_MODULE_56__pages_markets_createsale__["a" /* CreateSalePage */],
+                __WEBPACK_IMPORTED_MODULE_57__pages_markets_createpromo__["a" /* CreatePromoPage */]
             ],
             providers: [
                 __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__["a" /* StatusBar */],
@@ -6746,7 +8315,8 @@ var AppModule = /** @class */ (function () {
                 __WEBPACK_IMPORTED_MODULE_40__autocomplete_provider__["a" /* CompleteTestService */],
                 __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__["a" /* AutoCompleteComponent */],
                 __WEBPACK_IMPORTED_MODULE_41__ionic_native_geolocation__["a" /* Geolocation */],
-                __WEBPACK_IMPORTED_MODULE_42__ionic_native_google_maps__["a" /* GoogleMaps */]
+                __WEBPACK_IMPORTED_MODULE_42__ionic_native_google_maps__["a" /* GoogleMaps */],
+                __WEBPACK_IMPORTED_MODULE_53__smartContract_service__["a" /* SmartContractService */]
             ]
         })
     ], AppModule);
@@ -6757,32 +8327,33 @@ var AppModule = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 569:
+/***/ 577:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MyApp; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(345);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(348);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(223);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(396);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(398);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(399);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(226);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(400);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(229);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(402);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(348);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(351);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(405);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(407);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(408);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(409);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(232);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(410);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(233);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__pages_assets_assets__ = __webpack_require__(229);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -6803,6 +8374,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -6900,6 +8472,21 @@ var MyApp = /** @class */ (function () {
                 { title: 'Groups', label: 'Groups', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
             ];
         }
+        else if (this.settingsService.menu === 'assets') {
+            this.pages = [
+                { title: 'Assets', label: 'Assets', component: __WEBPACK_IMPORTED_MODULE_21__pages_assets_assets__["a" /* AssetsPage */], count: false, color: '', root: true },
+            ];
+        }
+        else if (this.settingsService.menu === 'markets') {
+            this.pages = [
+                { title: 'Markets', label: 'Markets', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
+            ];
+        }
+        else if (this.settingsService.menu === 'affiliates') {
+            this.pages = [
+                { title: 'Affiliates', label: 'Affiliates', component: __WEBPACK_IMPORTED_MODULE_9__pages_list_list__["a" /* ListPage */], count: false, color: '', root: true },
+            ];
+        }
         else if (this.settingsService.menu === 'files') {
             this.pages = [
                 { title: 'Files', label: 'Files', component: __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__["a" /* SiaFiles */], count: false, color: '', root: true },
@@ -6994,7 +8581,7 @@ var MyApp = /** @class */ (function () {
         __metadata("design:type", __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["h" /* Nav */])
     ], MyApp.prototype, "nav", void 0);
     MyApp = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_MAIL]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MAIL].length + graphService.notifications[settingsService.collections.GROUP_MAIL].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatbubbles"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_CALENDAR]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CALENDAR].length + graphService.notifications[settingsService.collections.GROUP_CALENDAR].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <!-- <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button> -->\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\']?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[\'notifications\'].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col col-lg-10 col-md-10 col-sm-10 style="padding-right: 7px; margin-top: 4px;">\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="graphService.graph.friend_requests">{{graphService.graph.friend_requests.length}}</ion-note>\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="p.kwargs && p.kwargs.identity && graphService.counts[p.kwargs.identity.username_signature] && graphService.counts[p.kwargs.identity.username_signature] > 0">{{graphService.counts[p.kwargs.identity.username_signature]}}</ion-note>\n            </button>\n            <ng-container *ngIf="p.kwargs && p.kwargs.identity && p.kwargs.subitems && p.kwargs.subitems[p.kwargs.identity.username_signature]">\n              <button\n                menuClose\n                ion-item\n                (click)="openPage(subitem)"\n                class="subnavbutton"\n                *ngFor="let subitem of p.kwargs.subitems[p.kwargs.identity.username_signature]"\n              >\n                &nbsp;&nbsp;&nbsp;&nbsp;{{subitem.kwargs.identity.username}} <ion-note *ngIf="graphService.counts[subitem.kwargs.identity.username_signature] && graphService.counts[subitem.kwargs.identity.username_signature] > 0">{{graphService.counts[subitem.kwargs.identity.username_signature]}}</ion-note>\n              </button>\n            </ng-container>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/app/app.html"*/'<ion-split-pane>\n  <ion-menu [content]="content">\n    <ion-header>\n      <ion-toolbar>\n        <ion-title>\n          <ion-note *ngIf="settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'Center Identity\'}}\n          </ion-note>\n          <ion-note *ngIf="!settingsService.remoteSettings.restricted" style="font-size: 20px">\n            {{bulletinSecretService.identity.username || \'YadaCoin\'}}\n          </ion-note>\n          <ion-note style="font-size: 12px">\n            {{version}}\n          </ion-note>\n        </ion-title>\n      </ion-toolbar>\n    </ion-header>\n\n    <ion-content *ngIf="bulletinSecretService.key">\n      <ion-row>\n        <ion-col col-lg-2 col-md-2 col-sm-2>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'home\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="home"\n            tooltip="Home"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="home"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'wallet\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="wallet"\n            tooltip="Wallet"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cash"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'mail\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="mail"\n            tooltip="Mail"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="mail"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MAIL]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_MAIL]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MAIL].length + graphService.notifications[settingsService.collections.GROUP_MAIL].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'chat\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="chat"\n            tooltip="Private messages"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatboxes"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'community\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="community"\n            tooltip="Community chat"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="chatbubbles"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.GROUP_CHAT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.GROUP_CHAT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'calendar\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="calendar"\n            tooltip="Calendar"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="calendar"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CALENDAR]?.length > 0 || graphService.notifications[settingsService.collections.GROUP_CALENDAR]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CALENDAR].length + graphService.notifications[settingsService.collections.GROUP_CALENDAR].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'contacts\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="contacts"\n            tooltip="Contacts"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contacts"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.CONTACT]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.CONTACT].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'files\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="files"\n            tooltip="Files"\n            (click)="segmentChanged($event)"\n            *ngIf="settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="folder"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'assets\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="assets"\n            tooltip="Assets"\n            (click)="segmentChanged($event)"\n            *ngIf="!settingsService.remoteSettings.restricted"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="pricetag"></ion-icon>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'markets\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="markets"\n            tooltip="Markets"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="cart"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[settingsService.collections.MARKET]?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[settingsService.collections.MARKET].length}}</ion-badge>\n          </button>\n          <!-- <button\n            class="navbutton"\n            [color]="settingsService.menu === \'web\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="web"\n            tooltip="Web"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="globe"></ion-icon>\n          </button> -->\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'notifications\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="notifications"\n            tooltip="Notifications"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="notifications"></ion-icon>\n            <ion-badge\n              *ngIf="graphService.notifications[\'notifications\']?.length > 0"\n              color="secondary"\n              style="vertical-align:top;position:absolute;"\n              item-right\n            >{{graphService.notifications[\'notifications\'].length}}</ion-badge>\n          </button>\n          <button\n            class="navbutton"\n            [color]="settingsService.menu === \'settings\' ? \'secondary\' : \'primary\'"\n            ion-button\n            value="settings"\n            tooltip="Identity"\n            (click)="segmentChanged($event)"\n            icon-only\n            navTooltip\n            arrow="true"\n            positionH="right"\n            topOffset="-67"\n          >\n            <ion-icon name="contact"></ion-icon>\n          </button>\n        </ion-col>\n        <ion-col col-lg-10 col-md-10 col-sm-10 style="padding-right: 7px; margin-top: 4px;">\n          <ng-container *ngFor="let p of pages">\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Contact Requests\'"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="graphService.graph.friend_requests">{{graphService.graph.friend_requests.length}}</ion-note>\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              [color]="\'grey\'"\n              *ngIf="p.title == \'Messages\'"\n              class="subnavbutton"\n            >\n              {{p.label}}\n            </button>\n            <button\n              menuClose\n              ion-item\n              (click)="openPage(p)"\n              *ngIf="[\'Messages\', \'Contact Requests\'].indexOf(p.title) < 0"\n              class="subnavbutton"\n            >\n              {{p.label}} <ion-note *ngIf="p.kwargs && p.kwargs.identity && graphService.counts[p.kwargs.identity.username_signature] && graphService.counts[p.kwargs.identity.username_signature] > 0">{{graphService.counts[p.kwargs.identity.username_signature]}}</ion-note>\n            </button>\n            <ng-container *ngIf="p.kwargs && p.kwargs.identity && p.kwargs.subitems && p.kwargs.subitems[p.kwargs.identity.username_signature]">\n              <button\n                menuClose\n                ion-item\n                (click)="openPage(subitem)"\n                class="subnavbutton"\n                *ngFor="let subitem of p.kwargs.subitems[p.kwargs.identity.username_signature]"\n              >\n                &nbsp;&nbsp;&nbsp;&nbsp;{{subitem.kwargs.identity.username}} <ion-note *ngIf="graphService.counts[subitem.kwargs.identity.username_signature] && graphService.counts[subitem.kwargs.identity.username_signature] > 0">{{graphService.counts[subitem.kwargs.identity.username_signature]}}</ion-note>\n              </button>\n            </ng-container>\n          </ng-container>\n        </ion-col>\n      </ion-row>\n      <img *ngIf="!settingsService.remoteSettings.restricted" src="assets/img/yadacoinlogosmall.png" class="logo">\n      <img *ngIf="settingsService.remoteSettings.restricted" src="assets/center-identity-logo-square.png" class="logo">\n    </ion-content>\n  </ion-menu>\n  <!-- Disable swipe-to-go-back because it\'s poor UX to combine STGB with side menus -->\n  <ion-nav [root]="rootPage" main #content swipeBackEnabled="false"></ion-nav>\n</ion-split-pane>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/app/app.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["k" /* Platform */],
             __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__["a" /* StatusBar */],
@@ -7014,52 +8601,27 @@ var MyApp = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 615:
+/***/ 623:
 /***/ (function(module, exports) {
 
 /* (ignored) */
 
 /***/ }),
 
-/***/ 616:
+/***/ 624:
 /***/ (function(module, exports) {
 
 /* (ignored) */
 
 /***/ }),
 
-/***/ 67:
+/***/ 68:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ListPage; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return SmartContractService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(107);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(225);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(81);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(394);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(137);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__ = __webpack_require__(227);
-var __assign = (this && this.__assign) || function () {
-    __assign = Object.assign || function(t) {
-        for (var s, i = 1, n = arguments.length; i < n; i++) {
-            s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-                t[p] = s[p];
-        }
-        return t;
-    };
-    return __assign.apply(this, arguments);
-};
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(10);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -7069,6 +8631,410 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
+
+var SmartContractService = /** @class */ (function () {
+    function SmartContractService(settingsService) {
+        this.settingsService = settingsService;
+        this.version = 1;
+        this.payoutOperators = {
+            PERCENT: 'percent',
+            FIXED: 'fixed'
+        };
+        this.payoutType = {
+            RECURRING: 'recurring',
+            ONE_TIME: 'one_time'
+        };
+        this.assetProofTypes = {
+            CONFIRMATION: 'confirmation',
+            FIRST_COME: 'first_come',
+            AUCTION: 'auction'
+        };
+        this.promoProofTypes = {
+            COINBASE: 'coinbase',
+            CONFIRMATION: 'confirmation',
+            HONOR: 'honor'
+        };
+        this.contractTypes = {
+            CHANGE_OWNERSHIP: 'change_ownership',
+            NEW_RELATIONSHIP: 'new_relationship'
+        };
+    }
+    SmartContractService.prototype.generateChangeOfOwnership = function (asset, creator, amount, asset_proof_type, market) {
+        var key = foobar.bitcoin.ECPair.makeRandom();
+        var wif = key.toWIF();
+        var username = '';
+        var username_signature = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(username)).toDER());
+        var public_key = key.getPublicKeyBuffer().toString('hex');
+        var identity = {
+            username: username,
+            username_signature: username_signature,
+            public_key: public_key,
+            wif: wif,
+            collection: this.settingsService.collections.SMART_CONTRACT
+        };
+        var expiry = 280 * 14;
+        var contract_type = this.contractTypes.CHANGE_OWNERSHIP;
+        var payout_amount = 1;
+        var payout_operator = this.payoutOperators.PERCENT;
+        var payout_type = this.payoutType.ONE_TIME;
+        var price = amount;
+        var username_signatures = [market.username_signature, market.username_signature].sort(function (a, b) {
+            return a.toLowerCase().localeCompare(b.toLowerCase());
+        });
+        var market_rid = forge.sha256.create().update(username_signatures[0] + username_signatures[1] + this.settingsService.collections.MARKET).digest().toHex();
+        return {
+            version: this.version,
+            expiry: expiry,
+            contract_type: contract_type,
+            payout_amount: payout_amount,
+            payout_operator: payout_operator,
+            payout_type: payout_type,
+            asset_proof_type: asset_proof_type,
+            price: price,
+            identity: identity,
+            asset: asset,
+            creator: creator,
+            market: market_rid
+        };
+    };
+    SmartContractService.prototype.generateNewRelationshipPromo = function (creator, affiliate_proof_type, target, market, pay_referrer, pay_referrer_operator, pay_referrer_payout_type, pay_referrer_amount, pay_referee, pay_referee_operator, pay_referee_payout_type, pay_referee_amount) {
+        var key = foobar.bitcoin.ECPair.makeRandom();
+        var wif = key.toWIF();
+        var username = '';
+        var username_signature = foobar.base64.fromByteArray(key.sign(foobar.bitcoin.crypto.sha256(username)).toDER());
+        var public_key = key.getPublicKeyBuffer().toString('hex');
+        var identity = {
+            username: username,
+            username_signature: username_signature,
+            public_key: public_key,
+            wif: wif,
+            collection: this.settingsService.collections.SMART_CONTRACT
+        };
+        var expiry = 280 * 14;
+        var contract_type = this.contractTypes.NEW_RELATIONSHIP;
+        var username_signatures = [market.username_signature, market.username_signature].sort(function (a, b) {
+            return a.toLowerCase().localeCompare(b.toLowerCase());
+        });
+        var market_rid = forge.sha256.create().update(username_signatures[0] + username_signatures[1] + this.settingsService.collections.MARKET).digest().toHex();
+        return {
+            version: this.version,
+            expiry: expiry,
+            contract_type: contract_type,
+            affiliate_proof_type: affiliate_proof_type,
+            identity: identity,
+            creator: creator,
+            target: target,
+            market: market_rid,
+            referrer: {
+                active: pay_referrer,
+                operator: pay_referrer_operator,
+                payout_type: pay_referrer_payout_type,
+                amount: pay_referrer_amount
+            },
+            referee: {
+                active: pay_referee,
+                operator: pay_referee_operator,
+                payout_type: pay_referee_payout_type,
+                amount: pay_referee_amount
+            }
+        };
+    };
+    SmartContractService.prototype.toString = function (contract) {
+        if (contract.contract_type === this.contractTypes.CHANGE_OWNERSHIP) {
+            return ('' +
+                contract.version +
+                contract.expiry +
+                contract.contract_type +
+                contract.payout_amount +
+                contract.payout_operator +
+                contract.payout_type +
+                contract.market +
+                contract.asset_proof_type +
+                contract.price +
+                contract.identity.username_signature +
+                contract.asset +
+                contract.creator);
+        }
+        else if (contract.contract_type === this.contractTypes.NEW_RELATIONSHIP) {
+            var referrer_str = contract.referrer.active === true ? ('true' +
+                contract.referrer.operator +
+                contract.referrer.payout_type +
+                contract.referrer.amount) : 'false';
+            var referee_str = contract.referee.active === true ? ('true' +
+                contract.referee.operator +
+                contract.referee.payout_type +
+                contract.referee.amount) : 'false';
+            return ('' +
+                contract.version +
+                contract.expiry +
+                contract.contract_type +
+                contract.affiliate_proof_type +
+                contract.target +
+                contract.market +
+                contract.identity.username_signature +
+                referrer_str +
+                referee_str +
+                contract.creator);
+        }
+    };
+    SmartContractService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1__settings_service__["a" /* SettingsService */]])
+    ], SmartContractService);
+    return SmartContractService;
+}());
+
+//# sourceMappingURL=smartContract.service.js.map
+
+/***/ }),
+
+/***/ 683:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony default export */ __webpack_exports__["a"] = ({
+    default_groups: [
+        {
+            "username": "Text Channels",
+            "username_signature": "MEQCIE29etn0ZKakmbuI7uaSLwf7O+W3fyX9HDtGSZspagknAiBKfSM2H8/T/b9mIxvzDIjh05nw0V7nrN22/+pcArlj6w==",
+            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
+            "collection": "group"
+        },
+        {
+            "username": "Yada Protocol",
+            "username_signature": "MEQCIAZ0wJYLDxJei2Za7XMzbx+AOqeH2PpB6suzTF/bvqgkAiBJYnznzkNlfqjY+1bRUnn5bIuIxL0wz2Mi/TB81487rA==",
+            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
+            "collection": "group"
+        },
+        {
+            "username": "Yada App",
+            "username_signature": "MEUCIQCa091+XlEyJ4w44Az4xFLySEvzf8WS7nv3qVmAj0L7bgIgaSkLRBCDHt/MIfmlNDN7UsnGYc+9HitPMgsCEZDG4xY=",
+            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
+            "collection": "group"
+        },
+        {
+            "username": "YadaCoin",
+            "username_signature": "MEQCIDMpt/iX+l60D3ZpANgib973gxwxMwMXoEZ2BF/6A5U6AiBHM1GyMQORffO/YM8dG386/2PBTHCYd0YZu+GaWt5Geg==",
+            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
+            "collection": "group"
+        },
+    ],
+    default_markets: [
+        {
+            "username": "Marketplace",
+            "username_signature": "MEUCIQDkV0OjvBtW5g6Hm7OtplD4AkeFcCUBT+UaMMTwYggARAIgK74HoNW5WD7uHpTZPv6WieE1igEgTva7kcmxJm/H6Wc=",
+            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
+            "collection": "market"
+        },
+        {
+            "username": "Promotions",
+            "username_signature": "MEQCIHF50YImuU7az7tAn5MbM3Z+1YN6gN/zEPretnSLdJ3XAiBMTv1DN+TL4strit+PORmgw2xSk52zKzHjpdB2yfxjJg==",
+            "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
+            "collection": "market"
+        },
+    ]
+});
+//# sourceMappingURL=groups.js.map
+
+/***/ }),
+
+/***/ 684:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PostModal; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(19);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+
+
+
+
+
+
+var PostModal = /** @class */ (function () {
+    function PostModal(navParams, viewCtrl, walletService, alertCtrl, transactionService, openGraphParserService, settingsService, ahttp) {
+        var _this = this;
+        this.navParams = navParams;
+        this.viewCtrl = viewCtrl;
+        this.walletService = walletService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.openGraphParserService = openGraphParserService;
+        this.settingsService = settingsService;
+        this.ahttp = ahttp;
+        this.blockchainAddress = null;
+        this.postText = null;
+        this.logicalParent = null;
+        this.post = {};
+        this.files = null;
+        this.selectedFile = null;
+        this.blockchainAddress = navParams.data.blockchainAddress;
+        this.logicalParent = navParams.data.logicalParent;
+        var headers = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["a" /* Headers */]();
+        headers.append('Authorization', 'basic ' + Base64.encode(this.settingsService.remoteSettings['siaPassword']));
+        var options = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
+        this.ahttp.get(this.settingsService.remoteSettings['siaUrl'] + '/renter/files', options)
+            .subscribe(function (res) {
+            _this.files = res.json()['files'];
+        });
+    }
+    PostModal.prototype.change = function () {
+        var _this = this;
+        if (this.openGraphParserService.isURL(this.postText)) {
+            this.openGraphParserService.parseFromUrl(this.postText).then(function (data) {
+                _this.post = data;
+            });
+        }
+    };
+    PostModal.prototype.submit = function () {
+        var _this = this;
+        this.walletService.get().then(function () {
+            return new Promise(function (resolve, reject) {
+                if (_this.selectedFile) {
+                    _this.ahttp.get(_this.settingsService.remoteSettings['siaUrl'] + '/renter/shareascii?siapaths=' + _this.selectedFile[0])
+                        .subscribe(function (res) {
+                        var sharefiledata = res.json()['asciisia'];
+                        _this.approveTxn(sharefiledata, resolve);
+                    });
+                }
+                else {
+                    _this.approveTxn(null, resolve);
+                }
+                console.log(status);
+            }).then(function () {
+                _this.dismiss();
+            });
+        });
+    };
+    PostModal.prototype.approveTxn = function (sharefiledata, resolve) {
+        var _this = this;
+        var alert = this.alertCtrl.create();
+        alert.setTitle('Approve Transaction');
+        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
+        alert.addButton('Cancel');
+        alert.addButton({
+            text: 'Confirm',
+            handler: function (data) {
+                // camera permission was granted
+                new Promise(function (resolve, reject) {
+                    if (sharefiledata) {
+                        return _this.transactionService.generateTransaction({
+                            relationship: {
+                                postText: _this.postText,
+                                postFile: sharefiledata,
+                                postFileName: _this.selectedFile[0]
+                            }
+                        })
+                            .then(function () {
+                            resolve();
+                        })
+                            .catch(function (err) {
+                            reject('failed to generate transaction');
+                        });
+                    }
+                    else {
+                        return _this.transactionService.generateTransaction({
+                            relationship: {
+                                postText: _this.postText
+                            }
+                        })
+                            .then(function () {
+                            resolve();
+                        })
+                            .catch(function (err) {
+                            reject('failed to generate transaction');
+                        });
+                    }
+                })
+                    .then(function () {
+                    return _this.transactionService.getFastGraphSignature();
+                })
+                    .then(function (hash) {
+                    return _this.transactionService.sendTransaction();
+                })
+                    .then(function () {
+                    _this.dismiss();
+                })
+                    .catch(function (err) {
+                    console.log('could not generate hash');
+                });
+            }
+        });
+        alert.present();
+    };
+    PostModal.prototype.dismiss = function () {
+        this.logicalParent.refresh();
+        this.viewCtrl.dismiss();
+    };
+    PostModal = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'modal-post',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/postmodal.html"*/'<ion-header>\n  <ion-toolbar>\n    <ion-title>\n      Write post\n    </ion-title>\n    <ion-buttons start>\n      <button ion-button (click)="dismiss()">\n        <span ion-text color="primary" showWhen="ios">Cancel</span>\n        <ion-icon name="md-close" showWhen="android,windows,core"></ion-icon>\n      </button>\n    </ion-buttons>\n  </ion-toolbar>\n</ion-header>\n<ion-content>\n  <ion-item>\n    <ion-textarea placeholder="Shortened url (35 chars max)" [(ngModel)]="postText" (input)="change()">\n    </ion-textarea>\n  </ion-item>\n  <ion-item>\n    <ion-label>Files</ion-label>\n    <ion-select [(ngModel)]="selectedFile" multiple="true">\n      <ion-option *ngFor="let file of files" value="{{file.siapath}}">{{file.siapath}}</ion-option>\n    </ion-select>\n  </ion-item>\n  <button ion-button secondary (click)="submit()">Post</button>\n  <ion-card *ngIf="post.title">\n    <img src="{{post.image}}" *ngIf="post.image" />\n    <ion-card-content>\n      <ion-card-title>\n        {{post.title}}\n      </ion-card-title>\n      <p *ngIf="post.description">\n        {{post.description}}\n      </p>\n    </ion-card-content>\n  </ion-card>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/postmodal.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["m" /* ViewController */],
+            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__["a" /* OpenGraphParserService */],
+            __WEBPACK_IMPORTED_MODULE_5__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_6__angular_http__["b" /* Http */]])
+    ], PostModal);
+    return PostModal;
+}());
+
+//# sourceMappingURL=postmodal.js.map
+
+/***/ }),
+
+/***/ 69:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ListPage; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(108);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(70);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(397);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(138);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__markets_market__ = __webpack_require__(398);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
 
 
 
@@ -7216,6 +9182,36 @@ var ListPage = /** @class */ (function () {
                     _this.graphService.sortTxnsByUsername(graphArray, false, _this.settingsService.collections.GROUP);
                     _this.makeList(graphArray, 'Groups', null);
                     _this.loading = false;
+                }
+                else if (_this.pageTitle == 'Markets') {
+                    _this.loading = false;
+                    _this.graphService.sortTxnsByUsername(_this.graphService.graph.markets);
+                    var marketList = _this.graphService.graph.markets.filter(function (item) {
+                        var parentIdentity = _this.graphService.getParentIdentityFromTxn(item, _this.settingsService.collections.MARKET);
+                        if (parentIdentity) {
+                            _this.subitems[parentIdentity.username_signature] = _this.subitems[parentIdentity.username_signature] || [];
+                            var identity = _this.graphService.getIdentityFromTxn(item, _this.settingsService.collections.MARKET);
+                            _this.subitems[parentIdentity.username_signature].push({
+                                title: 'Markets',
+                                label: identity.username,
+                                component: __WEBPACK_IMPORTED_MODULE_16__markets_market__["a" /* MarketPage */],
+                                count: false,
+                                color: '',
+                                kwargs: {
+                                    item: item,
+                                    identity: identity,
+                                    subitems: _this.subitems
+                                },
+                                root: true
+                            });
+                        }
+                        return !parentIdentity;
+                    });
+                    return _this.makeList(marketList, '', { title: 'Markets', component: __WEBPACK_IMPORTED_MODULE_16__markets_market__["a" /* MarketPage */] })
+                        .then(function (pages) {
+                        _this.events.publish('menu', pages);
+                        _this.loading = false;
+                    });
                 }
                 else if (_this.pageTitle == 'Messages') {
                     public_key = _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex');
@@ -7389,7 +9385,7 @@ var ListPage = /** @class */ (function () {
                     resolve();
                 }
                 else if (_this.pageTitle == 'Contact Requests') {
-                    _this.friend_request = _this.navParams.get('item').identity;
+                    _this.friend_request = _this.navParams.get('item').item;
                     resolve();
                 }
                 else if (_this.pageTitle == 'Sign Ins') {
@@ -7515,16 +9511,19 @@ var ListPage = /** @class */ (function () {
     };
     ListPage.prototype.itemTapped = function (event, item) {
         if (this.pageTitle == 'Messages') {
-            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */], __assign({}, item));
+            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */], item);
         }
         else if (this.pageTitle == 'Community') {
-            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */], __assign({}, item));
+            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__chat_chat__["a" /* ChatPage */], item);
+        }
+        else if (this.pageTitle == 'Markets') {
+            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_16__markets_market__["a" /* MarketPage */], item);
         }
         else if (this.pageTitle == 'Groups') {
-            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */], __assign({}, item));
+            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */], item);
         }
         else if (this.pageTitle == 'Contacts') {
-            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */], __assign({}, item));
+            this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_10__profile_profile__["a" /* ProfilePage */], item);
         }
         else if (this.pageTitle == 'Notifications') {
             if (item.relationship[this.settingsService.collections.SIGNATURE_REQUEST]) {
@@ -7542,9 +9541,9 @@ var ListPage = /** @class */ (function () {
     };
     ListPage.prototype.accept = function () {
         var _this = this;
-        var rids = this.graphService.generateRids(this.friend_request);
         this.loading = true;
-        return this.graphService.addFriend(this.friend_request, rids.rid, rids.requester_rid, rids.requested_rid).then(function (txn) {
+        var rids = this.graphService.generateRids(this.friend_request.relationship[this.settingsService.collections.CONTACT]);
+        return this.graphService.addFriend(this.friend_request.relationship[this.settingsService.collections.CONTACT], rids.rid, rids.requested_rid, this.friend_request.requested_rid).then(function (txn) {
             return _this.graphService.refreshFriendsAndGroups();
         })
             .then(function () {
@@ -7559,80 +9558,129 @@ var ListPage = /** @class */ (function () {
             console.log(err);
         });
     };
+    ListPage.prototype.getIdentity = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var buttons = [];
+            buttons.push({
+                text: 'Add',
+                handler: function (data) {
+                    resolve(data.identity);
+                }
+            });
+            var alert = _this.alertCtrl.create({
+                inputs: [
+                    {
+                        name: 'identity',
+                        placeholder: 'Paste identity here...'
+                    }
+                ],
+                buttons: buttons
+            });
+            alert.setTitle('Request contact');
+            alert.setSubTitle('Paste the identity of your contact below');
+            alert.present();
+        });
+    };
     ListPage.prototype.addFriend = function () {
         var _this = this;
-        var buttons = [];
-        buttons.push({
-            text: 'Add',
-            handler: function (data) {
-                var promise;
-                if (_this.settingsService.remoteSettings.restricted) {
-                    promise = _this.graphService.addFriendFromSkylink(data.identity);
-                }
-                else {
-                    promise = _this.graphService.addFriend(JSON.parse(data.identity));
-                }
-                promise
-                    .then(function () {
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Contact added');
-                    alert.setSubTitle('Your contact was added successfully');
-                    alert.addButton('Ok');
-                    alert.present();
-                    return _this.choosePage();
+        return this.getPromo()
+            .then(function (promo_code) {
+            if (_this.settingsService.remoteSettings.restricted) {
+                return _this.getIdentity()
+                    .then(function (data) {
+                    return _this.graphService.addFriendFromSkylink(data.identity);
                 });
             }
+            if (promo_code) {
+                return _this.graphService.getPromotion(promo_code)
+                    .then(function (promotion) {
+                    return _this.graphService.addFriend(promotion.relationship[_this.settingsService.collections.AFFILIATE].target, null, promotion.rid, promotion.requested_rid);
+                });
+            }
+            else {
+                return _this.getIdentity()
+                    .then(function (identity) {
+                    return _this.graphService.addFriend(JSON.parse(identity));
+                });
+            }
+        })
+            .then(function () {
+            var alert = _this.alertCtrl.create();
+            alert.setTitle('Contact added');
+            alert.setSubTitle('Your contact was added successfully');
+            alert.addButton('Ok');
+            alert.present();
+            return _this.choosePage();
         });
-        var alert = this.alertCtrl.create({
-            inputs: [
-                {
-                    name: 'identity',
-                    placeholder: 'Paste identity here...'
-                }
-            ],
-            buttons: buttons
-        });
-        alert.setTitle('Request contact');
-        alert.setSubTitle('Paste the identity of your contact below');
-        alert.present();
     };
     ListPage.prototype.addGroup = function () {
         var _this = this;
-        var buttons = [];
-        buttons.push({
-            text: 'Add',
-            handler: function (data) {
-                var promise;
-                if (_this.settingsService.remoteSettings.restricted) {
-                    promise = _this.graphService.addGroupFromSkylink(data.identity);
-                }
-                else {
-                    promise = _this.graphService.addGroup(JSON.parse(data.identity));
-                }
-                promise
-                    .then(function (identity) {
-                    _this.websocketService.joinGroup(identity);
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Group added');
-                    alert.setSubTitle('Your group was added successfully');
-                    alert.addButton('Ok');
-                    alert.present();
-                    return _this.choosePage();
+        var group;
+        return this.getPromo()
+            .then(function (promo_code) {
+            if (_this.settingsService.remoteSettings.restricted) {
+                return _this.getIdentity()
+                    .then(function (data) {
+                    return _this.graphService.addGroupFromSkylink(data.identity);
                 });
             }
+            if (promo_code) {
+                return _this.graphService.getPromotion(promo_code)
+                    .then(function (promotion) {
+                    group = promotion.relationship.target;
+                    return _this.graphService.addGroup(promotion.relationship.target, promotion.rid, null, promotion.requested_rid);
+                });
+            }
+            else {
+                return _this.getIdentity()
+                    .then(function (identity) {
+                    group = identity;
+                    return _this.graphService.addGroup(JSON.parse(identity));
+                });
+            }
+        })
+            .then(function () {
+            _this.websocketService.joinGroup(group);
+            var alert = _this.alertCtrl.create();
+            alert.setTitle('Group added');
+            alert.setSubTitle('Your group was added successfully');
+            alert.addButton('Ok');
+            alert.present();
+            return _this.choosePage();
         });
-        var alert = this.alertCtrl.create({
-            inputs: [
-                {
-                    name: 'identity',
-                    placeholder: 'Paste identity here...'
-                }
-            ],
-            buttons: buttons
+    };
+    ListPage.prototype.getPromo = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            var alert = _this.alertCtrl.create({
+                title: 'Do you have a promotion code?',
+                subTitle: 'If so, enter it now, otherwise, leave blank.',
+                inputs: [
+                    {
+                        name: 'promo',
+                        placeholder: 'Promo code'
+                    }
+                ],
+                buttons: [
+                    {
+                        text: 'Cancel',
+                        role: 'cancel',
+                        handler: function (data) {
+                            console.log('Cancel clicked');
+                            reject('Cancel clicked');
+                        }
+                    },
+                    {
+                        text: 'confirm',
+                        handler: function (data) {
+                            resolve(data.promo);
+                        }
+                    }
+                ]
+            });
+            alert.present();
         });
-        alert.setTitle('Add group');
-        alert.setSubTitle('Paste the identity of your contact below');
-        alert.present();
     };
     ListPage.prototype.sendSignIn = function () {
         var _this = this;
@@ -7704,574 +9752,24 @@ var ListPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 675:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony default export */ __webpack_exports__["a"] = ([
-    {
-        "username": "Text Channels",
-        "username_signature": "MEQCIE29etn0ZKakmbuI7uaSLwf7O+W3fyX9HDtGSZspagknAiBKfSM2H8/T/b9mIxvzDIjh05nw0V7nrN22/+pcArlj6w==",
-        "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-        "collection": "group"
-    },
-    {
-        "username": "Yada Protocol",
-        "username_signature": "MEQCIAZ0wJYLDxJei2Za7XMzbx+AOqeH2PpB6suzTF/bvqgkAiBJYnznzkNlfqjY+1bRUnn5bIuIxL0wz2Mi/TB81487rA==",
-        "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-        "collection": "group"
-    },
-    {
-        "username": "Yada App",
-        "username_signature": "MEUCIQCa091+XlEyJ4w44Az4xFLySEvzf8WS7nv3qVmAj0L7bgIgaSkLRBCDHt/MIfmlNDN7UsnGYc+9HitPMgsCEZDG4xY=",
-        "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-        "collection": "group"
-    },
-    {
-        "username": "YadaCoin",
-        "username_signature": "MEQCIDMpt/iX+l60D3ZpANgib973gxwxMwMXoEZ2BF/6A5U6AiBHM1GyMQORffO/YM8dG386/2PBTHCYd0YZu+GaWt5Geg==",
-        "public_key": "025879ebd9760913bca9d2a95dd5d1dd2d258995f176985d285ed1c824b391e039",
-        "collection": "group"
-    },
-]);
-//# sourceMappingURL=groups.js.map
-
-/***/ }),
-
-/***/ 676:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PostModal; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(23);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-var PostModal = /** @class */ (function () {
-    function PostModal(navParams, viewCtrl, walletService, alertCtrl, transactionService, openGraphParserService, settingsService, ahttp) {
-        var _this = this;
-        this.navParams = navParams;
-        this.viewCtrl = viewCtrl;
-        this.walletService = walletService;
-        this.alertCtrl = alertCtrl;
-        this.transactionService = transactionService;
-        this.openGraphParserService = openGraphParserService;
-        this.settingsService = settingsService;
-        this.ahttp = ahttp;
-        this.blockchainAddress = null;
-        this.postText = null;
-        this.logicalParent = null;
-        this.post = {};
-        this.files = null;
-        this.selectedFile = null;
-        this.blockchainAddress = navParams.data.blockchainAddress;
-        this.logicalParent = navParams.data.logicalParent;
-        var headers = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["a" /* Headers */]();
-        headers.append('Authorization', 'basic ' + Base64.encode(this.settingsService.remoteSettings['siaPassword']));
-        var options = new __WEBPACK_IMPORTED_MODULE_6__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
-        this.ahttp.get(this.settingsService.remoteSettings['siaUrl'] + '/renter/files', options)
-            .subscribe(function (res) {
-            _this.files = res.json()['files'];
-        });
-    }
-    PostModal.prototype.change = function () {
-        var _this = this;
-        if (this.openGraphParserService.isURL(this.postText)) {
-            this.openGraphParserService.parseFromUrl(this.postText).then(function (data) {
-                _this.post = data;
-            });
-        }
-    };
-    PostModal.prototype.submit = function () {
-        var _this = this;
-        this.walletService.get().then(function () {
-            return new Promise(function (resolve, reject) {
-                if (_this.selectedFile) {
-                    _this.ahttp.get(_this.settingsService.remoteSettings['siaUrl'] + '/renter/shareascii?siapaths=' + _this.selectedFile[0])
-                        .subscribe(function (res) {
-                        var sharefiledata = res.json()['asciisia'];
-                        _this.approveTxn(sharefiledata, resolve);
-                    });
-                }
-                else {
-                    _this.approveTxn(null, resolve);
-                }
-                console.log(status);
-            }).then(function () {
-                _this.dismiss();
-            });
-        });
-    };
-    PostModal.prototype.approveTxn = function (sharefiledata, resolve) {
-        var _this = this;
-        var alert = this.alertCtrl.create();
-        alert.setTitle('Approve Transaction');
-        alert.setSubTitle('You are about to spend 0.01 coins ( 0.01 fee)');
-        alert.addButton('Cancel');
-        alert.addButton({
-            text: 'Confirm',
-            handler: function (data) {
-                // camera permission was granted
-                new Promise(function (resolve, reject) {
-                    if (sharefiledata) {
-                        return _this.transactionService.generateTransaction({
-                            relationship: {
-                                postText: _this.postText,
-                                postFile: sharefiledata,
-                                postFileName: _this.selectedFile[0]
-                            }
-                        })
-                            .then(function () {
-                            resolve();
-                        })
-                            .catch(function (err) {
-                            reject('failed to generate transaction');
-                        });
-                    }
-                    else {
-                        return _this.transactionService.generateTransaction({
-                            relationship: {
-                                postText: _this.postText
-                            }
-                        })
-                            .then(function () {
-                            resolve();
-                        })
-                            .catch(function (err) {
-                            reject('failed to generate transaction');
-                        });
-                    }
-                })
-                    .then(function () {
-                    return _this.transactionService.getFastGraphSignature();
-                })
-                    .then(function (hash) {
-                    return _this.transactionService.sendTransaction();
-                })
-                    .then(function () {
-                    _this.dismiss();
-                })
-                    .catch(function (err) {
-                    console.log('could not generate hash');
-                });
-            }
-        });
-        alert.present();
-    };
-    PostModal.prototype.dismiss = function () {
-        this.logicalParent.refresh();
-        this.viewCtrl.dismiss();
-    };
-    PostModal = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'modal-post',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/home/postmodal.html"*/'<ion-header>\n  <ion-toolbar>\n    <ion-title>\n      Write post\n    </ion-title>\n    <ion-buttons start>\n      <button ion-button (click)="dismiss()">\n        <span ion-text color="primary" showWhen="ios">Cancel</span>\n        <ion-icon name="md-close" showWhen="android,windows,core"></ion-icon>\n      </button>\n    </ion-buttons>\n  </ion-toolbar>\n</ion-header>\n<ion-content>\n  <ion-item>\n    <ion-textarea placeholder="Shortened url (35 chars max)" [(ngModel)]="postText" (input)="change()">\n    </ion-textarea>\n  </ion-item>\n  <ion-item>\n    <ion-label>Files</ion-label>\n    <ion-select [(ngModel)]="selectedFile" multiple="true">\n      <ion-option *ngFor="let file of files" value="{{file.siapath}}">{{file.siapath}}</ion-option>\n    </ion-select>\n  </ion-item>\n  <button ion-button secondary (click)="submit()">Post</button>\n  <ion-card *ngIf="post.title">\n    <img src="{{post.image}}" *ngIf="post.image" />\n    <ion-card-content>\n      <ion-card-title>\n        {{post.title}}\n      </ion-card-title>\n      <p *ngIf="post.description">\n        {{post.description}}\n      </p>\n    </ion-card-content>\n  </ion-card>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/home/postmodal.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["m" /* ViewController */],
-            __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__["a" /* OpenGraphParserService */],
-            __WEBPACK_IMPORTED_MODULE_5__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_6__angular_http__["b" /* Http */]])
-    ], PostModal);
-    return PostModal;
-}());
-
-//# sourceMappingURL=postmodal.js.map
-
-/***/ }),
-
-/***/ 68:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return WebSocketService; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(26);
-var __assign = (this && this.__assign) || function () {
-    __assign = Object.assign || function(t) {
-        for (var s, i = 1, n = arguments.length; i < n; i++) {
-            s = arguments[i];
-            for (var p in s) if (Object.prototype.hasOwnProperty.call(s, p))
-                t[p] = s[p];
-        }
-        return t;
-    };
-    return __assign.apply(this, arguments);
-};
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-var WebSocketService = /** @class */ (function () {
-    function WebSocketService(ahttp, bulletinSecretService, settingsService, graphService, transactionService, events) {
-        this.ahttp = ahttp;
-        this.bulletinSecretService = bulletinSecretService;
-        this.settingsService = settingsService;
-        this.graphService = graphService;
-        this.transactionService = transactionService;
-        this.events = events;
-    }
-    WebSocketService.prototype.init = function () {
-        if (this.websocket)
-            return;
-        this.websocket = new WebSocket(this.settingsService.remoteSettings.websocketUrl);
-        this.websocket.onopen = this.onOpen.bind(this);
-        this.websocket.onmessage = this.onMessage.bind(this);
-    };
-    WebSocketService.prototype.onOpen = function (event) {
-        console.log(event.data);
-    };
-    WebSocketService.prototype.onMessage = function (event) {
-        var _this = this;
-        var directMessageResponseCount;
-        var directMessageResponseCounts;
-        var msg = JSON.parse(event.data);
-        console.log(msg);
-        switch (msg.method) {
-            case 'connect_confirm':
-                for (var i = 0; i < this.graphService.graph.groups.length; i++) {
-                    var group = this.graphService.getIdentityFromTxn(this.graphService.graph.groups[i], this.settingsService.collections.GROUP);
-                    this.joinGroup(group);
-                }
-                break;
-            case 'join_confirmed':
-                // const members = msg.result.members;
-                // for (let i=0; i < Object.keys(members).length; i++) {
-                //   let requested_rid = Object.keys(members)[i];
-                //   let group_members = members[requested_rid];
-                //   if(!this.graphService.online[requested_rid]) this.graphService.online[requested_rid] = [];
-                //   this.graphService.online[requested_rid] = this.graphService.online[requested_rid].concat(group_members)
-                // }
-                break;
-            case 'newtxn':
-                if (msg.params.transaction.public_key === this.bulletinSecretService.identity.public_key)
-                    return;
-                var collection = this.graphService.getNewTxnCollection(msg.params.transaction);
-                if (collection) {
-                    switch (collection) {
-                        case this.settingsService.collections.CONTACT:
-                            this.graphService.parseFriendRequests([msg.params.transaction]);
-                            this.graphService.refreshFriendsAndGroups()
-                                .then(function () {
-                                return _this.graphService.addNotification(msg.params.transaction, _this.settingsService.collections.CONTACT);
-                            });
-                            break;
-                        case this.settingsService.collections.CALENDAR:
-                            var calendar = this.graphService.parseCalendar([msg.params.transaction]);
-                            return this.graphService.addNotification(calendar, this.settingsService.collections.CALENDAR);
-                            break;
-                        case this.settingsService.collections.GROUP_CALENDAR:
-                            var group_calendar = this.graphService.parseCalendar([msg.params.transaction]);
-                            return this.graphService.addNotification(group_calendar, this.settingsService.collections.GROUP_CALENDAR);
-                            break;
-                        case this.settingsService.collections.CHAT:
-                            this.graphService.parseMessages([msg.params.transaction], 'new_messages_counts', 'new_messages_count', msg.params.transaction.rid, this.settingsService.collections.CHAT, 'last_message_height')
-                                .then(function (item) {
-                                if (!_this.graphService.graph.messages[msg.params.transaction.rid]) {
-                                    _this.graphService.graph.messages[msg.params.transaction.rid] = [];
-                                }
-                                _this.graphService.graph.messages[msg.params.transaction.rid].push(item[0]);
-                                _this.events.publish('newchat');
-                                return _this.graphService.addNotification(item[0], _this.settingsService.collections.CHAT);
-                            });
-                            break;
-                        case this.settingsService.collections.CONTRACT:
-                            break;
-                        case this.settingsService.collections.CONTRACT_SIGNED:
-                            break;
-                        case this.settingsService.collections.GROUP_CHAT:
-                            this.graphService.parseMessages([msg.params.transaction], 'new_group_messages_counts', 'new_group_messages_count', msg.params.transaction.rid, this.settingsService.collections.GROUP_CHAT, 'last_group_message_height')
-                                .then(function (item) {
-                                if (!_this.graphService.graph.messages[msg.params.transaction.requested_rid]) {
-                                    _this.graphService.graph.messages[msg.params.transaction.requested_rid] = [];
-                                }
-                                _this.graphService.graph.messages[msg.params.transaction.requested_rid].push(item[0]);
-                                _this.events.publish('newchat');
-                                return _this.graphService.addNotification(item[0], _this.settingsService.collections.GROUP_CHAT);
-                            });
-                            break;
-                        case this.settingsService.collections.GROUP_MAIL:
-                            this.graphService.parseMail([msg.params.transaction], 'new_sent_mail_counts', 'new_sent_mail_count', undefined, this.settingsService.collections.GROUP_MAIL, 'last_sent_mail_height')
-                                .then(function (item) {
-                                _this.events.publish('newmail');
-                                return _this.graphService.addNotification(item, _this.settingsService.collections.GROUP_MAIL);
-                            });
-                            break;
-                        case this.settingsService.collections.MAIL:
-                            var mailCount = void 0;
-                            var mailCounts = void 0;
-                            this.graphService.parseMail([msg.params.transaction], mailCount, mailCounts, msg.params.transaction.rid, this.settingsService.collections.MAIL)
-                                .then(function (item) {
-                                _this.events.publish('newmail');
-                                return _this.graphService.addNotification(item, _this.settingsService.collections.MAIL);
-                            });
-                            break;
-                        case this.settingsService.collections.PERMISSION_REQUEST:
-                            break;
-                        case this.settingsService.collections.SIGNATURE_REQUEST:
-                            var permissionRequestCount = void 0;
-                            var permissionRequestCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], permissionRequestCount, permissionRequestCounts, msg.params.transaction.rid, this.settingsService.collections.SIGNATURE_REQUEST)
-                                .then(function (item) {
-                                return _this.graphService.addNotification(item[msg.params.transaction.rid][0], _this.settingsService.collections.SIGNATURE_REQUEST);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_CHALLENGE_REQUEST:
-                            var directMessageRequestCount = void 0;
-                            var directMessageRequestCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_REQUEST)
-                                .then(function (items) {
-                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_CHALLENGE_RESPONSE, {
-                                    challenge: uuid4(),
-                                    url: _this.settingsService.remoteSettings.webSignInUrl
-                                });
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_CHALLENGE_RESPONSE:
-                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_CHALLENGE_RESPONSE)
-                                .then(function (items) {
-                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_SIGNIN_REQUEST:
-                            this.graphService.parseMessages([msg.params.transaction], directMessageRequestCount, directMessageRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_REQUEST)
-                                .then(function (items) {
-                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_SIGNIN_RESPONSE, items[msg.params.transaction.rid][0].relationship[_this.settingsService.collections.WEB_SIGNIN_REQUEST]);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_SIGNIN_RESPONSE:
-                            this.graphService.parseMessages([msg.params.transaction], directMessageResponseCount, directMessageResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_SIGNIN_RESPONSE)
-                                .then(function (items) {
-                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_PAGE:
-                            var webpage = this.graphService.parseMyPages([msg.params.transaction]);
-                            this.graphService.addNotification(webpage, this.settingsService.collections.WEB_PAGE);
-                            break;
-                        case this.settingsService.collections.WEB_PAGE_REQUEST:
-                            var webRequestCount = void 0;
-                            var webRequestCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], webRequestCount, webRequestCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_REQUEST)
-                                .then(function (items) {
-                                var myRids2 = [_this.graphService.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.WEB_PAGE)];
-                                return _this.graphService.getMyPages(myRids2);
-                            })
-                                .then(function (items) {
-                                var request = msg.params.transaction;
-                                var myPages = _this.graphService.graph.mypages.filter(function (item2) {
-                                    return item2.relationship[_this.settingsService.collections.WEB_PAGE].resource === request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource;
-                                });
-                                var webResponse;
-                                if (myPages[0]) {
-                                    webResponse = {
-                                        resource: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].resource,
-                                        content: myPages[0].relationship[_this.settingsService.collections.WEB_PAGE].content
-                                    };
-                                }
-                                else {
-                                    webResponse = {
-                                        resource: request.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST].resource,
-                                        content: 'Page not found for resource.'
-                                    };
-                                }
-                                _this.directMessageResponse(msg.params.transaction.rid, _this.settingsService.collections.WEB_PAGE_RESPONSE, webResponse);
-                            });
-                            break;
-                        case this.settingsService.collections.WEB_PAGE_RESPONSE:
-                            var webResponseCount = void 0;
-                            var webResponseCounts = void 0;
-                            this.graphService.parseMessages([msg.params.transaction], webResponseCount, webResponseCounts, msg.params.transaction.rid, this.settingsService.collections.WEB_PAGE_RESPONSE)
-                                .then(function (items) {
-                                return _this.directMessageRequestResolve(items[msg.params.transaction.rid][0]);
-                            });
-                            break;
-                    }
-                }
-                break;
-        }
-    };
-    WebSocketService.prototype.connect = function () {
-        this.websocket.send(JSON.stringify({
-            id: '',
-            jsonrpc: 2.0,
-            method: 'connect',
-            params: {
-                identity: this.graphService.toIdentity(this.bulletinSecretService.identity)
-            }
-        }));
-    };
-    WebSocketService.prototype.joinGroup = function (identity) {
-        return this.websocket.send(JSON.stringify({
-            id: '',
-            jsonrpc: 2.0,
-            method: 'join_group',
-            params: identity
-        }));
-    };
-    WebSocketService.prototype.webpage = function (mypage) {
-        var _this = this;
-        var identity = this.graphService.toIdentity(JSON.parse(this.bulletinSecretService.identityJson()));
-        identity.collection = this.settingsService.collections.WEB_PAGE;
-        var rids = this.graphService.generateRids(identity);
-        var request = __assign({}, rids, { relationship: {}, shared_secret: this.bulletinSecretService.identity.username_signature });
-        request.relationship[this.settingsService.collections.WEB_PAGE] = mypage;
-        this.transactionService.generateTransaction(request)
-            .then(function () {
-            return _this.websocket.send(JSON.stringify({
-                id: '',
-                jsonrpc: 2.0,
-                method: 'newtxn',
-                params: {
-                    transaction: _this.transactionService.transaction
-                }
-            }));
-        });
-    };
-    WebSocketService.prototype.directMessageRequest = function (identity, collection, relationship, resolve) {
-        var _this = this;
-        this.directMessageRequestResolve = resolve;
-        identity.collection = collection;
-        var rids = this.graphService.generateRids(identity);
-        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
-        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
-        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
-        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
-        request.relationship[collection] = relationship;
-        this.transactionService.generateTransaction(request)
-            .then(function () {
-            _this.websocket.send(JSON.stringify({
-                id: '',
-                jsonrpc: 2.0,
-                method: 'newtxn',
-                params: {
-                    transaction: _this.transactionService.transaction
-                }
-            }));
-        });
-    };
-    WebSocketService.prototype.directMessageResponse = function (rid, collection, relationship) {
-        var _this = this;
-        var myRids = this.graphService.generateRids(this.bulletinSecretService.identity);
-        var recipient;
-        if (this.graphService.friends_indexed[rid]) {
-            recipient = this.graphService.getIdentityFromTxn(this.graphService.friends_indexed[rid], this.settingsService.collections.CONTACT);
-        }
-        if (myRids.rid == rid) {
-            recipient = this.bulletinSecretService.identity;
-        }
-        if (!recipient)
-            return;
-        recipient.collection = collection;
-        var rids = this.graphService.generateRids(recipient);
-        var dh_public_key = this.graphService.keys[rids.rid].dh_public_keys[0];
-        var dh_private_key = this.graphService.keys[rids.rid].dh_private_keys[0];
-        var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-            return parseInt(h, 16);
-        }));
-        var shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
-        var request = __assign({}, rids, { relationship: {}, shared_secret: shared_secret });
-        request.relationship[collection] = relationship;
-        return this.transactionService.generateTransaction(request)
-            .then(function () {
-            _this.websocket.send(JSON.stringify({
-                id: '',
-                jsonrpc: 2.0,
-                method: 'newtxn',
-                params: {
-                    transaction: _this.transactionService.transaction
-                }
-            }));
-        });
-    };
-    WebSocketService.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    WebSocketService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_3__angular_http__["b" /* Http */],
-            __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_2__settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_5__graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_6__transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_4_ionic_angular__["b" /* Events */]])
-    ], WebSocketService);
-    return WebSocketService;
-}());
-
-//# sourceMappingURL=websocket.service.js.map
-
-/***/ }),
-
-/***/ 81:
+/***/ 70:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return ProfilePage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(47);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(27);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(26);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(67);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(225);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(23);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__sendreceive_sendreceive__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(48);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(69);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(109);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__sendreceive_sendreceive__ = __webpack_require__(227);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -8476,5 +9974,5 @@ var ProfilePage = /** @class */ (function () {
 
 /***/ })
 
-},[416]);
+},[424]);
 //# sourceMappingURL=main.js.map

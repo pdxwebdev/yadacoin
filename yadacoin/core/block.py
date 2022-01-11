@@ -12,6 +12,7 @@ from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from logging import getLogger
+from yadacoin.contracts.base import Contract
 
 from yadacoin.core.chain import CHAIN
 import yadacoin.core.config
@@ -28,6 +29,7 @@ from yadacoin.core.config import get_config
 
 
 def quantize_eight(value):
+    getcontext().prec = len(str(value)) + 8
     if value == -0.0:
         value = 0.0
     value = Decimal(value)
@@ -69,7 +71,7 @@ class Block(object):
     __slots__ = ('app_log', 'config', 'mongo', 'version', 'time', 'index', 'prev_hash', 'nonce', 'transactions', 'txn_hashes',
                  'merkle_root', 'verify_merkle_root','hash', 'public_key', 'signature', 'special_min', 'target',
                  'special_target', 'header')
-    
+
     @classmethod
     async def init_async(
         cls,
@@ -179,7 +181,7 @@ class Block(object):
                     config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
                     app_log.debug("Block embeds txn too far in the future {} {}".format(xtime, transaction_obj.time))
                     continue
-                
+
                 if transaction_obj.inputs:
                     failed = False
                     input_ids = []
@@ -195,6 +197,34 @@ class Block(object):
                         failed = True
                     if failed:
                         continue
+
+                contract_txns = config.mongo.async_db.blocks.aggregate([
+                    {
+                        '$match': {
+                            'transactions.contract.rid': transaction_obj.requested_rid
+                        }
+                    },
+                    {
+                        '$unwind': '$transactions'
+                    },
+                    {
+                        '$match': {
+                            'txn.contract.rid': transaction_obj.requested_rid
+                        }
+                    },
+                    {
+                        '$project': {
+                            'txn': '$transactions'
+                        }
+                    },
+                ])
+
+                async for contract_txn in contract_txns:
+                    txn = Transaction.from_dict(contract_txn)
+                    if index > txn.contract.expiry:
+                        continue
+                    payout_txn = txn.contract.process(transaction_obj)
+                    fee_sum += float(payout_txn.fee)
 
                 transaction_objs.append(transaction_obj)
 
@@ -291,26 +321,17 @@ class Block(object):
 
     @classmethod
     async def from_dict(cls, block):
-        transactions = []
-        for txn in block.get('transactions'):
-            # TODO: do validity checking for coinbase transactions
-            if str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.get('public_key')))) in [x['to'] for x in txn.get('outputs', '')] and len(txn.get('outputs', '')) == 1 and not txn.get('inputs') and not txn.get('relationship'):
-                txn['coinbase'] = True  
-            else:
-                txn['coinbase'] = False
-            transactions.append(Transaction.from_dict(txn))
 
         if block.get('special_target', 0) == 0:
             block['special_target'] = block.get('target')
 
-        return await cls.init_async(
+        block_inst = await cls.init_async(
             version=block.get('version'),
             block_time=block.get('time'),
             block_index=block.get('index'),
             public_key=block.get('public_key'),
             prev_hash=block.get('prevHash'),
             nonce=block.get('nonce'),
-            transactions=transactions,
             block_hash=block.get('hash'),
             merkle_root=block.get('merkleRoot'),
             signature=block.get('id'),
@@ -320,14 +341,37 @@ class Block(object):
             special_target=int(block.get('special_target', 0), 16)
         )
 
+        transactions = []
+
+        for txn in block.get('transactions'):
+            transaction = Transaction.from_dict(txn)
+            try:
+                transaction.coinbase = Block.is_coinbase(block_inst, transaction)
+            except:
+                print('no')
+            transaction.contract_generated = await transaction.is_contract_generated()
+            transactions.append(transaction)
+
+        block_inst.transactions = transactions
+        return block_inst
+
     @classmethod
     async def from_json(cls, block_json):
         return await cls.from_dict(json.loads(block_json))
-    
+
     def get_coinbase(self):
         for txn in self.transactions:
-            if str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))) in [x.to for x in txn.outputs] and len(txn.outputs) == 1 and not txn.relationship and len(txn.inputs) == 0:
+            if Block.is_coinbase(self, txn):
                 return txn
+
+    @staticmethod
+    def is_coinbase(block, txn):
+        return (
+            block.public_key == txn.public_key and
+            str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))) in [x.to for x in txn.outputs] and
+            len(txn.inputs) == 0 and
+            quantize_eight(sum([x.value for x in txn.outputs])) == quantize_eight(CHAIN.get_block_reward(block.index))
+        )
 
     def generate_hash_from_header(self, height, header, nonce):
         if not hasattr(Block, 'pyrx'):
@@ -355,7 +399,7 @@ class Block(object):
             header = header.format(nonce=nonce)
             return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
 
-    def verify(self):
+    async def verify(self):
         getcontext().prec = 8
         if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
             raise Exception("Wrong version for block height", self.version, CHAIN.get_version_for_height(self.index))
@@ -372,7 +416,7 @@ class Block(object):
             getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
             raise Exception('Invalid block hash')
 
-        address = P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         try:
             # print("address", address, "sig", self.signature, "pubkey", self.public_key)
             result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
@@ -388,6 +432,7 @@ class Block(object):
 
         # verify reward
         coinbase_sum = 0
+        fee_sum = 0.0
         for txn in self.transactions:
             if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
                 #yadacoin.core.config.CONFIG.mongo.db.miner_transactions.remove({'id': txn.transaction_signature}, multi=True)
@@ -397,11 +442,11 @@ class Block(object):
             if txn.coinbase:
                 for output in txn.outputs:
                     coinbase_sum += float(output.value)
-
-        fee_sum = 0.0
-        for txn in self.transactions:
-            if not txn.coinbase:
+            elif txn.miner_signature:
+                await smart_contract_txn.relationship.verify_generation(self, txn)
+            else:
                 fee_sum += float(txn.fee)
+
         reward = CHAIN.get_block_reward(self.index)
 
         #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
@@ -419,7 +464,7 @@ class Block(object):
         return sorted([str(x.hash) for x in self.transactions], key=str.lower)
 
     async def save(self):
-        self.verify()
+        await self.verify()
         for txn in self.transactions:
             if txn.inputs:
                 failed = False
