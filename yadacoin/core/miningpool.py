@@ -13,6 +13,7 @@ from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.transaction import (
     Transaction,
     MissingInputTransactionException,
@@ -119,9 +120,10 @@ class MiningPool(object):
 
     async def on_miner_nonce(self, nonce: str, job: Job, miner: Miner='', miner_hash: str='') -> bool:
         nonce = nonce + job.extra_nonce.encode().hex()
+        header = binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}').replace(job.extra_nonce, '')
         hash1 = self.block_factory.generate_hash_from_header(
             job.index,
-            binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}').replace(job.extra_nonce, ''),
+            header,
             nonce
         )
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
@@ -169,13 +171,13 @@ class MiningPool(object):
             target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
         elif self.config.network == 'regnet':
             target = 0x000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-        if (
-          (int(block_candidate.target) + target) > int(hash1, 16) or
-          (
-            block_candidate.index >= CHAIN.BLOCK_V5_FORK and
-            (int(block_candidate.target) + target) > int(block_candidate.little_hash(), 16)
-          )
-        ):
+
+        if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
+            test_hash = int(block_candidate.little_hash(), 16)
+        else:
+            test_hash = int(hash1, 16)
+
+        if test_hash < target:
             # submit share only now, not to slow down if we had a block
             await self.mongo.async_db.shares.update_one(
                 {
@@ -196,35 +198,35 @@ class MiningPool(object):
 
             accepted = True
 
+        if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
+            test_hash = int(block_candidate.little_hash(), 16)
+        else:
+            test_hash = int(block_candidate.hash, 16)
+
         if (
-          int(block_candidate.target) > int(block_candidate.hash, 16) or
-          (
-            block_candidate.index >= CHAIN.BLOCK_V5_FORK and
-            int(block_candidate.target) > int(block_candidate.little_hash(), 16)
-          ) or
-          (
-            self.config.network == 'regnet' and
-            target > int(block_candidate.little_hash(), 16)
-          )
+          test_hash < int(block_candidate.target) or
+          self.config.network == 'regnet'
         ):
             block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
 
+            if header != block_candidate.header:
+                return {
+                    'hash': block_candidate.hash,
+                    'nonce': nonce,
+                    'height': block_candidate.index,
+                    'id': block_candidate.signature
+                }
             try:
                 await block_candidate.verify()
             except Exception as e:
-                if accepted:
+                if accepted and self.config.network == 'mainnet':
                     return {
                         'hash': hash1,
                         'nonce': nonce,
                         'height': job.index,
                         'id': block_candidate.signature
                     }
-                self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
-                    e,
-                    block_candidate.hash,
-                    block_candidate.header,
-                    block_candidate.nonce
-                ))
+
                 return False
             # accept winning block
             await self.accept_block(block_candidate)
@@ -232,6 +234,7 @@ class MiningPool(object):
             self.app_log.debug('block ok')
 
             return {
+                'accepted': accepted,
                 'hash': block_candidate.hash,
                 'nonce': nonce,
                 'height': block_candidate.index,
@@ -301,7 +304,6 @@ class MiningPool(object):
                 self.config.private_key,
                 index=self.config.LatestBlock.block.index + 1
             )
-            await self.set_target(int(time()))
             self.block_factory.header = self.block_factory.generate_header()
             self.refreshing = False
         except Exception as e:
@@ -371,34 +373,6 @@ class MiningPool(object):
         }
         return await Job.from_dict(res)
 
-    async def set_target(self, to_time):
-        if not self.block_factory.special_min:
-            await self.set_target_from_last_non_special_min(self.config.LatestBlock.block)
-        # todo: keep block target at normal target, for header and block info.
-        # Only tweak target at validation time, and don't include special_min into header
-        if self.block_factory.index >= CHAIN.SPECIAL_MIN_FORK:  # TODO: use a CHAIN constant
-            # print("test target", int(to_time), self.last_block_time)
-            if self.block_factory.target == 0:
-                # If the node is started when the current block is special_min, then we have a 0 target
-                await self.set_target_as_previous_non_special_min()
-                # print('target set to', self.block_factory.target)
-            delta_t = int(to_time) - self.last_block_time
-            if delta_t \
-                    > CHAIN.special_min_trigger(self.config.network, self.block_factory.index):
-                special_target = CHAIN.special_target(self.block_factory.index, self.block_factory.target, delta_t, self.config.network)
-                self.block_factory.special_min = True
-                self.block_factory.special_target = special_target
-                self.block_factory.time = int(to_time)
-            else:
-                self.block_factory.special_min = False
-        elif self.block_factory.index < CHAIN.SPECIAL_MIN_FORK:  # TODO: use a CHAIN constant
-            if (int(to_time) - self.last_block_time) > self.target_block_time:
-                self.block_factory.target = self.max_target
-                self.block_factory.special_min = True
-                self.block_factory.time = int(to_time)
-            else:
-                self.block_factory.special_min = False
-
     async def set_target_as_previous_non_special_min(self):
         """TODO: this is not correct, should use a cached version of the current target somewhere, and recalc on
         new block event if we cross a boundary (% 2016 currently). Beware, at boundary we need to recalc the new diff one block ahead
@@ -436,7 +410,7 @@ class MiningPool(object):
 
     async def get_pending_transactions(self):
         mempool_smart_contract_objs = {}
-        transaction_objs = []
+        transaction_objs = {}
         used_sigs = []
         async for txn in self.mongo.async_db.miner_transactions.find({'relationship.smart_contract': {'$exists': True}}).sort([('fee', -1), ('time', 1)]):
             transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
@@ -451,26 +425,51 @@ class MiningPool(object):
 
             mempool_smart_contract_objs[transaction_obj.requested_rid] = transaction_obj
 
-        blockchain_smart_contract_objs = {}
         async for txn in self.mongo.async_db.miner_transactions.find({'relationship.smart_contract': {'$exists': False}}).sort([('fee', -1), ('time', 1)]):
             transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
             if not isinstance(transaction_obj, Transaction):
                 continue
 
-            smart_contract_obj = await Contract.get_smart_contract(transaction_obj)
-            if smart_contract_obj:
-                blockchain_smart_contract_objs[smart_contract_obj.requested_rid] = smart_contract_obj
-
-            transaction_objs.append(transaction_obj)
+            transaction_objs.setdefault(transaction_obj.requested_rid, [])
+            transaction_objs[transaction_obj.requested_rid].append(transaction_obj)
 
         generated_txns = []
-        for smart_contract_obj in blockchain_smart_contract_objs.values():
-            for trigger_txn in transaction_objs:
+        blockchain_smart_contract_objs = self.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': {'$gt': self.config.LatestBlock.block.index}
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': {'$gt': self.config.LatestBlock.block.index}
+                }
+            },
+            {
+                '$sort': {'$transactions.time': 1}
+            }
+        ])
+        async for smart_contract_block in blockchain_smart_contract_objs:
+            for x in smart_contract_block.get('transactions'):
                 try:
-                    payout_txn = await smart_contract_obj.relationship.process(smart_contract_obj, trigger_txn, transaction_objs)
-                    generated_txns.append(payout_txn)
-                except Exception as e:
-                    self.config.app_log.warning(format_exc())
+                    smart_contract_txn = Transaction.from_dict(x)
+                    async for trigger_txn_block in self.mongo.async_db.blocks.find({'relationship.smart_contract': {'$exists': False}}).sort([('fee', -1), ('time', 1)]):
+                        for txn in trigger_txn_block.get('transactions'):
+                            trigger_txn = Transaction.from_dict(txn)
+                            payout_txn = await smart_contract_txn.relationship.process(smart_contract_txn, trigger_txn, transaction_objs)
+                            generated_txns.append(payout_txn)
+                except:
+                    pass
+
+                for trigger_txn in transaction_objs.get(transaction_obj.requested_rid, []): # process mempool txns
+                    try:
+                        payout_txn = await smart_contract_txn.relationship.process(smart_contract_txn, trigger_txn, transaction_objs)
+                        generated_txns.append(payout_txn)
+                    except:
+                        pass
 
         return list(mempool_smart_contract_objs.values()) + transaction_objs + generated_txns
 

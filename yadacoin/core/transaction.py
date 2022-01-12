@@ -77,7 +77,7 @@ class Transaction(object):
         seed_gateway_rid='',
         seed_rid='',
         version=None,
-        miner_signature=None,
+        miner_signature='',
         contract_generated=False
     ):
         self.app_log = getLogger("tornado.application")
@@ -150,7 +150,7 @@ class Transaction(object):
         no_relationship=False,
         exact_match=False,
         version=3,
-        miner_signature=None,
+        miner_signature='',
         contract_generated=False
     ):
         cls_inst = cls()
@@ -329,8 +329,8 @@ class Transaction(object):
             outputs=txn.get('outputs', []),
             coinbase=txn.get('coinbase', ''),
             version=txn.get('version'),
-            miner_signature=txn.get('miner_signature'),
-            contract_generated=txn.get('contract_generated')
+            miner_signature=txn.get('miner_signature', ''),
+            contract_generated=txn.get('contract_generated', '')
         )
 
     def in_the_future(self):
@@ -457,7 +457,21 @@ class Transaction(object):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship
-        if self.time:
+        if self.version == 3:
+            hashout = hashlib.sha256((
+                self.public_key +
+                str(self.time) +
+                self.dh_public_key +
+                self.rid +
+                relationship +
+                "{0:.8f}".format(self.fee) +
+                self.requester_rid +
+                self.requested_rid +
+                inputs_concat +
+                outputs_concat +
+                str(self.version)).encode('utf-8')
+            ).digest().hex()
+        elif self.version == 2:
             hashout = hashlib.sha256((
                 self.public_key +
                 str(self.time) +
@@ -649,7 +663,8 @@ class Transaction(object):
             'fee': float(self.fee),
             'hash': self.hash,
             'inputs': [x.to_dict() for x in self.inputs],
-            'outputs': [x.to_dict() for x in self.outputs]
+            'outputs': [x.to_dict() for x in self.outputs],
+            'version': self.version
         }
         if self.dh_public_key:
             ret['dh_public_key'] = self.dh_public_key

@@ -258,7 +258,6 @@ class Block(object):
         )
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
-        block.target = target
         block.header = block.generate_header()
         if nonce:
             block.nonce = str(nonce)

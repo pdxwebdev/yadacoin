@@ -589,8 +589,8 @@ class NodeApplication(Application):
         self.config.LatestBlock = LatestBlock
         if test:
             return
-        tornado.ioloop.IOLoop.current().run_sync(self.config.LatestBlock.block_checker)
         self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(Consensus.init_async)
+        tornado.ioloop.IOLoop.current().run_sync(self.config.LatestBlock.block_checker)
         self.config.cipher = Crypt(self.config.wif)
         if 'node' in self.config.modes:
             self.config.nodeServer = NodeSocketServer

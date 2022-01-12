@@ -7,7 +7,7 @@ from enum import Enum
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from yadacoin.core.asset import Asset
+from yadacoin.contracts.asset import Asset
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity, PrivateIdentity
@@ -141,8 +141,9 @@ class Contract:
     async def get_smart_contract(transaction_obj):
         smart_contract_block = await get_config().mongo.async_db.blocks.find_one({
             'transactions.requested_rid': transaction_obj.requested_rid,
-            'transactions.relationship.smart_contract': {'$exists': True},
-            'transactions': {'$elemMatch': {'id': {'$ne': transaction_obj.transaction_signature}}}
+            'transactions': {'$elemMatch': {'relationship.smart_contract': {'$exists': True}}},
+            'transactions': {'$elemMatch': {'id': {'$ne': transaction_obj.transaction_signature}}},
+            'transactions': {'$elemMatch': {'relationship.smart_contract.expiry': {'$gt': get_config().LatestBlock.block.index}}}
         }, sort=[('index', 1)])
         if not smart_contract_block:
             return

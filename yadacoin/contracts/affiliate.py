@@ -142,6 +142,7 @@ class AffiliateContract(Contract):
         from yadacoin.core.transactionutils import TU
 
         await self.verify(contract_txn, trigger_txn, mempool_txns)
+        await self.verify_payout_generated_already(contract_txn, trigger_txn)
 
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
         value_sent_to_address = sum([x.value for x in trigger_txn.outputs if x.to == address])
@@ -183,9 +184,9 @@ class AffiliateContract(Contract):
             fee=0,
             outputs=outputs,
             public_key=self.identity.public_key,
-            requester_rid=contract_txn.requester_rid,
+            requester_rid=trigger_txn.requester_rid,
             requested_rid=contract_txn.requested_rid,
-            rid=contract_txn.rid,
+            rid=trigger_txn.rid,
             private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
         )
         payout_txn.miner_signature = TU.generate_signature_with_private_key(
@@ -201,6 +202,16 @@ class AffiliateContract(Contract):
 
         if trigger_txn.requested_rid != contract_txn.requested_rid:
             raise Exception('Referee is not for this contract')
+
+    async def verify_payout_generated_already(self, contract_txn, trigger_txn):
+        block_result = await self.config.mongo.async_db.blocks.find_one({
+          'transactions.public_key': self.identity.public_key,
+          'transactions.requester_rid': trigger_txn.requester_rid,
+          'transactions.requested_rid': contract_txn.requested_rid,
+          'transactions.rid': trigger_txn.rid
+        })
+        if block_result:
+            raise Exception('Contract already generated payout')
 
     async def get_honor_funds(self, contract_txn, total_payout):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))

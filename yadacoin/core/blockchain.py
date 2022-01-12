@@ -35,11 +35,11 @@ class Blockchain(object):
         if not self.blocks:
             return # allow nothing
         return self
-    
+
     async def make_gen(self, blocks):
         for block in blocks:
             yield block
-    
+
     @property
     async def blocks(self):
         self.init_blocks, blocks = tee(self.init_blocks)
@@ -47,16 +47,16 @@ class Blockchain(object):
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
             yield block
-    
+
     async def get_block(self, start, end):
         return await anext(islice(self.blocks, start, end))
-    
+
     async def get_blocks(self, start, end):
         async for block in islice(self.blocks, start, end):
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
             yield block
-    
+
     @property
     async def is_consecutive(self):
         prev = None
@@ -68,20 +68,20 @@ class Blockchain(object):
             prev = block
 
         return True
-    
+
     @property
     async def first_block(self):
         block = None
         async for block in self.blocks:
             return block
-    
+
     @property
     async def final_block(self):
         block = None
         async for block in self.blocks:
             pass
         return block
-    
+
     @property
     async def count(self):
         i = 0
@@ -118,7 +118,7 @@ class Blockchain(object):
 
         if block.index == 0:
             return True
-        
+
         if simulate_last_block:
             last_block = simulate_last_block
         else:
@@ -127,7 +127,7 @@ class Blockchain(object):
                 last_block = await Block.from_dict(last_block_data)
             else:
                 return False
-        
+
         if block.index >= CHAIN.FORK_10_MIN_BLOCK:
             target = await CHAIN.get_target_10min(last_block, block, extra_blocks)
         else:
@@ -222,6 +222,8 @@ class Blockchain(object):
         elif (block.index >= 35200 and block.index < 38600 and block.special_min and (int(block.time) - int(last_block.time)) > target_block_time):
             config.app_log.debug('9')
             checks_passed = True
+        elif config.network == 'regnet':
+            checks_passed = True
         else:
             config.app_log.warning("Integrate block error - target too high, possible fork")
 
@@ -229,7 +231,7 @@ class Blockchain(object):
             return False
 
         return True
-    
+
     async def test_inbound_blockchain(self, inbound_blockchain):
         existing_difficulty = await self.get_difficulty()
         inbound_difficulty = await inbound_blockchain.get_difficulty()
@@ -285,7 +287,7 @@ class Blockchain(object):
             "target" : "fffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
             "special_min" : False,
             "version" : "1",
-            "transactions" : [ 
+            "transactions" : [
                 {
                     "public_key" : "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570",
                     "fee" : 0.0000000000000000,
@@ -293,7 +295,7 @@ class Blockchain(object):
                     "dh_public_key" : "",
                     "relationship" : "",
                     "inputs" : [],
-                    "outputs" : [ 
+                    "outputs" : [
                         {
                             "to" : "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
                             "value" : 50.0000000000000000

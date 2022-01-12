@@ -1772,7 +1772,10 @@ var GraphService = /** @class */ (function () {
                         decrypted = _this.decrypt(group.relationship);
                     }
                     var relationship;
-                    if (!bypassDecrypt) {
+                    if (bypassDecrypt) {
+                        relationship = group.relationship[collection];
+                    }
+                    else {
                         relationship = JSON.parse(decrypted);
                         if (!relationship[collection])
                             continue;
@@ -1797,7 +1800,10 @@ var GraphService = /** @class */ (function () {
                             decrypted = _this.shared_decrypt(parentGroup.username_signature, group.relationship);
                         }
                         var relationship;
-                        if (!bypassDecrypt) {
+                        if (bypassDecrypt) {
+                            relationship = group.relationship[collection];
+                        }
+                        else {
                             relationship = JSON.parse(decrypted);
                             if (!relationship[collection])
                                 continue;
@@ -1820,7 +1826,13 @@ var GraphService = /** @class */ (function () {
                     _this.graph[collection + 's'].push(group);
                 }
                 _this.groups_indexed[group.requested_rid] = group;
-                var group_username_signature = group.relationship[collection].username_signature;
+                var group_username_signature = void 0;
+                if (group.relationship[_this.settingsService.collections.SMART_CONTRACT]) {
+                    group_username_signature = group.relationship[collection].identity.username_signature;
+                }
+                else {
+                    group_username_signature = group.relationship[collection].username_signature;
+                }
                 if (collection === _this.settingsService.collections.GROUP) {
                     _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_CHAT)] = group;
                     _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, _this.settingsService.collections.GROUP_MAIL)] = group;
@@ -3076,7 +3088,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship[_this.settingsService.collections.SMART_CONTRACT]) {
                 //creating smart contract instance
@@ -3097,7 +3110,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship[_this.settingsService.collections.CALENDAR] ||
                 _this.info.relationship[_this.settingsService.collections.CHAT] ||
@@ -3115,7 +3129,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST]) {
                 // sign in
@@ -3128,7 +3143,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship.wif) {
                 // recovery
@@ -3141,7 +3157,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship[_this.settingsService.collections.GROUP]) {
                 // join or create group
@@ -3159,7 +3176,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship[_this.settingsService.collections.MARKET]) {
                 // join or create market
@@ -3172,7 +3190,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship[_this.settingsService.collections.AFFILIATE] ||
                 _this.info.relationship[_this.settingsService.collections.BID] ||
@@ -3191,7 +3210,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE] ||
                 _this.info.relationship[_this.settingsService.collections.ASSET]) {
@@ -3205,7 +3225,8 @@ var TransactionService = /** @class */ (function () {
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             else {
                 //straight transaction
@@ -3217,7 +3238,8 @@ var TransactionService = /** @class */ (function () {
                     (_this.transaction.requester_rid || '') +
                     (_this.transaction.requested_rid || '') +
                     inputs_hashes_concat +
-                    outputs_hashes_concat).toString('hex');
+                    outputs_hashes_concat +
+                    version).toString('hex');
             }
             _this.transaction.hash = hash;
             var attempt = _this.txnattempts.pop();
@@ -6712,7 +6734,8 @@ var MarketItemPage = /** @class */ (function () {
                 var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.AFFILIATE);
                 _this.websocketService.newtxn({
                     referrer: _this.graphService.toIdentity(_this.bulletinSecretService.identity),
-                    target: _this.smartContract.target
+                    target: _this.smartContract.target,
+                    contract: _this.graphService.toIdentity(_this.smartContract.identity)
                 }, rids, _this.settingsService.collections.AFFILIATE, _this.market.username_signature)
                     .then(function () {
                     return _this.refresh();
@@ -6738,7 +6761,7 @@ var MarketItemPage = /** @class */ (function () {
     };
     MarketItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.asset_proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.asset_proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.asset_proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="smartContract.asset_proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="bids.length === 0 && smartContract.asset_proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="bids.length > 0 && smartContract.asset_proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.asset_proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount}} YDA\n        </ion-item>\n      </ng-container>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
+            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.asset_proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.asset_proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.asset_proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.asset_proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.asset_proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.asset_proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.asset_proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount}} YDA\n        </ion-item>\n      </ng-container>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -9628,8 +9651,9 @@ var ListPage = /** @class */ (function () {
             if (promo_code) {
                 return _this.graphService.getPromotion(promo_code)
                     .then(function (promotion) {
-                    group = promotion.relationship.target;
-                    return _this.graphService.addGroup(promotion.relationship.target, promotion.rid, null, promotion.requested_rid);
+                    group = promotion.relationship[_this.settingsService.collections.AFFILIATE].target;
+                    group.parent = _this.graphService.toIdentity(promotion.relationship[_this.settingsService.collections.AFFILIATE].contract);
+                    return _this.graphService.addGroup(group, promotion.rid, null, promotion.requested_rid);
                 });
             }
             else {
