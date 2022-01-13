@@ -11,7 +11,8 @@ from yadacoin.contracts.asset import Asset
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity, PrivateIdentity
-from yadacoin.core.transaction import InvalidTransactionException, InvalidTransactionSignatureException, Transaction
+from yadacoin.core.transaction import InvalidTransactionException, InvalidTransactionSignatureException, Output, Transaction
+from yadacoin.core.transactionutils import TU
 
 
 class PayoutOperators(Enum):
@@ -155,3 +156,25 @@ class Contract:
             ):
                 smart_contract_obj = Transaction.from_dict(smart_contract)
                 return smart_contract_obj
+
+    async def expire(self, contract_txn):
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
+        balance = await self.config.BU.get_wallet_balance(str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key))))
+        payout_txn = await Transaction.generate(
+            fee=0,
+            outputs=[Output(
+                to=address,
+                value=balance
+            )],
+            public_key=self.identity.public_key,
+            requester_rid=contract_txn.requester_rid,
+            requested_rid=contract_txn.requested_rid,
+            rid=contract_txn.rid,
+            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
+        )
+        payout_txn.miner_signature = TU.generate_signature_with_private_key(
+            self.config.private_key,
+            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
+        )
+        return payout_txn
+

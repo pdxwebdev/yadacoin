@@ -34,6 +34,7 @@ class ReferPayout:
       active=False,
       operator='',
       payout_type='',
+      interval='',
       amount=''
     ):
 
@@ -45,12 +46,20 @@ class ReferPayout:
             if payout_type not in [x.value for x in PayoutType]:
                 self.report_init_error('payout_type')
 
+            if (
+                payout_type == PayoutType.RECURRING.value and
+                not isinstance(interval, float) and
+                not isinstance(interval, int)
+            ):
+                self.report_init_error('interval')
+
             if not isinstance(amount, float) and not isinstance(amount, int):
                 self.report_init_error('amount')
 
         self.active = active
         self.operator = operator
         self.payout_type = payout_type
+        self.interval = interval
         self.amount = amount
 
     def report_init_error(self, member):
@@ -64,6 +73,7 @@ class ReferPayout:
             'active': self.active,
             'operator': self.operator,
             'payout_type': self.payout_type,
+            'interval': self.interval,
             'amount': self.amount
         }
 
@@ -72,6 +82,7 @@ class ReferPayout:
             ('true' if self.active else 'false') +
             self.get_string(self.operator) +
             self.get_string(self.payout_type) +
+            self.get_string(self.interval) +
             self.get_string(self.amount)
         )
 
@@ -142,7 +153,6 @@ class AffiliateContract(Contract):
         from yadacoin.core.transactionutils import TU
 
         await self.verify(contract_txn, trigger_txn, mempool_txns)
-        await self.verify_payout_generated_already(contract_txn, trigger_txn)
 
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
         value_sent_to_address = sum([x.value for x in trigger_txn.outputs if x.to == address])
@@ -152,48 +162,56 @@ class AffiliateContract(Contract):
             return
 
         outputs = []
-        if self.referrer.active:
-            to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(referrer.public_key)))
-            if self.referrer.operator == PayoutOperators.PERCENT.value:
-                value = self.referrer.amount * value_sent_to_address
-            if self.referrer.operator == PayoutOperators.FIXED.value:
-                value = self.referrer.amount
+        try:
+            await self.verify_payout_generated_already(contract_txn, trigger_txn, self.referrer, mempool_txns)
+            if self.referrer.active:
+                to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(referrer.public_key)))
+                if self.referrer.operator == PayoutOperators.PERCENT.value:
+                    value = self.referrer.amount * value_sent_to_address
+                if self.referrer.operator == PayoutOperators.FIXED.value:
+                    value = self.referrer.amount
 
-            output = Output(
-                to=to,
-                value=value
+                output = Output(
+                    to=to,
+                    value=value
+                )
+                outputs.append(output)
+        except:
+            pass
+        try:
+            await self.verify_payout_generated_already(contract_txn, trigger_txn, self.referee, mempool_txns)
+            if self.referee.active:
+                to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(trigger_txn.public_key)))
+                if self.referee.operator == PayoutOperators.PERCENT.value:
+                    value = self.referee.amount * value_sent_to_address
+                if self.referee.operator == PayoutOperators.FIXED.value:
+                    value = self.referee.amount
+
+                output = Output(
+                    to=to,
+                    value=value
+                )
+                outputs.append(output)
+        except:
+            pass
+
+        if outputs:
+            total_payout = sum([x.value for x in outputs])
+
+            payout_txn = await Transaction.generate(
+                fee=0,
+                outputs=outputs,
+                public_key=self.identity.public_key,
+                requester_rid=trigger_txn.requester_rid,
+                requested_rid=contract_txn.requested_rid,
+                rid=trigger_txn.rid,
+                private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
             )
-            outputs.append(output)
-
-        if self.referee.active:
-            to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(trigger_txn.public_key)))
-            if self.referee.operator == PayoutOperators.PERCENT.value:
-                value = self.referee.amount * value_sent_to_address
-            if self.referee.operator == PayoutOperators.FIXED.value:
-                value = self.referee.amount
-
-            output = Output(
-                to=to,
-                value=value
+            payout_txn.miner_signature = TU.generate_signature_with_private_key(
+                self.config.private_key,
+                hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
             )
-            outputs.append(output)
-
-        total_payout = sum([x.value for x in outputs])
-
-        payout_txn = await Transaction.generate(
-            fee=0,
-            outputs=outputs,
-            public_key=self.identity.public_key,
-            requester_rid=trigger_txn.requester_rid,
-            requested_rid=contract_txn.requested_rid,
-            rid=trigger_txn.rid,
-            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
-        )
-        payout_txn.miner_signature = TU.generate_signature_with_private_key(
-            self.config.private_key,
-            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
-        )
-        return payout_txn
+            return payout_txn
 
     async def verify_honor(self, contract_txn, trigger_txn):
         referrer = await self.get_referrer(trigger_txn)
@@ -203,15 +221,45 @@ class AffiliateContract(Contract):
         if trigger_txn.requested_rid != contract_txn.requested_rid:
             raise Exception('Referee is not for this contract')
 
-    async def verify_payout_generated_already(self, contract_txn, trigger_txn):
-        block_result = await self.config.mongo.async_db.blocks.find_one({
-          'transactions.public_key': self.identity.public_key,
-          'transactions.requester_rid': trigger_txn.requester_rid,
-          'transactions.requested_rid': contract_txn.requested_rid,
-          'transactions.rid': trigger_txn.rid
-        })
-        if block_result:
-            raise Exception('Contract already generated payout')
+    async def verify_payout_generated_already(self, contract_txn, trigger_txn, participant, mempool_txns):
+        recurring_interval = 10 # number of blocks to wait until payment generation
+
+        for txn in mempool_txns:
+            if (
+                txn.public_key == self.identity.public_key and
+                txn.requester_rid == trigger_txn.requester_rid and
+                txn.requested_rid == contract_txn.requested_rid and
+                txn.rid == trigger_txn.rid
+            ):
+                raise Exception('Contract already generated in this mempool')
+        match = {
+            'transactions.public_key': self.identity.public_key,
+            'transactions.requester_rid': trigger_txn.requester_rid,
+            'transactions.requested_rid': contract_txn.requested_rid,
+            'transactions.rid': trigger_txn.rid
+        }
+        block_results = self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': match
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': match
+            },
+            {
+                '$sort': {'index': -1, 'transactions.fee': -1, 'transactions.time': -1}
+            }
+        ])
+        async for block_result in block_results:
+            if participant.payout_type == PayoutType.RECURRING.value:
+                if block_result['index'] > self.config.LatestBlock.block.index - recurring_interval:
+                    raise Exception('Contract already generated payout for this interval')
+            elif participant.payout_type == PayoutType.ONE_TIME.value:
+                if block_result:
+                    raise Exception('Contract already generated payout')
+            break
 
     async def get_honor_funds(self, contract_txn, total_payout):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))

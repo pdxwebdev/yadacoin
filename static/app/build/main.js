@@ -52,6 +52,7 @@ var SettingsService = /** @class */ (function () {
             WEB_SIGNIN_RESPONSE: 'web_signin_response'
         };
         this.tokens = {};
+        this.latest_block = {};
     }
     SettingsService.prototype.go = function () {
         return new Promise(function (resolve, reject) {
@@ -1088,6 +1089,15 @@ var GraphService = /** @class */ (function () {
             }).catch(function (err) {
                 _this.getGraphError = true;
                 reject(null);
+            });
+        });
+    };
+    GraphService.prototype.getBlockHeight = function () {
+        var _this = this;
+        return new Promise(function (resolve, reject) {
+            _this.endpointRequest('get-height')
+                .then(function (data) {
+                return resolve(data);
             });
         });
     };
@@ -5471,6 +5481,41 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : new P(function (resolve) { resolve(result.value); }).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
 
 
 
@@ -5487,24 +5532,26 @@ var WalletService = /** @class */ (function () {
             unspent_transactions: []
         };
     }
-    WalletService.prototype.get = function (amount_needed) {
+    WalletService.prototype.get = function (amount_needed, address) {
         var _this = this;
         if (amount_needed === void 0) { amount_needed = 0; }
+        if (address === void 0) { address = null; }
         return new Promise(function (resolve, reject) {
             if (!_this.settingsService.remoteSettings || !_this.settingsService.remoteSettings['walletUrl'])
                 return resolve();
-            return _this.walletPromise(amount_needed)
-                .then(function () {
-                return resolve();
+            return _this.walletPromise(amount_needed, address)
+                .then(function (wallet) {
+                return resolve(wallet);
             })
                 .catch(function (err) {
                 return reject(err);
             });
         });
     };
-    WalletService.prototype.walletPromise = function (amount_needed) {
+    WalletService.prototype.walletPromise = function (amount_needed, address) {
         var _this = this;
         if (amount_needed === void 0) { amount_needed = 0; }
+        if (address === void 0) { address = null; }
         return new Promise(function (resolve, reject) {
             if (!_this.settingsService.remoteSettings['walletUrl']) {
                 return reject('no wallet url');
@@ -5513,33 +5560,42 @@ var WalletService = /** @class */ (function () {
                 var headers = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["a" /* Headers */]();
                 headers.append('Authorization', 'Bearer ' + _this.settingsService.tokens[_this.bulletinSecretService.keyname]);
                 var options = new __WEBPACK_IMPORTED_MODULE_3__angular_http__["d" /* RequestOptions */]({ headers: headers, withCredentials: true });
-                _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed=' + amount_needed + '&address=' + _this.bulletinSecretService.key.getAddress() + '&username_signature=' + _this.bulletinSecretService.username_signature + '&origin=' + window.location.origin, options)
+                return _this.ahttp.get(_this.settingsService.remoteSettings['walletUrl'] + '?amount_needed=' + amount_needed + '&address=' + (address || _this.bulletinSecretService.key.getAddress()) + '&username_signature=' + _this.bulletinSecretService.username_signature + '&origin=' + window.location.origin, options)
                     .pipe(Object(__WEBPACK_IMPORTED_MODULE_4_rxjs_operators__["timeout"])(30000))
-                    .subscribe(function (data) {
-                    if (data['_body']) {
-                        _this.walletError = false;
-                        _this.wallet = JSON.parse(data['_body']);
-                        _this.wallet.balance = parseFloat(_this.wallet.balance); //pasefloat
-                        _this.wallet.pending_balance = parseFloat(_this.wallet.pending_balance); //pasefloat
-                        _this.wallet.balancePretty = _this.wallet.balance.toFixed(2);
-                        _this.wallet.pendingBalancePretty = _this.wallet.pending_balance.toFixed(2);
-                        resolve(data['_body']);
-                    }
-                    else {
-                        _this.walletError = true;
-                        _this.wallet = {};
-                        _this.wallet.balancePretty = 0;
-                        _this.wallet.pendingBalancePretty = 0;
-                        reject("no data returned");
-                    }
-                }, function (err) {
+                    .subscribe(function (data) { return __awaiter(_this, void 0, void 0, function () {
+                    var wallet;
+                    return __generator(this, function (_a) {
+                        switch (_a.label) {
+                            case 0:
+                                if (!data['_body']) return [3 /*break*/, 2];
+                                return [4 /*yield*/, data.json()];
+                            case 1:
+                                wallet = _a.sent();
+                                if (!address) {
+                                    this.walletError = false;
+                                    this.wallet = wallet;
+                                    this.wallet.balance = parseFloat(this.wallet.balance); //pasefloat
+                                    this.wallet.pending_balance = parseFloat(this.wallet.pending_balance); //pasefloat
+                                    this.wallet.balancePretty = this.wallet.balance.toFixed(2);
+                                    this.wallet.pendingBalancePretty = this.wallet.pending_balance.toFixed(2);
+                                }
+                                return [2 /*return*/, resolve(wallet)];
+                            case 2:
+                                this.walletError = true;
+                                this.wallet = {};
+                                this.wallet.balancePretty = 0;
+                                this.wallet.pendingBalancePretty = 0;
+                                return [2 /*return*/, reject("no data returned")];
+                        }
+                    });
+                }); }, function (err) {
                     _this.walletError = true;
-                    reject("data or server error");
+                    return reject("data or server error");
                 });
             }
             else {
                 _this.walletError = true;
-                reject("username not set");
+                return reject("username not set");
             }
         });
     };
@@ -6357,7 +6413,7 @@ var CreateSalePage = /** @class */ (function () {
         alert.addButton({
             text: 'Confirm',
             handler: function (data) {
-                var contract = _this.smartContractService.generateChangeOfOwnership(_this.asset, _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), parseFloat(_this.price), _this.asset_proof_type, _this.market);
+                var contract = _this.smartContractService.generateChangeOfOwnership(_this.asset, _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), parseFloat(_this.price), _this.asset_proof_type, _this.market, _this.expiry);
                 var rids = _this.graphService.generateRids(contract.identity, _this.market, _this.settingsService.collections.SMART_CONTRACT);
                 _this.websocketService.newtxn(contract, rids, _this.settingsService.collections.SMART_CONTRACT, _this.market.username_signature)
                     .then(function () {
@@ -6369,7 +6425,7 @@ var CreateSalePage = /** @class */ (function () {
     };
     CreateSalePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'create-sale',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Create new sale</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Asset info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          {{asset.identity.username}}\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n    <ion-col col-md-4>\n      <h3>Sale info</h3>\n      <ion-item>\n        <ion-label color="primary">Sale price</ion-label>\n        <ion-input type="number" [(ngModel)]="price" placeholder="What\'s the price of this asset?"></ion-input>\n      </ion-item>\n      <h3>Sale type</h3>\n      <ion-list radio-group [(ngModel)]="asset_proof_type">\n        <ion-item>\n          <ion-label>Buy now</ion-label>\n          <ion-radio value="first_come" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Auction</ion-label>\n          <ion-radio value="auction"></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ion-item>\n        <button ion-button secondary (click)="save()" [disabled]="!price">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/
+            selector: 'create-sale',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Create new sale</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Asset info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          {{asset.identity.username}}\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n    <ion-col col-md-4>\n      <h3>Sale info</h3>\n      <ion-item>\n        <ion-label color="primary">Price</ion-label>\n        <ion-input type="number" [(ngModel)]="price" placeholder="What\'s the price of this asset?"></ion-input>\n      </ion-item>\n      <ion-item>\n        <ion-label color="primary">Expires</ion-label>\n        <ion-input type="number" [(ngModel)]="expiry" placeholder="How many blocks until this sale ends?"></ion-input>\n      </ion-item>\n      <h3>Sale type</h3>\n      <ion-list radio-group [(ngModel)]="asset_proof_type">\n        <ion-item>\n          <ion-label>Buy now</ion-label>\n          <ion-radio value="first_come" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Auction</ion-label>\n          <ion-radio value="auction"></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ion-item>\n        <button ion-button secondary (click)="save()" [disabled]="!price">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -6429,6 +6485,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 var CreatePromoPage = /** @class */ (function () {
     function CreatePromoPage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, websocketService, transactionService, alertCtrl, ahttp, smartContractService, completeTestService, walletService) {
+        var _this = this;
         this.navCtrl = navCtrl;
         this.navParams = navParams;
         this.graphService = graphService;
@@ -6448,6 +6505,10 @@ var CreatePromoPage = /** @class */ (function () {
         this.market = market.relationship[this.settingsService.collections.MARKET];
         this.affiliate_proof_type = this.smartContractService.promoProofTypes.HONOR;
         this.promotedIdentity = 'me';
+        this.graphService.getBlockHeight()
+            .then(function (data) {
+            _this.settingsService.latest_block = data;
+        });
     }
     CreatePromoPage.prototype.promotedIdentityChanged = function () {
         if (this.promotedIdentity === 'me') {
@@ -6480,6 +6541,10 @@ var CreatePromoPage = /** @class */ (function () {
                 this.presentError('pay_referrer_payout_type');
                 return;
             }
+            if (!this.pay_referrer_payout_interval) {
+                this.presentError('pay_referrer_payout_interval');
+                return;
+            }
             if (!this.pay_referrer_amount) {
                 this.presentError('pay_referrer_amount');
                 return;
@@ -6494,6 +6559,10 @@ var CreatePromoPage = /** @class */ (function () {
                 this.presentError('pay_referee_payout_type');
                 return;
             }
+            if (!this.pay_referee_payout_interval) {
+                this.presentError('pay_referee_payout_interval');
+                return;
+            }
             if (!this.pay_referee_amount) {
                 this.presentError('pay_referee_amount');
                 return;
@@ -6505,6 +6574,10 @@ var CreatePromoPage = /** @class */ (function () {
         }
         if (!this.fund_amount) {
             this.presentError('fund_amount');
+            return;
+        }
+        if (!this.expiry) {
+            this.presentError('expiry');
             return;
         }
         var alert = this.alertCtrl.create();
@@ -6525,7 +6598,7 @@ var CreatePromoPage = /** @class */ (function () {
                 }
                 _this.walletService.get(_this.fund_amount)
                     .then(function () {
-                    var contract = _this.smartContractService.generateNewRelationshipPromo(_this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), _this.affiliate_proof_type, selectedIdentity, _this.market, _this.pay_referrer, _this.pay_referrer_operator, _this.pay_referrer_payout_type, parseFloat(_this.pay_referrer_amount), _this.pay_referee, _this.pay_referee_operator, _this.pay_referee_payout_type, parseFloat(_this.pay_referee_amount));
+                    var contract = _this.smartContractService.generateNewRelationshipPromo(_this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), _this.affiliate_proof_type, selectedIdentity, _this.market, _this.pay_referrer, _this.pay_referrer_operator, _this.pay_referrer_payout_type, parseInt(_this.pay_referrer_payout_interval), parseFloat(_this.pay_referrer_amount), _this.pay_referee, _this.pay_referee_operator, _this.pay_referee_payout_type, parseInt(_this.pay_referee_payout_interval), parseFloat(_this.pay_referee_amount), parseInt(_this.expiry));
                     var rids = _this.graphService.generateRids(contract.identity, _this.market, _this.settingsService.collections.SMART_CONTRACT);
                     var contractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(contract.identity.public_key, 'hex')).getAddress();
                     var outputs = [];
@@ -6546,7 +6619,7 @@ var CreatePromoPage = /** @class */ (function () {
     };
     CreatePromoPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'create-promo',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Start new promotion</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Promotion info</h3>\n      <h3>Identity to promote</h3>\n      <ion-list radio-group [(ngModel)]="promotedIdentity" (change)="promotedIdentityChanged()">\n        <ion-item>\n          <ion-label>Promote myself</ion-label>\n          <ion-radio value="me" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Promote a contact</ion-label>\n          <ion-radio value="contact"></ion-radio>\n        </ion-item>\n        <form [formGroup]="myForm" (change)="contactSearchChanged()">\n          <ion-auto-complete #searchbar [(ngModel)]="selectedIdentityForm" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n        </form>\n      </ion-list>\n      <h3>Referrer payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referrer">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referrer">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_amount" placeholder="How much to pay the referrer?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referrer_amount" placeholder="What percentage does the referrer get?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>Referree payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referee">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referee">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_amount" placeholder="How much to pay the referee?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referee_amount" placeholder="What percentage does the referee?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED || pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n        <h3>Contract fund</h3>\n        <ion-item>\n          <ion-label color="primary">Fund amount</ion-label>\n          <ion-input type="number" [(ngModel)]="fund_amount" placeholder="How much YDA to fund this promotion?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>&nbsp;</h3>\n      <ion-item>\n        <button ion-button secondary (click)="save()">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/
+            selector: 'create-promo',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Start new promotion</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Promotion info</h3>\n      <h3>Identity to promote</h3>\n      <ion-list radio-group [(ngModel)]="promotedIdentity" (change)="promotedIdentityChanged()">\n        <ion-item>\n          <ion-label>Promote myself</ion-label>\n          <ion-radio value="me" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Promote a contact</ion-label>\n          <ion-radio value="contact"></ion-radio>\n        </ion-item>\n        <form [formGroup]="myForm" (change)="contactSearchChanged()">\n          <ion-auto-complete #searchbar [(ngModel)]="selectedIdentityForm" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n        </form>\n      </ion-list>\n      <h3>Referrer payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referrer">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referrer">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <ion-item *ngIf="pay_referrer_payout_type === smartContractService.payoutType.RECURRING">\n          <ion-label color="primary">Payment interval</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_payout_interval" placeholder="How many blocks between payouts?"></ion-input>\n        </ion-item>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_amount" placeholder="How much to pay the referrer?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referrer_amount" placeholder="What percentage does the referrer get?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>Referree payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referee">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referee">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <ion-item *ngIf="pay_referee_payout_type === smartContractService.payoutType.RECURRING">\n          <ion-label color="primary">Payment interval</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_payout_interval" placeholder="How many blocks between payouts?"></ion-input>\n        </ion-item>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_amount" placeholder="How much to pay the referee?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referee_amount" placeholder="What percentage does the referee?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED || pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n        <h3>Contract fund</h3>\n        <ion-item>\n          <ion-label color="primary">Fund amount</ion-label>\n          <ion-input type="number" [(ngModel)]="fund_amount" placeholder="How much YDA to fund this promotion?"></ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary">Expiry</ion-label>\n          <ion-input type="number" [(ngModel)]="expiry" placeholder="Expires in how many blocks?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>&nbsp;</h3>\n      <ion-item>\n        <button ion-button secondary (click)="save()">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -6604,6 +6677,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 var MarketItemPage = /** @class */ (function () {
     function MarketItemPage(navCtrl, navParams, walletService, graphService, bulletinSecretService, alertCtrl, transactionService, settingsService, smartContractService, websocketService) {
+        var _this = this;
         this.navCtrl = navCtrl;
         this.navParams = navParams;
         this.walletService = walletService;
@@ -6622,6 +6696,10 @@ var MarketItemPage = /** @class */ (function () {
         this.refresh();
         this.price = this.smartContract.price;
         this.minPrice = this.smartContract.price;
+        this.graphService.getBlockHeight()
+            .then(function (data) {
+            _this.settingsService.latest_block = data;
+        });
     }
     MarketItemPage.prototype.refresh = function () {
         var _this = this;
@@ -6633,7 +6711,12 @@ var MarketItemPage = /** @class */ (function () {
             identity.collection = this.settingsService.collections.AFFILIATE;
         }
         var rids = this.graphService.generateRids(identity);
-        this.graphService.getBids(rids.requested_rid, this.market)
+        var scAddress = this.bulletinSecretService.publicKeyToAddress(this.smartContract.identity.public_key);
+        this.walletService.get(this.price, scAddress)
+            .then(function (wallet) {
+            _this.balance = wallet.balance;
+            return _this.graphService.getBids(rids.requested_rid, _this.market);
+        })
             .then(function (bids) {
             _this.bids = bids.sort(function (a, b) {
                 var aamount = _this.getAmount(a);
@@ -6693,11 +6776,12 @@ var MarketItemPage = /** @class */ (function () {
         alert.addButton({
             text: buttonText,
             handler: function (data) {
+                var scAddress = _this.bulletinSecretService.publicKeyToAddress(_this.smartContract.identity.public_key);
                 _this.walletService.get(_this.price)
                     .then(function () {
                     var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.BID);
                     return _this.websocketService.newtxn(_this.graphService.toIdentity(_this.bulletinSecretService.identity), rids, _this.settingsService.collections.BID, _this.market.username_signature, {
-                        to: _this.bulletinSecretService.publicKeyToAddress(_this.smartContract.identity.public_key),
+                        to: scAddress,
                         value: _this.price
                     });
                 })
@@ -6761,7 +6845,7 @@ var MarketItemPage = /** @class */ (function () {
     };
     MarketItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.asset_proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.asset_proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.asset_proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.asset_proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.asset_proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.asset_proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.asset_proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount}} YDA\n        </ion-item>\n      </ng-container>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
+            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.asset_proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.asset_proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-card>\n      <ion-item *ngIf="smartContract.asset_proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.asset_proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.asset_proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.asset_proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.asset_proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item>\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -8683,7 +8767,7 @@ var SmartContractService = /** @class */ (function () {
             NEW_RELATIONSHIP: 'new_relationship'
         };
     }
-    SmartContractService.prototype.generateChangeOfOwnership = function (asset, creator, amount, asset_proof_type, market) {
+    SmartContractService.prototype.generateChangeOfOwnership = function (asset, creator, amount, asset_proof_type, market, contract_expiry) {
         var key = foobar.bitcoin.ECPair.makeRandom();
         var wif = key.toWIF();
         var username = '';
@@ -8696,7 +8780,7 @@ var SmartContractService = /** @class */ (function () {
             wif: wif,
             collection: this.settingsService.collections.SMART_CONTRACT
         };
-        var expiry = 280 * 14;
+        var expiry = parseInt(contract_expiry) + parseInt(this.settingsService.latest_block.height);
         var contract_type = this.contractTypes.CHANGE_OWNERSHIP;
         var payout_amount = 1;
         var payout_operator = this.payoutOperators.PERCENT;
@@ -8721,7 +8805,7 @@ var SmartContractService = /** @class */ (function () {
             market: market_rid
         };
     };
-    SmartContractService.prototype.generateNewRelationshipPromo = function (creator, affiliate_proof_type, target, market, pay_referrer, pay_referrer_operator, pay_referrer_payout_type, pay_referrer_amount, pay_referee, pay_referee_operator, pay_referee_payout_type, pay_referee_amount) {
+    SmartContractService.prototype.generateNewRelationshipPromo = function (creator, affiliate_proof_type, target, market, pay_referrer, pay_referrer_operator, pay_referrer_payout_type, pay_referrer_payout_interval, pay_referrer_amount, pay_referee, pay_referee_operator, pay_referee_payout_type, pay_referee_payout_interval, pay_referee_amount, contract_expiry) {
         var key = foobar.bitcoin.ECPair.makeRandom();
         var wif = key.toWIF();
         var username = '';
@@ -8734,7 +8818,7 @@ var SmartContractService = /** @class */ (function () {
             wif: wif,
             collection: this.settingsService.collections.SMART_CONTRACT
         };
-        var expiry = 280 * 14;
+        var expiry = parseInt(contract_expiry) + parseInt(this.settingsService.latest_block.height);
         var contract_type = this.contractTypes.NEW_RELATIONSHIP;
         var username_signatures = [market.username_signature, market.username_signature].sort(function (a, b) {
             return a.toLowerCase().localeCompare(b.toLowerCase());
@@ -8753,13 +8837,15 @@ var SmartContractService = /** @class */ (function () {
                 active: pay_referrer,
                 operator: pay_referrer_operator,
                 payout_type: pay_referrer_payout_type,
-                amount: pay_referrer_amount
+                amount: pay_referrer_amount,
+                interval: pay_referrer_payout_interval
             },
             referee: {
                 active: pay_referee,
                 operator: pay_referee_operator,
                 payout_type: pay_referee_payout_type,
-                amount: pay_referee_amount
+                amount: pay_referee_amount,
+                interval: pay_referee_payout_interval
             }
         };
     };
@@ -8783,10 +8869,12 @@ var SmartContractService = /** @class */ (function () {
             var referrer_str = contract.referrer.active === true ? ('true' +
                 contract.referrer.operator +
                 contract.referrer.payout_type +
+                contract.referrer.interval +
                 contract.referrer.amount) : 'false';
             var referee_str = contract.referee.active === true ? ('true' +
                 contract.referee.operator +
                 contract.referee.payout_type +
+                contract.referee.interval +
                 contract.referee.amount) : 'false';
             return ('' +
                 contract.version +
