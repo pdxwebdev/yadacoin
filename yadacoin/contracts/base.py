@@ -63,7 +63,7 @@ class Contract:
         self.creator = Identity.from_dict(creator) if isinstance(creator, dict) else creator
 
     def get_string(self, p):
-        return str(p or '')
+        return '' if p is None else str(p)
 
     def report_init_error(self, member):
         raise Exception(f'Cannot instantiate contract with invalid {member}')
@@ -160,6 +160,8 @@ class Contract:
     async def expire(self, contract_txn):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
         balance = await self.config.BU.get_wallet_balance(str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key))))
+        if not float(balance):
+            return
         payout_txn = await Transaction.generate(
             fee=0,
             outputs=[Output(

@@ -188,6 +188,21 @@ class Mongo(object):
             self.config.app_log.warning(f'Converting txn time to int for txn: {txn["id"]}')
             self.db.miner_transactions.update({'id': txn['id']}, {'$set': {'time': int(txn['time'])}})
 
+        # convert blockchain transaction time from string to number
+        blockchain_txns_to_convert = self.db.blocks.find({'transactions.time': {'$type': 2}})
+        for block in blockchain_txns_to_convert:
+            changed = False
+            for txn in block.get('transactions'):
+                changed = True
+                if 'time' in txn:
+                    self.config.app_log.warning(f'Converting blockchain txn time to int for index and txn: {block["index"]} {txn["id"]}')
+                    if txn['time'] in ['', 0, '0']:
+                        del txn['time']
+                    else:
+                        txn['time'] = int(txn['time'])
+            if changed:
+                self.db.blocks.update({'index': block['index']}, {'$set': block})
+
         too_high_reward_blocks = self.db.blocks.find({'index': {'$gte': 210000}})
         for block in too_high_reward_blocks:
             for txn in block['transactions']:

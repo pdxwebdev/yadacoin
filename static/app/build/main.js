@@ -6085,6 +6085,9 @@ var MarketPage = /** @class */ (function () {
             _this.smartContracts = smartContracts.filter(function (item) {
                 try {
                     var sc = item.relationship[_this.settingsService.collections.SMART_CONTRACT];
+                    if ((sc.expiry - _this.settingsService.latest_block.height) < 0) {
+                        return false;
+                    }
                     if (sc.contract_type === _this.smartContractService.contractTypes.CHANGE_OWNERSHIP) {
                         return sc.asset.data.substr(0, 5) === 'data:';
                     }
@@ -6541,7 +6544,8 @@ var CreatePromoPage = /** @class */ (function () {
                 this.presentError('pay_referrer_payout_type');
                 return;
             }
-            if (!this.pay_referrer_payout_interval) {
+            if (this.pay_referrer_payout_type === this.smartContractService.payoutType.RECURRING &&
+                !this.pay_referrer_payout_interval) {
                 this.presentError('pay_referrer_payout_interval');
                 return;
             }
@@ -6559,7 +6563,8 @@ var CreatePromoPage = /** @class */ (function () {
                 this.presentError('pay_referee_payout_type');
                 return;
             }
-            if (!this.pay_referee_payout_interval) {
+            if (this.pay_referee_payout_type === this.smartContractService.payoutType.RECURRING &&
+                !this.pay_referee_payout_interval) {
                 this.presentError('pay_referee_payout_interval');
                 return;
             }
@@ -6714,7 +6719,7 @@ var MarketItemPage = /** @class */ (function () {
         var scAddress = this.bulletinSecretService.publicKeyToAddress(this.smartContract.identity.public_key);
         this.walletService.get(this.price, scAddress)
             .then(function (wallet) {
-            _this.balance = wallet.balance;
+            _this.balance = _this.item.pending ? wallet.pending_balance : wallet.balance;
             return _this.graphService.getBids(rids.requested_rid, _this.market);
         })
             .then(function (bids) {

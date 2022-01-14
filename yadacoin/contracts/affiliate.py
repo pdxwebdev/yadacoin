@@ -66,7 +66,7 @@ class ReferPayout:
         raise Exception(f'Cannot instantiate referpayout with invalid {member}')
 
     def get_string(self, p):
-        return str(p or '')
+        return '' if p is None else str(p)
 
     def to_dict(self):
         return {
@@ -222,7 +222,6 @@ class AffiliateContract(Contract):
             raise Exception('Referee is not for this contract')
 
     async def verify_payout_generated_already(self, contract_txn, trigger_txn, participant, mempool_txns):
-        recurring_interval = 10 # number of blocks to wait until payment generation
 
         for txn in mempool_txns:
             if (
@@ -254,7 +253,7 @@ class AffiliateContract(Contract):
         ])
         async for block_result in block_results:
             if participant.payout_type == PayoutType.RECURRING.value:
-                if block_result['index'] > self.config.LatestBlock.block.index - recurring_interval:
+                if block_result['index'] > self.config.LatestBlock.block.index - participant.interval:
                     raise Exception('Contract already generated payout for this interval')
             elif participant.payout_type == PayoutType.ONE_TIME.value:
                 if block_result:

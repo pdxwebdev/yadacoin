@@ -369,7 +369,7 @@ class Block(object):
             block.public_key == txn.public_key and
             str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))) in [x.to for x in txn.outputs] and
             len(txn.inputs) == 0 and
-            quantize_eight(sum([x.value for x in txn.outputs])) == quantize_eight(CHAIN.get_block_reward(block.index))
+            len(txn.outputs) == 1
         )
 
     def generate_hash_from_header(self, height, header, nonce):
@@ -442,7 +442,7 @@ class Block(object):
                 for output in txn.outputs:
                     coinbase_sum += float(output.value)
             elif txn.miner_signature:
-                await smart_contract_txn.relationship.verify_generation(self, txn)
+                await txn.relationship.verify_generation(self, txn)
             else:
                 fee_sum += float(txn.fee)
 
