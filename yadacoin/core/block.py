@@ -344,10 +344,7 @@ class Block(object):
 
         for txn in block.get('transactions'):
             transaction = Transaction.from_dict(txn)
-            try:
-                transaction.coinbase = Block.is_coinbase(block_inst, transaction)
-            except:
-                print('no')
+            transaction.coinbase = Block.is_coinbase(block_inst, transaction)
             transaction.contract_generated = await transaction.is_contract_generated()
             transactions.append(transaction)
 
