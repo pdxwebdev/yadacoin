@@ -21,6 +21,7 @@ class LatestBlock:
         from yadacoin.core.block import Block
         block = await cls.config.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
         if not block:
+            await cls.config.BU.insert_genesis()
             return
         cls.block = await Block.from_dict(block)
 
