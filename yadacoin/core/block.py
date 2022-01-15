@@ -194,8 +194,7 @@ class Block(object):
             used_inputs,
             fee_sum,
             index,
-            xtime,
-            extra_txns=True
+            xtime
         )
 
         block_reward = CHAIN.get_block_reward(index)
@@ -240,17 +239,13 @@ class Block(object):
         used_inputs,
         fee_sum,
         index,
-        xtime,
-        extra_txns=False
+        xtime
     ):
         config = get_config()
         for transaction_obj in txns:
             try:
                 if transaction_obj.transaction_signature in used_sigs:
                     raise InvalidTransactionException('duplicate transaction found and removed')
-
-                if extra_txns:
-                    transaction_obj.extra_txns = transaction_objs
 
                 await transaction_obj.verify()
                 used_sigs.append(transaction_obj.transaction_signature)

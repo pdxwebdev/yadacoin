@@ -20,6 +20,7 @@ from yadacoin.core.transaction import (
     InvalidTransactionException,
     InvalidTransactionSignatureException
 )
+from yadacoin.core.block import quantize_eight
 
 
 class AssetProofTypes(Enum):
@@ -115,34 +116,37 @@ class ChangeOwnershipContract(Contract):
         )
 
     async def process(self, contract_txn, trigger_txn, mempool_txns):
-        from yadacoin.core.transaction import Transaction
-        from yadacoin.core.transactionutils import TU
 
         await self.verify(contract_txn, trigger_txn, mempool_txns)
         await self.verify_payout_generated_already(contract_txn, trigger_txn)
 
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
-        return_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
-
-        if self.proof_type in [AssetProofTypes.CONFIRMATION.value, AssetProofTypes.AUCTION.value]:
+        if self.proof_type == AssetProofTypes.AUCTION.value:
+            return
+        elif self.proof_type in [AssetProofTypes.CONFIRMATION.value, ]:
             bid = await getattr(self, f'get_{self.proof_type}_bid')(contract_txn)
         elif self.proof_type == AssetProofTypes.FIRST_COME.value:
             bid = trigger_txn
 
-        value_sent_to_address = sum([x.value for x in bid.outputs if x.to == address])
+        return await self.generate_transaction(contract_txn, bid)
 
-        payout_txn = Transaction.from_dict({
-            'value': value_sent_to_address,
-            'inputs': [{'id': bid.transaction_signature}],
-            'fee': 0,
-            'outputs': [{'to': return_address, 'value': value_sent_to_address}],
-            'time': int(time.time()),
-            'public_key': self.identity.public_key,
-            'requester_rid': trigger_txn.requester_rid,
-            'requested_rid': contract_txn.requested_rid,
-            'rid': trigger_txn.rid,
-            'contract_generated': True
-        })
+    async def generate_transaction(self, contract_txn, trigger_txn):
+        from yadacoin.core.transaction import Transaction, Input, Output
+        from yadacoin.core.transactionutils import TU
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
+        return_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
+        value_sent_to_address = sum([x.value for x in trigger_txn.outputs if x.to == address])
+
+        payout_txn = await Transaction.generate(
+            value=value_sent_to_address,
+            inputs=[Input(trigger_txn.transaction_signature)],
+            fee=0,
+            outputs=[Output(to=return_address, value=value_sent_to_address)],
+            public_key=self.identity.public_key,
+            requester_rid=trigger_txn.requester_rid,
+            requested_rid=contract_txn.requested_rid,
+            rid=trigger_txn.rid,
+            contract_generated=True
+        )
 
         payout_txn.hash = await payout_txn.generate_hash()
         payout_txn.transaction_signature = TU.generate_signature_with_private_key(
@@ -168,37 +172,50 @@ class ChangeOwnershipContract(Contract):
     async def verify_first_come(self, contract_txn, trigger_txn):
         await self.verify_input(trigger_txn)
 
-    async def get_first_come_bid(self, contract_txn):
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
-        bids = self.get_funds(contract_txn)
-        highest = 0
-        selected_bid = None
-        async for bid in bids:
-            total_output_to_contract = sum([x.value for x in bid.outputs if x.to == address])
+        if not await self.get_first_come_bid(contract_txn):
+            raise Exception('No winning bid for this auction')
 
-            if total_output_to_contract > highest:
-                selected_bid = bid
-                highest = total_output_to_contract
-        return selected_bid
+    async def get_first_come_bid(self, contract_txn):
+        from yadacoin.core.transaction import Transaction, Input, Output
+        earliest_time = 10000000000000
+        earliest_height = 10000000000000
+        winning_purchase_txn = None
+        async for purchase_txn_block in await self.get_purchase_txns(contract_txn):
+            purchase_txn_obj = Transaction.ensure_instance(purchase_txn_block.get('transactions'))
+            purchase_amount = await self.get_amount(contract_txn, purchase_txn_obj)
+
+            if purchase_txn_block['index'] < earliest_height:
+                winning_purchase_txn = purchase_txn_obj
+                earliest_height = purchase_txn_block['index']
+                earliest_time = purchase_txn_obj.time
+            elif purchase_txn_block['index'] == earliest_height:
+                if purchase_txn_obj.time < earliest_time:
+                    winning_purchase_txn = purchase_txn_obj
+                    earliest_height = purchase_txn_block['index']
+                    earliest_time = purchase_txn_obj.time
+        return winning_purchase_txn
 
     async def verify_auction(self, contract_txn, trigger_txn):
         if self.expiry > self.config.LatestBlock.block.index:
             raise Exception('Expiry block height has not yet been reached.')
 
-        if not await self.get_auction_bid(contract_txn):
+        winning_txn = await self.get_auction_bid(contract_txn)
+        if not winning_txn:
             raise Exception('No winning bid for this auction')
 
-    async def get_auction_bid(self, contract_txn):
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
-        bids = await self.get_funds(self, contract_txn)
-        highest = 0
-        selected_bid = None
-        async for bid in bids:
-            total_output_to_contract = sum([x.value for x in bid.outputs if x.to == address])
+        if winning_txn.transaction_signature != trigger_txn.transaction_signature:
+            raise Exception('Incorrect winning bid for this auction')
 
-            if total_output_to_contract > highest:
-                slected_bid = bid
-        return selected_bid
+    async def get_auction_bid(self, contract_txn):
+        from yadacoin.core.transaction import Transaction, Input, Output
+        highest_amount = 0
+        winning_purchase_txn = None
+        async for purchase_txn_block in await self.get_purchase_txns(contract_txn):
+            purchase_txn_obj = Transaction.ensure_instance(purchase_txn_block.get('transactions'))
+            purchase_amount = await self.get_amount(contract_txn, purchase_txn_obj)
+            if purchase_amount > highest_amount:
+                winning_purchase_txn = purchase_txn_obj
+        return winning_purchase_txn
 
     async def verify_confirmation(self, contract_txn, trigger_txn):
         if contract_txn.public_key != trigger_txn.public_key:
@@ -207,17 +224,21 @@ class ChangeOwnershipContract(Contract):
         if contract_txn.requested_rid != trigger_txn.requested_rid:
             raise Exception('requested_rid of confirmation transaction does not match that of the purchasing transaction')
 
-        if not await self.get_confirmation_bid(contract_txn, trigger_txn):
+        winning_txn = await self.get_confirmation_bid(contract_txn, trigger_txn)
+        if not winning_txn:
             raise Exception('Confirmation transaction does not reference a transaction matching the terms of this contract')
 
-    async def get_confirmation_bid(self, contract_txn, trigger_txn):
+        if winning_txn.transaction_signature != trigger_txn.transaction_signature:
+            raise Exception('Incorrect winning bid for this auction')
+
+    async def get_confirmation_bid(self, contract_txn):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
-        bids = await self.get_funds(self, contract_txn)
+        bids = await self.get_purchase_txns(self, contract_txn)
         async for bid in bids:
             if (
-                trigger_txn.requested_rid == bid.requested_rid and
-                trigger_txn.requester_rid == bid.requester_rid and
-                trigger_txn.rid == bid.rid
+                contract_txn.requested_rid == bid.requested_rid and
+                contract_txn.requester_rid == bid.requester_rid and
+                contract_txn.rid == bid.rid
             ):
                 total_output_to_contract = sum([x.value for x in bid.outputs if x.to == address])
 
@@ -225,59 +246,18 @@ class ChangeOwnershipContract(Contract):
                     return bid
 
     async def expire_first_come(self, contract_txn):
-        from yadacoin.core.transaction import Transaction, Output
-        from yadacoin.core.transactionutils import TU
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
-        balance = await self.config.BU.get_wallet_balance(str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key))))
-        if not float(balance):
-            return
-        payout_txn = await Transaction.generate(
-            fee=0,
-            outputs=[Output(
-                to=address,
-                value=balance
-            )],
-            public_key=self.identity.public_key,
-            requester_rid=contract_txn.requester_rid,
-            requested_rid=contract_txn.requested_rid,
-            rid=contract_txn.rid,
-            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
-        )
-        payout_txn.miner_signature = TU.generate_signature_with_private_key(
-            self.config.private_key,
-            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
-        )
-        return payout_txn
+        bid = await self.get_first_come_bid(contract_txn)
+        return await self.generate_transaction(contract_txn, bid)
 
     async def expire_auction(self, contract_txn):
-        from yadacoin.core.transaction import Transaction, Output, Input
-        from yadacoin.core.transactionutils import TU
+        bid = await self.get_auction_bid(contract_txn)
+        return await self.generate_transaction(contract_txn, bid)
 
-        purchase_txn = await self.get_purchase_txn(contract_txn)
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
-        payout = await self.get_amount(contract_txn, purchase_txn)
-        payout_txn = await Transaction.generate(
-            fee=0,
-            outputs=[Output(
-                to=address,
-                value=payout
-            )],
-            inputs=[Input(
-                purchase_txn.transaction_signature
-            )],
-            public_key=self.identity.public_key,
-            requester_rid=contract_txn.requester_rid,
-            requested_rid=contract_txn.requested_rid,
-            rid=contract_txn.rid,
-            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
-        )
-        payout_txn.miner_signature = TU.generate_signature_with_private_key(
-            self.config.private_key,
-            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
-        )
-        return payout_txn
+    async def expire_confirmation(self, contract_txn):
+        bid = await self.get_confirmation_bid(contract_txn)
+        return await self.generate_transaction(contract_txn, bid)
 
-    async def get_purchase_txn(self, contract_txn):
+    async def get_purchase_txns(self, contract_txn):
         from yadacoin.core.transaction import Transaction, Output
         purchase_txn_blocks = self.config.mongo.async_db.blocks.aggregate([
             {
@@ -296,14 +276,7 @@ class ChangeOwnershipContract(Contract):
                 }
             }
         ])
-        highest_amount = 0
-        winning_purchase_txn = None
-        async for purchase_txn_block in purchase_txn_blocks:
-            purchase_txn_obj = Transaction.from_dict(purchase_txn_block.get('transactions'))
-            purchase_amount = await self.get_amount(contract_txn, purchase_txn_obj)
-            if purchase_amount > highest_amount:
-                winning_purchase_txn = purchase_txn_obj
-        return winning_purchase_txn
+        return purchase_txn_blocks
 
     async def get_amount(self, smart_contract_obj, purchase_txn_obj):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(smart_contract_obj.relationship.identity.public_key)))
@@ -336,12 +309,12 @@ class ChangeOwnershipContract(Contract):
             self.get_string(self.version) +
             self.get_string(self.expiry) +
             self.get_string(self.contract_type) +
-            self.get_string(self.payout_amount) +
+            self.get_string(quantize_eight(self.payout_amount)) +
             self.get_string(self.payout_operator) +
             self.get_string(self.payout_type) +
             self.get_string(self.market) +
             self.get_string(self.proof_type) +
-            self.get_string(self.price) +
+            self.get_string(quantize_eight(self.price)) +
             self.get_string(self.identity.username_signature) +
             self.get_string(self.asset.to_self.get_stringing() if isinstance(self.asset, Asset) else self.asset) +
             self.get_string(self.creator)

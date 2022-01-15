@@ -21,6 +21,7 @@ from yadacoin.core.transaction import (
     InvalidTransactionSignatureException,
     Output
 )
+from yadacoin.core.block import quantize_eight
 
 
 class AffiliatePoofTypes(Enum):
@@ -78,13 +79,16 @@ class ReferPayout:
         }
 
     def to_string(self):
-        return (
-            ('true' if self.active else 'false') +
-            self.get_string(self.operator) +
-            self.get_string(self.payout_type) +
-            self.get_string(self.interval) +
-            self.get_string(self.amount)
-        )
+        if self.active:
+            return (
+                'true' +
+                self.get_string(self.operator) +
+                self.get_string(self.payout_type) +
+                self.get_string(self.interval) +
+                self.get_string(quantize_eight(self.amount))
+            )
+        else:
+            return 'false'
 
 
 class AffiliateContract(Contract):
@@ -106,7 +110,6 @@ class AffiliateContract(Contract):
             version,
             expiry,
             contract_type,
-            proof_type,
             identity,
             creator
         )
@@ -302,10 +305,10 @@ class AffiliateContract(Contract):
             return Transaction.from_dict(results[0]['transactions'])
 
     async def expire_honor(self, contract_txn):
-        await self.expire(contract_txn)
+        return await self.expire(contract_txn)
 
     async def expire_honor(self, contract_txn):
-        await self.expire(contract_txn)
+        return await self.expire(contract_txn)
 
     async def expire(self, contract_txn):
         from yadacoin.core.transaction import Transaction, Output

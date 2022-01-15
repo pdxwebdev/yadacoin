@@ -494,14 +494,6 @@ class MiningPool(object):
             except:
                 pass
 
-            for trigger_txn in transaction_objs.get(smart_contract_txn.requested_rid, []): # process mempool txns
-                try:
-                    payout_txn = await smart_contract_txn.relationship.process(smart_contract_txn, trigger_txn, transaction_objs)
-                    if payout_txn:
-                        generated_txns.append(payout_txn)
-                except:
-                    pass
-
         # process expired contracts
         used_public_keys = []
         expired_blockchain_smart_contract_objs = self.mongo.async_db.blocks.aggregate([
