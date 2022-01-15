@@ -94,7 +94,7 @@ class AffiliateContract(Contract):
         version,
         expiry,
         contract_type,
-        affiliate_proof_type,
+        proof_type,
         target,
         market,
         identity,
@@ -106,12 +106,12 @@ class AffiliateContract(Contract):
             version,
             expiry,
             contract_type,
-            affiliate_proof_type,
+            proof_type,
             identity,
             creator
         )
 
-        self.affiliate_proof_type = affiliate_proof_type
+        self.proof_type = proof_type
 
         self.referrer = referrer if isinstance(referrer, ReferPayout) else ReferPayout(**referrer)
 
@@ -126,7 +126,7 @@ class AffiliateContract(Contract):
         cls,
         expiry=(time.time() + (60 * 60)),
         contract_type=ContractTypes.NEW_RELATIONSHIP.value,
-        affiliate_proof_type=AffiliatePoofTypes.HONOR.value,
+        proof_type=AffiliatePoofTypes.HONOR.value,
         target='',
         market='',
         username='',
@@ -139,7 +139,7 @@ class AffiliateContract(Contract):
             version=1,
             expiry=expiry,
             contract_type=contract_type,
-            affiliate_proof_type=affiliate_proof_type,
+            proof_type=proof_type,
             target=target,
             market=market,
             identity=identity,
@@ -205,7 +205,8 @@ class AffiliateContract(Contract):
                 requester_rid=trigger_txn.requester_rid,
                 requested_rid=contract_txn.requested_rid,
                 rid=trigger_txn.rid,
-                private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
+                private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode(),
+                contract_generated=True
             )
             payout_txn.miner_signature = TU.generate_signature_with_private_key(
                 self.config.private_key,
@@ -300,13 +301,44 @@ class AffiliateContract(Contract):
         if results:
             return Transaction.from_dict(results[0]['transactions'])
 
+    async def expire_honor(self, contract_txn):
+        await self.expire(contract_txn)
+
+    async def expire_honor(self, contract_txn):
+        await self.expire(contract_txn)
+
+    async def expire(self, contract_txn):
+        from yadacoin.core.transaction import Transaction, Output
+        from yadacoin.core.transactionutils import TU
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
+        balance = await self.config.BU.get_wallet_balance(str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key))))
+        if not float(balance):
+            return
+        payout_txn = await Transaction.generate(
+            fee=0,
+            outputs=[Output(
+                to=address,
+                value=balance
+            )],
+            public_key=self.identity.public_key,
+            requester_rid=contract_txn.requester_rid,
+            requested_rid=contract_txn.requested_rid,
+            rid=contract_txn.rid,
+            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
+        )
+        payout_txn.miner_signature = TU.generate_signature_with_private_key(
+            self.config.private_key,
+            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
+        )
+        return payout_txn
+
     def to_dict(self):
         return {
             Collections.SMART_CONTRACT.value: {
                 'version': self.version,
                 'expiry': self.expiry,
                 'contract_type': self.contract_type,
-                'affiliate_proof_type': self.affiliate_proof_type,
+                'proof_type': self.proof_type,
                 'target': self.target,
                 'market': self.market,
                 'identity': self.identity.to_dict,
@@ -321,7 +353,7 @@ class AffiliateContract(Contract):
             self.get_string(self.version) +
             self.get_string(self.expiry) +
             self.get_string(self.contract_type) +
-            self.get_string(self.affiliate_proof_type) +
+            self.get_string(self.proof_type) +
             self.get_string(self.target) +
             self.get_string(self.market) +
             self.get_string(self.identity.username_signature) +

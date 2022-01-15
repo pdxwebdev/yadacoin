@@ -98,7 +98,6 @@ class Block(object):
         self.index = block_index
         self.prev_hash = prev_hash
         self.nonce = nonce
-        self.transactions = transactions or []
         # txn_hashes = self.get_transaction_hashes()
         # self.set_merkle_root(txn_hashes)
         self.merkle_root = merkle_root
@@ -122,6 +121,14 @@ class Block(object):
             self.special_target = self.target
             # TODO: do we need recalc special target here if special min?
         self.header = header
+
+        self.transactions = []
+        for txn in transactions or []:
+            transaction = Transaction.ensure_instance(txn)
+            transaction.coinbase = Block.is_coinbase(self, transaction)
+            transaction.contract_generated = await transaction.is_contract_generated()
+            self.transactions.append(transaction)
+
         return self
 
     async def copy(self):
@@ -161,78 +168,35 @@ class Block(object):
         fee_sum = 0.0
         used_sigs = []
         used_inputs = {}
-        for txn in transactions:
-            try:
-                if isinstance(txn, Transaction):
-                    transaction_obj = txn
-                else:
-                    transaction_obj = Transaction.from_dict(txn)
+        regular_txns = []
+        generated_txns = []
+        for x in transactions:
+            x = Transaction.ensure_instance(x)
+            if await x.is_contract_generated():
+                generated_txns.append(x)
+            else:
+                regular_txns.append(x)
 
-                if transaction_obj.transaction_signature in used_sigs:
-                    print('duplicate transaction found and removed')
-                    continue
+        await Block.validate_transactions(
+            regular_txns,
+            transaction_objs,
+            used_sigs,
+            used_inputs,
+            fee_sum,
+            index,
+            xtime
+        )
 
-                await transaction_obj.verify()
-                used_sigs.append(transaction_obj.transaction_signature)
-            except:
-                raise InvalidTransactionException("invalid transactions")
-            try:
-                if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
-                    config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
-                    app_log.debug("Block embeds txn too far in the future {} {}".format(xtime, transaction_obj.time))
-                    continue
-
-                if transaction_obj.inputs:
-                    failed = False
-                    input_ids = []
-                    for x in transaction_obj.inputs:
-                        if (x.id, transaction_obj.public_key) in used_inputs:
-                            failed = True
-                        used_inputs[(x.id, transaction_obj.public_key)] = transaction_obj
-                        input_ids.append(x.id)
-                    is_input_spent = await config.BU.is_input_spent(input_ids, transaction_obj.public_key)
-                    if is_input_spent:
-                        failed = True
-                    if len(input_ids) != len(list(set(input_ids))):
-                        failed = True
-                    if failed:
-                        continue
-
-                contract_txns = config.mongo.async_db.blocks.aggregate([
-                    {
-                        '$match': {
-                            'transactions.contract.rid': transaction_obj.requested_rid
-                        }
-                    },
-                    {
-                        '$unwind': '$transactions'
-                    },
-                    {
-                        '$match': {
-                            'txn.contract.rid': transaction_obj.requested_rid
-                        }
-                    },
-                    {
-                        '$project': {
-                            'txn': '$transactions'
-                        }
-                    },
-                ])
-
-                async for contract_txn in contract_txns:
-                    txn = Transaction.from_dict(contract_txn)
-                    if index > txn.contract.expiry:
-                        continue
-                    payout_txn = txn.contract.process(transaction_obj)
-                    fee_sum += float(payout_txn.fee)
-
-                transaction_objs.append(transaction_obj)
-
-                fee_sum += float(transaction_obj.fee)
-            except Exception as e:
-                await config.mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
-                config.app_log.debug('Exception {}'.format(e))
-                continue
+        await Block.validate_transactions(
+            generated_txns,
+            transaction_objs,
+            used_sigs,
+            used_inputs,
+            fee_sum,
+            index,
+            xtime,
+            extra_txns=True
+        )
 
         block_reward = CHAIN.get_block_reward(index)
         coinbase_txn = await Transaction.generate(
@@ -246,13 +210,12 @@ class Block(object):
         )
         transaction_objs.append(coinbase_txn)
 
-        transactions = transaction_objs
         block = await cls.init_async(
             version=version,
             block_time=xtime,
             block_index=index,
             prev_hash=prev_hash,
-            transactions=transactions,
+            transactions=transaction_objs,
             public_key=public_key,
             target=target
         )
@@ -268,6 +231,60 @@ class Block(object):
             )
             block.signature = TU.generate_signature(block.hash, private_key)
         return block
+
+    @staticmethod
+    async def validate_transactions(
+        txns,
+        transaction_objs,
+        used_sigs,
+        used_inputs,
+        fee_sum,
+        index,
+        xtime,
+        extra_txns=False
+    ):
+        config = get_config()
+        for transaction_obj in txns:
+            try:
+                if transaction_obj.transaction_signature in used_sigs:
+                    raise InvalidTransactionException('duplicate transaction found and removed')
+
+                if extra_txns:
+                    transaction_obj.extra_txns = transaction_objs
+
+                await transaction_obj.verify()
+                used_sigs.append(transaction_obj.transaction_signature)
+            except Exception as e:
+                await Transaction.handle_exception(e, transaction_obj)
+                continue
+            try:
+                if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
+                    config.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature}, multi=True)
+                    raise InvalidTransactionException("Block embeds txn too far in the future {} {}".format(xtime, transaction_obj.time))
+
+                if transaction_obj.inputs:
+                    failed = False
+                    input_ids = []
+                    for x in transaction_obj.inputs:
+                        if (x.id, transaction_obj.public_key) in used_inputs:
+                            failed = True
+                        used_inputs[(x.id, transaction_obj.public_key)] = transaction_obj
+                        input_ids.append(x.id)
+                    is_input_spent = await config.BU.is_input_spent(input_ids, transaction_obj.public_key)
+                    if is_input_spent:
+                        failed = True
+                    if len(input_ids) != len(list(set(input_ids))):
+                        failed = True
+                    if failed:
+                        raise InvalidTransactionException(f"Transaction has inputs already spent: {transaction_obj.transaction_signature}")
+
+                fee_sum += float(transaction_obj.fee)
+            except Exception as e:
+                await Transaction.handle_exception(e, transaction_obj)
+                continue
+
+            transaction_objs.append(transaction_obj)
+
 
     def little_hash(self):
         little_hex = bytearray.fromhex(self.hash)
@@ -324,7 +341,7 @@ class Block(object):
         if block.get('special_target', 0) == 0:
             block['special_target'] = block.get('target')
 
-        block_inst = await cls.init_async(
+        return await cls.init_async(
             version=block.get('version'),
             block_time=block.get('time'),
             block_index=block.get('index'),
@@ -332,6 +349,7 @@ class Block(object):
             prev_hash=block.get('prevHash'),
             nonce=block.get('nonce'),
             block_hash=block.get('hash'),
+            transactions=block.get('transactions'),
             merkle_root=block.get('merkleRoot'),
             signature=block.get('id'),
             special_min=block.get('special_min'),
@@ -339,17 +357,6 @@ class Block(object):
             target=int(block.get('target'), 16),
             special_target=int(block.get('special_target', 0), 16)
         )
-
-        transactions = []
-
-        for txn in block.get('transactions'):
-            transaction = Transaction.from_dict(txn)
-            transaction.coinbase = Block.is_coinbase(block_inst, transaction)
-            transaction.contract_generated = await transaction.is_contract_generated()
-            transactions.append(transaction)
-
-        block_inst.transactions = transactions
-        return block_inst
 
     @classmethod
     async def from_json(cls, block_json):
@@ -439,6 +446,9 @@ class Block(object):
                 for output in txn.outputs:
                     coinbase_sum += float(output.value)
             elif txn.miner_signature:
+                result = verify_signature(base64.b64decode(txn.miner_signature), self.signature.encode('utf-8'), bytes.fromhex(self.public_key))
+                if not result:
+                    raise Exception("block signature1 is invalid")
                 await txn.relationship.verify_generation(self, txn)
             else:
                 fee_sum += float(txn.fee)

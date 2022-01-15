@@ -433,6 +433,7 @@ class MiningPool(object):
             transaction_objs.setdefault(transaction_obj.requested_rid, [])
             transaction_objs[transaction_obj.requested_rid].append(transaction_obj)
 
+        # process recurring payments
         generated_txns = []
         blockchain_smart_contract_objs = self.mongo.async_db.blocks.aggregate([
             {
@@ -500,6 +501,8 @@ class MiningPool(object):
                         generated_txns.append(payout_txn)
                 except:
                     pass
+
+        # process expired contracts
         used_public_keys = []
         expired_blockchain_smart_contract_objs = self.mongo.async_db.blocks.aggregate([
             {
@@ -543,6 +546,8 @@ class MiningPool(object):
                 self.config.app_log.warning('transaction unrecognizable, skipping')
                 return
 
+            transaction_obj.contract_generated = await transaction_obj.is_contract_generated()
+
             await transaction_obj.verify()
 
             if transaction_obj.transaction_signature in used_sigs:
@@ -572,64 +577,8 @@ class MiningPool(object):
             else:
                 return transaction_obj
 
-        except MissingInputTransactionException as e:
-            self.config.app_log.warning('MissingInputTransactionException: transaction removed')
-            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-            self.mongo.db.failed_transactions.insert({'reason': 'MissingInputTransactionException', 'txn': transaction_obj.to_dict()})
-
-        except InvalidTransactionSignatureException as e:
-            self.config.app_log.warning('InvalidTransactionSignatureException: transaction removed')
-            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-            self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction_obj.to_dict()})
-
-        except InvalidTransactionException as e:
-            self.config.app_log.warning('InvalidTransactionException: transaction removed')
-            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-            self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
-
-        except TransactionInputOutputMismatchException as e:
-            self.config.app_log.warning('TransactionInputOutputMismatchException: transaction removed')
-            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-            self.mongo.db.failed_transactions.insert({'reason': 'TransactionInputOutputMismatchException', 'txn': transaction_obj.to_dict()})
-
-        except TotalValueMismatchException as e:
-            self.config.app_log.warning('TotalValueMismatchException: transaction removed')
-            self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-            self.mongo.db.failed_transactions.insert({'reason': 'TotalValueMismatchException', 'txn': transaction_obj.to_dict()})
-
         except Exception as e:
-            self.config.app_log.warning(format_exc())
-            self.mongo.db.miner_transactions.remove({'id': txn['id']})
-            self.mongo.db.failed_transactions.insert({'reason': 'Unhandled exception', 'error': format_exc()})
-
-    async def get_purchase_txn(self, transaction_obj):
-        purchase_txn_blocks = self.config.mongo.async_db.blocks.find({
-            'transactions.requested_rid': transaction_obj.requested_rid,
-            'transactions.id': {'$ne': transaction_obj.transaction_signature}
-        })
-        smart_contract_obj = None
-        highest_amount = 0
-        winning_purchase_txn = None
-        async for purchase_txn_block in purchase_txn_blocks:
-            for purchase_txn in purchase_txn_block.get('transactions'):
-                purchase_txn_obj = Transaction.from_dict(purchase_txn)
-                if transaction_obj.requested_rid != purchase_txn_obj.requested_rid:
-                    continue
-                smart_contract_obj = await Contract.get_smart_contract(purchase_txn_obj)
-                if not smart_contract_obj:
-                    continue
-                purchase_amount = await self.get_amount(smart_contract_obj, purchase_txn_obj)
-                if purchase_amount > highest_amount:
-                    winning_purchase_txn = purchase_txn_obj
-        return smart_contract_obj, winning_purchase_txn
-
-    async def get_amount(self, smart_contract_obj, purchase_txn_obj):
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(smart_contract_obj.relationship.identity.public_key)))
-        amount = 0
-        for output in purchase_txn_obj.outputs:
-            if output.to == address:
-                amount += output.value
-        return amount
+            await Transaction.handle_exception(e, transaction_obj)
 
     async def accept_block(self, block):
         from yadacoin.core.consensus import ProcessingQueueItem

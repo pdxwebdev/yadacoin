@@ -6372,6 +6372,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 var CreateSalePage = /** @class */ (function () {
     function CreateSalePage(navCtrl, navParams, graphService, bulletinSecretService, settingsService, websocketService, transactionService, alertCtrl, ahttp, smartContractService) {
+        var _this = this;
         this.navCtrl = navCtrl;
         this.navParams = navParams;
         this.graphService = graphService;
@@ -6386,7 +6387,11 @@ var CreateSalePage = /** @class */ (function () {
         this.market = market.relationship[this.settingsService.collections.MARKET];
         this.item = this.navParams.get('item');
         this.asset = this.item.relationship[this.settingsService.collections.ASSET];
-        this.asset_proof_type = this.smartContractService.assetProofTypes.FIRST_COME;
+        this.proof_type = this.smartContractService.assetProofTypes.FIRST_COME;
+        this.graphService.getBlockHeight()
+            .then(function (data) {
+            _this.settingsService.latest_block = data;
+        });
     }
     CreateSalePage.prototype.presentError = function (field) {
         var alert = this.alertCtrl.create();
@@ -6403,8 +6408,8 @@ var CreateSalePage = /** @class */ (function () {
             this.presentError('price');
             return;
         }
-        if (!this.asset_proof_type) {
-            this.presentError('asset_proof_type');
+        if (!this.proof_type) {
+            this.presentError('proof_type');
             return;
         }
         var alert = this.alertCtrl.create();
@@ -6416,7 +6421,7 @@ var CreateSalePage = /** @class */ (function () {
         alert.addButton({
             text: 'Confirm',
             handler: function (data) {
-                var contract = _this.smartContractService.generateChangeOfOwnership(_this.asset, _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), parseFloat(_this.price), _this.asset_proof_type, _this.market, _this.expiry);
+                var contract = _this.smartContractService.generateChangeOfOwnership(_this.asset, _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), parseFloat(_this.price), _this.proof_type, _this.market, _this.expiry);
                 var rids = _this.graphService.generateRids(contract.identity, _this.market, _this.settingsService.collections.SMART_CONTRACT);
                 _this.websocketService.newtxn(contract, rids, _this.settingsService.collections.SMART_CONTRACT, _this.market.username_signature)
                     .then(function () {
@@ -6428,7 +6433,7 @@ var CreateSalePage = /** @class */ (function () {
     };
     CreateSalePage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'create-sale',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Create new sale</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Asset info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          {{asset.identity.username}}\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n    <ion-col col-md-4>\n      <h3>Sale info</h3>\n      <ion-item>\n        <ion-label color="primary">Price</ion-label>\n        <ion-input type="number" [(ngModel)]="price" placeholder="What\'s the price of this asset?"></ion-input>\n      </ion-item>\n      <ion-item>\n        <ion-label color="primary">Expires</ion-label>\n        <ion-input type="number" [(ngModel)]="expiry" placeholder="How many blocks until this sale ends?"></ion-input>\n      </ion-item>\n      <h3>Sale type</h3>\n      <ion-list radio-group [(ngModel)]="asset_proof_type">\n        <ion-item>\n          <ion-label>Buy now</ion-label>\n          <ion-radio value="first_come" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Auction</ion-label>\n          <ion-radio value="auction"></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ion-item>\n        <button ion-button secondary (click)="save()" [disabled]="!price">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/
+            selector: 'create-sale',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Create new sale</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Asset info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          {{asset.identity.username}}\n        </ion-card-content>\n      </ion-card>\n    </ion-col>\n    <ion-col col-md-4>\n      <h3>Sale info</h3>\n      <ion-item>\n        <ion-label color="primary">Price</ion-label>\n        <ion-input type="number" [(ngModel)]="price" placeholder="What\'s the price of this asset?"></ion-input>\n      </ion-item>\n      <ion-item>\n        <ion-label color="primary">Expires</ion-label>\n        <ion-input type="number" [(ngModel)]="expiry" placeholder="How many blocks until this sale ends?"></ion-input>\n      </ion-item>\n      <h3>Sale type</h3>\n      <ion-list radio-group [(ngModel)]="proof_type">\n        <ion-item>\n          <ion-label>Buy now</ion-label>\n          <ion-radio value="first_come" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Auction</ion-label>\n          <ion-radio value="auction"></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ion-item>\n        <button ion-button secondary (click)="save()" [disabled]="!price">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createsale.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -6506,7 +6511,7 @@ var CreatePromoPage = /** @class */ (function () {
         });
         var market = this.navParams.get('market');
         this.market = market.relationship[this.settingsService.collections.MARKET];
-        this.affiliate_proof_type = this.smartContractService.promoProofTypes.HONOR;
+        this.proof_type = this.smartContractService.promoProofTypes.HONOR;
         this.promotedIdentity = 'me';
         this.graphService.getBlockHeight()
             .then(function (data) {
@@ -6603,7 +6608,7 @@ var CreatePromoPage = /** @class */ (function () {
                 }
                 _this.walletService.get(_this.fund_amount)
                     .then(function () {
-                    var contract = _this.smartContractService.generateNewRelationshipPromo(_this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), _this.affiliate_proof_type, selectedIdentity, _this.market, _this.pay_referrer, _this.pay_referrer_operator, _this.pay_referrer_payout_type, parseInt(_this.pay_referrer_payout_interval), parseFloat(_this.pay_referrer_amount), _this.pay_referee, _this.pay_referee_operator, _this.pay_referee_payout_type, parseInt(_this.pay_referee_payout_interval), parseFloat(_this.pay_referee_amount), parseInt(_this.expiry));
+                    var contract = _this.smartContractService.generateNewRelationshipPromo(_this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), _this.proof_type, selectedIdentity, _this.market, _this.pay_referrer, _this.pay_referrer_operator, _this.pay_referrer_payout_type, parseInt(_this.pay_referrer_payout_interval), parseFloat(_this.pay_referrer_amount), _this.pay_referee, _this.pay_referee_operator, _this.pay_referee_payout_type, parseInt(_this.pay_referee_payout_interval), parseFloat(_this.pay_referee_amount), parseInt(_this.expiry));
                     var rids = _this.graphService.generateRids(contract.identity, _this.market, _this.settingsService.collections.SMART_CONTRACT);
                     var contractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(contract.identity.public_key, 'hex')).getAddress();
                     var outputs = [];
@@ -6765,12 +6770,12 @@ var MarketItemPage = /** @class */ (function () {
         // generate purchase txn
         var alert = this.alertCtrl.create();
         var buttonText = '';
-        if (this.smartContract.asset_proof_type === this.smartContractService.assetProofTypes.FIRST_COME) {
+        if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.FIRST_COME) {
             alert.setTitle('Buy Asset');
             alert.setSubTitle('Are you sure you want to buy this asset?');
             buttonText = 'Buy';
         }
-        else if (this.smartContract.asset_proof_type === this.smartContractService.assetProofTypes.AUCTION) {
+        else if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.AUCTION) {
             alert.setTitle('Bid on Asset');
             alert.setSubTitle('Are you sure you want to place a bid for this asset?');
             buttonText = 'Bid';
@@ -6850,7 +6855,7 @@ var MarketItemPage = /** @class */ (function () {
     };
     MarketItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.asset_proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.asset_proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.asset_proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-card>\n      <ion-item *ngIf="smartContract.asset_proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.asset_proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.asset_proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.asset_proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.asset_proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item>\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
+            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item>\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -8772,7 +8777,7 @@ var SmartContractService = /** @class */ (function () {
             NEW_RELATIONSHIP: 'new_relationship'
         };
     }
-    SmartContractService.prototype.generateChangeOfOwnership = function (asset, creator, amount, asset_proof_type, market, contract_expiry) {
+    SmartContractService.prototype.generateChangeOfOwnership = function (asset, creator, amount, proof_type, market, contract_expiry) {
         var key = foobar.bitcoin.ECPair.makeRandom();
         var wif = key.toWIF();
         var username = '';
@@ -8802,7 +8807,7 @@ var SmartContractService = /** @class */ (function () {
             payout_amount: payout_amount,
             payout_operator: payout_operator,
             payout_type: payout_type,
-            asset_proof_type: asset_proof_type,
+            proof_type: proof_type,
             price: price,
             identity: identity,
             asset: asset,
@@ -8810,7 +8815,7 @@ var SmartContractService = /** @class */ (function () {
             market: market_rid
         };
     };
-    SmartContractService.prototype.generateNewRelationshipPromo = function (creator, affiliate_proof_type, target, market, pay_referrer, pay_referrer_operator, pay_referrer_payout_type, pay_referrer_payout_interval, pay_referrer_amount, pay_referee, pay_referee_operator, pay_referee_payout_type, pay_referee_payout_interval, pay_referee_amount, contract_expiry) {
+    SmartContractService.prototype.generateNewRelationshipPromo = function (creator, proof_type, target, market, pay_referrer, pay_referrer_operator, pay_referrer_payout_type, pay_referrer_payout_interval, pay_referrer_amount, pay_referee, pay_referee_operator, pay_referee_payout_type, pay_referee_payout_interval, pay_referee_amount, contract_expiry) {
         var key = foobar.bitcoin.ECPair.makeRandom();
         var wif = key.toWIF();
         var username = '';
@@ -8833,7 +8838,7 @@ var SmartContractService = /** @class */ (function () {
             version: this.version,
             expiry: expiry,
             contract_type: contract_type,
-            affiliate_proof_type: affiliate_proof_type,
+            proof_type: proof_type,
             identity: identity,
             creator: creator,
             target: target,
@@ -8864,7 +8869,7 @@ var SmartContractService = /** @class */ (function () {
                 contract.payout_operator +
                 contract.payout_type +
                 contract.market +
-                contract.asset_proof_type +
+                contract.proof_type +
                 contract.price +
                 contract.identity.username_signature +
                 contract.asset +
@@ -8885,7 +8890,7 @@ var SmartContractService = /** @class */ (function () {
                 contract.version +
                 contract.expiry +
                 contract.contract_type +
-                contract.affiliate_proof_type +
+                contract.proof_type +
                 contract.target +
                 contract.market +
                 contract.identity.username_signature +

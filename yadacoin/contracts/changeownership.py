@@ -40,7 +40,7 @@ class ChangeOwnershipContract(Contract):
         payout_operator,
         payout_type,
         market,
-        asset_proof_type,
+        proof_type,
         identity,
         creator,
         price,
@@ -50,7 +50,6 @@ class ChangeOwnershipContract(Contract):
             version,
             expiry,
             contract_type,
-            asset_proof_type,
             identity,
             creator
         )
@@ -73,8 +72,8 @@ class ChangeOwnershipContract(Contract):
         if not isinstance(price, float) and not isinstance(price, int):
             self.report_init_error('price')
 
-        if asset_proof_type not in [x.value for x in AssetProofTypes]:
-            self.report_init_error('asset_proof_type')
+        if proof_type not in [x.value for x in AssetProofTypes]:
+            self.report_init_error('proof_type')
 
         self.payout_amount = payout_amount
         self.payout_operator = payout_operator
@@ -82,7 +81,7 @@ class ChangeOwnershipContract(Contract):
         self.market = market
         self.asset = Asset.from_dict(asset) if isinstance(asset, dict) else asset
         self.price = price
-        self.asset_proof_type = asset_proof_type
+        self.proof_type = proof_type
 
     @classmethod
     async def generate(
@@ -93,7 +92,7 @@ class ChangeOwnershipContract(Contract):
         payout_operator=None,
         payout_type=None,
         market=None,
-        asset_proof_type=None,
+        proof_type=None,
         price=None,
         username=None,
         asset=None,
@@ -108,7 +107,7 @@ class ChangeOwnershipContract(Contract):
             payout_operator=payout_operator or PayoutOperators.FIXED,
             payout_type=payout_type or PayoutType.ONE_TIME.value,
             market=market,
-            asset_proof_type=AssetProofTypes.CONFIRMATION.value,
+            proof_type=AssetProofTypes.CONFIRMATION.value,
             price=price or 1,
             identity=identity,
             asset=asset,
@@ -125,7 +124,11 @@ class ChangeOwnershipContract(Contract):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
         return_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
 
-        bid = await getattr(self, f'get_{self.asset_proof_type}_bid')(contract_txn)
+        if self.proof_type in [AssetProofTypes.CONFIRMATION.value, AssetProofTypes.AUCTION.value]:
+            bid = await getattr(self, f'get_{self.proof_type}_bid')(contract_txn)
+        elif self.proof_type == AssetProofTypes.FIRST_COME.value:
+            bid = trigger_txn
+
         value_sent_to_address = sum([x.value for x in bid.outputs if x.to == address])
 
         payout_txn = Transaction.from_dict({
@@ -137,7 +140,8 @@ class ChangeOwnershipContract(Contract):
             'public_key': self.identity.public_key,
             'requester_rid': trigger_txn.requester_rid,
             'requested_rid': contract_txn.requested_rid,
-            'rid': trigger_txn.rid
+            'rid': trigger_txn.rid,
+            'contract_generated': True
         })
 
         payout_txn.hash = await payout_txn.generate_hash()
@@ -147,7 +151,7 @@ class ChangeOwnershipContract(Contract):
         )
         payout_txn.miner_signature = TU.generate_signature_with_private_key(
             self.config.private_key,
-            hashlib.sha256(payout_txn.transaction_signature).hexdigest().encode('utf-8')
+            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
         )
         return payout_txn
 
@@ -163,8 +167,6 @@ class ChangeOwnershipContract(Contract):
 
     async def verify_first_come(self, contract_txn, trigger_txn):
         await self.verify_input(trigger_txn)
-        if not await self.get_first_come_bid(contract_txn):
-            raise Exception('No bid matching the contract terms found')
 
     async def get_first_come_bid(self, contract_txn):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
@@ -175,7 +177,7 @@ class ChangeOwnershipContract(Contract):
             total_output_to_contract = sum([x.value for x in bid.outputs if x.to == address])
 
             if total_output_to_contract > highest:
-                slected_bid = bid
+                selected_bid = bid
                 highest = total_output_to_contract
         return selected_bid
 
@@ -222,6 +224,95 @@ class ChangeOwnershipContract(Contract):
                 if total_output_to_contract < self.price:
                     return bid
 
+    async def expire_first_come(self, contract_txn):
+        from yadacoin.core.transaction import Transaction, Output
+        from yadacoin.core.transactionutils import TU
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
+        balance = await self.config.BU.get_wallet_balance(str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key))))
+        if not float(balance):
+            return
+        payout_txn = await Transaction.generate(
+            fee=0,
+            outputs=[Output(
+                to=address,
+                value=balance
+            )],
+            public_key=self.identity.public_key,
+            requester_rid=contract_txn.requester_rid,
+            requested_rid=contract_txn.requested_rid,
+            rid=contract_txn.rid,
+            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
+        )
+        payout_txn.miner_signature = TU.generate_signature_with_private_key(
+            self.config.private_key,
+            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
+        )
+        return payout_txn
+
+    async def expire_auction(self, contract_txn):
+        from yadacoin.core.transaction import Transaction, Output, Input
+        from yadacoin.core.transactionutils import TU
+
+        purchase_txn = await self.get_purchase_txn(contract_txn)
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
+        payout = await self.get_amount(contract_txn, purchase_txn)
+        payout_txn = await Transaction.generate(
+            fee=0,
+            outputs=[Output(
+                to=address,
+                value=payout
+            )],
+            inputs=[Input(
+                purchase_txn.transaction_signature
+            )],
+            public_key=self.identity.public_key,
+            requester_rid=contract_txn.requester_rid,
+            requested_rid=contract_txn.requested_rid,
+            rid=contract_txn.rid,
+            private_key=binascii.hexlify(base58.b58decode(self.identity.wif))[2:-10].decode()
+        )
+        payout_txn.miner_signature = TU.generate_signature_with_private_key(
+            self.config.private_key,
+            hashlib.sha256(payout_txn.transaction_signature.encode()).hexdigest()
+        )
+        return payout_txn
+
+    async def get_purchase_txn(self, contract_txn):
+        from yadacoin.core.transaction import Transaction, Output
+        purchase_txn_blocks = self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.requested_rid': contract_txn.requested_rid,
+                    'transactions': {'$elemMatch': {'id': {'$ne': contract_txn.transaction_signature}}}
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.requested_rid': contract_txn.requested_rid,
+                    'transactions.id': {'$ne': contract_txn.transaction_signature}
+                }
+            }
+        ])
+        highest_amount = 0
+        winning_purchase_txn = None
+        async for purchase_txn_block in purchase_txn_blocks:
+            purchase_txn_obj = Transaction.from_dict(purchase_txn_block.get('transactions'))
+            purchase_amount = await self.get_amount(contract_txn, purchase_txn_obj)
+            if purchase_amount > highest_amount:
+                winning_purchase_txn = purchase_txn_obj
+        return winning_purchase_txn
+
+    async def get_amount(self, smart_contract_obj, purchase_txn_obj):
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(smart_contract_obj.relationship.identity.public_key)))
+        amount = 0
+        for output in purchase_txn_obj.outputs:
+            if output.to == address:
+                amount += output.value
+        return amount
+
     def to_dict(self):
         return {
             Collections.SMART_CONTRACT.value: {
@@ -232,7 +323,7 @@ class ChangeOwnershipContract(Contract):
                 'payout_operator': self.payout_operator,
                 'payout_type': self.payout_type,
                 'market': self.market,
-                'asset_proof_type': self.asset_proof_type,
+                'proof_type': self.proof_type,
                 'price': self.price,
                 'identity': self.identity.to_dict,
                 'asset': self.asset.to_dict() if isinstance(self.asset, Asset) else self.asset,
@@ -249,7 +340,7 @@ class ChangeOwnershipContract(Contract):
             self.get_string(self.payout_operator) +
             self.get_string(self.payout_type) +
             self.get_string(self.market) +
-            self.get_string(self.asset_proof_type) +
+            self.get_string(self.proof_type) +
             self.get_string(self.price) +
             self.get_string(self.identity.username_signature) +
             self.get_string(self.asset.to_self.get_stringing() if isinstance(self.asset, Asset) else self.asset) +

@@ -3,6 +3,7 @@ import hashlib
 import os
 import base64
 import time
+from traceback import format_exc
 from logging import getLogger
 from enum import Enum
 
@@ -78,7 +79,8 @@ class Transaction(object):
         seed_rid='',
         version=None,
         miner_signature='',
-        contract_generated=False
+        contract_generated=False,
+        extra_txns=None
     ):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
@@ -99,6 +101,7 @@ class Transaction(object):
         self.extra_blocks = extra_blocks
         self.seed_gateway_rid = seed_gateway_rid,
         self.seed_rid = seed_rid
+        self.extra_txns = extra_txns
 
         if version:
             self.version = version
@@ -358,6 +361,21 @@ class Transaction(object):
             if isinstance(txn_obj.relationship, Contract) and txn_obj.relationship.identity.public_key == self.public_key:
                 return txn_obj
 
+    @staticmethod
+    def ensure_instance(txn):
+        if isinstance(txn, Transaction):
+            return txn
+        else:
+            return Transaction.from_dict(txn)
+
+    @staticmethod
+    async def handle_exception(e, txn):
+        config = get_config()
+        app_log = getLogger("tornado.application")
+        await config.mongo.async_db.failed_transactions.insert_one({'reason': f'{e.__class__.__name__}: {e.msg}','txn': txn.to_dict(), 'error': format_exc()})
+        await config.mongo.async_db.miner_transactions.delete_many({'id': txn.transaction_signature})
+        config.app_log.warning('Exception {}'.format(e))
+
     async def verify(self):
         from yadacoin.contracts.base import Contract
         verify_hash = await self.generate_hash()
@@ -402,6 +420,8 @@ class Transaction(object):
             if not input_txn:
                 if self.extra_blocks:
                     txn_input = await self.find_in_extra_blocks(txn)
+                if not txn_input and self.extra_txns and self.miner_signature:
+                    txn_input = await self.find_in_extra_txns(txn)
                 if not txn_input:
                     result = await self.recover_missing_transaction(txn.id, exclude_recovered_ids)
                     exclude_recovered_ids.append(exclude_recovered_ids)
@@ -505,6 +525,11 @@ class Transaction(object):
             for xtxn in block.transactions:
                 if xtxn.transaction_signature == txn_input.id:
                     return xtxn
+
+    async def find_in_extra_txns(self, txn_input):
+        for xtxn in self.extra_txns:
+            if xtxn.transaction_signature == txn_input.id:
+                return xtxn
 
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
