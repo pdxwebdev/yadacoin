@@ -78,12 +78,12 @@ var SettingsService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_autocomplete_provider__ = __webpack_require__(110);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_forms__ = __webpack_require__(30);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(390);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic2_auto_complete__ = __webpack_require__(391);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_bulletinSecret_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(10);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -331,7 +331,7 @@ var ComposePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__ = __webpack_require__(673);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_4_rxjs_add_operator_map__);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(16);
@@ -522,9 +522,18 @@ var MailItemPage = /** @class */ (function () {
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return OpenGraphParserService; });
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MarketItemPage; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(20);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__profile_profile__ = __webpack_require__(70);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_websocket_service__ = __webpack_require__(37);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -536,106 +545,300 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 };
 
 
-var OpenGraphParserService = /** @class */ (function () {
-    function OpenGraphParserService(ahttp) {
-        this.ahttp = ahttp;
-        this.html = null;
-        this.attrs = null;
-        this.attrs = {
-            "title": "title",
-            "document.title": "title",
-            "description": "description",
-            "twitter:title": "title",
-            "twitter:image": "image",
-            "twitter:description": "description",
-            "og:title": "title",
-            "og:image": "image",
-            "og:image:url": "image",
-            "og:description": "description"
-        };
-    }
-    OpenGraphParserService.prototype.parseFromUrl = function (url) {
+
+
+
+
+
+
+
+
+
+var MarketItemPage = /** @class */ (function () {
+    function MarketItemPage(navCtrl, navParams, walletService, graphService, bulletinSecretService, alertCtrl, transactionService, settingsService, smartContractService, websocketService, ahttp) {
         var _this = this;
-        var output = { url: url };
-        this.html = '';
-        return new Promise(function (resolve, reject) {
-            if (_this.isURL(url)) {
-                _this.ahttp.get(url)
-                    .subscribe(function (res) {
-                    _this.html = res['_body'];
-                    if (_this.isYouTubeURL(url)) {
-                        var YTID = _this.getYouTubeID(url);
-                        output['image'] = 'https://img.youtube.com/vi/' + YTID + '/0.jpg';
-                    }
-                    for (var key in _this.attrs) {
-                        var attr = _this.getAttr(key);
-                        if (attr) {
-                            var escape = document.createElement('textarea');
-                            escape.innerHTML = attr;
-                            output[_this.attrs[key]] = escape.textContent;
-                        }
-                    }
-                    resolve(output);
-                });
-            }
-            else {
-                resolve(false);
-            }
+        this.navCtrl = navCtrl;
+        this.navParams = navParams;
+        this.walletService = walletService;
+        this.graphService = graphService;
+        this.bulletinSecretService = bulletinSecretService;
+        this.alertCtrl = alertCtrl;
+        this.transactionService = transactionService;
+        this.settingsService = settingsService;
+        this.smartContractService = smartContractService;
+        this.websocketService = websocketService;
+        this.ahttp = ahttp;
+        this.item = navParams.get('item');
+        this.smartContract = this.item.relationship[this.settingsService.collections.SMART_CONTRACT];
+        this.market = navParams.get('market').relationship[this.settingsService.collections.MARKET];
+        this.bids = [];
+        this.affiliates = [];
+        this.sentPage = 1;
+        this.past_sent_page_cache = {};
+        this.past_sent_transactions = [];
+        this.refresh();
+        this.price = this.smartContract.price;
+        this.minPrice = this.smartContract.price;
+        this.graphService.getBlockHeight()
+            .then(function (data) {
+            _this.settingsService.latest_block = data;
         });
-    };
-    OpenGraphParserService.prototype.isURL = function (str) {
-        var pattern = new RegExp('^(https?:\\/\\/)' + // protocol
-            '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.?)+[a-z]{2,}|' + // domain name
-            '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
-            '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
-            '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
-            '(\\#[-a-z\\d_]*)?$', 'i'); // fragment locator
-        return pattern.test(str);
-    };
-    OpenGraphParserService.prototype.getYouTubeID = function (url) {
-        var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#\&\?]*).*/;
-        var match = url.match(regExp);
-        return (match && match[7].length == 11) ? match[7] : false;
-    };
-    OpenGraphParserService.prototype.isYouTubeURL = function (str) {
-        return str.indexOf('youtube.com') > -1 || str.indexOf('youtu.be') > -1 || str.indexOf('youtube-nocookie.com') > -1 ? true : false;
-    };
-    OpenGraphParserService.prototype.getAttr = function (attr) {
-        var attrLocation = this.html.indexOf(attr);
-        var beginningToAttr = this.html.substr(0, attrLocation);
-        if (attr === 'title' || attr === 'description') {
-            var tagBodyWithRemainder = this.html.substr(attrLocation + attr.length + 1);
-            var closingTagStart = tagBodyWithRemainder.indexOf('</' + attr);
-            var content = tagBodyWithRemainder.substr(0, closingTagStart);
-            return content;
+        this.prevHeight = this.settingsService.latest_block.height;
+        setInterval(function () {
+            if (_this.prevHeight < _this.settingsService.latest_block.height) {
+                _this.prevHeight = _this.settingsService.latest_block.height;
+                _this.graphService.getSmartContracts(_this.market)
+                    .then(function (smartContracts) {
+                    var item = smartContracts.filter(function (item) {
+                        return item.id === _this.item.id;
+                    })[0];
+                    _this.item = item || _this.item;
+                });
+                _this.refresh();
+            }
+        }, 1000);
+    }
+    MarketItemPage.prototype.refresh = function (e) {
+        var _this = this;
+        if (e === void 0) { e = null; }
+        var identity = JSON.parse(JSON.stringify(this.smartContract.identity));
+        if (this.smartContract.contract_type === this.smartContractService.contractTypes.CHANGE_OWNERSHIP) {
+            identity.collection = this.settingsService.collections.BID;
         }
         else {
-            var reversed = beginningToAttr.split('').reverse().join('');
-            var find = 'atem<';
-            var tagStart = reversed.indexOf(find);
-            var tagWithRemainder = this.html.substr(beginningToAttr.length - tagStart - 5);
-            var tagEnd = tagWithRemainder.indexOf('>');
-            var tag = tagWithRemainder.substr(0, tagEnd + 1);
-            var contentAttrStart = tag.indexOf('content');
-            if (contentAttrStart < 0) {
-                contentAttrStart = tag.indexOf('value');
+            identity.collection = this.settingsService.collections.AFFILIATE;
+        }
+        var rids = this.graphService.generateRids(identity);
+        var scAddress = this.bulletinSecretService.publicKeyToAddress(this.smartContract.identity.public_key);
+        this.walletService.get(this.price, scAddress)
+            .then(function (wallet) {
+            _this.balance = _this.item.pending ? wallet.pending_balance : wallet.balance;
+            return _this.graphService.getBids(rids.requested_rid, _this.market);
+        })
+            .then(function (bids) {
+            _this.bids = bids.sort(function (a, b) {
+                var aamount = _this.getAmount(a);
+                var bamount = _this.getAmount(b);
+                if (aamount < bamount)
+                    return 1;
+                if (aamount > bamount)
+                    return -1;
+                if (aamount === bamount)
+                    return 0;
+            });
+            if (_this.bids.slice(0).length > 0) {
+                _this.price = _this.getAmount(_this.bids[0]);
+                _this.minPrice = _this.price;
             }
-            var contentAttrSub = tag.substr(contentAttrStart);
-            var contentAttrStartQuote = contentAttrSub.indexOf('"');
-            var contentWithRemainder = contentAttrSub.substr(contentAttrStartQuote + 1);
-            var contentEnd = contentWithRemainder.indexOf('"');
-            content = contentWithRemainder.substr(0, contentEnd);
-            return content;
+        });
+        this.graphService.getAffiliates(rids.requested_rid, this.market)
+            .then(function (affiliates) {
+            _this.affiliates = affiliates.filter(function (item) {
+                if (item.public_key === _this.bulletinSecretService.identity.public_key ||
+                    _this.item.public_key === _this.bulletinSecretService.identity.public_key)
+                    return true;
+            });
+        });
+        this.smartContractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(this.smartContract.identity.public_key, 'hex')).getAddress();
+        this.getSentHistory();
+        setTimeout(function () {
+            e && e.complete();
+        }, 1000);
+    };
+    MarketItemPage.prototype.getSentHistory = function (public_key) {
+        var _this = this;
+        if (public_key === void 0) { public_key = null; }
+        return new Promise(function (resolve, reject) {
+            var options = new __WEBPACK_IMPORTED_MODULE_10__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
+            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-sent-txns?page=' + _this.sentPage + '&public_key=' + _this.smartContract.identity.public_key + '&origin=' + encodeURIComponent(window.location.origin), options)
+                .subscribe(function (res) {
+                _this.past_sent_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
+                _this.getSentOutputValue(_this.past_sent_transactions);
+                _this.past_sent_page_cache[_this.sentPage] = _this.past_sent_transactions;
+                resolve(res);
+            }, function (err) {
+                return reject('cannot unlock wallet');
+            });
+        });
+    };
+    MarketItemPage.prototype.prevSentPage = function () {
+        this.sentPage--;
+        var result = this.past_sent_transactions = this.past_sent_page_cache[this.sentPage] || [];
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getSentHistory();
+    };
+    MarketItemPage.prototype.nextSentPage = function () {
+        this.sentPage++;
+        var result = this.past_sent_page_cache[this.sentPage] || [];
+        if (result.length > 0) {
+            this.past_sent_transactions = result;
+            return;
+        }
+        return this.getSentHistory();
+    };
+    MarketItemPage.prototype.getSentOutputValue = function (array) {
+        for (var i = 0; i < array.length; i++) {
+            var txn = array[i];
+            if (!array[i]['value']) {
+                array[i]['value'] = 0;
+            }
+            for (var j = 0; j < txn['outputs'].length; j++) {
+                var output = txn['outputs'][j];
+                if (this.smartContractAddress !== output.to) {
+                    array[i]['value'] += parseFloat(output.value);
+                    if (output.to)
+                        array[i]['to'] = output.to;
+                }
+                else {
+                    if (output.to)
+                        array[i]['from'] = output.to;
+                }
+            }
+            array[i]['value'] = array[i]['value'].toFixed(8);
         }
     };
-    OpenGraphParserService = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1__angular_http__["b" /* Http */]])
-    ], OpenGraphParserService);
-    return OpenGraphParserService;
+    MarketItemPage.prototype.sortFunc = function (a, b) {
+        if (parseInt(a.time) < parseInt(b.time))
+            return 1;
+        if (parseInt(a.time) > parseInt(b.time))
+            return -1;
+        return 0;
+    };
+    MarketItemPage.prototype.convertDateTime = function (timestamp) {
+        var a = new Date(timestamp * 1000);
+        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var year = a.getFullYear();
+        var month = months[a.getMonth()];
+        var date = a.getDate();
+        var hour = '0' + a.getHours();
+        var min = '0' + a.getMinutes();
+        var time = date + '-' + month + '-' + year + ' ' + hour.substr(-2) + ':' + min.substr(-2);
+        return time;
+    };
+    MarketItemPage.prototype.getAmount = function (bid) {
+        var total = 0;
+        for (var i = 0; i < bid.outputs.length; i++) {
+            if (bid.outputs[i].to === this.smartContractAddress)
+                total += bid.outputs[i].value;
+        }
+        return total.toFixed(8);
+    };
+    MarketItemPage.prototype.openProfile = function (identity) {
+        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__profile_profile__["a" /* ProfilePage */], {
+            identity: identity
+        });
+    };
+    MarketItemPage.prototype.buy = function (e) {
+        var _this = this;
+        // generate purchase txn
+        var alert = this.alertCtrl.create();
+        var buttonText = '';
+        if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.FIRST_COME) {
+            alert.setTitle('Buy Asset');
+            alert.setSubTitle('Are you sure you want to buy this asset?');
+            buttonText = 'Buy';
+        }
+        else if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.AUCTION) {
+            alert.setTitle('Bid on Asset');
+            alert.setSubTitle('Are you sure you want to place a bid for this asset?');
+            buttonText = 'Bid';
+        }
+        alert.addButton({
+            text: 'Cancel'
+        });
+        alert.addButton({
+            text: buttonText,
+            handler: function (data) {
+                var scAddress = _this.bulletinSecretService.publicKeyToAddress(_this.smartContract.identity.public_key);
+                _this.walletService.get(_this.price)
+                    .then(function () {
+                    var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.BID);
+                    return _this.websocketService.newtxn(_this.graphService.toIdentity(_this.bulletinSecretService.identity), rids, _this.settingsService.collections.BID, _this.market.username_signature, {
+                        to: scAddress,
+                        value: _this.price
+                    });
+                })
+                    .then(function () {
+                    return _this.refresh();
+                })
+                    .catch(function (err) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Transaction failed');
+                    alert.setSubTitle(err);
+                    alert.addButton({
+                        text: 'Ok'
+                    });
+                    alert.present();
+                });
+            }
+        });
+        alert.present();
+    };
+    MarketItemPage.prototype.joinPromotion = function (e) {
+        var _this = this;
+        // generate purchase txn
+        var alert = this.alertCtrl.create();
+        var buttonText = '';
+        alert.setTitle('Join promotion');
+        alert.setSubTitle('Are you sure you want to join this promotion?');
+        buttonText = 'Join';
+        alert.addButton({
+            text: 'Cancel'
+        });
+        alert.addButton({
+            text: buttonText,
+            handler: function (data) {
+                var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.AFFILIATE);
+                _this.websocketService.newtxn({
+                    referrer: _this.graphService.toIdentity(_this.bulletinSecretService.identity),
+                    target: _this.smartContract.target,
+                    contract: _this.graphService.toIdentity(_this.smartContract.identity)
+                }, rids, _this.settingsService.collections.AFFILIATE, _this.market.username_signature)
+                    .then(function () {
+                    return _this.refresh();
+                })
+                    .catch(function (err) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle('Transaction failed');
+                    alert.setSubTitle(err);
+                    alert.addButton({
+                        text: 'Ok'
+                    });
+                    alert.present();
+                });
+            }
+        });
+        alert.present();
+    };
+    MarketItemPage.prototype.toHex = function (byteArray) {
+        var callback = function (byte) {
+            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+        };
+        return Array.from(byteArray, callback).join('');
+    };
+    MarketItemPage = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
+            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n          <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n          <strong>Expired: </strong>{{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n        Expired: {{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n  <ion-row>\n    <ion-col>\n      <h4>Transaction history</h4>\n      <strong>Sent</strong><br>\n      <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n      <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n      <ion-list>\n        <ion-item *ngFor="let txn of past_sent_transactions">\n          <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n          <ion-label>{{txn.from}}</ion-label>\n          <ion-label>{{txn.to}}</ion-label>\n          <ion-label>{{txn.value}}</ion-label>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
+        }),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
+            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
+            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
+            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
+            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
+            __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__["a" /* TransactionService */],
+            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
+            __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__["a" /* SmartContractService */],
+            __WEBPACK_IMPORTED_MODULE_9__app_websocket_service__["a" /* WebSocketService */],
+            __WEBPACK_IMPORTED_MODULE_10__angular_http__["b" /* Http */]])
+    ], MarketItemPage);
+    return MarketItemPage;
 }());
 
-//# sourceMappingURL=opengraphparser.service.js.map
+//# sourceMappingURL=marketitem.js.map
 
 /***/ }),
 
@@ -860,6 +1063,127 @@ var BulletinSecretService = /** @class */ (function () {
 
 /***/ }),
 
+/***/ 140:
+/***/ (function(module, __webpack_exports__, __webpack_require__) {
+
+"use strict";
+/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return OpenGraphParserService; });
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_http__ = __webpack_require__(18);
+var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
+    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
+    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
+    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
+    return c > 3 && r && Object.defineProperty(target, key, r), r;
+};
+var __metadata = (this && this.__metadata) || function (k, v) {
+    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+
+
+var OpenGraphParserService = /** @class */ (function () {
+    function OpenGraphParserService(ahttp) {
+        this.ahttp = ahttp;
+        this.html = null;
+        this.attrs = null;
+        this.attrs = {
+            "title": "title",
+            "document.title": "title",
+            "description": "description",
+            "twitter:title": "title",
+            "twitter:image": "image",
+            "twitter:description": "description",
+            "og:title": "title",
+            "og:image": "image",
+            "og:image:url": "image",
+            "og:description": "description"
+        };
+    }
+    OpenGraphParserService.prototype.parseFromUrl = function (url) {
+        var _this = this;
+        var output = { url: url };
+        this.html = '';
+        return new Promise(function (resolve, reject) {
+            if (_this.isURL(url)) {
+                _this.ahttp.get(url)
+                    .subscribe(function (res) {
+                    _this.html = res['_body'];
+                    if (_this.isYouTubeURL(url)) {
+                        var YTID = _this.getYouTubeID(url);
+                        output['image'] = 'https://img.youtube.com/vi/' + YTID + '/0.jpg';
+                    }
+                    for (var key in _this.attrs) {
+                        var attr = _this.getAttr(key);
+                        if (attr) {
+                            var escape = document.createElement('textarea');
+                            escape.innerHTML = attr;
+                            output[_this.attrs[key]] = escape.textContent;
+                        }
+                    }
+                    resolve(output);
+                });
+            }
+            else {
+                resolve(false);
+            }
+        });
+    };
+    OpenGraphParserService.prototype.isURL = function (str) {
+        var pattern = new RegExp('^(https?:\\/\\/)' + // protocol
+            '((([a-z\\d]([a-z\\d-]*[a-z\\d])*)\\.?)+[a-z]{2,}|' + // domain name
+            '((\\d{1,3}\\.){3}\\d{1,3}))' + // OR ip (v4) address
+            '(\\:\\d+)?(\\/[-a-z\\d%_.~+]*)*' + // port and path
+            '(\\?[;&a-z\\d%_.~+=-]*)?' + // query string
+            '(\\#[-a-z\\d_]*)?$', 'i'); // fragment locator
+        return pattern.test(str);
+    };
+    OpenGraphParserService.prototype.getYouTubeID = function (url) {
+        var regExp = /^.*((youtu.be\/)|(v\/)|(\/u\/\w\/)|(embed\/)|(watch\?))\??v?=?([^#\&\?]*).*/;
+        var match = url.match(regExp);
+        return (match && match[7].length == 11) ? match[7] : false;
+    };
+    OpenGraphParserService.prototype.isYouTubeURL = function (str) {
+        return str.indexOf('youtube.com') > -1 || str.indexOf('youtu.be') > -1 || str.indexOf('youtube-nocookie.com') > -1 ? true : false;
+    };
+    OpenGraphParserService.prototype.getAttr = function (attr) {
+        var attrLocation = this.html.indexOf(attr);
+        var beginningToAttr = this.html.substr(0, attrLocation);
+        if (attr === 'title' || attr === 'description') {
+            var tagBodyWithRemainder = this.html.substr(attrLocation + attr.length + 1);
+            var closingTagStart = tagBodyWithRemainder.indexOf('</' + attr);
+            var content = tagBodyWithRemainder.substr(0, closingTagStart);
+            return content;
+        }
+        else {
+            var reversed = beginningToAttr.split('').reverse().join('');
+            var find = 'atem<';
+            var tagStart = reversed.indexOf(find);
+            var tagWithRemainder = this.html.substr(beginningToAttr.length - tagStart - 5);
+            var tagEnd = tagWithRemainder.indexOf('>');
+            var tag = tagWithRemainder.substr(0, tagEnd + 1);
+            var contentAttrStart = tag.indexOf('content');
+            if (contentAttrStart < 0) {
+                contentAttrStart = tag.indexOf('value');
+            }
+            var contentAttrSub = tag.substr(contentAttrStart);
+            var contentAttrStartQuote = contentAttrSub.indexOf('"');
+            var contentWithRemainder = contentAttrSub.substr(contentAttrStartQuote + 1);
+            var contentEnd = contentWithRemainder.indexOf('"');
+            content = contentWithRemainder.substr(0, contentEnd);
+            return content;
+        }
+    };
+    OpenGraphParserService = __decorate([
+        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["B" /* Injectable */])(),
+        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1__angular_http__["b" /* Http */]])
+    ], OpenGraphParserService);
+    return OpenGraphParserService;
+}());
+
+//# sourceMappingURL=opengraphparser.service.js.map
+
+/***/ }),
+
 /***/ 16:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -870,13 +1194,13 @@ var BulletinSecretService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(389);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_badge__ = __webpack_require__(390);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8_rxjs_operators__ = __webpack_require__(52);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(223);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__ionic_native_geolocation__ = __webpack_require__(224);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(352);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs__ = __webpack_require__(353);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_11_eciesjs__);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
@@ -1010,12 +1334,18 @@ var GraphService = /** @class */ (function () {
             .then(function () {
             return _this.getFriendRequests();
         })
-            .then(function () {
-            var promises = _this.graph.smart_contracts.map(function (smart_contract) {
-                return _this.getFriendRequests(_this.generateRid(smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, _this.settingsService.collections.SMART_CONTRACT));
-            });
-            return Promise.all(promises);
-        })
+            // .then(() => {
+            //   const promises = this.graph.smart_contracts.map((smart_contract) => {
+            //     return this.getFriendRequests(
+            //       this.generateRid(
+            //         smart_contract.relationship[this.settingsService.collections.SMART_CONTRACT].identity.username_signature,
+            //         smart_contract.relationship[this.settingsService.collections.SMART_CONTRACT].identity.username_signature,
+            //         this.settingsService.collections.SMART_CONTRACT
+            //       )
+            //     )
+            //   });
+            //   return Promise.all(promises)
+            // })
             .then(function () {
             return _this.getSharedSecrets();
         });
@@ -1851,7 +2181,7 @@ var GraphService = /** @class */ (function () {
                 }
                 _this.groups_indexed[_this.generateRid(group_username_signature, group_username_signature, group_username_signature)] = group;
                 try {
-                    if (!relationship.parent) {
+                    if (!relationship.parent && !relationship[_this.settingsService.collections.SMART_CONTRACT]) {
                         promises.push(_this.getGroups(_this.generateRid(group_username_signature, group_username_signature, group_username_signature), collection, true));
                     }
                 }
@@ -2903,8 +3233,8 @@ var GraphService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(19);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(352);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs__ = __webpack_require__(353);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5_eciesjs___default = __webpack_require__.n(__WEBPACK_IMPORTED_MODULE_5_eciesjs__);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__smartContract_service__ = __webpack_require__(68);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -3408,7 +3738,7 @@ var TransactionService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 224:
+/***/ 225:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -3421,14 +3751,14 @@ var TransactionService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_transaction_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_peer_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__list_list__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(70);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_opengraphparser_service__ = __webpack_require__(140);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__ionic_native_social_sharing__ = __webpack_require__(108);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(230);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_firebase_service__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_autocomplete_provider__ = __webpack_require__(110);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -3986,14 +4316,14 @@ var HomePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 225:
+/***/ 226:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return PeerService; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_storage__ = __webpack_require__(48);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3_rxjs_operators__ = __webpack_require__(52);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__wallet_service__ = __webpack_require__(25);
@@ -4113,7 +4443,7 @@ var PeerService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 226:
+/***/ 227:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4128,7 +4458,7 @@ var PeerService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(70);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_websocket_service__ = __webpack_require__(37);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -4415,7 +4745,7 @@ var ChatPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 227:
+/***/ 228:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -4425,11 +4755,11 @@ var ChatPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_bulletinSecret_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(396);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__ionic_native_qr_scanner__ = __webpack_require__(397);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__ionic_native_social_sharing__ = __webpack_require__(108);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__list_list__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -4653,12 +4983,13 @@ var SendReceive = /** @class */ (function () {
             });
         });
     };
-    SendReceive.prototype.getSentHistory = function () {
+    SendReceive.prototype.getSentHistory = function (public_key) {
         var _this = this;
+        if (public_key === void 0) { public_key = null; }
         return new Promise(function (resolve, reject) {
             _this.sentLoading = true;
             var options = new __WEBPACK_IMPORTED_MODULE_9__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
-            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-sent-txns?page=' + _this.sentPage + '&public_key=' + _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex') + '&origin=' + encodeURIComponent(window.location.origin), options)
+            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-sent-txns?page=' + _this.sentPage + '&public_key=' + (public_key || _this.bulletinSecretService.key.getPublicKeyBuffer().toString('hex')) + '&origin=' + encodeURIComponent(window.location.origin), options)
                 .subscribe(function (res) {
                 _this.sentLoading = false;
                 _this.past_sent_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
@@ -4847,7 +5178,7 @@ var SendReceive = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 228:
+/***/ 229:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5009,7 +5340,7 @@ var CalendarPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 229:
+/***/ 230:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5019,8 +5350,8 @@ var CalendarPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__createasset__ = __webpack_require__(399);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__assetitem__ = __webpack_require__(400);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__createasset__ = __webpack_require__(400);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__assetitem__ = __webpack_require__(401);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -5095,7 +5426,7 @@ var AssetsPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 230:
+/***/ 231:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5104,7 +5435,7 @@ var AssetsPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__ionic_native_firebase__ = __webpack_require__(404);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_http__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -5167,7 +5498,7 @@ var FirebaseService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 231:
+/***/ 232:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5268,7 +5599,7 @@ var MailPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 232:
+/***/ 233:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5382,7 +5713,7 @@ var WebPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 233:
+/***/ 234:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -5470,7 +5801,7 @@ var BuildPagePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_rxjs_operators__ = __webpack_require__(52);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -5612,7 +5943,7 @@ var WalletService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 267:
+/***/ 268:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -5625,11 +5956,11 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 267;
+webpackEmptyAsyncContext.id = 268;
 
 /***/ }),
 
-/***/ 308:
+/***/ 309:
 /***/ (function(module, exports) {
 
 function webpackEmptyAsyncContext(req) {
@@ -5642,7 +5973,7 @@ function webpackEmptyAsyncContext(req) {
 webpackEmptyAsyncContext.keys = function() { return []; };
 webpackEmptyAsyncContext.resolve = webpackEmptyAsyncContext;
 module.exports = webpackEmptyAsyncContext;
-webpackEmptyAsyncContext.id = 308;
+webpackEmptyAsyncContext.id = 309;
 
 /***/ }),
 
@@ -5654,7 +5985,7 @@ webpackEmptyAsyncContext.id = 308;
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__transaction_service__ = __webpack_require__(20);
@@ -5695,13 +6026,27 @@ var WebSocketService = /** @class */ (function () {
         this.events = events;
     }
     WebSocketService.prototype.init = function () {
-        if (this.websocket)
-            return;
+        var _this = this;
+        if (this.websocket && this.websocket.readyState > 1) {
+            this.websocket.close();
+        }
+        ;
         this.websocket = new WebSocket(this.settingsService.remoteSettings.websocketUrl);
         this.websocket.onopen = this.onOpen.bind(this);
         this.websocket.onmessage = this.onMessage.bind(this);
+        this.websocket.onerror = function (err) {
+            console.error('Socket encountered error: ', err.message, 'Closing socket');
+            _this.websocket.close();
+        };
+        this.websocket.onclose = function (e) {
+            console.log('Socket is closed. Reconnect will be attempted in 1 second.', e.reason);
+            setTimeout(function () {
+                _this.init();
+            }, 1000);
+        };
     };
     WebSocketService.prototype.onOpen = function (event) {
+        this.connect();
         console.log(event.data);
     };
     WebSocketService.prototype.onMessage = function (event) {
@@ -5872,6 +6217,11 @@ var WebSocketService = /** @class */ (function () {
                     }
                 }
                 break;
+            case 'newblock':
+                var block = msg.params.payload.block;
+                block.height = block.index;
+                this.settingsService.latest_block = block;
+                break;
         }
     };
     WebSocketService.prototype.connect = function () {
@@ -5902,8 +6252,9 @@ var WebSocketService = /** @class */ (function () {
         }
         request.relationship[collection] = item;
         return this.transactionService.generateTransaction(request)
-            .then(function () {
+            .then(function (txn) {
             _this.sendnewtxn();
+            return txn;
         });
     };
     WebSocketService.prototype.directMessageRequest = function (identity, collection, relationship, resolve) {
@@ -5989,7 +6340,7 @@ var WebSocketService = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 397:
+/***/ 398:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6038,7 +6389,7 @@ var SignatureRequestPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 398:
+/***/ 399:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6048,9 +6399,9 @@ var SignatureRequestPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_smartContract_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__assets_assets__ = __webpack_require__(229);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__createpromo__ = __webpack_require__(402);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__marketitem__ = __webpack_require__(403);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__assets_assets__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__createpromo__ = __webpack_require__(403);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__marketitem__ = __webpack_require__(139);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6070,6 +6421,7 @@ var __metadata = (this && this.__metadata) || function (k, v) {
 
 var MarketPage = /** @class */ (function () {
     function MarketPage(navCtrl, navParams, graphService, settingsService, smartContractService) {
+        var _this = this;
         this.navCtrl = navCtrl;
         this.navParams = navParams;
         this.graphService = graphService;
@@ -6077,10 +6429,24 @@ var MarketPage = /** @class */ (function () {
         this.smartContractService = smartContractService;
         this.item = this.navParams.get('item');
         this.market = this.item.relationship[this.settingsService.collections.MARKET];
+        setInterval(function () {
+            if (_this.prevHeight < _this.settingsService.latest_block.height)
+                _this.refresh();
+        }, 1000);
     }
     MarketPage.prototype.ionViewDidEnter = function () {
+        this.refresh();
+    };
+    MarketPage.prototype.refresh = function (e) {
         var _this = this;
-        this.graphService.getSmartContracts(this.market)
+        if (e === void 0) { e = null; }
+        this.graphService.getBlockHeight()
+            .then(function (data) {
+            _this.settingsService.latest_block = data;
+        })
+            .then(function () {
+            return _this.graphService.getSmartContracts(_this.market);
+        })
             .then(function (smartContracts) {
             _this.smartContracts = smartContracts.filter(function (item) {
                 try {
@@ -6098,6 +6464,7 @@ var MarketPage = /** @class */ (function () {
                 return true;
             });
             console.log(_this.smartContracts);
+            e && e.complete();
         });
     };
     MarketPage.prototype.sellAsset = function () {
@@ -6131,7 +6498,7 @@ var MarketPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 399:
+/***/ 400:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6143,7 +6510,7 @@ var MarketPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6254,7 +6621,7 @@ var CreateAssetPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 400:
+/***/ 401:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6268,7 +6635,7 @@ var CreateAssetPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_smartContract_service__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_websocket_service__ = __webpack_require__(37);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__markets_createsale__ = __webpack_require__(401);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__markets_createsale__ = __webpack_require__(402);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6338,7 +6705,7 @@ var AssetItemPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 401:
+/***/ 402:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6350,8 +6717,9 @@ var AssetItemPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__ = __webpack_require__(68);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__marketitem__ = __webpack_require__(139);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6361,6 +6729,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -6383,8 +6752,8 @@ var CreateSalePage = /** @class */ (function () {
         this.alertCtrl = alertCtrl;
         this.ahttp = ahttp;
         this.smartContractService = smartContractService;
-        var market = this.navParams.get('market');
-        this.market = market.relationship[this.settingsService.collections.MARKET];
+        this.marketTxn = this.navParams.get('market');
+        this.market = this.marketTxn.relationship[this.settingsService.collections.MARKET];
         this.item = this.navParams.get('item');
         this.asset = this.item.relationship[this.settingsService.collections.ASSET];
         this.proof_type = this.smartContractService.assetProofTypes.FIRST_COME;
@@ -6424,8 +6793,14 @@ var CreateSalePage = /** @class */ (function () {
                 var contract = _this.smartContractService.generateChangeOfOwnership(_this.asset, _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity()), parseFloat(_this.price), _this.proof_type, _this.market, _this.expiry);
                 var rids = _this.graphService.generateRids(contract.identity, _this.market, _this.settingsService.collections.SMART_CONTRACT);
                 _this.websocketService.newtxn(contract, rids, _this.settingsService.collections.SMART_CONTRACT, _this.market.username_signature)
-                    .then(function () {
-                    _this.navCtrl.pop();
+                    .then(function (smartContract) {
+                    smartContract.relationship[_this.settingsService.collections.SMART_CONTRACT][_this.settingsService.collections.ASSET] = _this.asset;
+                    smartContract.relationship[_this.settingsService.collections.SMART_CONTRACT].creator = _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity());
+                    smartContract.pending = true;
+                    _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_9__marketitem__["a" /* MarketItemPage */], {
+                        item: smartContract,
+                        market: _this.marketTxn
+                    });
                 });
             }
         });
@@ -6453,7 +6828,7 @@ var CreateSalePage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 402:
+/***/ 403:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
 "use strict";
@@ -6466,10 +6841,11 @@ var CreateSalePage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_websocket_service__ = __webpack_require__(37);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_forms__ = __webpack_require__(30);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_smartContract_service__ = __webpack_require__(68);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_autocomplete_provider__ = __webpack_require__(110);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__app_wallet_service__ = __webpack_require__(25);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__marketitem__ = __webpack_require__(139);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -6479,6 +6855,7 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+
 
 
 
@@ -6509,8 +6886,8 @@ var CreatePromoPage = /** @class */ (function () {
         this.myForm = new __WEBPACK_IMPORTED_MODULE_7__angular_forms__["b" /* FormGroup */]({
             searchTerm: new __WEBPACK_IMPORTED_MODULE_7__angular_forms__["a" /* FormControl */]('', [__WEBPACK_IMPORTED_MODULE_7__angular_forms__["g" /* Validators */].required])
         });
-        var market = this.navParams.get('market');
-        this.market = market.relationship[this.settingsService.collections.MARKET];
+        this.marketTxn = this.navParams.get('market');
+        this.market = this.marketTxn.relationship[this.settingsService.collections.MARKET];
         this.proof_type = this.smartContractService.promoProofTypes.HONOR;
         this.promotedIdentity = 'me';
         this.graphService.getBlockHeight()
@@ -6620,8 +6997,14 @@ var CreatePromoPage = /** @class */ (function () {
                         });
                     }
                     return _this.websocketService.newtxn(contract, rids, _this.settingsService.collections.SMART_CONTRACT, _this.market.username_signature, { outputs: outputs });
-                }).then(function () {
-                    _this.navCtrl.pop();
+                }).then(function (smartContract) {
+                    smartContract.relationship[_this.settingsService.collections.SMART_CONTRACT][_this.settingsService.collections.ASSET] = _this.asset;
+                    smartContract.relationship[_this.settingsService.collections.SMART_CONTRACT].creator = _this.graphService.toIdentity(_this.bulletinSecretService.cloneIdentity());
+                    smartContract.pending = true;
+                    _this.navCtrl.setRoot(__WEBPACK_IMPORTED_MODULE_12__marketitem__["a" /* MarketItemPage */], {
+                        item: smartContract,
+                        market: _this.marketTxn
+                    });
                 });
             }
         });
@@ -6651,230 +7034,6 @@ var CreatePromoPage = /** @class */ (function () {
 
 /***/ }),
 
-/***/ 403:
-/***/ (function(module, __webpack_exports__, __webpack_require__) {
-
-"use strict";
-/* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MarketItemPage; });
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__profile_profile__ = __webpack_require__(70);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_websocket_service__ = __webpack_require__(37);
-var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
-    var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
-    if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
-    else for (var i = decorators.length - 1; i >= 0; i--) if (d = decorators[i]) r = (c < 3 ? d(r) : c > 3 ? d(target, key, r) : d(target, key)) || r;
-    return c > 3 && r && Object.defineProperty(target, key, r), r;
-};
-var __metadata = (this && this.__metadata) || function (k, v) {
-    if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
-};
-
-
-
-
-
-
-
-
-
-
-var MarketItemPage = /** @class */ (function () {
-    function MarketItemPage(navCtrl, navParams, walletService, graphService, bulletinSecretService, alertCtrl, transactionService, settingsService, smartContractService, websocketService) {
-        var _this = this;
-        this.navCtrl = navCtrl;
-        this.navParams = navParams;
-        this.walletService = walletService;
-        this.graphService = graphService;
-        this.bulletinSecretService = bulletinSecretService;
-        this.alertCtrl = alertCtrl;
-        this.transactionService = transactionService;
-        this.settingsService = settingsService;
-        this.smartContractService = smartContractService;
-        this.websocketService = websocketService;
-        this.item = navParams.get('item');
-        this.smartContract = this.item.relationship[this.settingsService.collections.SMART_CONTRACT];
-        this.market = navParams.get('market').relationship[this.settingsService.collections.MARKET];
-        this.bids = [];
-        this.affiliates = [];
-        this.refresh();
-        this.price = this.smartContract.price;
-        this.minPrice = this.smartContract.price;
-        this.graphService.getBlockHeight()
-            .then(function (data) {
-            _this.settingsService.latest_block = data;
-        });
-    }
-    MarketItemPage.prototype.refresh = function () {
-        var _this = this;
-        var identity = JSON.parse(JSON.stringify(this.smartContract.identity));
-        if (this.smartContract.contract_type === this.smartContractService.contractTypes.CHANGE_OWNERSHIP) {
-            identity.collection = this.settingsService.collections.BID;
-        }
-        else {
-            identity.collection = this.settingsService.collections.AFFILIATE;
-        }
-        var rids = this.graphService.generateRids(identity);
-        var scAddress = this.bulletinSecretService.publicKeyToAddress(this.smartContract.identity.public_key);
-        this.walletService.get(this.price, scAddress)
-            .then(function (wallet) {
-            _this.balance = _this.item.pending ? wallet.pending_balance : wallet.balance;
-            return _this.graphService.getBids(rids.requested_rid, _this.market);
-        })
-            .then(function (bids) {
-            _this.bids = bids.sort(function (a, b) {
-                var aamount = _this.getAmount(a);
-                var bamount = _this.getAmount(b);
-                if (aamount < bamount)
-                    return 1;
-                if (aamount > bamount)
-                    return -1;
-                if (aamount === bamount)
-                    return 0;
-            });
-            if (_this.bids.slice(0).length > 0) {
-                _this.price = _this.getAmount(_this.bids[0]);
-                _this.minPrice = _this.price;
-            }
-        });
-        this.graphService.getAffiliates(rids.requested_rid, this.market)
-            .then(function (affiliates) {
-            _this.affiliates = affiliates.filter(function (item) {
-                if (item.public_key === _this.bulletinSecretService.identity.public_key)
-                    return true;
-            });
-        });
-        this.smartContractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(this.smartContract.identity.public_key, 'hex')).getAddress();
-    };
-    MarketItemPage.prototype.getAmount = function (bid) {
-        var total = 0;
-        for (var i = 0; i < bid.outputs.length; i++) {
-            if (bid.outputs[i].to === this.smartContractAddress)
-                total += bid.outputs[i].value;
-        }
-        return total.toFixed(8);
-    };
-    MarketItemPage.prototype.openProfile = function (identity) {
-        this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__profile_profile__["a" /* ProfilePage */], {
-            identity: identity
-        });
-    };
-    MarketItemPage.prototype.buy = function (e) {
-        var _this = this;
-        // generate purchase txn
-        var alert = this.alertCtrl.create();
-        var buttonText = '';
-        if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.FIRST_COME) {
-            alert.setTitle('Buy Asset');
-            alert.setSubTitle('Are you sure you want to buy this asset?');
-            buttonText = 'Buy';
-        }
-        else if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.AUCTION) {
-            alert.setTitle('Bid on Asset');
-            alert.setSubTitle('Are you sure you want to place a bid for this asset?');
-            buttonText = 'Bid';
-        }
-        alert.addButton({
-            text: 'Cancel'
-        });
-        alert.addButton({
-            text: buttonText,
-            handler: function (data) {
-                var scAddress = _this.bulletinSecretService.publicKeyToAddress(_this.smartContract.identity.public_key);
-                _this.walletService.get(_this.price)
-                    .then(function () {
-                    var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.BID);
-                    return _this.websocketService.newtxn(_this.graphService.toIdentity(_this.bulletinSecretService.identity), rids, _this.settingsService.collections.BID, _this.market.username_signature, {
-                        to: scAddress,
-                        value: _this.price
-                    });
-                })
-                    .then(function () {
-                    return _this.refresh();
-                })
-                    .catch(function (err) {
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Transaction failed');
-                    alert.setSubTitle(err);
-                    alert.addButton({
-                        text: 'Ok'
-                    });
-                    alert.present();
-                });
-            }
-        });
-        alert.present();
-    };
-    MarketItemPage.prototype.joinPromotion = function (e) {
-        var _this = this;
-        // generate purchase txn
-        var alert = this.alertCtrl.create();
-        var buttonText = '';
-        alert.setTitle('Join promotion');
-        alert.setSubTitle('Are you sure you want to join this promotion?');
-        buttonText = 'Join';
-        alert.addButton({
-            text: 'Cancel'
-        });
-        alert.addButton({
-            text: buttonText,
-            handler: function (data) {
-                var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.AFFILIATE);
-                _this.websocketService.newtxn({
-                    referrer: _this.graphService.toIdentity(_this.bulletinSecretService.identity),
-                    target: _this.smartContract.target,
-                    contract: _this.graphService.toIdentity(_this.smartContract.identity)
-                }, rids, _this.settingsService.collections.AFFILIATE, _this.market.username_signature)
-                    .then(function () {
-                    return _this.refresh();
-                })
-                    .catch(function (err) {
-                    var alert = _this.alertCtrl.create();
-                    alert.setTitle('Transaction failed');
-                    alert.setSubTitle(err);
-                    alert.addButton({
-                        text: 'Ok'
-                    });
-                    alert.present();
-                });
-            }
-        });
-        alert.present();
-    };
-    MarketItemPage.prototype.toHex = function (byteArray) {
-        var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
-        };
-        return Array.from(byteArray, callback).join('');
-    };
-    MarketItemPage = __decorate([
-        Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item>\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
-        }),
-        __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
-            __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__["a" /* WalletService */],
-            __WEBPACK_IMPORTED_MODULE_3__app_graph_service__["a" /* GraphService */],
-            __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__["a" /* BulletinSecretService */],
-            __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["a" /* AlertController */],
-            __WEBPACK_IMPORTED_MODULE_4__app_transaction_service__["a" /* TransactionService */],
-            __WEBPACK_IMPORTED_MODULE_7__app_settings_service__["a" /* SettingsService */],
-            __WEBPACK_IMPORTED_MODULE_8__app_smartContract_service__["a" /* SmartContractService */],
-            __WEBPACK_IMPORTED_MODULE_9__app_websocket_service__["a" /* WebSocketService */]])
-    ], MarketItemPage);
-    return MarketItemPage;
-}());
-
-//# sourceMappingURL=marketitem.js.map
-
-/***/ }),
-
 /***/ 405:
 /***/ (function(module, __webpack_exports__, __webpack_require__) {
 
@@ -6884,21 +7043,21 @@ var MarketItemPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_storage__ = __webpack_require__(48);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_peer_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_bulletinSecret_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_firebase_service__ = __webpack_require__(231);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__ionic_native_social_sharing__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(224);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(19);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_geolocation__ = __webpack_require__(223);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__home_home__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__angular_http__ = __webpack_require__(18);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__ionic_native_geolocation__ = __webpack_require__(224);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__ionic_native_google_maps__ = __webpack_require__(406);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__app_websocket_service__ = __webpack_require__(37);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__app_groups__ = __webpack_require__(683);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__mail_mail__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__mail_mail__ = __webpack_require__(232);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -6989,9 +7148,6 @@ var Settings = /** @class */ (function () {
         this.refresh(null)
             .then(function () {
             return _this.peerService.go();
-        })
-            .then(function () {
-            return _this.websocketService.init();
         }).catch(function (err) {
             console.log(err);
         });
@@ -7446,7 +7602,7 @@ var Settings = /** @class */ (function () {
                 }
             })
                 .then(function () {
-                return _this.websocketService.connect();
+                return _this.websocketService.init();
             })
                 .then(function () {
                 if (showModal) {
@@ -7498,7 +7654,7 @@ var Settings = /** @class */ (function () {
                 _this.events.publish('menu', [{ title: 'Home', label: 'Home', component: __WEBPACK_IMPORTED_MODULE_12__home_home__["a" /* HomePage */], count: false, color: '', root: true }]);
             })
                 .then(function () {
-                return _this.websocketService.connect();
+                return _this.websocketService.init();
             })
                 .catch(function (err) {
                 console.log(err);
@@ -7654,10 +7810,10 @@ var Settings = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(140);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_bulletinSecret_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__app_graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__profile_profile__ = __webpack_require__(70);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
@@ -7896,7 +8052,7 @@ var SiaFiles = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_platform_browser__ = __webpack_require__(54);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
@@ -8117,8 +8273,8 @@ var StreamPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(233);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(232);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__buildpage__ = __webpack_require__(234);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__web__ = __webpack_require__(233);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -8212,61 +8368,61 @@ Object(__WEBPACK_IMPORTED_MODULE_0__angular_platform_browser_dynamic__["a" /* pl
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_platform_browser__ = __webpack_require__(54);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__angular_common__ = __webpack_require__(53);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_component__ = __webpack_require__(577);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__pages_home_home__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__pages_home_postmodal__ = __webpack_require__(684);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_list_list__ = __webpack_require__(69);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_settings_settings__ = __webpack_require__(405);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_chat_chat__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_profile_profile__ = __webpack_require__(70);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(407);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(408);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_mail_mail__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_mail_mail__ = __webpack_require__(232);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_compose__ = __webpack_require__(109);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_calendar_calendar__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__ = __webpack_require__(348);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_splash_screen__ = __webpack_require__(351);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_qr_scanner__ = __webpack_require__(396);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__pages_calendar_calendar__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__ionic_native_status_bar__ = __webpack_require__(349);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__ionic_native_splash_screen__ = __webpack_require__(352);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__ionic_native_qr_scanner__ = __webpack_require__(397);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_20_ngx_qrcode2__ = __webpack_require__(685);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__ionic_storage__ = __webpack_require__(48);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_22__graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_23__bulletinSecret_service__ = __webpack_require__(14);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__peer_service__ = __webpack_require__(225);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_24__peer_service__ = __webpack_require__(226);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_25__settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_26__wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_27__websocket_service__ = __webpack_require__(37);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_28__transaction_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(139);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__firebase_service__ = __webpack_require__(230);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_29__opengraphparser_service__ = __webpack_require__(140);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_30__firebase_service__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_31__pages_sendreceive_sendreceive__ = __webpack_require__(228);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_32__ionic_native_clipboard__ = __webpack_require__(705);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_33__ionic_native_social_sharing__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__ = __webpack_require__(389);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_34__ionic_native_badge__ = __webpack_require__(390);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_35__ionic_native_deeplinks__ = __webpack_require__(409);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_36__ionic_native_firebase__ = __webpack_require__(404);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_37__ionic_tools_emoji_picker__ = __webpack_require__(706);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_38__ionic_native_file__ = __webpack_require__(748);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__ = __webpack_require__(390);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_39_ionic2_auto_complete__ = __webpack_require__(391);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_40__autocomplete_provider__ = __webpack_require__(110);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__ionic_native_geolocation__ = __webpack_require__(223);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_41__ionic_native_geolocation__ = __webpack_require__(224);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_42__ionic_native_google_maps__ = __webpack_require__(406);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_43__pages_mail_mailitem__ = __webpack_require__(138);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__ = __webpack_require__(397);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_web_web__ = __webpack_require__(232);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_44__pages_signaturerequest_signaturerequest__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_45__pages_web_web__ = __webpack_require__(233);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_46__pages_web_mypages__ = __webpack_require__(410);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__ = __webpack_require__(233);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_47__pages_web_buildpage__ = __webpack_require__(234);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_48_ionic_tooltips__ = __webpack_require__(749);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_49__angular_platform_browser_animations__ = __webpack_require__(751);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__pages_assets_assets__ = __webpack_require__(229);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_51__pages_assets_assetitem__ = __webpack_require__(400);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_52__pages_assets_createasset__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_50__pages_assets_assets__ = __webpack_require__(230);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_51__pages_assets_assetitem__ = __webpack_require__(401);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_52__pages_assets_createasset__ = __webpack_require__(400);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_53__smartContract_service__ = __webpack_require__(68);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_54__pages_markets_market__ = __webpack_require__(398);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_55__pages_markets_marketitem__ = __webpack_require__(403);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_56__pages_markets_createsale__ = __webpack_require__(401);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_57__pages_markets_createpromo__ = __webpack_require__(402);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_54__pages_markets_market__ = __webpack_require__(399);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_55__pages_markets_marketitem__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_56__pages_markets_createsale__ = __webpack_require__(402);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_57__pages_markets_createpromo__ = __webpack_require__(403);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -8451,26 +8607,26 @@ var AppModule = /** @class */ (function () {
 /* harmony export (binding) */ __webpack_require__.d(__webpack_exports__, "a", function() { return MyApp; });
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_0__angular_core__ = __webpack_require__(0);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(348);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(351);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__ionic_native_status_bar__ = __webpack_require__(349);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__ionic_native_splash_screen__ = __webpack_require__(352);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__graph_service__ = __webpack_require__(16);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__bulletinSecret_service__ = __webpack_require__(14);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__wallet_service__ = __webpack_require__(25);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(224);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__pages_home_home__ = __webpack_require__(225);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__pages_list_list__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__pages_calendar_calendar__ = __webpack_require__(229);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__pages_settings_settings__ = __webpack_require__(405);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__pages_siafiles_siafiles__ = __webpack_require__(407);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__pages_stream_stream__ = __webpack_require__(408);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(227);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(231);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__pages_sendreceive_sendreceive__ = __webpack_require__(228);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__pages_mail_mail__ = __webpack_require__(232);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__ionic_native_deeplinks__ = __webpack_require__(409);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_17__websocket_service__ = __webpack_require__(37);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(232);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_18__pages_web_web__ = __webpack_require__(233);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_19__pages_web_mypages__ = __webpack_require__(410);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(233);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__pages_assets_assets__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_20__pages_web_buildpage__ = __webpack_require__(234);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_21__pages_assets_assets__ = __webpack_require__(230);
 var __assign = (this && this.__assign) || function () {
     __assign = Object.assign || function(t) {
         for (var s, i = 1, n = arguments.length; i < n; i++) {
@@ -8969,9 +9125,9 @@ var SmartContractService = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_1_ionic_angular__ = __webpack_require__(5);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_2__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_3__app_transaction_service__ = __webpack_require__(20);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(139);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_4__app_opengraphparser_service__ = __webpack_require__(140);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_settings_service__ = __webpack_require__(10);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__angular_http__ = __webpack_require__(18);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -9138,14 +9294,14 @@ var PostModal = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__ionic_native_social_sharing__ = __webpack_require__(108);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(226);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__chat_chat__ = __webpack_require__(227);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__profile_profile__ = __webpack_require__(70);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(397);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__signaturerequest_signaturerequest__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_13__mail_mailitem__ = __webpack_require__(138);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_14__app_websocket_service__ = __webpack_require__(37);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__ = __webpack_require__(228);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__markets_market__ = __webpack_require__(398);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_15__calendar_calendar__ = __webpack_require__(229);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_16__markets_market__ = __webpack_require__(399);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);
@@ -9887,11 +10043,11 @@ var ListPage = /** @class */ (function () {
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_5__app_wallet_service__ = __webpack_require__(25);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_6__app_transaction_service__ = __webpack_require__(20);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_7__list_list__ = __webpack_require__(69);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(226);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(19);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_8__chat_chat__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_9__angular_http__ = __webpack_require__(18);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_10__app_settings_service__ = __webpack_require__(10);
 /* harmony import */ var __WEBPACK_IMPORTED_MODULE_11__mail_compose__ = __webpack_require__(109);
-/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__sendreceive_sendreceive__ = __webpack_require__(227);
+/* harmony import */ var __WEBPACK_IMPORTED_MODULE_12__sendreceive_sendreceive__ = __webpack_require__(228);
 var __decorate = (this && this.__decorate) || function (decorators, target, key, desc) {
     var c = arguments.length, r = c < 3 ? target : desc === null ? desc = Object.getOwnPropertyDescriptor(target, key) : desc, d;
     if (typeof Reflect === "object" && typeof Reflect.decorate === "function") r = Reflect.decorate(decorators, target, key, desc);

@@ -247,14 +247,20 @@ class ChangeOwnershipContract(Contract):
 
     async def expire_first_come(self, contract_txn):
         bid = await self.get_first_come_bid(contract_txn)
+        if not bid:
+            return
         return await self.generate_transaction(contract_txn, bid)
 
     async def expire_auction(self, contract_txn):
         bid = await self.get_auction_bid(contract_txn)
+        if not bid:
+            return
         return await self.generate_transaction(contract_txn, bid)
 
     async def expire_confirmation(self, contract_txn):
         bid = await self.get_confirmation_bid(contract_txn)
+        if not bid:
+            return
         return await self.generate_transaction(contract_txn, bid)
 
     async def get_purchase_txns(self, contract_txn):

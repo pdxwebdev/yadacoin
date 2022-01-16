@@ -355,11 +355,15 @@ class MiningPool(object):
         header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
 
         if self.config.network == 'regnet':
-            target = '000FFFFFFFFFFFFF'
-        elif 'XMRigCC/3' in agent or 'XMRig/3' in agent:
-            target = '0000FFFFFFFFFFFF'
+            if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
+                target = '000FFFFFFFFFFFFF'
+            else:
+                target = '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
         else:
-            target = '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+            if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
+                target = '0000FFFFFFFFFFFF'
+            else:
+                target = '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
 
         res = {
             'job_id': job_id,
@@ -584,6 +588,8 @@ class MiningPool(object):
         await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block)))
 
         await self.config.nodeShared.send_block(block)
+
+        await self.config.websocketServer.send_block(block)
 
         await self.refresh()
 
