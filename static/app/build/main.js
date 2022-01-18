@@ -653,6 +653,7 @@ var MarketItemPage = /** @class */ (function () {
             _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-sent-txns?page=' + _this.sentPage + '&public_key=' + _this.smartContract.identity.public_key + '&origin=' + encodeURIComponent(window.location.origin), options)
                 .subscribe(function (res) {
                 _this.past_sent_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
+                _this.past_sent_transactions = _this.breakApartByOutput();
                 _this.getSentOutputValue(_this.past_sent_transactions);
                 _this.past_sent_page_cache[_this.sentPage] = _this.past_sent_transactions;
                 resolve(res);
@@ -660,6 +661,20 @@ var MarketItemPage = /** @class */ (function () {
                 return reject('cannot unlock wallet');
             });
         });
+    };
+    MarketItemPage.prototype.breakApartByOutput = function () {
+        var _this = this;
+        var new_array = [];
+        this.past_sent_transactions.map(function (item) {
+            item.outputs.map(function (output) {
+                if (_this.smartContractAddress === output.to)
+                    return;
+                var new_item = JSON.parse(JSON.stringify(item));
+                new_item.outputs = [output];
+                new_array.push(new_item);
+            });
+        });
+        return new_array;
     };
     MarketItemPage.prototype.prevSentPage = function () {
         this.sentPage--;
@@ -821,7 +836,7 @@ var MarketItemPage = /** @class */ (function () {
     };
     MarketItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n          <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n          <strong>Expired: </strong>{{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n        Expired: {{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n  <ion-row>\n    <ion-col>\n      <h4>Transaction history</h4>\n      <strong>Sent</strong><br>\n      <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n      <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n      <ion-list>\n        <ion-item *ngFor="let txn of past_sent_transactions">\n          <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n          <ion-label>{{txn.from}}</ion-label>\n          <ion-label>{{txn.to}}</ion-label>\n          <ion-label>{{txn.value}}</ion-label>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
+            selector: 'market-item',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Type: </strong>{{smartContract.proof_type}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n          <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n          <strong>Expired: </strong>{{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Type: </strong>{{smartContract.proof_type}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n        Expired: {{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n  <ion-row>\n    <ion-col>\n      <h4>Transaction history</h4>\n      <strong>Sent</strong><br>\n      <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n      <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n      <ion-list>\n        <ion-item *ngFor="let txn of past_sent_transactions">\n          <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n          <ion-label>{{txn.to}}</ion-label>\n          <ion-label>{{txn.value}}</ion-label>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/marketitem.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -1457,10 +1472,7 @@ var GraphService = /** @class */ (function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
             var rids = [_this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature)];
-            var more_rids = _this.graph.smart_contracts.map(function (smart_contract) {
-                return _this.generateRid(smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, _this.settingsService.collections.SMART_CONTRACT);
-            });
-            _this.endpointRequest('get-graph-sent-friend-requests', null, rids.concat(more_rids))
+            _this.endpointRequest('get-graph-sent-friend-requests', null, rids)
                 .then(function (data) {
                 _this.graph.sent_friend_requests = _this.parseSentFriendRequests(data.sent_friend_requests);
                 _this.getSentFriendRequestsError = false;
@@ -1476,10 +1488,7 @@ var GraphService = /** @class */ (function () {
         if (rid === void 0) { rid = null; }
         return new Promise(function (resolve, reject) {
             var rids = [rid || _this.generateRid(_this.bulletinSecretService.identity.username_signature, _this.bulletinSecretService.identity.username_signature, _this.settingsService.collections.CONTACT)];
-            var more_rids = _this.graph.smart_contracts.map(function (smart_contract) {
-                return _this.generateRid(smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, smart_contract.relationship[_this.settingsService.collections.SMART_CONTRACT].identity.username_signature, _this.settingsService.collections.SMART_CONTRACT);
-            });
-            _this.endpointRequest('get-graph-collection', null, rids.concat(more_rids))
+            _this.endpointRequest('get-graph-collection', null, rids)
                 .then(function (data) {
                 _this.parseFriendRequests(data.collection);
                 _this.getFriendRequestsError = false;
@@ -3327,49 +3336,68 @@ var TransactionService = /** @class */ (function () {
             else {
                 transaction_total = parseFloat(_this.transaction.fee);
             }
+            var inputs_hashes_concat = '';
             if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < transaction_total) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
                 reject("not enough money");
                 return;
             }
             else {
-                var inputs = [];
-                var input_sum = 0;
-                var unspent_transactions = void 0;
-                if (_this.unspent_transaction_override) {
-                    unspent_transactions = [_this.unspent_transaction_override];
-                }
-                else {
-                    _this.info.relationship = _this.info.relationship || {};
-                    unspent_transactions = _this.walletService.wallet.unspent_transactions;
-                    unspent_transactions.sort(function (a, b) {
-                        if (a.height < b.height)
-                            return -1;
-                        if (a.height > b.height)
-                            return 1;
-                        return 0;
-                    });
-                }
-                var already_added = [];
-                dance: for (var i = 0; i < unspent_transactions.length; i++) {
-                    var unspent_transaction = unspent_transactions[i];
-                    for (var j = 0; j < unspent_transaction.outputs.length; j++) {
-                        var unspent_output = unspent_transaction.outputs[j];
-                        if (unspent_output.to === _this.key.getAddress()) {
-                            if (already_added.indexOf(unspent_transaction.id) === -1) {
-                                already_added.push(unspent_transaction.id);
-                                inputs.push({ id: unspent_transaction.id });
-                                input_sum += parseFloat(unspent_output.value);
-                                console.log(parseFloat(unspent_output.value));
-                            }
-                            if (input_sum >= transaction_total) {
-                                _this.transaction.outputs.push({
-                                    to: _this.key.getAddress(),
-                                    value: (input_sum - transaction_total)
-                                });
-                                break dance;
+                if (transaction_total > 0) {
+                    var inputs = [];
+                    var input_sum = 0;
+                    var unspent_transactions = void 0;
+                    if (_this.unspent_transaction_override) {
+                        unspent_transactions = [_this.unspent_transaction_override];
+                    }
+                    else {
+                        _this.info.relationship = _this.info.relationship || {};
+                        unspent_transactions = _this.walletService.wallet.unspent_transactions;
+                        unspent_transactions.sort(function (a, b) {
+                            if (a.height < b.height)
+                                return -1;
+                            if (a.height > b.height)
+                                return 1;
+                            return 0;
+                        });
+                    }
+                    var already_added = [];
+                    dance: for (var i = 0; i < unspent_transactions.length; i++) {
+                        var unspent_transaction = unspent_transactions[i];
+                        for (var j = 0; j < unspent_transaction.outputs.length; j++) {
+                            var unspent_output = unspent_transaction.outputs[j];
+                            if (unspent_output.to === _this.key.getAddress()) {
+                                if (already_added.indexOf(unspent_transaction.id) === -1) {
+                                    already_added.push(unspent_transaction.id);
+                                    inputs.push({ id: unspent_transaction.id });
+                                    input_sum += parseFloat(unspent_output.value);
+                                    console.log(parseFloat(unspent_output.value));
+                                }
+                                if (input_sum >= transaction_total) {
+                                    _this.transaction.outputs.push({
+                                        to: _this.key.getAddress(),
+                                        value: (input_sum - transaction_total)
+                                    });
+                                    break dance;
+                                }
                             }
                         }
                     }
+                    if (input_sum < transaction_total) {
+                        return reject('Insufficient funds');
+                    }
+                    _this.transaction.inputs = inputs;
+                    var inputs_hashes = [];
+                    for (i = 0; i < inputs.length; i++) {
+                        inputs_hashes.push(inputs[i].id);
+                    }
+                    var inputs_hashes_arr = inputs_hashes.sort(function (a, b) {
+                        if (a.toLowerCase() < b.toLowerCase())
+                            return -1;
+                        if (a.toLowerCase() > b.toLowerCase())
+                            return 1;
+                        return 0;
+                    });
+                    inputs_hashes_concat = inputs_hashes_arr.join('');
                 }
             }
             var myAddress = _this.key.getAddress();
@@ -3385,22 +3413,6 @@ var TransactionService = /** @class */ (function () {
                     value: 0
                 });
             }
-            if (input_sum < transaction_total) {
-                return reject('Insufficient funds');
-            }
-            _this.transaction.inputs = inputs;
-            var inputs_hashes = [];
-            for (i = 0; i < inputs.length; i++) {
-                inputs_hashes.push(inputs[i].id);
-            }
-            var inputs_hashes_arr = inputs_hashes.sort(function (a, b) {
-                if (a.toLowerCase() < b.toLowerCase())
-                    return -1;
-                if (a.toLowerCase() > b.toLowerCase())
-                    return 1;
-                return 0;
-            });
-            var inputs_hashes_concat = inputs_hashes_arr.join('');
             var outputs_hashes = [];
             for (i = 0; i < _this.transaction.outputs.length; i++) {
                 outputs_hashes.push(_this.transaction.outputs[i].to + _this.transaction.outputs[i].value.toFixed(8));
@@ -6889,7 +6901,17 @@ var CreatePromoPage = /** @class */ (function () {
         this.marketTxn = this.navParams.get('market');
         this.market = this.marketTxn.relationship[this.settingsService.collections.MARKET];
         this.proof_type = this.smartContractService.promoProofTypes.HONOR;
+        this.pay_referrer = true;
+        this.pay_referrer_operator = this.smartContractService.payoutOperators.FIXED;
+        this.pay_referrer_payout_type = this.smartContractService.payoutType.ONE_TIME;
+        this.pay_referrer_amount = 1;
+        this.pay_referee = true;
+        this.pay_referee_operator = this.smartContractService.payoutOperators.FIXED;
+        this.pay_referee_payout_type = this.smartContractService.payoutType.ONE_TIME;
+        this.pay_referee_amount = 1;
         this.promotedIdentity = 'me';
+        this.fund_amount = 1;
+        this.expiry = 1000;
         this.graphService.getBlockHeight()
             .then(function (data) {
             _this.settingsService.latest_block = data;
@@ -7012,7 +7034,7 @@ var CreatePromoPage = /** @class */ (function () {
     };
     CreatePromoPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'create-promo',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Start new promotion</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Promotion info</h3>\n      <h3>Identity to promote</h3>\n      <ion-list radio-group [(ngModel)]="promotedIdentity" (change)="promotedIdentityChanged()">\n        <ion-item>\n          <ion-label>Promote myself</ion-label>\n          <ion-radio value="me" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Promote a contact</ion-label>\n          <ion-radio value="contact"></ion-radio>\n        </ion-item>\n        <form [formGroup]="myForm" (change)="contactSearchChanged()">\n          <ion-auto-complete #searchbar [(ngModel)]="selectedIdentityForm" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n        </form>\n      </ion-list>\n      <h3>Referrer payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referrer">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referrer">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <ion-item *ngIf="pay_referrer_payout_type === smartContractService.payoutType.RECURRING">\n          <ion-label color="primary">Payment interval</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_payout_interval" placeholder="How many blocks between payouts?"></ion-input>\n        </ion-item>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_amount" placeholder="How much to pay the referrer?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referrer_amount" placeholder="What percentage does the referrer get?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>Referree payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referee">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referee">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <ion-item *ngIf="pay_referee_payout_type === smartContractService.payoutType.RECURRING">\n          <ion-label color="primary">Payment interval</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_payout_interval" placeholder="How many blocks between payouts?"></ion-input>\n        </ion-item>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_amount" placeholder="How much to pay the referee?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referee_amount" placeholder="What percentage does the referee?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED || pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n        <h3>Contract fund</h3>\n        <ion-item>\n          <ion-label color="primary">Fund amount</ion-label>\n          <ion-input type="number" [(ngModel)]="fund_amount" placeholder="How much YDA to fund this promotion?"></ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary">Expiry</ion-label>\n          <ion-input type="number" [(ngModel)]="expiry" placeholder="Expires in how many blocks?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>&nbsp;</h3>\n      <ion-item>\n        <button ion-button secondary (click)="save()">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/
+            selector: 'create-promo',template:/*ion-inline-start:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h1>Start new promotion</h1>\n  <ion-row>\n    <ion-col col-md-4>\n      <h3>Promotion info</h3>\n      <h3>Proof type</h3>\n      <ion-list radio-group [(ngModel)]="proof_type">\n        <ion-item>\n          <ion-label>{{smartContractService.promoProofTypes.HONOR}}</ion-label>\n          <ion-radio [value]="smartContractService.promoProofTypes.HONOR" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>{{smartContractService.promoProofTypes.CONFIRMATION}}</ion-label>\n          <ion-radio [value]="smartContractService.promoProofTypes.CONFIRMATION"></ion-radio>\n        </ion-item>\n      </ion-list>\n      <h3>Identity to promote</h3>\n      <ion-list radio-group [(ngModel)]="promotedIdentity" (change)="promotedIdentityChanged()">\n        <ion-item>\n          <ion-label>Promote myself</ion-label>\n          <ion-radio value="me" checked></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>Promote a contact</ion-label>\n          <ion-radio value="contact"></ion-radio>\n        </ion-item>\n        <form [formGroup]="myForm" (change)="contactSearchChanged()">\n          <ion-auto-complete #searchbar [(ngModel)]="selectedIdentityForm" [options]="{ placeholder : \'Recipient\' }" [dataProvider]="completeTestService" formControlName="searchTerm" required></ion-auto-complete>\n        </form>\n      </ion-list>\n      <h3>Referrer payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referrer">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referrer">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referrer_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <ion-item *ngIf="pay_referrer_payout_type === smartContractService.payoutType.RECURRING">\n          <ion-label color="primary">Payment interval</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_payout_interval" placeholder="How many blocks between payouts?"></ion-input>\n        </ion-item>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referrer_amount" placeholder="How much to pay the referrer?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referrer_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referrer_amount" placeholder="What percentage does the referrer get?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>Referree payout</h3>\n      <ion-list radio-group [(ngModel)]="pay_referee">\n        <ion-item>\n          <ion-label>Yes</ion-label>\n          <ion-radio [value]="true"></ion-radio>\n        </ion-item>\n        <ion-item>\n          <ion-label>No</ion-label>\n          <ion-radio [value]="false" checked></ion-radio>\n        </ion-item>\n      </ion-list>\n      <ng-container *ngIf="pay_referee">\n        <h3>Type</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_operator">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.FIXED" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutOperators.PERCENT"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <h3>Term</h3>\n        <ion-list radio-group [(ngModel)]="pay_referee_payout_type">\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.ONE_TIME}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.ONE_TIME" checked></ion-radio>\n          </ion-item>\n          <ion-item>\n            <ion-label>{{smartContractService.payoutType.RECURRING}}</ion-label>\n            <ion-radio [value]="smartContractService.payoutType.RECURRING"></ion-radio>\n          </ion-item>\n        </ion-list>\n        <ion-item *ngIf="pay_referee_payout_type === smartContractService.payoutType.RECURRING">\n          <ion-label color="primary">Payment interval</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_payout_interval" placeholder="How many blocks between payouts?"></ion-input>\n        </ion-item>\n        <h3>Amount</h3>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED">\n          <ion-label>{{smartContractService.payoutOperators.FIXED}}</ion-label>\n          <ion-input type="number" [(ngModel)]="pay_referee_amount" placeholder="How much to pay the referee?"></ion-input>\n        </ion-item>\n        <ion-item *ngIf="pay_referee_operator === smartContractService.payoutOperators.PERCENT">\n          <ion-label>{{smartContractService.payoutOperators.PERCENT}}</ion-label>\n          <ion-input type="number" min="0.0" max="1.0" step="0.1" [(ngModel)]="pay_referee_amount" placeholder="What percentage does the referee?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="pay_referee_operator === smartContractService.payoutOperators.FIXED || pay_referrer_operator === smartContractService.payoutOperators.FIXED">\n        <h3>Contract fund</h3>\n        <ion-item>\n          <ion-label color="primary">Fund amount</ion-label>\n          <ion-input type="number" [(ngModel)]="fund_amount" placeholder="How much YDA to fund this promotion?"></ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary">Expiry</ion-label>\n          <ion-input type="number" [(ngModel)]="expiry" placeholder="Expires in how many blocks?"></ion-input>\n        </ion-item>\n      </ng-container>\n      <h3>&nbsp;</h3>\n      <ion-item>\n        <button ion-button secondary (click)="save()">Confirm</button>\n      </ion-item>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/home/mvogel/yadacoinmobile/src/pages/markets/createpromo.html"*/
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -9870,9 +9892,14 @@ var ListPage = /** @class */ (function () {
                 });
             }
             if (promo_code) {
+                var promo_1;
                 return _this.graphService.getPromotion(promo_code)
                     .then(function (promotion) {
-                    return _this.graphService.addFriend(promotion.relationship[_this.settingsService.collections.AFFILIATE].target, null, promotion.rid, promotion.requested_rid);
+                    promo_1 = promotion.relationship[_this.settingsService.collections.AFFILIATE].target;
+                    _this.graphService.addFriend(promo_1, null, promotion.rid, promotion.requested_rid);
+                })
+                    .then(function () {
+                    return _this.graphService.addFriend(promo_1); // add friend to global context
                 });
             }
             else {
@@ -9907,7 +9934,10 @@ var ListPage = /** @class */ (function () {
                     .then(function (promotion) {
                     group = promotion.relationship[_this.settingsService.collections.AFFILIATE].target;
                     group.parent = _this.graphService.toIdentity(promotion.relationship[_this.settingsService.collections.AFFILIATE].contract);
-                    return _this.graphService.addGroup(group, promotion.rid, null, promotion.requested_rid);
+                    return _this.graphService.addGroup(group, promotion.rid, null, promotion.requested_rid)
+                        .then(function () {
+                        return _this.graphService.addGroup(group); // add group to global context
+                    });
                 });
             }
             else {

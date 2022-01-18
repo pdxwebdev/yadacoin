@@ -225,6 +225,22 @@ class AffiliateContract(Contract):
         if trigger_txn.requested_rid != contract_txn.requested_rid:
             raise Exception('Referee is not for this contract')
 
+    async def verify_confirmation(self, contract_txn, trigger_txn):
+
+        if trigger_txn.requested_rid != contract_txn.requested_rid:
+            raise Exception('Referee is not for this contract')
+
+        if trigger_txn.public_key == contract_txn.public_key:
+            raise Exception('Trigger txn should not be a confirmation')
+
+        confirmation = await self.get_confirmation(contract_txn, trigger_txn)
+        if not confirmation:
+            raise Exception('Trigger not confirmed')
+
+        referrer = await self.get_referrer(trigger_txn)
+        if not referrer:
+            raise Exception('Referrer not found')
+
     async def verify_payout_generated_already(self, contract_txn, trigger_txn, participant, mempool_txns):
 
         for txn in mempool_txns:
@@ -304,10 +320,39 @@ class AffiliateContract(Contract):
         if results:
             return Transaction.from_dict(results[0]['transactions'])
 
+    async def get_confirmation(self, contract_txn, trigger_txn):
+        from yadacoin.core.transaction import Transaction
+        confirmations = self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.rid': trigger_txn.rid,
+                    'transactions.public_key': contract_txn.public_key
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.rid': trigger_txn.rid,
+                    'transactions.public_key': contract_txn.public_key
+                }
+            },
+            {
+                '$sort': {'index': 1, 'transactions.time': 1}
+            },
+            {
+                '$limit': 1
+            }
+        ])
+        results = [confirmation async for confirmation in confirmations]
+        if results:
+            return Transaction.from_dict(results[0]['transactions'])
+
     async def expire_honor(self, contract_txn):
         return await self.expire(contract_txn)
 
-    async def expire_honor(self, contract_txn):
+    async def expire_confirmation(self, contract_txn):
         return await self.expire(contract_txn)
 
     async def expire(self, contract_txn):
