@@ -212,7 +212,7 @@ class CHAIN(object):
             circulating += (210000 if i > 210000 else i) * CHAIN.get_block_reward(index)
             index += 210000
         return circulating
-    
+
     @classmethod
     async def get_target_10min(
         cls,
@@ -258,7 +258,7 @@ class CHAIN(object):
             if not block_data:
                 return False
             block_from_retarget_period_ago = await Block.from_dict(block_data)
-        
+
         retarget_period_ago_time = block_from_retarget_period_ago.time
         elapsed_time_from_retarget_period_ago = int(block.time) - int(retarget_period_ago_time)
         average_block_time = elapsed_time_from_retarget_period_ago / retarget_period
@@ -278,7 +278,7 @@ class CHAIN(object):
         retarget_period2_ago_time = block_from_retarget_period2_ago.time
         elapsed_time_from_retarget_period2_ago = int(block.time) - int(retarget_period2_ago_time)
         average_block_time2 = elapsed_time_from_retarget_period2_ago / retarget_period2
-            
+
         # React faster to a drop in block time than to a raise. short block times are more a threat than large ones.
         if average_block_time2 < target_time:
             hash_sum2 = 0

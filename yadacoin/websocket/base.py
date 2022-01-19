@@ -301,6 +301,16 @@ class RCPWebSocketServer(WebSocketHandler):
         matching_rids = set(rids) & set(self.config.websocketServer.inbound_streams[User.__name__].keys())
         await self.write_result('online', {'online_rids': list(matching_rids)}, body=body)
 
+    @staticmethod
+    async def send_block(block):
+        payload = {
+            'payload': {
+                'block': block.to_dict()
+            }
+        }
+        for stream in get_config().websocketServer.inbound_streams[User.__name__].values():
+            await stream.write_params('newblock', payload)
+
     def remove_peer(self, peer):
         id_attr = getattr(peer, peer.id_attribute)
         if id_attr in self.inbound_streams[peer.__class__.__name__]:

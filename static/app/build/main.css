@@ -25874,6 +25874,10 @@ page-chat .speech-bubble-left:after {
   color: #32db64;
 }
 
+ion-auto-complete {
+  width: 250px;
+}
+
 .qrcode {
   width: 200px;
 }

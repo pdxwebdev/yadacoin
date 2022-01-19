@@ -6,14 +6,17 @@ import binascii
 from bitcoin.wallet import P2PKHBitcoinAddress
 from logging import getLogger
 from threading import Thread
+from yadacoin.contracts.base import Contract
 
 from yadacoin.core.chain import CHAIN
+from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.transaction import (
     Transaction,
-    MissingInputTransactionException, 
+    MissingInputTransactionException,
     InvalidTransactionException,
     InvalidTransactionSignatureException,
     TransactionInputOutputMismatchException,
@@ -117,9 +120,10 @@ class MiningPool(object):
 
     async def on_miner_nonce(self, nonce: str, job: Job, miner: Miner='', miner_hash: str='') -> bool:
         nonce = nonce + job.extra_nonce.encode().hex()
+        header = binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}').replace(job.extra_nonce, '')
         hash1 = self.block_factory.generate_hash_from_header(
             job.index,
-            binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}').replace(job.extra_nonce, ''),
+            header,
             nonce
         )
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
@@ -143,14 +147,14 @@ class MiningPool(object):
             special_target = CHAIN.special_target(
                 block_candidate.index,
                 block_candidate.target,
-                delta_t, 
+                delta_t,
                 self.config.network
             )
             block_candidate.special_target = special_target
 
         if (
             block_candidate.index >= 35200 and
-            (int(block_candidate.time) - int(self.last_block_time)) < 600 and 
+            (int(block_candidate.time) - int(self.last_block_time)) < 600 and
             block_candidate.special_min and
             self.config.network == 'mainnet'
         ):
@@ -166,14 +170,14 @@ class MiningPool(object):
         if self.config.network == 'mainnet':
             target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
         elif self.config.network == 'regnet':
-            target = 0x00FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-        if (
-          (int(block_candidate.target) + target) > int(hash1, 16) or
-          (
-            block_candidate.index >= CHAIN.BLOCK_V5_FORK and
-            (int(block_candidate.target) + target) > int(block_candidate.little_hash(), 16)
-          )
-        ):
+            target = 0x000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+
+        if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
+            test_hash = int(block_candidate.little_hash(), 16)
+        else:
+            test_hash = int(hash1, 16)
+
+        if test_hash < target:
             # submit share only now, not to slow down if we had a block
             await self.mongo.async_db.shares.update_one(
                 {
@@ -194,35 +198,35 @@ class MiningPool(object):
 
             accepted = True
 
+        if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
+            test_hash = int(block_candidate.little_hash(), 16)
+        else:
+            test_hash = int(block_candidate.hash, 16)
+
         if (
-          int(block_candidate.target) > int(block_candidate.hash, 16) or
-          (
-            block_candidate.index >= CHAIN.BLOCK_V5_FORK and
-            int(block_candidate.target) > int(block_candidate.little_hash(), 16)
-          ) or
-          (
-            self.config.network == 'regnet' and
-            target > int(block_candidate.little_hash(), 16)
-          )
+          test_hash < int(block_candidate.target) or
+          self.config.network == 'regnet'
         ):
             block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
 
+            if header != block_candidate.header:
+                return {
+                    'hash': block_candidate.hash,
+                    'nonce': nonce,
+                    'height': block_candidate.index,
+                    'id': block_candidate.signature
+                }
             try:
-                block_candidate.verify()
+                await block_candidate.verify()
             except Exception as e:
-                if accepted:
+                if accepted and self.config.network == 'mainnet':
                     return {
                         'hash': hash1,
                         'nonce': nonce,
                         'height': job.index,
                         'id': block_candidate.signature
                     }
-                self.app_log.warning("Verify error {} - hash {} header {} nonce {}".format(
-                    e,
-                    block_candidate.hash,
-                    block_candidate.header,
-                    block_candidate.nonce
-                ))
+
                 return False
             # accept winning block
             await self.accept_block(block_candidate)
@@ -230,6 +234,7 @@ class MiningPool(object):
             self.app_log.debug('block ok')
 
             return {
+                'accepted': accepted,
                 'hash': block_candidate.hash,
                 'nonce': nonce,
                 'height': block_candidate.index,
@@ -245,7 +250,7 @@ class MiningPool(object):
             block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)
 
             try:
-                block_candidate.verify()
+                await block_candidate.verify()
             except Exception as e:
                 if accepted:
                     return {
@@ -299,7 +304,6 @@ class MiningPool(object):
                 self.config.private_key,
                 index=self.config.LatestBlock.block.index + 1
             )
-            await self.set_target(int(time()))
             self.block_factory.header = self.block_factory.generate_header()
             self.refreshing = False
         except Exception as e:
@@ -351,11 +355,15 @@ class MiningPool(object):
         header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
 
         if self.config.network == 'regnet':
-            target = '00FFFFFFFFFFFFFF'
-        elif 'XMRigCC/3' in agent or 'XMRig/3' in agent:
-            target = '0000FFFFFFFFFFFF'
+            if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
+                target = '000FFFFFFFFFFFFF'
+            else:
+                target = '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
         else:
-            target = '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+            if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
+                target = '0000FFFFFFFFFFFF'
+            else:
+                target = '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
 
         res = {
             'job_id': job_id,
@@ -369,34 +377,6 @@ class MiningPool(object):
         }
         return await Job.from_dict(res)
 
-    async def set_target(self, to_time):
-        if not self.block_factory.special_min:
-            await self.set_target_from_last_non_special_min(self.config.LatestBlock.block)
-        # todo: keep block target at normal target, for header and block info.
-        # Only tweak target at validation time, and don't include special_min into header
-        if self.block_factory.index >= CHAIN.SPECIAL_MIN_FORK:  # TODO: use a CHAIN constant
-            # print("test target", int(to_time), self.last_block_time)
-            if self.block_factory.target == 0:
-                # If the node is started when the current block is special_min, then we have a 0 target
-                await self.set_target_as_previous_non_special_min()
-                # print('target set to', self.block_factory.target)
-            delta_t = int(to_time) - self.last_block_time
-            if delta_t \
-                    > CHAIN.special_min_trigger(self.config.network, self.block_factory.index):
-                special_target = CHAIN.special_target(self.block_factory.index, self.block_factory.target, delta_t, self.config.network)
-                self.block_factory.special_min = True
-                self.block_factory.special_target = special_target
-                self.block_factory.time = int(to_time)
-            else:
-                self.block_factory.special_min = False
-        elif self.block_factory.index < CHAIN.SPECIAL_MIN_FORK:  # TODO: use a CHAIN constant
-            if (int(to_time) - self.last_block_time) > self.target_block_time:
-                self.block_factory.target = self.max_target
-                self.block_factory.special_min = True
-                self.block_factory.time = int(to_time)
-            else:
-                self.block_factory.special_min = False
-
     async def set_target_as_previous_non_special_min(self):
         """TODO: this is not correct, should use a cached version of the current target somewhere, and recalc on
         new block event if we cross a boundary (% 2016 currently). Beware, at boundary we need to recalc the new diff one block ahead
@@ -408,7 +388,7 @@ class MiningPool(object):
             },
             {
                 'target': 1
-            }, 
+            },
             sort=[('index',-1)]
         )
 
@@ -433,78 +413,175 @@ class MiningPool(object):
             yield x
 
     async def get_pending_transactions(self):
-        transaction_objs = []
+        mempool_smart_contract_objs = {}
+        transaction_objs = {}
         used_sigs = []
-        async for txn in self.mongo.async_db.miner_transactions.find().sort([('fee', -1)]):
+        async for txn in self.mongo.async_db.miner_transactions.find({'relationship.smart_contract': {'$exists': True}}).sort([('fee', -1), ('time', 1)]):
+            transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
+            if not isinstance(transaction_obj, Transaction):
+                continue
+
+            if (
+                transaction_obj.relationship.identity.wif in mempool_smart_contract_objs and
+                int(transaction_obj.time) > int(mempool_smart_contract_objs[transaction_obj.relationship.identity.wif].time)
+            ):
+                continue
+
+            mempool_smart_contract_objs[transaction_obj.relationship.identity.wif] = transaction_obj
+
+        async for txn in self.mongo.async_db.miner_transactions.find({'relationship.smart_contract': {'$exists': False}}).sort([('fee', -1), ('time', 1)]):
+            transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
+            if not isinstance(transaction_obj, Transaction):
+                continue
+
+            transaction_objs.setdefault(transaction_obj.requested_rid, [])
+            transaction_objs[transaction_obj.requested_rid].append(transaction_obj)
+
+        # process recurring payments
+        generated_txns = []
+        async for x in await self.get_current_smart_contract_txns():
             try:
-                if isinstance(txn, Transaction):
-                    transaction_obj = txn
-                elif isinstance(txn, dict):
-                    transaction_obj = Transaction.from_dict(txn)
-                else:
-                    self.config.app_log.warning('transaction unrecognizable, skipping')
-                    continue
-                
-                await transaction_obj.verify()
-                
-                if transaction_obj.transaction_signature in used_sigs:
-                    self.config.app_log.warning('duplicate transaction found and removed')
-                    continue
-                used_sigs.append(transaction_obj.transaction_signature)
+                smart_contract_txn = Transaction.from_dict(x['transactions'])
+            except:
+                continue
+            try:
+                async for trigger_txn_block in await self.get_trigger_txns(smart_contract_txn):  # process blockchain txns
+                    trigger_txn = Transaction.from_dict(trigger_txn_block.get('transactions'))
+                    try:
+                        payout_txn = await smart_contract_txn.relationship.process(smart_contract_txn, trigger_txn, self.get_transaction_objs_list(transaction_objs) + generated_txns)
+                        if payout_txn:
+                            generated_txns.append(payout_txn)
+                    except:
+                        pass
+            except:
+                pass
 
-                failed1 = False
-                failed2 = False
-                used_ids_in_this_txn = []
+        # process expired contracts
+        used_public_keys = []
+        async for x in await self.get_expired_smart_contract_txns():
+            expired_blockchain_smart_contract_obj = Transaction.from_dict(x.get('transactions'))
+            if expired_blockchain_smart_contract_obj.public_key in used_public_keys:
+                continue
+            payout_txn = await expired_blockchain_smart_contract_obj.relationship.expire(expired_blockchain_smart_contract_obj)
+            if payout_txn:
+                generated_txns.append(payout_txn)
+                used_public_keys.append(expired_blockchain_smart_contract_obj.public_key)
 
-                async for x in self.get_inputs(transaction_obj.inputs):
-                    is_input_spent = await self.config.BU.is_input_spent(x.id, transaction_obj.public_key)
-                    if is_input_spent:
-                        failed1 = True
-                    if x.id in used_ids_in_this_txn:
-                        failed2 = True
-                    used_ids_in_this_txn.append(x.id)
-                if failed1:
-                    self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                    self.config.app_log.warning('transaction removed: input presumably spent already, not in unspent outputs {}'.format(transaction_obj.transaction_signature))
-                    self.mongo.db.failed_transactions.insert({'reason': 'input presumably spent already', 'txn': transaction_obj.to_dict()})
-                elif failed2:
-                    self.config.app_log.warning('transaction removed: using an input used by another transaction in this block {}'.format(transaction_obj.transaction_signature))
-                    self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                    self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
-                else:
-                    transaction_objs.append(transaction_obj)
+        return list(mempool_smart_contract_objs.values()) + self.get_transaction_objs_list(transaction_objs) + generated_txns
 
-            except MissingInputTransactionException as e:
-                self.config.app_log.warning('MissingInputTransactionException: transaction removed')
+    async def get_current_smart_contract_txns(self):
+        return self.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions': {'$elemMatch': {'relationship.smart_contract.expiry': {'$gt': self.config.LatestBlock.block.index}}}
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': {'$gt': self.config.LatestBlock.block.index}
+                }
+            },
+            {
+                '$sort': {'transactions.time': 1}
+            }
+        ])
+
+    async def get_expired_smart_contract_txns(self):
+        return self.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': self.config.LatestBlock.block.index
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': self.config.LatestBlock.block.index
+                }
+            },
+            {
+                '$sort': {'index': 1, 'transactions.time': 1}
+            }
+        ])
+
+    async def get_trigger_txns(self, smart_contract_txn):
+        match = {
+            'transactions': {'$elemMatch': {'relationship.smart_contract': {'$exists': False}}},
+            'transactions.requested_rid': smart_contract_txn.requested_rid,
+            'transactions': {'$elemMatch': {'public_key': {'$ne': smart_contract_txn.relationship.identity.public_key}}}
+        }
+        match2 = {
+            'transactions.relationship.smart_contract': {'$exists': False},
+            'transactions.requested_rid': smart_contract_txn.requested_rid,
+            'transactions.public_key': {'$ne': smart_contract_txn.relationship.identity.public_key}
+        }
+        trigger_txn_blocks = self.mongo.async_db.blocks.aggregate([
+            {
+                '$match': match
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': match2
+            },
+            {
+                '$sort': {'transactions.fee': -1, 'transactions.time': 1}
+            }
+        ])
+        return trigger_txn_blocks
+
+    def get_transaction_objs_list(self, transaction_objs):
+        return [y for x in list(transaction_objs.values()) for y in x]
+
+    async def verify_pending_transaction(self, txn, used_sigs):
+        try:
+            if isinstance(txn, Transaction):
+                transaction_obj = txn
+            elif isinstance(txn, dict):
+                transaction_obj = Transaction.from_dict(txn)
+            else:
+                self.config.app_log.warning('transaction unrecognizable, skipping')
+                return
+
+            transaction_obj.contract_generated = await transaction_obj.is_contract_generated()
+
+            await transaction_obj.verify()
+
+            if transaction_obj.transaction_signature in used_sigs:
+                self.config.app_log.warning('duplicate transaction found and removed')
+                return
+            used_sigs.append(transaction_obj.transaction_signature)
+
+            failed1 = False
+            failed2 = False
+            used_ids_in_this_txn = []
+
+            async for x in self.get_inputs(transaction_obj.inputs):
+                is_input_spent = await self.config.BU.is_input_spent(x.id, transaction_obj.public_key)
+                if is_input_spent:
+                    failed1 = True
+                if x.id in used_ids_in_this_txn:
+                    failed2 = True
+                used_ids_in_this_txn.append(x.id)
+            if failed1:
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'MissingInputTransactionException', 'txn': transaction_obj.to_dict()})
-
-            except InvalidTransactionSignatureException as e:
-                self.config.app_log.warning('InvalidTransactionSignatureException: transaction removed')
+                self.config.app_log.warning('transaction removed: input spent already {}'.format(transaction_obj.transaction_signature))
+                self.mongo.db.failed_transactions.insert({'reason': 'input spent already', 'txn': transaction_obj.to_dict()})
+            elif failed2:
+                self.config.app_log.warning('transaction removed: using an input used by another transaction in this block {}'.format(transaction_obj.transaction_signature))
                 self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionSignatureException', 'txn': transaction_obj.to_dict()})
+                self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
+            else:
+                return transaction_obj
 
-            except InvalidTransactionException as e:
-                self.config.app_log.warning('InvalidTransactionException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'InvalidTransactionException', 'txn': transaction_obj.to_dict()})
-
-            except TransactionInputOutputMismatchException as e:
-                self.config.app_log.warning('TransactionInputOutputMismatchException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'TransactionInputOutputMismatchException', 'txn': transaction_obj.to_dict()})
-
-            except TotalValueMismatchException as e:
-                self.config.app_log.warning('TotalValueMismatchException: transaction removed')
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'TotalValueMismatchException', 'txn': transaction_obj.to_dict()})
-
-            except Exception as e:
-                self.config.app_log.warning(format_exc())
-                self.mongo.db.miner_transactions.remove({'id': txn['id']})
-                self.mongo.db.failed_transactions.insert({'reason': 'Unhandled exception', 'error': format_exc()})
-
-        return transaction_objs
+        except Exception as e:
+            await Transaction.handle_exception(e, transaction_obj)
 
     async def accept_block(self, block):
         from yadacoin.core.consensus import ProcessingQueueItem
@@ -519,6 +596,8 @@ class MiningPool(object):
 
         await self.config.nodeShared.send_block(block)
 
+        await self.config.websocketServer.send_block(block)
+
         await self.refresh()
-        
+
 

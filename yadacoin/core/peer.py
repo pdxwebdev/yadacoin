@@ -92,12 +92,10 @@ class Peer:
                         u.deleteportmapping(eport, 'TCP')
                     u.addportmapping(eport, 'TCP', u.lanaddr, server_port, 'UPnP YadaCoin Serve port %u' % eport, '')
             except Exception as e:
-                print(e)
                 config.serve_host = config.serve_host
                 config.serve_port = config.serve_port
                 config.peer_host = config.peer_host
                 config.peer_port = config.peer_port
-                print('UPnP failed: you must forward and/or whitelist port', config.peer_port)
 
     @classmethod
     def type_limit(cls, peer):

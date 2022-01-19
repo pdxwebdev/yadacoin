@@ -58,6 +58,8 @@ class Mongo(object):
           ("transactions.requester_rid", ASCENDING)
         ], name="__txn_index_requester_rid")
         __txn_time = IndexModel([("transactions.time", DESCENDING)], name="__txn_time")
+        __txn_contract_rid = IndexModel([("transactions.contract.rid", ASCENDING)], name="__txn_contract_rid")
+        __txn_rel_contract_identity_public_key = IndexModel([("transactions.relationship.smart_contract.identity.public_key", ASCENDING)], name="__txn_rel_contract_identity_public_key")
 
         try:
             self.db.blocks.create_indexes([
@@ -81,7 +83,9 @@ class Mongo(object):
                 __txn_index_rid,
                 __txn_index_requested_rid,
                 __txn_index_requester_rid,
-                __txn_time
+                __txn_time,
+                __txn_contract_rid,
+                __txn_rel_contract_identity_public_key
             ])
         except:
             pass
@@ -132,13 +136,18 @@ class Mongo(object):
         __requester_rid = IndexModel([("requester_rid", ASCENDING)], name="__requester_rid")
         __time = IndexModel([("time", DESCENDING)], name="__time")
         __inputs_id = IndexModel([("inputs.id", ASCENDING)], name="__inputs_id")
+        __fee_time = IndexModel([
+            ("fee", DESCENDING),
+            ("time", ASCENDING)
+        ], name="__fee_time")
         try:
             self.db.miner_transactions.create_indexes([
                 __rid,
                 __requested_rid,
                 __requester_rid,
                 __time,
-                __inputs_id
+                __inputs_id,
+                __fee_time
             ])
         except:
             pass
@@ -178,6 +187,21 @@ class Mongo(object):
         for txn in txns_to_convert:
             self.config.app_log.warning(f'Converting txn time to int for txn: {txn["id"]}')
             self.db.miner_transactions.update({'id': txn['id']}, {'$set': {'time': int(txn['time'])}})
+
+        # convert blockchain transaction time from string to number
+        blockchain_txns_to_convert = self.db.blocks.find({'transactions.time': {'$type': 2}})
+        for block in blockchain_txns_to_convert:
+            changed = False
+            for txn in block.get('transactions'):
+                changed = True
+                if 'time' in txn:
+                    self.config.app_log.warning(f'Converting blockchain txn time to int for index and txn: {block["index"]} {txn["id"]}')
+                    if txn['time'] in ['', 0, '0']:
+                        del txn['time']
+                    else:
+                        txn['time'] = int(txn['time'])
+            if changed:
+                self.db.blocks.update({'index': block['index']}, {'$set': block})
 
         too_high_reward_blocks = self.db.blocks.find({'index': {'$gte': 210000}})
         for block in too_high_reward_blocks:
