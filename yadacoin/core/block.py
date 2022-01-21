@@ -182,7 +182,6 @@ class Block(object):
             transaction_objs,
             used_sigs,
             used_inputs,
-            fee_sum,
             index,
             xtime
         )
@@ -192,11 +191,11 @@ class Block(object):
             transaction_objs,
             used_sigs,
             used_inputs,
-            fee_sum,
             index,
             xtime
         )
 
+        fee_sum = sum([float(transaction_obj.fee) for transaction_obj in transaction_objs])
         block_reward = CHAIN.get_block_reward(index)
         coinbase_txn = await Transaction.generate(
             public_key=public_key,
@@ -237,7 +236,6 @@ class Block(object):
         transaction_objs,
         used_sigs,
         used_inputs,
-        fee_sum,
         index,
         xtime
     ):
@@ -273,7 +271,6 @@ class Block(object):
                     if failed:
                         raise InvalidTransactionException(f"Transaction has inputs already spent: {transaction_obj.transaction_signature}")
 
-                fee_sum += float(transaction_obj.fee)
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
                 continue
