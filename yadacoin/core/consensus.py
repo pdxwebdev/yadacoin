@@ -195,7 +195,7 @@ class Consensus(object):
     async def search_network_for_new(self):
         if self.config.network == 'regnet':
             return False
-        
+
         if self.syncing:
             return False
 
@@ -210,7 +210,7 @@ class Consensus(object):
             except Exception as e:
                 self.config.app_log.warning(e)
             self.config.health.consensus.last_activity = time()
-    
+
     async def request_blocks(self, peer):
         await self.config.nodeShared.write_params(peer, 'getblocks', {
             'start_index': int(self.config.LatestBlock.block.index) + 1,
@@ -255,7 +255,7 @@ class Consensus(object):
         async for new_block in new_blocks:
             new_block = await Block.from_dict(new_block['block'])
             yield new_block
-    
+
     async def get_previous_consensus_block(self, block, stream=None):
         had_results = False
         async for local_block in self.get_previous_consensus_block_from_local(block):
@@ -270,7 +270,7 @@ class Consensus(object):
                     'index': block.index - 1
                 }
             )
-    
+
     async def build_backward_from_block_to_fork(self, block, blocks, stream=None, depth=0):
         self.app_log.debug(block.to_dict())
 
@@ -386,6 +386,7 @@ class Consensus(object):
                     if stream and stream.syncing:
                         return True
                     await self.config.nodeShared.send_block(self.config.LatestBlock.block)
+                    await self.config.websocketServer.send_block(self.config.LatestBlock.block)
 
             if self.config.mp:
                 if self.syncing:

@@ -30,7 +30,7 @@ class BaseHandler(RequestHandler):
         self.set_header('Access-Control-Allow-Headers', "Authorization, Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
         self.set_header('Access-Control-Max-Age', 600)
         self.jwt = {}
-    
+
     async def prepare(self):
         if self.config.api_whitelist and self.request.remote_ip not in self.config.api_whitelist:
             self.status_code = 400
