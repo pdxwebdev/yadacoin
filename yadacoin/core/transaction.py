@@ -191,7 +191,7 @@ class Transaction(object):
             if isinstance(x, Input):
                 inp = x
             else:
-                inp = x
+                inp = Input.from_dict(x)
             cls_inst.inputs.append(inp)
 
         cls_inst.coinbase = coinbase
@@ -689,6 +689,8 @@ class Transaction(object):
             ret['requester_rid'] = self.requester_rid
         if self.requested_rid:
             ret['requested_rid'] = self.requested_rid
+        if self.miner_signature:
+            ret['miner_signature'] = self.miner_signature
         return ret
 
     def to_json(self):

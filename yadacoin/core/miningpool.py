@@ -549,6 +549,10 @@ class MiningPool(object):
                 self.config.app_log.warning('transaction unrecognizable, skipping')
                 return
 
+            if self.config.LatestBlock.block.index + 1 >= CHAIN.TXN_V3_FORK and transaction_obj.version < 3:
+                self.config.app_log.warning('transaction version too old, skipping')
+                return
+
             transaction_obj.contract_generated = await transaction_obj.is_contract_generated()
 
             await transaction_obj.verify()

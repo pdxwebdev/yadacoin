@@ -23,6 +23,7 @@ class CHAIN(object):
     RANDOMX_FORK = 65000
     FORK_10_MIN_BLOCK = 65500
     SPECIAL_MIN_FORK = 38600
+    TXN_V3_FORK = 270000
 
     RETARGET_PERIOD = 2016  # blocks
     TWO_WEEKS = 1209600  # seconds

@@ -432,6 +432,9 @@ class Block(object):
         coinbase_sum = 0
         fee_sum = 0.0
         for txn in self.transactions:
+            if int(self.index) >= CHAIN.TXN_V3_FORK and int(txn.version) < 3:
+                raise Exception("block contains transaction with version too old for this height")
+
             if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
                 #yadacoin.core.config.CONFIG.mongo.db.miner_transactions.remove({'id': txn.transaction_signature}, multi=True)
                 #raise Exception("Block embeds txn too far in the future")
