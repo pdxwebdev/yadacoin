@@ -109,6 +109,12 @@ class NodeRPC(BaseRPC):
         except:
             return
 
+        if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
+            if not hasattr(txn, 'version'):
+                return
+            if int(txn.version) < 3:
+                return
+
         if await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn.transaction_signature}):
             return
 
@@ -186,7 +192,9 @@ class NodeRPC(BaseRPC):
         if block.index > (self.config.LatestBlock.block.index + 100) or block.index < self.config.LatestBlock.block.index:
             return
 
-        await self.config.consensus.insert_consensus_block(block, stream.peer)
+        if not await self.config.consensus.insert_consensus_block(block, stream.peer):
+            return
+
         await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
 
         async for peer_stream in self.config.peer.get_sync_peers():
