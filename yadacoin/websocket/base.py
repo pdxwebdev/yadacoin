@@ -351,7 +351,7 @@ class RCPWebSocketServer(WebSocketHandler):
         try:
             await self.write_message('{}'.format(json.dumps(rpc_data)).encode())
         except:
-            self.config.app_log.warning('message did not send')
+            self.config.app_log.debug(format_exc())
 
         self.config.app_log.debug(f'SENT {self.peer.identity.username} {method} {data} {rpc_type} {req_id}')
 
