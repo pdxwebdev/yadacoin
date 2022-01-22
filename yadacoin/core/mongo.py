@@ -116,12 +116,22 @@ class Mongo(object):
             pass
 
         __address = IndexModel([("address", ASCENDING)], name="__address")
+        __address_desc = IndexModel([("address", DESCENDING)], name="__address_desc")
         __address_only = IndexModel([("address_only", ASCENDING)], name="__address_only")
+        __address_only_desc = IndexModel([("address_only", DESCENDING)], name="__address_only_desc")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
         __time = IndexModel([("time", DESCENDING)], name="__time")
         try:
-            self.db.shares.create_indexes([__address, __address_only, __index, __hash, __time])
+            self.db.shares.create_indexes([
+                __address,
+                __address_desc,
+                __address_only,
+                __address_only_desc,
+                __index,
+                __hash,
+                __time
+            ])
         except:
             pass
 

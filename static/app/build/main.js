@@ -807,6 +807,8 @@ var MarketItemPage = /** @class */ (function () {
             text: buttonText,
             handler: function (data) {
                 var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.AFFILIATE);
+                var rid = _this.graphService.generateRid(_this.smartContract.identity.username_signature, _this.bulletinSecretService.username_signature);
+                rids.rid = rid;
                 _this.websocketService.newtxn({
                     referrer: _this.graphService.toIdentity(_this.bulletinSecretService.identity),
                     target: _this.smartContract.target,
