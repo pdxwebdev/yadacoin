@@ -313,7 +313,21 @@ class Consensus(object):
         if not await inbound_blockchain.is_consecutive:
             return False
 
-        first_block = await inbound_blockchain.first_block
+        await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)
+
+    async def integrate_blocks_with_existing_chain(self, blockchain, stream):
+        self.app_log.debug('integrate_blocks_with_existing_chain')
+
+        extra_blocks = [x async for x in blockchain.blocks]
+        prev_block = None
+        async for block in blockchain.blocks:
+            if self.config.network == 'regnet':
+                break
+            if not await Blockchain.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block):
+                return
+            prev_block = block
+
+        first_block = await blockchain.first_block
 
         existing_blockchain = await Blockchain.init_async(
             self.config.mongo.async_db.blocks.find({
@@ -324,8 +338,8 @@ class Consensus(object):
             partial=True
         )
 
-        if not await existing_blockchain.test_inbound_blockchain(inbound_blockchain):
-            final_block = await inbound_blockchain.final_block
+        if not await existing_blockchain.test_inbound_blockchain(blockchain):
+            final_block = await blockchain.final_block
             if stream:
                 await self.config.nodeShared.write_params(
                     stream,
@@ -335,19 +349,6 @@ class Consensus(object):
                     }
                 )
             return
-
-        await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)
-
-    async def integrate_blocks_with_existing_chain(self, blockchain, stream):
-        self.app_log.debug('integrate_blocks_with_existing_chain')
-        extra_blocks = [x async for x in blockchain.blocks]
-        prev_block = None
-        async for block in blockchain.blocks:
-            if self.config.network == 'regnet':
-                break
-            if not await Blockchain.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block):
-                return
-            prev_block = block
 
         async for block in blockchain.blocks:
             if not await Blockchain.test_block(block) and self.config.network == 'mainnet':
