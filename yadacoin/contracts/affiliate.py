@@ -242,14 +242,6 @@ class AffiliateContract(Contract):
 
     async def verify_payout_generated_already(self, contract_txn, trigger_txn, mempool_txns):
         for participant in [self.referrer, self.referrer]:
-            for txn in mempool_txns or []:
-                if (
-                    txn.public_key == self.identity.public_key and
-                    txn.requester_rid == trigger_txn.requester_rid and
-                    txn.requested_rid == contract_txn.requested_rid and
-                    txn.rid == trigger_txn.rid
-                ):
-                    raise Exception('Contract already generated in this mempool')
             match = {
                 'transactions.public_key': self.identity.public_key,
                 'transactions.requester_rid': trigger_txn.requester_rid,

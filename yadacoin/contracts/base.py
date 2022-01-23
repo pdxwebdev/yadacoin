@@ -113,7 +113,6 @@ class Contract:
         if generated_txn.requested_rid != contract_txn.requested_rid:
             raise Exception('requested_rid does not match that of smart contract')
 
-        await self.verify_payout_generated_already(contract_txn, generated_txn, mempool_txns)
         await getattr(self, f'verify_{self.proof_type}')(contract_txn, generated_txn)
 
     async def get_funds(self, contract_txn):
