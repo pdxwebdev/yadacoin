@@ -440,11 +440,21 @@ class Block(object):
             if txn.coinbase:
                 for output in txn.outputs:
                     coinbase_sum += float(output.value)
-            elif txn.miner_signature:
-                result = verify_signature(base64.b64decode(txn.miner_signature), self.signature.encode('utf-8'), bytes.fromhex(self.public_key))
+            elif txn.contract_generated:
+                result = verify_signature(
+                    base64.b64decode(txn.miner_signature),
+                    hashlib.sha256(txn.transaction_signature.encode()).hexdigest().encode(),
+                    bytes.fromhex(self.public_key)
+                )
                 if not result:
                     raise Exception("block signature1 is invalid")
-                await txn.relationship.verify_generation(self, txn)
+                contract_txn = await txn.get_generating_contract()
+                await contract_txn.relationship.verify_generation(
+                    self,
+                    txn,
+                    [x for x in self.transactions if x.transaction_signature != txn.transaction_signature]
+                )
+                fee_sum += float(txn.fee)
             else:
                 fee_sum += float(txn.fee)
 

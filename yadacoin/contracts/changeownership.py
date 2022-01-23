@@ -118,7 +118,7 @@ class ChangeOwnershipContract(Contract):
     async def process(self, contract_txn, trigger_txn, mempool_txns):
 
         await self.verify(contract_txn, trigger_txn, mempool_txns)
-        await self.verify_payout_generated_already(contract_txn, trigger_txn)
+        await self.verify_payout_generated_already(contract_txn, trigger_txn, mempool_txns)
 
         if self.proof_type == AssetProofTypes.AUCTION.value:
             return
@@ -159,14 +159,36 @@ class ChangeOwnershipContract(Contract):
         )
         return payout_txn
 
-    async def verify_payout_generated_already(self, contract_txn, trigger_txn):
-        block_result = await self.config.mongo.async_db.blocks.find_one({
-          'transactions.public_key': self.identity.public_key,
-          'transactions.requester_rid': trigger_txn.requester_rid,
-          'transactions.requested_rid': contract_txn.requested_rid,
-          'transactions.rid': trigger_txn.rid
-        })
-        if block_result:
+    async def verify_payout_generated_already(self, contract_txn, trigger_txn, mempool_txns):
+        for txn in mempool_txns:
+            if (
+                txn.public_key == self.identity.public_key and
+                txn.requester_rid == trigger_txn.requester_rid and
+                txn.requested_rid == contract_txn.requested_rid and
+                txn.rid == trigger_txn.rid
+            ):
+                raise Exception('Contract already generated in this mempool')
+        match = {
+            'transactions.public_key': self.identity.public_key,
+            'transactions.requester_rid': trigger_txn.requester_rid,
+            'transactions.requested_rid': contract_txn.requested_rid,
+            'transactions.rid': trigger_txn.rid
+        }
+        block_results = self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': match
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': match
+            },
+            {
+                '$sort': {'index': -1, 'transactions.fee': -1, 'transactions.time': -1}
+            }
+        ])
+        async for block_result in block_results:
             raise Exception('Contract already generated payout')
 
     async def verify_first_come(self, contract_txn, trigger_txn):

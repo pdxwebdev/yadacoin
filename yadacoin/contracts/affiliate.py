@@ -156,6 +156,7 @@ class AffiliateContract(Contract):
         from yadacoin.core.transactionutils import TU
 
         await self.verify(contract_txn, trigger_txn, mempool_txns)
+        await self.verify_payout_generated_already(contract_txn, trigger_txn, mempool_txns)
 
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
         value_sent_to_address = sum([x.value for x in trigger_txn.outputs if x.to == address])
@@ -166,7 +167,6 @@ class AffiliateContract(Contract):
 
         outputs = []
         try:
-            await self.verify_payout_generated_already(contract_txn, trigger_txn, self.referrer, mempool_txns)
             if self.referrer.active:
                 to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(referrer.public_key)))
                 if self.referrer.operator == PayoutOperators.PERCENT.value:
@@ -182,7 +182,6 @@ class AffiliateContract(Contract):
         except:
             pass
         try:
-            await self.verify_payout_generated_already(contract_txn, trigger_txn, self.referee, mempool_txns)
             if self.referee.active:
                 to = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(trigger_txn.public_key)))
                 if self.referee.operator == PayoutOperators.PERCENT.value:
@@ -241,44 +240,43 @@ class AffiliateContract(Contract):
         if not referrer:
             raise Exception('Referrer not found')
 
-    async def verify_payout_generated_already(self, contract_txn, trigger_txn, participant, mempool_txns):
-
-        for txn in mempool_txns:
-            if (
-                txn.public_key == self.identity.public_key and
-                txn.requester_rid == trigger_txn.requester_rid and
-                txn.requested_rid == contract_txn.requested_rid and
-                txn.rid == trigger_txn.rid
-            ):
-                raise Exception('Contract already generated in this mempool')
-        match = {
-            'transactions.public_key': self.identity.public_key,
-            'transactions.requester_rid': trigger_txn.requester_rid,
-            'transactions.requested_rid': contract_txn.requested_rid,
-            'transactions.rid': trigger_txn.rid
-        }
-        block_results = self.config.mongo.async_db.blocks.aggregate([
-            {
-                '$match': match
-            },
-            {
-                '$unwind': '$transactions'
-            },
-            {
-                '$match': match
-            },
-            {
-                '$sort': {'index': -1, 'transactions.fee': -1, 'transactions.time': -1}
+    async def verify_payout_generated_already(self, contract_txn, trigger_txn, mempool_txns):
+        for participant in [self.referrer, self.referrer]:
+            for txn in mempool_txns or []:
+                if (
+                    txn.public_key == self.identity.public_key and
+                    txn.requester_rid == trigger_txn.requester_rid and
+                    txn.requested_rid == contract_txn.requested_rid and
+                    txn.rid == trigger_txn.rid
+                ):
+                    raise Exception('Contract already generated in this mempool')
+            match = {
+                'transactions.public_key': self.identity.public_key,
+                'transactions.requester_rid': trigger_txn.requester_rid,
+                'transactions.requested_rid': contract_txn.requested_rid,
+                'transactions.rid': trigger_txn.rid
             }
-        ])
-        async for block_result in block_results:
-            if participant.payout_type == PayoutType.RECURRING.value:
-                if block_result['index'] > self.config.LatestBlock.block.index - participant.interval:
-                    raise Exception('Contract already generated payout for this interval')
-            elif participant.payout_type == PayoutType.ONE_TIME.value:
-                if block_result:
+            block_results = self.config.mongo.async_db.blocks.aggregate([
+                {
+                    '$match': match
+                },
+                {
+                    '$unwind': '$transactions'
+                },
+                {
+                    '$match': match
+                },
+                {
+                    '$sort': {'index': -1, 'transactions.fee': -1, 'transactions.time': -1}
+                }
+            ])
+            async for block_result in block_results:
+                if participant.payout_type == PayoutType.RECURRING.value:
+                    if block_result['index'] > self.config.LatestBlock.block.index - participant.interval:
+                        raise Exception('Contract already generated payout for this interval')
+                elif participant.payout_type == PayoutType.ONE_TIME.value:
                     raise Exception('Contract already generated payout')
-            break
+                break
 
     async def get_honor_funds(self, contract_txn, total_payout):
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
