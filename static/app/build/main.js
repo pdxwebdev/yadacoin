@@ -4882,8 +4882,6 @@ var SendReceive = /** @class */ (function () {
     };
     SendReceive.prototype.submit = function () {
         var _this = this;
-        var value = parseFloat(this.value);
-        var total = value + 0.01;
         var alert = this.alertCtrl.create();
         if (!this.recipients[0].to) {
             alert.setTitle('Enter an address');
@@ -4897,6 +4895,11 @@ var SendReceive = /** @class */ (function () {
             alert.present();
             return;
         }
+        var total = 0;
+        this.recipients.map(function (output, i) {
+            _this.recipients[i].value = parseFloat(output.value);
+            total += parseFloat(output.value);
+        });
         alert.setTitle('Approve Transaction');
         alert.setSubTitle('You are about to spend ' + total + ' coins');
         alert.addButton('Cancel');
@@ -4904,14 +4907,9 @@ var SendReceive = /** @class */ (function () {
             text: 'Confirm',
             handler: function (data) {
                 _this.loadingModal.present();
-                var value_needed = 0;
-                _this.recipients.map(function (output, i) {
-                    _this.recipients[i].value = parseFloat(output.value);
-                    value_needed += parseFloat(output.value);
-                });
-                _this.walletService.get(value_needed)
+                _this.walletService.get(total)
                     .then(function () {
-                    if (_this.walletService.wallet.balance < value_needed) {
+                    if (_this.walletService.wallet.balance < total) {
                         var title = 'Insufficient Funds';
                         var message = "Not enough YadaCoins for transaction.";
                         var alert = _this.alertCtrl.create();
