@@ -4906,7 +4906,7 @@ var SendReceive = /** @class */ (function () {
                 _this.loadingModal.present();
                 var value_needed = 0;
                 _this.recipients.map(function (output, i) {
-                    _this.recipients[i] = parseFloat(output.value);
+                    _this.recipients[i].value = parseFloat(output.value);
                     value_needed += parseFloat(output.value);
                 });
                 _this.walletService.get(value_needed)
