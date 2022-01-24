@@ -4821,7 +4821,7 @@ var SendReceive = /** @class */ (function () {
         }
         this.recipients = [
             {
-                address: '',
+                to: '',
                 value: 0
             }
         ];
@@ -4898,14 +4898,15 @@ var SendReceive = /** @class */ (function () {
             return;
         }
         alert.setTitle('Approve Transaction');
-        alert.setSubTitle('You are about to spend ' + total + ' coins (' + this.value + ' coin + 0.001 fee)');
+        alert.setSubTitle('You are about to spend ' + total + ' coins');
         alert.addButton('Cancel');
         alert.addButton({
             text: 'Confirm',
             handler: function (data) {
                 _this.loadingModal.present();
                 var value_needed = 0;
-                _this.recipients.map(function (output) {
+                _this.recipients.map(function (output, i) {
+                    _this.recipients[i] = parseFloat(output.value);
                     value_needed += parseFloat(output.value);
                 });
                 _this.walletService.get(value_needed)
@@ -4925,7 +4926,7 @@ var SendReceive = /** @class */ (function () {
                         throw ('insufficient funds');
                     }
                     return _this.transactionService.generateTransaction({
-                        outputs: _this.recipients
+                        outputs: JSON.parse(JSON.stringify(_this.recipients))
                     });
                 }).then(function (txn) {
                     return _this.transactionService.sendTransaction(txn);
