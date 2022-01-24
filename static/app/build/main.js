@@ -4904,9 +4904,13 @@ var SendReceive = /** @class */ (function () {
             text: 'Confirm',
             handler: function (data) {
                 _this.loadingModal.present();
-                _this.walletService.get(_this.value)
+                var value_needed = 0;
+                _this.recipients.map(function (output) {
+                    value_needed += output.value;
+                });
+                _this.walletService.get(value_needed)
                     .then(function () {
-                    if (_this.walletService.wallet.balance < value) {
+                    if (_this.walletService.wallet.balance < value_needed) {
                         var title = 'Insufficient Funds';
                         var message = "Not enough YadaCoins for transaction.";
                         var alert = _this.alertCtrl.create();
