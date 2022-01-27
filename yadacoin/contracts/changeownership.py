@@ -209,7 +209,7 @@ class ChangeOwnershipContract(Contract):
                     earliest_time = purchase_txn_obj.time
         return winning_purchase_txn
 
-    async def verify_auction(self, contract_txn, trigger_txn):
+    async def verify_auction(self, contract_txn, generated_txn):
         if self.expiry > self.config.LatestBlock.block.index:
             raise Exception('Expiry block height has not yet been reached.')
 
@@ -217,18 +217,33 @@ class ChangeOwnershipContract(Contract):
         if not winning_txn:
             raise Exception('No winning bid for this auction')
 
-        if winning_txn.transaction_signature != trigger_txn.transaction_signature:
+        if not (
+            generated_txn.requested_rid == winning_txn.requested_rid and
+            generated_txn.requester_rid == winning_txn.requester_rid and
+            generated_txn.rid == winning_txn.rid
+        ):
             raise Exception('Incorrect winning bid for this auction')
 
     async def get_auction_bid(self, contract_txn):
         from yadacoin.core.transaction import Transaction, Input, Output
         highest_amount = 0
+        lowest_time_for_highest_amount = 100000000000
         winning_purchase_txn = None
         async for purchase_txn_block in await self.get_purchase_txns(contract_txn):
             purchase_txn_obj = Transaction.ensure_instance(purchase_txn_block.get('transactions'))
             purchase_amount = await self.get_amount(contract_txn, purchase_txn_obj)
+
             if purchase_amount > highest_amount:
                 winning_purchase_txn = purchase_txn_obj
+                highest_amount = purchase_amount
+                lowest_time_for_highest_amount = purchase_txn_obj.time
+            elif (
+                purchase_amount == highest_amount and
+                purchase_txn_obj.time < lowest_time_for_highest_amount
+            ):
+                winning_purchase_txn = purchase_txn_obj
+                lowest_time_for_highest_amount = purchase_txn_obj.time
+
         return winning_purchase_txn
 
     async def verify_confirmation(self, contract_txn, trigger_txn):
