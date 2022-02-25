@@ -964,6 +964,13 @@ class WebSignInHandler(BaseGraphHandler):
         })
 
 
+class IdentityHandler(BaseGraphHandler):
+    async def get(self):
+        return self.render(
+            'identity.html'
+        )
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r'/yada-config', GraphConfigHandler), # first the config is requested
@@ -991,4 +998,5 @@ GRAPH_HANDLERS = [
     (r'/ns', NSHandler), # name server endpoints
     (r'/sia-download', SiaDownloadHandler),
     (r'/web-signin', WebSignInHandler),
+    (r'/identity', IdentityHandler),
 ]

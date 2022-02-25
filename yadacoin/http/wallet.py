@@ -66,7 +66,7 @@ class GenerateChildWalletHandler(BaseHandler):
             'signature': keyhash
         })
         return self.render_as_json({"address": address})
-    
+
     def to_wif(self, private_key):
 
         #to wif
@@ -223,7 +223,7 @@ class UnlockedHandler(BaseHandler):
             return self.render_as_json({
                 'unlocked': True
             })
-        
+
         return self.render_as_json({
             'unlocked': False
         })
@@ -238,7 +238,7 @@ class UnlockHandler(BaseHandler):
         self.render(
             "auth.html"
         )
-    
+
     async def post(self):
         try:
             key_or_wif = self.get_body_argument('key_or_wif')
@@ -270,7 +270,7 @@ class UnlockHandler(BaseHandler):
                         'key':'jwt',
                         'value': payload
                     }
-                }, 
+                },
                 upsert=True
             )
             return self.render_as_json({'token': self.encoded})
