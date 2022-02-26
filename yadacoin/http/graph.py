@@ -971,6 +971,43 @@ class IdentityHandler(BaseGraphHandler):
         )
 
 
+challenges = {}
+class ChallengeHandler(BaseGraphHandler):
+    async def post(self):
+        try:
+            data = json.loads(self.request.body)
+            challenge = str(uuid.uuid4())
+            challenges[data['username_signature']] = {
+                'identity': {
+                    'username': data['username'],
+                    'username_signature': data['username_signature'],
+                    'public_key': data['public_key']
+                },
+                'challenge': challenge
+            }
+            return self.render_as_json({
+                'status': True,
+                'challenge': challenge
+            })
+        except:
+            return self.render_as_json({'status': False})
+
+
+class AuthHandler(BaseGraphHandler):
+    async def post(self):
+        try:
+            data = json.loads(self.request.body)
+            challenge = challenges[data['username_signature']]
+            authed = verify_signature(
+                base64.b64decode(data['challange_signature']),
+                hashlib.sha256(challenge['challenge']).digest().hex().encode(),
+                bytes.fromhex(challenge['identity']['public_key'])
+            )
+        except:
+            authed = False
+        return self.render_as_json({'authed': authed})
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r'/yada-config', GraphConfigHandler), # first the config is requested
@@ -999,4 +1036,6 @@ GRAPH_HANDLERS = [
     (r'/sia-download', SiaDownloadHandler),
     (r'/web-signin', WebSignInHandler),
     (r'/identity', IdentityHandler),
+    (r'/challenge', ChallengeHandler),
+    (r'/auth', AuthHandler),
 ]
