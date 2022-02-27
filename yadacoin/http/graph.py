@@ -999,7 +999,7 @@ class AuthHandler(BaseGraphHandler):
             data = json.loads(self.request.body)
             challenge = challenges[data['username_signature']]
             authed = verify_signature(
-                base64.b64decode(data['challange_signature']),
+                base64.b64decode(data['challenge_signature']),
                 hashlib.sha256(challenge['challenge'].encode()).digest().hex().encode(),
                 bytes.fromhex(challenge['identity']['public_key'])
             )
