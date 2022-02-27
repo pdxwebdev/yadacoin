@@ -1,7 +1,7 @@
 {
   "files": {
-    "app.js": "/yadacoinstatic/identity/static/js/app.52696999.chunk.js",
-    "app.js.map": "/yadacoinstatic/identity/static/js/app.52696999.chunk.js.map",
+    "app.js": "/yadacoinstatic/identity/static/js/app.ed0088e9.chunk.js",
+    "app.js.map": "/yadacoinstatic/identity/static/js/app.ed0088e9.chunk.js.map",
     "runtime~app.js": "/yadacoinstatic/identity/static/js/runtime~app.a6042583.js",
     "runtime~app.js.map": "/yadacoinstatic/identity/static/js/runtime~app.a6042583.js.map",
     "static/js/2.f63c5853.chunk.js": "/yadacoinstatic/identity/static/js/2.f63c5853.chunk.js",
@@ -18,6 +18,6 @@
   "entrypoints": [
     "static/js/runtime~app.a6042583.js",
     "static/js/2.f63c5853.chunk.js",
-    "static/js/app.52696999.chunk.js"
+    "static/js/app.ed0088e9.chunk.js"
   ]
 }
