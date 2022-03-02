@@ -138,7 +138,7 @@ https://yadacoin.io/download
   - description: Depricated
 - wallet_host_port
   - type: string
-  - default: "http://localhost:8000"
+  - default: "http://localhost:8001"
   - description: The url used to contact the node from the wallet user interface. You may want to change this is you would like to access your wallet remotely.
 - credits_per_share
   - type: decimal
