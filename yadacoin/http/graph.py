@@ -840,119 +840,6 @@ class SiaUploadHandler(BaseGraphHandler):
         return self.render_as_json({'status': 'success', 'skylink': skylink})
 
 
-class SiaDownloadHandler(BaseGraphHandler):
-    async def get(self):
-        from siaskynet import SkynetClient, utils
-        sc = SkynetClient(self.config.skynet_url)
-        skylink = '/skynet/skylink/' + self.get_query_argument('skylink')
-        response = sc.download_file_request(skylink)
-        for key, header in response.headers.items():
-            self.set_header(key, header)
-        self.write(response.content)
-        self.finish()
-
-
-class SiaUploadDirectoryHandler(BaseGraphHandler):
-    async def post(self):
-        import zipfile
-        from requests.auth import HTTPBasicAuth
-        from siaskynet import Skynet
-        uploaded_file = self.request.files['file'][0]
-        filename = self.get_query_argument('filename')
-        local_filename = '/tmp/{}'.format(filename)
-        with open(uploaded_file['filename'], 'wb') as f:
-            f.write(uploaded_file['body'])
-        with zipfile.ZipFile(uploaded_file['filename'], 'r') as zip_ref:
-            zip_ref.extractall(local_filename + '/dir')
-        try:
-            opts = Skynet.default_upload_options()
-            opts.portal_url = 'http://0.0.0.0:9980'
-            skylink = Skynet.upload_directory(local_filename + '/dir')
-        except Exception as e:
-            self.set_status(400)
-            return self.render_as_json({
-                'status': 'error',
-                'message': 'sia node not responding'
-            })
-        return self.render_as_json({'status': 'success', 'skylink': Skynet.strip_prefix(skylink)})
-
-
-class SiaShareFileHandler(BaseGraphHandler):
-    async def get(self):
-        from requests.auth import HTTPBasicAuth
-        headers = {
-            'User-Agent': 'Sia-Agent'
-        }
-        filename = self.get_query_argument('siapath')
-        siapath = self.get_query_argument('siapath')
-        try:
-            res = requests.get('http://{}/skynet/skyfile/something?filename=?dst={}&siapath={}'.format(self.config.sia_server, dst + siapath.split('/')[-1] + '.sia', siapath), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
-        except:
-            self.set_status(400)
-            return self.render_as_json({
-                'status': 'error',
-                'message': 'sia node not responding'
-            })
-        with open(dst + siapath.split('/')[-1] + '.sia', 'rb') as f:
-            data = f.read()
-        bdata = base64.b64encode(data)
-        return self.render_as_json({'filedata': bdata.decode()}) # this data will go in the relationship of the yada transaction
-
-
-    async def post(self):
-        from requests.auth import HTTPBasicAuth
-        headers = {
-            'User-Agent': 'Sia-Agent'
-        }
-        src='/home/mvogel/'
-        relationship = json.loads(self.request.body.decode('utf-8'))
-        siafiledata = base64.b64decode(relationship['groupChatFile'])
-        with open(src + relationship['groupChatFileName'].split('/')[-1] + '.sia', 'wb') as f:
-            f.write(bytearray(siafiledata))
-        try:
-            res = requests.get('http://0.0.0.0:9980/renter/file/{}'.format(relationship['groupChatFileName']), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
-        except:
-            self.set_status(400)
-            return self.render_as_json({
-                'status': 'error',
-                'message': 'sia node not responding'
-            })
-        fileData = json.loads(res.content.decode())
-        if not fileData.get('file', None):
-            res = requests.post('http://0.0.0.0:9980/renter/share/receive', {'src': src + relationship['groupChatFileName'] + '.sia', 'siapath': ''}, headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
-        return self.render_as_json({'status': 'success', 'stream_url': 'http://0.0.0.0:9980/renter/stream/' + relationship['groupChatFileName']})
-
-
-class SiaDeleteHandler(BaseGraphHandler):
-    async def get(self):
-        from requests.auth import HTTPBasicAuth
-        headers = {
-            'User-Agent': 'Sia-Agent'
-        }
-        siapath = self.get_query_argument('siapath')
-        try:
-            res = requests.post('http://0.0.0.0:9980/renter/delete/{}'.format(siapath), headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
-        except:
-            self.set_status(400)
-            return self.render_as_json({
-                'status': 'error',
-                'message': 'sia node not responding'
-            })
-        res = requests.get('http://0.0.0.0:9980/renter/files', headers=headers, auth=HTTPBasicAuth('', self.config.sia_api_key))
-        fileData = json.loads(res.content.decode())
-        files = fileData.get('files') or []
-        return self.render_as_json({
-            'status': 'success',
-            'files': [
-                {
-                    'siapath': x['siapath'],
-                    'stream_url': 'http://0.0.0.0:9980/renter/stream/' + x['siapath'],
-                    'available': x['available']
-                } for x in files
-            ]
-        })
-
-
 class WebSignInHandler(BaseGraphHandler):
     async def get(self):
         return self.render('web-sign-in.html')
@@ -1027,13 +914,9 @@ GRAPH_HANDLERS = [
     (r'/sign-raw-transaction', SignRawTransactionHandler), # server signs the client transaction
     (r'/post-fastgraph-transaction', FastGraphHandler), # fastgraph transaction is submitted by client
     (r'/sia-upload', SiaUploadHandler), # upload a file to your local sia renter
-    (r'/sia-upload-dir', SiaUploadDirectoryHandler), # upload a directory to your local sia renter
     (r'/sia-files', SiaFileHandler), # list files from the local sia renter
     (r'/sia-files-stream', SiaStreamFileHandler), #stream the file from the sia network, we need this because of cross origin
-    (r'/sia-share-file', SiaShareFileHandler), # share a file or list files from the local sia renter and return the .sia data base 64 encoded
-    (r'/sia-delete', SiaDeleteHandler),
     (r'/ns', NSHandler), # name server endpoints
-    (r'/sia-download', SiaDownloadHandler),
     (r'/web-signin', WebSignInHandler),
     (r'/identity', IdentityHandler),
     (r'/challenge', ChallengeHandler),
