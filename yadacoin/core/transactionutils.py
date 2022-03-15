@@ -42,7 +42,7 @@ class TU(object):  # Transaction Utilities
     def generate_rid(cls, config, username_signature):
         username_signatures = sorted([str(config.username_signature), str(username_signature)], key=str.lower)
         return hashlib.sha256((str(username_signatures[0]) + str(username_signatures[1])).encode('utf-8')).digest().hex()
-    
+
     @classmethod
     def check_rid_txn_fully_spent(cls, config, rid_txn, address, index):
         from yadacoin.core.transaction import Transaction
@@ -81,7 +81,7 @@ class TU(object):  # Transaction Utilities
             outputs=[
                 {'to': to, 'value': value}
             ]
-        
+
         if not inputs:
             inputs = []
 
@@ -138,7 +138,7 @@ class TU(object):  # Transaction Utilities
             })
 
         config.last_mempool_clean = time.time()
-    
+
     @classmethod
     async def rebroadcast_mempool(cls, config, include_zero=False):
         from yadacoin.core.transaction import Transaction
