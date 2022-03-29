@@ -117,8 +117,8 @@ class NodeApplication(Application):
             self.default_handlers.extend(handlers.HANDLERS)
             self.init_websocket()
             self.init_webui()
-            self.init_http()
             self.init_plugins()
+            self.init_http()
             self.init_whitelist()
             self.init_jwt()
         self.init_ioloop()
@@ -496,7 +496,7 @@ class NodeApplication(Application):
         for finder, name, ispkg in pkgutil.iter_modules([path.join(path.dirname(__file__), '..', 'plugins')]):
             if os.path.exists(path.join(path.dirname(__file__), '..', 'plugins', name, 'postboot.py')):
                 post_boot = importlib.import_module('plugins.' + name + '.postboot')
-                tornado.ioloop.IOLoop.current().run_sync(lambda: post_boot.go(self.config))
+                tornado.ioloop.IOLoop.current().run_sync(lambda: post_boot.go(self))
             handlers = importlib.import_module('plugins.' + name + '.handlers')
             if name == self.config.root_app:
                 [self.default_handlers.insert(0, handler) for handler in handlers.HANDLERS]
