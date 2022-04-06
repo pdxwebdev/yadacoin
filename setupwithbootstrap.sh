@@ -11,7 +11,7 @@ else
 echo "deb [ arch=amd64,arm64 ] https://repo.mongodb.org/apt/ubuntu bionic/mongodb-org/4.4 multiverse" | sudo tee /etc/apt/sources.list.d/mongodb-org-4.4.list
 fi
 sudo apt-get update
-sudo apt-get install -y mongodb-org libssl-dev cmake python3-pip libjpeg-dev build-essential git mongo-tools
+sudo apt-get install -y mongodb-org libssl-dev cmake python3-pip libjpeg-dev build-essential git
 
 # Setup and start DB service
 sudo systemctl enable mongod.service
