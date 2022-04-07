@@ -33,7 +33,11 @@ class PoolPayer(object):
         won_blocks = self.config.mongo.async_db.blocks.aggregate([
             {
                 '$match': {
-                    'transactions.inputs.0': {'$exists': False},
+                    'transactions': {
+                        '$elemMatch': {
+                            'inputs.0': {'$exists': False},
+                        }
+                    },
                     'transactions.outputs.to': self.config.address,
                     'index': {
                         '$gt': already_paid_height.get('index', 0)
