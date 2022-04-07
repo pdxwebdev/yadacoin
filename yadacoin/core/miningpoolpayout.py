@@ -59,6 +59,11 @@ class PoolPayer(object):
         ready_blocks = []
         do_payout = False
         async for won_block in won_blocks:
+            won_block = await self.config.mongo.async_db.blocks.find_one({
+                'index': won_block['index'],
+                'id': won_block['id'],
+                'hash': won_block['hash']
+            })
             won_block = await Block.from_dict(won_block)
             coinbase = won_block.get_coinbase()
             if coinbase.outputs[0].to != self.config.address:
