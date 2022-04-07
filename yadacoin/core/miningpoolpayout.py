@@ -159,6 +159,9 @@ class PoolPayer(object):
         if not coinbases:
             return
 
+        if not outputs and ready_blocks:
+            await self.config.mongo.async_db.share_payout.insert_one({'index': ready_blocks[-1].index})
+
         outputs_formatted = []
         for address, output in outputs.items():
             outputs_formatted.append({
