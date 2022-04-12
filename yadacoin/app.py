@@ -203,10 +203,15 @@ class NodeApplication(Application):
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
-                    for peer_cls in self.config.nodeServer.inbound_streams.keys():
+                    for peer_cls in list(self.config.nodeServer.inbound_streams.keys()):
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
-                                del self.config.nodeServer.retry_messages[x]
+                                for y in list(self.config.nodeServer.retry_messages):
+                                    if y[0] == x[0]:
+                                        del self.config.nodeServer.retry_messages[y]
+                                for y in list(retry_attempts):
+                                    if y[0] == x[0]:
+                                        del retry_attempts[y]
                                 await self.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
@@ -221,10 +226,15 @@ class NodeApplication(Application):
                     if x not in retry_attempts:
                         retry_attempts[x] = 0
                     retry_attempts[x] += 1
-                    for peer_cls in self.config.nodeClient.outbound_streams.keys():
+                    for peer_cls in list(self.config.nodeClient.outbound_streams.keys()):
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
-                                del self.config.nodeClient.retry_messages[x]
+                                for y in self.config.nodeServer.retry_messages:
+                                    if y[0] == x[0]:
+                                        del self.config.nodeServer.retry_messages[y]
+                                for y in retry_attempts:
+                                    if y[0] == x[0]:
+                                        del retry_attempts[y]
                                 await self.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:

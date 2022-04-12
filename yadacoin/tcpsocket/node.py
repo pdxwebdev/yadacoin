@@ -103,6 +103,14 @@ class NodeRPC(BaseRPC):
         ):
             return
 
+        if stream.peer.protocol_version > 2:
+            await self.write_result(
+                stream,
+                'newtxn_confirmed',
+                body.get('params', {}),
+                body['id']
+            )
+
         txn = Transaction.from_dict(payload.get('transaction'))
         try:
             await txn.verify()
@@ -125,14 +133,6 @@ class NodeRPC(BaseRPC):
             txn.to_dict(),
             upsert=True
         )
-
-        if stream.peer.protocol_version > 2:
-            await self.write_result(
-                stream,
-                'newtxn_confirmed',
-                body.get('params', {}),
-                body['id']
-            )
 
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:
