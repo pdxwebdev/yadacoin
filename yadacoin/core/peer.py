@@ -188,7 +188,6 @@ class Peer:
             return
         outbound_class = await self.get_outbound_class()
         limit = self.__class__.type_limit(outbound_class)
-        streams = self.config.nodeClient.outbound_streams[outbound_class.__name__].items()
 
         stream_collection = {**self.config.nodeClient.outbound_streams[outbound_class.__name__], **self.config.nodeClient.outbound_pending[outbound_class.__name__]}
         await self.connect(stream_collection, limit, peers)
@@ -284,12 +283,10 @@ class Seed(Peer):
                 self.config.app_log.error('No bridge seed found. Cannot route transaction.')
             yield peer_stream
         elif isinstance(peer, Seed):
-            streams = self.config.nodeServer.inbound_streams[SeedGateway.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeServer.inbound_streams[SeedGateway.__name__].values()):
                 yield peer_stream
 
-            streams = self.config.nodeClient.outbound_streams[Seed.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeClient.outbound_streams[Seed.__name__].values()):
                 yield peer_stream
 
     async def get_service_provider_request_peers(self, peer, payload):
@@ -318,21 +315,17 @@ class Seed(Peer):
                 self.config.app_log.error('No bridge seed found. Cannot route transaction.')
             yield peer_stream
         elif isinstance(peer, Seed):
-            streams = self.config.nodeServer.inbound_streams[SeedGateway.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeServer.inbound_streams[SeedGateway.__name__].values()):
                 yield peer_stream
 
     async def get_sync_peers(self):
-        peers = self.config.nodeServer.inbound_streams[SeedGateway.__name__].items()
-        for x, y in peers:
+        for y in list(self.config.nodeServer.inbound_streams[SeedGateway.__name__].values()):
             yield y
 
-        peers = self.config.nodeServer.inbound_streams[Seed.__name__].items()
-        for x, y in peers:
+        for y in list(self.config.nodeServer.inbound_streams[Seed.__name__].values()):
             yield y
 
-        peers = self.config.nodeClient.outbound_streams[Seed.__name__].items()
-        for x, y in peers:
+        for y in list(self.config.nodeClient.outbound_streams[Seed.__name__].values()):
             yield y
 
     async def get_peer_by_id(self, id_attr):
@@ -411,31 +404,26 @@ class SeedGateway(Peer):
 
     async def get_route_peers(self, peer, payload):
         if isinstance(peer, Seed):
-            streams = self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeServer.inbound_streams[ServiceProvider.__name__].values()):
                 yield peer_stream
         elif isinstance(peer, ServiceProvider):
-            streams = self.config.nodeClient.outbound_streams[Seed.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeClient.outbound_streams[Seed.__name__].values()):
                 yield peer_stream
 
     async def get_service_provider_request_peers(self, peer, payload):
         if isinstance(peer, Seed):
-            streams = self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeServer.inbound_streams[ServiceProvider.__name__].values()):
                 yield peer_stream
+
         elif isinstance(peer, ServiceProvider):
-            streams = self.config.nodeClient.outbound_streams[Seed.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeClient.outbound_streams[Seed.__name__].values()):
                 yield peer_stream
 
     async def get_sync_peers(self):
-        streams = self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items()
-        for x, y in streams:
+        for y in list(self.config.nodeServer.inbound_streams[ServiceProvider.__name__].values()):
             yield y
 
-        streams = self.config.nodeClient.outbound_streams[Seed.__name__].items()
-        for x, y in streams:
+        for y in list(self.config.nodeClient.outbound_streams[Seed.__name__].values()):
             yield y
 
     async def get_peer_by_id(self, id_attr):
@@ -495,12 +483,10 @@ class ServiceProvider(Peer):
     async def get_route_peers(self, peer, payload):
 
         if isinstance(peer, User):
-            streams = self.config.nodeClient.outbound_streams[SeedGateway.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()):
                 yield peer_stream
 
-            streams = self.config.websocketServer.inbound_streams.items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.websocketServer.inbound_streams.values()):
                 if peer.identity.username_signature == peer_stream.peer.identity.username_signature:
                     continue
                 yield peer_stream
@@ -535,8 +521,7 @@ class ServiceProvider(Peer):
                         },
                         txn.to_dict()
                     )
-                    streams = self.config.nodeServer.inbound_streams[User.__name__].items()
-                    for peer_rid, peer_stream in streams:
+                    for peer_stream in list(self.config.nodeServer.inbound_streams[User.__name__].values()):
                         yield peer_stream
                 elif rid:
                     yield self.config.nodeServer.inbound_streams[User.__name__][rid]
@@ -547,32 +532,26 @@ class ServiceProvider(Peer):
             group = Group.from_dict(payload.get('group'))
 
         if isinstance(peer, User):
-            streams = self.config.nodeClient.outbound_streams[SeedGateway.__name__].items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()):
                 yield peer_stream
 
-            streams = self.config.websocketServer.inbound_streams.items()
-            for rid, peer_stream in streams:
+            for peer_stream in list(self.config.websocketServer.inbound_streams.values()):
                 if peer.identity.username_signature == peer_stream.peer.identity.username_signature:
                     continue
                 yield peer_stream
 
         elif isinstance(peer, SeedGateway):
-            streams = self.config.nodeServer.inbound_streams[User.__name__].items()
-            for peer_rid, peer_stream in streams:
+            for peer_stream in list(self.config.nodeServer.inbound_streams[User.__name__].values()):
                 yield peer_stream
 
-            streams = self.config.websocketServer.inbound_streams[User.__name__].items()
-            for peer_rid, peer_stream in streams:
+            for peer_stream in list(self.config.websocketServer.inbound_streams[User.__name__].values()):
                 yield peer_stream
 
     async def get_sync_peers(self):
-        streams = self.config.nodeServer.inbound_streams[User.__name__].items()
-        for x, y in streams:
+        for y in list(self.config.nodeServer.inbound_streams[User.__name__].values()):
             yield y
 
-        streams = self.config.nodeClient.outbound_streams[SeedGateway.__name__].items()
-        for x, y in streams:
+        for y in list(self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()):
             yield y
 
     async def get_peer_by_id(self, id_attr):
@@ -650,20 +629,17 @@ class User(Peer):
         return [ServiceProvider]
 
     async def get_sync_peers(self):
-        peers = self.config.nodeClient.outbound_streams[ServiceProvider.__name__].items()
-        for x, y in peers:
+        for y in list(self.config.nodeClient.outbound_streams[ServiceProvider.__name__].values()):
             yield y
 
     async def get_peer_by_id(self, id_attr):
         return self.config.nodeClient.outbound_streams[ServiceProvider.__name__].get(id_attr)
 
     async def get_route_peers(self, peer, payload):
-        peers = self.config.nodeClient.outbound_streams[User.__name__].items()
-        for x, y in peers:
+        for y in list(self.config.nodeClient.outbound_streams[User.__name__].values()):
             yield y
 
-        peers = self.config.nodeServer.inbound_streams[User.__name__].items()
-        for x, y in peers:
+        for y in list(self.config.nodeServer.inbound_streams[User.__name__].values()):
             yield y
 
     def is_linked_peer(self, peer):

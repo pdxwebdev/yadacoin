@@ -147,7 +147,7 @@ class RCPWebSocketServer(WebSocketHandler):
             #     await BaseRPC().write_params(peer_stream, 'route', params)
 
             if transaction.requested_rid in self.config.websocketServer.inbound_streams[Group.__name__]:
-                for rid, peer_stream in self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid].items():
+                for rid, peer_stream in list(self.config.websocketServer.inbound_streams[Group.__name__][transaction.requested_rid].values()):
                     if rid == transaction.requester_rid:
                         continue
                     await peer_stream.write_params('route', params)
@@ -207,10 +207,10 @@ class RCPWebSocketServer(WebSocketHandler):
         )
         if self.peer.identity.public_key == params.get('transaction', {}).get('public_key') and source == 'websocket':
             if isinstance(self.config.peer, ServiceProvider):
-                for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
+                for rid, peer_stream in list(self.config.nodeServer.inbound_streams[User.__name__].values()):
                     await BaseRPC().write_params(peer_stream, 'newtxn', params)
 
-                for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
+                for rid, peer_stream in list(self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()):
                     await BaseRPC().write_params(peer_stream, 'newtxn', params)
             return
 
@@ -261,7 +261,7 @@ class RCPWebSocketServer(WebSocketHandler):
         peer_rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
         RCPWebSocketServer.inbound_streams[Group.__name__][group_rid][peer_rid] = self
         return {
-            group_rid: [x.peer.identity.to_dict for y, x in RCPWebSocketServer.inbound_streams[Group.__name__][group_rid].items()]
+            group_rid: [x.peer.identity.to_dict for x in list(RCPWebSocketServer.inbound_streams[Group.__name__][group_rid].values())]
         }
 
     def append_to_group(self, group, collection):
@@ -271,7 +271,7 @@ class RCPWebSocketServer(WebSocketHandler):
         peer_rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
         RCPWebSocketServer.inbound_streams[Group.__name__][group_rid][peer_rid] = self
         return {
-            group_rid: [x.peer.identity.to_dict for y, x in RCPWebSocketServer.inbound_streams[Group.__name__][group_rid].items()]
+            group_rid: [x.peer.identity.to_dict for x in list(RCPWebSocketServer.inbound_streams[Group.__name__][group_rid].values())]
         }
 
     async def service_provider_request(self, body):
@@ -292,7 +292,7 @@ class RCPWebSocketServer(WebSocketHandler):
             'group': group.to_dict()
         }
 
-        for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
+        for peer_stream in list(self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()):
             await BaseRPC().write_params(peer_stream, 'service_provider_request', params)
         await self.write_result('service_provider_request_confirm', {}, body=body)
 
@@ -308,7 +308,7 @@ class RCPWebSocketServer(WebSocketHandler):
                 'block': block.to_dict()
             }
         }
-        for stream in get_config().websocketServer.inbound_streams[User.__name__].values():
+        for stream in list(get_config().websocketServer.inbound_streams[User.__name__].values()):
             await stream.write_params('newblock', payload)
 
     def remove_peer(self, peer):
@@ -317,12 +317,12 @@ class RCPWebSocketServer(WebSocketHandler):
             del self.inbound_streams[peer.__class__.__name__][id_attr]
 
         loop = ioloop.IOLoop.current()
-        for rid, group in peer.groups.items():
+        for group in list(peer.groups.values()):
             group_id_attr = getattr(group, group.id_attribute)
             if group_id_attr in self.inbound_streams[Group.__name__]:
                 if id_attr in self.inbound_streams[Group.__name__]:
                     del self.inbound_streams[Group.__name__][group_id_attr][id_attr]
-                for rid, peer_stream in RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr].items():
+                for rid, peer_stream in list(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr].values()):
                     if id_attr == rid:
                         continue
                     loop.add_callback(

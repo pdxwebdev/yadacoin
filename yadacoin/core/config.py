@@ -117,9 +117,9 @@ class Config(object):
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
         num_peers = 0
-        for x, y in self.nodeServer.inbound_streams.items():
+        for y in list(self.nodeServer.inbound_streams.values()):
             num_peers += len(y)
-        for x, y in self.nodeClient.outbound_streams.items():
+        for y in list(self.nodeClient.outbound_streams.values()):
             num_peers += len(y)
         status = {
             'version': '.'.join([str(x) for x in self.protocol_version]),
