@@ -200,7 +200,7 @@ class Consensus(object):
             return False
 
         async for peer in self.config.peer.get_sync_peers():
-            if peer.synced or peer.message_queue.get('getblocks') or peer.syncing:
+            if peer.synced or peer.message_queue.get('getblocks'):
                 continue
             try:
                 peer.syncing = True
@@ -320,12 +320,19 @@ class Consensus(object):
 
         extra_blocks = [x async for x in blockchain.blocks]
         prev_block = None
+        i = 0
         async for block in blockchain.blocks:
             if self.config.network == 'regnet':
                 break
             if not await Blockchain.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block):
-                return
+                good_blocks = [x async for x in blockchain.get_blocks(0, i)]
+                if good_blocks:
+                    blockchain = await Blockchain.init_async(good_blocks, True)
+                    break
+                else:
+                    return
             prev_block = block
+            i += 1
 
         first_block = await blockchain.first_block
 
