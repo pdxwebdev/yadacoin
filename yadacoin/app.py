@@ -229,10 +229,10 @@ class NodeApplication(Application):
                     for peer_cls in list(self.config.nodeClient.outbound_streams.keys()):
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                             if retry_attempts[x] > 10:
-                                for y in self.config.nodeServer.retry_messages:
+                                for y in list(self.config.nodeClient.retry_messages):
                                     if y[0] == x[0]:
-                                        del self.config.nodeServer.retry_messages[y]
-                                for y in retry_attempts:
+                                        del self.config.nodeClient.retry_messages[y]
+                                for y in list(retry_attempts):
                                     if y[0] == x[0]:
                                         del retry_attempts[y]
                                 await self.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
