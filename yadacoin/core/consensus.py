@@ -394,7 +394,7 @@ class Consensus(object):
                     if stream and stream.syncing:
                         return True
                     await self.config.nodeShared.send_block(self.config.LatestBlock.block)
-                    await self.config.websocketServer.send_block(self.config.LatestBlock.block)
+                    #await self.config.websocketServer.send_block(self.config.LatestBlock.block) # disabiling until it can be debugged, causing code to block indefinitely.
 
             if self.config.mp:
                 if self.syncing:
