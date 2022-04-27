@@ -13,12 +13,12 @@ class HealthItem:
 
     def report_bad_health(self, message):
         self.config.app_log.error(message)
-    
+
     def report_status(self, status, ignore=False):
         self.ignore = ignore
         self.status = status
         return status
-    
+
     def to_dict(self):
         return {
             'last_activity  ': int(self.last_activity),
@@ -67,7 +67,7 @@ class TCPClientHealth(HealthItem):
                     await self.config.nodeClient.remove_peer(stream)
 
             return self.report_status(False)
-        
+
         return self.report_status(True)
 
 
@@ -185,10 +185,9 @@ class Health:
 
     async def check_health(self):
         for x in self.health_items:
-            if await x.check_health():
-                if not x.status and not x.ignore:
-                    self.status = False
-                    return False
+            if not await x.check_health() and not x.ignore:
+                self.status = False
+                return False
         self.status = True
         return True
 
