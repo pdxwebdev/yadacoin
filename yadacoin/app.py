@@ -11,11 +11,11 @@ import ssl
 import ntpath
 import binascii
 import socket
-import resource
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
 sys.path.append(parentdir)
 try:
+    import resource
     resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
 except:
     pass
