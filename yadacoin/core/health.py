@@ -4,7 +4,7 @@ from yadacoin.core.config import get_config
 
 class HealthItem:
     last_activity = time.time()
-    timeout = 600
+    timeout = 120
     status = True
     ignore = False
 
@@ -26,6 +26,8 @@ class HealthItem:
             'time_until_fail': self.timeout - (int(time.time()) - int(self.last_activity)),
             'ignore         ': self.ignore
         }
+    async def reset(self):
+        pass
 
 
 class TCPServerHealth(HealthItem):
@@ -48,6 +50,11 @@ class TCPServerHealth(HealthItem):
 
         return self.report_status(status)
 
+    async def reset(self):
+        self.config.node_server_instance.stop()
+        self.config.node_server_instance = self.config.nodeServer()
+        self.config.node_server_instance.bind(self.config.peer_port)
+        self.config.node_server_instance.start(1)
 
 
 class TCPClientHealth(HealthItem):
@@ -70,6 +77,12 @@ class TCPClientHealth(HealthItem):
 
         return self.report_status(True)
 
+    async def reset(self):
+        streams = await self.config.peer.get_all_outbound_streams()
+        self.config.app_log.info(streams)
+        for stream in streams:
+            await self.config.nodeClient.remove_peer(stream)
+
 
 class ConsenusHealth(HealthItem):
 
@@ -79,6 +92,11 @@ class ConsenusHealth(HealthItem):
             return self.report_status(False)
 
         return self.report_status(True)
+
+
+    async def reset(self):
+        # if the block queue has items that will not move out, consensus will halt
+        self.config.consensus.block_queue.queue = {}
 
 
 class PeerHealth(HealthItem):
@@ -186,6 +204,7 @@ class Health:
     async def check_health(self):
         for x in self.health_items:
             if not await x.check_health() and not x.ignore:
+                await x.reset()
                 self.status = False
                 return False
         self.status = True

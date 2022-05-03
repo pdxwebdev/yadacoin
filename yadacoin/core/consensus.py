@@ -382,20 +382,6 @@ class Consensus(object):
 
             self.app_log.info("New block inserted for height: {}".format(block.index))
 
-            latest_consensus = await self.mongo.async_db.consensus.find_one({
-                'index': block.index + 1,
-                'block.version': CHAIN.get_version_for_height(block.index + 1),
-                'ignore': {'$ne': True}
-            })
-
-            if not latest_consensus:
-                await self.config.LatestBlock.block_checker()  # This will trigger mining pool to generate a new block to mine
-                if not self.syncing:
-                    if stream and stream.syncing:
-                        return True
-                    await self.config.nodeShared.send_block(self.config.LatestBlock.block)
-                    #await self.config.websocketServer.send_block(self.config.LatestBlock.block) # disabiling until it can be debugged, causing code to block indefinitely.
-
             if self.config.mp:
                 if self.syncing:
                     return True

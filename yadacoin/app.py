@@ -199,8 +199,22 @@ class NodeApplication(Application):
 
     async def background_message_sender(self):
         retry_attempts = {}
+        latest_block_height = self.config.LatestBlock.block.index
         while True:
             try:
+                if latest_block_height != self.config.LatestBlock.block.index:
+                    block = self.config.LatestBlock.block
+                    latest_consensus = await self.config.mongo.async_db.consensus.find_one({
+                        'index': block.index + 1,
+                        'block.version': CHAIN.get_version_for_height(block.index + 1),
+                        'ignore': {'$ne': True}
+                    })
+
+                    if not latest_consensus:
+                        await self.config.LatestBlock.block_checker()  # This will trigger mining pool to generate a new block to mine
+                        if not self.config.consensus.syncing:
+                            await self.config.nodeShared.send_block(self.config.LatestBlock.block)
+                            await self.config.websocketServer.send_block(self.config.LatestBlock.block)
                 for x in list(self.config.nodeServer.retry_messages):
                     message = self.config.nodeServer.retry_messages.get(x)
                     if not message:
@@ -628,7 +642,7 @@ class NodeApplication(Application):
                 if x.__name__ not in self.config.nodeServer.inbound_streams:
                     self.config.nodeServer.inbound_streams[x.__name__] = {}
             self.config.node_server_instance = self.config.nodeServer()
-            self.config.node_server_instance.bind(self.config.peer_port, family=socket.AF_INET)
+            self.config.node_server_instance.bind(self.config.peer_port)
             self.config.node_server_instance.start(1)
 
         self.config.websocketServer = RCPWebSocketServer
