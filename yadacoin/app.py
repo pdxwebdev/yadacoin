@@ -40,11 +40,12 @@ from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 from concurrent.futures import ThreadPoolExecutor
 from bson.objectid import ObjectId
+from bitcoin import core
 
 import yadacoin.core.blockchainutils
 import yadacoin.core.transactionutils
 import yadacoin.core.config
-from yadacoin.core.crypt import Crypt
+from yadacoin.core.crypt import Crypt, RIPEMD160
 from yadacoin.core.consensus import Consensus
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.graphutils import GraphUtils
@@ -73,6 +74,8 @@ from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin import version
 from plugins.yadacoinpool import handlers
 
+
+core.Hash160 = RIPEMD160.ripemd160
 
 define("debug", default=False, help="debug mode", type=bool)
 define("verbose", default=False, help="verbose mode", type=bool)
@@ -427,8 +430,6 @@ class NodeApplication(Application):
                 self.config.network = options.network
 
         self.config.reset = options.reset
-        self.config.pyrx = pyrx.PyRX()
-        self.config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
 
     def init_consensus(self):
         tornado.ioloop.IOLoop.current().run_sync(self.config.consensus.async_init)
@@ -448,23 +449,25 @@ class NodeApplication(Application):
     def init_ioloop(self):
         tornado.ioloop.IOLoop.current().set_default_executor(ThreadPoolExecutor(max_workers=1))
 
-        tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
+        if 'node' in self.config.modes:
 
-        tornado.ioloop.IOLoop.current().spawn_callback(self.background_consensus)
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
 
-        tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_checker)
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_consensus)
 
-        tornado.ioloop.IOLoop.current().spawn_callback(self.background_cache_validator)
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_checker)
 
-        tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_cache_validator)
 
-        tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
 
-        if self.config.network != 'regnet' and 'node' in self.config.modes:
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
 
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)
+            if self.config.network != 'regnet':
 
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
+                tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)
+
+                tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
@@ -625,6 +628,8 @@ class NodeApplication(Application):
         self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(Consensus.init_async)
         self.config.cipher = Crypt(self.config.wif)
         if 'node' in self.config.modes:
+            self.config.pyrx = pyrx.PyRX()
+            self.config.pyrx.get_rx_hash('header', binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d'), 4)
             self.config.nodeServer = NodeSocketServer
             self.config.nodeShared = NodeRPC()
             self.config.nodeClient = NodeSocketClient()

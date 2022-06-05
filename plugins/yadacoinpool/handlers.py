@@ -84,8 +84,8 @@ class PoolInfoHandler(BaseWebHandler):
             net_difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff
             network_hash_rate = 0
 
-        miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'})
-        worker_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'worker_count'})
+        miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'}) or {'value': 0}
+        worker_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'worker_count'}) or {'value': 0}
         payouts = await self.config.mongo.async_db.share_payout.find({}, {'_id': 0}).sort([('index', -1)]).to_list(100)
         self.render_as_json({
             'pool': {

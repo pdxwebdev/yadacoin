@@ -114,12 +114,9 @@ class Consensus(object):
         else:
             await self.integrate_blocks_with_existing_chain(item.blockchain, item.stream)
 
-    def remove_pending_transactions_now_in_chain(self, block):
+    async def remove_pending_transactions_now_in_chain(self, block):
         #remove transactions from miner_transactions collection in the blockchain
-        self.mongo.db.miner_transactions.remove({'id': {'$in': [x['id'] for x in block['block']['transactions']]}}, {'_id': 0})
-
-    def remove_fastgraph_transactions_now_in_chain(self, block):
-        self.mongo.db.fastgraph_transactions.remove({'id': {'$in': [x['id'] for x in block['block']['transactions']]}}, {'_id': 0})
+        await self.mongo.async_db.miner_transactions.delete_many({'id': {'$in': [x['id'] for x in block['block']['transactions']]}})
 
     async def insert_consensus_block(self, block, peer):
         existing = await self.mongo.async_db.consensus.find_one({
@@ -161,8 +158,7 @@ class Consensus(object):
             'ignore': {'$ne': True}
         })
         if latest_consensus:
-            self.remove_pending_transactions_now_in_chain(latest_consensus)
-            self.remove_fastgraph_transactions_now_in_chain(latest_consensus)
+            await self.remove_pending_transactions_now_in_chain(latest_consensus)
             latest_consensus = await Block.from_dict( latest_consensus['block'])
             if self.debug:
                 self.app_log.info("Latest consensus_block {}".format(latest_consensus.index))
