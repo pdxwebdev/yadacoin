@@ -227,7 +227,7 @@ class Transaction(object):
         enough = False
         if self.inputs:
             async for y in self.get_inputs(self.inputs):
-                txn = self.config.BU.get_transaction_by_id(y.id, instance=True)
+                txn = await self.config.BU.get_transaction_by_id(y.id, instance=True)
                 if not txn:
                     raise MissingInputTransactionException()
 
@@ -411,7 +411,7 @@ class Transaction(object):
         exclude_recovered_ids = []
         async for txn in self.get_inputs(self.inputs):
             txn_input = None
-            input_txn = self.config.BU.get_transaction_by_id(txn.id)
+            input_txn = await self.config.BU.get_transaction_by_id(txn.id)
 
             if input_txn:
                 txn_input = Transaction.from_dict(input_txn)
@@ -724,8 +724,8 @@ class ExternalInput(Input):
         self.signature = signature
         self.address = address
 
-    def verify(self):
-        txn = self.config.BU.get_transaction_by_id(self.id, instance=True)
+    async def verify(self):
+        txn = await self.config.BU.get_transaction_by_id(self.id, instance=True)
         result = verify_signature(base64.b64decode(self.signature), self.id.encode('utf-8'), bytes.fromhex(txn.public_key))
         if not result:
             raise Exception('Invalid external input')

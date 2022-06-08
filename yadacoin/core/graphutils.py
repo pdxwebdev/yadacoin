@@ -1164,7 +1164,7 @@ class GraphUtils(object):
                     txn = Transaction.from_dict(txn)
                     await txn.verify()
             else:
-                txn = self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
+                txn = await self.config.BU.get_transaction_by_id(txn_id, inc_mempool=True)
                 txn = Transaction.from_dict(txn)
                 await txn.verify()
             cipher = None

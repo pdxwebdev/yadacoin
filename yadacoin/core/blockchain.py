@@ -168,7 +168,7 @@ class Blockchain(object):
                 failed = False
                 used_ids_in_this_txn = []
                 async for x in Blockchain.get_inputs(transaction.inputs):
-                    txn = config.BU.get_transaction_by_id(x.id, instance=True)
+                    txn = await config.BU.get_transaction_by_id(x.id, instance=True)
                     if not txn:
                         txn = await transaction.find_in_extra_blocks(x)
                         if not txn:
