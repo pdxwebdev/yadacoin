@@ -95,7 +95,7 @@ class BlockChainUtils(object):
         return self.latest_block
 
     async def get_block_by_index(self, index):
-        return self.mongo.async_db.blocks.find_one({'index': index}, {'_id': 0})
+        return await self.mongo.async_db.blocks.find_one({'index': index}, {'_id': 0})
 
     async def get_wallet_balance(self, address):
         balance = 0
@@ -418,17 +418,15 @@ class BlockChainUtils(object):
 
     async def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
         from yadacoin.core.transaction import Transaction
-        res = await self.mongo.async_db.blocks.find_one({"transactions.id": id})
-        if res:
-            for block in res:
-                if give_block:
-                    return block
-                for txn in block['transactions']:
-                    if txn['id'] == id:
-                        if instance:
-                            return Transaction.from_dict(txn)
-                        else:
-                            return txn
+        async for block in self.mongo.async_db.blocks.find({"transactions.id": id}):
+            if give_block:
+                return block
+            for txn in block['transactions']:
+                if txn['id'] == id:
+                    if instance:
+                        return Transaction.from_dict(txn)
+                    else:
+                        return txn
         if inc_mempool:
             res2 = self.mongo.db.miner_transactions.find_one({"id": id})
             if res2:
