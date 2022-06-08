@@ -44,23 +44,6 @@ class TU(object):  # Transaction Utilities
         return hashlib.sha256((str(username_signatures[0]) + str(username_signatures[1])).encode('utf-8')).digest().hex()
 
     @classmethod
-    def check_rid_txn_fully_spent(cls, config, rid_txn, address, index):
-        from yadacoin.core.transaction import Transaction
-        rid_txn = Transaction.from_dict(rid_txn)
-        spending_txn = rid_txn.used_as_input(rid_txn.transaction_signature)
-        if spending_txn:
-            for output in spending_txn['outputs']:
-                if output['to'] == address and output['value'] == 0:
-                    return True # now we can create a duplicate relationship
-            x = config.BU.get_transaction_by_id(spending_txn['id'], instance=True)
-            result = cls.check_rid_txn_fully_spent(config, x.to_dict(), address, index)
-            if result:
-                return True
-            return False
-        else:
-            return False # hasn't been spent to zero yet
-
-    @classmethod
     async def send(cls, config, to, value, from_address=True, inputs=None, dry_run=False, exact_match=False, outputs=None):
         from yadacoin.core.transaction import NotEnoughMoneyException, Transaction
         if from_address == config.address:

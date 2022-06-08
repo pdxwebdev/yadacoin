@@ -248,25 +248,6 @@ class BlockChainUtils(object):
             unspent_txn['transactions']['outputs'] = [unspent_txn['transactions']['outputs']]
             yield unspent_txn['transactions']
 
-    def get_wallet_unspent_fastgraph_transactions(self, address):
-        result = [x for x in self.mongo.db.fastgraph_transactions.find({'txn.outputs.to': address})]
-        reverse_public_key = None
-        for x in result:
-            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))
-            if xaddress == address:
-                reverse_public_key = x['public_key']
-                break
-        if not reverse_public_key:
-            for x in result:
-                yield x['txn']
-            return
-        for x in result:
-            spent_on_fastgraph = self.mongo.db.fastgraph_transactions.find({'public_key': reverse_public_key, 'txn.inputs.id': x['id']})
-            spent_on_blockchain = self.mongo.db.blocks.find({'public_key': reverse_public_key, 'transactions.inputs.id': x['id']})
-            if not spent_on_fastgraph.count_documents() and not spent_on_blockchain.count_documents():
-                # x['txn']['height'] = x['height'] # TODO: make height work for frastgraph transactions so we can order messages etc.
-                yield x['txn']
-
     async def get_transactions(self, wif, query, queryType, raw=False, both=True, skip=None):
         if not skip:
             skip = []
@@ -274,18 +255,18 @@ class BlockChainUtils(object):
         #from transaction import Transaction
         from yadacoin import Crypt
 
-        get_transactions_cache = self.mongo.db.get_transactions_cache.find(
+        get_transactions_cache = await self.mongo.async_db.get_transactions_cache.find_one(
                 {
                     'public_key': self.config.public_key,
                     'raw': raw,
                     'both': both,
                     'skip': skip,
                     'queryType': queryType
-                }
-        ).sort([('height', -1)])
+                },
+                sort=[('height', -1)]
+        )
         latest_block = await self.config.LatestBlock.block.copy()
-        if get_transactions_cache.count_documents():
-            get_transactions_cache = get_transactions_cache[0]
+        if get_transactions_cache:
             block_height = get_transactions_cache['height']
         else:
             block_height = 0
@@ -435,10 +416,10 @@ class BlockChainUtils(object):
         signature = key.sign(message.encode("utf-8"))
         return base64.b64encode(signature).decode("utf-8")
 
-    def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
+    async def get_transaction_by_id(self, id, instance=False, give_block=False, include_fastgraph=False, inc_mempool=False):
         from yadacoin.core.transaction import Transaction
-        res = self.mongo.db.blocks.find({"transactions.id": id})
-        if res.count_documents():
+        res = await self.mongo.async_db.blocks.find_one({"transactions.id": id})
+        if res:
             for block in res:
                 if give_block:
                     return block
