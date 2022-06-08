@@ -354,7 +354,7 @@ class CHAIN(object):
         if height > 0 and height % retarget_period == 0:
             cls.config.app_log.debug(
                 "RETARGET get_target height {} - last_block {} - block {}/time {}".format(height, last_block.index, block.index, block.time))
-            block_data = get_config().BU.get_block_by_index(height - retarget_period)
+            block_data = await get_config().BU.get_block_by_index(height - retarget_period)
             block_from_2016_ago = None
             if block_data:
                 block_from_2016_ago = await Block.from_dict(block_data)

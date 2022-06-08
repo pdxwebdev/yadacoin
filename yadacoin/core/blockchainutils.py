@@ -27,10 +27,10 @@ def set_BU(BU):
 
 class BlockChainUtils(object):
     # Blockchain Utilities
-    
+
     collection = None
     database = None
-        
+
     def __init__(self):
         self.config = get_config()
         self.mongo = self.config.mongo
@@ -94,10 +94,8 @@ class BlockChainUtils(object):
         self.latest_block = await self.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
         return self.latest_block
 
-    def get_block_by_index(self, index):
-        res = self.mongo.db.blocks.find({'index': index}, {'_id': 0})
-        if res.count():
-            return res[0]
+    async def get_block_by_index(self, index):
+        return self.mongo.async_db.blocks.find_one({'index': index}, {'_id': 0})
 
     async def get_wallet_balance(self, address):
         balance = 0
@@ -136,7 +134,7 @@ class BlockChainUtils(object):
                         "transaction": "$transactions",
                         "public_key": "$transactions.public_key"
                 }
-                
+
             },
             {
                 '$unwind': "$transaction.outputs"
@@ -405,7 +403,7 @@ class BlockChainUtils(object):
 
         for transaction in transactions:
             yield transaction['txn']
-        
+
 
     def get_fastgraph_transactions(self, secret, query, queryType, raw=False, both=True, skip=None):
         from yadacoin import Crypt
@@ -438,7 +436,7 @@ class BlockChainUtils(object):
                     , upsert=True)
                 except:
                     continue
-        
+
         for x in self.mongo.db.fastgraph_transaction_cache.find({
             'txn': {'$exists': True}
         }):
@@ -473,7 +471,7 @@ class BlockChainUtils(object):
                     return res2
             return None
         else:
-            # fix for bug when unspent cache returns an input 
+            # fix for bug when unspent cache returns an input
             # that has been removed from the chain
             self.mongo.db.unspent_cache.remove({})
             return None
@@ -529,7 +527,7 @@ class BlockChainUtils(object):
                                         return True
                 return False
             return True
-        
+
         if inc_mempool:
             res2 = await self.mongo.async_db.miner_transactions.find_one({
                 "inputs.id": {'$in': input_ids},
@@ -635,7 +633,7 @@ class BlockChainUtils(object):
             ], allowDiskUse=True)
             double_spends.extend([x for x in res])
         return double_spends
-    
+
     def get_hash_rate(self, blocks):
         sum_time = 0
         sum_work = 0
