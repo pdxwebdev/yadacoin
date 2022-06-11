@@ -110,14 +110,28 @@ class TU(object):  # Transaction Utilities
         async for txn_to_clean in txns_to_clean:
             for x in txn_to_clean.get('inputs'):
                 if await config.BU.is_input_spent(x['id'], txn_to_clean['public_key']):
-                    to_delete.append(txn_to_clean['id'])
+                    to_delete.append({
+                        'reason': 'MempoolCleaner: Input already spent',
+                        'txn': txn_to_clean
+                    })
                     continue
             if await config.mongo.async_db.blocks.find_one({'transactions.id': txn_to_clean['id']}):
-                to_delete.append(txn_to_clean['id'])
+                to_delete.append({
+                    'reason': 'MempoolCleaner: Transaction already in blockchain',
+                    'txn': txn_to_clean
+                })
 
-        for txn_id in to_delete:
+        txns_to_clean = config.mongo.async_db.miner_transactions.find({'time': {'$lte': time.time() - 60*60}})
+        async for txn_to_clean in txns_to_clean:
+            to_delete.append({
+                'reason': 'MempoolCleaner: Transaction expired',
+                'txn': txn_to_clean
+            })
+
+        for txn in to_delete:
+            await config.mongo.async_db.failed_transactions.insert_one(txn)
             await config.mongo.async_db.miner_transactions.delete_many({
-                'id': txn_id
+                'id': txn['txn']['id']
             })
 
         config.last_mempool_clean = time.time()

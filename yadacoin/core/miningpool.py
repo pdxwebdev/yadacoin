@@ -574,13 +574,13 @@ class MiningPool(object):
                     failed2 = True
                 used_ids_in_this_txn.append(x.id)
             if failed1:
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
                 self.config.app_log.warning('transaction removed: input spent already {}'.format(transaction_obj.transaction_signature))
-                self.mongo.db.failed_transactions.insert({'reason': 'input spent already', 'txn': transaction_obj.to_dict()})
+                await self.mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
+                await self.mongo.async_db.failed_transactions.insert_one({'reason': 'input spent already', 'txn': transaction_obj.to_dict()})
             elif failed2:
                 self.config.app_log.warning('transaction removed: using an input used by another transaction in this block {}'.format(transaction_obj.transaction_signature))
-                self.mongo.db.miner_transactions.remove({'id': transaction_obj.transaction_signature})
-                self.mongo.db.failed_transactions.insert({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
+                await self.mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
+                await self.mongo.async_db.failed_transactions.insert_one({'reason': 'using an input used by another transaction in this block', 'txn': transaction_obj.to_dict()})
             else:
                 return transaction_obj
 

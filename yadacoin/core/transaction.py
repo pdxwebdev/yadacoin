@@ -214,11 +214,11 @@ class Transaction(object):
         if outputs_and_fee_total == 0:
             return
         my_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        miner_transactions = self.mongo.db.miner_transactions.find({
+        miner_transactions = self.mongo.async_db.miner_transactions.find({
             "public_key": self.public_key
         })
         mtxn_ids = []
-        for mtxn in miner_transactions:
+        async for mtxn in miner_transactions:
             for mtxninput in mtxn['inputs']:
                 mtxn_ids.append(mtxninput['id'])
 
@@ -526,19 +526,6 @@ class Transaction(object):
     def get_output_hashes(self):
         outputs_sorted = sorted([x.to_dict() for x in self.outputs], key=lambda x: x['to'].lower())
         return ''.join([x['to'] + "{0:.8f}".format(x['value']) for x in outputs_sorted])
-
-    def used_as_input(self, input_id):
-        block = self.config.mongo.db.blocks.find_one({ # we need to look ahead in the chain
-            'transactions.inputs.id': input_id
-        })
-        output_txn = None
-        if not block:
-            return output_txn
-        for txn in block['transactions']:
-            for inp in txn['inputs']:
-                if inp['id'] == input_id:
-                    output_txn = txn
-                    return output_txn
 
     async def get_coinbase_origin(self, txn_input):
         from yadacoin.core.block import Block

@@ -40,20 +40,11 @@ class BlockChainUtils(object):
     def invalidate_latest_block(self):
         self.latest_block = None
 
-    def get_blocks(self, reverse=False):
-        if reverse:
-            return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
-        else:
-            return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
-
     async def get_blocks_async(self, reverse=False):
         if reverse:
             return self.mongo.async_db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
         else:
             return self.mongo.async_db.blocks.find({}, {'_id': 0}).sort([('index', 1)])
-
-    def get_latest_blocks(self):
-        return self.mongo.db.blocks.find({}, {'_id': 0}).sort([('index', -1)])
 
     async def get_latest_block(self) -> dict:
         # cached - WARNING : this is a json doc, NOT a block
@@ -67,7 +58,7 @@ class BlockChainUtils(object):
         #insert genesis if it doesn't exist
         genesis_block = await Blockchain.get_genesis_block()
         await genesis_block.save()
-        self.mongo.db.consensus.update_one({
+        await self.mongo.async_db.consensus.update_one({
             'block': genesis_block.to_dict(),
             'peer': 'me',
             'id': genesis_block.signature,
@@ -273,7 +264,7 @@ class BlockChainUtils(object):
 
         cipher = None
         transactions = []
-        for block in self.mongo.db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}}):
+        async for block in self.mongo.async_db.blocks.find({"transactions": {"$elemMatch": {"relationship": {"$ne": ""}}}, 'index': {'$gt': block_height}}):
             for transaction in block.get('transactions'):
                 try:
                     if transaction.get('id') in skip:
@@ -289,7 +280,7 @@ class BlockChainUtils(object):
                         relationship = json.loads(decrypted.decode('latin1'))
                         transaction['relationship'] = relationship
                     transaction['height'] = block['index']
-                    self.mongo.db.get_transactions_cache.update(
+                    await self.mongo.async_db.get_transactions_cache.update_many(
                         {
                             'public_key': self.config.public_key,
                             'raw': raw,
@@ -317,7 +308,7 @@ class BlockChainUtils(object):
                     self.app_log.debug('failed decrypt. block: {}'.format(block['index']))
                     if both:
                         transaction['height'] = block['index']
-                        self.mongo.db.get_transactions_cache.update(
+                        await self.mongo.async_db.get_transactions_cache.update_many(
                             {
                                 'public_key': self.config.public_key,
                                 'raw': raw,
@@ -342,7 +333,7 @@ class BlockChainUtils(object):
                     continue
 
         if not transactions:
-            self.mongo.db.get_transactions_cache.insert({
+            await self.mongo.async_db.get_transactions_cache.insert_one({
                 'public_key': self.config.public_key,
                 'raw': raw,
                 'both': both,
@@ -353,12 +344,6 @@ class BlockChainUtils(object):
                 'cache_time': time()
             })
 
-        fastgraph_transactions = self.get_fastgraph_transactions(wif, query, queryType, raw=False, both=True, skip=None)
-
-        for fastgraph_transaction in fastgraph_transactions:
-            yield fastgraph_transaction
-
-
         search_query = {
                 'public_key': self.config.public_key,
                 'raw': raw,
@@ -368,48 +353,10 @@ class BlockChainUtils(object):
                 'txn': {'$exists': True}
             }
         search_query.update(query)
-        transactions = self.mongo.db.get_transactions_cache.find(search_query).sort([('height', -1)])
+        transactions = self.mongo.async_db.get_transactions_cache.find(search_query).sort([('height', -1)])
 
-        for transaction in transactions:
+        async for transaction in transactions:
             yield transaction['txn']
-
-
-    def get_fastgraph_transactions(self, secret, query, queryType, raw=False, both=True, skip=None):
-        from yadacoin import Crypt
-        cipher = None
-        for transaction in self.mongo.db.fastgraph_transactions.find(query):
-            if 'txn' in transaction:
-                try:
-                    if transaction.get('id') in skip:
-                        continue
-                    if 'relationship' not in transaction:
-                        continue
-                    if not transaction['relationship']:
-                        continue
-                    res = self.mongo.db.fastgraph_transaction_cache.find_one({
-                        'txn.id': transaction.get('id'),
-                    })
-                    if res:
-                        continue
-                    if not raw:
-                        if not cipher:
-                            cipher = Crypt(secret)
-                        decrypted = cipher.decrypt(transaction['relationship'])
-                        relationship = json.loads(decrypted.decode('latin1'))
-                        transaction['relationship'] = relationship
-                    self.mongo.db.fastgraph_transaction_cache.update(
-                        {
-                            'txn': transaction,
-                            'cache_time': time()
-                        }
-                    , upsert=True)
-                except:
-                    continue
-
-        for x in self.mongo.db.fastgraph_transaction_cache.find({
-            'txn': {'$exists': True}
-        }):
-            yield x['tnx']
 
     def generate_signature(self, message, private_key):
         key = PrivateKey.from_hex(private_key)
@@ -428,7 +375,7 @@ class BlockChainUtils(object):
                     else:
                         return txn
         if inc_mempool:
-            res2 = self.mongo.db.miner_transactions.find_one({"id": id})
+            res2 = await self.mongo.async_db.miner_transactions.find_one({"id": id})
             if res2:
                 if give_block:
                     raise Exception('Cannot give block for mempool transaction')
@@ -440,7 +387,7 @@ class BlockChainUtils(object):
         else:
             # fix for bug when unspent cache returns an input
             # that has been removed from the chain
-            self.mongo.db.unspent_cache.remove({})
+            await self.mongo.async_db.unspent_cache.delete_many({})
             return None
 
     async def is_input_spent(
@@ -570,36 +517,6 @@ class BlockChainUtils(object):
                     break
 
         return float(block_reward['reward'])
-
-    def check_double_spend(self, transaction_obj):
-        double_spends = []
-        for txn_input in transaction_obj.inputs:
-            res = self.mongo.db.blocks.aggregate([
-                {"$unwind": "$transactions" },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "txn": "$transactions"
-                    }
-                },
-                {"$unwind": "$txn.inputs" },
-                {
-                    "$project": {
-                        "_id": 0,
-                        "input_id": "$txn.inputs.id",
-                        "public_key": "$txn.public_key"
-                    }
-                },
-                {"$sort": SON([("count", -1), ("input_id", -1)])},
-                {"$match":
-                    {
-                        "public_key": transaction_obj.public_key,
-                        "input_id": txn_input.id
-                    }
-                }
-            ], allowDiskUse=True)
-            double_spends.extend([x for x in res])
-        return double_spends
 
     def get_hash_rate(self, blocks):
         sum_time = 0

@@ -77,9 +77,9 @@ class Consensus(object):
             self.app_log.critical(result)
             if reset:
                 if 'last_good_block' in result:
-                    self.mongo.db.blocks.remove({"index": {"$gt": result['last_good_block'].index}}, multi=True)
+                    await self.mongo.async_db.blocks.delete_many({"index": {"$gt": result['last_good_block'].index}}, multi=True)
                 else:
-                    self.mongo.db.blocks.remove({"index": {"$gt": 0}}, multi=True)
+                    await self.mongo.async_db.blocks.delete_many({"index": {"$gt": 0}}, multi=True)
                 self.app_log.debug("{} {}".format(result['message'], '...truncating'))
             else:
                 self.app_log.critical("{} - reset False, not truncating - DID NOT VERIFY".format(result['message']))
@@ -379,7 +379,7 @@ class Consensus(object):
             self.app_log.info("New block inserted for height: {}".format(block.index))
 
             if self.config.mp:
-                if self.syncing:
+                if self.syncing or (hasattr(stream, 'syncing') and stream.syncing):
                     return True
                 try:
                     await self.config.mp.refresh()
