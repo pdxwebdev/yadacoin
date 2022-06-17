@@ -681,7 +681,7 @@ class Peers:
         else:
             seeds = [
                 Seed.from_dict({
-                    'host': '34.237.46.10',
+                    'host': 'yadacoin.io',
                     'port': 8000,
                     'identity': {
                         "username": "",
@@ -703,7 +703,7 @@ class Peers:
         else:
             seed_gateways = [
                 SeedGateway.from_dict({
-                    'host': '18.214.218.185',
+                    'host': 'remotelyrich.com',
                     'port': 8000,
                     'identity': {
                         "username": "",
@@ -725,7 +725,7 @@ class Peers:
         else:
             service_providers = [
                 ServiceProvider.from_dict({
-                    'host': '3.225.228.97',
+                    'host': 'centeridentity.com',
                     'port': 8000,
                     'identity': {
                         "username": "",
