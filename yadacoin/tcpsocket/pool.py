@@ -33,7 +33,10 @@ class StratumServer(RPCSocketServer):
             await cls.config.mp.refresh()
 
         if cls.current_header != cls.config.mp.block_factory.header:
-            await cls.send_jobs()
+            try:
+                await cls.send_jobs()
+            except:
+                cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
     async def send_jobs(cls):
