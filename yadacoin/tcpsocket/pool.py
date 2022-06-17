@@ -43,7 +43,10 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = get_config()
         for stream in list(StratumServer.inbound_streams[Miner.__name__].values()):
-            await cls.send_job(stream)
+            try:
+                await cls.send_job(stream)
+            except:
+                cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
     async def send_job(cls, stream):
