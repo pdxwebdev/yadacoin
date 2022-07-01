@@ -1,6 +1,7 @@
 ﻿"""
 Async Yadacoin node poc
 """
+import hashlib
 import sys
 import importlib
 import pkgutil
@@ -76,6 +77,7 @@ from plugins.yadacoinpool import handlers
 
 
 core.Hash160 = RIPEMD160.ripemd160
+hashlib.ripemd160 = RIPEMD160.ripemd160
 
 define("debug", default=False, help="debug mode", type=bool)
 define("verbose", default=False, help="verbose mode", type=bool)
