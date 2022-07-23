@@ -156,7 +156,7 @@ class Config(object):
             private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
             public_key = PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex()
-            address = str(key.Address())
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         if prv:
             key = PrivateKey.from_hex(prv)
@@ -170,7 +170,7 @@ class Config(object):
             private_key = key.PrivateKey().hex()
             extended_key = key.ExtendedKey()
             public_key = PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex()
-            address = str(key.Address())
+            address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         if xprv and child:
             for x in child:
