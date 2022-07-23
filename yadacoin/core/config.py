@@ -177,7 +177,7 @@ class Config(object):
                 key = key.ChildKey(int(x))
                 private_key = key.PrivateKey().hex()
                 public_key = PublicKey.from_point(key.K.pubkey.point.x(), key.K.pubkey.point.y()).format().hex()
-                address = str(key.Address())
+                address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         if not private_key:
             raise Exception('No key')
