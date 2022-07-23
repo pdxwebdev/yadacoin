@@ -6,12 +6,79 @@ from enum import Enum
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.core.collections import Collections
 from yadacoin.core.identity import Identity, PrivateIdentity
-from base import Contract
+from yadacoin.contracts.base import (
+    Contract,
+    ContractTypes,
+    PayoutOperators,
+    PayoutType
+)
 from yadacoin.core.block import quantize_eight
 
 
 class AssetProofTypes(Enum):
     TOKEN = 'token'
+
+
+class TraderPayout:
+    def __init__(
+      self,
+      active=False,
+      operator='',
+      payout_type='',
+      interval='',
+      amount=''
+    ):
+
+        if active is True:
+
+            if operator not in [x.value for x in PayoutOperators]:
+                self.report_init_error('operator')
+
+            if payout_type not in [x.value for x in PayoutType]:
+                self.report_init_error('payout_type')
+
+            if (
+                payout_type == PayoutType.RECURRING.value and
+                not isinstance(interval, float) and
+                not isinstance(interval, int)
+            ):
+                self.report_init_error('interval')
+
+            if not isinstance(amount, float) and not isinstance(amount, int):
+                self.report_init_error('amount')
+
+        self.active = active
+        self.operator = operator
+        self.payout_type = payout_type
+        self.interval = interval
+        self.amount = amount
+
+    def report_init_error(self, member):
+        raise Exception(f'Cannot instantiate referpayout with invalid {member}')
+
+    def get_string(self, p):
+        return '' if p is None else str(p)
+
+    def to_dict(self):
+        return {
+            'active': self.active,
+            'operator': self.operator,
+            'payout_type': self.payout_type,
+            'interval': self.interval,
+            'amount': self.amount
+        }
+
+    def to_string(self):
+        if self.active:
+            return (
+                'true' +
+                self.get_string(self.operator) +
+                self.get_string(self.payout_type) +
+                self.get_string(self.interval) +
+                self.get_string(quantize_eight(self.amount))
+            )
+        else:
+            return 'false'
 
 
 class WrappedTokenContract(Contract):
