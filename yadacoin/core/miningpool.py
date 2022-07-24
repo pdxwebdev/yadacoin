@@ -23,6 +23,7 @@ from yadacoin.core.transaction import (
     TotalValueMismatchException
 )
 from yadacoin.core.peer import Miner as MinerBase
+from yadacoin.core.transactionutils import TU
 
 
 class Miner(MinerBase):
@@ -439,16 +440,16 @@ class MiningPool(object):
 
         # process recurring payments
         generated_txns = []
-        async for x in await self.get_current_smart_contract_txns():
+        async for x in await TU.get_current_smart_contract_txns(self.config.LatestBlock.block.index):
             try:
                 smart_contract_txn = Transaction.from_dict(x['transactions'])
             except:
                 continue
             try:
-                async for trigger_txn_block in await self.get_trigger_txns(smart_contract_txn):  # process blockchain txns
+                async for trigger_txn_block in await TU.get_trigger_txns(smart_contract_txn):  # process blockchain txns
                     trigger_txn = Transaction.from_dict(trigger_txn_block.get('transactions'))
                     try:
-                        payout_txn = await smart_contract_txn.relationship.process(smart_contract_txn, trigger_txn, self.get_transaction_objs_list(transaction_objs) + generated_txns)
+                        payout_txn = await smart_contract_txn.relationship.process(smart_contract_txn, trigger_txn, TU.get_transaction_objs_list(transaction_objs) + generated_txns)
                         if payout_txn:
                             generated_txns.append(payout_txn)
                     except:
@@ -458,7 +459,7 @@ class MiningPool(object):
 
         # process expired contracts
         used_public_keys = []
-        async for x in await self.get_expired_smart_contract_txns():
+        async for x in await TU.get_expired_smart_contract_txns(self.config.LatestBlock.block.index):
             expired_blockchain_smart_contract_obj = Transaction.from_dict(x.get('transactions'))
             if expired_blockchain_smart_contract_obj.public_key in used_public_keys:
                 continue
@@ -467,77 +468,7 @@ class MiningPool(object):
                 generated_txns.append(payout_txn)
                 used_public_keys.append(expired_blockchain_smart_contract_obj.public_key)
 
-        return list(mempool_smart_contract_objs.values()) + self.get_transaction_objs_list(transaction_objs) + generated_txns
-
-    async def get_current_smart_contract_txns(self):
-        return self.mongo.async_db.blocks.aggregate([
-            {
-                '$match': {
-                    'transactions': {'$elemMatch': {'relationship.smart_contract.expiry': {'$gt': self.config.LatestBlock.block.index}}}
-                }
-            },
-            {
-                '$unwind': '$transactions'
-            },
-            {
-                '$match': {
-                    'transactions.relationship.smart_contract.expiry': {'$gt': self.config.LatestBlock.block.index}
-                }
-            },
-            {
-                '$sort': {'transactions.time': 1}
-            }
-        ])
-
-    async def get_expired_smart_contract_txns(self):
-        return self.mongo.async_db.blocks.aggregate([
-            {
-                '$match': {
-                    'transactions.relationship.smart_contract.expiry': self.config.LatestBlock.block.index
-                }
-            },
-            {
-                '$unwind': '$transactions'
-            },
-            {
-                '$match': {
-                    'transactions.relationship.smart_contract.expiry': self.config.LatestBlock.block.index
-                }
-            },
-            {
-                '$sort': {'index': 1, 'transactions.time': 1}
-            }
-        ])
-
-    async def get_trigger_txns(self, smart_contract_txn):
-        match = {
-            'transactions': {'$elemMatch': {'relationship.smart_contract': {'$exists': False}}},
-            'transactions.requested_rid': smart_contract_txn.requested_rid,
-            'transactions': {'$elemMatch': {'public_key': {'$ne': smart_contract_txn.relationship.identity.public_key}}}
-        }
-        match2 = {
-            'transactions.relationship.smart_contract': {'$exists': False},
-            'transactions.requested_rid': smart_contract_txn.requested_rid,
-            'transactions.public_key': {'$ne': smart_contract_txn.relationship.identity.public_key}
-        }
-        trigger_txn_blocks = self.mongo.async_db.blocks.aggregate([
-            {
-                '$match': match
-            },
-            {
-                '$unwind': '$transactions'
-            },
-            {
-                '$match': match2
-            },
-            {
-                '$sort': {'transactions.fee': -1, 'transactions.time': 1}
-            }
-        ])
-        return trigger_txn_blocks
-
-    def get_transaction_objs_list(self, transaction_objs):
-        return [y for x in list(transaction_objs.values()) for y in x]
+        return list(mempool_smart_contract_objs.values()) + TU.get_transaction_objs_list(transaction_objs) + generated_txns
 
     async def verify_pending_transaction(self, txn, used_sigs):
         try:

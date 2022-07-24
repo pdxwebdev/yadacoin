@@ -156,3 +156,80 @@ class TU(object):  # Transaction Utilities
                 if peer_stream.peer.protocol_version > 1:
                     config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', x.transaction_signature)] = {'transaction': x.to_dict()}
                 time.sleep(.1)
+
+    @classmethod
+    async def get_current_smart_contract_txns(cls, config, start_index):
+        return self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions': {'$elemMatch': {'relationship.smart_contract.expiry': {'$gt': start_index}}}
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': {'$gt': start_index}
+                }
+            },
+            {
+                '$sort': {'transactions.time': 1}
+            }
+        ])
+
+    @classmethod
+    async def get_expired_smart_contract_txns(cls, config, start_index):
+        return self.config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': start_index
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    'transactions.relationship.smart_contract.expiry': start_index
+                }
+            },
+            {
+                '$sort': {'index': 1, 'transactions.time': 1}
+            }
+        ])
+
+    @classmethod
+    async def get_trigger_txns(cls, config, smart_contract_txn, start_index=None, end_index=None):
+        match = {
+            'transactions': {'$elemMatch': {'relationship.smart_contract': {'$exists': False}}},
+            'transactions.requested_rid': smart_contract_txn.requested_rid,
+            'transactions': {'$elemMatch': {'public_key': {'$ne': smart_contract_txn.relationship.identity.public_key}}}
+        }
+        if start_index and end_index:
+            match['index']['$gte'] = start_index
+            match['index']['$lt'] = end_index
+        match2 = {
+            'transactions.relationship.smart_contract': {'$exists': False},
+            'transactions.requested_rid': smart_contract_txn.requested_rid,
+            'transactions.public_key': {'$ne': smart_contract_txn.relationship.identity.public_key}
+        }
+        trigger_txn_blocks = config.mongo.async_db.blocks.aggregate([
+            {
+                '$match': match
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': match2
+            },
+            {
+                '$sort': {'transactions.fee': -1, 'transactions.time': 1}
+            }
+        ])
+        async for x in trigger_txn_blocks:
+            yield x
+
+    def get_transaction_objs_list(self, transaction_objs):
+        return [y for x in list(transaction_objs.values()) for y in x]
