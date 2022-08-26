@@ -159,7 +159,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     async def get_current_smart_contract_txns(cls, config, start_index):
-        return self.config.mongo.async_db.blocks.aggregate([
+        return config.mongo.async_db.blocks.aggregate([
             {
                 '$match': {
                     'transactions': {'$elemMatch': {'relationship.smart_contract.expiry': {'$gt': start_index}}}
@@ -180,7 +180,7 @@ class TU(object):  # Transaction Utilities
 
     @classmethod
     async def get_expired_smart_contract_txns(cls, config, start_index):
-        return self.config.mongo.async_db.blocks.aggregate([
+        return config.mongo.async_db.blocks.aggregate([
             {
                 '$match': {
                     'transactions.relationship.smart_contract.expiry': start_index
@@ -231,5 +231,6 @@ class TU(object):  # Transaction Utilities
         async for x in trigger_txn_blocks:
             yield x
 
-    def get_transaction_objs_list(self, transaction_objs):
+    @classmethod
+    def get_transaction_objs_list(cls, transaction_objs):
         return [y for x in list(transaction_objs.values()) for y in x]

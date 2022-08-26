@@ -60,6 +60,7 @@ from yadacoin.core.peer import (
 from yadacoin.core.identity import Identity
 from yadacoin.core.health import Health
 from yadacoin.core.smtp import Email
+from yadacoin.http.proxy import ProxyHandler
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
@@ -541,6 +542,8 @@ class NodeApplication(Application):
         self.config.app_log.info("API: http://{}:{}".format(self.config.serve_host, self.config.serve_port))
         if 'web' in self.config.modes:
             self.config.app_log.info("Wallet: http://{}:{}/app".format(self.config.serve_host, self.config.serve_port))
+        if 'proxy' in self.config.modes:
+            self.config.app_log.info("Proxy: {}:{}".format(self.config.serve_host, self.config.proxy_port))
         if os.path.exists(path.join(path.dirname(__file__), '..', 'templates')):
             template_path = path.join(path.dirname(__file__), '..', 'templates')
         else:
@@ -658,6 +661,13 @@ class NodeApplication(Application):
             for x in [User, Group]:
                 if x.__name__ not in self.config.websocketServer.inbound_streams:
                     self.config.websocketServer.inbound_streams[x.__name__] = {}
+
+        if 'proxy' in self.config.modes:
+            app = tornado.web.Application([
+                (r'/', ProxyHandler),
+                (r'.*', ProxyHandler),
+            ])
+            app.listen(self.config.proxy_port)
 
 if __name__ == "__main__":
     NodeApplication()

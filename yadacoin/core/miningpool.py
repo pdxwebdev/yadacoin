@@ -440,7 +440,7 @@ class MiningPool(object):
 
         # process recurring payments
         generated_txns = []
-        async for x in await TU.get_current_smart_contract_txns(self.config.LatestBlock.block.index):
+        async for x in await TU.get_current_smart_contract_txns(self.config, self.config.LatestBlock.block.index):
             try:
                 smart_contract_txn = Transaction.from_dict(x['transactions'])
             except:
@@ -459,7 +459,7 @@ class MiningPool(object):
 
         # process expired contracts
         used_public_keys = []
-        async for x in await TU.get_expired_smart_contract_txns(self.config.LatestBlock.block.index):
+        async for x in await TU.get_expired_smart_contract_txns(self.config, self.config.LatestBlock.block.index):
             expired_blockchain_smart_contract_obj = Transaction.from_dict(x.get('transactions'))
             if expired_blockchain_smart_contract_obj.public_key in used_public_keys:
                 continue

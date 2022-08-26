@@ -78,6 +78,7 @@ class Config(object):
         self.mp = None
         self.pp = None
         self.stratum_pool_port = config.get('stratum_pool_port', 3333)
+        self.proxy_port = config.get('proxy_port', 8080)
         self.wallet_host_port = config.get('wallet_host_port', 'http://localhost:{}'.format(config['serve_port']))
         self.websocket_host_port = config.get('websocket_host_port', 'ws://localhost:{}'.format(config['serve_port']))
         self.credits_per_share = config.get('credits_per_share', 5)
@@ -374,7 +375,8 @@ class Config(object):
             'skynet_url': self.skynet_url,
             'skynet_api_key': self.skynet_api_key,
             'web_jwt_expiry': self.web_jwt_expiry,
-            'stratum_pool_port': self.stratum_pool_port
+            'stratum_pool_port': self.stratum_pool_port,
+            'proxy_port': self.proxy_port
         }
 
     def to_json(self):
