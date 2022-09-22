@@ -18,102 +18,108 @@ class ExplorerSearchHandler(BaseHandler):
             return
 
         try:
-            res = self.config.mongo.db.blocks.find({'index': int(term)}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'index': int(term)})
+            if res:
                 return self.render_as_json({
                     'resultType': 'block_height',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'index': int(term)}, {'_id': 0})]
                 })
         except:
             pass
         try:
-            res = self.config.mongo.db.blocks.find({'public_key': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'public_key': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'block_height',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'public_key': term}, {'_id': 0})]
                 })
         except:
             pass
         try:
-            res = self.config.mongo.db.blocks.find({'transactions.public_key': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'transactions.public_key': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'block_height',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'transactions.public_key': term}, {'_id': 0})]
                 })
         except:
             pass
         try:
             re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-            res = self.config.mongo.db.blocks.find({'hash': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'hash': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'block_hash',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'hash': term}, {'_id': 0})]
                 })
         except:
             pass
 
         try:
             base64.b64decode(term.replace(' ', '+'))
-            res = self.config.mongo.db.blocks.find({'id': term.replace(' ', '+')}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'id': term.replace(' ', '+')})
+            if res:
                 return self.render_as_json({
                     'resultType': 'block_id',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'id': term.replace(' ', '+')}, {'_id': 0})]
                 })
         except:
             pass
 
         try:
             re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-            res = self.config.mongo.db.blocks.find({'transactions.hash': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'transactions.hash': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'txn_hash',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'transactions.hash': term}, {'_id': 0})]
                 })
         except:
             pass
 
         try:
             re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-            res = self.config.mongo.db.blocks.find({'transactions.rid': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'transactions.rid': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'txn_rid',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'transactions.rid': term}, {'_id': 0})]
                 })
         except:
             pass
 
         try:
             base64.b64decode(term.replace(' ', '+'))
-            res = self.config.mongo.db.blocks.find({
+            res = await self.config.mongo.async_db.blocks.count_documents({
                 '$or': [
                     {'transactions.id': term.replace(' ', '+')},
                     {'transactions.inputs.id': term.replace(' ', '+')}
                 ]},
                 {'_id': 0}
             )
-            if res.count():
+            if res:
                 return self.render_as_json({
                     'resultType': 'txn_id',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({
+                        '$or': [
+                            {'transactions.id': term.replace(' ', '+')},
+                            {'transactions.inputs.id': term.replace(' ', '+')}
+                        ]},
+                        {'_id': 0}
+                    )]
                 })
         except:
             pass
 
         try:
             re.search(r'[A-Fa-f0-9]+', term).group(0)
-            res = self.config.mongo.db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
-            if res.count():
+            res = await self.config.mongo.async_db.blocks.count_documents({'transactions.outputs.to': term})
+            if res:
                 balance = await self.config.BU.get_wallet_balance(term)
                 return self.render_as_json({
                     'balance': "{0:.8f}".format(balance),
                     'resultType': 'txn_outputs_to',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.blocks.find({'transactions.outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)]
                 })
         except Exception as e:
             self.app_log.debug(e)
@@ -121,53 +127,53 @@ class ExplorerSearchHandler(BaseHandler):
 
         try:
             base64.b64decode(term.replace(' ', '+'))
-            res = self.config.mongo.db.miner_transactions.find({'id': term.replace(' ', '+')}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.miner_transactions.count_documents({'id': term.replace(' ', '+')})
+            if res:
                 return self.render_as_json({
                     'resultType': 'mempool_id',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.miner_transactions.find({'id': term.replace(' ', '+')}, {'_id': 0})]
                 })
         except:
             return self.render_as_json({})
 
         try:
             re.search(r'[A-Fa-f0-9]{64}', term).group(0)
-            res = self.config.mongo.db.miner_transactions.find({'hash': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.miner_transactions.count_documents({'hash': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'mempool_hash',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.miner_transactions.find({'hash': term}, {'_id': 0})]
                 })
         except:
             return self.render_as_json({})
 
         try:
             re.search(r'[A-Fa-f0-9]+', term).group(0)
-            res = self.config.mongo.db.miner_transactions.find({'outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)
-            if res.count():
+            res = await self.config.mongo.async_db.miner_transactions.count_documents({'outputs.to': term}).sort('index', -1).limit(10)
+            if res:
                 return self.render_as_json({
                     'resultType': 'mempool_outputs_to',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.miner_transactions.find({'outputs.to': term}, {'_id': 0}).sort('index', -1).limit(10)]
                 })
         except:
             return self.render_as_json({})
 
         try:
-            res = self.config.mongo.db.miner_transactions.find({'public_key': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.miner_transactions.count_documents({'public_key': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'mempool_public_key',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.miner_transactions.find({'public_key': term}, {'_id': 0})]
                 })
         except:
             pass
 
         try:
-            res = self.config.mongo.db.miner_transactions.find({'rid': term}, {'_id': 0})
-            if res.count():
+            res = await self.config.mongo.async_db.miner_transactions.count_documents({'rid': term})
+            if res:
                 return self.render_as_json({
                     'resultType': 'mempool_rid',
-                    'result': [changetime(x) for x in res]
+                    'result': [changetime(x) async for x in self.config.mongo.async_db.miner_transactions.find({'rid': term}, {'_id': 0})]
                 })
         except:
             pass
