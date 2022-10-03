@@ -60,7 +60,7 @@ from yadacoin.core.peer import (
 from yadacoin.core.identity import Identity
 from yadacoin.core.health import Health
 from yadacoin.core.smtp import Email
-from yadacoin.http.proxy import ProxyHandler
+from yadacoin.http.proxy import ProxyConfig, ProxyHandler, AuthHandler
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
@@ -75,6 +75,7 @@ from yadacoin.websocket.base import RCPWebSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin import version
 from plugins.yadacoinpool import handlers
+from yadacoin.udp.base import UDPServer
 
 
 core.Hash160 = RIPEMD160.ripemd160
@@ -106,10 +107,10 @@ class NodeApplication(Application):
             self.init_seed_gateways()
             self.init_service_providers()
             self.init_groups()
-            self.init_peer()
             self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
             if 'pool' in self.config.modes:
                 self.init_pool()
+        self.init_peer()
         if 'web' in self.config.modes:
             if os.path.exists(path.join(path.dirname(__file__), '..', 'static')):
                 static_path = path.join(path.dirname(__file__), '..', 'static')
@@ -663,11 +664,27 @@ class NodeApplication(Application):
                     self.config.websocketServer.inbound_streams[x.__name__] = {}
 
         if 'proxy' in self.config.modes:
-            app = tornado.web.Application([
-                (r'/', ProxyHandler),
+            self.config.proxy_server = tornado.web.Application([
+                (r'/auth', AuthHandler),
                 (r'.*', ProxyHandler),
-            ])
-            app.listen(self.config.proxy_port)
+            ], compiled_template_cache=False, debug=True)
+            self.config.challenges = {}
+            self.config.proxy = ProxyConfig()
+            for x in self.config.mongo.site_db.proxy_whitelist.find({}, {'_id': 0}):
+                self.config.proxy.white_list[x['domain']] = x
+            for x in self.config.mongo.site_db.proxy_blacklist.find({}, {'_id': 0}):
+                self.config.proxy.black_list[x['domain']] = x
+            self.config.proxy_server.inbound_peers = {User.__name__: {}}
+            self.config.proxy_server.listen(self.config.proxy_port)
+
+        if 'dns' not in self.config.modes:
+            self.config.udpServer = UDPServer
+            self.config.udpServer.inbound_streams = {
+                User.__name__: {}
+            }
+            # server = tornado.ioloop.IOLoop.current().run_sync(lambda s=UDPServer, ip='127.0.0.1', port=53: tornado.ioloop.IOLoop.current().asyncio_loop.create_server(s, ip, port))
+            # tornado.ioloop.IOLoop.current().run_sync(server.serve_forever)
+            tornado.ioloop.IOLoop.current().run_sync(lambda s=UDPServer, local_addr=('0.0.0.0', 53): tornado.ioloop.IOLoop.current().asyncio_loop.create_datagram_endpoint(s, local_addr=local_addr))
 
 if __name__ == "__main__":
     NodeApplication()

@@ -3,11 +3,15 @@ Base handler ancestor, factorize common functions
 """
 
 import json
+import base64
 import logging
 
 from tornado.web import RequestHandler
 
 from yadacoin.core.config import get_config
+from yadacoin.core.identity import Identity
+from yadacoin.core.peer import User
+from coincurve import verify_signature
 
 
 class BaseHandler(RequestHandler):
@@ -35,6 +39,27 @@ class BaseHandler(RequestHandler):
         if self.config.api_whitelist and self.request.remote_ip not in self.config.api_whitelist:
             self.status_code = 400
             self.render_as_json({'status': 'error', 'message': 'Not on the whitelist.'})
+
+        # if 'Authorization' in self.request.headers:
+        #     try:
+        #         data = json.loads(base64.b64decode(self.request.headers['Authorization']))
+        #         alias = Identity.from_dict(data['identity'])
+        #         rid = alias.generate_rid(self.config.username_signature)
+        #         if self.request.uri.endswith('proxy-challenge'):
+        #             return
+        #         if rid not in self.config.challenges:
+        #             self.set_status(403)
+        #             self.write('not authorized')
+        #             return self.finish()
+        #         challenge = self.config.challenges[rid]
+        #         mobile = self.config.websocketServer.inbound_streams[User.__name__][rid].peer.identity
+        #         result = verify_signature(base64.b64decode(data['challenge']['signature']), challenge['message'].encode('utf-8'), bytes.fromhex(mobile.public_key))
+        #         if not result:
+        #             self.set_status(403)
+        #             self.write('not authorized')
+        #             return self.finish()
+        #     except:
+        #         i=0
 
     # This could be static, but its easier to let it there so the template have direct access.
     def bool2str(self, a_boolean, iftrue, iffalse):

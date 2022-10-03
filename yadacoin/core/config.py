@@ -96,6 +96,9 @@ class Config(object):
 
         self.email = EmailConfig.from_dict(config.get('email'))
 
+        self.dns_resolvers = config.get('dns_resolvers', [])
+        self.dns_bypass_ips = config.get('dns_bypass_ips', [])
+
         for key, val in config.items():
             if not hasattr(self, key):
                 setattr(self, key, val)
@@ -236,7 +239,10 @@ class Config(object):
             "email": EmailConfig().to_dict(),
             "skynet_url": '',
             "skynet_api_key": '',
-            "web_jwt_expiry": 23040
+            "web_jwt_expiry": 23040,
+            "proxy_port": 8080,
+            "dns_resolvers": [],
+            "dns_bypass_ips": []
         })
 
     @classmethod
@@ -292,6 +298,10 @@ class Config(object):
         email = config.get('email', False)
         if email:
             cls.email = EmailConfig.from_dict(email)
+
+        cls.proxy_port = config.get('proxy_port', 8080)
+        cls.dns_resolvers = config.get('dns_resolvers', [])
+        cls.dns_bypass_ips = config.get('dns_bypass_ips', [])
 
     @staticmethod
     def address_is_valid(address):
@@ -376,7 +386,9 @@ class Config(object):
             'skynet_api_key': self.skynet_api_key,
             'web_jwt_expiry': self.web_jwt_expiry,
             'stratum_pool_port': self.stratum_pool_port,
-            'proxy_port': self.proxy_port
+            'proxy_port': self.proxy_port,
+            'dns_resolvers': self.dns_resolvers,
+            'dns_bypass_ips': self.dns_bypass_ips
         }
 
     def to_json(self):

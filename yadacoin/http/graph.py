@@ -9,10 +9,10 @@ import os
 import time
 import requests
 import uuid
-
+from binascii import unhexlify
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from eccsnacks.curve25519 import scalarmult_base
+from eccsnacks.curve25519 import scalarmult_base, scalarmult
 from logging import getLogger
 from threading import Thread
 from yadacoin.core.collections import Collections
@@ -25,6 +25,8 @@ from yadacoin.core.transaction import Transaction, InvalidTransactionException, 
     InvalidTransactionSignatureException, MissingInputTransactionException
 from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
+from yadacoin.core.identity import Identity
+from yadacoin.core.crypt import Crypt
 
 
 class GraphConfigHandler(BaseHandler):
@@ -148,13 +150,18 @@ class GraphRIDWalletHandler(BaseGraphHandler):
 class RegistrationHandler(BaseHandler):
 
     async def get(self):
-        data = {
-            'username_signature': self.config.get_identity().get('username_signature'),
-            'username': self.config.get_identity().get('username'),
-            'callbackurl': self.config.callbackurl,
-            'to': self.config.address
-        }
-        self.render_as_json(data)
+        rid = self.get_secure_cookie('user_rid')
+        dh_public_key = self.get_secure_cookie('dh_public_key')
+        # data = json.loads(base64.b64decode(self.request.headers['Authorization']))
+        # dh_private_key = hashlib.sha256(self.config.wif.encode() + data['alias']['username_signature'].encode()).hexdigest()
+        # shared_secret = scalarmult(
+        #     unhexlify(dh_private_key).decode('latin1'),
+        #     unhexlify(data['dh_public_key']).decode('latin1')
+        # )
+        # cipher = Crypt(shared_secret.encode('latin1').hex(), shared=True)
+        # encrypted = cipher.shared_encrypt('<a href="http://0.0.0.0:8000/login2">login2</a>'.encode())
+        # self.write(encrypted)
+        return self.finish()
 
 
 class GraphTransactionHandler(BaseGraphHandler):

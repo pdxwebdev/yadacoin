@@ -1,0 +1,116 @@
+{% autoescape None %}
+<a href="http://{{http_address}}/register">start</a>
+<div id="container"></div>
+<h2 id="proxy_hostname"></h2>
+<div id="qrcode" style="margin: 100px"></div>
+<pre id="contextjson"></pre>
+<script src="https://centeridentity.com/yadacoinstatic/app/assets/qrcode.js"></script>
+<script src="https://centeridentity.com/centeridentitystatic/centeridentity/dist/bundle.js"></script>
+<script type="text/javascript">
+    function uuidv4() {
+        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
+            return v.toString(16);
+        });
+    }
+
+    async function init() {
+        const ci = new CenterIdentity()
+        const alias = await ci.createUser(uuidv4())
+        let dh_public_key = '';
+        const result = await fetch(
+            'http://{{proxy_address}}/auth',
+            {
+                method: 'POST',
+                headers: {
+                    'Content-type': 'application/json'
+                },
+                body: JSON.stringify(ci.toObject(alias))
+            }
+        )
+        const context = await result.json()
+        document.getElementById('proxy_hostname').innerHTML = context.proxy
+        const signature = await ci.sign(context.challenge.message, alias)
+        context.origin_identity = context.identity;
+        context.identity = ci.toObject(alias)
+        delete context.proxy
+        context.challenge = {
+            message: context.challenge.message,
+            signature: signature,
+            origin: context.challenge.signature
+        };
+        const url = 'http://0.0.0.0:8000/register'
+        context.request = {
+            message: url,
+            signature: await ci.sign(url, alias)
+        }
+        delete context.request
+        const contextjson = JSON.stringify(context, null, 4)
+        if(window.location.hash === '#debug') {
+            document.getElementById('contextjson').style.visibility = 'visible'
+            document.getElementById('contextjson').innerHTML = contextjson
+        }
+
+        const qrcode = new QRCode(document.getElementById("qrcode"), {
+            text: JSON.stringify(context),
+            width: 800,
+            height: 800,
+            colorDark : "#000f00",
+            colorLight : "#ffffff",
+            correctLevel : QRCode.CorrectLevel.L
+        });
+        const webSocket = new WebSocket('ws://{{http_address}}/websocket');
+
+        webSocket.onopen = async (event) => {
+            webSocket.send(JSON.stringify({
+                id: uuidv4(),
+                method: 'connect',
+                jsonrpc: 2.0,
+                params: {
+                    identity: ci.toObject(alias)
+                }
+            }));
+        };
+
+        webSocket.onmessage = async (message) => {
+            const data = JSON.parse(message.data)
+            if(data.method === 'connect_confirm') {
+                webSocket.send(JSON.stringify({
+                    id: uuidv4(),
+                    method: 'join_proxy',
+                    jsonrpc: 2.0,
+                    params: context
+                }));
+            } else if (data.method === 'join_proxy_confirmed') {
+                const dh_keys = ci.get_dh_keys(
+                    alias,
+                    context.origin_identity
+                )
+                webSocket.send(JSON.stringify({
+                    id: uuidv4(),
+                    method: 'dh_public_key',
+                    jsonrpc: 2.0,
+                    result: {
+                        dh_public_key: dh_keys.dh_public_key,
+                        identity: ci.toObject(alias)
+                    }
+                }));
+            } else if (data.method === 'dh_public_key') {
+                dh_public_key = data.result.dh_public_key
+            } else if (data.method === 'content_response') {
+                const shared_key = ci.getSharedSecret(
+                    alias,
+                    context.origin_identity,
+                    {dh_public_key: dh_public_key}
+                )
+                const content = ci.decrypt(shared_key, data.result.content)
+
+                const container = document.getElementById('container')
+                container.innerHTML = content
+
+            }
+        }
+    }
+
+    init();
+</script>

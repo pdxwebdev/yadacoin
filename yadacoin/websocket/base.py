@@ -254,6 +254,48 @@ class RCPWebSocketServer(WebSocketHandler):
           'members': members
         }, body=body)
 
+    async def join_proxy(self, body):
+        # we're trying to establish a route back to their wallet
+        data = body['params']
+        identity = Identity.from_dict(data['identity'])
+        if 'alias' in data:
+            alias = Identity.from_dict(data['alias'])
+        challenge = data['challenge']
+        contact = True # self.config.GU.get_contact(username_signature=identity.username_signature)
+        if contact:
+            result1 = verify_signature(base64.b64decode(challenge['origin']), challenge['message'].encode('utf-8'), bytes.fromhex(self.config.public_key)) # did we sign it?
+            result2 = verify_signature(base64.b64decode(challenge['signature']), challenge['message'].encode('utf-8'), bytes.fromhex(identity.public_key)) # did my contact sign it?
+            if result1 and result2:
+                if 'alias' in data:
+                    identity_rid = identity.generate_rid(self.config.username_signature)
+                    alias_rid = alias.generate_rid(self.config.username_signature)
+                    if (
+                        alias_rid in self.config.websocketServer.inbound_streams[User.__name__] and
+                        identity_rid in self.config.websocketServer.inbound_streams[User.__name__]
+                    ):
+                        self.config.websocketServer.inbound_streams[User.__name__][identity_rid].link = alias_rid
+                        self.config.websocketServer.inbound_streams[User.__name__][identity_rid].data = data
+                        self.config.websocketServer.inbound_streams[User.__name__][alias_rid].link = identity_rid
+                        self.config.websocketServer.inbound_streams[User.__name__][alias_rid].data = data
+                        await self.config.websocketServer.inbound_streams[User.__name__][alias_rid].write_params('proxy_linked', {})
+                await self.write_result('join_proxy_confirmed', {}, body=body)
+
+    async def dh_public_key(self, body):
+        data = body['result']
+        identity = Identity.from_dict(data['identity'])
+        rid = identity.generate_rid(self.config.username_signature)
+        if rid in self.config.websocketServer.inbound_streams[User.__name__]:
+            self.config.websocketServer.inbound_streams[User.__name__][rid].dh_public_key = data['dh_public_key']
+
+    async def proxy_signature_response(self, body):
+        data = body['result']
+        await self.write_result('proxy_signature_response_confirm', {}, body)
+        if 'alias' in data:
+            alias = Identity.from_dict(data['alias'])
+            alias_rid = alias.generate_rid(self.config.username_signature)
+            if alias_rid in self.config.websocketServer.inbound_streams[User.__name__]:
+                self.config.challenges[alias_rid]['signature'] = data['challenge']['signature']
+
     def append_to_private(self, group, collection):
         group_rid = group.generate_rid(group.username_signature, collection)
         if group_rid not in RCPWebSocketServer.inbound_streams[Group.__name__]:
@@ -270,6 +312,7 @@ class RCPWebSocketServer(WebSocketHandler):
             RCPWebSocketServer.inbound_streams[Group.__name__][group_rid] = {}
         peer_rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
         RCPWebSocketServer.inbound_streams[Group.__name__][group_rid][peer_rid] = self
+        self.peer.groups[group_rid] = Group(identity=group)
         return {
             group_rid: [x.peer.identity.to_dict for x in list(RCPWebSocketServer.inbound_streams[Group.__name__][group_rid].values())]
         }
@@ -318,6 +361,10 @@ class RCPWebSocketServer(WebSocketHandler):
 
         loop = ioloop.IOLoop.current()
         for group in list(peer.groups.values()):
+            rid = group.identity.generate_rid(group.identity.username_signature, Collections.GROUP_CHAT.value)
+            peer_id = peer.identity.generate_rid(peer.identity.username_signature, Collections.GROUP_CHAT.value)
+            if rid in self.inbound_streams[Group.__name__] and peer_id in self.inbound_streams[Group.__name__][rid]:
+                del self.inbound_streams[Group.__name__][rid][peer_id]
             group_id_attr = getattr(group, group.id_attribute)
             if group_id_attr in self.inbound_streams[Group.__name__]:
                 if id_attr in self.inbound_streams[Group.__name__]:
@@ -352,6 +399,7 @@ class RCPWebSocketServer(WebSocketHandler):
             await self.write_message('{}'.format(json.dumps(rpc_data)).encode())
         except:
             self.config.app_log.debug(format_exc())
+            self.remove_peer(self.peer)
 
         self.config.app_log.debug(f'SENT {self.peer.identity.username} {method} {data} {rpc_type} {req_id}')
 
