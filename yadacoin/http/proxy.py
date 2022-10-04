@@ -179,6 +179,7 @@ class ProxyHandler(tornado.web.RequestHandler):
         config.app_log.debug('Handle %s request to %s', self.request.method,
                      self.request.uri)
         rid = None
+        post_challenge_resp = None
         async def handle_response(response):
             if (response.error and not
                     isinstance(response.error, tornado.httpclient.HTTPError)):
@@ -186,11 +187,16 @@ class ProxyHandler(tornado.web.RequestHandler):
                 self.write('Internal server error:\n' + str(response.error))
             else:
                 self.set_status(response.code, response.reason)
-                #self._headers = tornado.httputil.HTTPHeaders() # clear tornado default header
+                self._headers = tornado.httputil.HTTPHeaders() # clear tornado default header
 
                 for header, v in response.headers.get_all():
                     if header not in ('Content-Length', 'Transfer-Encoding', 'Content-Encoding', 'Connection'):
+                        self.clear_header(header)
                         self.add_header(header, v) # some header appear multiple times, eg 'Set-Cookie'
+                if post_challenge_resp:
+                    for header, v in post_challenge_resp.headers.get_all():
+                        if header == 'Set-Cookie':
+                            self.add_header(header, v) # some header appear multiple times, eg 'Set-Cookie'
 
                 # if 'Proxy-Authorization' in self.request.headers:
                 #     self.clear_header('Authorization')
@@ -244,7 +250,7 @@ class ProxyHandler(tornado.web.RequestHandler):
                     return self.finish()
                 if not data.get('authenticated'):
                     url_parsed = urlparse(self.request.uri, scheme='http')
-                    resp = await fetch_request(
+                    get_challenge_resp = await fetch_request(
                         f'http://{url_parsed.netloc}/proxy-challenge',
                         body=json.dumps(data),
                         headers={
@@ -254,9 +260,9 @@ class ProxyHandler(tornado.web.RequestHandler):
                         follow_redirects=False,
                         allow_nonstandard_methods=True
                     )
-                    if resp.code < 200 or resp.code > 299:
+                    if get_challenge_resp.code < 200 or get_challenge_resp.code > 299:
                         return
-                    respdata = json.loads(resp.body)
+                    respdata = json.loads(get_challenge_resp.body)
 
                     data['challenge'] = {
                         'message': respdata['challenge']
@@ -265,7 +271,7 @@ class ProxyHandler(tornado.web.RequestHandler):
 
                     await self.proxy_signature_request(data, link)
                     data['challenge']['signature'] = config.challenges[link]['signature']
-                    resp = await fetch_request(
+                    post_challenge_resp = await fetch_request(
                         f'http://{url_parsed.netloc}/proxy-challenge',
                         body=json.dumps(data),
                         headers={
@@ -275,10 +281,10 @@ class ProxyHandler(tornado.web.RequestHandler):
                         follow_redirects=False,
                         allow_nonstandard_methods=True
                     )
-                    if resp.code < 200 or resp.code > 299:
+                    if post_challenge_resp.code < 200 or post_challenge_resp.code > 299:
                         return
                     data['authenticated'] = True
-                    for header, v in resp.headers.get_all():
+                    for header, v in post_challenge_resp.headers.get_all():
                         if header not in ('Content-Length', 'Transfer-Encoding', 'Content-Encoding', 'Connection'):
                             self.add_header(header, v) # some header appear multiple times, eg 'Set-Cookie'
                 # await config.websocketServer.inbound_streams[User.__name__][rid].write_result(
