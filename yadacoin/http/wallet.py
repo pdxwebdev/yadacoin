@@ -43,10 +43,10 @@ class GenerateChildWalletHandler(BaseHandler):
                 TU.generate_deterministic_signature(self.config, 'child_wallet').encode()
             ).hexdigest()
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
-        last_child_key = self.config.mongo.db.child_keys.find({
+        last_child_key = await self.config.mongo.async_db.child_keys.count_documents({
             'signature': keyhash
         }, sort=[('inc', -1)])
-        inc = last_child_key.count() + 1
+        inc = last_child_key + 1
         key = exkey.ChildKey(inc)
         child_key = BIP32Key.fromExtendedKey(key.ExtendedKey())
         child_key = child_key.ChildKey(inc)
