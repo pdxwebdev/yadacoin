@@ -677,7 +677,7 @@ class NodeApplication(Application):
             self.config.proxy_server.inbound_peers = {User.__name__: {}}
             self.config.proxy_server.listen(self.config.proxy_port)
 
-        if 'dns' not in self.config.modes:
+        if 'dns' in self.config.modes:
             self.config.udpServer = UDPServer
             self.config.udpServer.inbound_streams = {
                 User.__name__: {}
