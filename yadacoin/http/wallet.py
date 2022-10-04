@@ -45,7 +45,7 @@ class GenerateChildWalletHandler(BaseHandler):
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
         last_child_key = await self.config.mongo.async_db.child_keys.count_documents({
             'signature': keyhash
-        }, sort=[('inc', -1)])
+        })
         inc = last_child_key + 1
         key = exkey.ChildKey(inc)
         child_key = BIP32Key.fromExtendedKey(key.ExtendedKey())
