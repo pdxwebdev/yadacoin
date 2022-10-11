@@ -30,3 +30,4 @@ pbkdf2
 asyncstdlib
 GitPython
 eciespy
+dnspython

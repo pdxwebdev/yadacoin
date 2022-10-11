@@ -24,6 +24,7 @@ class RCPWebSocketServer(WebSocketHandler):
     def __init__(self, application, request):
         super(RCPWebSocketServer, self).__init__(application, request)
         self.config = get_config()
+        self.peer = None
 
     async def open(self):
         pass # removing cookies! Yada does not do cookies or sessions! EVER!
@@ -355,6 +356,8 @@ class RCPWebSocketServer(WebSocketHandler):
             await stream.write_params('newblock', payload)
 
     def remove_peer(self, peer):
+        if not peer:
+            return
         id_attr = getattr(peer, peer.id_attribute)
         if id_attr in self.inbound_streams[peer.__class__.__name__]:
             del self.inbound_streams[peer.__class__.__name__][id_attr]

@@ -4,7 +4,6 @@ import asyncio
 import functools
 import tornado
 import dns.resolver
-from classutils.thread_pool import ThreadPool
 from ipaddress import IPv4Network, IPv4Address, AddressValueError, ip_address
 from networkutil.addressing import get_my_addresses
 from dns.message import from_wire, make_response
