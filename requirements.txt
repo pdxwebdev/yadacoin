@@ -31,3 +31,4 @@ asyncstdlib
 GitPython
 eciespy
 dnspython
+networkutil
