@@ -323,7 +323,7 @@ class NodeApplication(Application):
         """Responsible for validating the cache and clearing it when necessary"""
         while True:
             if not hasattr(self.config, 'cache_inited'):
-                self.cache_collections = [x for x in await self.config.mongo.async_db.list_collection_names({}) if x.endswith('_cache')]
+                self.cache_collections = [x for x in await self.config.mongo.async_db.list_collection_names() if x.endswith('_cache')]
                 self.cache_last_times = {}
                 try:
                     async for x in self.config.mongo.async_db.blocks.find({'updated_at': {'$exists': False}}):
