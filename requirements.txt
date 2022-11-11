@@ -32,3 +32,4 @@ GitPython
 eciespy
 dnspython
 networkutil
+setuptools_rust
