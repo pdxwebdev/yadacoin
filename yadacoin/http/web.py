@@ -18,6 +18,7 @@ from yadacoin.core.blockchainutils import BU
 from yadacoin.core.identity import Identity
 from yadacoin.core.config import Config
 from eccsnacks.curve25519 import scalarmult_base, scalarmult
+from yadacoin.core.transactionutils import TU
 
 
 challenges = {}
@@ -26,7 +27,7 @@ class BaseWebHandler(BaseHandler):
 
     async def prepare(self):
 
-        if self.request.protocol == 'http' and self.config.ssl.is_valid():
+        if self.request.protocol == 'http' and 'ssl' in self.config.modes and self.config.ssl.is_valid():
             self.redirect('https://' + self.request.host + self.request.uri, permanent=False)
 
         await super(BaseWebHandler, self).prepare()
@@ -356,17 +357,6 @@ class ProxyChallengeHandler(BaseWebHandler):
         dh_public_key = scalarmult_base(a.decode('latin1')).encode('latin1').hex()
         rid = mobile.generate_rid(self.config.username_signature)
 
-        if rid in self.config.challenges and 'challenge' in data and 'signature' in data['challenge']:
-            result = verify_signature(
-                base64.b64decode(data['challenge']['signature']),
-                self.config.challenges[rid]['message'].encode(),
-                bytes.fromhex(mobile.public_key)
-            )
-            if result:
-                self.set_secure_cookie('user_rid', rid)
-                self.set_secure_cookie('dh_public_key', dh_public_key)
-                return self.finish()
-
         challenge = str(uuid.uuid4())
         self.config.challenges[rid] = {
             'message': challenge
@@ -532,6 +522,50 @@ class ProxyAppHandler(BaseWebHandler):
         return self.render('proxy.html')
 
 
+class AuthHandler(BaseWebHandler):
+
+    async def get(self):
+        return self.render(
+            'auth.html',
+            proxy_address=f'{self.config.peer_host}:{self.config.proxy_port}',
+            http_address=f'{self.config.peer_host}:{self.config.serve_port}'
+        )
+
+    async def post(self):
+        data = json.loads(self.request.body)
+        user_identity = Identity.from_dict(data)
+        challenge_message = str(uuid.uuid4())
+        challenge_signature = TU.generate_signature(challenge_message, self.config.private_key)
+        url = f'{self.config.peer_host}:{self.config.serve_port}/websocket'
+        url_signature = TU.generate_signature(url, self.config.private_key)
+        server_identity = Identity.from_dict({
+            'public_key': self.config.public_key,
+            'username': self.config.username,
+            'username_signature': self.config.username_signature
+        })
+        rid = server_identity.generate_rid(user_identity.username_signature)
+        self.config.challenges[rid] = {
+            'message': challenge_message,
+            'origin': challenge_signature
+        }
+        context = {
+            'identity': {
+                'public_key': self.config.public_key,
+                'username': self.config.username,
+                'username_signature': self.config.username_signature
+            },
+            'challenge': {
+                'message': challenge_message,
+                'origin': challenge_signature
+            },
+            'url': {
+                'message': url,
+                'signature': url_signature
+            },
+        }
+        return self.write(json.dumps(context))
+
+
 WEB_HANDLERS = [
     (r'/mfa', MultifactorAuthHandler),
     (r'/login', LoginHandler),
@@ -548,4 +582,5 @@ WEB_HANDLERS = [
     (r'/proxy-allowedlist', ProxyAllowedList),
     (r'/proxy-config', ProxyConfig),
     (r'/proxy-app', ProxyAppHandler),
+    (r'/auth', AuthHandler),
 ]

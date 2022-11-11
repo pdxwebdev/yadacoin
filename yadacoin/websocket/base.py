@@ -15,6 +15,7 @@ from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, G
 from yadacoin.core.config import get_config
 from yadacoin.core.transaction import Transaction
 from yadacoin.tcpsocket.base import BaseRPC
+from asyncio import sleep as async_sleep
 
 class RCPWebSocketServer(WebSocketHandler):
     inbound_streams = {}
@@ -259,6 +260,7 @@ class RCPWebSocketServer(WebSocketHandler):
         # we're trying to establish a route back to their wallet
         data = body['params']
         identity = Identity.from_dict(data['identity'])
+        identity_rid = identity.generate_rid(self.config.username_signature)
         if 'alias' in data:
             alias = Identity.from_dict(data['alias'])
         challenge = data['challenge']
@@ -268,7 +270,6 @@ class RCPWebSocketServer(WebSocketHandler):
             result2 = verify_signature(base64.b64decode(challenge['signature']), challenge['message'].encode('utf-8'), bytes.fromhex(identity.public_key)) # did my contact sign it?
             if result1 and result2:
                 if 'alias' in data:
-                    identity_rid = identity.generate_rid(self.config.username_signature)
                     alias_rid = alias.generate_rid(self.config.username_signature)
                     if (
                         alias_rid in self.config.websocketServer.inbound_streams[User.__name__] and
@@ -278,8 +279,36 @@ class RCPWebSocketServer(WebSocketHandler):
                         self.config.websocketServer.inbound_streams[User.__name__][identity_rid].data = data
                         self.config.websocketServer.inbound_streams[User.__name__][alias_rid].link = identity_rid
                         self.config.websocketServer.inbound_streams[User.__name__][alias_rid].data = data
-                        await self.config.websocketServer.inbound_streams[User.__name__][alias_rid].write_params('proxy_linked', {})
+                        await self.config.websocketServer.inbound_streams[User.__name__][alias_rid].write_params('proxy_linked', data['identity'])
+                    else:
+                        self.config.websocketServer.inbound_streams[User.__name__][identity_rid] = self
                 await self.write_result('join_proxy_confirmed', {}, body=body)
+
+    async def proxy_auth(self, body):
+        # we're trying to establish a route back to their wallet
+        data = body['params']
+        identity = Identity.from_dict(data['identity'])
+        identity_rid = identity.generate_rid(self.config.username_signature)
+        challenge = data['challenge']
+        contact = True # self.config.GU.get_contact(username_signature=identity.username_signature)
+        if contact:
+            result1 = verify_signature(base64.b64decode(challenge['origin']), challenge['message'].encode('utf-8'), bytes.fromhex(self.config.public_key)) # did we sign it?
+            result2 = verify_signature(base64.b64decode(challenge['signature']), challenge['message'].encode('utf-8'), bytes.fromhex(identity.public_key)) # did my contact sign it?
+            if result1 and result2 and self.config.challenges.get(identity_rid):
+                link = self.config.websocketServer.inbound_streams[User.__name__][identity_rid].link
+                await self.config.websocketServer.inbound_streams[User.__name__][link].write_params(
+                    'proxy_signature_request',
+                    data
+                )
+                while 'signature' not in self.config.challenges[identity_rid]:
+                    await async_sleep(1)
+                data['challenge'] = self.config.challenges[identity_rid]
+                await self.config.websocketServer.inbound_streams[User.__name__][identity_rid].write_params(
+                    'proxy_signature_response',
+                    self.config.websocketServer.inbound_streams[User.__name__][identity_rid].data
+                )
+                del self.config.challenges[identity_rid]
+
 
     async def dh_public_key(self, body):
         data = body['result']
