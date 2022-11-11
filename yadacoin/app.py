@@ -39,6 +39,7 @@ import tornado.log
 from tornado.iostream import StreamClosedError
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
+from tornado.httpserver import HTTPServer
 from concurrent.futures import ThreadPoolExecutor
 from bson.objectid import ObjectId
 from bitcoin import core
@@ -60,7 +61,6 @@ from yadacoin.core.peer import (
 from yadacoin.core.identity import Identity
 from yadacoin.core.health import Health
 from yadacoin.core.smtp import Email
-from yadacoin.http.proxy import ProxyConfig, ProxyHandler, AuthHandler
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
@@ -75,7 +75,6 @@ from yadacoin.websocket.base import RCPWebSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin import version
 from plugins.yadacoinpool import handlers
-from yadacoin.udp.base import UDPServer
 
 
 core.Hash160 = RIPEMD160.ripemd160
@@ -568,12 +567,12 @@ class NodeApplication(Application):
         handlers = self.default_handlers.copy()
         super().__init__(handlers, **settings)
         self.config.application = self
-        self.config.http_server = tornado.httpserver.HTTPServer(self)
+        self.config.http_server = HTTPServer(self)
         self.config.http_server.listen(self.config.serve_port, self.config.serve_host)
         if hasattr(self.config, 'ssl') and self.config.ssl.is_valid():
             ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.ca_file)
             ssl_ctx.load_cert_chain(self.config.ssl.cert_file, keyfile=self.config.ssl.key_file)
-            self.config.https_server = tornado.httpserver.HTTPServer(self, ssl_options=ssl_ctx)
+            self.config.https_server = HTTPServer(self, ssl_options=ssl_ctx)
             self.config.https_server.listen(self.config.ssl.port)
         if hasattr(self.config, 'email') and self.config.email.is_valid():
             self.config.emailer = Email()
@@ -658,26 +657,28 @@ class NodeApplication(Application):
 
         self.config.websocketServer = RCPWebSocketServer
         self.config.app_log = logging.getLogger('tornado.application')
+        self.config.challenges = {}
         if 'web' in self.config.modes:
             for x in [User, Group]:
                 if x.__name__ not in self.config.websocketServer.inbound_streams:
                     self.config.websocketServer.inbound_streams[x.__name__] = {}
 
         if 'proxy' in self.config.modes:
-            self.config.proxy_server = tornado.web.Application([
-                (r'/auth', AuthHandler),
+            from yadacoin.http.proxy import ProxyConfig, ProxyHandler
+            proxy_app = Application([
                 (r'.*', ProxyHandler),
             ], compiled_template_cache=False, debug=True)
-            self.config.challenges = {}
+            self.config.proxy_server = HTTPServer(proxy_app)
+            self.config.proxy_server.listen(self.config.proxy_port)
             self.config.proxy = ProxyConfig()
             for x in self.config.mongo.site_db.proxy_whitelist.find({}, {'_id': 0}):
                 self.config.proxy.white_list[x['domain']] = x
             for x in self.config.mongo.site_db.proxy_blacklist.find({}, {'_id': 0}):
                 self.config.proxy.black_list[x['domain']] = x
             self.config.proxy_server.inbound_peers = {User.__name__: {}}
-            self.config.proxy_server.listen(self.config.proxy_port)
 
         if 'dns' in self.config.modes:
+            from yadacoin.udp.base import UDPServer
             self.config.udpServer = UDPServer
             self.config.udpServer.inbound_streams = {
                 User.__name__: {}
