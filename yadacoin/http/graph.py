@@ -865,26 +865,71 @@ class IdentityHandler(BaseGraphHandler):
         )
 
 
-challenges = {}
 class ChallengeHandler(BaseGraphHandler):
     async def post(self):
         try:
             data = json.loads(self.request.body)
-            challenge = str(uuid.uuid4())
-            challenges[data['username_signature']] = {
-                'identity': {
-                    'username': data['username'],
-                    'username_signature': data['username_signature'],
-                    'public_key': data['public_key']
+            challenge = await self.config.mongo.async_db.challenges.find_one(
+                {
+                    'identity.username_signature': data['identity']['username_signature']
                 },
-                'challenge': challenge
-            }
+                sort=[('time', -1)]
+            )
+            if challenge and int(data['challenge']['time']) == challenge['challenge']['time']:
+                await self.generate_challenge(data)
+                result = verify_signature(
+                    data['challenge']['origin_signature'],
+                    challenge['challenge']['message'],
+                    self.config.public_key
+                )
+                if not result:
+                    return self.render_as_json({'status': False})
+                result = verify_signature(
+                    data['challenge']['signature'],
+                    challenge['challenge']['message'],
+                    challenge['identity']['public_key']
+                )
+                if not result:
+                    return self.render_as_json({'status': False})
+                await self.config.mongo.async_db.challenges.update_one({
+                    {
+                        'challenge.time': challenge['challenge']['time'],
+                        'challenge.message': challenge['challenge']['message'],
+                        'identity.username_signature': data['identity']['username_signature']
+                    },
+                    {
+                        '$set': {
+                            'challenge.verified': True
+                        }
+                    }
+                })
+                return self.render_as_json({'status': True})
+            if challenge and int(time.time()) == challenge['challenge']['time']:
+                raise Exception('Requests happing too fast. Same time stamp as previously generated timestamp.')
+            await self.generate_challenge(data)
             return self.render_as_json({
                 'status': True,
                 'challenge': challenge
             })
         except:
             return self.render_as_json({'status': False})
+
+    async def generate_challenge(self, data):
+        challenge = str(uuid.uuid4())
+        await self.config.mongo.async_db.challenges.insert_one(
+            {
+                'identity': {
+                    'username': data['username'],
+                    'username_signature': data['username_signature'],
+                    'public_key': data['public_key']
+                },
+                'challenge': {
+                    'message': challenge,
+                    'origin_signature': TU.generate_signature(challenge, self.config.private_key),
+                    'time': int(time.time())
+                }
+            }
+        )
 
 
 class AuthHandler(BaseGraphHandler):
