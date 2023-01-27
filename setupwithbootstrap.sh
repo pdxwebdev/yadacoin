@@ -46,6 +46,7 @@ EOL
 
 # Install python prerequisites
 sudo -H python3 -m pip install --upgrade pip
+sudo -H python3 -m pip install pyopenssl --upgrade
 sudo -H python3 -m pip install -r requirements.txt
 # get the correct chardet and urllib3 versions for yada code
 sudo python3 -m pip install --upgrade requests
