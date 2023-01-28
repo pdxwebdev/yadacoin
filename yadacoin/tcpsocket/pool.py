@@ -171,7 +171,7 @@ class StratumServer(RPCSocketServer):
         await StratumServer.block_checker()
 
     async def login(self, body, stream):
-        if StratumServer.inbound_streams[Miner.__name__].keys() > self.config.max_miners:
+        if len(StratumServer.inbound_streams[Miner.__name__].keys()) > self.config.max_miners:
             await stream.write('{}\n'.format(json.dumps({
                 'id': '1',
                 'method': 'login',
