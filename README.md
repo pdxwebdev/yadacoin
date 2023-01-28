@@ -180,11 +180,11 @@ https://yadacoin.io/download
   - description: This specifies the number of peers that can connect to your node.
 - pool_target3
   - type: integer
-  - default: '000FFFFFFFFFFFFF'
+  - default: "000FFFFFFFFFFFFF"
   - description: This specifies the default target for xmrig(cc) version 3 miners, this is often also referred to as the shared difficulty
 - pool_target
   - type: integer
-  - default: '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+  - default: "000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"
   - description: This specifies the default target for xmrig(cc) version 2 and lower, this is often also referred to as the shared difficulty
 - email
   - type: object

@@ -213,7 +213,7 @@ class RPCSocketClient(TCPClient):
                 stream = DummyStream(peer)
 
             await self.remove_peer(stream)
-            self.config.app_log.warning('Streamed closed for {}: {}'.format(peer.__class__.__name__, peer.to_json()))
+            self.config.app_log.warning('Stream closed for {}: {}'.format(peer.__class__.__name__, peer.to_json()))
         except TimeoutError:
             if not stream:
                 stream = DummyStream(peer)
