@@ -170,6 +170,22 @@ https://yadacoin.io/download
   - type: integer
   - default: 6
   - description: This specifies the number of blocks that must by won by the pool before a payout can take place.
+- max_miners
+  - type: integer
+  - default: 100
+  - description: This specifies the number of miners for your pool.
+- max_peers
+  - type: integer
+  - default: 20
+  - description: This specifies the number of peers that can connect to your node.
+- pool_target3
+  - type: integer
+  - default: '000FFFFFFFFFFFFF'
+  - description: This specifies the default target for xmrig(cc) version 3 miners, this is often also referred to as the shared difficulty
+- pool_target
+  - type: integer
+  - default: '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+  - description: This specifies the default target for xmrig(cc) version 2 and lower, this is often also referred to as the shared difficulty
 - email
   - type: object
   - default: undefined

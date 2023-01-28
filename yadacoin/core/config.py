@@ -33,7 +33,6 @@ class Config(object):
         self.origin = config.get('origin', False)
         self.max_inbound = config.get('max_inbound', 10)
         self.max_outbound = config.get('max_outbound', 10)
-        self.max_miners = config.get('max_miners', -1)
         self.public_key = config['public_key']
         self.address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
@@ -86,6 +85,10 @@ class Config(object):
         self.pool_payout = config.get('pool_payout', False)
         self.pool_take = config.get('pool_take', .01)
         self.payout_frequency = config.get('payout_frequency', 6)
+        self.max_miners = config.get('max_miners', 100)
+        self.max_peers = config.get('max_peers', 20)
+        self.pool_target3 = config.get('pool_target3', '000FFFFFFFFFFFFF')
+        self.pool_target = config.get('pool_target', '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')
 
         self.restrict_graph_api = config.get('restrict_graph_api', False)
 
@@ -235,6 +238,10 @@ class Config(object):
             "pool_payout": False,
             "pool_take": .01,
             "payout_frequency": 6,
+            "max_miners": 100,
+            "max_peers": 20,
+            "pool_target3": '000FFFFFFFFFFFFF',
+            "pool_target": '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
             "restrict_graph_api": False,
             "email": EmailConfig().to_dict(),
             "skynet_url": '',
@@ -287,6 +294,11 @@ class Config(object):
         cls.pool_payout = config.get('pool_payout', False)
         cls.pool_take = config.get('pool_take', .01)
         cls.payout_frequency = config.get('payout_frequency', 6)
+        cls.max_miners = config.get('max_miners', 100)
+        cls.max_peers = config.get('max_peers', 20)
+        cls.pool_target3 = config.get('pool_target3', '000FFFFFFFFFFFFF')
+        cls.pool_target = config.get('pool_target', '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')
+
 
         cls.restrict_graph_api = config.get('restrict_graph_api', False)
 
@@ -380,6 +392,10 @@ class Config(object):
             'pool_payout': self.pool_payout,
             'pool_take': self.pool_take,
             'payout_frequency': self.payout_frequency,
+            'max_miners': self.max_miners,
+            'max_peers': self.max_peers,
+            'pool_target3': self.pool_target3,
+            'pool_target': self.pool_target,
             'restrict_graph_api': self.restrict_graph_api,
             'email': self.email.to_dict(),
             'skynet_url': self.skynet_url,

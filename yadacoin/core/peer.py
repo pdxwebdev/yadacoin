@@ -249,7 +249,7 @@ class Seed(Peer):
     @classmethod
     def type_limit(cls, peer):
         if peer == Seed:
-            return 100000
+            return get_config().max_peers or 100000
         elif peer == SeedGateway:
             return 1
         else:
@@ -394,7 +394,7 @@ class SeedGateway(Peer):
         if peer == Seed:
             return 1
         elif peer == ServiceProvider:
-            return 100000
+            return get_config().max_peers or 100000
         else:
             return 0
 
@@ -472,7 +472,7 @@ class ServiceProvider(Peer):
         if peer == SeedGateway:
             return 1
         elif peer == User:
-            return 100000
+            return get_config().max_peers or 100000
         else:
             return 0
 
@@ -620,7 +620,7 @@ class User(Peer):
         if peer == ServiceProvider:
             return 1
         elif peer == User:
-            return 100000
+            return get_config().max_peers or 100000
         else:
             return 0
 
