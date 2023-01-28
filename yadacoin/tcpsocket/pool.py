@@ -171,6 +171,15 @@ class StratumServer(RPCSocketServer):
         await StratumServer.block_checker()
 
     async def login(self, body, stream):
+        if StratumServer.inbound_streams[Miner.__name__].keys() > self.config.max_miners:
+            await stream.write('{}\n'.format(json.dumps({
+                'id': '1',
+                'method': 'login',
+                'jsonrpc': "2.0",
+                'error': {'message': 'Maximum number of miners connected. Please see https://miningpoolstats.stream/yadacoin for more pools.'}
+            })).encode())
+            await StratumServer.remove_peer(stream)
+            return
         await StratumServer.block_checker()
         job = await StratumServer.config.mp.block_template(body['params'].get('agent'))
         if not hasattr(stream, 'jobs'):
