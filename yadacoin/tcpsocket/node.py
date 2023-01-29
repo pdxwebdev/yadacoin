@@ -16,6 +16,11 @@ from yadacoin.core.transactionutils import TU
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.processingqueue import (
+    BlockProcessingQueueItem,
+    TransactionProcessingQueue,
+    TransactionProcessingQueueItem
+)
 
 
 class NodeRPC(BaseRPC):
@@ -23,7 +28,6 @@ class NodeRPC(BaseRPC):
     def __init__(self):
         super(NodeRPC, self).__init__()
         self.config = get_config()
-        self.transaction_queue = ProcessingQueue()
 
     config = None
     async def getblocks(self, body, stream):
@@ -112,7 +116,7 @@ class NodeRPC(BaseRPC):
                 body['id']
             )
         txn = Transaction.from_dict(payload.get('transaction'))
-        await self.transaction_queue.add(ProcessingQueueItem(txn, stream))
+        await self.config.node_server_instance.transaction_queue.add(TransactionProcessingQueueItem(txn, stream))
 
         ws_users = self.config.websocketServer.inbound_streams[User.__name__]
 
@@ -178,7 +182,6 @@ class NodeRPC(BaseRPC):
             del self.retry_messages[(stream.peer.rid, 'newtxn', transaction.transaction_signature)]
 
     async def newblock(self, body, stream):
-        from yadacoin.core.consensus import ProcessingQueueItem
         payload = body.get('params', {}).get('payload')
 
         if stream.peer.protocol_version > 1:
@@ -207,7 +210,7 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info('newblock, error inserting consensus block')
             return
 
-        await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block), stream))
 
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:
@@ -332,7 +335,6 @@ class NodeRPC(BaseRPC):
                 self.retry_messages[(stream.peer.rid, 'blockresponse', '', body['id'])] = {}
 
     async def blocksresponse(self, body, stream):
-        from yadacoin.core.consensus import ProcessingQueueItem
         # get blocks should be done only by syncing peers
         result = body.get('result')
         blocks = result.get('blocks')
@@ -361,7 +363,7 @@ class NodeRPC(BaseRPC):
             self.config.consensus.syncing = False
             return False
 
-        await self.config.consensus.block_queue.add(ProcessingQueueItem(inbound_blockchain, stream))
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(inbound_blockchain, stream))
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
@@ -371,7 +373,6 @@ class NodeRPC(BaseRPC):
             del self.retry_messages[(stream.peer.rid, 'blocksresponse', start_index, body['id'])]
 
     async def blockresponse(self, body, stream):
-        from yadacoin.core.consensus import ProcessingQueueItem
         # get blocks should be done only by syncing peers
         result = body.get('result')
         if not result.get("block"):
@@ -388,7 +389,7 @@ class NodeRPC(BaseRPC):
             return
 
         await self.config.consensus.insert_consensus_block(block, stream.peer)
-        await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block), stream))
 
         if stream.peer.protocol_version > 1:
             await self.write_result(
@@ -567,6 +568,7 @@ class NodeSocketServer(RPCSocketServer, NodeRPC):
     def __init__(self):
         super(NodeSocketServer, self).__init__()
         self.config = get_config()
+        self.transaction_queue = TransactionProcessingQueue()
 
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
@@ -634,25 +636,3 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
     async def capacity(self, body, stream):
         NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][stream.peer.rid] = stream.peer
         self.config.app_log.warning('{} at full capacity: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
-
-
-class ProcessingQueueItem:
-    def __init__(self, transaction: Transaction, stream=None):
-        self.transaction = transaction
-        self.stream = stream
-
-
-class ProcessingQueue:
-    def __init__(self):
-        self.queue = {}
-        self.last_popped = ''
-
-    async def add(self, item: ProcessingQueueItem):
-        self.queue.setdefault(item.transaction_signature, item)
-
-    async def pop(self):
-        if not self.queue:
-            return None
-        key, item = self.queue.popitem()
-        self.last_popped = key
-        return item

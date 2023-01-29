@@ -303,12 +303,22 @@ class NodeApplication(Application):
     async def background_transaction_processor(self):
         while True:
             try:
-                await self.config.nodeShared.process_transaction_queue()
+                await self.config.node_server_instance.process_transaction_queue()
                 self.config.health.transaction_processor.last_activity = int(time())
             except:
                 self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(1)
+
+    async def background_nonce_processor(self):
+        while True:
+            try:
+                await self.config.mp.process_nonce_queue()
+                self.config.health.nonce_processor.last_activity = int(time())
+            except:
+                self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(.1)
 
     async def background_pool_payer(self):
         """Responsible for paying miners"""
@@ -475,6 +485,8 @@ class NodeApplication(Application):
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_transaction_processor)
+
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_nonce_processor)
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
 

@@ -13,7 +13,11 @@ from yadacoin.core.config import Config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
 from yadacoin.tcpsocket.base import RPCSocketServer
-from yadacoin.core.miningpool import MiningPool, InvalidAddressException, Miner
+from yadacoin.core.miner import Miner
+from yadacoin.core.processingqueue import (
+    NonceProcessingQueue,
+    NonceProcessingQueueItem
+)
 
 
 class StratumServer(RPCSocketServer):
@@ -23,6 +27,7 @@ class StratumServer(RPCSocketServer):
     def __init__(self):
         super(StratumServer, self).__init__()
         self.config = get_config()
+        self.nonce_processing_queue = NonceProcessingQueue()
 
     @classmethod
     async def block_checker(cls):
@@ -141,34 +146,13 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def submit(self, body, stream):
-        nonce = body['params'].get('nonce')
-        if type(nonce) is not str:
-            result = {'error': True, 'message': 'nonce is wrong data type'}
-        if len(nonce) > CHAIN.MAX_NONCE_LEN:
-            result = {'error': True, 'message': 'nonce is too long'}
-        data = {
-            'id': body.get('id'),
-            'method': body.get('method'),
-            'jsonrpc': body.get('jsonrpc')
-        }
-        try:
-            data['result'] = await StratumServer.config.mp.on_miner_nonce(
-                nonce,
-                stream.jobs[body['params']['id']],
+        self.nonce_processing_queue.add(
+            NonceProcessingQueueItem(
                 miner=stream.peer,
-                miner_hash=body['params']['result']
+                stream=stream,
+                body=body
             )
-            if not data['result']:
-                data['error'] = {'message': 'Invalid hash for current block'}
-        except:
-            data['result'] = {}
-            data['error'] = {'message': 'Invalid hash for current block'}
-
-        await stream.write('{}\n'.format(json.dumps(data)).encode())
-        if 'error' in data:
-            await StratumServer.send_job(stream)
-
-        await StratumServer.block_checker()
+        )
 
     async def login(self, body, stream):
         if len(StratumServer.inbound_streams[Miner.__name__].keys()) > self.config.max_miners:

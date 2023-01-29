@@ -152,6 +152,16 @@ class TransactionProcessorHealth(HealthItem):
         return self.report_status(True)
 
 
+class NonceProcessorHealth(HealthItem):
+
+    async def check_health(self):
+        if time.time() - self.last_activity > self.timeout:
+            self.report_bad_health('Background nonce processor health check failed')
+            return self.report_status(False)
+
+        return self.report_status(True)
+
+
 class PoolPayerHealth(HealthItem):
 
     async def check_health(self):
@@ -197,6 +207,7 @@ class Health:
         self.message_sender = MessageSenderHealth()
         self.block_inserter = BlockInserterHealth()
         self.transaction_processor = TransactionProcessorHealth()
+        self.nonce_processor = NonceProcessorHealth()
         self.pool_payer = PoolPayerHealth()
         self.cache_validator = CacheValidatorHealth()
         self.mempool_cleaner = MempoolCleanerHealth()
@@ -209,6 +220,7 @@ class Health:
             self.message_sender,
             self.block_inserter,
             self.transaction_processor,
+            self.nonce_processor,
             self.pool_payer,
             self.cache_validator,
             self.mempool_cleaner

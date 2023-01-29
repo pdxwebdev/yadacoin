@@ -1,86 +1,22 @@
 from traceback import format_exc
 import uuid
 import random
+import json
 from time import time
 import binascii
-from bitcoin.wallet import P2PKHBitcoinAddress
 from logging import getLogger
-from threading import Thread
-from yadacoin.contracts.base import Contract
 
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
-from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.transaction import (
-    Transaction,
-    MissingInputTransactionException,
-    InvalidTransactionException,
-    InvalidTransactionSignatureException,
-    TransactionInputOutputMismatchException,
-    TotalValueMismatchException
+    Transaction
 )
-from yadacoin.core.peer import Miner as MinerBase
 from yadacoin.core.transactionutils import TU
-
-
-class Miner(MinerBase):
-    address = ''
-    address_only = ''
-    agent = ''
-    id_attribute = 'address'
-
-    def __init__(self, address, agent=''):
-        super(Miner, self).__init__()
-        if '.' in address:
-            self.address = address
-            self.address_only = address.split('.')[0]
-            if not self.config.address_is_valid(self.address_only):
-                raise InvalidAddressException()
-        else:
-            self.address = address
-            self.address_only = address
-            if not self.config.address_is_valid(self.address):
-                raise InvalidAddressException()
-        self.agent = agent
-
-    def to_json(self):
-        return {
-            'address': self.address
-        }
-
-
-class InvalidAddressException(Exception):
-    pass
-
-
-class Job:
-    @classmethod
-    async def from_dict(cls, job):
-        inst = cls()
-        inst.id = job['job_id']
-        inst.diff = job['difficulty']
-        inst.target = job['target']
-        inst.blob = job['blob']
-        inst.seed_hash = job['seed_hash']
-        inst.index = job['height']
-        inst.extra_nonce = job['extra_nonce']
-        inst.algo = job['algo']
-        return inst
-
-    def to_dict(self):
-        return {
-            'job_id': self.id,
-            'difficulty': self.diff,
-            'target': self.target,
-            'blob': self.blob,
-            'seed_hash': self.seed_hash,
-            'height': self.index,
-            'extra_nonce': self.extra_nonce,
-            'algo': self.algo,
-        }
+from yadacoin.tcpsocket.pool import StratumServer
+from yadacoin.core.job import Job
+from yadacoin.core.processingqueue import BlockProcessingQueueItem
 
 
 class MiningPool(object):
@@ -119,7 +55,43 @@ class MiningPool(object):
 
         return str_little
 
-    async def on_miner_nonce(self, nonce: str, job: Job, miner: Miner='', miner_hash: str='') -> bool:
+    async def process_nonce_queue(self):
+        item = await self.config.pool_server.nonce_processing_queue.pop()
+        if not item:
+            return
+        body = item.body
+        stream = item.stream
+        miner = item.miner
+        nonce = body['params'].get('nonce')
+        job = stream.jobs[body['params']['id']]
+        if type(nonce) is not str:
+            result = {'error': True, 'message': 'nonce is wrong data type'}
+        if len(nonce) > CHAIN.MAX_NONCE_LEN:
+            result = {'error': True, 'message': 'nonce is too long'}
+        data = {
+            'id': body.get('id'),
+            'method': body.get('method'),
+            'jsonrpc': body.get('jsonrpc')
+        }
+        data = await self.process_nonce(
+            miner,
+            nonce,
+            job
+        )
+        try:
+            if not data['result']:
+                data['error'] = {'message': 'Invalid hash for current block'}
+        except:
+            data['result'] = {}
+            data['error'] = {'message': 'Invalid hash for current block'}
+
+        await stream.write('{}\n'.format(json.dumps(data)).encode())
+        if 'error' in data:
+            await StratumServer.send_job(stream)
+
+        await StratumServer.block_checker()
+
+    async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce.encode().hex()
         header = binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}').replace(job.extra_nonce, '')
         hash1 = self.block_factory.generate_hash_from_header(
@@ -519,7 +491,6 @@ class MiningPool(object):
             await Transaction.handle_exception(e, transaction_obj)
 
     async def accept_block(self, block):
-        from yadacoin.core.consensus import ProcessingQueueItem
         self.app_log.info('Candidate submitted for index: {}'.format(block.index))
         self.app_log.info('Transactions:')
         for x in block.transactions:
@@ -527,7 +498,7 @@ class MiningPool(object):
 
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 
-        await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block)))
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block)))
 
         await self.config.nodeShared.send_block(block)
 

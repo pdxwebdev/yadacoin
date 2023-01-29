@@ -33,6 +33,10 @@ from yadacoin.tcpsocket.node import NodeSocketServer
 from yadacoin.core.peer import Peer
 from yadacoin.tcpsocket.base import BaseRPC
 from yadacoin.tcpsocket.pool import StratumServer
+from yadacoin.core.processingqueue import (
+    BlockProcessingQueue,
+    BlockProcessingQueueItem
+)
 
 
 class Consensus(object):
@@ -56,7 +60,7 @@ class Consensus(object):
         self.target = target
         self.special_target = special_target
         self.syncing = False
-        self.block_queue = ProcessingQueue()
+        self.block_queue = BlockProcessingQueue()
 
         if self.config.LatestBlock.block:
             self.latest_block = self.config.LatestBlock.block
@@ -175,7 +179,7 @@ class Consensus(object):
                     continue
                 stream = await self.config.peer.get_peer_by_id(record['peer']['rid'])
                 if stream and hasattr(stream, 'peer') and stream.peer.authenticated:
-                    await self.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
+                    await self.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block), stream))
 
             return True
         else:
@@ -395,31 +399,3 @@ class Consensus(object):
         except Exception as e:
             from traceback import format_exc
             self.app_log.warning("{}".format(format_exc()))
-
-
-class ProcessingQueueItem:
-    def __init__(self, blockchain: Blockchain, stream=None):
-        self.blockchain = blockchain
-        self.stream = stream
-
-
-class ProcessingQueue:
-    def __init__(self):
-        self.queue = {}
-        self.last_popped = ()
-
-    async def add(self, item: ProcessingQueueItem):
-        first_block = await item.blockchain.first_block
-        final_block = await item.blockchain.final_block
-        if (first_block.hash, final_block.hash) == self.last_popped:
-            return
-        self.queue.setdefault((first_block.hash, final_block.hash), item)
-
-    async def pop(self):
-        if not self.queue:
-            return None
-        key, item = self.queue.popitem()
-        first_block = await item.blockchain.first_block
-        final_block = await item.blockchain.final_block
-        self.last_popped = (first_block.hash, final_block.hash)
-        return item
