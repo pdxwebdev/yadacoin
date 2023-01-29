@@ -23,6 +23,7 @@ class NodeRPC(BaseRPC):
     def __init__(self):
         super(NodeRPC, self).__init__()
         self.config = get_config()
+        self.transaction_queue = ProcessingQueue()
 
     config = None
     async def getblocks(self, body, stream):
@@ -110,8 +111,36 @@ class NodeRPC(BaseRPC):
                 body.get('params', {}),
                 body['id']
             )
-
         txn = Transaction.from_dict(payload.get('transaction'))
+        await self.transaction_queue.add(ProcessingQueueItem(txn, stream))
+
+        ws_users = self.config.websocketServer.inbound_streams[User.__name__]
+
+        if 'web' not in self.config.modes:
+            return
+
+        peer_stream = None
+        if txn.requested_rid in ws_users:
+            peer_stream = ws_users[txn.requested_rid]
+
+        if txn.requester_rid in ws_users:
+            peer_stream = ws_users[txn.requester_rid]
+
+        if txn.rid in ws_users:
+            peer_stream = ws_users[txn.rid]
+
+        if peer_stream:
+            await peer_stream.newtxn(body, source='tcpsocket')
+
+    async def process_transaction_queue(self):
+
+        item = await self.transaction_queue.pop()
+
+        if not item:
+            return
+
+        txn = item.transaction
+        stream = item.stream
         try:
             await txn.verify()
         except:
@@ -137,30 +166,9 @@ class NodeRPC(BaseRPC):
         async for peer_stream in self.config.peer.get_sync_peers():
             if peer_stream.peer.rid == stream.peer.rid:
                 continue
-            await self.write_params(
-                peer_stream,
-                'newtxn',
-                payload
-            )
             if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = body.get('params', {})
+                self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = txn.to_dict()
 
-        if 'web' not in self.config.modes:
-            return
-
-        ws_users = self.config.websocketServer.inbound_streams[User.__name__]
-        peer_stream = None
-        if txn.requested_rid in ws_users:
-            peer_stream = ws_users[txn.requested_rid]
-
-        if txn.requester_rid in ws_users:
-            peer_stream = ws_users[txn.requester_rid]
-
-        if txn.rid in ws_users:
-            peer_stream = ws_users[txn.rid]
-
-        if peer_stream:
-            await peer_stream.newtxn(body, source='tcpsocket')
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get('result', {})
@@ -622,3 +630,25 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
     async def capacity(self, body, stream):
         NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][stream.peer.rid] = stream.peer
         self.config.app_log.warning('{} at full capacity: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
+
+
+class ProcessingQueueItem:
+    def __init__(self, transaction: Transaction, stream=None):
+        self.transaction = transaction
+        self.stream = stream
+
+
+class ProcessingQueue:
+    def __init__(self):
+        self.queue = {}
+        self.last_popped = ''
+
+    async def add(self, item: ProcessingQueueItem):
+        self.queue.setdefault(item.transaction_signature, item)
+
+    async def pop(self):
+        if not self.queue:
+            return None
+        key, item = self.queue.popitem()
+        self.last_popped = key
+        return item
