@@ -1,8 +1,6 @@
 ﻿"""
 Async Yadacoin node poc
 """
-import nest_asyncio
-nest_asyncio.apply()
 import hashlib
 import sys
 import importlib
