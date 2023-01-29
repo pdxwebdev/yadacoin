@@ -190,17 +190,21 @@ class NodeRPC(BaseRPC):
             )
 
         if not payload.get('block'):
+            self.config.app_log.info('newblock, no payload')
             return
 
         block = await Block.from_dict(payload.get('block'))
 
         if block.time > time.time():
+            self.config.app_log.info('newblock, block time greater than now')
             return
 
         if block.index > (self.config.LatestBlock.block.index + 100) or block.index < self.config.LatestBlock.block.index:
+            self.config.app_log.info('newblock, block index greater than latest block + 100 or block index less than our latest block index')
             return
 
         if not await self.config.consensus.insert_consensus_block(block, stream.peer):
+            self.config.app_log.info('newblock, error inserting consensus block')
             return
 
         await self.config.consensus.block_queue.add(ProcessingQueueItem(await Blockchain.init_async(block), stream))
