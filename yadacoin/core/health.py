@@ -125,7 +125,8 @@ class MessageSenderHealth(HealthItem):
 
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background message sender health check failed')
+            tornado.ioloop.IOLoop.current().spawn_callback(self.config.application.background_message_sender)
+            self.report_bad_health('Background message sender health check failed, restarting...')
             return self.report_status(False)
 
         return self.report_status(True)

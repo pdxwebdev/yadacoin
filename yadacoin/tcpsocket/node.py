@@ -402,6 +402,7 @@ class NodeRPC(BaseRPC):
             stream.close()
             return {}
         generic_peer = Peer.from_dict(params.get('peer'))
+        peerCls = None
         if isinstance(self.config.peer, Seed):
 
             if generic_peer.identity.username_signature in self.config.seeds:
@@ -428,6 +429,11 @@ class NodeRPC(BaseRPC):
             peerCls = User
         else:
             self.config.app_log.error('inbound peer is not defined, disconnecting')
+            stream.close()
+            return {}
+
+        if not peerCls:
+            self.config.app_log.error('unknown peer type')
             stream.close()
             return {}
 
