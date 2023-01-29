@@ -450,10 +450,7 @@ class ServiceProvider(Peer):
         return User
 
     async def get_outbound_peers(self, nonce=None):
-        seed_gateway = await self.calculate_seed_gateway()
-        if not seed_gateway:
-            return None
-        return {seed_gateway.identity.username_signature: seed_gateway}
+        return {self.config.seed_gateways[self.seed_gateway].identity.username_signature: self.config.seeds[self.seed_gateway]}
 
     async def get_inbound_streams(self):
         return list(self.config.nodeServer.inbound_streams[User.__name__].values())
@@ -771,7 +768,8 @@ class Peers:
                         "username": "",
                         "username_signature": "MEQCIC7ADPLI3VPDNpQPaXAeB8gUk2LrvZDJIdEg9C12dj5PAiB61Te/sen1D++EJAcgnGLH4iq7HTZHv/FNByuvu4PrrA==",
                         "public_key": "02a9aed3a4d69013246d24e25ded69855fbd590cb75b4a90fbfdc337111681feba"
-                    }
+                    },
+                    "seed_gateway": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ=="
                 }),
                 ServiceProvider.from_dict({
                     'host': 'serviceprovider.hashyada.com',
@@ -780,7 +778,8 @@ class Peers:
                         "username": "",
                         "username_signature": "MEQCIDs4GfdyUMFMptmtXsn2vbgQ+rIBfT50nkm++v9swNsjAiA15mHrFehtusgqszbMI5S3nIXQYBUM8Q3smZ615PjL1w==",
                         "public_key": "023c1bb0de2b8b10f4ff84e13dc6c8d02e113ed297b83e561ca6b302cb70377f0e"
-                    }
+                    },
+                    "seed_gateway": "MEQCIF3Wlbk99pgxKVrb6Iqdd6L5AJMJgVhc9rrB64P+oHhKAiAfTDCx1GaSWYUyX69k+7GuctPeEclpdXCbR0vly/q77A=="
                 }),
                 ServiceProvider.from_dict({
                     'host': 'yda.sinergia.gg',
@@ -789,7 +788,8 @@ class Peers:
                         "username": "",
                         "username_signature": "MEUCIQDB43E+4zCPX6ScXxN/3FQeOTDlulDXRp+73eJvLheRgAIgUUErkU2eRx9NnNdgkHHJzBcQpJEEgI4lE9cP4MqDuMg=",
                         "public_key": "0258bd03df466316597268055e5516c0755d3b302b4a5c4fc54a1a49c18893ad57"
-                    }
+                    },
+                    "seed_gateway": "MEQCICBbKFIaKbSK4RkWOKrKNhnFp0gP5Z2NvVBjD4zf2SxJAiAZZnhVzUkLKDpIayPQWeoTIGacM8LOk+sNwuAgtsk44g=="
                 }),
             ]
         return OrderedDict({x.identity.username_signature: x for x in service_providers})
