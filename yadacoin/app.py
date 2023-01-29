@@ -1,6 +1,8 @@
 ﻿"""
 Async Yadacoin node poc
 """
+import nest_asyncio
+nest_asyncio.apply()
 import hashlib
 import sys
 import importlib
@@ -569,7 +571,7 @@ class NodeApplication(Application):
         self.config.application = self
         self.config.http_server = HTTPServer(self)
         self.config.http_server.listen(self.config.serve_port, self.config.serve_host)
-        if hasattr(self.config, 'ssl') and self.config.ssl.is_valid():
+        if 'ssl' in self.config.modes and hasattr(self.config, 'ssl') and self.config.ssl.is_valid():
             ssl_ctx = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH, cafile=self.config.ssl.ca_file)
             ssl_ctx.load_cert_chain(self.config.ssl.cert_file, keyfile=self.config.ssl.key_file)
             self.config.https_server = HTTPServer(self, ssl_options=ssl_ctx)
@@ -614,6 +616,8 @@ class NodeApplication(Application):
             my_peer['seed'] = self.config.seed_gateways[self.config.username_signature].seed
             self.config.peer = SeedGateway.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'service_provider':
+            if self.config.username_signature in self.config.service_providers:
+                my_peer['seed_gateway'] = self.config.service_providers[self.config.username_signature].seed_gateway
             self.config.peer = ServiceProvider.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'user' or True: # default if not specified
             self.config.peer = User.from_dict(my_peer, is_me=True)
