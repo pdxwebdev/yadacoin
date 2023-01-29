@@ -450,7 +450,7 @@ class ServiceProvider(Peer):
         return User
 
     async def get_outbound_peers(self, nonce=None):
-        return {self.config.seed_gateways[self.seed_gateway].identity.username_signature: self.config.seeds[self.seed_gateway]}
+        return {self.config.seed_gateways[self.seed_gateway].identity.username_signature: self.config.seed_gateways[self.seed_gateway]}
 
     async def get_inbound_streams(self):
         return list(self.config.nodeServer.inbound_streams[User.__name__].values())
