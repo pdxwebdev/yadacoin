@@ -357,9 +357,9 @@ class MiningPool(object):
 
         if self.config.network == 'regnet':
             if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
-                target = self.config.pool_target3
+                target = '000FFFFFFFFFFFFF'
             else:
-                target = self.config.pool_target
+                target = '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
         else:
             if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
                 target = self.config.pool_target3

@@ -87,8 +87,8 @@ class Config(object):
         self.payout_frequency = config.get('payout_frequency', 6)
         self.max_miners = config.get('max_miners', 100)
         self.max_peers = config.get('max_peers', 20)
-        self.pool_target3 = config.get('pool_target3', '000FFFFFFFFFFFFF')
-        self.pool_target = config.get('pool_target', '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')
+        self.pool_target3 = config.get('pool_target3', '0000FFFFFFFFFFFF')
+        self.pool_target = config.get('pool_target', '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')
 
         self.restrict_graph_api = config.get('restrict_graph_api', False)
 
@@ -240,8 +240,8 @@ class Config(object):
             "payout_frequency": 6,
             "max_miners": 100,
             "max_peers": 20,
-            "pool_target3": '000FFFFFFFFFFFFF',
-            "pool_target": '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
+            "pool_target3": '0000FFFFFFFFFFFF',
+            "pool_target": '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF',
             "restrict_graph_api": False,
             "email": EmailConfig().to_dict(),
             "skynet_url": '',
@@ -296,8 +296,8 @@ class Config(object):
         cls.payout_frequency = config.get('payout_frequency', 6)
         cls.max_miners = config.get('max_miners', 100)
         cls.max_peers = config.get('max_peers', 20)
-        cls.pool_target3 = config.get('pool_target3', '000FFFFFFFFFFFFF')
-        cls.pool_target = config.get('pool_target', '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')
+        cls.pool_target3 = config.get('pool_target3', '0000FFFFFFFFFFFF')
+        cls.pool_target = config.get('pool_target', '0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF')
 
 
         cls.restrict_graph_api = config.get('restrict_graph_api', False)
