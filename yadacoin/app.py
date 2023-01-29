@@ -605,7 +605,7 @@ class NodeApplication(Application):
 
         if my_peer.get('peer_type') == 'seed':
             if not self.config.username_signature in self.config.seeds:
-                raise Exception('You are not a valid SeedGateway. Could not find you in the list of SeedGateways')
+                raise Exception('You are not a valid Seed. Could not find you in the list of Seed')
             my_peer['seed_gateway'] = self.config.seeds[self.config.username_signature].seed_gateway
             self.config.peer = Seed.from_dict(my_peer, is_me=True)
         elif my_peer.get('peer_type') == 'seed_gateway':
