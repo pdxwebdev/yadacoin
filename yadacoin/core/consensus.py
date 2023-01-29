@@ -125,7 +125,7 @@ class Consensus(object):
             'id': block.signature,
         })
         if existing:
-            return False
+            return True
         try:
             await block.verify()
         except:
