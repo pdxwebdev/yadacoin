@@ -73,16 +73,12 @@ class MiningPool(object):
             'method': body.get('method'),
             'jsonrpc': body.get('jsonrpc')
         }
-        data = await self.process_nonce(
+        data['result'] = await self.process_nonce(
             miner,
             nonce,
             job
         )
-        try:
-            if not data['result']:
-                data['error'] = {'message': 'Invalid hash for current block'}
-        except:
-            data['result'] = {}
+        if not data['result']:
             data['error'] = {'message': 'Invalid hash for current block'}
 
         await stream.write('{}\n'.format(json.dumps(data)).encode())

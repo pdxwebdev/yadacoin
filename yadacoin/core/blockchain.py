@@ -120,7 +120,7 @@ class Blockchain(object):
             return True
 
         if block.time > time():
-            config.config.app_log.info('Block time greater than now')
+            config.app_log.info('Block time greater than now')
             return False
 
         if simulate_last_block:

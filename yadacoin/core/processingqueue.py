@@ -71,7 +71,7 @@ class NonceProcessingQueue:
     async def add(self, item: NonceProcessingQueueItem):
         if (item.id, item.nonce) == self.last_popped:
             return
-        self.queue.setdefault((self.id, item.nonce), item)
+        self.queue.setdefault((item.id, item.nonce), item)
 
     async def pop(self):
         if not self.queue:
