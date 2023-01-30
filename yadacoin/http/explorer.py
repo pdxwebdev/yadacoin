@@ -108,7 +108,7 @@ class ExplorerSearchHandler(BaseHandler):
                     )]
                 })
         except:
-            raise
+            pass
 
         try:
             re.search(r'[A-Fa-f0-9]+', term).group(0)
