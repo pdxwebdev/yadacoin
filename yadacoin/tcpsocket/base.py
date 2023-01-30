@@ -114,9 +114,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     continue
                 if hasattr(stream, 'peer'):
                     if hasattr(stream.peer, 'host'):
-                        self.config.app_log.debug(f'RECEIVED {stream.peer.host} {method} {body}')
+                        self.config.app_log.debug(f'SERVER RECEIVED {stream.peer.host} {method} {body}')
                     if hasattr(stream.peer, 'address'):
-                        self.config.app_log.debug(f'RECEIVED {stream.peer.address} {method} {body}')
+                        self.config.app_log.debug(f'SERVER RECEIVED {stream.peer.address} {method} {body}')
                     id_attr = getattr(stream.peer, stream.peer.id_attribute)
                     if id_attr not in self.inbound_streams[stream.peer.__class__.__name__]:
                         await self.write_params(stream, 'disconnect', {})
@@ -236,7 +236,7 @@ class RPCSocketClient(TCPClient):
                         if body['id'] in stream.message_queue.get(REQUEST_RESPONSE_MAP[body['method']], {}):
                             del stream.message_queue[REQUEST_RESPONSE_MAP[body['method']]][body['id']]
                 if hasattr(stream, 'peer'):
-                    self.config.app_log.debug(f'RECEIVED {stream.peer.host} {body["method"]} {body}')
+                    self.config.app_log.debug(f'CLIENT RECEIVED {stream.peer.host} {body["method"]} {body}')
                 else:
                     stream.close()
                 self.config.health.tcp_client.last_activity = time.time()

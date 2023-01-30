@@ -36,7 +36,7 @@ class RCPWebSocketServer(WebSocketHandler):
         body = json.loads(data)
         method = body.get('method')
         await getattr(self, method)(body)
-        self.config.app_log.debug(f'RECEIVED {self.peer.identity.username} {method} {data}')
+        self.config.app_log.debug(f'SERVER RECEIVED {self.peer.identity.username} {method} {data}')
 
     def on_close(self):
         self.remove_peer(self.peer)
