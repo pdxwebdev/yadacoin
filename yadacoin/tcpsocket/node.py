@@ -202,8 +202,12 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info('newblock, block time greater than now')
             return
 
-        if block.index > (self.config.LatestBlock.block.index + 100) or block.index < self.config.LatestBlock.block.index:
-            self.config.app_log.info('newblock, block index greater than latest block + 100 or block index less than our latest block index')
+        if block.index > (self.config.LatestBlock.block.index + 100):
+            self.config.app_log.info('newblock, block index greater than latest block + 100')
+            return
+
+        if block.index < self.config.LatestBlock.block.index:
+            self.config.app_log.info('block index less than our latest block index')
             return
 
         if not await self.config.consensus.insert_consensus_block(block, stream.peer):
