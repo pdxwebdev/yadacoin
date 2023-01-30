@@ -42,9 +42,9 @@ class TransactionProcessingQueue:
         self.last_popped = ''
 
     async def add(self, item: TransactionProcessingQueueItem):
-        if item.transaction_signature == self.last_popped:
+        if item.transaction.transaction_signature == self.last_popped:
             return
-        self.queue.setdefault(item.transaction_signature, item)
+        self.queue.setdefault(item.transaction.transaction_signature, item)
 
     async def pop(self):
         if not self.queue:

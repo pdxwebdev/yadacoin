@@ -680,16 +680,6 @@ class Peers:
         else:
             seeds = [
                 Seed.from_dict({
-                    'host': 'localhost',
-                    'port': 8000,
-                    'identity': {
-                        "username": "",
-                        "public_key": "0286707b29746a434ead4ab94af2d7758d4ae8aaa12fdad9ab42ce3952a8ef798f",
-                        "username_signature": "MEUCIQC3slOHQ0AgPSyFeas/mxMrmJuF5+itfpxSFAERAjyr4wIgCBMuSOEJnisJ7//Y019vYhIWCWvzvCnfXZRxfbrt2SM="
-                    },
-                    "seed_gateway": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ=="
-                }),
-                Seed.from_dict({
                     'host': 'yadacoin.io',
                     'port': 8000,
                     'identity': {
