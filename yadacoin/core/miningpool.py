@@ -80,8 +80,10 @@ class MiningPool(object):
         )
         if not data['result']:
             data['error'] = {'message': 'Invalid hash for current block'}
-
-        await stream.write('{}\n'.format(json.dumps(data)).encode())
+        try:
+            await stream.write('{}\n'.format(json.dumps(data)).encode())
+        except:
+            pass
         if 'error' in data:
             await StratumServer.send_job(stream)
 
