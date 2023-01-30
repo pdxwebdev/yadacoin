@@ -94,8 +94,7 @@ class ExplorerSearchHandler(BaseHandler):
                 '$or': [
                     {'transactions.id': term.replace(' ', '+')},
                     {'transactions.inputs.id': term.replace(' ', '+')}
-                ]},
-                {'_id': 0}
+                ]}
             )
             if res:
                 return self.render_as_json({
@@ -109,7 +108,7 @@ class ExplorerSearchHandler(BaseHandler):
                     )]
                 })
         except:
-            pass
+            raise
 
         try:
             re.search(r'[A-Fa-f0-9]+', term).group(0)
@@ -149,7 +148,7 @@ class ExplorerSearchHandler(BaseHandler):
 
         try:
             re.search(r'[A-Fa-f0-9]+', term).group(0)
-            res = await self.config.mongo.async_db.miner_transactions.count_documents({'outputs.to': term}).sort('index', -1).limit(10)
+            res = await self.config.mongo.async_db.miner_transactions.count_documents({'outputs.to': term})
             if res:
                 return self.render_as_json({
                     'resultType': 'mempool_outputs_to',
