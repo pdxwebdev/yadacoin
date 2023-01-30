@@ -141,10 +141,11 @@ class NodeApplication(Application):
                     await tornado.gen.sleep(3)
                     continue
                 await self.config.consensus.sync_bottom_up()
-                await tornado.gen.sleep(3)
 
             except Exception as e:
                 self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(3)
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
@@ -268,10 +269,11 @@ class NodeApplication(Application):
                                 await self.config.nodeShared.write_params(self.config.nodeClient.outbound_streams[peer_cls][x[0]], x[1], message)
 
                 self.config.health.message_sender.last_activity = int(time())
-                await tornado.gen.sleep(10)
 
             except Exception as e:
                 self.config.app_log.error(format_exc())
+
+            await tornado.gen.sleep(10)
 
     async def remove_peer(self, stream):
         stream.close()
