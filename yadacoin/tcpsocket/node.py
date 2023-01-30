@@ -220,8 +220,10 @@ class NodeRPC(BaseRPC):
                 'newblock',
                 body.get('params', {})
             )
+            self.config.app_log.info(f'Consensus block forwarded to: {peer_stream.peer.rid}')
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[(peer_stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
+        self.config.app_log.info(f'Consensus block imported {block.to_dict()}')
 
     async def newblock_confirmed(self, body, stream):
         payload = body.get('result', {}).get('payload')
