@@ -207,7 +207,6 @@ class Health:
         self.message_sender = MessageSenderHealth()
         self.block_inserter = BlockInserterHealth()
         self.transaction_processor = TransactionProcessorHealth()
-        self.nonce_processor = NonceProcessorHealth()
         self.pool_payer = PoolPayerHealth()
         self.cache_validator = CacheValidatorHealth()
         self.mempool_cleaner = MempoolCleanerHealth()
@@ -220,11 +219,13 @@ class Health:
             self.message_sender,
             self.block_inserter,
             self.transaction_processor,
-            self.nonce_processor,
             self.pool_payer,
             self.cache_validator,
             self.mempool_cleaner
         ]
+        if 'pool' in self.config.modes:
+            self.nonce_processor = NonceProcessorHealth()
+            self.health_items.append(self.nonce_processor)
 
     async def check_health(self):
         for x in self.health_items:

@@ -486,8 +486,6 @@ class NodeApplication(Application):
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_transaction_processor)
 
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_nonce_processor)
-
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
 
             if self.config.network != 'regnet':
@@ -495,6 +493,9 @@ class NodeApplication(Application):
                 tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)
 
                 tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
+
+        if 'pool' in self.config.modes:
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_nonce_processor)
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
