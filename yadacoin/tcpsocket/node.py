@@ -207,7 +207,16 @@ class NodeRPC(BaseRPC):
             return
 
         if block.index < self.config.LatestBlock.block.index:
-            self.config.app_log.info('block index less than our latest block index')
+            await self.write_params(
+                stream,
+                'newblock',
+                {
+                    'payload': {
+                        'block': self.config.LatestBlock.block.to_dict()
+                    }
+                }
+            )
+            self.config.app_log.info(f'block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}')
             return
 
         if not await self.config.consensus.insert_consensus_block(block, stream.peer):

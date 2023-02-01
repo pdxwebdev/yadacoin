@@ -55,6 +55,7 @@ class TCPServerHealth(HealthItem):
         self.config.node_server_instance = self.config.nodeServer()
         self.config.node_server_instance.bind(self.config.peer_port)
         self.config.node_server_instance.start(1)
+        return self.report_status(True)
 
 
 class TCPClientHealth(HealthItem):
