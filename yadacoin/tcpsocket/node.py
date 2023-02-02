@@ -225,17 +225,6 @@ class NodeRPC(BaseRPC):
 
         await self.config.consensus.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block), stream))
 
-        async for peer_stream in self.config.peer.get_sync_peers():
-            if peer_stream.peer.rid == stream.peer.rid:
-                continue
-            await self.write_params(
-                peer_stream,
-                'newblock',
-                body.get('params', {})
-            )
-            self.config.app_log.info(f'Consensus block forwarded to: {peer_stream.peer.rid}')
-            if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[(peer_stream.peer.rid, 'newblock', block.hash)] = body.get('params', {})
         self.config.app_log.info(f'Consensus block imported {block.to_dict()}')
 
     async def newblock_confirmed(self, body, stream):
