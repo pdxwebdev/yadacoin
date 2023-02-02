@@ -700,7 +700,7 @@ class Peers:
                     "seed_gateway": "MEQCIF3Wlbk99pgxKVrb6Iqdd6L5AJMJgVhc9rrB64P+oHhKAiAfTDCx1GaSWYUyX69k+7GuctPeEclpdXCbR0vly/q77A=="
                 }),
                 Seed.from_dict({
-                    'host': '3.84.3.38',
+                    'host': 'seed.sinergia.gg',
                     'port': 8000,
                     'identity': {
                         "username": "",
@@ -742,7 +742,7 @@ class Peers:
                     "seed": "MEQCIHrMlgx3RzvLg+8eU1LXfY5QLk2le1mOUM2JLnRSSqTRAiByXKWP7cKasX2kB9VqIm43wT004evxNRQX+YYl5I30jg=="
                 }),
                 SeedGateway.from_dict({
-                    'host': '3.91.62.216',
+                    'host': 'seedgt.sinergia.gg',
                     'port': 8000,
                     'identity': {
                         "username": "",
