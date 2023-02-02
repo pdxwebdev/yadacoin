@@ -476,27 +476,27 @@ class NodeRPC(BaseRPC):
         if (len(NodeSocketServer.inbound_pending[peerCls.__name__]) + len(NodeSocketServer.inbound_streams[peerCls.__name__])) >= limit:
             if not self.config.peer.is_linked_peer(stream.peer):
                 await self.write_result(stream, 'capacity', {}, body['id'])
-                stream.close()
+                self.remove_peer()
                 return {}
 
         if generic_peer.rid in NodeSocketServer.inbound_pending[stream.peer.__class__.__name__]:
-            stream.close()
+            self.remove_peer(close=False)
             return {}
 
         if generic_peer.rid in NodeSocketServer.inbound_streams[stream.peer.__class__.__name__]:
-            stream.close()
+            self.remove_peer(close=False)
             return {}
 
         if generic_peer.rid in self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__]:
-            stream.close()
+            self.remove_peer(close=False)
             return
 
         if generic_peer.rid in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]:
-            stream.close()
+            self.remove_peer(close=False)
             return
 
         if generic_peer.rid in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]:
-            stream.close()
+            self.remove_peer(close=False)
             return
 
         try:

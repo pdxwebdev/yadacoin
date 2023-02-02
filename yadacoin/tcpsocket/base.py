@@ -72,8 +72,9 @@ class BaseRPC:
             return
         self.config.app_log.debug(f'SENT {stream.peer.host} {method} {data} {rpc_type} {req_id}')
 
-    async def remove_peer(self, stream):
-        stream.close()
+    async def remove_peer(self, stream, close=True):
+        if close:
+            stream.close()
         if not hasattr(stream, 'peer'):
             return
         id_attr = getattr(stream.peer, stream.peer.id_attribute)
