@@ -41,7 +41,6 @@ from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 from tornado.httpserver import HTTPServer
 from concurrent.futures import ThreadPoolExecutor
-from bson.objectid import ObjectId
 from bitcoin import core
 
 import yadacoin.core.blockchainutils
@@ -107,8 +106,8 @@ class NodeApplication(Application):
             self.init_service_providers()
             self.init_groups()
             self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
-            if 'pool' in self.config.modes:
-                self.init_pool()
+        if 'pool' in self.config.modes:
+            self.init_pool()
         self.init_peer()
         if 'web' in self.config.modes:
             if os.path.exists(path.join(path.dirname(__file__), '..', 'static')):

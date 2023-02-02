@@ -123,18 +123,20 @@ class Config(object):
             pool_status = await self.pool_server.status()
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
-        num_peers = 0
+        inbound_num_peers = 0
         for y in list(self.nodeServer.inbound_streams.values()):
-            num_peers += len(y)
+            inbound_num_peers += len(y)
+        outbound_num_peers = 0
         for y in list(self.nodeClient.outbound_streams.values()):
-            num_peers += len(y)
+            outbound_num_peers += len(y)
         status = {
             'version': '.'.join([str(x) for x in self.protocol_version]),
             'network': self.network,
             'peer_type': self.peer_type,
             # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
             'username': self.username,
-            'peers': num_peers,
+            'inbound_peers': inbound_num_peers,
+            'outbound_peers': outbound_num_peers,
             'pool': pool_status,
             'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s),
             'height': self.LatestBlock.block.index

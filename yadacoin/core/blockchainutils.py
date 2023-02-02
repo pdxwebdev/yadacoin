@@ -4,7 +4,6 @@ import re
 
 # from yadacoin.transactionutils import TU
 from bitcoin.wallet import P2PKHBitcoinAddress
-from bson.son import SON
 from coincurve import PrivateKey
 from logging import getLogger
 

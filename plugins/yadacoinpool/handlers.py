@@ -4,6 +4,7 @@ import requests
 from tornado.web import Application, StaticFileHandler
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.chain import CHAIN
+from yadacoin import version
 
 
 class BaseWebHandler(BaseHandler):
@@ -89,6 +90,7 @@ class PoolInfoHandler(BaseWebHandler):
         payouts = await self.config.mongo.async_db.share_payout.find({}, {'_id': 0}).sort([('index', -1)]).to_list(100)
         self.render_as_json({
             'pool': {
+                'version': '.'.join([str(x) for x in version]),
                 'hashes_per_second': pool_hash_rate,
                 'miner_count': miner_count_pool_stat['value'],
                 'worker_count': worker_count_pool_stat['value'],

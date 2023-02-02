@@ -19,7 +19,6 @@ websockets
 miniupnpc
 pyfcm
 pycryptodome
-Pillow==6.2.1
 jws
 pyasn1
 PyJWT
