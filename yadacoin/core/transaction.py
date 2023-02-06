@@ -27,6 +27,10 @@ def fix_float2(value):
     return "{0:.8f}".format(value)
 
 
+class TransactionAddressInvalidException(Exception):
+    pass
+
+
 class InvalidTransactionException(Exception):
     pass
 
@@ -462,6 +466,8 @@ class Transaction(object):
         total_output = 0
         for txn in self.outputs:
             total_output += float(txn.value)
+            if not self.config.address_is_valid(txn.to):
+                raise TransactionAddressInvalidException("An address used in the outputs of this transaction is invalid.")
         total = float(total_output) + float(self.fee)
         if fix_float1(total_input) != fix_float1(total) and fix_float2(total_input) != fix_float2(total):
             raise TotalValueMismatchException("inputs and outputs sum must match %s, %s, %s, %s" % (total_input, float(total_output), float(self.fee), total))

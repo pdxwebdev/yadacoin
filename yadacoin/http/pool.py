@@ -40,8 +40,12 @@ class PoolPayoutsHandler(BaseHandler):
         query = {'address': address}
         if '.' in address:
             query = {'address': address.split('.')[0]}
-        results = await self.config.mongo.async_db.share_payout.find({'txn.outputs.to': address}, {'_id': 0}).sort([('index', -1)]).to_list(100)
-        self.render_as_json({'results': results})
+        out = []
+        results = self.config.mongo.async_db.share_payout.find({'txn.outputs.to': address}, {'_id': 0}).sort([('index', -1)])
+        async for result in results:
+            if await self.config.mongo.async_db.blocks.count_documents({'transactions.id': result['txn']['id']}, {'_id': 0}) > 0:
+                out.append(result)
+        self.render_as_json({'results': out})
 
 
 class PoolHashRateHandler(BaseHandler):
