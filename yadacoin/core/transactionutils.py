@@ -5,7 +5,6 @@ import sys
 import time
 from coincurve.keys import PrivateKey
 from coincurve._libsecp256k1 import ffi
-from bitcoin.wallet import P2PKHBitcoinAddress
 
 
 class TU(object):  # Transaction Utilities

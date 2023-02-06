@@ -21,7 +21,8 @@ from yadacoin.core.transaction import (
     NotEnoughMoneyException,
     InvalidTransactionException,
     MissingInputTransactionException,
-    InvalidTransactionSignatureException
+    InvalidTransactionSignatureException,
+    TransactionAddressInvalidException
 )
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.latestblock import LatestBlock
@@ -246,6 +247,9 @@ class Block(object):
                     raise InvalidTransactionException('duplicate transaction found and removed')
 
                 await transaction_obj.verify()
+                for output in transaction_obj.outputs:
+                    if not config.address_is_valid(output.to):
+                        raise TransactionAddressInvalidException('Output address is invalid')
                 used_sigs.append(transaction_obj.transaction_signature)
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
