@@ -29,7 +29,7 @@ class ProcessingQueue:
     def to_status_dict(self):
         return {
             'queue_item_count': len(self.queue.values()),
-            'average_processing_time': self.time_sum / (self.num_items_processed or 1),
+            'average_processing_time': '%.4f' % self.time_sum / (self.num_items_processed or 1),
             'num_items_processed': self.num_items_processed
         }
 
