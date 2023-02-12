@@ -304,6 +304,9 @@ class NodeApplication(Application):
                     self.config.processing_queues.nonce_queue.time_sum_end()
 
             try:
+                if self.config.processing_queues.block_queue.queue:
+                    if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
+                        continue
                 await self.config.consensus.sync_bottom_up()
                 self.config.health.consensus.last_activity = time()
             except Exception as e:
