@@ -136,7 +136,7 @@ class Consensus(object):
                     return
 
                 if block.index < self.config.LatestBlock.block.index:
-                    await self.write_params(
+                    await self.config.nodeShared.write_params(
                         stream,
                         'newblock',
                         {
