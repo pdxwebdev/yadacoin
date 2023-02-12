@@ -561,6 +561,8 @@ class ServiceProvider(Peer):
             return self.config.nodeClient.outbound_streams[SeedGateway.__name__].get(id_attr)
 
     def is_linked_peer(self, peer):
+        if self.seed_gateway == peer.identity.username_signature:
+            return True
         return False
 
 
