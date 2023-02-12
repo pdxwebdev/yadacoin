@@ -256,7 +256,7 @@ class Block(object):
                 continue
             try:
                 if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
-                    await config.mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature}, multi=True)
+                    await config.mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
                     raise InvalidTransactionException("Block embeds txn too far in the future {} {}".format(xtime, transaction_obj.time))
 
                 if transaction_obj.inputs:
@@ -438,7 +438,7 @@ class Block(object):
                 raise Exception("block contains transaction with version too old for this height")
 
             if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
-                #await self.config.mongo.async_db.miner_transactions.delete_many({'id': txn.transaction_signature}, multi=True)
+                #await self.config.mongo.async_db.miner_transactions.delete_many({'id': txn.transaction_signature})
                 #raise Exception("Block embeds txn too far in the future")
                 pass
 

@@ -80,9 +80,9 @@ class Consensus(object):
             self.app_log.critical(result)
             if reset:
                 if 'last_good_block' in result:
-                    await self.mongo.async_db.blocks.delete_many({"index": {"$gt": result['last_good_block'].index}}, multi=True)
+                    await self.mongo.async_db.blocks.delete_many({"index": {"$gt": result['last_good_block'].index}})
                 else:
-                    await self.mongo.async_db.blocks.delete_many({"index": {"$gt": 0}}, multi=True)
+                    await self.mongo.async_db.blocks.delete_many({"index": {"$gt": 0}})
                 self.app_log.debug("{} {}".format(result['message'], '...truncating'))
             else:
                 self.app_log.critical("{} - reset False, not truncating - DID NOT VERIFY".format(result['message']))
