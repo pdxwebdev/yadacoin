@@ -91,7 +91,9 @@ class GetStatusHandler(BaseHandler):
         :return:
         """
         # TODO: complete and cache
-        status = self.config.get_status()
+        status = await self.config.get_status()
+        status['health'] = self.config.health.to_dict()
+        status['latest_block'] = self.config.LatestBlock.block.to_dict()
         self.render_as_json(status)
 
 

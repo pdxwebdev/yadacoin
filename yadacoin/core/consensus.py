@@ -72,7 +72,7 @@ class Consensus(object):
 
     async def verify_existing_blockchain(self, reset=False):
         self.app_log.info('verifying existing blockchain')
-        existing_blockchain = await Blockchain.init_async(self.config.mongo.async_db.blocks.find({}).sort([('index', 1)]))
+        existing_blockchain = Blockchain(self.config.mongo.async_db.blocks.find({}).sort([('index', 1)]))
         result = await existing_blockchain.verify()
         if result['verified']:
             print('Block height: %s | time: %s' % (self.latest_block.index, datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")))
@@ -95,8 +95,79 @@ class Consensus(object):
         if not item:
             return
 
-        first_block = await item.blockchain.first_block
-        final_block = await item.blockchain.final_block
+        stream = item.stream
+        body = item.body
+        if body:
+            payload = body.get('result', {})
+            if not payload:
+                payload = body.get('params', {})
+            block = payload.get('block')
+
+            if body['method'] == 'blockresponse':
+                if not block:
+                    return
+
+                if block['index'] > (self.config.LatestBlock.block.index + 100):
+                    return
+                if stream.peer.protocol_version > 1:
+                    await self.config.nodeShared.write_result(
+                        stream,
+                        'blockresponse_confirmed',
+                        body.get('result', {}),
+                        body['id']
+                    )
+                return
+
+            if body['method'] == 'newblock':
+                if not block:
+                    return
+                if stream.peer.protocol_version > 1:
+                    await self.config.nodeShared.write_result(
+                        stream,
+                        'newblock_confirmed',
+                        body.get('params', {}),
+                        body['id']
+                    )
+
+                block = await Block.from_dict(block)
+
+                if block.time > time():
+                    self.config.app_log.info('newblock, block time greater than now')
+                    return
+
+                if block.index > (self.config.LatestBlock.block.index + 100):
+                    self.config.app_log.info('newblock, block index greater than latest block + 100')
+                    return
+
+                if block.index < self.config.LatestBlock.block.index:
+                    await self.write_params(
+                        stream,
+                        'newblock',
+                        {
+                            'payload': {
+                                'block': self.config.LatestBlock.block.to_dict()
+                            }
+                        }
+                    )
+                    self.config.app_log.info(f'block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}')
+                    return
+
+                if not await self.config.consensus.insert_consensus_block(block, stream.peer):
+                    self.config.app_log.info('newblock, error inserting consensus block')
+                    return
+
+                self.config.app_log.info(f'Consensus block imported {payload}')
+
+
+        if isinstance(item.blockchain.init_blocks, list):
+            first_block = await Block.from_dict(item.blockchain.first_block)
+        else:
+            first_block = await Block.from_dict(await item.blockchain.async_first_block)
+
+        if isinstance(item.blockchain.init_blocks, list):
+            final_block = await Block.from_dict(item.blockchain.final_block)
+        else:
+            final_block = await Block.from_dict(await item.blockchain.async_final_block)
 
         first_existing = await self.mongo.async_db.blocks.find_one({
             'hash': first_block.hash,
@@ -114,9 +185,9 @@ class Consensus(object):
         if count < 1:
             return
         elif count == 1:
-            await self.integrate_block_with_existing_chain(await item.blockchain.first_block, item.stream)
+            await self.integrate_block_with_existing_chain(first_block, stream)
         else:
-            await self.integrate_blocks_with_existing_chain(item.blockchain, item.stream)
+            await self.integrate_blocks_with_existing_chain(item.blockchain, stream)
 
     async def remove_pending_transactions_now_in_chain(self, block):
         #remove transactions from miner_transactions collection in the blockchain
@@ -173,13 +244,9 @@ class Consensus(object):
                 'ignore': {'$ne': True}
             }).to_list(length=100)
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
-                try:
-                    block = await Block.from_dict(record['block'])
-                except:
-                    continue
                 stream = await self.config.peer.get_peer_by_id(record['peer']['rid'])
                 if stream and hasattr(stream, 'peer') and stream.peer.authenticated:
-                    await self.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block), stream))
+                    await self.block_queue.add(BlockProcessingQueueItem(Blockchain(record['block']), stream))
 
             return True
         else:
@@ -220,7 +287,7 @@ class Consensus(object):
     async def build_local_chain(self, block: Block):
 
         local_blocks = self.config.mongo.async_db.blocks.find({'index': {'$gte': block.index}}).sort([('index', 1)])
-        return await Blockchain.init_async(local_blocks, partial=True)
+        return Blockchain(local_blocks, partial=True)
 
     async def build_remote_chain(self, block: Block):
         # now we just need to see how far this chain extends
@@ -243,7 +310,7 @@ class Consensus(object):
 
         blocks.sort(key=lambda x: x.index)
 
-        return await Blockchain.init_async(blocks, partial=True)
+        return Blockchain(blocks, partial=True)
 
     async def get_previous_consensus_block_from_local(self, block):
         #table cleanup
@@ -308,7 +375,7 @@ class Consensus(object):
 
         forward_blocks_chain = await self.build_remote_chain(block) #contains block
 
-        inbound_blockchain = await Blockchain.init_async(sorted(backward_blocks + [x async for x in forward_blocks_chain.blocks], key=lambda x: x.index))
+        inbound_blockchain = Blockchain(sorted(backward_blocks + [x async for x in forward_blocks_chain.blocks], key=lambda x: x.index))
 
         if not await inbound_blockchain.is_consecutive:
             return False
@@ -327,16 +394,19 @@ class Consensus(object):
             if not await Blockchain.test_block(block, extra_blocks=extra_blocks, simulate_last_block=prev_block):
                 good_blocks = [x async for x in blockchain.get_blocks(0, i)]
                 if good_blocks:
-                    blockchain = await Blockchain.init_async(good_blocks, True)
+                    blockchain = Blockchain(good_blocks, True)
                     break
                 else:
                     return
             prev_block = block
             i += 1
 
-        first_block = await blockchain.first_block
+        if isinstance(blockchain.init_blocks, list):
+            first_block = await Block.from_dict(blockchain.first_block)
+        else:
+            first_block = await Block.from_dict(await blockchain.async_first_block)
 
-        existing_blockchain = await Blockchain.init_async(
+        existing_blockchain = Blockchain(
             self.config.mongo.async_db.blocks.find({
                 'index': {
                     '$gte': first_block.index
@@ -346,7 +416,10 @@ class Consensus(object):
         )
 
         if not await existing_blockchain.test_inbound_blockchain(blockchain):
-            final_block = await blockchain.final_block
+            if isinstance(blockchain.init_blocks, list):
+                final_block = blockchain.final_block
+            else:
+                final_block = await blockchain.async_final_block
             if stream:
                 await self.config.nodeShared.write_params(
                     stream,

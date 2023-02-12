@@ -333,7 +333,8 @@ class Block(object):
 
     @classmethod
     async def from_dict(cls, block):
-
+        if isinstance(block, Block):
+            return block
         if block.get('special_target', 0) == 0:
             block['special_target'] = block.get('target')
 

@@ -182,50 +182,12 @@ class NodeRPC(BaseRPC):
             del self.retry_messages[(stream.peer.rid, 'newtxn', transaction.transaction_signature)]
 
     async def newblock(self, body, stream):
-        payload = body.get('params', {}).get('payload')
-
-        if stream.peer.protocol_version > 1:
-            await self.write_result(
-                stream,
-                'newblock_confirmed',
-                body.get('params', {}),
-                body['id']
-            )
-
+        payload = body.get('params', {}).get('payload', {})
         if not payload.get('block'):
             self.config.app_log.info('newblock, no payload')
             return
 
-        block = await Block.from_dict(payload.get('block'))
-
-        if block.time > time.time():
-            self.config.app_log.info('newblock, block time greater than now')
-            return
-
-        if block.index > (self.config.LatestBlock.block.index + 100):
-            self.config.app_log.info('newblock, block index greater than latest block + 100')
-            return
-
-        if block.index < self.config.LatestBlock.block.index:
-            await self.write_params(
-                stream,
-                'newblock',
-                {
-                    'payload': {
-                        'block': self.config.LatestBlock.block.to_dict()
-                    }
-                }
-            )
-            self.config.app_log.info(f'block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}')
-            return
-
-        if not await self.config.consensus.insert_consensus_block(block, stream.peer):
-            self.config.app_log.info('newblock, error inserting consensus block')
-            return
-
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block), stream))
-
-        self.config.app_log.info(f'Consensus block imported {block.to_dict()}')
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(Blockchain(payload.get('block')), stream, body))
 
     async def newblock_confirmed(self, body, stream):
         payload = body.get('result', {}).get('payload')
@@ -357,9 +319,8 @@ class NodeRPC(BaseRPC):
         blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = blocks[0]
         forward_blocks_chain = await self.config.consensus.build_remote_chain(blocks[-1])
-        forward_blocks = [x async for x in forward_blocks_chain.blocks]
-        inbound_blocks = blocks + forward_blocks[1:]
-        inbound_blockchain = await Blockchain.init_async(inbound_blocks, partial=True)
+        inbound_blocks = blocks + forward_blocks_chain.init_blocks[1:]
+        inbound_blockchain = Blockchain(inbound_blocks, partial=True)
         backward_blocks, status = await self.config.consensus.build_backward_from_block_to_fork(first_inbound_block, [], stream)
 
         if not status:
@@ -367,7 +328,7 @@ class NodeRPC(BaseRPC):
             self.config.consensus.syncing = False
             return False
 
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(inbound_blockchain, stream))
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(inbound_blockchain, stream, body))
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
@@ -378,30 +339,12 @@ class NodeRPC(BaseRPC):
 
     async def blockresponse(self, body, stream):
         # get blocks should be done only by syncing peers
-        result = body.get('result')
-        if not result.get("block"):
-            if stream.peer.protocol_version > 1:
-                await self.write_result(
-                    stream,
-                    'blockresponse_confirmed',
-                    body.get('result', {}),
-                    body['id']
-                )
-            return
-        block = await Block.from_dict(result.get("block"))
-        if block.index > (self.config.LatestBlock.block.index + 100):
+        result = body.get('result', {})
+        if not result.get('block'):
+            self.config.app_log.info('blockresponse, no payload')
             return
 
-        await self.config.consensus.insert_consensus_block(block, stream.peer)
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block), stream))
-
-        if stream.peer.protocol_version > 1:
-            await self.write_result(
-                stream,
-                'blockresponse_confirmed',
-                body.get('result', {}),
-                body['id']
-            )
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(Blockchain(result.get('block')), stream, body))
 
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('result')

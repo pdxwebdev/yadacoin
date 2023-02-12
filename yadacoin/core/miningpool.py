@@ -496,7 +496,7 @@ class MiningPool(object):
 
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(await Blockchain.init_async(block)))
+        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(Blockchain(block.to_dict())))
 
         await self.config.nodeShared.send_block(block)
 

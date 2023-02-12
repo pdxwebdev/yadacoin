@@ -538,7 +538,7 @@ class Transaction(object):
             'transactions.id': txn_input.id
         })
         async for b in blocks:
-            b = await Block.async_init(b)
+            b = await Block.from_dict(b)
             cb = b.get_coinbase()
             if cb.id == txn_input.id:
                 return cb

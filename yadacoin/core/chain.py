@@ -55,6 +55,8 @@ class CHAIN(object):
     MAX_TARGET_V3 = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     MAX_TARGET_HEX_V3 = '000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
+    FORCE_CONSENSUS_TIME_THRESHOLD = 3
+
     @classmethod
     def target_block_time(cls, network:str):
         """What is the target block time for a specific network?"""

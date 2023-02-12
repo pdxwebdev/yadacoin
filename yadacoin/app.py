@@ -105,10 +105,10 @@ class NodeApplication(Application):
             self.init_seed_gateways()
             self.init_service_providers()
             self.init_groups()
+            self.init_peer()
             self.config.app_log.info("Node: {}:{}".format(self.config.peer_host, self.config.peer_port))
         if 'pool' in self.config.modes:
             self.init_pool()
-        self.init_peer()
         if 'web' in self.config.modes:
             if os.path.exists(path.join(path.dirname(__file__), '..', 'static')):
                 static_path = path.join(path.dirname(__file__), '..', 'static')
@@ -132,19 +132,6 @@ class NodeApplication(Application):
             self.init_whitelist()
             self.init_jwt()
         self.init_ioloop()
-
-    async def background_consensus(self):
-        while True:
-            try:
-                if self.config.consensus.block_queue.queue:
-                    await tornado.gen.sleep(3)
-                    continue
-                await self.config.consensus.sync_bottom_up()
-
-            except Exception as e:
-                self.config.app_log.error(format_exc())
-
-            await tornado.gen.sleep(3)
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
@@ -291,17 +278,7 @@ class NodeApplication(Application):
         if id_attr in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]:
             del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][id_attr]
 
-    async def background_block_inserter(self):
-        while True:
-            try:
-                await self.config.consensus.process_block_queue()
-                self.config.health.block_inserter.last_activity = int(time())
-            except:
-                self.config.app_log.error(format_exc())
-
-            await tornado.gen.sleep(1)
-
-    async def background_transaction_processor(self):
+    async def background_queue_processor(self):
         while True:
             try:
                 await self.config.node_server_instance.process_transaction_queue()
@@ -309,13 +286,24 @@ class NodeApplication(Application):
             except:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(1)
+            if 'pool' in self.config.modes:
+                try:
+                    await self.config.mp.process_nonce_queue()
+                    self.config.health.nonce_processor.last_activity = int(time())
+                except:
+                    self.config.app_log.error(format_exc())
 
-    async def background_nonce_processor(self):
-        while True:
             try:
-                await self.config.mp.process_nonce_queue()
-                self.config.health.nonce_processor.last_activity = int(time())
+                if self.config.consensus.block_queue.queue:
+                    if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
+                        continue
+                await self.config.consensus.sync_bottom_up()
+            except Exception as e:
+                self.config.app_log.error(format_exc())
+
+            try:
+                await self.config.consensus.process_block_queue()
+                self.config.health.block_inserter.last_activity = int(time())
             except:
                 self.config.app_log.error(format_exc())
 
@@ -477,26 +465,19 @@ class NodeApplication(Application):
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
 
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_consensus)
-
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_checker)
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_cache_validator)
 
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_block_inserter)
-
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_transaction_processor)
-
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_mempool_cleaner)
+
+            tornado.ioloop.IOLoop.current().spawn_callback(self.background_queue_processor)
 
             if self.config.network != 'regnet':
 
                 tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)
 
                 tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
-
-        if 'pool' in self.config.modes:
-            tornado.ioloop.IOLoop.current().spawn_callback(self.background_nonce_processor)
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")

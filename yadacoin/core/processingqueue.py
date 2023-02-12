@@ -2,11 +2,13 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.job import Job
 from yadacoin.core.miner import Miner
+from yadacoin.core.block import Block
 
 
 class BlockProcessingQueueItem:
-    def __init__(self, blockchain: Blockchain, stream=None):
+    def __init__(self, blockchain: Blockchain, stream=None, body=None):
         self.blockchain = blockchain
+        self.body = body or {}
         self.stream = stream
 
 
@@ -16,11 +18,16 @@ class BlockProcessingQueue:
         self.last_popped = ()
 
     async def add(self, item: BlockProcessingQueueItem):
-        first_block = await item.blockchain.first_block
-        final_block = await item.blockchain.final_block
-        if (first_block.hash, final_block.hash) == self.last_popped:
-            return
-        self.queue.setdefault((first_block.hash, final_block.hash), item)
+        first_block = item.blockchain.first_block
+        final_block = item.blockchain.final_block
+        if isinstance(first_block, Block) and isinstance(final_block, Block):
+            if (first_block.hash, final_block.hash) == self.last_popped:
+                return
+            self.queue.setdefault((first_block.hash, final_block.hash), item)
+        else:
+            if (first_block['hash'], final_block['hash']) == self.last_popped:
+                return
+            self.queue.setdefault((first_block['hash'], final_block['hash']), item)
 
     async def pop(self):
         if not self.queue:

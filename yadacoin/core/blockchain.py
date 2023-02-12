@@ -18,31 +18,34 @@ class BlockChainException(Exception):
 
 
 class Blockchain(object):
-    @classmethod
-    async def init_async(cls, blocks=None, partial=False):
-        self = cls()
+    def __init__(self, blocks=None, partial=False):
         self.config = get_config()
         self.mongo = self.config.mongo
         if isinstance(blocks, list):
-            self.init_blocks = self.make_gen(blocks)
+            self.init_blocks = blocks
         elif isinstance(blocks, Block):
-            self.init_blocks = self.make_gen([blocks])
+            self.init_blocks = [blocks]
+        elif isinstance(blocks, dict):
+            self.init_blocks = [blocks]
         elif not blocks:
-            self.init_blocks = self.make_gen([])
+            self.init_blocks = []
         else:
             self.init_blocks = blocks
         self.partial = partial
         if not self.blocks:
             return # allow nothing
-        return self
 
     async def make_gen(self, blocks):
-        for block in blocks:
-            yield block
+        if isinstance(blocks, list):
+            for block in blocks:
+                yield block
+        else:
+            async for block in blocks:
+                yield block
 
     @property
     async def blocks(self):
-        self.init_blocks, blocks = tee(self.init_blocks)
+        blocks = self.make_gen(self.init_blocks)
         async for block in blocks:
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
@@ -70,13 +73,25 @@ class Blockchain(object):
         return True
 
     @property
-    async def first_block(self):
+    def first_block(self):
+        if not self.init_blocks:
+            return None
+        return self.init_blocks[0]
+
+    @property
+    async def async_first_block(self):
         block = None
         async for block in self.blocks:
             return block
 
     @property
-    async def final_block(self):
+    def final_block(self):
+        if not self.init_blocks:
+            return None
+        return self.init_blocks[-1]
+
+    @property
+    async def async_final_block(self):
         block = None
         async for block in self.blocks:
             pass
@@ -239,8 +254,15 @@ class Blockchain(object):
     async def test_inbound_blockchain(self, inbound_blockchain):
         existing_difficulty = await self.get_difficulty()
         inbound_difficulty = await inbound_blockchain.get_difficulty()
-        final_existing_block = await self.final_block
-        final_inbound_block = await inbound_blockchain.final_block
+        if isinstance(self.init_blocks, list):
+            final_existing_block = self.final_block
+        else:
+            final_existing_block = await self.async_final_block
+
+        if isinstance(inbound_blockchain.init_blocks, list):
+            final_inbound_block = inbound_blockchain.final_block
+        else:
+            final_inbound_block = await inbound_blockchain.async_final_block
         if not final_existing_block:
             return True
         if (
