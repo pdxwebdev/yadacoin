@@ -105,20 +105,26 @@ class NodeRPC(BaseRPC):
         payload = body.get('params', {})
         if (payload.get('transaction')):
             txn = Transaction.from_dict(payload.get('transaction'))
+            if stream.peer.protocol_version > 2:
+                await self.write_result(
+                    stream,
+                    'newtxn_confirmed',
+                    body.get('params', {}),
+                    body['id']
+                )
         elif (payload.get('hash')):
             txn = Transaction.from_dict(payload)
+            if stream.peer.protocol_version > 2:
+                await self.write_result(
+                    stream,
+                    'newtxn_confirmed',
+                    {'transaction': body.get('params', {})},
+                    body['id']
+                )
         else:
             self.config.app_log.info('newtxn, no payload')
             return
-
-        if stream.peer.protocol_version > 2:
-            await self.write_result(
-                stream,
-                'newtxn_confirmed',
-                body.get('params', {}),
-                body['id']
-            )
-        self.config.processing_queue.transaction_queue.add(TransactionProcessingQueueItem(txn, stream))
+        self.config.processing_queues.transaction_queue.add(TransactionProcessingQueueItem(txn, stream))
 
         ws_users = self.config.websocketServer.inbound_streams[User.__name__]
 
@@ -140,7 +146,7 @@ class NodeRPC(BaseRPC):
 
     async def process_transaction_queue(self):
 
-        item = self.transaction_queue.pop()
+        item = self.config.processing_queues.transaction_queue.pop()
 
         if not item:
             return
@@ -173,7 +179,7 @@ class NodeRPC(BaseRPC):
             if peer_stream.peer.rid == stream.peer.rid:
                 continue
             if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = txn.to_dict()
+                self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = {'transaction': txn.to_dict()}
 
 
     async def newtxn_confirmed(self, body, stream):
