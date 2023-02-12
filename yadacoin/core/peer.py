@@ -561,7 +561,7 @@ class ServiceProvider(Peer):
             return self.config.nodeClient.outbound_streams[SeedGateway.__name__].get(id_attr)
 
     def is_linked_peer(self, peer):
-        return True
+        return False
 
 
 class Group(Peer):
