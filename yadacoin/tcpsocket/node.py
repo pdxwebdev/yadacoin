@@ -103,9 +103,12 @@ class NodeRPC(BaseRPC):
 
     async def newtxn(self, body, stream):
         payload = body.get('params', {})
-        if (
-            not payload.get('transaction')
-        ):
+        if (payload.get('transaction')):
+            txn = Transaction.from_dict(payload.get('transaction'))
+        elif (payload.get('hash')):
+            txn = Transaction.from_dict(payload)
+        else:
+            self.config.app_log.info('newtxn, no payload')
             return
 
         if stream.peer.protocol_version > 2:
@@ -115,8 +118,7 @@ class NodeRPC(BaseRPC):
                 body.get('params', {}),
                 body['id']
             )
-        txn = Transaction.from_dict(payload.get('transaction'))
-        self.config.node_server_instance.transaction_queue.add(TransactionProcessingQueueItem(txn, stream))
+        self.config.processing_queue.transaction_queue.add(TransactionProcessingQueueItem(txn, stream))
 
         ws_users = self.config.websocketServer.inbound_streams[User.__name__]
 
@@ -516,7 +518,6 @@ class NodeSocketServer(RPCSocketServer, NodeRPC):
     def __init__(self):
         super(NodeSocketServer, self).__init__()
         self.config = get_config()
-        self.transaction_queue = TransactionProcessingQueue()
 
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
