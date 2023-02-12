@@ -17,9 +17,6 @@ class ProcessingQueue:
     def time_sum_end(self):
         self.time_sum += time() - self.start_time
 
-    def pop(self):
-        self.inc_num_items_processed()
-
     def inc_num_items_processed(self):
         self.num_items_processed += 1
 
@@ -61,7 +58,6 @@ class BlockProcessingQueue(ProcessingQueue):
             self.queue.setdefault((first_block['hash'], final_block['hash']), item)
 
     def pop(self):
-        super().pop()
         if not self.queue:
             return None
         key, item = self.queue.popitem()
@@ -86,7 +82,6 @@ class TransactionProcessingQueue(ProcessingQueue):
         self.queue.setdefault(item.transaction.transaction_signature, item)
 
     def pop(self):
-        super().pop()
         if not self.queue:
             return None
         key, item = self.queue.popitem()
@@ -114,7 +109,6 @@ class NonceProcessingQueue(ProcessingQueue):
         self.queue.setdefault((item.id, item.nonce), item)
 
     def pop(self):
-        super().pop()
         if not self.queue:
             return None
         key, item = self.queue.popitem()

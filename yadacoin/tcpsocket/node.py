@@ -149,38 +149,40 @@ class NodeRPC(BaseRPC):
         item = self.config.processing_queues.transaction_queue.pop()
 
         while item:
-
-            txn = item.transaction
-            stream = item.stream
-            try:
-                await txn.verify()
-            except:
-                continue
-
-            if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
-                if not hasattr(txn, 'version'):
-                    continue
-                if int(txn.version) < 3:
-                    continue
-
-            if await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn.transaction_signature}):
-                continue
-
-            await self.config.mongo.async_db.miner_transactions.replace_one(
-                {
-                    'id': txn.transaction_signature
-                },
-                txn.to_dict(),
-                upsert=True
-            )
-
-            async for peer_stream in self.config.peer.get_sync_peers():
-                if peer_stream.peer.rid == stream.peer.rid:
-                    continue
-                if peer_stream.peer.protocol_version > 1:
-                    self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = {'transaction': txn.to_dict()}
-
+            self.config.processing_queues.transaction_queue.inc_num_items_processed()
+            self.process_transaction_queue_item(item)
             item = self.config.processing_queues.transaction_queue.pop()
+
+    async def process_transaction_queue_item(self, item):
+        txn = item.transaction
+        stream = item.stream
+        try:
+            await txn.verify()
+        except:
+            return
+
+        if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
+            if not hasattr(txn, 'version'):
+                return
+            if int(txn.version) < 3:
+                return
+
+        if await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn.transaction_signature}):
+            return
+
+        await self.config.mongo.async_db.miner_transactions.replace_one(
+            {
+                'id': txn.transaction_signature
+            },
+            txn.to_dict(),
+            upsert=True
+        )
+
+        async for peer_stream in self.config.peer.get_sync_peers():
+            if peer_stream.peer.rid == stream.peer.rid:
+                continue
+            if peer_stream.peer.protocol_version > 1:
+                self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = {'transaction': txn.to_dict()}
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get('result', {})

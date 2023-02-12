@@ -58,6 +58,7 @@ class MiningPool(object):
     async def process_nonce_queue(self):
         item = self.config.processing_queues.nonce_queue.pop()
         while item:
+            self.config.processing_queues.nonce_queue.inc_num_items_processed()
             body = item.body
             stream = item.stream
             miner = item.miner
