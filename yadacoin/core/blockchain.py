@@ -45,7 +45,10 @@ class Blockchain(object):
 
     @property
     async def blocks(self):
-        blocks = self.make_gen(self.init_blocks)
+        if isinstance(self.init_blocks, list):
+            blocks = self.make_gen(self.init_blocks)
+        else:
+            self.init_blocks, blocks = tee(self.make_gen(self.init_blocks))
         async for block in blocks:
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
