@@ -36,7 +36,8 @@ class RCPWebSocketServer(WebSocketHandler):
         body = json.loads(data)
         method = body.get('method')
         await getattr(self, method)(body)
-        self.config.app_log.debug(f'SERVER RECEIVED {self.peer.identity.username} {method} {data}')
+        if hasattr(self.config, 'websocket_traffic_debug') and self.config.websocket_traffic_debug == True:
+            self.config.app_log.debug(f'SERVER RECEIVED {self.peer.identity.username} {method} {data}')
 
     def on_close(self):
         self.remove_peer(self.peer)
@@ -433,6 +434,7 @@ class RCPWebSocketServer(WebSocketHandler):
             self.config.app_log.debug(format_exc())
             self.remove_peer(self.peer)
 
-        self.config.app_log.debug(f'SENT {self.peer.identity.username} {method} {data} {rpc_type} {req_id}')
+        if hasattr(self.config, 'websocket_traffic_debug') and self.config.websocket_traffic_debug == True:
+            self.config.app_log.debug(f'SENT {self.peer.identity.username} {method} {data} {rpc_type} {req_id}')
 
 WEBSOCKET_HANDLERS = [(r'/websocket', RCPWebSocketServer),]
