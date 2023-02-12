@@ -222,3 +222,11 @@ https://yadacoin.io/download
   - type: string
   - default: 'ws://localhost:8000/websocket'
   - description: Specify the host and port of your websocket
+- tcp_traffic_debub
+  - type: bool
+  - default: undefined
+  - description: Specify if you want all tcp traffic in debug logging
+- websocket_traffic_debub
+  - type: bool
+  - default: undefined
+  - description: Specify if you want all websocket traffic in debug logging
