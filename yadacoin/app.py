@@ -314,7 +314,7 @@ class NodeApplication(Application):
 
             try:
                 if self.config.processing_queues.block_queue.queue:
-                    if (time() - self.config.health.block_inserter.last_activity) > 10:
+                    if (time() - self.config.health.block_inserter.last_activity) > 1:
                         self.config.processing_queues.block_queue.time_sum_start()
                         await self.config.consensus.process_block_queue()
                         self.config.processing_queues.block_queue.time_sum_end()
