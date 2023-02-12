@@ -317,7 +317,7 @@ class NodeApplication(Application):
                 if self.config.processing_queues.block_queue.queue:
                     if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
                         continue
-                if (time() - self.config.health.consensus.last_activity) > 30:
+                if (time() - self.config.health.consensus.last_activity) > 60:
                     await self.config.consensus.sync_bottom_up()
             except Exception as e:
                 self.config.app_log.error(format_exc())
