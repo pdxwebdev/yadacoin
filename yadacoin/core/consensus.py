@@ -339,7 +339,7 @@ class Consensus(object):
             )
 
     async def build_backward_from_block_to_fork(self, block, blocks, stream=None, depth=0):
-        self.app_log.debug(f'build_backward_from_block_to_fork: block.index')
+        self.app_log.debug(f'build_backward_from_block_to_fork: {block.index}')
 
         retrace_block = await self.mongo.async_db.blocks.find_one({
             'hash': block.prev_hash,
