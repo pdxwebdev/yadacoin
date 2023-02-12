@@ -312,6 +312,7 @@ class NodeRPC(BaseRPC):
                 body['id']
             )
         if not blocks:
+            self.config.app_log.info(f'blocksresponse, no blocks, {stream.peer.host}')
             self.config.consensus.syncing = False
             stream.synced = True
             return
@@ -341,7 +342,7 @@ class NodeRPC(BaseRPC):
         # get blocks should be done only by syncing peers
         result = body.get('result', {})
         if not result.get('block'):
-            self.config.app_log.info('blockresponse, no payload')
+            self.config.app_log.info(f'blockresponse, no block, {stream.peer.host}')
             return
 
         await self.config.consensus.block_queue.add(BlockProcessingQueueItem(Blockchain(result.get('block')), stream, body))
