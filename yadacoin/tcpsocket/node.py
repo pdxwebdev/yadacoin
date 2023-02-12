@@ -414,8 +414,10 @@ class NodeRPC(BaseRPC):
             return {}
 
         limit = self.config.peer.__class__.type_limit(peerCls)
+        self.config.app_log.info(f'limit num peers {limit}, currently at {len(NodeSocketServer.inbound_streams[peerCls.__name__])}')
         if (len(NodeSocketServer.inbound_pending[peerCls.__name__]) + len(NodeSocketServer.inbound_streams[peerCls.__name__])) >= limit:
             if not self.config.peer.is_linked_peer(stream.peer):
+                self.config.app_log.info('sent capacity message, stream closed')
                 await self.write_result(stream, 'capacity', {}, body['id'])
                 await self.remove_peer(stream)
                 return {}
