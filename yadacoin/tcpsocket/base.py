@@ -63,6 +63,10 @@ class BaseRPC:
             stream.message_queue[method][rpc_data['id']] = rpc_data
         try:
             await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
+        except StreamClosedError:
+            if hasattr(stream, 'peer'):
+                self.config.app_log.warning('Disconnected from {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
+            await self.remove_peer(stream)
         except:
             if hasattr(stream, 'peer'):
                 await self.remove_peer(stream)
