@@ -111,7 +111,6 @@ class Consensus(object):
                         body.get('result', {}),
                         body['id']
                     )
-                return
 
             if body['method'] == 'newblock':
                 payload = body.get('params', {}).get('payload', {})
@@ -153,7 +152,7 @@ class Consensus(object):
                     self.config.app_log.info('newblock, error inserting consensus block')
                     return
 
-                self.config.app_log.info(f'Consensus block imported {payload}')
+            self.config.app_log.info(f'Consensus block imported {block}')
 
 
         self.config.processing_queues.block_queue.time_sum_start()
