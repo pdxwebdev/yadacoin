@@ -367,6 +367,7 @@ class Consensus(object):
         backward_blocks, status = await self.build_backward_from_block_to_fork(block, [], stream)
 
         if not status:
+            self.app_log.debug('integrate_block_with_existing_chain: status is false')
             return
 
         forward_blocks_chain = await self.build_remote_chain(block) #contains block
@@ -374,6 +375,7 @@ class Consensus(object):
         inbound_blockchain = Blockchain(sorted(backward_blocks + [x async for x in forward_blocks_chain.blocks], key=lambda x: x.index))
 
         if not await inbound_blockchain.is_consecutive:
+            self.app_log.debug('integrate_block_with_existing_chain: inbound_blockchain.is_consecutive is false')
             return False
 
         await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)
