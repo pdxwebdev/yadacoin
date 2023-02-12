@@ -109,7 +109,7 @@ class Consensus(object):
                             body.get('result', {}),
                             body['id']
                         )
-
+                    block = await Block.from_dict(block)
                     if not await self.config.consensus.insert_consensus_block(block, stream.peer):
                         self.config.app_log.info('newblock, error inserting consensus block')
                         return
