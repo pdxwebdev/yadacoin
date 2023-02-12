@@ -112,7 +112,7 @@ class Consensus(object):
                         body['id']
                     )
 
-            if body['method'] == 'newblock':
+            elif body['method'] == 'newblock':
                 payload = body.get('params', {}).get('payload', {})
                 block = payload.get('block')
                 if not block:
@@ -153,7 +153,6 @@ class Consensus(object):
                     return
 
             self.config.app_log.info(f'Consensus block imported {block}')
-
 
         self.config.processing_queues.block_queue.time_sum_start()
         if isinstance(item.blockchain.init_blocks, list):
