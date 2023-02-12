@@ -314,14 +314,16 @@ class NodeApplication(Application):
 
             try:
                 if self.config.processing_queues.block_queue.queue:
-                    self.config.processing_queues.block_queue.time_sum_start()
-                    await self.config.consensus.process_block_queue()
-                    self.config.processing_queues.block_queue.time_sum_end()
+                    if (time() - self.config.health.block_inserter.last_activity) > 1:
+                        self.config.processing_queues.block_queue.time_sum_start()
+                        await self.config.consensus.process_block_queue()
+                        self.config.processing_queues.block_queue.time_sum_end()
                 self.config.health.block_inserter.last_activity = int(time())
             except:
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.block_queue.time_sum_end()
 
+            await tornado.gen.sleep(10)
 
     async def background_pool_payer(self):
         """Responsible for paying miners"""

@@ -148,39 +148,39 @@ class NodeRPC(BaseRPC):
 
         item = self.config.processing_queues.transaction_queue.pop()
 
-        if not item:
-            return
+        while item:
 
-        txn = item.transaction
-        stream = item.stream
-        try:
-            await txn.verify()
-        except:
-            return
-
-        if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
-            if not hasattr(txn, 'version'):
-                return
-            if int(txn.version) < 3:
+            txn = item.transaction
+            stream = item.stream
+            try:
+                await txn.verify()
+            except:
                 return
 
-        if await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn.transaction_signature}):
-            return
+            if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
+                if not hasattr(txn, 'version'):
+                    return
+                if int(txn.version) < 3:
+                    return
 
-        await self.config.mongo.async_db.miner_transactions.replace_one(
-            {
-                'id': txn.transaction_signature
-            },
-            txn.to_dict(),
-            upsert=True
-        )
+            if await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn.transaction_signature}):
+                return
 
-        async for peer_stream in self.config.peer.get_sync_peers():
-            if peer_stream.peer.rid == stream.peer.rid:
-                continue
-            if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = {'transaction': txn.to_dict()}
+            await self.config.mongo.async_db.miner_transactions.replace_one(
+                {
+                    'id': txn.transaction_signature
+                },
+                txn.to_dict(),
+                upsert=True
+            )
 
+            async for peer_stream in self.config.peer.get_sync_peers():
+                if peer_stream.peer.rid == stream.peer.rid:
+                    continue
+                if peer_stream.peer.protocol_version > 1:
+                    self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = {'transaction': txn.to_dict()}
+
+            item = self.config.processing_queues.transaction_queue.pop()
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get('result', {})

@@ -90,98 +90,98 @@ class Consensus(object):
 
     async def process_block_queue(self):
         item = self.config.processing_queues.block_queue.pop()
+        while item:
 
-        if not item:
-            return
+            stream = item.stream
+            body = item.body
+            if body:
+                if body['method'] == 'blockresponse':
+                    payload = body.get('result', {})
+                    block = payload.get('block')
+                    if not block:
+                        return
+                    if block['index'] > (self.config.LatestBlock.block.index + 100):
+                        return
+                    if stream.peer.protocol_version > 1:
+                        await self.config.nodeShared.write_result(
+                            stream,
+                            'blockresponse_confirmed',
+                            body.get('result', {}),
+                            body['id']
+                        )
 
-        stream = item.stream
-        body = item.body
-        if body:
-            if body['method'] == 'blockresponse':
-                payload = body.get('result', {})
-                block = payload.get('block')
-                if not block:
-                    return
-                if block['index'] > (self.config.LatestBlock.block.index + 100):
-                    return
-                if stream.peer.protocol_version > 1:
-                    await self.config.nodeShared.write_result(
-                        stream,
-                        'blockresponse_confirmed',
-                        body.get('result', {}),
-                        body['id']
-                    )
+                elif body['method'] == 'newblock':
+                    payload = body.get('params', {}).get('payload', {})
+                    block = payload.get('block')
+                    if not block:
+                        return
+                    if stream.peer.protocol_version > 1:
+                        await self.config.nodeShared.write_result(
+                            stream,
+                            'newblock_confirmed',
+                            body.get('params', {}),
+                            body['id']
+                        )
 
-            elif body['method'] == 'newblock':
-                payload = body.get('params', {}).get('payload', {})
-                block = payload.get('block')
-                if not block:
-                    return
-                if stream.peer.protocol_version > 1:
-                    await self.config.nodeShared.write_result(
-                        stream,
-                        'newblock_confirmed',
-                        body.get('params', {}),
-                        body['id']
-                    )
+                    block = await Block.from_dict(block)
 
-                block = await Block.from_dict(block)
+                    if block.time > time():
+                        self.config.app_log.info('newblock, block time greater than now')
+                        return
 
-                if block.time > time():
-                    self.config.app_log.info('newblock, block time greater than now')
-                    return
+                    if block.index > (self.config.LatestBlock.block.index + 100):
+                        self.config.app_log.info('newblock, block index greater than latest block + 100')
+                        return
 
-                if block.index > (self.config.LatestBlock.block.index + 100):
-                    self.config.app_log.info('newblock, block index greater than latest block + 100')
-                    return
-
-                if block.index < self.config.LatestBlock.block.index:
-                    await self.config.nodeShared.write_params(
-                        stream,
-                        'newblock',
-                        {
-                            'payload': {
-                                'block': self.config.LatestBlock.block.to_dict()
+                    if block.index < self.config.LatestBlock.block.index:
+                        await self.config.nodeShared.write_params(
+                            stream,
+                            'newblock',
+                            {
+                                'payload': {
+                                    'block': self.config.LatestBlock.block.to_dict()
+                                }
                             }
-                        }
-                    )
-                    self.config.app_log.info(f'block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}')
-                    return
+                        )
+                        self.config.app_log.info(f'block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}')
+                        return
 
-                if not await self.config.consensus.insert_consensus_block(block, stream.peer):
-                    self.config.app_log.info('newblock, error inserting consensus block')
-                    return
+                    if not await self.config.consensus.insert_consensus_block(block, stream.peer):
+                        self.config.app_log.info('newblock, error inserting consensus block')
+                        return
 
-        self.config.processing_queues.block_queue.time_sum_start()
-        if isinstance(item.blockchain.init_blocks, list):
-            first_block = await Block.from_dict(item.blockchain.first_block)
-        else:
-            first_block = await Block.from_dict(await item.blockchain.async_first_block)
+            self.config.processing_queues.block_queue.time_sum_start()
+            if isinstance(item.blockchain.init_blocks, list):
+                first_block = await Block.from_dict(item.blockchain.first_block)
+            else:
+                first_block = await Block.from_dict(await item.blockchain.async_first_block)
 
-        if isinstance(item.blockchain.init_blocks, list):
-            final_block = await Block.from_dict(item.blockchain.final_block)
-        else:
-            final_block = await Block.from_dict(await item.blockchain.async_final_block)
+            if isinstance(item.blockchain.init_blocks, list):
+                final_block = await Block.from_dict(item.blockchain.final_block)
+            else:
+                final_block = await Block.from_dict(await item.blockchain.async_final_block)
 
-        first_existing = await self.mongo.async_db.blocks.find_one({
-            'hash': first_block.hash,
-        })
+            first_existing = await self.mongo.async_db.blocks.find_one({
+                'hash': first_block.hash,
+            })
 
-        final_existing = await self.mongo.async_db.blocks.find_one({
-            'hash': final_block.hash,
-        })
+            final_existing = await self.mongo.async_db.blocks.find_one({
+                'hash': final_block.hash,
+            })
 
-        if first_existing and final_existing:
-            return
+            if first_existing and final_existing:
+                return
 
-        count = await item.blockchain.count
+            count = await item.blockchain.count
 
-        if count < 1:
-            return
-        elif count == 1:
-            await self.integrate_block_with_existing_chain(first_block, stream)
-        else:
-            await self.integrate_blocks_with_existing_chain(item.blockchain, stream)
+            if count < 1:
+                return
+            elif count == 1:
+                await self.integrate_block_with_existing_chain(first_block, stream)
+            else:
+                await self.integrate_blocks_with_existing_chain(item.blockchain, stream)
+
+            item = self.config.processing_queues.block_queue.pop()
 
     async def remove_pending_transactions_now_in_chain(self, block):
         #remove transactions from miner_transactions collection in the blockchain

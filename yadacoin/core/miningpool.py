@@ -57,37 +57,37 @@ class MiningPool(object):
 
     async def process_nonce_queue(self):
         item = self.config.processing_queues.nonce_queue.pop()
-        if not item:
-            return
-        body = item.body
-        stream = item.stream
-        miner = item.miner
-        nonce = body['params'].get('nonce')
-        job = stream.jobs[body['params']['id']]
-        if type(nonce) is not str:
-            result = {'error': True, 'message': 'nonce is wrong data type'}
-        if len(nonce) > CHAIN.MAX_NONCE_LEN:
-            result = {'error': True, 'message': 'nonce is too long'}
-        data = {
-            'id': body.get('id'),
-            'method': body.get('method'),
-            'jsonrpc': body.get('jsonrpc')
-        }
-        data['result'] = await self.process_nonce(
-            miner,
-            nonce,
-            job
-        )
-        if not data['result']:
-            data['error'] = {'message': 'Invalid hash for current block'}
-        try:
-            await stream.write('{}\n'.format(json.dumps(data)).encode())
-        except:
-            pass
-        if 'error' in data:
-            await StratumServer.send_job(stream)
+        while item:
+            body = item.body
+            stream = item.stream
+            miner = item.miner
+            nonce = body['params'].get('nonce')
+            job = stream.jobs[body['params']['id']]
+            if type(nonce) is not str:
+                result = {'error': True, 'message': 'nonce is wrong data type'}
+            if len(nonce) > CHAIN.MAX_NONCE_LEN:
+                result = {'error': True, 'message': 'nonce is too long'}
+            data = {
+                'id': body.get('id'),
+                'method': body.get('method'),
+                'jsonrpc': body.get('jsonrpc')
+            }
+            data['result'] = await self.process_nonce(
+                miner,
+                nonce,
+                job
+            )
+            if not data['result']:
+                data['error'] = {'message': 'Invalid hash for current block'}
+            try:
+                await stream.write('{}\n'.format(json.dumps(data)).encode())
+            except:
+                pass
+            if 'error' in data:
+                await StratumServer.send_job(stream)
 
-        await StratumServer.block_checker()
+            await StratumServer.block_checker()
+            item = self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce.encode().hex()
