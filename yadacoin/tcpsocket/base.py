@@ -138,8 +138,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 self.config.app_log.debug("{}".format(format_exc()))
                 break
 
-    async def remove_peer(self, stream):
-        stream.close()
+    async def remove_peer(self, stream, close=True):
+        if close:
+            stream.close()
         if not hasattr(stream, 'peer'):
             return
         id_attr = getattr(stream.peer, stream.peer.id_attribute)
@@ -258,8 +259,9 @@ class RPCSocketClient(TCPClient):
                 self.config.app_log.debug("{}".format(format_exc()))
                 break
 
-    async def remove_peer(self, stream):
-        stream.close()
+    async def remove_peer(self, stream, close=True):
+        if close:
+            stream.close()
         if not hasattr(stream, 'peer'):
             return
         if stream.peer.rid in self.outbound_streams[stream.peer.__class__.__name__]:
