@@ -67,6 +67,7 @@ class BaseRPC:
             if hasattr(stream, 'peer'):
                 self.config.app_log.warning('Disconnected from {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
             await self.remove_peer(stream)
+            return
         except:
             if hasattr(stream, 'peer'):
                 await self.remove_peer(stream)
