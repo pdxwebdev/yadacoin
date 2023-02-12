@@ -305,6 +305,16 @@ class NodeApplication(Application):
 
             try:
                 if self.config.processing_queues.block_queue.queue:
+                    if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
+                        continue
+                if (time() - self.config.health.consensus.last_activity) > 10:
+                    await self.config.consensus.sync_bottom_up()
+                    self.config.health.consensus.last_activity = time()
+            except Exception as e:
+                self.config.app_log.error(format_exc())
+
+            try:
+                if self.config.processing_queues.block_queue.queue:
                     self.config.processing_queues.block_queue.time_sum_start()
                     await self.config.consensus.process_block_queue()
                     self.config.processing_queues.block_queue.time_sum_end()
@@ -312,15 +322,6 @@ class NodeApplication(Application):
             except:
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.block_queue.time_sum_end()
-
-            try:
-                if self.config.processing_queues.block_queue.queue:
-                    if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
-                        continue
-                if (time() - self.config.health.consensus.last_activity) > 60:
-                    await self.config.consensus.sync_bottom_up()
-            except Exception as e:
-                self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(.1)
 
