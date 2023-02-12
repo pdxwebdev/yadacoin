@@ -155,16 +155,16 @@ class NodeRPC(BaseRPC):
             try:
                 await txn.verify()
             except:
-                return
+                continue
 
             if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
                 if not hasattr(txn, 'version'):
-                    return
+                    continue
                 if int(txn.version) < 3:
-                    return
+                    continue
 
             if await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn.transaction_signature}):
-                return
+                continue
 
             await self.config.mongo.async_db.miner_transactions.replace_one(
                 {

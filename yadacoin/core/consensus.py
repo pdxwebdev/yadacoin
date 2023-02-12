@@ -99,9 +99,9 @@ class Consensus(object):
                     payload = body.get('result', {})
                     block = payload.get('block')
                     if not block:
-                        return
+                        continue
                     if block['index'] > (self.config.LatestBlock.block.index + 100):
-                        return
+                        continue
                     if stream.peer.protocol_version > 1:
                         await self.config.nodeShared.write_result(
                             stream,
@@ -112,13 +112,13 @@ class Consensus(object):
                     block = await Block.from_dict(block)
                     if not await self.config.consensus.insert_consensus_block(block, stream.peer):
                         self.config.app_log.info('newblock, error inserting consensus block')
-                        return
+                        continue
 
                 elif body['method'] == 'newblock':
                     payload = body.get('params', {}).get('payload', {})
                     block = payload.get('block')
                     if not block:
-                        return
+                        continue
                     if stream.peer.protocol_version > 1:
                         await self.config.nodeShared.write_result(
                             stream,
@@ -131,11 +131,11 @@ class Consensus(object):
 
                     if block.time > time():
                         self.config.app_log.info('newblock, block time greater than now')
-                        return
+                        continue
 
                     if block.index > (self.config.LatestBlock.block.index + 100):
                         self.config.app_log.info('newblock, block index greater than latest block + 100')
-                        return
+                        continue
 
                     if block.index < self.config.LatestBlock.block.index:
                         await self.config.nodeShared.write_params(
@@ -148,11 +148,11 @@ class Consensus(object):
                             }
                         )
                         self.config.app_log.info(f'block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}')
-                        return
+                        continue
 
                     if not await self.config.consensus.insert_consensus_block(block, stream.peer):
                         self.config.app_log.info('newblock, error inserting consensus block')
-                        return
+                        continue
 
             self.config.processing_queues.block_queue.time_sum_start()
             if isinstance(item.blockchain.init_blocks, list):
@@ -174,12 +174,12 @@ class Consensus(object):
             })
 
             if first_existing and final_existing:
-                return
+                continue
 
             count = await item.blockchain.count
 
             if count < 1:
-                return
+                continue
             elif count == 1:
                 await self.integrate_block_with_existing_chain(first_block, stream)
             else:
