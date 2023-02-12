@@ -60,7 +60,6 @@ class Consensus(object):
         self.target = target
         self.special_target = special_target
         self.syncing = False
-        self.block_queue = BlockProcessingQueue()
 
         if self.config.LatestBlock.block:
             self.latest_block = self.config.LatestBlock.block
@@ -90,7 +89,7 @@ class Consensus(object):
             self.config.BU.latest_block = None
 
     async def process_block_queue(self):
-        item = await self.block_queue.pop()
+        item = self.config.processing_queues.block_queue.pop()
 
         if not item:
             return
@@ -159,6 +158,7 @@ class Consensus(object):
                 self.config.app_log.info(f'Consensus block imported {payload}')
 
 
+        self.config.processing_queues.block_queue.time_sum_start()
         if isinstance(item.blockchain.init_blocks, list):
             first_block = await Block.from_dict(item.blockchain.first_block)
         else:
@@ -246,7 +246,7 @@ class Consensus(object):
             for record in sorted(records, key=lambda x: int(x['block']['target'], 16)):
                 stream = await self.config.peer.get_peer_by_id(record['peer']['rid'])
                 if stream and hasattr(stream, 'peer') and stream.peer.authenticated:
-                    await self.block_queue.add(BlockProcessingQueueItem(Blockchain(record['block']), stream))
+                    self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(record['block']), stream))
 
             return True
         else:
@@ -257,7 +257,9 @@ class Consensus(object):
             #    getblocks <--- rpc request
             #    blocksresponse <--- rpc response
             #    process_block_queue
-            return await self.search_network_for_new()
+            if (time() - self.config.health.consensus.last_activity) > 30:
+                self.last_network_search = time()
+                return await self.search_network_for_new()
 
     async def search_network_for_new(self):
         if self.config.network == 'regnet':

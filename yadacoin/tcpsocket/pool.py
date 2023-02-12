@@ -27,7 +27,6 @@ class StratumServer(RPCSocketServer):
     def __init__(self):
         super(StratumServer, self).__init__()
         self.config = get_config()
-        self.nonce_processing_queue = NonceProcessingQueue()
 
     @classmethod
     async def block_checker(cls):
@@ -146,7 +145,7 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def submit(self, body, stream):
-        await self.nonce_processing_queue.add(
+        self.config.queues.nonce_queue.add(
             NonceProcessingQueueItem(
                 miner=stream.peer,
                 stream=stream,

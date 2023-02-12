@@ -56,7 +56,7 @@ class MiningPool(object):
         return str_little
 
     async def process_nonce_queue(self):
-        item = await self.config.pool_server.nonce_processing_queue.pop()
+        item = self.config.processing_queues.nonce_queue.pop()
         if not item:
             return
         body = item.body
@@ -496,7 +496,7 @@ class MiningPool(object):
 
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(Blockchain(block.to_dict())))
+        self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(block.to_dict())))
 
         await self.config.nodeShared.send_block(block)
 

@@ -97,7 +97,7 @@ class ConsenusHealth(HealthItem):
 
     async def reset(self):
         # if the block queue has items that will not move out, consensus will halt
-        self.config.consensus.block_queue.queue = {}
+        self.config.processing_queues.block_queue.queue = {}
 
 
 class PeerHealth(HealthItem):

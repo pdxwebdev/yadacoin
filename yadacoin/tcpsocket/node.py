@@ -116,7 +116,7 @@ class NodeRPC(BaseRPC):
                 body['id']
             )
         txn = Transaction.from_dict(payload.get('transaction'))
-        await self.config.node_server_instance.transaction_queue.add(TransactionProcessingQueueItem(txn, stream))
+        self.config.node_server_instance.transaction_queue.add(TransactionProcessingQueueItem(txn, stream))
 
         ws_users = self.config.websocketServer.inbound_streams[User.__name__]
 
@@ -138,7 +138,7 @@ class NodeRPC(BaseRPC):
 
     async def process_transaction_queue(self):
 
-        item = await self.transaction_queue.pop()
+        item = self.transaction_queue.pop()
 
         if not item:
             return
@@ -187,7 +187,7 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info('newblock, no payload')
             return
 
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(Blockchain(payload.get('block')), stream, body))
+        self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(payload.get('block')), stream, body))
 
     async def newblock_confirmed(self, body, stream):
         payload = body.get('result', {}).get('payload')
@@ -329,7 +329,7 @@ class NodeRPC(BaseRPC):
             self.config.consensus.syncing = False
             return False
 
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(inbound_blockchain, stream, body))
+        self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(inbound_blockchain, stream, body))
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
@@ -345,7 +345,7 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info(f'blockresponse, no block, {stream.peer.host}')
             return
 
-        await self.config.consensus.block_queue.add(BlockProcessingQueueItem(Blockchain(result.get('block')), stream, body))
+        self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(result.get('block')), stream, body))
 
     async def blockresponse_confirmed(self, body, stream):
         result = body.get('result')

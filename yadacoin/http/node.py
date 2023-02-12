@@ -94,7 +94,8 @@ class GetStatusHandler(BaseHandler):
         status = await self.config.get_status()
         status['health'] = self.config.health.to_dict()
         status['latest_block'] = self.config.LatestBlock.block.to_dict()
-        self.render_as_json(status)
+        status['queues'] = self.config.processing_queues.to_status_dict()
+        self.render_as_json(status, indent=4)
 
 
 class NewBlockHandler(BaseHandler):

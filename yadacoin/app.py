@@ -59,6 +59,7 @@ from yadacoin.core.peer import (
 )
 from yadacoin.core.identity import Identity
 from yadacoin.core.health import Health
+from yadacoin.core.processingqueue import ProcessingQueues
 from yadacoin.core.smtp import Email
 from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
@@ -149,6 +150,7 @@ class NodeApplication(Application):
         while True:
             try:
                 status = await self.config.get_status()
+                status['processing_queues'] = self.config.processing_queues.to_status_dict()
                 await self.config.health.check_health()
                 status['health'] = self.config.health.to_dict()
                 if status['health']['status']:
@@ -159,7 +161,7 @@ class NodeApplication(Application):
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(30)
+            await tornado.gen.sleep(10)
 
     async def background_block_checker(self):
         """Responsible for miner updates"""
@@ -281,30 +283,43 @@ class NodeApplication(Application):
     async def background_queue_processor(self):
         while True:
             try:
-                await self.config.node_server_instance.process_transaction_queue()
+                if self.config.processing_queues.transaction_queue.queue:
+                    self.config.processing_queues.transaction_queue.time_sum_start()
+                    await self.config.node_server_instance.process_transaction_queue()
+                    self.config.processing_queues.transaction_queue.time_sum_end()
                 self.config.health.transaction_processor.last_activity = int(time())
             except:
                 self.config.app_log.error(format_exc())
+                self.config.processing_queues.transaction_queue.time_sum_end()
 
             if 'pool' in self.config.modes:
                 try:
-                    await self.config.mp.process_nonce_queue()
+                    if self.config.processing_queues.nonce_queue.queue:
+                        self.config.processing_queues.nonce_queue.time_sum_start()
+                        await self.config.mp.process_nonce_queue()
+                        self.config.processing_queues.nonce_queue.time_sum_end()
                     self.config.health.nonce_processor.last_activity = int(time())
                 except:
                     self.config.app_log.error(format_exc())
+                    self.config.processing_queues.nonce_queue.time_sum_end()
 
             try:
-                if self.config.consensus.block_queue.queue:
-                    if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
-                        continue
-                await self.config.consensus.sync_bottom_up()
-            except Exception as e:
-                self.config.app_log.error(format_exc())
-
-            try:
-                await self.config.consensus.process_block_queue()
+                if self.config.processing_queues.block_queue.queue:
+                    self.config.processing_queues.block_queue.time_sum_start()
+                    await self.config.consensus.process_block_queue()
+                    self.config.processing_queues.block_queue.time_sum_end()
                 self.config.health.block_inserter.last_activity = int(time())
             except:
+                self.config.app_log.error(format_exc())
+                self.config.processing_queues.block_queue.time_sum_end()
+
+            try:
+                if self.config.processing_queues.block_queue.queue:
+                    if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
+                        continue
+                if (time() - self.config.health.consensus.last_activity) > 5:
+                    await self.config.consensus.sync_bottom_up()
+            except Exception as e:
                 self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(.1)
@@ -629,6 +644,7 @@ class NodeApplication(Application):
 
     def init_config_properties(self, test=False):
         self.config.health = Health()
+        self.config.processing_queues = ProcessingQueues()
         self.config.mongo = Mongo()
         self.config.http_client = AsyncHTTPClient()
         self.config.BU = yadacoin.core.blockchainutils.BlockChainUtils()
