@@ -97,15 +97,11 @@ class Consensus(object):
         stream = item.stream
         body = item.body
         if body:
-            payload = body.get('result', {})
-            if not payload:
-                payload = body.get('params', {})
-            block = payload.get('block')
-
             if body['method'] == 'blockresponse':
+                payload = body.get('result', {})
+                block = payload.get('block')
                 if not block:
                     return
-
                 if block['index'] > (self.config.LatestBlock.block.index + 100):
                     return
                 if stream.peer.protocol_version > 1:
@@ -118,6 +114,8 @@ class Consensus(object):
                 return
 
             if body['method'] == 'newblock':
+                payload = body.get('params', {}).get('payload', {})
+                block = payload.get('block')
                 if not block:
                     return
                 if stream.peer.protocol_version > 1:
