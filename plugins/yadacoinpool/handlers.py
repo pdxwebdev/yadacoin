@@ -35,7 +35,7 @@ class PoolInfoHandler(BaseWebHandler):
     async def get(self):
         def get_ticker():
             return requests.get('https://safe.trade/api/v2/peatio/public/markets/tickers')
-        
+
         try:
             if not hasattr(self.config, 'ticker'):
                 self.config.ticker = get_ticker()
@@ -89,8 +89,12 @@ class PoolInfoHandler(BaseWebHandler):
         worker_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'worker_count'}) or {'value': 0}
         payouts = await self.config.mongo.async_db.share_payout.find({}, {'_id': 0}).sort([('index', -1)]).to_list(100)
         self.render_as_json({
-            'pool': {
+            'node': {
+                'latest_block': self.config.LatestBlock.block.to_dict(),
+                'health': self.config.health.to_dict(),
                 'version': '.'.join([str(x) for x in version]),
+            },
+            'pool': {
                 'hashes_per_second': pool_hash_rate,
                 'miner_count': miner_count_pool_stat['value'],
                 'worker_count': worker_count_pool_stat['value'],
