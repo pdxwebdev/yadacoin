@@ -271,47 +271,63 @@ class Collection:
     async def find_one(self, *args, **kwargs):
         self.set_start_time()
         result = await self._db.get_collection(self.collection).find_one(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('find_one', args, kwargs)
         return result
 
     def find(self, *args, **kwargs):
         self.set_start_time()
         result = self._db.get_collection(self.collection).find(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('find', args, kwargs)
         return result
 
     async def count_documents(self, *args, **kwargs):
         self.set_start_time()
         result = await self._db.get_collection(self.collection).count_documents(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('count_documents', args, kwargs)
         return result
 
     async def delete_many(self, *args, **kwargs):
         self.set_start_time()
         result = await self._db.get_collection(self.collection).delete_many(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('delete_many', args, kwargs)
         return result
 
     async def insert_one(self, *args, **kwargs):
         self.set_start_time()
         result = await self._db.get_collection(self.collection).insert_one(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('insert_one', args, kwargs)
         return result
 
     async def replace_one(self, *args, **kwargs):
         self.set_start_time()
         result = await self._db.get_collection(self.collection).replace_one(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('replace_one', args, kwargs)
         return result
 
     async def update_one(self, *args, **kwargs):
         self.set_start_time()
         result = await self._db.get_collection(self.collection).update_one(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('update_one', args, kwargs)
         return result
 
     def aggregate(self, *args, **kwargs):
         self.set_start_time()
         result = self._db.get_collection(self.collection).aggregate(*args, **kwargs)
+        if self.collection == 'child_keys':
+            return result
         self.do_logging('aggregate', args, kwargs)
         return result
