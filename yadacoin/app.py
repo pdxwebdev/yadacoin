@@ -137,6 +137,7 @@ class NodeApplication(Application):
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
         while True:
+            self.config.app_log.debug('background_peers')
             try:
                 await self.config.peer.ensure_peers_connected()
                 self.config.health.peer.last_activity = int(time())
@@ -148,6 +149,7 @@ class NodeApplication(Application):
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
         while True:
+            self.config.app_log.debug('background_status')
             try:
                 status = await self.config.get_status()
                 status['processing_queues'] = self.config.processing_queues.to_status_dict()
@@ -183,6 +185,7 @@ class NodeApplication(Application):
         So we can update the miners.
         """
         while True:
+            self.config.app_log.debug('background_block_checker')
             try:
                 last_block_height = 0
                 if LatestBlock.block:
@@ -207,6 +210,7 @@ class NodeApplication(Application):
     async def background_message_sender(self):
         latest_block_height = self.config.LatestBlock.block.index
         while True:
+            self.config.app_log.debug('background_message_sender')
             try:
                 for x in self.config.nodeServer.retry_messages.copy():
                     message = self.config.nodeServer.retry_messages.get(x)
@@ -276,6 +280,7 @@ class NodeApplication(Application):
 
     async def background_queue_processor(self):
         while True:
+            self.config.app_log.debug('background_queue_processor')
             try:
                 if self.config.processing_queues.transaction_queue.queue:
                     self.config.processing_queues.transaction_queue.time_sum_start()
@@ -298,11 +303,13 @@ class NodeApplication(Application):
                     self.config.processing_queues.nonce_queue.time_sum_end()
 
             try:
+                skip = False
                 if self.config.processing_queues.block_queue.queue:
                     if time() - self.config.health.consensus.last_activity < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD:
-                        continue
-                await self.config.consensus.sync_bottom_up()
-                self.config.health.consensus.last_activity = time()
+                        skip = True
+                if not skip:
+                    await self.config.consensus.sync_bottom_up()
+                    self.config.health.consensus.last_activity = time()
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
@@ -327,6 +334,7 @@ class NodeApplication(Application):
         So we can update the miners.
         """
         while True:
+            self.config.app_log.debug('background_pool_payer')
             try:
                 if self.config.pp:
                     await self.config.pp.do_payout()
@@ -340,6 +348,7 @@ class NodeApplication(Application):
     async def background_cache_validator(self):
         """Responsible for validating the cache and clearing it when necessary"""
         while True:
+            self.config.app_log.debug('background_cache_validator')
             if not hasattr(self.config, 'cache_inited'):
                 self.cache_collections = [x for x in await self.config.mongo.async_db.list_collection_names() if x.endswith('_cache')]
                 self.cache_last_times = {}
@@ -396,6 +405,7 @@ class NodeApplication(Application):
         """Responsible for removing failed transactions from the mempool"""
 
         while True:
+            self.config.app_log.debug('background_mempool_cleaner')
             try:
                 await self.config.TU.clean_mempool(self.config)
                 await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
