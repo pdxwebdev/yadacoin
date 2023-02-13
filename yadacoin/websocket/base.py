@@ -387,6 +387,7 @@ class RCPWebSocketServer(WebSocketHandler):
 
     def remove_peer(self, peer):
         if not peer:
+            get_config().app_log.warning('Failed removing websocket peer.')
             return
         id_attr = getattr(peer, peer.id_attribute)
         if id_attr in self.inbound_streams[peer.__class__.__name__]:
@@ -430,6 +431,8 @@ class RCPWebSocketServer(WebSocketHandler):
 
         try:
             await self.write_message('{}'.format(json.dumps(rpc_data)).encode())
+        except WebSocketClosedError:
+            self.remove_peer(self.peer)
         except:
             self.config.app_log.debug(format_exc())
             self.remove_peer(self.peer)

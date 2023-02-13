@@ -1,4 +1,5 @@
 import os
+from time import time
 from pymongo import MongoClient, IndexModel, ASCENDING, DESCENDING
 from motor.motor_tornado import MotorClient
 
@@ -183,7 +184,8 @@ class Mongo(object):
 
         # See https://motor.readthedocs.io/en/stable/tutorial-tornado.html
         self.async_client = MotorClient(self.config.mongodb_host)
-        self.async_db = self.async_client[self.config.database]
+        self.async_db = AsyncDB(self.async_client)
+        # self.async_db = self.async_client[self.config.database]
         self.async_site_db = self.async_client[self.config.site_database]
 
         # convert block time from string to number
@@ -223,3 +225,93 @@ class Mongo(object):
                     if total_output >= 50:
                         self.config.app_log.warning(f'Removing block with too high of reward: {block["index"]}')
                         self.db.blocks.delete_one({'index': block['index']})
+
+
+class AsyncDB:
+    def __init__(self, async_client):
+        self.async_client = async_client
+        self.config = get_config()
+        self.slow_queries = []
+
+    def __getattr__(self, __name: str):
+        return Collection(self.async_client, __name)
+
+    async def list_collection_names(self, *args, **kwargs):
+        start_time = time()
+        self._db = self.async_client[self.config.database]
+        result = await self._db.list_collection_names()
+        if time() - start_time > 3:
+            self.config.app_log.warning(f'SLOW QUERY: find_one {args}, {kwargs}')
+        return result
+
+    def __getitem__(self, name):
+        return getattr(self, name)
+
+class Collection:
+    def __init__(self, async_client, collection):
+        self.config = get_config()
+        self._db = async_client[self.config.database]
+        self.collection = collection
+
+    def set_start_time(self):
+        self.start_time = time()
+
+    def set_duration(self):
+        self.duration = float('%.3f' % (time() - self.start_time))
+
+    def do_logging(self, query_type, args, kwargs):
+        self.set_duration()
+        message = f'QUERY: {query_type} {self.collection} {args}, {kwargs}, duration: {self.duration}'
+        if self.duration > 3:
+            self.config.app_log.warning(f'SLOW {message}')
+            self.config.mongo.async_db.slow_queries.append(message)
+        else:
+            self.config.app_log.debug(message)
+
+    async def find_one(self, *args, **kwargs):
+        self.set_start_time()
+        result = await self._db.get_collection(self.collection).find_one(*args, **kwargs)
+        self.do_logging('find_one', args, kwargs)
+        return result
+
+    def find(self, *args, **kwargs):
+        self.set_start_time()
+        result = self._db.get_collection(self.collection).find(*args, **kwargs)
+        self.do_logging('find', args, kwargs)
+        return result
+
+    async def count_documents(self, *args, **kwargs):
+        self.set_start_time()
+        result = await self._db.get_collection(self.collection).count_documents(*args, **kwargs)
+        self.do_logging('count_documents', args, kwargs)
+        return result
+
+    async def delete_many(self, *args, **kwargs):
+        self.set_start_time()
+        result = await self._db.get_collection(self.collection).delete_many(*args, **kwargs)
+        self.do_logging('delete_many', args, kwargs)
+        return result
+
+    async def insert_one(self, *args, **kwargs):
+        self.set_start_time()
+        result = await self._db.get_collection(self.collection).insert_one(*args, **kwargs)
+        self.do_logging('insert_one', args, kwargs)
+        return result
+
+    async def replace_one(self, *args, **kwargs):
+        self.set_start_time()
+        result = await self._db.get_collection(self.collection).replace_one(*args, **kwargs)
+        self.do_logging('replace_one', args, kwargs)
+        return result
+
+    async def update_one(self, *args, **kwargs):
+        self.set_start_time()
+        result = await self._db.get_collection(self.collection).update_one(*args, **kwargs)
+        self.do_logging('update_one', args, kwargs)
+        return result
+
+    def aggregate(self, *args, **kwargs):
+        self.set_start_time()
+        result = self._db.get_collection(self.collection).aggregate(*args, **kwargs)
+        self.do_logging('aggregate', args, kwargs)
+        return result

@@ -161,6 +161,10 @@ class NodeApplication(Application):
                         'num_messages': len(list(self.config.nodeClient.retry_messages))
                     }
                 }
+                status['slow_queries'] = {
+                    'count': len(self.config.mongo.async_db.slow_queries),
+                    'detail': self.config.mongo.async_db.slow_queries
+                }
                 if status['health']['status']:
                     self.config.app_log.info(json.dumps(status, indent=4))
                 else:
@@ -204,30 +208,18 @@ class NodeApplication(Application):
         latest_block_height = self.config.LatestBlock.block.index
         while True:
             try:
-                if latest_block_height != self.config.LatestBlock.block.index:
-                    block = self.config.LatestBlock.block
-                    latest_consensus = await self.config.mongo.async_db.consensus.find_one({
-                        'index': block.index + 1,
-                        'block.version': CHAIN.get_version_for_height(block.index + 1),
-                        'ignore': {'$ne': True}
-                    })
-
-                    if not latest_consensus:
-                        await self.config.LatestBlock.block_checker()  # This will trigger mining pool to generate a new block to mine
-                        if not self.config.consensus.syncing:
-                            await self.config.nodeShared.send_block(self.config.LatestBlock.block)
-                            await self.config.websocketServer.send_block(self.config.LatestBlock.block)
-                for x in list(self.config.nodeServer.retry_messages):
+                for x in self.config.nodeServer.retry_messages.copy():
                     message = self.config.nodeServer.retry_messages.get(x)
                     if not message:
-                        del self.config.nodeServer.retry_messages[x]
+                        if x in self.config.nodeServer.retry_messages:
+                            del self.config.nodeServer.retry_messages[x]
                         continue
                     message.setdefault('retry_attempts', 0)
                     message['retry_attempts'] += 1
-                    for peer_cls in list(self.config.nodeServer.inbound_streams.keys()):
+                    for peer_cls in self.config.nodeServer.inbound_streams.keys().copy():
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
-                            if message['retry_attempts'] > 10:
-                                for y in list(self.config.nodeServer.retry_messages):
+                            if message['retry_attempts'] > 3:
+                                for y in self.config.nodeServer.retry_messages.copy():
                                     if y[0] == x[0]:
                                         del self.config.nodeServer.retry_messages[y]
                                 await self.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
@@ -237,17 +229,18 @@ class NodeApplication(Application):
                             else:
                                 await self.config.nodeShared.write_params(self.config.nodeServer.inbound_streams[peer_cls][x[0]], x[1], message)
 
-                for x in list(self.config.nodeClient.retry_messages):
+                for x in self.config.nodeClient.retry_messages.copy():
                     message = self.config.nodeClient.retry_messages.get(x)
                     if not message:
-                        del self.config.nodeClient.retry_messages[x]
+                        if x in self.config.nodeClient.retry_messages:
+                            del self.config.nodeClient.retry_messages[x]
                         continue
                     message.setdefault('retry_attempts', 0)
                     message['retry_attempts'] += 1
-                    for peer_cls in list(self.config.nodeClient.outbound_streams.keys()):
+                    for peer_cls in list(self.config.nodeClient.outbound_streams.keys()).copy():
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
-                            if message['retry_attempts'] > 10:
-                                for y in list(self.config.nodeClient.retry_messages):
+                            if message['retry_attempts'] > 3:
+                                for y in self.config.nodeClient.retry_messages.copy():
                                     if y[0] == x[0]:
                                         del self.config.nodeClient.retry_messages[y]
                                 await self.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])

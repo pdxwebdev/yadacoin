@@ -103,6 +103,10 @@ class GetStatusHandler(BaseHandler):
                 'num_messages': len(list(self.config.nodeClient.retry_messages))
             }
         }
+        status['slow_queries'] = {
+            'count': len(self.config.mongo.async_db.slow_queries),
+            'detail': self.config.mongo.async_db.slow_queries
+        }
         self.render_as_json(status, indent=4)
 
 
