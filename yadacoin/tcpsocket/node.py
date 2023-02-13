@@ -154,7 +154,7 @@ class NodeRPC(BaseRPC):
 
             i += 1
             if i >= 100:
-                self.config.app_log.info('process_block_queue: max loops exceeded, exiting')
+                self.config.app_log.info('process_transaction_queue: max loops exceeded, exiting')
                 return
 
             item = self.config.processing_queues.transaction_queue.pop()

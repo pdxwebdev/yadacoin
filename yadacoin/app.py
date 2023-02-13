@@ -291,17 +291,6 @@ class NodeApplication(Application):
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.transaction_queue.time_sum_end()
 
-            if 'pool' in self.config.modes:
-                try:
-                    if self.config.processing_queues.nonce_queue.queue:
-                        self.config.processing_queues.nonce_queue.time_sum_start()
-                        await self.config.mp.process_nonce_queue()
-                        self.config.processing_queues.nonce_queue.time_sum_end()
-                    self.config.health.nonce_processor.last_activity = int(time())
-                except:
-                    self.config.app_log.error(format_exc())
-                    self.config.processing_queues.nonce_queue.time_sum_end()
-
             try:
                 skip = False
                 if self.config.processing_queues.block_queue.queue:
@@ -415,6 +404,21 @@ class NodeApplication(Application):
 
             await tornado.gen.sleep(1200)
 
+    async def background_nonce_processor(self):
+        """Responsible for processing all share submissions from miners"""
+
+        while True:
+            try:
+                if self.config.processing_queues.nonce_queue.queue:
+                    self.config.processing_queues.nonce_queue.time_sum_start()
+                    await self.config.mp.process_nonce_queue()
+                    self.config.processing_queues.nonce_queue.time_sum_end()
+                self.config.health.nonce_processor.last_activity = int(time())
+            except:
+                self.config.app_log.error(format_exc())
+                self.config.processing_queues.nonce_queue.time_sum_end()
+            await tornado.gen.sleep(1)
+
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
         self.config.app_log = logging.getLogger("tornado.application")
@@ -498,6 +502,9 @@ class NodeApplication(Application):
                 tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)
 
                 tornado.ioloop.IOLoop.current().spawn_callback(self.background_message_sender)
+
+            if 'pool' in self.config.modes:
+                tornado.ioloop.IOLoop.current().spawn_callback(self.background_nonce_processor)
 
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")

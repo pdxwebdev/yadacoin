@@ -91,8 +91,8 @@ class MiningPool(object):
             await StratumServer.block_checker()
 
             i += 1
-            if i >= 100:
-                self.config.app_log.info('process_block_queue: max loops exceeded, exiting')
+            if i >= 1000:
+                self.config.app_log.info('process_nonce_queue: max loops exceeded, exiting')
                 return
 
             item = self.config.processing_queues.nonce_queue.pop()
