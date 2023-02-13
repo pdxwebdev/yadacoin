@@ -153,6 +153,14 @@ class NodeApplication(Application):
                 status['processing_queues'] = self.config.processing_queues.to_status_dict()
                 await self.config.health.check_health()
                 status['health'] = self.config.health.to_dict()
+                status['message_sender'] = {
+                    'nodeServer': {
+                        'num_messages': len(list(self.config.nodeServer.retry_messages))
+                    },
+                    'nodeClient': {
+                        'num_messages': len(list(self.config.nodeClient.retry_messages))
+                    }
+                }
                 if status['health']['status']:
                     self.config.app_log.info(json.dumps(status, indent=4))
                 else:
@@ -193,7 +201,6 @@ class NodeApplication(Application):
             await tornado.gen.sleep(1)
 
     async def background_message_sender(self):
-        retry_attempts = {}
         latest_block_height = self.config.LatestBlock.block.index
         while True:
             try:
@@ -213,19 +220,16 @@ class NodeApplication(Application):
                 for x in list(self.config.nodeServer.retry_messages):
                     message = self.config.nodeServer.retry_messages.get(x)
                     if not message:
+                        del self.config.nodeServer.retry_messages[x]
                         continue
-                    if x not in retry_attempts:
-                        retry_attempts[x] = 0
-                    retry_attempts[x] += 1
+                    message.setdefault('retry_attempts', 0)
+                    message['retry_attempts'] += 1
                     for peer_cls in list(self.config.nodeServer.inbound_streams.keys()):
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
-                            if retry_attempts[x] > 10:
+                            if message['retry_attempts'] > 10:
                                 for y in list(self.config.nodeServer.retry_messages):
                                     if y[0] == x[0]:
                                         del self.config.nodeServer.retry_messages[y]
-                                for y in list(retry_attempts):
-                                    if y[0] == x[0]:
-                                        del retry_attempts[y]
                                 await self.remove_peer(self.config.nodeServer.inbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:
@@ -236,19 +240,16 @@ class NodeApplication(Application):
                 for x in list(self.config.nodeClient.retry_messages):
                     message = self.config.nodeClient.retry_messages.get(x)
                     if not message:
+                        del self.config.nodeClient.retry_messages[x]
                         continue
-                    if x not in retry_attempts:
-                        retry_attempts[x] = 0
-                    retry_attempts[x] += 1
+                    message.setdefault('retry_attempts', 0)
+                    message['retry_attempts'] += 1
                     for peer_cls in list(self.config.nodeClient.outbound_streams.keys()):
                         if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
-                            if retry_attempts[x] > 10:
+                            if message['retry_attempts'] > 10:
                                 for y in list(self.config.nodeClient.retry_messages):
                                     if y[0] == x[0]:
                                         del self.config.nodeClient.retry_messages[y]
-                                for y in list(retry_attempts):
-                                    if y[0] == x[0]:
-                                        del retry_attempts[y]
                                 await self.remove_peer(self.config.nodeClient.outbound_streams[peer_cls][x[0]])
                                 continue
                             if len(x) > 3:

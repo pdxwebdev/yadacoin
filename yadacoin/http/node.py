@@ -95,6 +95,14 @@ class GetStatusHandler(BaseHandler):
         status['health'] = self.config.health.to_dict()
         status['latest_block'] = self.config.LatestBlock.block.to_dict()
         status['queues'] = self.config.processing_queues.to_status_dict()
+        status['message_sender'] = {
+            'nodeServer': {
+                'num_messages': len(list(self.config.nodeServer.retry_messages))
+            },
+            'nodeClient': {
+                'num_messages': len(list(self.config.nodeClient.retry_messages))
+            }
+        }
         self.render_as_json(status, indent=4)
 
 
