@@ -216,7 +216,7 @@ class NodeApplication(Application):
                         continue
                     message.setdefault('retry_attempts', 0)
                     message['retry_attempts'] += 1
-                    for peer_cls in self.config.nodeServer.inbound_streams.keys().copy():
+                    for peer_cls in list(self.config.nodeServer.inbound_streams.keys()).copy():
                         if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                             if message['retry_attempts'] > 3:
                                 for y in self.config.nodeServer.retry_messages.copy():
