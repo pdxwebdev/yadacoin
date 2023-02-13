@@ -57,6 +57,7 @@ class MiningPool(object):
 
     async def process_nonce_queue(self):
         item = self.config.processing_queues.nonce_queue.pop()
+        i = 0 # max loops
         while item:
             self.config.processing_queues.nonce_queue.inc_num_items_processed()
             body = item.body
@@ -88,6 +89,12 @@ class MiningPool(object):
                 await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
+
+            i += 1
+            if i >= 100:
+                self.config.app_log.info('process_block_queue: max loops exceeded, exiting')
+                return
+
             item = self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):

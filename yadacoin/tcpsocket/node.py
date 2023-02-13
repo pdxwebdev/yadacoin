@@ -147,10 +147,16 @@ class NodeRPC(BaseRPC):
     async def process_transaction_queue(self):
 
         item = self.config.processing_queues.transaction_queue.pop()
-
+        i = 0 # max loops
         while item:
             self.config.processing_queues.transaction_queue.inc_num_items_processed()
             self.process_transaction_queue_item(item)
+
+            i += 1
+            if i >= 100:
+                self.config.app_log.info('process_block_queue: max loops exceeded, exiting')
+                return
+
             item = self.config.processing_queues.transaction_queue.pop()
 
     async def process_transaction_queue_item(self, item):

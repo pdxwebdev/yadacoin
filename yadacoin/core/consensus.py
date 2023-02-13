@@ -90,9 +90,15 @@ class Consensus(object):
 
     async def process_block_queue(self):
         item = self.config.processing_queues.block_queue.pop()
+        i = 0 # max loops
         while item:
-            self.config.processing_queues.block_queue.inc_num_items_processed()
             await self.process_block_queue_item(item)
+
+            i += 1
+            if i >= 100:
+                self.config.app_log.info('process_block_queue: max loops exceeded, exiting')
+                return
+
             item = self.config.processing_queues.block_queue.pop()
 
     async def process_block_queue_item(self, item):
