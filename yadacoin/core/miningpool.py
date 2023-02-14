@@ -340,9 +340,9 @@ class MiningPool(object):
                 target = '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
         else:
             if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
-                target = self.config.pool_target3
+                target = hex(0x10000000000000001 // self.config.pool_diff)
             else:
-                target = self.config.pool_target
+                target = hex(0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000)
 
         res = {
             'job_id': job_id,
@@ -511,5 +511,4 @@ class MiningPool(object):
         await self.config.websocketServer.send_block(block)
 
         await self.refresh()
-
 
