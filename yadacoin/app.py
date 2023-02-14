@@ -408,6 +408,7 @@ class NodeApplication(Application):
         """Responsible for processing all share submissions from miners"""
 
         while True:
+            self.config.app_log.debug('background_nonce_processor')
             try:
                 if self.config.processing_queues.nonce_queue.queue:
                     self.config.processing_queues.nonce_queue.time_sum_start()
