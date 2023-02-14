@@ -80,9 +80,8 @@ class PoolHashRateHandler(BaseHandler):
                     'address_only': address
                 },
             ]
-        miner_diff = int(0x10000000000000001) // int(self.config.pool_target3, 16)
         number_of_shares = await self.config.mongo.async_db.shares.count_documents(query)
-        miner_hashrate = (number_of_shares * miner_diff) / miner_hashrate_seconds
+        miner_hashrate = (number_of_shares * self.config.pool_diff) / miner_hashrate_seconds
         self.render_as_json({'miner_hashrate': int(miner_hashrate)})
 
 class PoolScanMissedPayoutsHandler(BaseHandler):
