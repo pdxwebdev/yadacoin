@@ -67,10 +67,9 @@ class PoolInfoHandler(BaseWebHandler):
         ).sort([('index', -1)]).to_list(100)
         expected_blocks = 144
         mining_time_interval = 240
-        pool_share_diff3 = int(0x10000000000000001) // int(self.config.pool_target3, 16)
         shares_count = await self.config.mongo.async_db.shares.count_documents({'time': {'$gte': time.time() - mining_time_interval}})
         if shares_count > 0:
-            pool_hash_rate = (shares_count * pool_share_diff3) / mining_time_interval
+            pool_hash_rate = (shares_count * self.config.pool_diff) / mining_time_interval
         else:
             pool_hash_rate = 0
 
