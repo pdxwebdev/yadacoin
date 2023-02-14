@@ -5,6 +5,7 @@ from tornado.web import Application, StaticFileHandler
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.chain import CHAIN
 from yadacoin import version
+from yadacoin.core.latestblock import LatestBlock
 
 
 class BaseWebHandler(BaseHandler):
@@ -66,23 +67,20 @@ class PoolInfoHandler(BaseWebHandler):
         ).sort([('index', -1)]).to_list(100)
         expected_blocks = 144
         mining_time_interval = 240
+        pool_share_diff3 = int(0x10000000000000001) // int(self.config.pool_target3, 16)
         shares_count = await self.config.mongo.async_db.shares.count_documents({'time': {'$gte': time.time() - mining_time_interval}})
         if shares_count > 0:
-            pool_hash_rate = (shares_count * 69905) / mining_time_interval
+            pool_hash_rate = (shares_count * pool_share_diff3) / mining_time_interval
         else:
             pool_hash_rate = 0
 
-        net_blocks_found = self.config.mongo.async_db.blocks.find({'time': {'$gte': time.time() - ( 600 * 144 )}})
-        net_blocks_found = await net_blocks_found.to_list(length=expected_blocks*10)
-        if len(net_blocks_found) > 0:
-            avg_net_target = 0
-            for block in net_blocks_found:
-                avg_net_target += int(block['target'], 16)
-            avg_net_target = avg_net_target / len(net_blocks_found)
-            net_difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_net_target
-            network_hash_rate = ((len(net_blocks_found)/expected_blocks)*net_difficulty * 2**32 / 600)
+        net_blocks_found = await self.config.mongo.async_db.blocks.count_documents({'time': {'$gte': time.time() - (600 * 144)}})
+        if net_blocks_found > 0:
+            net_target = self.config.LatestBlock.block.target
+            net_difficulty = int(0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff) / int(net_target)
+            network_hash_rate = ((net_blocks_found / expected_blocks) * net_difficulty * 2**48 / int(0x100000000) / 600)
         else:
-            net_difficulty = 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff / 0xfffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+            net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
             network_hash_rate = 0
 
         miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'}) or {'value': 0}
@@ -114,6 +112,8 @@ class PoolInfoHandler(BaseWebHandler):
                 'reward': CHAIN.get_block_reward(self.config.LatestBlock.block.index),
                 'last_block': self.config.LatestBlock.block.time,
                 'hashes_per_second': network_hash_rate,
+                'hashes_per_second_khps': network_hash_rate / 1000,
+                'hashes_per_second_mhps': network_hash_rate / 1000000,
                 'difficulty': net_difficulty
             },
             'market': {
