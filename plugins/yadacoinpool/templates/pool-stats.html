@@ -33,6 +33,10 @@
             <h2>Network</h2>
             <h4 style="font-weight: bold;">Hash rate</h4 style="font-weight: bold;">
             <div id="network-hash-rate"></div>
+            <div id="network-hash-rate_khps"></div>
+            <div id="network-hash-rate_mhps"></div>
+            <h4 style="font-weight: bold;">Network Difficulty</h4 style="font-weight: bold;">
+            <div id="network-difficulty"></div>
             <h4 style="font-weight: bold;">Height</h4 style="font-weight: bold;">
             <div id="network-height"></div>
             <h4 style="font-weight: bold;">Reward</h4 style="font-weight: bold;">
@@ -83,7 +87,8 @@
                 $('#pool-blocks-found').html(data.pool.blocks_found);
                 $('#pool-min-payout').html(data.pool.min_payout);
                 $('#pool-url').html(data.pool.url);
-
+                
+                $('#network-difficulty').html(data.network.difficulty);
                 $('#network-height').html(data.network.height);
                 $('#network-reward').html(data.network.reward);
                 var newDate = new Date();
@@ -91,6 +96,8 @@
                 dateString = newDate.toUTCString();
                 $('#network-last-block').html(dateString);
                 $('#network-hash-rate').html(data.network.hashes_per_second.toFixed(0) + 'H/s');
+                $('#network-hash-rate_khps').html(data.network.hashes_per_second_khps.toFixed(2) + 'KH/s');
+                $('#network-hash-rate_mhps').html(data.network.hashes_per_second_mhps.toFixed(2) + 'MH/s');
 
                 $('#market-last-btc').html(data.market.last_btc);
             })
