@@ -150,7 +150,7 @@ class NodeRPC(BaseRPC):
         i = 0 # max loops
         while item:
             self.config.processing_queues.transaction_queue.inc_num_items_processed()
-            self.process_transaction_queue_item(item)
+            await self.process_transaction_queue_item(item)
 
             i += 1
             if i >= 100:
