@@ -150,7 +150,7 @@ class NodeRPC(BaseRPC):
         i = 0 # max loops
         while item:
             self.config.processing_queues.transaction_queue.inc_num_items_processed()
-            self.process_transaction_queue_item(item)
+            await self.process_transaction_queue_item(item)
 
             i += 1
             if i >= 100:
@@ -438,7 +438,7 @@ class NodeRPC(BaseRPC):
             await self.remove_peer(stream, close=False)
             return {}
 
-        if generic_peer.rid in self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__]:
+        if generic_peer.identity.username_signature in self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__]:
             await self.remove_peer(stream, close=False)
             return
 
@@ -599,5 +599,5 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             )
 
     async def capacity(self, body, stream):
-        NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][stream.peer.rid] = stream.peer
+        NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][stream.peer.identity.username_signature] = time.time()
         self.config.app_log.warning('{} at full capacity: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
