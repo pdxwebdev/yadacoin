@@ -168,7 +168,7 @@ class Peer:
         username_signatures = list(self.config.seed_gateways)
         first_number = seed_select
         num_reset = False
-        while self.config.seed_gateways[username_signatures[seed_select]].rid in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
+        while self.config.seed_gateways[username_signatures[seed_select]].identity.username_signature in self.config.nodeClient.outbound_ignore[SeedGateway.__name__]:
             seed_select += 1
             if seed_select >= len(username_signatures):
                 return None
@@ -190,11 +190,14 @@ class Peer:
         limit = self.__class__.type_limit(outbound_class)
 
         stream_collection = {**self.config.nodeClient.outbound_streams[outbound_class.__name__], **self.config.nodeClient.outbound_pending[outbound_class.__name__]}
-        await self.connect(stream_collection, limit, peers)
+        self.config.nodeClient.outbound_ignore[outbound_class.__name__] = {k:v for k, v in self.config.nodeClient.outbound_ignore[outbound_class.__name__].items() if (time.time() - v) < 30}
+        await self.connect(stream_collection, limit, peers, self.config.nodeClient.outbound_ignore[outbound_class.__name__])
 
-    async def connect(self, stream_collection, limit, peers):
+    async def connect(self, stream_collection, limit, peers, ignored_peers):
         if limit and len(stream_collection) < limit:
-            for peer in set(peers) - set(stream_collection):
+            for i, peer in enumerate(set(peers) - set(stream_collection) - set(ignored_peers)):
+                if i >= limit:
+                    break
                 tornado.ioloop.IOLoop.current().spawn_callback(self.config.nodeClient.connect, peers[peer])
 
     def to_dict(self):
