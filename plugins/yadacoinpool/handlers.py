@@ -5,7 +5,6 @@ from tornado.web import Application, StaticFileHandler
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.chain import CHAIN
 from yadacoin import version
-from yadacoin.core.latestblock import LatestBlock
 
 
 class BaseWebHandler(BaseHandler):

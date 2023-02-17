@@ -125,22 +125,32 @@ class Config(object):
         inbound_num_peers = 0
         for y in list(self.nodeServer.inbound_streams.values()):
             inbound_num_peers += len(y)
+        inbound_num_peers_pending = 0
+        for y in list(self.nodeServer.inbound_pending.values()):
+            inbound_num_peers_pending += len(y)
         outbound_num_peers = 0
         for y in list(self.nodeClient.outbound_streams.values()):
             outbound_num_peers += len(y)
+        outbound_num_peers_ignored = 0
+        for y in list(self.nodeClient.outbound_ignore.values()):
+            outbound_num_peers_ignored += len(y)
+        outbound_num_peers_pending = 0
+        for y in list(self.nodeClient.outbound_pending.values()):
+            outbound_num_peers_pending += len(y)
         status = {
             'version': '.'.join([str(x) for x in self.protocol_version]),
             'network': self.network,
             'peer_type': self.peer_type,
-            # 'connections':{'outgoing': -1, 'ingoing': -1, 'max': -1},
             'username': self.username,
             'inbound_peers': inbound_num_peers,
+            'inbound_pending': inbound_num_peers_pending,
             'outbound_peers': outbound_num_peers,
+            'outbound_ignore': outbound_num_peers_ignored,
+            'outbound_pending': outbound_num_peers_pending,
             'pool': pool_status,
             'uptime': '{:d}:{:02d}:{:02d}'.format(h, m, s),
             'height': self.LatestBlock.block.index
         }
-        # TODO: add uptime in human readable format
         return status
 
     def get_identity(self):
@@ -297,7 +307,6 @@ class Config(object):
         cls.max_miners = config.get('max_miners', 100)
         cls.max_peers = config.get('max_peers', 20)
         cls.pool_diff = config.get('pool_diff', 100000)
-        
 
         cls.restrict_graph_api = config.get('restrict_graph_api', False)
 

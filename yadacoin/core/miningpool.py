@@ -146,10 +146,7 @@ class MiningPool(object):
 
         accepted = False
 
-        if self.config.network == 'mainnet':
-            target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-        elif self.config.network == 'regnet':
-            target = 0x000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+        target = int('0x' + (f'0000000000000000000000000000000000000000000000000000000000000000'+f'{hex(0x10000000000000001 // self.config.pool_diff)[2:64]}FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'[:64])[-64:], 16)
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
             test_hash = int(block_candidate.little_hash(), 16)
@@ -333,16 +330,10 @@ class MiningPool(object):
         extra_nonce = hex(random.randrange(1000000,1000000000000000))[2:]
         header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
 
-        if self.config.network == 'regnet':
-            if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
-                target = '000FFFFFFFFFFFFF'
-            else:
-                target = '000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'
+        if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
+            target = hex(0x10000000000000001 // self.config.pool_diff)
         else:
-            if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
-                target = hex(0x10000000000000001 // self.config.pool_diff)
-            else:
-                target = hex(0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000)
+            target = hex(0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000)
 
         res = {
             'job_id': job_id,
