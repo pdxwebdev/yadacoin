@@ -243,7 +243,7 @@ class CHAIN(object):
         if current_block_time > 2 * target_time:
             current_target = block.target
             # Linear decrease to reach max target after one hour block time.
-            new_target = int(current_target + current_target * (current_block_time - 600) / 600)
+            new_target = int(current_target + current_target * (current_block_time - target_time) / current_block_time)
             # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
             adjusted = new_target
             # To be used later on, once the rest is calc'd
