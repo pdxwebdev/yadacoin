@@ -402,8 +402,6 @@ class Config(object):
             'payout_frequency': self.payout_frequency,
             'max_miners': self.max_miners,
             'max_peers': self.max_peers,
-            'pool_target3': self.pool_target3,
-            'pool_target': self.pool_target,
             'restrict_graph_api': self.restrict_graph_api,
             'email': self.email.to_dict(),
             'skynet_url': self.skynet_url,
