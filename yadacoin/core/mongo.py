@@ -266,7 +266,7 @@ class Collection:
             self._config.app_log.warning(f'SLOW {message}')
             self._config.mongo.async_db.slow_queries.append(message)
         else:
-            if hasattr(self.config, 'mongo_debug') and self._config.mongo_debug:
+            if hasattr(self._config, 'mongo_debug') and self._config.mongo_debug:
                 self._config.app_log.debug(message)
 
     async def find_one(self, *args, **kwargs):
