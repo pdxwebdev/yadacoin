@@ -236,6 +236,16 @@ class AffiliateContract(Contract):
             raise Exception('Referee is not for this contract')
 
     async def verify_confirmation(self, contract_txn, trigger_txn):
+        is_expired_payout = False
+        creator_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(contract_txn.public_key)))
+        contract_address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.identity.public_key)))
+        if self.expiry <= self.config.LatestBlock.block.index:
+            for output in trigger_txn.outputs:
+                if creator_address == output.to:
+                    is_expired_payout = True
+                if output.to != creator_address and output.to != contract_address:
+                    is_expired_payout = False
+                    break
 
         if trigger_txn.requested_rid != contract_txn.requested_rid:
             raise Exception('Referee is not for this contract')
@@ -247,9 +257,10 @@ class AffiliateContract(Contract):
         if not confirmation:
             raise Exception('Trigger not confirmed')
 
-        referrer = await self.get_referrer(trigger_txn)
-        if not referrer:
-            raise Exception('Referrer not found')
+        if not is_expired_payout:
+            referrer = await self.get_referrer(trigger_txn)
+            if not referrer:
+                raise Exception('Referrer not found')
 
     async def verify_payout_generated_already(self, contract_txn, trigger_txn, mempool_txns):
         for participant in [self.referrer, self.referrer]:
