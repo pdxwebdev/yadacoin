@@ -243,10 +243,10 @@ class CHAIN(object):
         adjusted = False
 
         if current_block_time > 2 * target_time:
-            if block.height >= CHAIN.FORK_SMOOTH_RETARGET:
-                current_target = block.target
+            if block.index >= CHAIN.FORK_SMOOTH_RETARGET:
+                current_target = last_block.target
                 # Linear decrease to reach max target after one hour block time.
-                new_target = int((current_target + current_target) * ((current_block_time - target_time) / current_block_time))
+                new_target = int(current_target + current_target * ((current_block_time - target_time) / current_block_time))
                 # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
                 adjusted = new_target
                 # To be used later on, once the rest is calc'd
@@ -255,6 +255,7 @@ class CHAIN(object):
                 delta = max_target - latest_target
                 # Linear decrease to reach max target after one hour block time.
                 new_target = int(latest_target + delta * current_block_time / 3600)
+                adjusted = new_target
 
         start_index = last_block.index
 
