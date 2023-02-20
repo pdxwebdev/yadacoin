@@ -696,23 +696,13 @@ class Peers:
                 }),
                 Seed.from_dict({
                     'host': 'seed.hashyada.com',
-                    'port': 8000,
+                    'port': 8002,
                     'identity': {
                         "username": "",
                         "username_signature": "MEQCIHrMlgx3RzvLg+8eU1LXfY5QLk2le1mOUM2JLnRSSqTRAiByXKWP7cKasX2kB9VqIm43wT004evxNRQX+YYl5I30jg==",
                         "public_key": "0254c7e913ebf0c49c80129c7acc306033a62ac52219ec03e41a6f0a2549b91658"
                     },
                     "seed_gateway": "MEQCIF3Wlbk99pgxKVrb6Iqdd6L5AJMJgVhc9rrB64P+oHhKAiAfTDCx1GaSWYUyX69k+7GuctPeEclpdXCbR0vly/q77A=="
-                }),
-                Seed.from_dict({
-                    'host': 'seed.sinergia.gg',
-                    'port': 8000,
-                    'identity': {
-                        "username": "",
-                        "username_signature": "MEUCIQCRZgPdbNkrE75IrmD0bzK1na8Zu+W5t5CVVfYUifZ1FgIgcmnZB9ZthCCd6mpN0MKRWhrk2OZJww25Q2yUhAZ7bTQ=",
-                        "public_key": "03f924bc2525807d873cac3fc38407014965db83fb83e9644ce312a4d500b79a94"
-                    },
-                    "seed_gateway": "MEQCICBbKFIaKbSK4RkWOKrKNhnFp0gP5Z2NvVBjD4zf2SxJAiAZZnhVzUkLKDpIayPQWeoTIGacM8LOk+sNwuAgtsk44g=="
                 }),
             ]
         return OrderedDict({x.identity.username_signature: x for x in seeds})
@@ -738,23 +728,13 @@ class Peers:
                 }),
                 SeedGateway.from_dict({
                     'host': 'seedgateway.hashyada.com',
-                    'port': 8000,
+                    'port': 8004,
                     'identity': {
                         "username": "",
                         "username_signature": "MEQCIF3Wlbk99pgxKVrb6Iqdd6L5AJMJgVhc9rrB64P+oHhKAiAfTDCx1GaSWYUyX69k+7GuctPeEclpdXCbR0vly/q77A==",
                         "public_key": "0399f61da3f69d3e1600269c9a946a4c21d3a933d5362f9db613d33fb6a0cb164e"
                     },
                     "seed": "MEQCIHrMlgx3RzvLg+8eU1LXfY5QLk2le1mOUM2JLnRSSqTRAiByXKWP7cKasX2kB9VqIm43wT004evxNRQX+YYl5I30jg=="
-                }),
-                SeedGateway.from_dict({
-                    'host': 'seedgt.sinergia.gg',
-                    'port': 8000,
-                    'identity': {
-                        "username": "",
-                        "username_signature": "MEQCICBbKFIaKbSK4RkWOKrKNhnFp0gP5Z2NvVBjD4zf2SxJAiAZZnhVzUkLKDpIayPQWeoTIGacM8LOk+sNwuAgtsk44g==",
-                        "public_key": "033752c2fce00511a4386d4cababa1497b5092d951cc89f04d7380461dd4a15b26"
-                    },
-                    "seed": "MEUCIQCRZgPdbNkrE75IrmD0bzK1na8Zu+W5t5CVVfYUifZ1FgIgcmnZB9ZthCCd6mpN0MKRWhrk2OZJww25Q2yUhAZ7bTQ="
                 }),
             ]
         return OrderedDict({x.identity.username_signature: x for x in seed_gateways})
@@ -780,23 +760,13 @@ class Peers:
                 }),
                 ServiceProvider.from_dict({
                     'host': 'serviceprovider.hashyada.com',
-                    'port': 8000,
+                    'port': 8006,
                     'identity': {
                         "username": "",
                         "username_signature": "MEQCIDs4GfdyUMFMptmtXsn2vbgQ+rIBfT50nkm++v9swNsjAiA15mHrFehtusgqszbMI5S3nIXQYBUM8Q3smZ615PjL1w==",
                         "public_key": "023c1bb0de2b8b10f4ff84e13dc6c8d02e113ed297b83e561ca6b302cb70377f0e"
                     },
                     "seed_gateway": "MEQCIF3Wlbk99pgxKVrb6Iqdd6L5AJMJgVhc9rrB64P+oHhKAiAfTDCx1GaSWYUyX69k+7GuctPeEclpdXCbR0vly/q77A=="
-                }),
-                ServiceProvider.from_dict({
-                    'host': 'yda.sinergia.gg',
-                    'port': 8000,
-                    'identity': {
-                        "username": "",
-                        "username_signature": "MEUCIQDB43E+4zCPX6ScXxN/3FQeOTDlulDXRp+73eJvLheRgAIgUUErkU2eRx9NnNdgkHHJzBcQpJEEgI4lE9cP4MqDuMg=",
-                        "public_key": "0258bd03df466316597268055e5516c0755d3b302b4a5c4fc54a1a49c18893ad57"
-                    },
-                    "seed_gateway": "MEQCICBbKFIaKbSK4RkWOKrKNhnFp0gP5Z2NvVBjD4zf2SxJAiAZZnhVzUkLKDpIayPQWeoTIGacM8LOk+sNwuAgtsk44g=="
                 }),
             ]
         return OrderedDict({x.identity.username_signature: x for x in service_providers})

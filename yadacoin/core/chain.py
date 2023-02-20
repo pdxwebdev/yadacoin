@@ -25,6 +25,7 @@ class CHAIN(object):
     SPECIAL_MIN_FORK = 38600
     TXN_V3_FORK = 269600
     TXN_V3_FORK_CHECK_MINER_SIGNATURE = 270700
+    FORK_SMOOTH_RETARGET = 422110
 
     RETARGET_PERIOD = 2016  # blocks
     TWO_WEEKS = 1209600  # seconds
@@ -107,7 +108,7 @@ class CHAIN(object):
             special_target = int(target * (target_factor * 4))
         elif int(block_height) >= cls.FORK_10_MIN_BLOCK:
             special_target = int(target) # we handle the adjustment in get_target now.
-        elif int(block_height) >= cls.POW_FORK_V3 and int(block_height) < cls.FORK_10_MIN_BLOCK:
+        elif int(block_height) >= cls.POW_FORK_V3:
             # from 60k, POW_FORK_V3, we aim to reach MAX_TARGET_V3 after MAX_TARGET_AFTER_V3
             if delta_t >= 2 * cls.MAX_TARGET_AFTER_V3:
                 # but after twice that time, if still stuck - hard block - allow anything (MAX_TARGET)
@@ -240,13 +241,20 @@ class CHAIN(object):
         # decrease after 2x target - can be 3 as well
         current_block_time = int(block.time) - int(last_block.time)
         adjusted = False
+
         if current_block_time > 2 * target_time:
-            current_target = block.target
-            # Linear decrease to reach max target after one hour block time.
-            new_target = int(current_target + current_target * (current_block_time - target_time) / current_block_time)
-            # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
-            adjusted = new_target
-            # To be used later on, once the rest is calc'd
+            if block.height >= CHAIN.FORK_SMOOTH_RETARGET:
+                current_target = block.target
+                # Linear decrease to reach max target after one hour block time.
+                new_target = int((current_target + current_target) * ((current_block_time - target_time) / current_block_time))
+                # print("adjust", current_block_time, MinerSimulator.HEX(new_target), latest_target)
+                adjusted = new_target
+                # To be used later on, once the rest is calc'd
+            else:
+                latest_target = last_block.target
+                delta = max_target - latest_target
+                # Linear decrease to reach max target after one hour block time.
+                new_target = int(latest_target + delta * current_block_time / 3600)
 
         start_index = last_block.index
 

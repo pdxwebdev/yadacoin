@@ -230,7 +230,7 @@ class Mongo(object):
 class AsyncDB:
     def __init__(self, async_client):
         self.async_client = async_client
-        self.config = get_config()
+        self._config = get_config()
         self.slow_queries = []
 
     def __getattr__(self, __name: str):
@@ -238,10 +238,10 @@ class AsyncDB:
 
     async def list_collection_names(self, *args, **kwargs):
         start_time = time()
-        self._db = self.async_client[self.config.database]
+        self._db = self.async_client[self._config.database]
         result = await self._db.list_collection_names()
         if time() - start_time > 3:
-            self.config.app_log.warning(f'SLOW QUERY: find_one {args}, {kwargs}')
+            self._config.app_log.warning(f'SLOW QUERY: find_one {args}, {kwargs}')
         return result
 
     def __getitem__(self, name):
@@ -249,8 +249,8 @@ class AsyncDB:
 
 class Collection:
     def __init__(self, async_client, collection):
-        self.config = get_config()
-        self._db = async_client[self.config.database]
+        self._config = get_config()
+        self._db = async_client[self._config.database]
         self.collection = collection
 
     def set_start_time(self):
@@ -263,11 +263,11 @@ class Collection:
         self.set_duration()
         message = f'QUERY: {query_type} {self.collection} {args}, {kwargs}, duration: {self.duration}'
         if self.duration > 3:
-            self.config.app_log.warning(f'SLOW {message}')
-            self.config.mongo.async_db.slow_queries.append(message)
+            self._config.app_log.warning(f'SLOW {message}')
+            self._config.mongo.async_db.slow_queries.append(message)
         else:
-            if self.config.mongo_debug:
-                self.config.app_log.debug(message)
+            if hasattr(self.config, 'mongo_debug') and self._config.mongo_debug:
+                self._config.app_log.debug(message)
 
     async def find_one(self, *args, **kwargs):
         self.set_start_time()
