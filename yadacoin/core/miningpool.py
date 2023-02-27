@@ -332,8 +332,10 @@ class MiningPool(object):
 
         if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
             target = hex(0x10000000000000001 // self.config.pool_diff)
+        elif self.config.pool_diff <= 69905:
+            target = hex(0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000)[2:].zfill(48)
         else:
-            target = '-' + (f'000000000000000000000000000000000000000000000000'+f'{hex(0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000)[3:48]}000000000000000000000000000000000000000000000000'[:12])[-48:]
+            target = '-' + hex(0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000)[3:].zfill(48)
 
         res = {
             'job_id': job_id,
