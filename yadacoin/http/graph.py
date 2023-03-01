@@ -273,6 +273,11 @@ class GraphTransactionHandler(BaseGraphHandler):
             ):
                 stream = websocket_streams[x.requested_rid]
 
+            for output in x.outputs:
+                if output.to in websocket_streams:
+                    stream = websocket_streams[output.to]
+
+
             if stream:
                 await stream.write_params(
                     'newtxn',

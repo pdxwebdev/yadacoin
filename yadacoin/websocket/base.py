@@ -1,6 +1,7 @@
 import json
 import base64
 import functools
+import hashlib
 from traceback import format_exc
 
 from tornado import gen, ioloop
@@ -16,6 +17,8 @@ from yadacoin.core.config import get_config
 from yadacoin.core.transaction import Transaction
 from yadacoin.tcpsocket.base import BaseRPC
 from asyncio import sleep as async_sleep
+from ecdsa import VerifyingKey, SECP256k1
+from ecdsa.util import sigdecode_der
 
 class RCPWebSocketServer(WebSocketHandler):
     inbound_streams = {}
@@ -64,13 +67,13 @@ class RCPWebSocketServer(WebSocketHandler):
             RCPWebSocketServer.inbound_streams[User.__name__][rid] = self
 
         try:
-            result = verify_signature(
-                base64.b64decode(peer.identity.username_signature),
-                peer.identity.username.encode(),
-                bytes.fromhex(peer.identity.public_key)
-            )
+            vk = VerifyingKey.from_string(bytes.fromhex(peer.identity.public_key), curve=SECP256k1)
+
+            result = vk.verify(base64.b64decode(peer.identity.username_signature), peer.identity.username.encode(), hashlib.sha256, sigdecode=sigdecode_der)
+
             if not result:
                 self.close()
+                return
         except:
             self.config.app_log.error('invalid peer identity signature')
             self.close()
@@ -246,6 +249,16 @@ class RCPWebSocketServer(WebSocketHandler):
         #                     'group_user_count': len(RCPWebSocketServer.inbound_streams[Group.__name__][group_id_attr])
         #                 }, body=body)
 
+        if self.config.address_is_valid(body.get('params', {}).get('username')):
+            address = body.get('params', {}).get('username')
+            RCPWebSocketServer.inbound_streams[User.__name__][address] = self
+            members = {address: self.peer.identity.to_dict}
+
+            await self.write_result('join_confirmed', {
+                'members': members
+            }, body=body)
+            return
+
         group = Identity.from_dict(body.get('params'))
 
         members = {}
@@ -339,8 +352,7 @@ class RCPWebSocketServer(WebSocketHandler):
 
     def append_to_group(self, group, collection):
         group_rid = group.generate_rid(group.username_signature, collection)
-        if group_rid not in RCPWebSocketServer.inbound_streams[Group.__name__]:
-            RCPWebSocketServer.inbound_streams[Group.__name__][group_rid] = {}
+        RCPWebSocketServer.inbound_streams[Group.__name__].setdefault(group_rid, {})
         peer_rid = self.peer.identity.generate_rid(self.peer.identity.username_signature, collection)
         RCPWebSocketServer.inbound_streams[Group.__name__][group_rid][peer_rid] = self
         self.peer.groups[group_rid] = Group(identity=group)

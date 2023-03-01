@@ -18,6 +18,8 @@ from yadacoin.core.identity import Identity
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.config import get_config
 from yadacoin.core.chain import CHAIN
+from ecdsa import VerifyingKey, SECP256k1
+from ecdsa.util import sigencode_der, sigdecode_der
 
 
 def fix_float1(value):
@@ -395,13 +397,28 @@ class Transaction(object):
                 raise Exception()
         except:
             try:
-                result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+                vk = VerifyingKey.from_string(
+                    bytes.fromhex(self.public_key),
+                    curve=SECP256k1
+                )
+                result = vk.verify(
+                    base64.b64decode(self.transaction_signature),
+                    self.hash.encode(),
+                    hashlib.sha256,
+                    sigdecode=sigdecode_der
+                )
                 if not result:
                     print("t verify2")
-                    raise
+                    raise Exception()
             except:
-                print("t verify3")
-                raise InvalidTransactionSignatureException("transaction signature did not verify")
+                    try:
+                        result = VerifyMessage(address, BitcoinMessage(self.hash, magic=''), self.transaction_signature)
+                        if not result:
+                            print("t verify3")
+                            raise
+                    except:
+                        print("t verify3")
+                        raise InvalidTransactionSignatureException("transaction signature did not verify")
 
         relationship = self.relationship
         if isinstance(self.relationship, Contract):

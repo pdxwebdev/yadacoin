@@ -15,6 +15,7 @@ from yadacoin.http.base import BaseHandler
 from yadacoin.core.transaction import Transaction, NotEnoughMoneyException
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.core.transactionutils import TU
+from yadacoin.core.identity import Identity
 
 
 class WalletHandler(BaseHandler):
@@ -407,6 +408,121 @@ class ReceivedTransactionsView(BaseHandler):
         })
 
 
+class TransactionConfirmationsHandler(BaseHandler):
+    async def get(self):
+        txn_id = self.get_query_argument('id').replace(' ', '+')
+        result = await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn_id}, {'_id': 0}, sort=[('transactions.time', -1)])
+        return self.render_as_json({'confirmations': self.config.LatestBlock.block.index - result['index'] if result else 0})
+
+    async def post(self):
+        data = json.loads(self.request.body)
+        results = []
+        for txn_id in data['txn_ids']:
+            result = await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn_id}, {'_id': 0}, sort=[('transactions.time', -1)])
+            results.append({
+                'txn_id': txn_id,
+                'confirmations': self.config.LatestBlock.block.index - result['index'] if result else 0,
+            })
+        return self.render_as_json({'confirmations': results})
+
+
+class PaymentHandler(BaseHandler):
+    async def get(self):
+        newer_than = self.get_query_argument('newer_than', None)
+        to_address = self.get_query_argument('to_address', None)
+        from_address = self.get_query_argument('from_address', None)
+        try:
+            identity = Identity.from_dict(json.loads(self.get_secure_cookie('identity')))
+        except:
+            return self.redirect('/logout')
+        query = [
+            {
+                '$match': {
+                    '$and': [
+                        {
+                            'transactions.outputs.to': to_address
+                        },
+                        {
+                            'transactions.outputs.to': from_address or to_address
+                        },
+                    ]
+                }
+            },
+            {
+                '$unwind': '$transactions'
+            },
+            {
+                '$match': {
+                    '$and': [
+                        {
+                            'transactions.outputs.to': to_address
+                        },
+                        {
+                            'transactions.outputs.to': from_address or to_address
+                        },
+                    ]
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "txn": "$transactions"
+                }
+            }
+        ]
+        if newer_than:
+            query.append({
+                '$match': {
+                    'txn.time': {'$gt': int(newer_than)}
+                }
+            })
+        query.append({
+            '$sort': {'txn.time': -1}
+        })
+        result = self.config.mongo.async_db.blocks.aggregate(query)
+        pending_query = [
+            {
+                '$match': {
+                    '$and': [
+                        {
+                            'outputs.to': to_address
+                        },
+                        {
+                            'outputs.to': from_address or to_address
+                        },
+                    ]
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    'pending': True,
+                    'outputs': '$outputs',
+                    'inputs': '$inputs',
+                    'id': '$id',
+                    'hash': '$hash',
+                    'time': '$time',
+                    'public_key': '$public_key'
+                }
+            }
+        ]
+        if newer_than:
+            pending_query.append({
+                '$match': {
+                    'time': {
+                        '$gt': int(newer_than)
+                    }
+                }
+            })
+        pending_query.append({
+            '$sort': {'time': -1}
+        })
+        pending = self.config.mongo.async_db.miner_transactions.aggregate(pending_query)
+        mempool = [x async for x in pending if to_address != str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['public_key'])))]
+        blockchain = [x['txn'] async for x in result if to_address != str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(x['txn']['public_key'])))]
+        return self.render_as_json({'payments': blockchain + mempool})
+
+
 WALLET_HANDLERS = [
     (r'/wallet', WalletHandler),
     (r'/generate-wallet', GenerateWalletHandler),
@@ -422,4 +538,6 @@ WALLET_HANDLERS = [
     (r'/get-past-sent-txns', SentTransactionsView),
     (r'/get-past-pending-received-txns', ReceivedPendingTransactionsView),
     (r'/get-past-received-txns', ReceivedTransactionsView),
+    (r'/get-transaction-confirmations', TransactionConfirmationsHandler),
+    (r'/payment', PaymentHandler),
 ]

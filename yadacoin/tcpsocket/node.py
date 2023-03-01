@@ -141,6 +141,10 @@ class NodeRPC(BaseRPC):
         if txn.rid in ws_users:
             peer_stream = ws_users[txn.rid]
 
+        for output in txn.outputs:
+            if output.to in ws_users:
+                peer_stream = ws_users[output.to]
+
         if peer_stream:
             await peer_stream.newtxn(body, source='tcpsocket')
 

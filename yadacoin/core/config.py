@@ -1,6 +1,8 @@
 import binascii
 import hashlib
 import json
+import base64
+import requests
 from logging import getLogger
 from time import time
 
@@ -10,6 +12,8 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 from mnemonic import Mnemonic
 from yadacoin import version
+from ecdsa import VerifyingKey, SECP256k1
+from ecdsa.util import sigdecode_der
 
 CONFIG = None
 
@@ -39,6 +43,8 @@ class Config(object):
         self.private_key = config['private_key']
         self.wif = self.to_wif(self.private_key)
         self.username_signature = self.get_username_signature()
+        vk2 = VerifyingKey.from_string(bytes.fromhex(self.public_key), curve=SECP256k1)
+        vk2.verify(base64.b64decode(self.username_signature), self.username.encode(), hashlib.sha256, sigdecode=sigdecode_der)
 
         self.mongodb_host = config['mongodb_host']
         self.database = config['database']
@@ -122,6 +128,12 @@ class Config(object):
             pool_status = await self.pool_server.status()
         m, s = divmod(int(time() - self.start_time), 60)
         h, m = divmod(m, 60)
+        wsinbound_num_peers = 0
+        for y in list(self.websocketServer.inbound_streams.values()):
+            wsinbound_num_peers += len(y)
+        wsinbound_num_peers_pending = 0
+        for y in list(self.websocketServer.inbound_pending.values()):
+            wsinbound_num_peers_pending += len(y)
         inbound_num_peers = 0
         for y in list(self.nodeServer.inbound_streams.values()):
             inbound_num_peers += len(y)
@@ -142,6 +154,8 @@ class Config(object):
             'network': self.network,
             'peer_type': self.peer_type,
             'username': self.username,
+            'websocket_inbound_peers': wsinbound_num_peers,
+            'websocket_inbound_pending': wsinbound_num_peers_pending,
             'inbound_peers': inbound_num_peers,
             'inbound_pending': inbound_num_peers_pending,
             'outbound_peers': outbound_num_peers,
@@ -264,6 +278,7 @@ class Config(object):
 
     @classmethod
     def from_dict(cls, config):
+        from yadacoin.core.transactionutils import TU
         cls.modes = config.get('modes', ['node', 'web', 'pool'])
         cls.root_app = config.get('root_app', '')
         cls.seed = config.get('seed', '')
@@ -363,6 +378,18 @@ class Config(object):
         final_key = extended_key+second_sha256[:8]
         wif = base58.b58encode(binascii.unhexlify(final_key)).decode('utf-8')
         return wif
+
+    def get_price(self):
+        def get_ticker():
+            return requests.get('https://api.coingecko.com/api/v3/simple/price?ids=yadacoin&vs_currencies=usd').json()
+
+        if not hasattr(self, 'ticker'):
+            self.ticker = get_ticker()
+            self.last_update = time()
+        if (time() - self.last_update) > (600 * 6):
+            self.ticker = get_ticker()
+            self.last_update = time()
+        return self.ticker['yadacoin']['usd']
 
     def to_dict(self):
         return {
