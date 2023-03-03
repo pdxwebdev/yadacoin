@@ -383,6 +383,19 @@ class NodeRPC(BaseRPC):
             stream.close()
             return {}
         generic_peer = Peer.from_dict(params.get('peer'))
+        if self.config.LatestBlock.block.index >= CHAIN.REQUIRE_NODE_VERSION_566:
+            if generic_peer.node_version[0] < 5:
+                await self.write_result(stream, 'version_too_old', {}, body['id'])
+                stream.close()
+                return {}
+            elif generic_peer.node_version[0] == 5 and generic_peer.node_version[1] < 6:
+                await self.write_result(stream, 'version_too_old', {}, body['id'])
+                stream.close()
+                return {}
+            elif generic_peer.node_version[0] == 5 and generic_peer.node_version[1] == 6 and generic_peer.node_version[2] < 6:
+                await self.write_result(stream, 'version_too_old', {}, body['id'])
+                stream.close()
+                return {}
         peerCls = None
         if isinstance(self.config.peer, Seed):
 

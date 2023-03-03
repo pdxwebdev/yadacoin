@@ -71,7 +71,8 @@ class Config(object):
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
         self.outgoing_blacklist.append("{}:{}".format(self.peer_host, self.peer_port))
-        self.protocol_version = version
+        self.protocol_version = 3
+        self.node_version = version
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
         self.consensus = None
@@ -150,7 +151,8 @@ class Config(object):
         for y in list(self.nodeClient.outbound_pending.values()):
             outbound_num_peers_pending += len(y)
         status = {
-            'version': '.'.join([str(x) for x in self.protocol_version]),
+            'version': '.'.join([str(x) for x in self.node_version]),
+            'protocol_version': self.protocol_version,
             'network': self.network,
             'peer_type': self.peer_type,
             'username': self.username,

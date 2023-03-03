@@ -635,7 +635,8 @@ class NodeApplication(Application):
             'http_host': self.config.ssl.common_name or self.config.peer_host,
             'http_port': self.config.ssl.port or self.config.serve_port,
             'secure': self.config.ssl.is_valid(),
-            'protocol_version': 3
+            'protocol_version': 3,
+            'node_version': self.config.node_version
         }
 
         if my_peer.get('peer_type') == 'seed':
