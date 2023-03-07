@@ -42,7 +42,7 @@ class Peer:
         self.app_log = getLogger("tornado.application")
         self.protocol_version = protocol_version
         self.authenticated = False
-        self.node_version = tuple(node_version)
+        self.node_version = tuple([int(x) for x in node_version])
 
     @classmethod
     def from_dict(cls, peer, is_me=False):
