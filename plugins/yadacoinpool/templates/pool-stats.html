@@ -74,7 +74,15 @@
     <script type="text/javascript">
         $(document).ready(function() {
             $.get('/pool-info').then((data) => {
-                $('#pool-hash-rate').html(data.pool.hashes_per_second.toFixed(0) + 'H/s');
+                if(data.pool.hashes_per_second < 1000) {
+                    $('#pool-hash-rate').html(data.pool.hashes_per_second + ' H/s');
+                }
+                else if(data.pool.hashes_per_second >= 1000 && data.pool.hashes_per_second < 1000000) {
+                    $('#pool-hash-rate').html((data.pool.hashes_per_second / 1000).toFixed(2) + ' KH/s');
+                }
+                else if(data.pool.hashes_per_second >= 1000000) {
+                    $('#pool-hash-rate').html((data.pool.hashes_per_second / 1000000).toFixed(2) + ' MH/s');
+                }
                 if(data.pool.last_five_blocks.length > 0) {
                     var newDate = new Date();
                     newDate.setTime(data.pool.last_five_blocks[0].timestamp*1000);
@@ -94,10 +102,15 @@
                 newDate.setTime(data.network.last_block*1000);
                 dateString = newDate.toUTCString();
                 $('#network-last-block').html(dateString);
-                $('#network-hash-rate').html(data.network.hashes_per_second.toFixed(0) + 'H/s');
-                $('#network-hash-rate_khps').html(data.network.hashes_per_second_khps.toFixed(2) + 'KH/s');
-                $('#network-hash-rate_mhps').html(data.network.hashes_per_second_mhps.toFixed(2) + 'MH/s');
-
+                if(data.network.hashes_per_second < 1000) {
+                    $('#network-hash-rate').html(data.network.hashes_per_second.toFixed(0) + ' H/s');
+                }
+                else if(data.network.hashes_per_second >= 1000 && data.network.hashes_per_second < 1000000) {
+                    $('#network-hash-rate').html((data.network.hashes_per_second / 1000).toFixed(2) + ' KH/s');
+                }
+                else if(data.network.hashes_per_second >= 1000000) {
+                    $('#network-hash-rate').html((data.network.hashes_per_second / 1000000).toFixed(2) + ' MH/s');
+                }
                 $('#market-last-btc').html(data.market.last_btc);
             })
             $('#form').submit(function(e) {
@@ -125,7 +138,15 @@
                     }
                 });
                 $.get('/hashrate-for-address?address=' + $('#address').val()).then((data) => {
-                    $('#hash-rate').html(data.miner_hashrate + 'H/s');
+                    if(data.miner_hashrate < 1000) {
+                        $('#hash-rate').html(data.miner_hashrate + ' H/s');
+                    }
+                    else if(data.miner_hashrate >= 1000 && data.miner_hashrate < 1000000) {
+                        $('#hash-rate').html((data.miner_hashrate / 1000).toFixed(2) + ' KH/s');
+                    }
+                    else if(data.miner_hashrate >= 1000000) {
+                        $('#hash-rate').html((data.miner_hashrate / 1000000).toFixed(2) + ' MH/s');
+                    }
                 });
             });
         });
