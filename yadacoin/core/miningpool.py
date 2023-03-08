@@ -499,7 +499,7 @@ class MiningPool(object):
 
         self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(block.to_dict())))
 
-        await self.config.nodeShared.send_block(block)
+        await self.config.nodeShared.send_block_to_peers(block)
 
         await self.config.websocketServer.send_block(block)
 

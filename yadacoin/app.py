@@ -201,10 +201,10 @@ class NodeApplication(Application):
                             )
                         ).strftime("%Y-%m-%d %H:%M:%S")
                     ))
-                    await self.config.nodeShared.send_block(self.config.LatestBlock.block)
+                    await self.config.nodeShared.send_block_to_peers(self.config.LatestBlock.block)
                 elif int(time()) - last_send > 60:
                     last_send = int(time())
-                    await self.config.nodeShared.send_block(self.config.LatestBlock.block)
+                    await self.config.nodeShared.send_block_to_peers(self.config.LatestBlock.block)
 
                 self.config.health.block_checker.last_activity = int(time())
             except Exception as e:

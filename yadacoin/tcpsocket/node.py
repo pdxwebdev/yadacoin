@@ -278,7 +278,6 @@ class NodeRPC(BaseRPC):
             }
         )
 
-
     async def send_mempool(self, peer_stream):
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
@@ -293,32 +292,27 @@ class NodeRPC(BaseRPC):
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = payload
 
-
-    async def send_block(self, block, peer_stream=None):
-        payload = {
-            'payload': {
-                'block': block.to_dict()
-            }
-        }
-
-        async def send_block():
-            await self.write_params(
-                peer_stream,
-                'newblock',
-                payload
-            )
-            if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[(peer_stream.peer.rid, 'newblock', block.hash)] = payload
-
-        if peer_stream:
-            await send_block()
-            return
+    async def send_block_to_peers(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
             if (
                 peer_stream.peer.block.index > block.index + 100
             ):
                 continue
-            await send_block()
+            await self.send_block_to_peer(block, peer_stream)
+
+    async def send_block_to_peer(self, block, peer_stream):
+        payload = {
+            'payload': {
+                'block': block.to_dict()
+            }
+        }
+        await self.write_params(
+            peer_stream,
+            'newblock',
+            payload
+        )
+        if peer_stream.peer.protocol_version > 1:
+            self.retry_messages[(peer_stream.peer.rid, 'newblock', block.hash)] = payload
 
     async def get_next_block(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
@@ -582,7 +576,7 @@ class NodeRPC(BaseRPC):
         if result:
             stream.peer.authenticated = True
             self.config.app_log.info('Authenticated {}: {}'.format(stream.peer.__class__.__name__, stream.peer.to_json()))
-            await self.send_block(self.config.LatestBlock.block, stream)
+            await self.send_block_to_peer(self.config.LatestBlock.block, stream)
             await self.send_mempool(stream)
             await self.get_next_block(self.config.LatestBlock.block)
         else:
