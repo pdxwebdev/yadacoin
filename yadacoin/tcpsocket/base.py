@@ -76,7 +76,8 @@ class BaseRPC:
             self.config.app_log.debug(format_exc())
             return
         if hasattr(self.config, 'tcp_traffic_debug') and self.config.tcp_traffic_debug == True:
-            self.config.app_log.debug(f'SENT {stream.peer.host} {method} {data} {rpc_type} {req_id}')
+            if hasattr(stream, 'peer'):
+                self.config.app_log.debug(f'SENT {stream.peer.host} {method} {data} {rpc_type} {req_id}')
 
     async def remove_peer(self, stream, close=True):
         if close:
