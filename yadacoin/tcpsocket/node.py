@@ -507,10 +507,13 @@ class NodeRPC(BaseRPC):
         return {}
 
     async def challenge(self, body, stream):
-        self.ensure_protocol_version(body, stream)
-        params = body.get('params', {})
-        challenge = params.get('token')
-        signed_challenge = TU.generate_signature(challenge, self.config.private_key)
+        try:
+            self.ensure_protocol_version(body, stream)
+            params = body.get('params', {})
+            challenge = params.get('token')
+            signed_challenge = TU.generate_signature(challenge, self.config.private_key)
+        except:
+            await self.remove_peer(stream)
         if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,
@@ -614,10 +617,13 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             get_config().app_log.error('Cannot connect to {}: {}'.format(peer.__class__.__name__, peer.to_json()))
 
     async def challenge(self, body, stream):
-        self.ensure_protocol_version(body, stream)
-        params = body.get('params', {})
-        challenge =  params.get('token')
-        signed_challenge = TU.generate_signature(challenge, self.config.private_key)
+        try:
+            self.ensure_protocol_version(body, stream)
+            params = body.get('params', {})
+            challenge =  params.get('token')
+            signed_challenge = TU.generate_signature(challenge, self.config.private_key)
+        except:
+            await self.remove_peer(stream)
         if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,
