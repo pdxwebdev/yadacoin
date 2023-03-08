@@ -184,6 +184,7 @@ class NodeApplication(Application):
         This co-routine checks if new transactions have been received, or if special_min is triggered,
         So we can update the miners.
         """
+        last_send = 0
         while True:
             self.config.app_log.debug('background_block_checker')
             try:
@@ -201,7 +202,8 @@ class NodeApplication(Application):
                         ).strftime("%Y-%m-%d %H:%M:%S")
                     ))
                     await self.config.nodeShared.send_block(self.config.LatestBlock.block)
-                elif int(time()) - self.config.health.block_checker.last_activity > 60:
+                elif int(time()) - last_send > 60:
+                    last_send = int(time())
                     await self.config.nodeShared.send_block(self.config.LatestBlock.block)
 
                 self.config.health.block_checker.last_activity = int(time())
