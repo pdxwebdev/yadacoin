@@ -381,15 +381,24 @@ class Config(object):
         wif = base58.b58encode(binascii.unhexlify(final_key)).decode('utf-8')
         return wif
 
-    def get_price(self):
-        def get_ticker():
-            return requests.get('https://api.coingecko.com/api/v3/simple/price?ids=yadacoin&vs_currencies=usd').json()
+    async def get_price(self):
+        async def get_ticker():
+            r = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=yadacoin&vs_currencies=usd')
+            if r.status_code == 200:
+                result = r.json()
+                result['time'] = time()
+                await self.mongo.async_site_db.coingecko_spot_rates.insert_one(result)
+                return result
+            else:
+                if not hasattr(self, 'ticker'):
+                    self.ticker = await self.mongo.async_site_db.coingecko_spot_rates.find_one(result)
+                return self.ticker
 
         if not hasattr(self, 'ticker'):
-            self.ticker = get_ticker()
+            self.ticker = await get_ticker()
             self.last_update = time()
         if (time() - self.last_update) > (600 * 6):
-            self.ticker = get_ticker()
+            self.ticker = await get_ticker()
             self.last_update = time()
         return self.ticker['yadacoin']['usd']
 

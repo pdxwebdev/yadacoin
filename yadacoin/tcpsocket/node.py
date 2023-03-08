@@ -207,7 +207,15 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info('newblock, no payload')
             return
 
-        self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(payload.get('block')), stream, body))
+        if not self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(payload.get('block')), stream, body)):
+            if stream.peer.protocol_version > 1:
+                await self.config.nodeShared.write_result(
+                    stream,
+                    'newblock_confirmed',
+                    body.get('params', {}),
+                    body['id']
+                )
+
 
     async def newblock_confirmed(self, body, stream):
         payload = body.get('result', {}).get('payload')
@@ -385,6 +393,12 @@ class NodeRPC(BaseRPC):
         result = body.get('result', {})
         if not result.get('block'):
             self.config.app_log.info(f'blockresponse, no block, {stream.peer.host}')
+            await self.config.nodeShared.write_result(
+                stream,
+                'blockresponse_confirmed',
+                body.get('result', {}),
+                body['id']
+            )
             return
 
         self.config.processing_queues.block_queue.add(BlockProcessingQueueItem(Blockchain(result.get('block')), stream, body))

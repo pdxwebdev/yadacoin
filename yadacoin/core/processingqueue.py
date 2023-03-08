@@ -56,6 +56,7 @@ class BlockProcessingQueue(ProcessingQueue):
             if (first_block['hash'], final_block['hash']) == self.last_popped:
                 return
             self.queue.setdefault((first_block['hash'], final_block['hash']), item)
+        return True
 
     def pop(self):
         if not self.queue:
@@ -80,6 +81,7 @@ class TransactionProcessingQueue(ProcessingQueue):
         if item.transaction.transaction_signature == self.last_popped:
             return
         self.queue.setdefault(item.transaction.transaction_signature, item)
+        return True
 
     def pop(self):
         if not self.queue:
@@ -107,6 +109,7 @@ class NonceProcessingQueue(ProcessingQueue):
         if (item.id, item.nonce) == self.last_popped:
             return
         self.queue.setdefault((item.id, item.nonce), item)
+        return True
 
     def pop(self):
         if not self.queue:
