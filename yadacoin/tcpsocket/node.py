@@ -188,11 +188,21 @@ class NodeRPC(BaseRPC):
             upsert=True
         )
 
-        async for peer_stream in self.config.peer.get_sync_peers():
+        async def make_gen(streams):
+            for stream in streams:
+                yield stream
+
+        async for peer_stream in make_gen(await self.config.peer.get_inbound_streams()):
             if peer_stream.peer.rid == stream.peer.rid:
                 continue
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = {'transaction': txn.to_dict()}
+
+        async for peer_stream in make_gen(await self.config.peer.get_outbound_streams()):
+            if peer_stream.peer.rid == stream.peer.rid:
+                continue
+            if peer_stream.peer.protocol_version > 1:
+                self.config.nodeClient.retry_messages[(peer_stream.peer.rid, 'newtxn', txn.transaction_signature)] = {'transaction': txn.to_dict()}
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get('result', {})
