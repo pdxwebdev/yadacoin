@@ -314,6 +314,10 @@ class NodeRPC(BaseRPC):
             await send_block()
             return
         async for peer_stream in self.config.peer.get_sync_peers():
+            if (
+                peer_stream.peer.block.index > block.index + 100
+            ):
+                continue
             await send_block()
 
     async def get_next_block(self, block):

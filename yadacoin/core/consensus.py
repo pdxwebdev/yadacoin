@@ -60,6 +60,7 @@ class Consensus(object):
         self.target = target
         self.special_target = special_target
         self.syncing = False
+        self.last_network_search = 0
 
         if self.config.LatestBlock.block:
             self.latest_block = self.config.LatestBlock.block
@@ -139,6 +140,8 @@ class Consensus(object):
                     )
 
                 block = await Block.from_dict(block)
+
+                stream.peer.block = block
 
                 if block.time > time():
                     self.config.app_log.info('newblock, block time greater than now')
@@ -264,7 +267,7 @@ class Consensus(object):
             #    getblocks <--- rpc request
             #    blocksresponse <--- rpc response
             #    process_block_queue
-            if (time() - self.config.health.consensus.last_activity) > 30:
+            if (time() - self.last_network_search) > 30:
                 self.last_network_search = time()
                 return await self.search_network_for_new()
 
