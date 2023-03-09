@@ -294,10 +294,8 @@ class NodeRPC(BaseRPC):
 
     async def send_block_to_peers(self, block):
         async for peer_stream in self.config.peer.get_sync_peers():
-            if not hasattr(peer_stream.peer, 'block'):
-                continue
             if (
-                peer_stream.peer.block.index > block.index + 100
+                hasattr(peer_stream.peer, 'block') and peer_stream.peer.block.index > block.index + 100
             ):
                 continue
             await self.send_block_to_peer(block, peer_stream)
