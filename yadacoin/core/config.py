@@ -381,26 +381,35 @@ class Config(object):
         wif = base58.b58encode(binascii.unhexlify(final_key)).decode('utf-8')
         return wif
 
-    async def get_price(self):
+    async def get_highest_price(self):
+        highest = None
+        async for x in self.mongo.async_site_db.coingecko_spot_rates.find({'time': {'$gte': time() - (3600 * 4)}}):
+            if highest is None or x['yadacoin']['usd'] > highest:
+                highest = x['yadacoin']['usd']
+        return highest
+
+    async def get_lowest_price(self):
+        lowest = None
+        async for x in self.mongo.async_site_db.coingecko_spot_rates.find({'time': {'$gte': time() - (3600 * 4)}}):
+            if lowest is None or x['yadacoin']['usd'] < lowest:
+                lowest = x['yadacoin']['usd']
+        return lowest
+
+    async def refresh_price(self):
         async def get_ticker():
             r = requests.get('https://api.coingecko.com/api/v3/simple/price?ids=yadacoin&vs_currencies=usd')
             if r.status_code == 200:
                 result = r.json()
                 result['time'] = time()
                 await self.mongo.async_site_db.coingecko_spot_rates.insert_one(result)
-                return result
-            else:
-                if not hasattr(self, 'ticker'):
-                    self.ticker = await self.mongo.async_site_db.coingecko_spot_rates.find_one(result)
-                return self.ticker
 
         if not hasattr(self, 'ticker'):
-            self.ticker = await get_ticker()
+            await get_ticker()
             self.last_update = time()
+
         if (time() - self.last_update) > (600 * 6):
-            self.ticker = await get_ticker()
+            await get_ticker()
             self.last_update = time()
-        return self.ticker['yadacoin']['usd']
 
     def to_dict(self):
         return {
