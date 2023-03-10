@@ -66,6 +66,7 @@ from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
+from yadacoin.http.product import PRODUCT_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
 from yadacoin.websocket.base import WEBSOCKET_HANDLERS
 from yadacoin.tcpsocket.node import (
@@ -564,6 +565,7 @@ class NodeApplication(Application):
         self.default_handlers.extend(GRAPH_HANDLERS)
         self.default_handlers.extend(EXPLORER_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)
+        self.default_handlers.extend(PRODUCT_HANDLERS)
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
 
