@@ -5,7 +5,7 @@ class Miner(MinerBase):
     address = ''
     address_only = ''
     agent = ''
-    id_attribute = 'address'
+    id_attribute = 'address_only'
 
     def __init__(self, address, agent=''):
         super(Miner, self).__init__()
