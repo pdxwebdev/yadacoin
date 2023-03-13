@@ -119,11 +119,17 @@ class Peer:
     async def get_outbound_streams(self):
         raise NotImplementedError()
 
-    async def get_miner_streams(self):
-        return list(self.config.nodeServer.inbound_streams[Miner.__name__].values())
+    @staticmethod
+    async def get_miner_streams():
+        config = get_config()
+        miners = config.nodeServer.inbound_streams[Miner.__name__].values()
+        return list([worker for miner in miners for worker in miner.values()])
 
-    async def get_miner_pending(self):
-        return list(self.config.nodeServer.inbound_pending[Miner.__name__].values())
+    @staticmethod
+    async def get_miner_pending():
+        config = get_config()
+        miners = config.nodeServer.inbound_pending[Miner.__name__].values()
+        return list([worker for miner in miners for worker in miner.values()])
 
     async def get_inbound_pending(self):
         raise NotImplementedError()
@@ -153,8 +159,8 @@ class Peer:
 
     async def get_all_miner_streams(self):
         return (
-            await self.get_miner_streams() +
-            await self.get_miner_pending()
+            await Peer.get_miner_streams() +
+            await Peer.get_miner_pending()
         )
 
     async def calculate_seed_gateway(self, nonce=None):

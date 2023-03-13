@@ -238,6 +238,6 @@ class Health:
         return True
 
     def to_dict(self):
-        out = {x.__class__.__name__: x.to_dict() for x in self.health_items if not x.ignore}
+        out = {x.__class__.__name__: x.to_dict() for x in self.health_items}
         out['status'] = self.status
         return out

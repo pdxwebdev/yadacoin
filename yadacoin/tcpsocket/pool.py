@@ -18,6 +18,7 @@ from yadacoin.core.processingqueue import (
     NonceProcessingQueue,
     NonceProcessingQueueItem
 )
+from yadacoin.core.peer import Peer
 
 
 class StratumServer(RPCSocketServer):
@@ -46,11 +47,12 @@ class StratumServer(RPCSocketServer):
     async def send_jobs(cls):
         if not cls.config:
             cls.config = get_config()
-        for stream in list(StratumServer.inbound_streams[Miner.__name__].values()):
-            try:
-                await cls.send_job(stream)
-            except:
-                cls.config.app_log.warning(traceback.format_exc())
+        for miner in list(StratumServer.inbound_streams[Miner.__name__].values()):
+            for stream in miner.values():
+                try:
+                    await cls.send_job(stream)
+                except:
+                    cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
     async def send_job(cls, stream):
@@ -92,7 +94,7 @@ class StratumServer(RPCSocketServer):
             'stat': 'miner_count'
         }, {
             '$set': {
-                'value': len(list(set([address for address in StratumServer.inbound_streams[Miner.__name__].keys()])))
+                'value': len(await Peer.get_miner_streams())
             }
         }
         , upsert=True)
@@ -103,7 +105,9 @@ class StratumServer(RPCSocketServer):
         if not hasattr(stream, 'peer'):
             return
         if stream.peer.address in StratumServer.inbound_streams[Miner.__name__]:
-            del StratumServer.inbound_streams[Miner.__name__][stream.peer.address]
+            del StratumServer.inbound_streams[Miner.__name__][stream.peer.address][stream.peer.worker]
+            if len(StratumServer.inbound_streams[Miner.__name__][stream.peer.address].keys()) == 0:
+                del StratumServer.inbound_streams[Miner.__name__][stream.peer.address]
         await StratumServer.update_miner_count()
 
     async def getblocktemplate(self, body, stream):
@@ -154,7 +158,7 @@ class StratumServer(RPCSocketServer):
         )
 
     async def login(self, body, stream):
-        if len(StratumServer.inbound_streams[Miner.__name__].keys()) > self.config.max_miners:
+        if len(await Peer.get_miner_streams()) > self.config.max_miners:
             await stream.write('{}\n'.format(json.dumps({
                 'id': '1',
                 'method': 'login',
@@ -187,7 +191,8 @@ class StratumServer(RPCSocketServer):
         except:
             rpc_data['error'] = {'message': 'Invalid wallet address or invalid format'}
         self.config.app_log.info(f'Connected to Miner: {stream.peer.to_json()}')
-        StratumServer.inbound_streams[Miner.__name__][stream.peer.address] = stream
+        StratumServer.inbound_streams[Miner.__name__].setdefault(stream.peer.address_only, {})
+        StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only][stream.peer.worker] = stream
         await StratumServer.update_miner_count()
         await stream.write('{}\n'.format(json.dumps(rpc_data)).encode())
 
@@ -206,5 +211,5 @@ class StratumServer(RPCSocketServer):
     async def status(self):
         return {
             'miners': len(list(set([address for address in StratumServer.inbound_streams[Miner.__name__].keys()]))),
-            'workers': len(StratumServer.inbound_streams[Miner.__name__].keys())
+            'workers': len(await Peer.get_miner_streams())
         }
