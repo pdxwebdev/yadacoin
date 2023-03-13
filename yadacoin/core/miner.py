@@ -32,7 +32,7 @@ class Miner(MinerBase):
 
     def to_json(self):
         return {
-            'address': self.address,
+            'address': self.address_only,
             'worker': self.worker
         }
 
