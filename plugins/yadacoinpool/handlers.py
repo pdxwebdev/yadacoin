@@ -34,7 +34,10 @@ class PoolStatsInterfaceHandler(BaseWebHandler):
 class PoolInfoHandler(BaseWebHandler):
     async def get(self):
         def get_ticker():
-            return requests.get('https://safe.trade/api/v2/peatio/public/markets/tickers')
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36'
+            }
+            return requests.get('https://safe.trade/api/v2/peatio/public/markets/tickers', headers=headers)
 
         try:
             if not hasattr(self.config, 'ticker'):
@@ -43,9 +46,11 @@ class PoolInfoHandler(BaseWebHandler):
             if (time.time() - self.config.last_update) > (600 * 6):
                 self.config.ticker = get_ticker()
                 self.config.last_update = time.time()
-            last_btc = self.config.ticker.json()['ydabtc']['ticker']['last']
+            last_btc = float(self.config.ticker.json()['ydabtc']['ticker']['last'])
+            last_usdt = float(self.config.ticker.json()['ydausdt']['ticker']['last'])
         except:
             last_btc = 0
+            last_usdt = 0
         await self.config.LatestBlock.block_checker()
         pool_public_key = self.config.pool_public_key if hasattr(self.config, 'pool_public_key') else self.config.public_key
         total_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
@@ -64,7 +69,6 @@ class PoolInfoHandler(BaseWebHandler):
                 '_id': 0
             }
         ).sort([('index', -1)]).to_list(100)
-        expected_blocks = 144
         mining_time_interval = 600
         shares_count = await self.config.mongo.async_db.shares.count_documents({'time': {'$gte': time.time() - mining_time_interval}})
         if shares_count > 0:
@@ -72,18 +76,36 @@ class PoolInfoHandler(BaseWebHandler):
         else:
             pool_hash_rate = 0
 
-        net_blocks_found = await self.config.mongo.async_db.blocks.count_documents({'time': {'$gte': time.time() - (600 * 144)}})
-        if net_blocks_found > 0:
+        daily_blocks_found = await self.config.mongo.async_db.blocks.count_documents({'time': {'$gte': time.time() - (600 * 144)}})
+        if daily_blocks_found > 0:
             net_target = self.config.LatestBlock.block.target
-            net_difficulty = int(0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff) / int(net_target)
-            network_hash_rate = ((net_blocks_found / expected_blocks) * net_difficulty * 2**48 / int(0x100000000) / 600)
+        avg_blocks_found = self.config.mongo.async_db.blocks.find({'time': {'$gte': time.time() - ( 600 * 9)}})
+        avg_blocks_found = await avg_blocks_found.to_list(length=600 * 9)
+        if len(avg_blocks_found) > 0:
+            avg_net_target = 0
+            for block in avg_blocks_found:
+                avg_net_target += int(block['target'], 16)
+            avg_net_target = avg_net_target / len(avg_blocks_found)
+            avg_net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_net_target
+            net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / net_target
+            avg_network_hash_rate = len(avg_blocks_found) / 9 * avg_net_difficulty * 2**16 / 600
+            network_hash_rate = net_difficulty * 2**16 / 600
         else:
             net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
             network_hash_rate = 0
-
+        pool_perecentage = pool_hash_rate / avg_network_hash_rate * 100
+        avg_block_time = daily_blocks_found / expected_blocks * 600
+        avg_pool_block_time = int(avg_network_hash_rate * avg_block_time // pool_hash_rate)
+        avg_time  = []
+        for d,u in [(86400,"day"),(3600,"hour"),(60,"minute")]:
+            n,avg_pool_block_time = divmod(avg_pool_block_time,d)
+            if n: avg_time.append(f"{n} {u}"+"s"*(n>1))
+        avg_time = "  ".join(avg_time)
+         
         miner_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'miner_count'}) or {'value': 0}
         worker_count_pool_stat = await self.config.mongo.async_db.pool_stats.find_one({'stat': 'worker_count'}) or {'value': 0}
         payouts = await self.config.mongo.async_db.share_payout.find({}, {'_id': 0}).sort([('index', -1)]).to_list(100)
+
         self.render_as_json({
             'node': {
                 'latest_block': self.config.LatestBlock.block.to_dict(),
@@ -103,19 +125,21 @@ class PoolInfoHandler(BaseWebHandler):
                 'fee': self.config.pool_take,
                 'payout_frequency': self.config.payout_frequency,
                 'payouts': payouts,
-                'blocks': pool_blocks_found_list[:100]
+                'blocks': pool_blocks_found_list[:100],
+                'pool_perecentage': pool_perecentage,
+                'avg_block_time': avg_time,
             },
             'network': {
                 'height': self.config.LatestBlock.block.index,
                 'reward': CHAIN.get_block_reward(self.config.LatestBlock.block.index),
                 'last_block': self.config.LatestBlock.block.time,
-                'hashes_per_second': network_hash_rate,
-                'hashes_per_second_khps': network_hash_rate / 1000,
-                'hashes_per_second_mhps': network_hash_rate / 1000000,
+                'avg_hashes_per_second': avg_network_hash_rate,
+                'current_hashes_per_second': network_hash_rate,
                 'difficulty': net_difficulty
             },
             'market': {
-                'last_btc': last_btc
+                'last_btc': last_btc,
+                'last_usdt': last_usdt
             },
             'coin': {
                 'algo': 'randomx YDA',
