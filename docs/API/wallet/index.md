@@ -162,3 +162,52 @@ Is a wallet address valid
     "token": "`encoded JWT string`"
 }
 ```
+
+# /send-transaction
+
+Create an Account for the authenticated User if an Account for that User does
+not already exist. Each User can only have one Account.
+
+**URL** : `/send-transaction`
+
+**Method** : `POST`
+
+**Header** : `Authorization: bearer JWT_TOKEN`
+**Header** : `Content-type: application/json`
+
+**Request data**
+```json
+{
+    "address": "`string address of recipient address`",
+    "value": "`int or decimal amount of YDA being sent`"
+}
+
+## Success Response
+
+**Code** : `200 OK`
+
+**Content example**
+
+```json
+{
+    "public_key": "02fa9550f57055c96c7ce4c6c9cd1411856beba5c7d5a07417e980a39aa03da3dc", 
+    "fee": 0.0001, 
+    "hash": "6639e35fd0cf8149458254908ec79ce23b64f050f919fa4adb86b4d36504ad6a", 
+    "dh_public_key": "", 
+    "relationship": "", 
+    "inputs": [
+        {
+            "id": "MEQCIEi9sagTl6Iq69g9NzhfOjiJdnl4Uj+upWmTbp6wjWsXAiAGf7cPN9vJTRn/dfqAtw4XMOssPiRKaqCERcg1puFhOg=="
+        }
+    ], 
+    "outputs": [
+        {
+            "to": "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK", 
+            "value": 21.3714287047476
+        }
+    ], 
+    "height": 23507, 
+    "rid": "", 
+    "id": "MEUCIQDRaOpsNtb4Si0zwHzflCHds4PBri2Y6QPFyurJ8MnmYQIgFQ8aAN2Ujjjndb31On2cfzW302Vl+wMk53It7awatIA="
+}
+```
