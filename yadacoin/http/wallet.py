@@ -9,6 +9,7 @@ import json
 import datetime
 import jwt
 import time
+from yadacoin.core.config import get_config
 from bip32utils import BIP32Key
 from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
 from yadacoin.http.base import BaseHandler
@@ -523,6 +524,12 @@ class PaymentHandler(BaseHandler):
         return self.render_as_json({'payments': blockchain + mempool})
 
 
+class ValidateAddressHandler(BaseHandler):
+    async def get(self):
+        address = self.get_argument('address')
+        return self.render_as_json({'status': get_config().address_is_valid(address), 'address': address})
+
+
 WALLET_HANDLERS = [
     (r'/wallet', WalletHandler),
     (r'/generate-wallet', GenerateWalletHandler),
@@ -540,4 +547,5 @@ WALLET_HANDLERS = [
     (r'/get-past-received-txns', ReceivedTransactionsView),
     (r'/get-transaction-confirmations', TransactionConfirmationsHandler),
     (r'/payment', PaymentHandler),
+    (r'/validate-address', ValidateAddressHandler),
 ]
