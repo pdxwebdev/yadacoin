@@ -98,10 +98,16 @@ This endpoint takes a block hash and responds with a block for the given hash if
 **URL Parameters** : 
 
 `hash`: `SHA256 hex encoded string`
+OR
+`index`: `integer of block height`
 
 **Example URL** : 
 ```
 /get-block?hash=0dd0ec9ab91e9defe535841a4c70225e3f97b7447e5358250c2dc898b8bd3139
+```
+OR
+```
+/get-block?index=455210
 ```
 
 ## Success Response
