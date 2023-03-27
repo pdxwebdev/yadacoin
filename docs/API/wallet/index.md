@@ -147,3 +147,28 @@ Generate a new seed and HD wallet
 }
 
 ```
+
+# /validate-address
+
+Is a wallet address valid
+
+**URL** : `/validate-address`
+
+**URL Parameters** : `?address=[P2PKH Address]`
+
+**Example URL** : `/validate-address?address=13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK`
+
+**Method** : `GET`
+
+## Success Responses
+
+**Code** : `200 OK`
+
+**Content example** : Response will return boolean true if address is valid, false if it is not.
+
+```json
+{
+    "status": true,
+    "address": "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK"
+}
+```
