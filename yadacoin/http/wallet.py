@@ -530,6 +530,32 @@ class ValidateAddressHandler(BaseHandler):
         return self.render_as_json({'status': get_config().address_is_valid(address), 'address': address})
 
 
+class TransactionByIdHandler(BaseHandler):
+
+    async def get(self):
+
+        txn_id = self.get_query_argument('id').replace(' ', '+')
+        best_mt_txn = await self.config.mongo.async_db.miner_transactions.find_one({'id': txn_id}, {'_id': 0}, sort=[('time', -1)])
+        result = await self.config.mongo.async_db.blocks.find_one({'transactions.id': txn_id}, {'_id': 0}, sort=[('transactions.time', -1)])
+        all_block_txn = []
+        if result:
+            for txn in result['transactions']:
+                if txn['id'] == txn_id:
+                    all_block_txn.append(txn)
+
+        best_block_txn = None
+        if all_block_txn:
+            best_block_txn = sorted(all_block_txn, key=lambda x: int(x['time']), reverse=True)[0]
+
+        if best_mt_txn and best_block_txn:
+            return self.render_as_json(best_mt_txn if int(best_mt_txn['time']) >= int(best_block_txn['time']) else best_block_txn)
+        elif best_mt_txn or best_block_txn:
+            return self.render_as_json(best_mt_txn if best_mt_txn else best_block_txn)
+        else:
+            self.status_code = 404
+            return self.render_as_json({'status': False, 'message': 'user not found'})
+
+
 WALLET_HANDLERS = [
     (r'/wallet', WalletHandler),
     (r'/generate-wallet', GenerateWalletHandler),
@@ -548,4 +574,5 @@ WALLET_HANDLERS = [
     (r'/get-transaction-confirmations', TransactionConfirmationsHandler),
     (r'/payment', PaymentHandler),
     (r'/validate-address', ValidateAddressHandler),
+    (r'/get-transaction-by-id', TransactionByIdHandler),
 ]
