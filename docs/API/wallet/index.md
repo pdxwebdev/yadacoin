@@ -180,7 +180,7 @@ not already exist. Each User can only have one Account.
 {
     "address": "`string address of recipient address`",
     "value": "`int or decimal amount of YDA being sent`"
-}
+}```
 
 ## Success Response
 
