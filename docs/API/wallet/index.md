@@ -172,3 +172,33 @@ Is a wallet address valid
     "address": "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK"
 }
 ```
+
+# /unlock
+
+Is a wallet address valid
+
+**Method** : `POST`
+
+**URL** : `/unlock`
+
+**Request Content-type** : `json`
+
+**Data**
+
+```json
+{
+  "key_or_wif": "`wif or private_key string from config.json`"
+}
+```
+
+## Success Responses
+
+**Code** : `200 OK`
+
+**Content example** : Response will return boolean true if address is valid, false if it is not.
+
+```json
+{
+    "token": "`encoded JWT string`"
+}
+```
