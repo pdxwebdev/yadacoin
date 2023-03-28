@@ -27,7 +27,7 @@ class MiningPool(object):
         self.mongo = self.config.mongo
         self.app_log = getLogger("tornado.application")
         self.target_block_time = CHAIN.target_block_time(self.config.network)
-        self.max_target = CHAIN.MAX_TARGET
+        self.max_target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
         self.inbound = {}
         self.connected_ips = {}
         self.last_block_time = 0
@@ -146,7 +146,7 @@ class MiningPool(object):
 
         accepted = False
 
-        target = int('0x' + (f'0000000000000000000000000000000000000000000000000000000000000000'+f'{hex(0x10000000000000001 // self.config.pool_diff)[2:64]}FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'[:64])[-64:], 16)
+        target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
             test_hash = int(block_candidate.little_hash(), 16)
@@ -302,8 +302,8 @@ class MiningPool(object):
             #await self.refresh()
             return {}
         res = {
-            'target': hex(int(self.block_factory.target))[2:].rjust(64, '0'),  # target is now in hex format
-            'special_target': hex(int(self.block_factory.special_target))[2:].rjust(64, '0'),  # target is now in hex format
+            'target': hex(self.block_factory.target)[2:],  # target is now in hex format
+            'special_target': hex(self.block_factory.special_target)[2:],  # target is now in hex format
             # TODO this is the network target, maybe also send some pool target?
             'special_min': self.block_factory.special_min,
             'header': self.block_factory.header,
@@ -327,11 +327,11 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = hex(random.randrange(1000000,1000000000000000))[2:]
+        extra_nonce = hex(random.randrange(1,4294967295))[2:].rjust(8, '0')
         header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
 
         if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
-            target = hex(0x10000000000000001 // self.config.pool_diff)
+            target = hex(0x10000000000000001 // self.config.pool_diff)[2:].rjust(16, '0')
         elif self.config.pool_diff <= 69905:
             target = hex(0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000)[2:].zfill(48)
         else:
