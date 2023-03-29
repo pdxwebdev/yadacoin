@@ -34,7 +34,7 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = get_config()
 
-        if time.time() - cls.config.mp.block_factory.time > 600:
+        if time.time() - cls.config.mp.block_factory.time > 120:
             await cls.config.mp.refresh()
 
         if cls.current_header != cls.config.mp.block_factory.header:
