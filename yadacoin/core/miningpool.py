@@ -98,8 +98,8 @@ class MiningPool(object):
             item = self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):
-        nonce = nonce + job.extra_nonce.encode().hex()
-        header = binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}').replace(job.extra_nonce, '')
+        nonce = nonce
+        header = binascii.unhexlify(job.blob).decode().replace('{00}', '{nonce}')
         hash1 = self.block_factory.generate_hash_from_header(
             job.index,
             header,
@@ -146,7 +146,7 @@ class MiningPool(object):
 
         accepted = False
 
-        target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+        target = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
             test_hash = int(block_candidate.little_hash(), 16)
@@ -302,8 +302,8 @@ class MiningPool(object):
             #await self.refresh()
             return {}
         res = {
-            'target': hex(self.block_factory.target)[2:],  # target is now in hex format
-            'special_target': hex(self.block_factory.special_target)[2:],  # target is now in hex format
+            'target': '{:064x}'.format(self.block_factory.target),  # target is now in hex format
+            'special_target': '{:064x}'.format(self.block_factory.special_target),  # target is now in hex format
             # TODO this is the network target, maybe also send some pool target?
             'special_min': self.block_factory.special_min,
             'header': self.block_factory.header,
@@ -328,7 +328,7 @@ class MiningPool(object):
         seed_hash = '4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d' #sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
         extra_nonce = hex(random.randrange(1,4294967295))[2:].rjust(8, '0')
-        header = self.block_factory.header.replace('{nonce}', '{00}' + extra_nonce)
+        header = self.block_factory.header.replace('{nonce}', '{00}')
 
         if 'XMRigCC/3' in agent or 'XMRig/3' in agent:
             target = hex(0x10000000000000001 // self.config.pool_diff)[2:].rjust(16, '0')
