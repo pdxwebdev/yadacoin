@@ -98,10 +98,16 @@ This endpoint takes a block hash and responds with a block for the given hash if
 **URL Parameters** : 
 
 `hash`: `SHA256 hex encoded string`
+OR
+`index`: `integer of block height`
 
 **Example URL** : 
 ```
 /get-block?hash=0dd0ec9ab91e9defe535841a4c70225e3f97b7447e5358250c2dc898b8bd3139
+```
+OR
+```
+/get-block?index=455210
 ```
 
 ## Success Response
@@ -264,23 +270,153 @@ None
 
 **Code** : `200 OK`
 
-**Content examples**
-
-> Placeholder, to be completed
+**Content example**
 
 ```json
 {
-  "version": "0.0.8", 
-  "network": "mainnet", 
-  "connections": {
-    "outgoing": -1, 
-    "ingoing": -1, 
-    "max": -1
-  },
-  "peers": {
-    "active": -1,
-    "inactive": -1
-  }
+    "version": "5.7.2",
+    "protocol_version": 3,
+    "network": "mainnet",
+    "peer_type": "seed",
+    "username": "",
+    "websocket_inbound_peers": 4802,
+    "websocket_inbound_pending": 0,
+    "inbound_peers": 1,
+    "inbound_pending": 0,
+    "outbound_peers": 1,
+    "outbound_ignore": 0,
+    "outbound_pending": 0,
+    "pool": "N/A",
+    "uptime": "310:19:18",
+    "height": 427750,
+    "health": {
+        "ConsenusHealth": {
+            "last_activity  ": 1679891003,
+            "status         ": true,
+            "time_until_fail": 120,
+            "ignore         ": false
+        },
+        "TCPServerHealth": {
+            "last_activity  ": 1679890994,
+            "status         ": true,
+            "time_until_fail": 111,
+            "ignore         ": true
+        },
+        "TCPClientHealth": {
+            "last_activity  ": 1679890998,
+            "status         ": true,
+            "time_until_fail": 115,
+            "ignore         ": false
+        },
+        "PeerHealth": {
+            "last_activity  ": 1679891000,
+            "status         ": true,
+            "time_until_fail": 117,
+            "ignore         ": false
+        },
+        "BlockCheckerHealth": {
+            "last_activity  ": 1679891003,
+            "status         ": true,
+            "time_until_fail": 120,
+            "ignore         ": false
+        },
+        "MessageSenderHealth": {
+            "last_activity  ": 1679891000,
+            "status         ": true,
+            "time_until_fail": 117,
+            "ignore         ": false
+        },
+        "BlockInserterHealth": {
+            "last_activity  ": 1679891003,
+            "status         ": true,
+            "time_until_fail": 120,
+            "ignore         ": false
+        },
+        "TransactionProcessorHealth": {
+            "last_activity  ": 1679891003,
+            "status         ": true,
+            "time_until_fail": 120,
+            "ignore         ": false
+        },
+        "PoolPayerHealth": {
+            "last_activity  ": 1679890964,
+            "status         ": true,
+            "time_until_fail": 81,
+            "ignore         ": false
+        },
+        "CacheValidatorHealth": {
+            "last_activity  ": 1679890883,
+            "status         ": true,
+            "time_until_fail": 0,
+            "ignore         ": false
+        },
+        "MempoolCleanerHealth": {
+            "last_activity  ": 1679890237,
+            "status         ": true,
+            "time_until_fail": 2834,
+            "ignore         ": false
+        },
+        "status": true
+    },
+    "latest_block": {
+        "version": 5,
+        "time": 1679889834,
+        "index": 427750,
+        "public_key": "03dc4edf90c1c60c79e557d833031360ac9581d078beff7668f95f05d5f64a9fab",
+        "prevHash": "84b9e7111f001c904324ee88e730b2b74f92f02fc4ed1c3e4885669a02000000",
+        "nonce": "d971027d33313662313532353838623135",
+        "transactions": [
+            {
+                "time": 1679889834,
+                "rid": "",
+                "id": "MEQCID/rxhNJOTie40cqKA6afr0eqm+Mhwa9s5tGtzhcf0W7AiADxbhDgbCPjyRgKkG75SwkG+xVgGn2kcIbFTTd/R38BA==",
+                "relationship": "",
+                "public_key": "03dc4edf90c1c60c79e557d833031360ac9581d078beff7668f95f05d5f64a9fab",
+                "dh_public_key": "",
+                "fee": 0.0,
+                "hash": "dc762b5291a18186ae7158b299abed69237b837df00ca351fab1c02f977c04be",
+                "inputs": [],
+                "outputs": [
+                    {
+                        "to": "1Jkeiz8z94m12hh426wz6dnUkU5fN5RYhp",
+                        "value": 12.5
+                    }
+                ],
+                "version": 3
+            }
+        ],
+        "hash": "04d48313d159fea661f7c4f15a16da6ff501dc480dc4776f850da7b002000000",
+        "merkleRoot": "c3524fed1d0c0f0359d5d08bf880728f4100fa482d8bf509a976f774daf4dc9d",
+        "special_min": false,
+        "target": "00000005b3239469452340000000000000000000000000000000000000000000",
+        "special_target": "00000005b3239469452340000000000000000000000000000000000000000000",
+        "header": "5167988983403dc4edf90c1c60c79e557d833031360ac9581d078beff7668f95f05d5f64a9fab42775084b9e7111f001c904324ee88e730b2b74f92f02fc4ed1c3e4885669a02000000{nonce}00000005b3239469452340000000000000000000000000000000000000000000c3524fed1d0c0f0359d5d08bf880728f4100fa482d8bf509a976f774daf4dc9d",
+        "id": "MEQCIDUduiXvbDAsZPUNKtmB0bPivxC5iAwogJm+SXW6kaJ7AiAczZNmbgriUSTA8elyY9Bb48JIa5NvjooH05nqtMTHnA=="
+    },
+    "queues": {
+        "BlockProcessingQueue": {
+            "queue_item_count": 0,
+            "average_processing_time": "2.4385",
+            "num_items_processed": 3641
+        },
+        "TransactionProcessingQueue": {
+            "queue_item_count": 0,
+            "average_processing_time": "0.3142",
+            "num_items_processed": 11911
+        }
+    },
+    "message_sender": {
+        "nodeServer": {
+            "num_messages": 0
+        },
+        "nodeClient": {
+            "num_messages": 550
+        }
+    },
+    "slow_queries": {
+        "count": 0,
+        "detail": []
+    }
 }
 ```
 # /sign-raw-transaction
