@@ -50,6 +50,9 @@ sudo python3 -m pip install --upgrade requests
 # hugepages reservation
 sudo bash -c "echo vm.nr_hugepages=1280 >> /etc/sysctl.conf"
 
+#apply hugepages in machine
+sudo sysctl -p
+
 # enable systemd startup
 sudo systemctl enable yadanode.service
 
