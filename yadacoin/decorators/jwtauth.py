@@ -44,7 +44,8 @@ def jwtauthwallet(handler_class):
                     if not mongo_jwt or handler.jwt['timestamp'] < mongo_jwt.get('value', {}).get('timestamp', 0):
                         return False
 
-                except:
+                except Exception as e:
+                    raise e
                     return False
             else:
                 return False
