@@ -104,10 +104,10 @@ class StratumServer(RPCSocketServer):
         stream.close()
         if not hasattr(stream, 'peer'):
             return
-        if stream.peer.address in StratumServer.inbound_streams[Miner.__name__]:
-            del StratumServer.inbound_streams[Miner.__name__][stream.peer.address][stream.peer.worker]
-            if len(StratumServer.inbound_streams[Miner.__name__][stream.peer.address].keys()) == 0:
-                del StratumServer.inbound_streams[Miner.__name__][stream.peer.address]
+        if stream.peer.address_only in StratumServer.inbound_streams[Miner.__name__]:
+            del StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only][stream.peer.worker]
+            if len(StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only].keys()) == 0:
+                del StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only]
         await StratumServer.update_miner_count()
 
     async def getblocktemplate(self, body, stream):

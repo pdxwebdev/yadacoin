@@ -1,3 +1,4 @@
+import random, string
 from yadacoin.core.peer import Miner as MinerBase
 
 
@@ -17,13 +18,9 @@ class Miner(MinerBase):
                 raise InvalidAddressException()
         else:
             from yadacoin.tcpsocket.pool import StratumServer
+            N = 17
             StratumServer.inbound_streams[Miner.__name__].setdefault(address, {})
-            i = 0
-            while True:
-                if not str(i) in StratumServer.inbound_streams[Miner.__name__][address]:
-                    self.worker = str(i)
-                    break
-                i += 1
+            self.worker = ''.join(random.choices(string.ascii_uppercase + string.digits, k=N))
             self.address = address
             self.address_only = address
             if not self.config.address_is_valid(self.address):
