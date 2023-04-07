@@ -235,18 +235,19 @@ class CHAIN(object):
         from yadacoin.core.block import Block
         # Aim at 5 min average block time, with escape hatch
         max_target = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  # A single cpu does that under a minute.
+        max_target_after = 0x000000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffff  # A single cpu does that under 10 minutes.
         retarget_period = 6 * 5  # 5 hours at 10 min per block - needs to be high enough to account for organic variance of the miners
         retarget_period2 = int(6 * 1.5)  # 1 hour and 30 min at 10 min per block - Faster reaction to drops in blocktime, we want to make "instamine" harder
         target_time = 10 * 60  # 10 min
         # That should not happen
-        if int(block.time) - int(last_block.time) > 3600:
+        if int(block.time) - int(last_block.time) > 3600 * 2:
             cls.config.app_log.debug("Block time over max. Max target set.")
-            return int(max_target)
+            return int(max_target_after)
         # decrease after 2x target - can be 3 as well
         current_block_time = int(block.time) - int(last_block.time)
         adjusted = False
 
-        if current_block_time > 2 * target_time:
+        if current_block_time > 3 * target_time:
             if block.index >= CHAIN.FORK_SMOOTH_RETARGET:
                 current_target = last_block.target
                 # Linear decrease to reach max target after one hour block time.
