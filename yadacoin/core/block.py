@@ -281,15 +281,6 @@ class Block(object):
 
             transaction_objs.append(transaction_obj)
 
-
-    def little_hash(self):
-        little_hex = bytearray.fromhex(self.hash)
-        little_hex.reverse()
-
-        str_little = ''.join(format(x, '02x') for x in little_hex)
-
-        return str_little
-
     def generate_header(self):
         if int(self.version) < 3:
             return str(self.version) + \

@@ -47,14 +47,6 @@ class MiningPool(object):
         status = {"miners": len(self.inbound), "ips": len(self.connected_ips)}
         return status
 
-    def little_hash(self, block_hash):
-        little_hex = bytearray.fromhex(block_hash)
-        little_hex.reverse()
-
-        str_little = ''.join(format(x, '02x') for x in little_hex)
-
-        return str_little
-
     async def process_nonce_queue(self):
         item = self.config.processing_queues.nonce_queue.pop()
         i = 0 # max loops
@@ -106,7 +98,7 @@ class MiningPool(object):
             nonce
         )
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
-            hash1_test = self.little_hash(hash1)
+            hash1_test = Blockchain.little_hash(hash1)
         else:
             hash1_test = hash1
 
@@ -149,7 +141,7 @@ class MiningPool(object):
         target = int('0x' + (f'0000000000000000000000000000000000000000000000000000000000000000'+f'{hex(0x10000000000000001 // self.config.pool_diff)[2:64]}FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF'[:64])[-64:], 16)
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
-            test_hash = int(block_candidate.little_hash(), 16)
+            test_hash = int(Blockchain.little_hash(block_candidate.hash), 16)
         else:
             test_hash = int(hash1, 16)
 
@@ -175,7 +167,7 @@ class MiningPool(object):
             accepted = True
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
-            test_hash = int(block_candidate.little_hash(), 16)
+            test_hash = int(Blockchain.little_hash(block_candidate.hash), 16)
         else:
             test_hash = int(block_candidate.hash, 16)
 
@@ -220,7 +212,7 @@ class MiningPool(object):
           block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.hash, 16)) or
           (
             block_candidate.index >= CHAIN.BLOCK_V5_FORK and
-            block_candidate.special_min and (int(block_candidate.special_target) > int(block_candidate.little_hash(), 16))
+            block_candidate.special_min and (int(block_candidate.special_target) > int(Blockchain.little_hash(block_candidate.hash), 16))
           )
         ):
             block_candidate.signature = self.config.BU.generate_signature(block_candidate.hash, self.config.private_key)

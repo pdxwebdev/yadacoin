@@ -230,7 +230,7 @@ class Blockchain(object):
         target_block_time = CHAIN.target_block_time(config.network)
 
         checks_passed = False
-        if (block.index >= CHAIN.BLOCK_V5_FORK) and int(block.little_hash(), 16) < target:
+        if (block.index >= CHAIN.BLOCK_V5_FORK) and int(Blockchain.little_hash(block.hash), 16) < target:
             config.app_log.debug('5')
             checks_passed = True
         elif (int(block.hash, 16) < target):
@@ -294,7 +294,11 @@ class Blockchain(object):
         async for block in self.blocks:
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
-            target = int(block.hash, 16)
+            if block.index >= CHAIN.LITTLE_HASH_DIFF_FIX:
+                hash = Blockchain.little_hash(block.hash)
+            else:
+                hash = block.hash
+            target = int(hash, 16)
             difficulty += CHAIN.MAX_TARGET - target
         return difficulty
 
@@ -304,6 +308,15 @@ class Blockchain(object):
             if block.index > height:
                 height = block.index
         return height
+
+    @staticmethod
+    def little_hash(block_hash):
+        little_hex = bytearray.fromhex(block_hash)
+        little_hex.reverse()
+
+        str_little = ''.join(format(x, '02x') for x in little_hex)
+
+        return str_little
 
     @classmethod
     async def get_genesis_block(cls):

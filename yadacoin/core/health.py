@@ -41,14 +41,12 @@ class TCPServerHealth(HealthItem):
             self.report_bad_health('TCP Server health check failed')
             return self.report_status(False)
 
-        status = True
         for stream in streams:
-            if time.time() - stream.last_activity > self.timeout:
+            if time.time() - stream.last_activity > 720:
                 await self.config.node_server_instance.remove_peer(stream)
                 self.report_bad_health('Stale stream detected in TCPServer, peer removed')
-                status = False
 
-        return self.report_status(status)
+        return self.report_status(True)
 
     async def reset(self):
         self.config.node_server_instance.stop()
