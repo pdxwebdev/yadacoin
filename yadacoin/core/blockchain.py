@@ -294,8 +294,8 @@ class Blockchain(object):
         async for block in self.blocks:
             if not isinstance(block, Block):
                 block = await Block.from_dict(block)
-            target = int(block.hash, 16)
-            difficulty += CHAIN.MAX_TARGET - target
+            target = int(block.target, 16)
+            difficulty += CHAIN.MAX_TARGET_RX // target
         return difficulty
 
     def get_highest_block_height(self):
