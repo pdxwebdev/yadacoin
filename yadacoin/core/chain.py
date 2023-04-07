@@ -9,6 +9,9 @@ class CHAIN(object):
     # Max possible target for a block
     MAX_TARGET = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
     MAX_TARGET_HEX = 'ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
+    # since we use "get_target_10min" to generate a new block, the target cannot be higher
+    MAX_TARGET_RX = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+    MAX_TARGET_RX_HEX = '0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'
 
     MAX_NONCE_LEN = 64
 
