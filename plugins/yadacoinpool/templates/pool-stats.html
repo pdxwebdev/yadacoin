@@ -2,133 +2,385 @@
 <script src="yadacoinpoolstatic/lib/bootstrap/dist/js/bootstrap.min.js"></script>
 <link href="yadacoinpoolstatic/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
 <body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
-    <main>
-      <div class="main">
-        <section class="module container" id="about">
-          <h1>YadaCoin Pool Stats</h1>
-          <h2>Pool</h2>
-          <div style="width: 350px; float:left;">
-            <h4 style="font-weight: bold;">Hash rate</h4 style="font-weight: bold;">
-            <div id="pool-hash-rate"></div>
-            <h4 style="font-weight: bold;">Last block</h4 style="font-weight: bold;">
-            <div id="pool-last-block"></div>
-            <h4 style="font-weight: bold;">Miner count</h4 style="font-weight: bold;">
-            <div id="pool-miner-count"></div>
-          </div>
-          <div style="width: 350px; float:left;">
-            <h4 style="font-weight: bold;">Payout scheme</h4 style="font-weight: bold;">
-            <div id="pool-payout-scheme"></div>
-            <h4 style="font-weight: bold;">Fee</h4 style="font-weight: bold;">
-            <div id="pool-fee"></div>
-            <h4 style="font-weight: bold;">Blocks found</h4 style="font-weight: bold;">
-            <div id="pool-blocks-found"></div>
-          </div>
-          <div style="width: 350px; float:left;clear:right;">
-            <h4 style="font-weight: bold;">Min payout</h4 style="font-weight: bold;">
-            <div id="pool-min-payout"></div>
-            <h4 style="font-weight: bold;">Url</h4 style="font-weight: bold;">
-            <div id="pool-url"></div>
-          </div>
-          <div style="width: 350px; clear: left; float:left">
-            <h2>Network</h2>
-            <h4 style="font-weight: bold;">Hash rate</h4 style="font-weight: bold;">
-            <div id="network-hash-rate"></div>
-            <div id="network-hash-rate_khps"></div>
-            <div id="network-hash-rate_mhps"></div>
-            <h4 style="font-weight: bold;">Network Difficulty</h4 style="font-weight: bold;">
-            <div id="network-difficulty"></div>
-            <h4 style="font-weight: bold;">Height</h4 style="font-weight: bold;">
-            <div id="network-height"></div>
-            <h4 style="font-weight: bold;">Reward</h4 style="font-weight: bold;">
-            <div id="network-reward"></div>
-            <h4 style="font-weight: bold;">Last block</h4 style="font-weight: bold;">
-            <div id="network-last-block"></div>
-          </div>
-          <div style="width: 350px; float:left;">
-            <h2>Market</h2>
-            <h4 style="font-weight: bold;">YDABTC</h4 style="font-weight: bold;">
-            <div id="market-last-btc"></div>
-          </div>
-          <div style="width: 150px; float:left;">
-            <h2>Download</h2>
-            <h4 style="font-weight: bold;"><a href="https://yadacoin.io/pool-guide#xmrigcc" target="_blank">XMRigCC</a></h4 style="font-weight: bold;">
-            <h4 style="font-weight: bold;"><a href="https://yadacoin.io/pool-guide#srbminer" target="_blank">SRBMiner</a></h4 style="font-weight: bold;">
-          </div>
-            <form method="GET" action="." id="form">
-                <input type="text" name="address" id="address" placeholder="address" class="form-control" />
-                <button class="form-control">Get stats</button>
-            </form>
-            <h2>Miner Hash Rate: <span id="hash-rate"></span></h2>
-            <h2>Recent 100 shares</h2>
-            <table id="shares-table" class="table">
-                <tr><td>No results</td></tr>
-            </table>
-            <h2>Recent 100 payouts</h2>
-            <table id="payouts-table" class="table">
-                <tr><td>No results</td></tr>
-            </table>
-        </section>
+
+<section class="module container" id="about">
+    <div class="header">
+      <div><img id="logo"> YADA MINING POOL</div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>POOL HASH RATE</b></h5>
+        <div id="pool-hash-rate"></div>
+        <div id="pool-perecentage"></div>
       </div>
-      <div class="scroll-up"><a href="#totop"><i class="fa fa-angle-double-up"></i></a></div>
-    </main>
-    <script type="text/javascript">
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>BLOCKS FOUND</b></h5>
+        <div id="pool-blocks-found"></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>BLOCK FOUND EVERY</b></h5>
+        <div id="pool-avg-block-time"></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>LAST BLOCK FOUND BY POOL</b></h5>
+        <div id="pool-last-block"></div>
+        <h5 id="pool-last-block-time"></h5>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>NETWORK HASH RATE</b></h5>
+        <div id="avg-network-hash-rate"></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>DIFFICULTY</b></h5>
+        <div id="network-difficulty"></div>
+        <div id="current-network-hash-rate"></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>BLOCKCHAIN HEIGHT</b></h5>
+        <div id="network-height"></div>
+        <h5 id="network-last-block"></h5>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>BLOCK REAWORD</b></h5>
+        <div><span  id="network-reward"></span> YDA</div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>CONNECTED MINERS / WORKERS</b></h5>
+        <div><span id="pool-worker-count"></span> / <span id="pool-miner-count"></span></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>POOL FEE</b></h5>
+        <div id="pool-fee"></div>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>MINIMUM PAYOUT</b></h5>
+        <div id="pool-min-payout"></div>
+        <h6 id="pool-payout-frequency"></h6>
+      </div>
+    </div>
+    <div class="column">
+      <div class="box">
+        <h5><b>PAYOUT SCHEME</b></h5>
+        <div id="pool-payout-scheme"></div>
+      </div>
+    </div>
+    <div class="column2">
+      <div class="box2">
+        <script src="https://widgets.coingecko.com/coingecko-coin-ticker-widget.js"></script>
+        <coingecko-coin-ticker-widget currency="usd" coin-id="yadacoin" locale="en"></coingecko-coin-ticker-widget>
+      </div>
+    </div>
+    <div class="column2">
+      <div class="box3">
+        <h5><b><center>HOW TO START</center></b></h5>
+        <div>Create wallet</div>
+        <div>Download Miner App</div>
+        <div>XMRigCC conf.json settings:</div>
+        <h5>"algo": "rx/yada",</h5>
+        <h5>"url": "<span id="pool-url">"</span>",</h5>
+        <h5>"user": "Your wallet address.Worker ID",</h5>
+        <h5>"keepalive": true,</h5>
+      </div>
+    </div>
+    <div class="column3">
+        <center>
+          <li><button style="display: inline" class="button" role="button"><a href="https://discord.gg/MWwq27j5tX">Discord</a></button></li>
+          <li><button style="display: inline" class="button" role="button"><a href="https://miningpoolstats.stream/yadacoin">MiningPoolStats</a></button></li>
+          <li><button style="display: inline" class="button" role="button"><a href="https://yadacoin.io/app">Official Wallet</a></button></li>
+          <li><button style="display: inline" class="button" role="button"><a href="https://github.com/Bendr0id/xmrigCC/releases">XMRigCC</a></button></li>
+        </center>
+      <h2>POOL BLOCKS</h2>
+      <table id="blocks-table" class="table">
+        <tr><th>Time Found</th><th>Height</th><th>Reward</th><th>Block Hash</th></tr> <!- TODO: I tried to get a reward from "pool-blocks" but if a block has more than one transaction, strange values came out ->
+      </table>
+      <center><button class="button" role="button"><a href="#" id="loadMore">Load More Blocks</a></button></center>
+      <h2>MINER STATISTICS</h2>
+      <form method="GET" action="." id="form">
+        <input type="text" name="address" id="address" placeholder="address" style="width: 75%; height: 35px; float:left;" />
+        <button class="button">Get stats</button>
+      </form>
+      <h4>MINER HASH RATE: <b><span id="hash-rate"></span></b></h4>
+      <h4>TOTAL HASHES SUBMITTED: <b><span id="total-hash"></span></b></h4>
+      <table id="payouts-table" class="table">
+        <tr><th>Time Sent</th><th>TXN ID</th><th>Amount</th></tr>
+      </table>
+      <center><button class="button" role="button"><a href="#" id="loadMore">Load More Paymants</a></button></center>
+ <!- TODO: dont know how to activate this function on Payouts Table ->
+    </div>
+</section>
+<script type="text/javascript">
         $(document).ready(function() {
             $.get('/pool-info').then((data) => {
-                $('#pool-hash-rate').html(data.pool.hashes_per_second.toFixed(0) + 'H/s');
-                if(data.pool.last_five_blocks.length > 0) {
-                    var newDate = new Date();
-                    newDate.setTime(data.pool.last_five_blocks[0].timestamp*1000);
-                    dateString = newDate.toUTCString();
-                    $('#pool-last-block').html(data.pool.last_five_blocks[0].height + " - " + dateString);
+                if(data.pool.hashes_per_second < 1000) {
+                    $('#pool-hash-rate').html(data.pool.hashes_per_second + ' H/sec ');
+                }
+                else if(data.pool.hashes_per_second >= 1000 && data.pool.hashes_per_second < 1000000) {
+                    $('#pool-hash-rate').html((data.pool.hashes_per_second / 1000).toFixed(2) + ' KH/sec ');
+                }
+                else if(data.pool.hashes_per_second >= 1000000) {
+                    $('#pool-hash-rate').html((data.pool.hashes_per_second / 1000000).toFixed(2) + ' MH/sec ');
                 }
                 $('#pool-miner-count').html(data.pool.miner_count);
+                $('#pool-worker-count').html(data.pool.worker_count);
                 $('#pool-payout-scheme').html(data.pool.payout_scheme);
                 $('#pool-fee').html(data.pool.pool_fee * 100 + '%');
                 $('#pool-blocks-found').html(data.pool.blocks_found);
-                $('#pool-min-payout').html(data.pool.min_payout);
+                $('#pool-min-payout').html(data.pool.min_payout + ' YDA');
                 $('#pool-url').html(data.pool.url);
-                $('#network-difficulty').html(data.network.difficulty);
+                $('#pool-perecentage').html('(' + data.pool.pool_perecentage.toFixed(2) + ' %)');
+                $('#pool-avg-block-time').html(data.pool.avg_block_time);
+                $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCK found by pool');
+                if(data.pool.payout_frequency > 1) {
+                    $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCKS found by pool');
+                } 
+                $('#pool-address').html(data.pool.pool_address);
+                $('#network-difficulty').html(data.network.difficulty.toFixed(3));
                 $('#network-height').html(data.network.height);
                 $('#network-reward').html(data.network.reward);
                 var newDate = new Date();
                 newDate.setTime(data.network.last_block*1000);
                 dateString = newDate.toUTCString();
                 $('#network-last-block').html(dateString);
-                $('#network-hash-rate').html(data.network.hashes_per_second.toFixed(0) + 'H/s');
-                $('#network-hash-rate_khps').html(data.network.hashes_per_second_khps.toFixed(2) + 'KH/s');
-                $('#network-hash-rate_mhps').html(data.network.hashes_per_second_mhps.toFixed(2) + 'MH/s');
-
-                $('#market-last-btc').html(data.market.last_btc);
+                if(data.network.avg_hashes_per_second < 1000) {
+                    $('#avg-network-hash-rate').html(data.network.avg_hashes_per_second.toFixed(0) + ' H/sec');
+                }
+                else if(data.network.avg_hashes_per_second >= 1000 && data.network.avg_hashes_per_second < 1000000) {
+                    $('#avg-network-hash-rate').html((data.network.avg_hashes_per_second / 1000).toFixed(2) + ' KH/sec');
+                }
+                else if(data.network.avg_hashes_per_second >= 1000000) {
+                    $('#avg-network-hash-rate').html((data.network.avg_hashes_per_second / 1000000).toFixed(2) + ' MH/sec');
+                }
+                if(data.network.current_hashes_per_second < 1000) {
+                    $('#current-network-hash-rate').html(data.network.current_hashes_per_second.toFixed(0) + ' H/sec');
+                }
+                else if(data.network.current_hashes_per_second >= 1000 && data.network.current_hashes_per_second < 1000000) {
+                    $('#current-network-hash-rate').html((data.network.current_hashes_per_second / 1000).toFixed(2) + ' KH/sec');
+                }
+                else if(data.network.current_hashes_per_second >= 1000000) {
+                    $('#current-network-hash-rate').html((data.network.current_hashes_per_second / 1000000).toFixed(2) + ' MH/sec');
+                }
+                $('#market-last-btc').html(data.market.last_btc.toFixed(8));
+                $('#market-last-usdt').html(data.market.last_usdt.toFixed(8));
             })
+            $.get('/pool-blocks').then((data) => {
+                if(data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Height</th><th>Reward</th><th>Block Hash</th></tr>');
+                    for(var i=0; i < data.blocks.length; i++) {
+                        var newDate = new Date();
+                        newDate.setTime(data.blocks[i].time*1000);
+                        dateString = newDate.toUTCString();
+                        $('#blocks-table').append('<tr><td>' + dateString + '</td><td>' + data.blocks[i].index + '</a></td><td>N/a</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.blocks[i].hash + '">' + data.blocks[i].hash + '</td></tr>');
+                    }
+                    var pagelength = 5;
+                    var pageIndex = 1;
+                    var selector = "tr:gt(" + pagelength + ")";
+                    $(selector).hide();
+  
+                    $("#loadMore").click(function(){
+                        var itemsCount = ((pageIndex * pagelength) + pagelength);   
+                        var selector = "tr:lt(" + itemsCount + ")";
+                    $(selector).show();
+                    pageIndex++;
+                    });
+
+                if(data.blocks.length > 0) {
+                    var newDate = new Date();
+                    newDate.setTime(data.blocks[0].time*1000);
+                    dateString = newDate.toUTCString();
+                    $('#pool-last-block').html(data.blocks[0].index);
+                    $('#pool-last-block-time').html(dateString);
+                }
+            });
             $('#form').submit(function(e) {
                 e.preventDefault();
-                $.get('/shares-for-address?address=' + $('#address').val()).then((data) => {
-                    if(data.results.length === 0) return $('#shares-table').html('<tr><td>No results</td></tr>');
-                    $('#shares-table').html('');
-                    $('#shares-table').append('<tr><th>Height</th><th>Hash</th></tr>');
-                    for(var i=0; i < data.results.length; i++) {
-                        $('#shares-table').append('<tr><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i].index + '">' + data.results[i].index + '</a></td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i].hash + '">' + data.results[i].hash + '</td></tr>');
-                    }
-                });
                 $.get('/payouts-for-address?address=' + $('#address').val()).then((data) => {
-                    if(data.results.length === 0) return $('#payouts-table').html('<tr><td>No results</td></tr>');
+                    if(data.results.length === 0) return $('#payouts-table').html('<tr>><th>Time Sent</th><th>TXN ID</th><th>Amount</th></tr>');
                     $('#payouts-table').html('');
-                    $('#payouts-table').append('<tr><th>Height</th><th>Amount</th></tr>');
+                    $('#payouts-table').append('<tr><th>Time Sent</th><th>TXN ID</th><th>Amount</th></tr>');
                     for(var i=0; i < data.results.length; i++) {
                         var selectOutput = {};
+                        var newDate = new Date();
+                        newDate.setTime(data.results[i]['txn'].time*1000);
+                        dateString = newDate.toUTCString();
                         for(var j=0; j < data.results[i]['txn'].outputs.length; j++) {
                             if(data.results[i]['txn'].outputs[j].to === $('#address').val()) {
                                 selectOutput = data.results[i]['txn'].outputs[j];
                             }
                         }
-                        $('#payouts-table').append('<tr><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i].index + '">' + data.results[i].index + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + '</td></tr>');
+                    $('#payouts-table').append('<tr><td>' + dateString + '<td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i]['txn'].id + '">' + data.results[i]['txn'].id + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + '</td></tr>');
                     }
                 });
+                $.get('/shares-for-address?address=' + $('#address').val()).then((data) => {
+                    $('#total-hash').html(data.total_hash)
+                });
                 $.get('/hashrate-for-address?address=' + $('#address').val()).then((data) => {
-                    $('#hash-rate').html(data.miner_hashrate + 'H/s');
+                    if(data.miner_hashrate < 1000) {
+                        $('#hash-rate').html(data.miner_hashrate + ' H/s');
+                    }
+                    else if(data.miner_hashrate >= 1000 && data.miner_hashrate < 1000000) {
+                        $('#hash-rate').html((data.miner_hashrate / 1000).toFixed(2) + ' KH/s');
+                    }
+                    else if(data.miner_hashrate >= 1000000) {
+                        $('#hash-rate').html((data.miner_hashrate / 1000000).toFixed(2) + ' MH/s');
+                    }
                 });
             });
         });
-    </script>
-  </body>
+</script>
+</body>
+<style>
+
+body {
+  background-color: #D3D3D3;
+}
+
+.header {
+  padding: 10px;
+  text-align: left;
+  font-size: 50px;
+}
+
+.box {
+  width: 265px;
+  height: 100px;  
+  padding: 3px;
+  padding-left: 15px;
+  font-size: 20px;
+  color: whitesmoke;
+  font-family: "Audiowide", sans-serif;
+  box-sizing: border-box;
+  background-image:linear-gradient(#A9A9A9, #696969);
+  opacity: 0.9;
+}
+
+.box2 {
+  width: 550px;
+  height: 205px;  
+  box-sizing: border-box;
+}
+
+.box3 {
+  width: 550px;
+  height: 205px;   
+  padding: 3px;
+  padding-left: 20px;
+  font-size: 14px;
+  color: whitesmoke;
+  text-decoration-color: darkred;
+  font-family: "Audiowide", sans-serif;
+  box-sizing: border-box;
+  background-image:linear-gradient(#A9A9A9, #696969);
+  opacity: 0.9;
+}
+
+.box4 {
+  width: 550px;
+  height: 210px;  
+  box-sizing: border-box;
+}
+
+.column {
+  float: left;
+  width: 25%;
+  padding: 10px;
+}
+
+.column2 {
+  float: left;
+  padding: 20px;
+  width: 50%;
+  padding: 10px;
+}
+
+.column3 {
+  float: center;
+  padding: 20px;
+  width: 100%;
+  padding: 10px;
+}
+
+.button {
+  width: 24%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 6px 14px;
+  font-family: -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
+  border-radius: 6px;
+  border: none;
+
+  background: #A9A9A9;
+  box-shadow: 0px 0.5px 1px rgba(0, 0, 0, 0.1), inset 0px 0.5px 0.5px rgba(255, 255, 255, 0.5), 0px 0px 0px 0.5px rgba(0, 0, 0, 0.12);
+  color: black;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+.button:focus {
+  box-shadow: inset 0px 0.8px 0px -0.25px rgba(255, 255, 255, 0.2), 0px 0.5px 1px rgba(0, 0, 0, 0.1), 0px 0px 0px 3.5px rgba(58, 108, 217, 0.5);
+  outline: 0;
+}
+
+.footer {
+  background-color: #f1f1f1;
+  padding: 10px;
+  text-align: center;
+}
+
+@media (max-width: 1100px) {
+  .column {
+    width: 100%;
+  }
+}
+
+#logo {
+  width: 50px;
+  height: 50px;
+  background-image: url("yadacoinpoolstatic/img/favicon.ico");
+  background-size: cover;
+}
+
+table {
+  border-collapse: collapse;
+  width: 95%;
+}
+
+th, td {
+  text-align: left;
+  padding: 8px;
+  font-size: 13;
+}
+
+tr:nth-child(even){background-color: #A9A9A9}
+
+th {
+  background-color: #696969;
+  color: whitesmoke;
+}
+
+li {
+  display: inline;
+}
+</style>
 </html>
+
