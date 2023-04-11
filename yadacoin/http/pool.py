@@ -30,9 +30,22 @@ class PoolSharesHandler(BaseHandler):
                     },
                 ]
             }
-        results = await self.config.mongo.async_db.shares.find(query, {'_id': 0}).sort([('index', -1)]).to_list(100)
-        self.render_as_json({'results': results})
+        total_share = await self.config.mongo.async_db.shares.count_documents(query)
+        total_hash = total_share * self.config.pool_diff
+        self.render_as_json({'total_hash': int(total_hash)})
 
+class PoolBlocksHandler(BaseHandler):
+    async def get(self):
+        pool_public_key = self.config.public_key
+        blocks = await self.config.mongo.async_db.blocks.find(
+            {
+                'public_key': pool_public_key
+            },
+            {
+                '_id': 0
+            }
+        ).sort([('index', -1)]).to_list(100)
+        self.render_as_json({'blocks': blocks})
 
 class PoolPayoutsHandler(BaseHandler):
     async def get(self):
@@ -92,6 +105,7 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
 
 
 POOL_HANDLERS = [
+    (r'/pool-blocks', PoolBlocksHandler),
     (r'/shares-for-address', PoolSharesHandler),
     (r'/payouts-for-address', PoolPayoutsHandler),
     (r'/hashrate-for-address', PoolHashRateHandler),
