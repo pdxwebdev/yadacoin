@@ -70,8 +70,8 @@ class PoolInfoHandler(BaseWebHandler):
         daily_blocks_found = await self.config.mongo.async_db.blocks.count_documents({'time': {'$gte': time.time() - (600 * 144)}})
         if daily_blocks_found > 0:
             net_target = self.config.LatestBlock.block.target
-        avg_blocks_found = self.config.mongo.async_db.blocks.find({'time': {'$gte': time.time() - ( 600 * 12)}})
-        avg_blocks_found = await avg_blocks_found.to_list(length=2 * 12)
+        avg_blocks_found = self.config.mongo.async_db.blocks.find({'time': {'$gte': time.time() - ( 600 * 36)}})
+        avg_blocks_found = await avg_blocks_found.to_list(length=52)
         avg_block_time = daily_blocks_found / expected_blocks * 600
         if len(avg_blocks_found) > 0:
             avg_net_target = 0
@@ -80,7 +80,7 @@ class PoolInfoHandler(BaseWebHandler):
             avg_net_target = avg_net_target / len(avg_blocks_found)
             avg_net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / avg_net_target
             net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / net_target
-            avg_network_hash_rate = len(avg_blocks_found) / 12 * avg_net_difficulty * 2**16 / avg_block_time
+            avg_network_hash_rate = len(avg_blocks_found) / 36 * avg_net_difficulty * 2**16 / avg_block_time
             network_hash_rate = net_difficulty * 2**16 / 600
         else:
             net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
