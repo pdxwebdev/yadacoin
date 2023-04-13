@@ -254,3 +254,28 @@ Get a transaction by transaction id on the blockchain or in the mempool.
     "id": "MEUCIQDRaOpsNtb4Si0zwHzflCHds4PBri2Y6QPFyurJ8MnmYQIgFQ8aAN2Ujjjndb31On2cfzW302Vl+wMk53It7awatIA="
 }
 ```
+
+# /convert-public-key-to-address
+
+Get a transaction by transaction id on the blockchain or in the mempool.
+
+**URL** : `/convert-public-key-to-address`
+
+**URL Parameters** : `?public_key=hex_public_key`
+
+**Example URL** : `/convert-public-key-to-address?public_key=0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7`
+
+**Method** : `GET`
+
+## Success Response
+
+**Code** : `200 OK`
+
+**Content example**
+
+```json
+{
+    "address": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC",
+    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7"
+}
+```
