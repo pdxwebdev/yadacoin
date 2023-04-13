@@ -1,11 +1,11 @@
 <script src="yadacoinpoolstatic/lib/jquery/dist/jquery.js"></script>
 <script src="yadacoinpoolstatic/lib/bootstrap/dist/js/bootstrap.min.js"></script>
 <link href="yadacoinpoolstatic/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
-<body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
 
-<section class="module container" id="about">
+<body>
+  <section class="module container" id="about">
     <div class="header">
-      <div><img id="logo"> YADA MINING POOL</div>
+      <div><img src="yadacoinpoolstatic/img/logo.ico"> YADA MINING POOL</div>
     </div>
     <div class="column">
       <div class="box">
@@ -127,7 +127,9 @@
       <center><button class="button" role="button"><a href="#" id="loadMore">Load More Paymants</a></button></center>
  <!- TODO: dont know how to activate this function on Payouts Table ->
     </div>
-</section>
+  </section>
+</body>
+
 <script type="text/javascript">
         $(document).ready(function() {
             $.get('/pool-info').then((data) => {
@@ -246,7 +248,7 @@
             });
         });
 </script>
-</body>
+
 <style>
 
 body {
@@ -292,12 +294,6 @@ body {
   opacity: 0.9;
 }
 
-.box4 {
-  width: 550px;
-  height: 210px;  
-  box-sizing: border-box;
-}
-
 .column {
   float: left;
   width: 25%;
@@ -316,6 +312,15 @@ body {
   padding: 20px;
   width: 100%;
   padding: 10px;
+}
+
+@media (max-width: 1200px) {
+  .column {
+    width: 100%;
+  }
+  .column2 {
+    width: 100%;
+  }
 }
 
 .button {
@@ -345,19 +350,6 @@ body {
   background-color: #f1f1f1;
   padding: 10px;
   text-align: center;
-}
-
-@media (max-width: 1100px) {
-  .column {
-    width: 100%;
-  }
-}
-
-#logo {
-  width: 50px;
-  height: 50px;
-  background-image: url("yadacoinpoolstatic/img/favicon.ico");
-  background-size: cover;
 }
 
 table {
