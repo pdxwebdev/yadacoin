@@ -3,7 +3,6 @@
 <link href="yadacoinpoolstatic/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
 
 <body>
-  <section class="module container" id="about">
     <div class="header">
       <div><img src="yadacoinpoolstatic/img/logo.ico"> YADA MINING POOL</div>
     </div>
@@ -94,7 +93,7 @@
       <div class="box3">
         <h5><b><center>HOW TO START</center></b></h5>
         <div>Create wallet</div>
-        <div>Download Miner App</div>
+        <div>Download XMRigCC</div>
         <div>XMRigCC conf.json settings:</div>
         <h5>"algo": "rx/yada",</h5>
         <h5>"url": "<span id="pool-url">"</span>",</h5>
@@ -127,7 +126,6 @@
       <center><button class="button" role="button"><a href="#" id="loadMore">Load More Paymants</a></button></center>
  <!- TODO: dont know how to activate this function on Payouts Table ->
     </div>
-  </section>
 </body>
 
 <script type="text/javascript">
@@ -253,6 +251,8 @@
 
 body {
   background-color: #D3D3D3;
+  margin-left: 12%;
+  margin-right: 12%;
 }
 
 .header {
@@ -262,11 +262,12 @@ body {
 }
 
 .box {
-  width: 265px;
-  height: 100px;  
+  width: 100%;
+  height: 120px;  
   padding: 3px;
   padding-left: 15px;
-  font-size: 20px;
+  font-size: 24px;
+  font-weight: bolder;
   color: whitesmoke;
   font-family: "Audiowide", sans-serif;
   box-sizing: border-box;
@@ -275,14 +276,14 @@ body {
 }
 
 .box2 {
-  width: 550px;
-  height: 205px;  
+  width: 100%;
+  height: 210px;  
   box-sizing: border-box;
 }
 
 .box3 {
-  width: 550px;
-  height: 205px;   
+  width: 100%;
+  height: 210px;   
   padding: 3px;
   padding-left: 20px;
   font-size: 14px;
@@ -314,7 +315,7 @@ body {
   padding: 10px;
 }
 
-@media (max-width: 1200px) {
+@media (max-width: 1100px) {
   .column {
     width: 100%;
   }
