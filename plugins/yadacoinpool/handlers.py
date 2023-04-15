@@ -86,8 +86,8 @@ class PoolInfoHandler(BaseWebHandler):
             net_difficulty = 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff / 0x0000ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
             network_hash_rate = 0
         
-        pool_perecentage = pool_hash_rate / network_hash_rate * 100
-        avg_pool_block_time = int(network_hash_rate * avg_block_time // pool_hash_rate)
+        pool_perecentage = pool_hash_rate / avg_network_hash_rate * 100
+        avg_pool_block_time = int(avg_network_hash_rate * avg_block_time // pool_hash_rate)
         #TODO if pool hashrate = 0 divmod fail and pool dont load any data, i dont know how to solve this
         if pool_hash_rate == 0:
             avg_time = [N/a]
