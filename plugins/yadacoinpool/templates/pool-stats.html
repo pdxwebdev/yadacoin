@@ -147,19 +147,18 @@
                 $('#pool-blocks-found').html(data.pool.blocks_found);
                 $('#pool-min-payout').html(data.pool.min_payout + ' YDA');
                 $('#pool-url').html(data.pool.url);
-                $('#pool-perecentage').html('(' + data.pool.pool_perecentage.toFixed(2) + ' %)');
+                $('#pool-perecentage').html(data.pool.pool_perecentage.toFixed(2) + ' %');
                 $('#pool-avg-block-time').html(data.pool.avg_block_time);
                 $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCK found by pool');
                 if(data.pool.payout_frequency > 1) {
                     $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCKS found by pool');
                 } 
-                $('#pool-address').html(data.pool.pool_address);
                 $('#network-difficulty').html(data.network.difficulty.toFixed(3));
                 $('#network-height').html(data.network.height);
                 $('#network-reward').html(data.network.reward);
                 var newDate = new Date();
                 newDate.setTime(data.network.last_block*1000);
-                dateString = newDate.toUTCString();
+                dateString = newDate.toLocaleString();
                 $('#network-last-block').html(dateString);
                 if(data.network.avg_hashes_per_second < 1000) {
                     $('#avg-network-hash-rate').html(data.network.avg_hashes_per_second.toFixed(0) + ' H/sec');
@@ -187,7 +186,7 @@
                     for(var i=0; i < data.blocks.length; i++) {
                         var newDate = new Date();
                         newDate.setTime(data.blocks[i].time*1000);
-                        dateString = newDate.toUTCString();
+                        dateString = newDate.toLocaleString();
                         $('#blocks-table').append('<tr><td>' + dateString + '</td><td>' + data.blocks[i].index + '</a></td><td>N/a</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.blocks[i].hash + '">' + data.blocks[i].hash + '</td></tr>');
                     }
                     var pagelength = 5;
@@ -205,7 +204,7 @@
                 if(data.blocks.length > 0) {
                     var newDate = new Date();
                     newDate.setTime(data.blocks[0].time*1000);
-                    dateString = newDate.toUTCString();
+                    dateString = newDate.toLocaleString();
                     $('#pool-last-block').html(data.blocks[0].index);
                     $('#pool-last-block-time').html(dateString);
                 }
@@ -220,13 +219,13 @@
                         var selectOutput = {};
                         var newDate = new Date();
                         newDate.setTime(data.results[i]['txn'].time*1000);
-                        dateString = newDate.toUTCString();
+                        dateString = newDate.toLocaleString();
                         for(var j=0; j < data.results[i]['txn'].outputs.length; j++) {
                             if(data.results[i]['txn'].outputs[j].to === $('#address').val()) {
                                 selectOutput = data.results[i]['txn'].outputs[j];
                             }
                         }
-                    $('#payouts-table').append('<tr><td>' + dateString + '<td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i]['txn'].id + '">' + data.results[i]['txn'].id + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + '</td></tr>');
+                    $('#payouts-table').append('<tr><td>' + dateString + '<td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i]['txn'].id + '">' + data.results[i]['txn'].id + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + ' YDA' + '</td></tr>');
                     }
                 });
                 $.get('/shares-for-address?address=' + $('#address').val()).then((data) => {
@@ -266,7 +265,7 @@ body {
   height: 120px;  
   padding: 3px;
   padding-left: 15px;
-  font-size: 24px;
+  font-size: 22px;
   font-weight: bolder;
   color: whitesmoke;
   font-family: "Audiowide", sans-serif;
@@ -361,7 +360,7 @@ table {
 th, td {
   text-align: left;
   padding: 8px;
-  font-size: 13;
+  font-size: 14;
 }
 
 tr:nth-child(even){background-color: #A9A9A9}
