@@ -140,6 +140,13 @@
                 else if(data.pool.hashes_per_second >= 1000000) {
                     $('#pool-hash-rate').html((data.pool.hashes_per_second / 1000000).toFixed(2) + ' MH/sec ');
                 }
+                if(data.pool.blocks.length > 0) {
+                    var newDate = new Date();
+                    newDate.setTime(data.pool.blocks[0].time*1000);
+                    dateString = newDate.toLocaleString();
+                    $('#pool-last-block').html(data.pool.blocks[0].index);
+                    $('#pool-last-block-time').html(dateString);
+                }
                 $('#pool-miner-count').html(data.pool.miner_count);
                 $('#pool-worker-count').html(data.pool.worker_count);
                 $('#pool-payout-scheme').html(data.pool.payout_scheme);
@@ -147,7 +154,7 @@
                 $('#pool-blocks-found').html(data.pool.blocks_found);
                 $('#pool-min-payout').html(data.pool.min_payout + ' YDA');
                 $('#pool-url').html(data.pool.url);
-                $('#pool-perecentage').html(data.pool.pool_perecentage.toFixed(2) + ' %');
+                $('#pool-perecentage').html('(' + data.pool.pool_perecentage.toFixed(2) + ' %)');
                 $('#pool-avg-block-time').html(data.pool.avg_block_time);
                 $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCK found by pool');
                 if(data.pool.payout_frequency > 1) {
@@ -180,14 +187,13 @@
                 }
                 $('#market-last-btc').html(data.market.last_btc.toFixed(8));
                 $('#market-last-usdt').html(data.market.last_usdt.toFixed(8));
-            })
-            $.get('/pool-blocks').then((data) => {
-                if(data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Height</th><th>Reward</th><th>Block Hash</th></tr>');
-                    for(var i=0; i < data.blocks.length; i++) {
+
+                if(data.pool.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Height</th><th>Reward</th><th>Block Hash</th></tr>');
+                    for(var i=0; i < data.pool.blocks.length; i++) {
                         var newDate = new Date();
-                        newDate.setTime(data.blocks[i].time*1000);
+                        newDate.setTime(data.pool.blocks[i].time*1000);
                         dateString = newDate.toLocaleString();
-                        $('#blocks-table').append('<tr><td>' + dateString + '</td><td>' + data.blocks[i].index + '</a></td><td>N/a</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.blocks[i].hash + '">' + data.blocks[i].hash + '</td></tr>');
+                        $('#blocks-table').append('<tr><td>' + dateString + '</td><td>' + data.pool.blocks[i].index + '</a></td><td>N/a</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.pool.blocks[i].hash + '">' + data.pool.blocks[i].hash + '</td></tr>');
                     }
                     var pagelength = 5;
                     var pageIndex = 1;
@@ -200,15 +206,7 @@
                     $(selector).show();
                     pageIndex++;
                     });
-
-                if(data.blocks.length > 0) {
-                    var newDate = new Date();
-                    newDate.setTime(data.blocks[0].time*1000);
-                    dateString = newDate.toLocaleString();
-                    $('#pool-last-block').html(data.blocks[0].index);
-                    $('#pool-last-block-time').html(dateString);
-                }
-            });
+            })
             $('#form').submit(function(e) {
                 e.preventDefault();
                 $.get('/payouts-for-address?address=' + $('#address').val()).then((data) => {
