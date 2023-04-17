@@ -59,6 +59,14 @@ class PoolInfoHandler(BaseWebHandler):
                 'public_key': pool_public_key
             }
         )
+        pool_blocks_found_list = await self.config.mongo.async_db.blocks.find(
+            {
+                'public_key': pool_public_key,
+            },
+            {
+                '_id': 0
+            }
+        ).sort([('index', -1)]).to_list(100)
         expected_blocks = 144
         mining_time_interval = 600
         shares_count = await self.config.mongo.async_db.shares.count_documents({'time': {'$gte': time.time() - mining_time_interval}})
@@ -120,8 +128,9 @@ class PoolInfoHandler(BaseWebHandler):
                 'fee': self.config.pool_take,
                 'payout_frequency': self.config.payout_frequency,
                 'payouts': payouts,
+                'blocks': pool_blocks_found_list[:100],
                 'pool_perecentage': pool_perecentage,
-                'avg_block_time': avg_time,
+                'avg_block_time': avg_time
             },
             'network': {
                 'height': self.config.LatestBlock.block.index,
