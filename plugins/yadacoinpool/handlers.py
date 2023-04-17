@@ -95,10 +95,14 @@ class PoolInfoHandler(BaseWebHandler):
             network_hash_rate = 0
         
         pool_perecentage = pool_hash_rate / avg_network_hash_rate * 100
-        avg_pool_block_time = int(avg_network_hash_rate * avg_block_time // pool_hash_rate)
-        #TODO if pool hashrate = 0 divmod fail and pool dont load any data, i dont know how to solve this
+        
         if pool_hash_rate == 0:
-            avg_time = [N/a]
+            avg_pool_block_time = 0
+        else:
+            avg_pool_block_time = int(avg_network_hash_rate * avg_block_time // pool_hash_rate)
+        
+        if avg_pool_block_time == 0:
+            avg_time = ['N/a']
         else:
             avg_time  = []
             for d,u in [(86400,"day"),(3600,"hour"),(60,"minute")]:
