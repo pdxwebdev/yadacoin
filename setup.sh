@@ -7,7 +7,7 @@ sudo apt-get install -y gnupg
 if [[ $(lsb_release -rs) == "22.04" ]]; then
 wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 sudo dpkg -i ./libssl1.1_1.1.0g-2ubuntu4_amd64.deb
-rm -i libssl1.1_1.1.0g-2ubuntu4_amd64.deb
+rm -rf libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 fi
 wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
 if [[ $(lsb_release -rs) == "20.04" ]]; then
