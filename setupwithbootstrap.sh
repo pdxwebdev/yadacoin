@@ -5,9 +5,9 @@ sudo mkdir /data/db -p
 sudo chmod 777 /data/db
 sudo apt-get install -y gnupg
 if [[ $(lsb_release -rs) == "22.04" ]]; then
-echo "deb http://security.ubuntu.com/ubuntu impish-security main" | sudo tee /etc/apt/sources.list.d/impish-security.list
-sudo apt-get update
-sudo apt-get install libssl1.1
+wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb
+sudo dpkg -i ./libssl1.1_1.1.0g-2ubuntu4_amd64.deb
+rm -i libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 fi
 wget -qO - https://www.mongodb.org/static/pgp/server-4.4.asc | sudo apt-key add -
 if [[ $(lsb_release -rs) == "20.04" ]]; then
