@@ -5,6 +5,7 @@ sudo mkdir /data/db -p
 sudo chmod 777 /data/db
 sudo apt-get install -y gnupg
 if [[ $(lsb_release -rs) == "22.04" ]]; then
+sudo sed -i "/#\$nrconf{restart} = 'i';/s/.*/\$nrconf{restart} = 'a';/" /etc/needrestart/needrestart.conf # prevent interactive prompt
 wget http://archive.ubuntu.com/ubuntu/pool/main/o/openssl/libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 sudo dpkg -i ./libssl1.1_1.1.0g-2ubuntu4_amd64.deb
 rm -rf libssl1.1_1.1.0g-2ubuntu4_amd64.deb
