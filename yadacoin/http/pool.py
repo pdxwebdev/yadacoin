@@ -30,9 +30,9 @@ class PoolSharesHandler(BaseHandler):
                     },
                 ]
             }
-        results = await self.config.mongo.async_db.shares.find(query, {'_id': 0}).sort([('index', -1)]).to_list(100)
-        self.render_as_json({'results': results})
-
+        total_share = await self.config.mongo.async_db.shares.count_documents(query)
+        total_hash = total_share * self.config.pool_diff
+        self.render_as_json({'total_hash': int(total_hash)})
 
 class PoolPayoutsHandler(BaseHandler):
     async def get(self):
@@ -46,7 +46,6 @@ class PoolPayoutsHandler(BaseHandler):
             if await self.config.mongo.async_db.blocks.count_documents({'transactions.id': result['txn']['id']}) > 0:
                 out.append(result)
         self.render_as_json({'results': out})
-
 
 class PoolHashRateHandler(BaseHandler):
     async def get(self):
