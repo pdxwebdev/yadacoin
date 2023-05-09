@@ -320,7 +320,7 @@ class Collection:
     def do_logging(self, query_type, args, kwargs):
         self.set_duration()
         message = f"QUERY: {query_type} {self.collection} {args}, {kwargs}, duration: {self.duration}"
-        if self.duration > 3 and getattr(self.config, "slow_query_logging", None):
+        if self.duration > 3 and getattr(self._config, "slow_query_logging", None):
             self._config.app_log.warning(f"SLOW {message}")
             self._config.mongo.async_db.slow_queries.append(message)
         else:
