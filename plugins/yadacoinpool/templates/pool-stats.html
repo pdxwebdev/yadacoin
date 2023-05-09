@@ -123,7 +123,7 @@
       <table id="payouts-table" class="table">
         <tr><th>Time Sent</th><th>TXN ID</th><th>Amount</th></tr>
       </table>
-      <center><button class="button" role="button"><a href="#" id="loadMore">Load More Paymants</a></button></center>
+      <center><button class="button" role="button"><a href="#" id="loadMore">Load More Payments</a></button></center>
  <!- TODO: dont know how to activate this function on Payouts Table ->
     </div>
 </body>
@@ -159,7 +159,7 @@
                 $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCK found by pool');
                 if(data.pool.payout_frequency > 1) {
                     $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCKS found by pool');
-                } 
+                }
                 $('#network-difficulty').html(data.network.difficulty.toFixed(3));
                 $('#network-height').html(data.network.height);
                 $('#network-reward').html(data.network.reward);
@@ -199,9 +199,9 @@
                     var pageIndex = 1;
                     var selector = "tr:gt(" + pagelength + ")";
                     $(selector).hide();
-  
+
                     $("#loadMore").click(function(){
-                        var itemsCount = ((pageIndex * pagelength) + pagelength);   
+                        var itemsCount = ((pageIndex * pagelength) + pagelength);
                         var selector = "tr:lt(" + itemsCount + ")";
                     $(selector).show();
                     pageIndex++;
@@ -260,7 +260,7 @@ body {
 
 .box {
   width: 100%;
-  height: 120px;  
+  height: 120px;
   padding: 3px;
   padding-left: 15px;
   font-size: 22px;
@@ -274,13 +274,13 @@ body {
 
 .box2 {
   width: 100%;
-  height: 210px;  
+  height: 210px;
   box-sizing: border-box;
 }
 
 .box3 {
   width: 100%;
-  height: 210px;   
+  height: 210px;
   padding: 3px;
   padding-left: 20px;
   font-size: 14px;
