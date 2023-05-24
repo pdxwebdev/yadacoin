@@ -97,6 +97,7 @@ class Transaction(object):
         version=None,
         miner_signature="",
         contract_generated=False,
+        relationship_hash="",
     ):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
@@ -107,6 +108,7 @@ class Transaction(object):
         self.rid = rid
         self.transaction_signature = transaction_signature
         self.relationship = relationship
+        self.relationship_hash = relationship_hash
         self.public_key = public_key
         self.dh_public_key = dh_public_key if dh_public_key else ""
         self.fee = float(fee)
@@ -173,7 +175,7 @@ class Transaction(object):
         relationship="",
         no_relationship=False,
         exact_match=False,
-        version=3,
+        version=4,
         miner_signature="",
         contract_generated=False,
         do_money=True,
@@ -197,6 +199,11 @@ class Transaction(object):
         cls_inst.time = int(time.time())
         cls_inst.outputs = []
         cls_inst.relationship = relationship
+        cls_inst.relationship_hash = (
+            (hashlib.sha256(relationship.encode()).digest().hex())
+            if relationship
+            else ""
+        )
         cls_inst.no_relationship = no_relationship
         cls_inst.exact_match = exact_match
         cls_inst.version = version
@@ -370,6 +377,7 @@ class Transaction(object):
             version=txn.get("version"),
             miner_signature=txn.get("miner_signature", ""),
             contract_generated=txn.get("contract_generated", ""),
+            relationship_hash=txn.get("relationship_hash", ""),
         )
 
     def in_the_future(self):
@@ -583,7 +591,33 @@ class Transaction(object):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship
-        if self.version == 3:
+        if self.version == 4:
+            if relationship:
+                relationship_hash = hashlib.sha256(relationship.encode()).digest().hex()
+                if relationship_hash != self.relationship_hash:
+                    raise InvalidRelationshipHashException()
+            else:
+                relationship_hash = self.relationship_hash
+            hashout = (
+                hashlib.sha256(
+                    (
+                        self.public_key
+                        + str(self.time)
+                        + self.dh_public_key
+                        + self.rid
+                        + relationship_hash
+                        + "{0:.8f}".format(self.fee)
+                        + self.requester_rid
+                        + self.requested_rid
+                        + inputs_concat
+                        + outputs_concat
+                        + str(self.version)
+                    ).encode("utf-8")
+                )
+                .digest()
+                .hex()
+            )
+        elif self.version == 3:
             hashout = (
                 hashlib.sha256(
                     (

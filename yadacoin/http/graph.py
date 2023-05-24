@@ -17,7 +17,7 @@ from logging import getLogger
 from threading import Thread
 from yadacoin.core.collections import Collections
 from yadacoin.core.graphutils import GraphUtils
-from yadacoin.core.peer import Group, User
+from yadacoin.core.peer import Group, User, Peers
 
 from yadacoin.http.base import BaseHandler
 from yadacoin.core.graph import Graph
@@ -29,8 +29,6 @@ from yadacoin.core.transaction import (
 )
 from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
-from yadacoin.core.identity import Identity
-from yadacoin.core.crypt import Crypt
 
 
 class GraphConfigHandler(BaseHandler):
@@ -1115,6 +1113,12 @@ class AuthHandler(BaseGraphHandler):
         return self.render_as_json({"authed": authed})
 
 
+class MyRoutesHandler(BaseGraphHandler):
+    async def get(self):
+        routes = await Peers.get_routes()
+        return self.render_as_json({"routes": routes})
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r"/yada-config", GraphConfigHandler),  # first the config is requested
@@ -1174,4 +1178,5 @@ GRAPH_HANDLERS = [
     (r"/identity", IdentityHandler),
     (r"/challenge", ChallengeHandler),
     (r"/auth", AuthHandler),
+    (r"/my-routes", MyRoutesHandler),
 ]

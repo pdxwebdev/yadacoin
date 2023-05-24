@@ -22,7 +22,7 @@ from yadacoin.core.transaction import (
     InvalidTransactionException,
     MissingInputTransactionException,
     InvalidTransactionSignatureException,
-    TransactionAddressInvalidException
+    TransactionAddressInvalidException,
 )
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.latestblock import LatestBlock
@@ -34,44 +34,69 @@ def quantize_eight(value):
     if value == -0.0:
         value = 0.0
     value = Decimal(value)
-    value = value.quantize(Decimal('0.00000000'))
+    value = value.quantize(Decimal("0.00000000"))
     return value
 
 
 class CoinbaseRule1(Exception):
     pass
 
+
 class CoinbaseRule2(Exception):
     pass
+
 
 class CoinbaseRule3(Exception):
     pass
 
+
 class CoinbaseRule4(Exception):
     pass
+
 
 class RelationshipRule1(Exception):
     pass
 
+
 class RelationshipRule2(Exception):
     pass
+
 
 class FastGraphRule1(Exception):
     pass
 
+
 class FastGraphRule2(Exception):
     pass
+
 
 class ExternalInputSpentException(Exception):
     pass
 
 
 class Block(object):
-
     # Memory optimization
-    __slots__ = ('app_log', 'config', 'mongo', 'version', 'time', 'index', 'prev_hash', 'nonce', 'transactions', 'txn_hashes',
-                 'merkle_root', 'verify_merkle_root','hash', 'public_key', 'signature', 'special_min', 'target',
-                 'special_target', 'header')
+    __slots__ = (
+        "app_log",
+        "config",
+        "mongo",
+        "version",
+        "time",
+        "index",
+        "prev_hash",
+        "nonce",
+        "transactions",
+        "txn_hashes",
+        "merkle_root",
+        "verify_merkle_root",
+        "hash",
+        "public_key",
+        "signature",
+        "special_min",
+        "target",
+        "special_target",
+        "header",
+    )
 
     @classmethod
     async def init_async(
@@ -79,21 +104,21 @@ class Block(object):
         version=1,
         block_time=0,
         block_index=-1,
-        prev_hash='',
-        nonce:str='',
+        prev_hash="",
+        nonce: str = "",
         transactions=None,
-        block_hash='',
-        merkle_root='',
-        public_key='',
-        signature='',
-        special_min: bool=False,
-        header= '',
-        target: int=0,
-        special_target: int=0
+        block_hash="",
+        merkle_root="",
+        public_key="",
+        signature="",
+        special_min: bool = False,
+        header="",
+        target: int = 0,
+        special_target: int = 0,
     ):
         self = cls()
         self.config = get_config()
-        self.app_log = getLogger('tornado.application')
+        self.app_log = getLogger("tornado.application")
         self.version = version
         self.time = int(block_time)
         self.index = block_index
@@ -102,14 +127,14 @@ class Block(object):
         # txn_hashes = self.get_transaction_hashes()
         # self.set_merkle_root(txn_hashes)
         self.merkle_root = merkle_root
-        self.verify_merkle_root = ''
+        self.verify_merkle_root = ""
         self.hash = block_hash
         self.public_key = public_key
         self.signature = signature
         self.special_min = special_min
         self.target = target
         self.special_target = special_target
-        if target==0:
+        if target == 0:
             # Same call as in new block check - but there's a circular reference here.
             latest_block = LatestBlock.block
             if not latest_block:
@@ -146,7 +171,7 @@ class Block(object):
         force_time=None,
         prev_hash=None,
         nonce=None,
-        target=0
+        target=0,
     ):
         config = get_config()
         app_log = getLogger("tornado.application")
@@ -160,7 +185,7 @@ class Block(object):
             xtime = int(time.time())
         index = int(index)
         if index == 0:
-            prev_hash = ''
+            prev_hash = ""
         elif prev_hash is None and index != 0:
             prev_hash = LatestBlock.block.hash
         transactions = transactions or []
@@ -179,33 +204,29 @@ class Block(object):
                 regular_txns.append(x)
 
         await Block.validate_transactions(
-            regular_txns,
-            transaction_objs,
-            used_sigs,
-            used_inputs,
-            index,
-            xtime
+            regular_txns, transaction_objs, used_sigs, used_inputs, index, xtime
         )
 
         await Block.validate_transactions(
-            generated_txns,
-            transaction_objs,
-            used_sigs,
-            used_inputs,
-            index,
-            xtime
+            generated_txns, transaction_objs, used_sigs, used_inputs, index, xtime
         )
 
-        fee_sum = sum([float(transaction_obj.fee) for transaction_obj in transaction_objs])
+        fee_sum = sum(
+            [float(transaction_obj.fee) for transaction_obj in transaction_objs]
+        )
         block_reward = CHAIN.get_block_reward(index)
         coinbase_txn = await Transaction.generate(
             public_key=public_key,
             private_key=private_key,
-            outputs=[{
-                'value': block_reward + float(fee_sum),
-                'to': str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-            }],
-            coinbase=True
+            outputs=[
+                {
+                    "value": block_reward + float(fee_sum),
+                    "to": str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+                    ),
+                }
+            ],
+            coinbase=True,
         )
         transaction_objs.append(coinbase_txn)
 
@@ -216,7 +237,7 @@ class Block(object):
             prev_hash=prev_hash,
             transactions=transaction_objs,
             public_key=public_key,
-            target=target
+            target=target,
         )
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
@@ -224,40 +245,45 @@ class Block(object):
         if nonce:
             block.nonce = str(nonce)
             block.hash = block.generate_hash_from_header(
-                block.index,
-                block.header,
-                str(block.nonce)
+                block.index, block.header, str(block.nonce)
             )
             block.signature = TU.generate_signature(block.hash, private_key)
         return block
 
     @staticmethod
     async def validate_transactions(
-        txns,
-        transaction_objs,
-        used_sigs,
-        used_inputs,
-        index,
-        xtime
+        txns, transaction_objs, used_sigs, used_inputs, index, xtime
     ):
         config = get_config()
         for transaction_obj in txns:
             try:
                 if transaction_obj.transaction_signature in used_sigs:
-                    raise InvalidTransactionException('duplicate transaction found and removed')
+                    raise InvalidTransactionException(
+                        "duplicate transaction found and removed"
+                    )
 
                 await transaction_obj.verify()
                 for output in transaction_obj.outputs:
                     if not config.address_is_valid(output.to):
-                        raise TransactionAddressInvalidException('Output address is invalid')
+                        raise TransactionAddressInvalidException(
+                            "Output address is invalid"
+                        )
                 used_sigs.append(transaction_obj.transaction_signature)
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
                 continue
             try:
-                if int(index) > CHAIN.CHECK_TIME_FROM and (int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE):
-                    await config.mongo.async_db.miner_transactions.delete_many({'id': transaction_obj.transaction_signature})
-                    raise InvalidTransactionException("Block embeds txn too far in the future {} {}".format(xtime, transaction_obj.time))
+                if int(index) > CHAIN.CHECK_TIME_FROM and (
+                    int(transaction_obj.time) > int(xtime) + CHAIN.TIME_TOLERANCE
+                ):
+                    await config.mongo.async_db.miner_transactions.delete_many(
+                        {"id": transaction_obj.transaction_signature}
+                    )
+                    raise InvalidTransactionException(
+                        "Block embeds txn too far in the future {} {}".format(
+                            xtime, transaction_obj.time
+                        )
+                    )
 
                 if transaction_obj.inputs:
                     failed = False
@@ -265,15 +291,21 @@ class Block(object):
                     for x in transaction_obj.inputs:
                         if (x.id, transaction_obj.public_key) in used_inputs:
                             failed = True
-                        used_inputs[(x.id, transaction_obj.public_key)] = transaction_obj
+                        used_inputs[
+                            (x.id, transaction_obj.public_key)
+                        ] = transaction_obj
                         input_ids.append(x.id)
-                    is_input_spent = await config.BU.is_input_spent(input_ids, transaction_obj.public_key)
+                    is_input_spent = await config.BU.is_input_spent(
+                        input_ids, transaction_obj.public_key
+                    )
                     if is_input_spent:
                         failed = True
                     if len(input_ids) != len(list(set(input_ids))):
                         failed = True
                     if failed:
-                        raise InvalidTransactionException(f"Transaction has inputs already spent: {transaction_obj.transaction_signature}")
+                        raise InvalidTransactionException(
+                            f"Transaction has inputs already spent: {transaction_obj.transaction_signature}"
+                        )
 
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
@@ -283,27 +315,31 @@ class Block(object):
 
     def generate_header(self):
         if int(self.version) < 3:
-            return str(self.version) + \
-                str(self.time) + \
-                self.public_key + \
-                str(self.index) + \
-                self.prev_hash + \
-                '{nonce}' + \
-                str(self.special_min) + \
-                str(self.target) + \
-                self.merkle_root
+            return (
+                str(self.version)
+                + str(self.time)
+                + self.public_key
+                + str(self.index)
+                + self.prev_hash
+                + "{nonce}"
+                + str(self.special_min)
+                + str(self.target)
+                + self.merkle_root
+            )
         else:
             # version 3 block do not contain special_min anymore and have target as 64 hex string
             # print("target", block.target)
             # TODO: somewhere, target is calc with a / and result is float instead of int.
-            return str(self.version) + \
-                   str(self.time) + \
-                   self.public_key + \
-                   str(self.index) + \
-                   self.prev_hash + \
-                   '{nonce}' + \
-                   hex(int(self.target))[2:].rjust(64, '0') + \
-                   self.merkle_root
+            return (
+                str(self.version)
+                + str(self.time)
+                + self.public_key
+                + str(self.index)
+                + self.prev_hash
+                + "{nonce}"
+                + hex(int(self.target))[2:].rjust(64, "0")
+                + self.merkle_root
+            )
 
     def set_merkle_root(self, txn_hashes):
         self.merkle_root = self.get_merkle_root(txn_hashes)
@@ -313,10 +349,10 @@ class Block(object):
         for i in range(0, len(txn_hashes), 2):
             txn1 = txn_hashes[i]
             try:
-                txn2 = txn_hashes[i+1]
+                txn2 = txn_hashes[i + 1]
             except:
-                txn2 = ''
-            hashes.append(hashlib.sha256((txn1+txn2).encode('utf-8')).digest().hex())
+                txn2 = ""
+            hashes.append(hashlib.sha256((txn1 + txn2).encode("utf-8")).digest().hex())
         if len(hashes) > 1:
             return self.get_merkle_root(hashes)
         else:
@@ -326,24 +362,24 @@ class Block(object):
     async def from_dict(cls, block):
         if isinstance(block, Block):
             return block
-        if block.get('special_target', 0) == 0:
-            block['special_target'] = block.get('target')
+        if block.get("special_target", 0) == 0:
+            block["special_target"] = block.get("target")
 
         return await cls.init_async(
-            version=block.get('version'),
-            block_time=block.get('time'),
-            block_index=block.get('index'),
-            public_key=block.get('public_key'),
-            prev_hash=block.get('prevHash'),
-            nonce=block.get('nonce'),
-            block_hash=block.get('hash'),
-            transactions=block.get('transactions'),
-            merkle_root=block.get('merkleRoot'),
-            signature=block.get('id'),
-            special_min=block.get('special_min'),
-            header=block.get('header', ''),
-            target=int(block.get('target'), 16),
-            special_target=int(block.get('special_target', 0), 16)
+            version=block.get("version"),
+            block_time=block.get("time"),
+            block_index=block.get("index"),
+            public_key=block.get("public_key"),
+            prev_hash=block.get("prevHash"),
+            nonce=block.get("nonce"),
+            block_hash=block.get("hash"),
+            transactions=block.get("transactions"),
+            merkle_root=block.get("merkleRoot"),
+            signature=block.get("id"),
+            special_min=block.get("special_min"),
+            header=block.get("header", ""),
+            target=int(block.get("target"), 16),
+            special_target=int(block.get("special_target", 0), 16),
         )
 
     @classmethod
@@ -358,26 +394,24 @@ class Block(object):
     @staticmethod
     def is_coinbase(block, txn):
         return (
-            block.public_key == txn.public_key and
-            str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key))) in [x.to for x in txn.outputs] and
-            len(txn.inputs) == 0 and
-            len(txn.outputs) == 1
+            block.public_key == txn.public_key
+            and str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key)))
+            in [x.to for x in txn.outputs]
+            and len(txn.inputs) == 0
+            and len(txn.outputs) == 1
         )
 
     def generate_hash_from_header(self, height, header, nonce):
-        if not hasattr(Block, 'pyrx'):
+        if not hasattr(Block, "pyrx"):
             Block.pyrx = pyrx.PyRX()
-        seed_hash = binascii.unhexlify('4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d') #sha256(yadacoin65000)
+        seed_hash = binascii.unhexlify(
+            "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"
+        )  # sha256(yadacoin65000)
         if height >= CHAIN.BLOCK_V5_FORK:
             bh = Block.pyrx.get_rx_hash(
-                header.encode().replace(
-                    b'{nonce}',
-                    binascii.unhexlify(
-                        nonce
-                    )
-                ),
+                header.encode().replace(b"{nonce}", binascii.unhexlify(nonce)),
                 seed_hash,
-                height
+                height,
             )
             hh = binascii.hexlify(bh).decode()
             return hh
@@ -388,12 +422,20 @@ class Block(object):
             return hh
         else:
             header = header.format(nonce=nonce)
-            return hashlib.sha256(hashlib.sha256(header.encode('utf-8')).digest()).digest()[::-1].hex()
+            return (
+                hashlib.sha256(hashlib.sha256(header.encode("utf-8")).digest())
+                .digest()[::-1]
+                .hex()
+            )
 
     async def verify(self):
         getcontext().prec = 8
         if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
-            raise Exception("Wrong version for block height", self.version, CHAIN.get_version_for_height(self.index))
+            raise Exception(
+                "Wrong version for block height",
+                self.version,
+                CHAIN.get_version_for_height(self.index),
+            )
 
         txns = self.get_transaction_hashes()
         verify_merkle_root = self.get_merkle_root(txns)
@@ -404,18 +446,30 @@ class Block(object):
         hashtest = self.generate_hash_from_header(self.index, header, str(self.nonce))
         # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
         if self.hash != hashtest:
-            getLogger("tornado.application").warning("Verify error hashtest {} header {} nonce {}".format(hashtest, header, self.nonce))
-            raise Exception('Invalid block hash')
+            getLogger("tornado.application").warning(
+                "Verify error hashtest {} header {} nonce {}".format(
+                    hashtest, header, self.nonce
+                )
+            )
+            raise Exception("Invalid block hash")
 
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         try:
             # print("address", address, "sig", self.signature, "pubkey", self.public_key)
-            result = verify_signature(base64.b64decode(self.signature), self.hash.encode('utf-8'), bytes.fromhex(self.public_key))
+            result = verify_signature(
+                base64.b64decode(self.signature),
+                self.hash.encode("utf-8"),
+                bytes.fromhex(self.public_key),
+            )
             if not result:
                 raise Exception("block signature1 is invalid")
         except:
             try:
-                result = VerifyMessage(address, BitcoinMessage(self.hash.encode('utf-8'), magic=''), self.signature)
+                result = VerifyMessage(
+                    address,
+                    BitcoinMessage(self.hash.encode("utf-8"), magic=""),
+                    self.signature,
+                )
                 if not result:
                     raise
             except:
@@ -426,11 +480,15 @@ class Block(object):
         fee_sum = 0.0
         for txn in self.transactions:
             if int(self.index) >= CHAIN.TXN_V3_FORK and int(txn.version) < 3:
-                raise Exception("block contains transaction with version too old for this height")
+                raise Exception(
+                    "block contains transaction with version too old for this height"
+                )
 
-            if int(self.index) > CHAIN.CHECK_TIME_FROM and (int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE):
-                #await self.config.mongo.async_db.miner_transactions.delete_many({'id': txn.transaction_signature})
-                #raise Exception("Block embeds txn too far in the future")
+            if int(self.index) > CHAIN.CHECK_TIME_FROM and (
+                int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE
+            ):
+                # await self.config.mongo.async_db.miner_transactions.delete_many({'id': txn.transaction_signature})
+                # raise Exception("Block embeds txn too far in the future")
                 pass
 
             if txn.coinbase:
@@ -440,8 +498,10 @@ class Block(object):
                 if self.index >= CHAIN.TXN_V3_FORK_CHECK_MINER_SIGNATURE:
                     result = verify_signature(
                         base64.b64decode(txn.miner_signature),
-                        hashlib.sha256(txn.transaction_signature.encode()).hexdigest().encode(),
-                        bytes.fromhex(self.public_key)
+                        hashlib.sha256(txn.transaction_signature.encode())
+                        .hexdigest()
+                        .encode(),
+                        bytes.fromhex(self.public_key),
                     )
                     if not result:
                         raise Exception("block signature1 is invalid")
@@ -449,7 +509,11 @@ class Block(object):
                     await contract_txn.relationship.verify_generation(
                         self,
                         txn,
-                        [x for x in self.transactions if x.transaction_signature != txn.transaction_signature]
+                        [
+                            x
+                            for x in self.transactions
+                            if x.transaction_signature != txn.transaction_signature
+                        ],
                     )
                 fee_sum += float(txn.fee)
             else:
@@ -457,7 +521,7 @@ class Block(object):
 
         reward = CHAIN.get_block_reward(self.index)
 
-        #if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
+        # if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
         """
         KO for block 13949
         0.02099999 50.021 50.0
@@ -465,7 +529,11 @@ class Block(object):
         """
         if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
             print(fee_sum, coinbase_sum, reward)
-            raise Exception("Coinbase output total does not equal block reward + transaction fees", fee_sum, (coinbase_sum - reward))
+            raise Exception(
+                "Coinbase output total does not equal block reward + transaction fees",
+                fee_sum,
+                (coinbase_sum - reward),
+            )
 
     def get_transaction_hashes(self):
         """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""
@@ -478,37 +546,45 @@ class Block(object):
                 failed = False
                 used_ids_in_this_txn = []
                 for x in txn.inputs:
-                    is_input_spent = await yadacoin.core.config.CONFIG.BU.is_input_spent(x.id, txn.public_key)
+                    is_input_spent = (
+                        await yadacoin.core.config.CONFIG.BU.is_input_spent(
+                            x.id, txn.public_key
+                        )
+                    )
                     if is_input_spent:
                         failed = True
                     if x.id in used_ids_in_this_txn:
                         failed = True
                     used_ids_in_this_txn.append(x.id)
                 if failed:
-                    raise Exception('double spend', [x.id for x in txn.inputs])
-        res = await self.config.mongo.async_db.blocks.find_one({"index": (int(self.index) - 1)})
-        if (res and res[0]['hash'] == self.prev_hash) or self.index == 0:
-            await self.config.mongo.async_db.blocks.replace_one({'index': self.index}, self.to_dict(), upsert=True)
+                    raise Exception("double spend", [x.id for x in txn.inputs])
+        res = await self.config.mongo.async_db.blocks.find_one(
+            {"index": (int(self.index) - 1)}
+        )
+        if (res and res[0]["hash"] == self.prev_hash) or self.index == 0:
+            await self.config.mongo.async_db.blocks.replace_one(
+                {"index": self.index}, self.to_dict(), upsert=True
+            )
         else:
             print("CRITICAL: block rejected...")
 
     def to_dict(self):
         try:
             return {
-                'version': self.version,
-                'time': int(self.time),
-                'index': self.index,
-                'public_key': self.public_key,
-                'prevHash': self.prev_hash,
-                'nonce': self.nonce,
-                'transactions': [x.to_dict() for x in self.transactions],
-                'hash': self.hash,
-                'merkleRoot': self.merkle_root,
-                'special_min': self.special_min,
-                'target': hex(self.target)[2:].rjust(64, '0'),
-                'special_target': hex(self.special_target)[2:].rjust(64, '0'),
-                'header': self.header,
-                'id': self.signature
+                "version": self.version,
+                "time": int(self.time),
+                "index": self.index,
+                "public_key": self.public_key,
+                "prevHash": self.prev_hash,
+                "nonce": self.nonce,
+                "transactions": [x.to_dict() for x in self.transactions],
+                "hash": self.hash,
+                "merkleRoot": self.merkle_root,
+                "special_min": self.special_min,
+                "target": hex(self.target)[2:].rjust(64, "0"),
+                "special_target": hex(self.special_target)[2:].rjust(64, "0"),
+                "header": self.header,
+                "id": self.signature,
             }
         except Exception as e:
             print(e)

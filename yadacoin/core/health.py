@@ -2,6 +2,7 @@ import time
 import tornado.ioloop
 from yadacoin.core.config import get_config
 
+
 class HealthItem:
     last_activity = time.time()
     timeout = 120
@@ -21,30 +22,36 @@ class HealthItem:
 
     def to_dict(self):
         return {
-            'last_activity  ': int(self.last_activity),
-            'status         ': self.status,
-            'time_until_fail': self.timeout - (int(time.time()) - int(self.last_activity)),
-            'ignore         ': self.ignore
+            "last_activity  ": int(self.last_activity),
+            "status         ": self.status,
+            "time_until_fail": self.timeout
+            - (int(time.time()) - int(self.last_activity)),
+            "ignore         ": self.ignore,
         }
+
     async def reset(self):
         pass
 
 
 class TCPServerHealth(HealthItem):
-
     async def check_health(self):
-        streams = await self.config.peer.get_all_inbound_streams() + await self.config.peer.get_all_miner_streams()
+        streams = (
+            await self.config.peer.get_all_inbound_streams()
+            + await self.config.peer.get_all_miner_streams()
+        )
         if not streams:
             return self.report_status(True, ignore=True)
 
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('TCP Server health check failed')
+            self.report_bad_health("TCP Server health check failed")
             return self.report_status(False)
 
         for stream in streams:
             if time.time() - stream.last_activity > 720:
                 await self.config.node_server_instance.remove_peer(stream)
-                self.report_bad_health('Stale stream detected in TCPServer, peer removed')
+                self.report_bad_health(
+                    "Stale stream detected in TCPServer, peer removed"
+                )
 
         return self.report_status(True)
 
@@ -57,16 +64,13 @@ class TCPServerHealth(HealthItem):
 
 
 class TCPClientHealth(HealthItem):
-
     async def check_health(self):
-
         streams = await self.config.peer.get_all_outbound_streams()
         if not streams:
             return self.report_status(True, ignore=True)
 
         if time.time() - self.last_activity > self.timeout:
-
-            self.report_bad_health('TCP Client health check failed')
+            self.report_bad_health("TCP Client health check failed")
             streams = await self.config.peer.get_all_outbound_streams()
             for stream in streams:
                 if time.time() - stream.last_activity > self.timeout:
@@ -84,14 +88,12 @@ class TCPClientHealth(HealthItem):
 
 
 class ConsenusHealth(HealthItem):
-
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Consensus health check failed')
+            self.report_bad_health("Consensus health check failed")
             return self.report_status(False)
 
         return self.report_status(True)
-
 
     async def reset(self):
         # if the block queue has items that will not move out, consensus will halt
@@ -99,86 +101,85 @@ class ConsenusHealth(HealthItem):
 
 
 class PeerHealth(HealthItem):
-
     async def check_health(self):
-
         if time.time() - self.last_activity > self.timeout:
-            tornado.ioloop.IOLoop.current().spawn_callback(self.config.application.background_peers)
-            self.report_bad_health('Background peer health check failed, restarting...')
+            tornado.ioloop.IOLoop.current().spawn_callback(
+                self.config.application.background_peers
+            )
+            self.report_bad_health("Background peer health check failed, restarting...")
             return self.report_status(False)
 
         return self.report_status(True)
 
 
 class BlockCheckerHealth(HealthItem):
-
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background block checker health check failed')
+            self.report_bad_health("Background block checker health check failed")
             return self.report_status(False)
 
         return self.report_status(True)
 
 
 class MessageSenderHealth(HealthItem):
-
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            tornado.ioloop.IOLoop.current().spawn_callback(self.config.application.background_message_sender)
-            self.report_bad_health('Background message sender health check failed, restarting...')
+            tornado.ioloop.IOLoop.current().spawn_callback(
+                self.config.application.background_message_sender
+            )
+            self.report_bad_health(
+                "Background message sender health check failed, restarting..."
+            )
             return self.report_status(False)
 
         return self.report_status(True)
 
 
 class BlockInserterHealth(HealthItem):
-
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background block inserter health check failed')
+            self.report_bad_health("Background block inserter health check failed")
             return self.report_status(False)
 
         return self.report_status(True)
 
 
 class TransactionProcessorHealth(HealthItem):
-
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background transaction processor health check failed')
+            self.report_bad_health(
+                "Background transaction processor health check failed"
+            )
             return self.report_status(False)
 
         return self.report_status(True)
 
 
 class NonceProcessorHealth(HealthItem):
-
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background nonce processor health check failed')
+            self.report_bad_health("Background nonce processor health check failed")
             return self.report_status(False)
 
         return self.report_status(True)
 
 
 class PoolPayerHealth(HealthItem):
-
     async def check_health(self):
         if not self.config.pp:
             return self.report_status(True, ignore=True)
 
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background pool payer health check failed')
+            self.report_bad_health("Background pool payer health check failed")
             return self.report_status(False)
 
         return self.report_status(True)
 
 
 class CacheValidatorHealth(HealthItem):
-
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background cache validator health check failed')
+            self.report_bad_health("Background cache validator health check failed")
             return self.report_status(False)
 
         return self.report_status(True)
@@ -186,9 +187,10 @@ class CacheValidatorHealth(HealthItem):
 
 class MempoolCleanerHealth(HealthItem):
     timeout = 3600
+
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
-            self.report_bad_health('Background mempool cleaner health check failed')
+            self.report_bad_health("Background mempool cleaner health check failed")
             return self.report_status(False)
 
         return self.report_status(True)
@@ -220,9 +222,9 @@ class Health:
             self.transaction_processor,
             self.pool_payer,
             self.cache_validator,
-            self.mempool_cleaner
+            self.mempool_cleaner,
         ]
-        if 'pool' in self.config.modes:
+        if "pool" in self.config.modes:
             self.nonce_processor = NonceProcessorHealth()
             self.health_items.append(self.nonce_processor)
 
@@ -237,5 +239,5 @@ class Health:
 
     def to_dict(self):
         out = {x.__class__.__name__: x.to_dict() for x in self.health_items}
-        out['status'] = self.status
+        out["status"] = self.status
         return out

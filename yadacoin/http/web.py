@@ -23,18 +23,22 @@ from yadacoin.core.transactionutils import TU
 
 challenges = {}
 
+
 class BaseWebHandler(BaseHandler):
-
     async def prepare(self):
-
-        if self.request.protocol == 'http' and 'ssl' in self.config.modes and self.config.ssl.is_valid():
-            self.redirect('https://' + self.request.host + self.request.uri, permanent=False)
+        if (
+            self.request.protocol == "http"
+            and "ssl" in self.config.modes
+            and self.config.ssl.is_valid()
+        ):
+            self.redirect(
+                "https://" + self.request.host + self.request.uri, permanent=False
+            )
 
         await super(BaseWebHandler, self).prepare()
 
 
 class HomeHandler(BaseHandler):
-
     async def get(self):
         """
         :return:
@@ -43,277 +47,278 @@ class HomeHandler(BaseHandler):
             "index.html",
             yadacoin=self.yadacoin_vars,
             username=self.get_secure_cookie("username"),
-            rid=self.get_secure_cookie("rid")
+            rid=self.get_secure_cookie("rid"),
         )
 
 
 class MultifactorAuthHandler(BaseHandler):
     async def get(self):
-        redirect = self.get_query_argument('redirect', None)
-        origin = self.get_query_argument('origin')
+        redirect = self.get_query_argument("redirect", None)
+        origin = self.get_query_argument("origin")
         if not origin:
             return '{"error": "origin not in query params"}', 400
         self.set_header("Access-Control-Allow-Origin", origin)
-        self.set_header('Access-Control-Allow-Credentials', "true")
-        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
-        self.set_header('Access-Control-Expose-Headers', "Content-Type")
-        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
-        self.set_header('Access-Control-Max-Age', 600)
+        self.set_header("Access-Control-Allow-Credentials", "true")
+        self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.set_header("Access-Control-Expose-Headers", "Content-Type")
+        self.set_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control",
+        )
+        self.set_header("Access-Control-Max-Age", 600)
         config = self.config
-        rid = self.get_query_argument('rid')
+        rid = self.get_query_argument("rid")
         if not rid:
             return '{"error": "rid not in query params"}', 400
 
-        txn_id = self.get_query_argument('id')
+        txn_id = self.get_query_argument("id")
 
         cookie = self.get_secure_cookie("signin_code")
         if cookie:
-            cookie = cookie.decode('utf-8')
+            cookie = cookie.decode("utf-8")
         else:
             cookie = str(uuid.uuid4())
             self.set_secure_cookie("signin_code", cookie)
 
         result = await GU().verify_message(
-            rid,
-            cookie,
-            config.public_key,
-            txn_id.replace(' ', '+'))
+            rid, cookie, config.public_key, txn_id.replace(" ", "+")
+        )
 
         if result[1]:
             self.set_secure_cookie("rid", rid)
 
-            username = await self.config.mongo.async_db.name_server.find_one({'rid': rid})
-            self.set_secure_cookie("username", username['txn']['relationship']['their_username'])
-
+            username = await self.config.mongo.async_db.name_server.find_one(
+                {"rid": rid}
+            )
+            self.set_secure_cookie(
+                "username", username["txn"]["relationship"]["their_username"]
+            )
 
             if redirect:
                 return self.redirect(redirect)
             else:
-                return self.render_as_json({
-                    'authenticated': True
-                })
+                return self.render_as_json({"authenticated": True})
 
-        return self.render_as_json({
-            'authenticated': False
-        })
+        return self.render_as_json({"authenticated": False})
 
 
 class GenerateChallengeHandler(BaseHandler):
     async def get(self):
         challenge = uuid.uuid4()
         await self.config.mongo.async_site_db.challenges.update_one(
-            {
-                'rid': self.get_query_argument('rid')
-            },
-            {
-                '$set': {
-                    'rid': self.get_query_argument('rid'),
-                    'challenge': challenge
-                }
-            },
-            upsert=True
+            {"rid": self.get_query_argument("rid")},
+            {"$set": {"rid": self.get_query_argument("rid"), "challenge": challenge}},
+            upsert=True,
         )
 
-        return self.render_as_json({'challenge': challenge})
-
+        return self.render_as_json({"challenge": challenge})
 
 
 class LoginHandler(BaseHandler):
-
     async def get(self):
-        origin = self.get_query_argument('origin')
+        origin = self.get_query_argument("origin")
         if not origin:
             return '{"error": "origin not in query params"}', 400
 
         # TODO: protect this endpoint with information that could only be generated by the identity!
         self.set_header("Access-Control-Allow-Origin", origin)
-        self.set_header('Access-Control-Allow-Credentials', "true")
-        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
-        self.set_header('Access-Control-Expose-Headers', "Content-Type")
-        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
-        self.set_header('Access-Control-Max-Age', 600)
+        self.set_header("Access-Control-Allow-Credentials", "true")
+        self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.set_header("Access-Control-Expose-Headers", "Content-Type")
+        self.set_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control",
+        )
+        self.set_header("Access-Control-Max-Age", 600)
 
         challenge = await self.config.mongo.async_site_db.challenges.find_one(
-            {
-                'rid': self.get_query_argument('rid')
-            }
+            {"rid": self.get_query_argument("rid")}
         )
 
         alias = Config.generate(username=challenge)
         alias_identity = alias.get_identity()
 
         payload = {
-            'timestamp': time.time(),
-            'exp': datetime.datetime.utcnow() + datetime.timedelta(seconds=int(self.config.web_jwt_expiry)),
-            'alias': alias_identity
+            "timestamp": time.time(),
+            "exp": datetime.datetime.utcnow()
+            + datetime.timedelta(seconds=int(self.config.web_jwt_expiry)),
+            "alias": alias_identity,
         }
 
         self.encoded = jwt.encode(
-            payload,
-            self.config.jwt_secret_key,
-            algorithm='ES256'
+            payload, self.config.jwt_secret_key, algorithm="ES256"
         )
         await self.config.mongo.async_site_db.web_tokens.update_one(
+            {"token": self.encoded, "rid": self.get_query_argument("rid")},
             {
-                'token': self.encoded,
-                'rid': self.get_query_argument('rid')
-            },
-            {
-                '$set': {
-                    'token': self.encoded,
-                    'rid': self.get_query_argument('rid'),
-                    'payload': payload
+                "$set": {
+                    "token": self.encoded,
+                    "rid": self.get_query_argument("rid"),
+                    "payload": payload,
                 }
             },
-            upsert=True
+            upsert=True,
         )
 
-        self.render_as_json({'token': self.encoded, 'wif': alias.wif})
+        self.render_as_json({"token": self.encoded, "wif": alias.wif})
+
 
 class RemoteMultifactorAuthHandler(BaseHandler):
     async def post(self):
-        args = json.loads(self.request.body.decode('utf-8'))
-        origin = args.get('origin', '*')
-        redirect = args.get('redirect')
-        signin_code = args.get('signin_code')
+        args = json.loads(self.request.body.decode("utf-8"))
+        origin = args.get("origin", "*")
+        redirect = args.get("redirect")
+        signin_code = args.get("signin_code")
 
         if not signin_code:
-            return self.render_as_json({'error': 'missing params'}), 400
+            return self.render_as_json({"error": "missing params"}), 400
         self.set_header("Access-Control-Allow-Origin", origin)
-        self.set_header('Access-Control-Allow-Credentials', "true")
-        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
-        self.set_header('Access-Control-Expose-Headers', "Content-Type")
-        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
-        self.set_header('Access-Control-Max-Age', 600)
+        self.set_header("Access-Control-Allow-Credentials", "true")
+        self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.set_header("Access-Control-Expose-Headers", "Content-Type")
+        self.set_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control",
+        )
+        self.set_header("Access-Control-Max-Age", 600)
         config = self.config
 
-        result = await self.config.mongo.async_db.verify_message_cache.find_one({
-            'message.signIn': signin_code
-        })
+        result = await self.config.mongo.async_db.verify_message_cache.find_one(
+            {"message.signIn": signin_code}
+        )
 
         if result:
-            self.set_secure_cookie("rid", result['rid'])
+            self.set_secure_cookie("rid", result["rid"])
 
-            username = await self.config.mongo.async_db.name_server.find_one({'rid': result['rid']})
-            self.set_secure_cookie("username", username['txn']['relationship']['their_username'])
+            username = await self.config.mongo.async_db.name_server.find_one(
+                {"rid": result["rid"]}
+            )
+            self.set_secure_cookie(
+                "username", username["txn"]["relationship"]["their_username"]
+            )
 
-            result = await self.config.mongo.async_db.verify_message_cache.delete_one({
-                'message.signIn': signin_code
-            })
+            result = await self.config.mongo.async_db.verify_message_cache.delete_one(
+                {"message.signIn": signin_code}
+            )
             if redirect:
                 return self.redirect(redirect)
             else:
-                return self.render_as_json({
-                    'authenticated': True
-                })
+                return self.render_as_json({"authenticated": True})
 
-        return self.render_as_json({
-            'authenticated': False
-        })
+        return self.render_as_json({"authenticated": False})
 
 
 class TwoFactorAuthHandler(BaseWebHandler):
-
     async def post(self):
         """
         :return:
         """
-        args = json.loads(self.request.body.decode('utf-8'))
-        origin = args.get('origin', '*')
-        redirect = args.get('redirect')
-        auth_code = args.get('signin_code')
-
+        args = json.loads(self.request.body.decode("utf-8"))
+        origin = args.get("origin", "*")
+        redirect = args.get("redirect")
+        auth_code = args.get("signin_code")
 
         if not auth_code:
-            return self.render_as_json({'error': 'missing params'}), 400
+            return self.render_as_json({"error": "missing params"}), 400
         self.set_header("Access-Control-Allow-Origin", origin)
-        self.set_header('Access-Control-Allow-Credentials', "true")
-        self.set_header('Access-Control-Allow-Methods', "GET, POST, OPTIONS")
-        self.set_header('Access-Control-Expose-Headers', "Content-Type")
-        self.set_header('Access-Control-Allow-Headers', "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control")
-        self.set_header('Access-Control-Max-Age', 600)
+        self.set_header("Access-Control-Allow-Credentials", "true")
+        self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS")
+        self.set_header("Access-Control-Expose-Headers", "Content-Type")
+        self.set_header(
+            "Access-Control-Allow-Headers",
+            "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control",
+        )
+        self.set_header("Access-Control-Max-Age", 600)
 
-        shared_secrets = self.config.GU.get_shared_secrets_by_rid(self.get_secure_cookie('rid').decode())
+        shared_secrets = self.config.GU.get_shared_secrets_by_rid(
+            self.get_secure_cookie("rid").decode()
+        )
         authenticated = False
         for shared_secret in shared_secrets:
             hashed_shared_secret = hashlib.sha256(shared_secret).hexdigest()
-            thirty_rounded_time = str(int(time.time()//30 * 30))
-            result = int(hashlib.sha256((thirty_rounded_time + hashed_shared_secret).encode()).hexdigest(), 16) % (10 ** 6)
-            if '000000{}'.format(result)[-6:] == auth_code:
+            thirty_rounded_time = str(int(time.time() // 30 * 30))
+            result = int(
+                hashlib.sha256(
+                    (thirty_rounded_time + hashed_shared_secret).encode()
+                ).hexdigest(),
+                16,
+            ) % (10**6)
+            if "000000{}".format(result)[-6:] == auth_code:
                 authenticated = True
-                self.set_secure_cookie('2fa', 'true')
+                self.set_secure_cookie("2fa", "true")
                 break
-
 
         if redirect:
             return self.redirect(redirect)
         else:
-            return self.render_as_json({
-                'authenticated': authenticated
-            })
+            return self.render_as_json({"authenticated": authenticated})
 
 
 class LogoutHandler(BaseHandler):
-
     def get(self):
-        redirect = self.get_query_argument('redirect', None)
+        redirect = self.get_query_argument("redirect", None)
 
         if self.get_secure_cookie("signin_code"):
-            self.set_secure_cookie("signin_code", '')
+            self.set_secure_cookie("signin_code", "")
 
         if self.get_secure_cookie("rid"):
-            self.set_secure_cookie("rid", '')
+            self.set_secure_cookie("rid", "")
 
         if self.get_secure_cookie("username"):
-            self.set_secure_cookie("username", '')
+            self.set_secure_cookie("username", "")
 
         if redirect:
             self.redirect(redirect)
         else:
-            self.render_as_json({
-                'authenticated': False
-            })
+            self.render_as_json({"authenticated": False})
+
 
 class HashrateAPIHandler(BaseHandler):
-
     async def get(self):
-        max_target = 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff
+        max_target = 0xFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
         config = self.config
         blocks = config.BU.get_blocks()
         total_nonce = 0
         periods = []
         last_time = None
         for block in blocks:
-            difficulty = max_target / int(block.get('target'), 16)
-            if block.get('index') == 0:
-                start_timestamp = block.get('time')
+            difficulty = max_target / int(block.get("target"), 16)
+            if block.get("index") == 0:
+                start_timestamp = block.get("time")
             if last_time:
-                if int(block.get('time')) > last_time:
-                    periods.append({
-                        'hashrate': (((int(block.get('index')) / 144) * difficulty) * 2**32) / 600 / 100,
-                        'index': block.get('index'),
-                        'elapsed_time': (int(block.get('time')) - last_time)
-                    })
-            last_time = int(block.get('time'))
+                if int(block.get("time")) > last_time:
+                    periods.append(
+                        {
+                            "hashrate": (
+                                ((int(block.get("index")) / 144) * difficulty) * 2**32
+                            )
+                            / 600
+                            / 100,
+                            "index": block.get("index"),
+                            "elapsed_time": (int(block.get("time")) - last_time),
+                        }
+                    )
+            last_time = int(block.get("time"))
             try:
-                total_nonce += int(block.get('nonce'))
+                total_nonce += int(block.get("nonce"))
             except:
-                total_nonce += int(block.get('nonce'), 16)
-        sorted(periods, key=lambda x: x['index'])
-        total_time_elapsed = int(block.get('time')) - int(start_timestamp)
-        network_hash_rate =  total_nonce / int(total_time_elapsed)
-        self.render_as_json({
-            'stats': {
-                'network_hash_rate': network_hash_rate,
-                'total_time_elapsed': total_time_elapsed,
-                'total_nonce': total_nonce,
-                'periods': periods
+                total_nonce += int(block.get("nonce"), 16)
+        sorted(periods, key=lambda x: x["index"])
+        total_time_elapsed = int(block.get("time")) - int(start_timestamp)
+        network_hash_rate = total_nonce / int(total_time_elapsed)
+        self.render_as_json(
+            {
+                "stats": {
+                    "network_hash_rate": network_hash_rate,
+                    "total_time_elapsed": total_time_elapsed,
+                    "total_nonce": total_nonce,
+                    "periods": periods,
+                }
             }
-        })
+        )
 
 
 class AppHandler(BaseWebHandler):
-
     async def get(self):
         """
         :return:
@@ -322,10 +327,11 @@ class AppHandler(BaseWebHandler):
 
 
 class App2FAHandler(BaseWebHandler):
-
     async def prepare(self):
-        if self.request.protocol == 'https':
-            self.redirect('http://' + self.request.host + self.request.uri, permanent=False)
+        if self.request.protocol == "https":
+            self.redirect(
+                "http://" + self.request.host + self.request.uri, permanent=False
+            )
 
     async def get(self):
         """
@@ -335,252 +341,245 @@ class App2FAHandler(BaseWebHandler):
 
 
 class GetRecoveryTransaction(BaseWebHandler):
-
     async def get(self):
         """
         :return:
         """
-        rid = self.get_query_argument('rid')
-        txn = await self.config.mongo.async_db.blocks.find_one({'transactions.rid': rid}, {'_id': 0})
+        rid = self.get_query_argument("rid")
+        txn = await self.config.mongo.async_db.blocks.find_one(
+            {"transactions.rid": rid}, {"_id": 0}
+        )
         if not txn:
-            txn = await self.config.mongo.async_db.miner_transactions.find_one({'rid': rid}, {'_id': 0})
+            txn = await self.config.mongo.async_db.miner_transactions.find_one(
+                {"rid": rid}, {"_id": 0}
+            )
         return self.render_as_json(txn)
 
 
 class ProxyChallengeHandler(BaseWebHandler):
     async def post(self):
         data = json.loads(self.request.body)
-        alias = Identity.from_dict(data['alias'])
-        mobile = Identity.from_dict(data['identity'])
+        alias = Identity.from_dict(data["alias"])
+        mobile = Identity.from_dict(data["identity"])
 
-        a = hashlib.sha256(self.config.wif.encode() + alias.username_signature.encode()).digest()
-        dh_public_key = scalarmult_base(a.decode('latin1')).encode('latin1').hex()
+        a = hashlib.sha256(
+            self.config.wif.encode() + alias.username_signature.encode()
+        ).digest()
+        dh_public_key = scalarmult_base(a.decode("latin1")).encode("latin1").hex()
         rid = mobile.generate_rid(self.config.username_signature)
 
         challenge = str(uuid.uuid4())
-        self.config.challenges[rid] = {
-            'message': challenge
-        }
+        self.config.challenges[rid] = {"message": challenge}
 
-        self.write(json.dumps({
-            'challenge': challenge,
-            'dh_public_key': dh_public_key
-        }))
+        self.write(json.dumps({"challenge": challenge, "dh_public_key": dh_public_key}))
 
         return self.finish()
 
 
 class ProxyWhiteList(BaseWebHandler):
     async def get(self):
-        term = self.get_query_argument('term', None)
+        term = self.get_query_argument("term", None)
         query = {}
         if term:
-            query['$or'] = [
-                {
-                    'domain': {'$regex': term}
-                }
-            ]
-        result = self.config.mongo.async_site_db.proxy_whitelist.find(query, {'_id': 0}).sort([('domain', 1)])
-        return self.render_as_json({'status': True, 'whitelist': await result.to_list(100)})
+            query["$or"] = [{"domain": {"$regex": term}}]
+        result = self.config.mongo.async_site_db.proxy_whitelist.find(
+            query, {"_id": 0}
+        ).sort([("domain", 1)])
+        return self.render_as_json(
+            {"status": True, "whitelist": await result.to_list(100)}
+        )
 
     async def post(self):
         data = json.loads(self.request.body)
         await self.config.mongo.async_site_db.proxy_whitelist.replace_one(
-            {
-                'domain': data['domain']
-            },
-            data,
-            upsert=True
+            {"domain": data["domain"]}, data, upsert=True
         )
         await self.refresh_config()
-        return self.render_as_json({'status': True})
+        return self.render_as_json({"status": True})
 
     async def delete(self):
         data = json.loads(self.request.body)
-        await self.config.mongo.async_site_db.proxy_whitelist.delete_one({
-            'domain': data['domain']
-        })
+        await self.config.mongo.async_site_db.proxy_whitelist.delete_one(
+            {"domain": data["domain"]}
+        )
         await self.refresh_config()
-        return self.render_as_json({'status': True})
+        return self.render_as_json({"status": True})
 
     async def refresh_config(self):
         self.config.proxy.white_list = {}
-        async for x in self.config.mongo.async_site_db.proxy_whitelist.find({}, {'_id': 0}):
-            self.config.proxy.white_list[x['domain']] = x
+        async for x in self.config.mongo.async_site_db.proxy_whitelist.find(
+            {}, {"_id": 0}
+        ):
+            self.config.proxy.white_list[x["domain"]] = x
 
 
 class ProxyBlackList(BaseWebHandler):
     async def get(self):
-        term = self.get_query_argument('term', None)
+        term = self.get_query_argument("term", None)
         query = {}
         if term:
-            query['$or'] = [
-                {
-                    'domain': {'$regex': term}
-                }
-            ]
-        result = self.config.mongo.async_site_db.proxy_blacklist.find(query, {'_id': 0}).sort([('domain', 1)])
-        return self.render_as_json({'status': True, 'blacklist': await result.to_list(100)})
+            query["$or"] = [{"domain": {"$regex": term}}]
+        result = self.config.mongo.async_site_db.proxy_blacklist.find(
+            query, {"_id": 0}
+        ).sort([("domain", 1)])
+        return self.render_as_json(
+            {"status": True, "blacklist": await result.to_list(100)}
+        )
 
     async def post(self):
         data = json.loads(self.request.body)
         await self.config.mongo.async_site_db.proxy_blacklist.replace_one(
-            {
-                'domain': data['domain']
-            },
-            data,
-            upsert=True
+            {"domain": data["domain"]}, data, upsert=True
         )
         await self.refresh_config()
-        return self.render_as_json({'status': True})
+        return self.render_as_json({"status": True})
 
     async def delete(self):
         data = json.loads(self.request.body)
-        await self.config.mongo.async_site_db.proxy_blacklist.delete_one({
-            'domain': data['domain']
-        })
+        await self.config.mongo.async_site_db.proxy_blacklist.delete_one(
+            {"domain": data["domain"]}
+        )
         await self.refresh_config()
-        return self.render_as_json({'status': True})
+        return self.render_as_json({"status": True})
 
     async def refresh_config(self):
         self.config.proxy.black_list = {}
-        async for x in self.config.mongo.async_site_db.proxy_blacklist.find({}, {'_id': 0}):
-            self.config.proxy.black_list[x['domain']] = x
+        async for x in self.config.mongo.async_site_db.proxy_blacklist.find(
+            {}, {"_id": 0}
+        ):
+            self.config.proxy.black_list[x["domain"]] = x
 
 
 class ProxyRejectedList(BaseWebHandler):
     async def get(self):
-        term = self.get_query_argument('term', None)
-        proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one({
-            'mode': {'$exists': True},
-        })
+        term = self.get_query_argument("term", None)
+        proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one(
+            {
+                "mode": {"$exists": True},
+            }
+        )
         query = {}
         if term:
-            query['$or'] = [
-                {
-                    'domain': {'$regex': term}
-                },
-                {
-                    'host': {'$regex': term}
-                }
-            ]
+            query["$or"] = [{"domain": {"$regex": term}}, {"host": {"$regex": term}}]
 
         if proxy_mode:
-            query['mode'] = proxy_mode['mode']
+            query["mode"] = proxy_mode["mode"]
 
-        result = self.config.mongo.async_site_db.proxy_rejectedlist.find(query, {'_id': 0}).sort([('domain', 1)])
-        return self.render_as_json({'status': True, 'rejectedlist': await result.to_list(100)})
+        result = self.config.mongo.async_site_db.proxy_rejectedlist.find(
+            query, {"_id": 0}
+        ).sort([("domain", 1)])
+        return self.render_as_json(
+            {"status": True, "rejectedlist": await result.to_list(100)}
+        )
 
 
 class ProxyAllowedList(BaseWebHandler):
     async def get(self):
-        term = self.get_query_argument('term', None)
-        proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one({
-            'mode': {'$exists': True},
-        })
+        term = self.get_query_argument("term", None)
+        proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one(
+            {
+                "mode": {"$exists": True},
+            }
+        )
         query = {}
         if term:
-            query['$or'] = [
-                {
-                    'domain': {'$regex': term}
-                },
-                {
-                    'host': {'$regex': term}
-                }
-            ]
+            query["$or"] = [{"domain": {"$regex": term}}, {"host": {"$regex": term}}]
 
         if proxy_mode:
-            query['mode'] = proxy_mode['mode']
+            query["mode"] = proxy_mode["mode"]
 
-        result = self.config.mongo.async_site_db.proxy_allowedlist.find(query, {'_id': 0}).sort([('domain', 1)])
-        return self.render_as_json({'status': True, 'allowedlist': await result.to_list(100)})
+        result = self.config.mongo.async_site_db.proxy_allowedlist.find(
+            query, {"_id": 0}
+        ).sort([("domain", 1)])
+        return self.render_as_json(
+            {"status": True, "allowedlist": await result.to_list(100)}
+        )
 
 
 class ProxyConfig(BaseWebHandler):
     async def get(self):
-        async for x in self.config.mongo.async_site_db.proxy_config.find({}, {'_id': 0}):
+        async for x in self.config.mongo.async_site_db.proxy_config.find(
+            {}, {"_id": 0}
+        ):
             setattr(self.config.proxy, list(x.keys())[0], x[list(x.keys())[0]])
-        return self.render_as_json({'status': True, 'proxyconfig': self.config.proxy.to_dict()})
+        return self.render_as_json(
+            {"status": True, "proxyconfig": self.config.proxy.to_dict()}
+        )
 
     async def post(self):
         data = json.loads(self.request.body)
         for k, v in data.items():
             await self.config.mongo.async_site_db.proxy_config.replace_one(
-                {
-                    k: {'$exists': True}
-                },
-                {k: v},
-                upsert=True
+                {k: {"$exists": True}}, {k: v}, upsert=True
             )
-        async for x in self.config.mongo.async_site_db.proxy_config.find({}, {'_id': 0}):
+        async for x in self.config.mongo.async_site_db.proxy_config.find(
+            {}, {"_id": 0}
+        ):
             setattr(self.config.proxy, list(x.keys())[0], x[list(x.keys())[0]])
-        return self.render_as_json({'status': True})
+        return self.render_as_json({"status": True})
 
 
 class ProxyAppHandler(BaseWebHandler):
     async def get(self):
-        return self.render('proxy.html')
+        return self.render("proxy.html")
 
 
 class AuthHandler(BaseWebHandler):
-
     async def get(self):
         return self.render(
-            'auth.html',
-            proxy_address=f'{self.config.peer_host}:{self.config.proxy_port}',
-            http_address=f'{self.config.peer_host}:{self.config.serve_port}'
+            "auth.html",
+            proxy_address=f"{self.config.peer_host}:{self.config.proxy_port}",
+            http_address=f"{self.config.peer_host}:{self.config.serve_port}",
         )
 
     async def post(self):
         data = json.loads(self.request.body)
         user_identity = Identity.from_dict(data)
         challenge_message = str(uuid.uuid4())
-        challenge_signature = TU.generate_signature(challenge_message, self.config.private_key)
-        url = f'{self.config.peer_host}:{self.config.serve_port}/websocket'
+        challenge_signature = TU.generate_signature(
+            challenge_message, self.config.private_key
+        )
+        url = f"{self.config.peer_host}:{self.config.serve_port}/websocket"
         url_signature = TU.generate_signature(url, self.config.private_key)
-        server_identity = Identity.from_dict({
-            'public_key': self.config.public_key,
-            'username': self.config.username,
-            'username_signature': self.config.username_signature
-        })
+        server_identity = Identity.from_dict(
+            {
+                "public_key": self.config.public_key,
+                "username": self.config.username,
+                "username_signature": self.config.username_signature,
+            }
+        )
         rid = server_identity.generate_rid(user_identity.username_signature)
         self.config.challenges[rid] = {
-            'message': challenge_message,
-            'origin': challenge_signature
+            "message": challenge_message,
+            "origin": challenge_signature,
         }
         context = {
-            'identity': {
-                'public_key': self.config.public_key,
-                'username': self.config.username,
-                'username_signature': self.config.username_signature
+            "identity": {
+                "public_key": self.config.public_key,
+                "username": self.config.username,
+                "username_signature": self.config.username_signature,
             },
-            'challenge': {
-                'message': challenge_message,
-                'origin': challenge_signature
-            },
-            'url': {
-                'message': url,
-                'signature': url_signature
-            },
+            "challenge": {"message": challenge_message, "origin": challenge_signature},
+            "url": {"message": url, "signature": url_signature},
         }
         return self.write(json.dumps(context))
 
 
 WEB_HANDLERS = [
-    (r'/mfa', MultifactorAuthHandler),
-    (r'/login', LoginHandler),
-    (r'/rmfa', RemoteMultifactorAuthHandler),
-    (r'/2fa', TwoFactorAuthHandler),
-    (r'/logout', LogoutHandler),
-    (r'/app', AppHandler),
-    (r'/app2fa', App2FAHandler),
-    (r'/get-recovery-transaction', GetRecoveryTransaction),
-    (r'/proxy-challenge', ProxyChallengeHandler),
-    (r'/proxy-whitelist', ProxyWhiteList),
-    (r'/proxy-blacklist', ProxyBlackList),
-    (r'/proxy-rejectedlist', ProxyRejectedList),
-    (r'/proxy-allowedlist', ProxyAllowedList),
-    (r'/proxy-config', ProxyConfig),
-    (r'/proxy-app', ProxyAppHandler),
-    (r'/auth', AuthHandler),
+    (r"/mfa", MultifactorAuthHandler),
+    (r"/login", LoginHandler),
+    (r"/rmfa", RemoteMultifactorAuthHandler),
+    (r"/2fa", TwoFactorAuthHandler),
+    (r"/logout", LogoutHandler),
+    (r"/app", AppHandler),
+    (r"/app2fa", App2FAHandler),
+    (r"/get-recovery-transaction", GetRecoveryTransaction),
+    (r"/proxy-challenge", ProxyChallengeHandler),
+    (r"/proxy-whitelist", ProxyWhiteList),
+    (r"/proxy-blacklist", ProxyBlackList),
+    (r"/proxy-rejectedlist", ProxyRejectedList),
+    (r"/proxy-allowedlist", ProxyAllowedList),
+    (r"/proxy-config", ProxyConfig),
+    (r"/proxy-app", ProxyAppHandler),
+    (r"/auth", AuthHandler),
 ]

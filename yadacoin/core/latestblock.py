@@ -6,6 +6,7 @@ from yadacoin.core.config import get_config
 class LatestBlock:
     config = None
     block = None
+
     @classmethod
     async def set_config(cls):
         cls.config = get_config()
@@ -19,7 +20,10 @@ class LatestBlock:
     @classmethod
     async def update_latest_block(cls):
         from yadacoin.core.block import Block
-        block = await cls.config.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+
+        block = await cls.config.mongo.async_db.blocks.find_one(
+            {}, {"_id": 0}, sort=[("index", -1)]
+        )
         if not block:
             await cls.config.BU.insert_genesis()
             return
@@ -28,7 +32,10 @@ class LatestBlock:
     @classmethod
     async def get_latest_block(cls):
         from yadacoin.core.block import Block
-        block = await cls.config.mongo.async_db.blocks.find_one({}, {'_id': 0}, sort=[('index', -1)])
+
+        block = await cls.config.mongo.async_db.blocks.find_one(
+            {}, {"_id": 0}, sort=[("index", -1)]
+        )
         if block:
             return await Block.from_dict(block)
         else:

@@ -21,15 +21,14 @@ class ProcessingQueue:
         self.num_items_processed += 1
 
     def to_dict(self):
-        return {
-            'queue': self.queue
-        }
+        return {"queue": self.queue}
 
     def to_status_dict(self):
         return {
-            'queue_item_count': len(self.queue.values()),
-            'average_processing_time': '%.4f' % (self.time_sum / (self.num_items_processed or 1)),
-            'num_items_processed': self.num_items_processed
+            "queue_item_count": len(self.queue.values()),
+            "average_processing_time": "%.4f"
+            % (self.time_sum / (self.num_items_processed or 1)),
+            "num_items_processed": self.num_items_processed,
         }
 
 
@@ -53,9 +52,9 @@ class BlockProcessingQueue(ProcessingQueue):
                 return
             self.queue.setdefault((first_block.hash, final_block.hash), item)
         else:
-            if (first_block['hash'], final_block['hash']) == self.last_popped:
+            if (first_block["hash"], final_block["hash"]) == self.last_popped:
                 return
-            self.queue.setdefault((first_block['hash'], final_block['hash']), item)
+            self.queue.setdefault((first_block["hash"], final_block["hash"]), item)
         return True
 
     def pop(self):
@@ -75,7 +74,7 @@ class TransactionProcessingQueueItem:
 class TransactionProcessingQueue(ProcessingQueue):
     def __init__(self):
         self.queue = {}
-        self.last_popped = ''
+        self.last_popped = ""
 
     def add(self, item: TransactionProcessingQueueItem):
         if item.transaction.transaction_signature == self.last_popped:
@@ -92,18 +91,18 @@ class TransactionProcessingQueue(ProcessingQueue):
 
 
 class NonceProcessingQueueItem:
-    def __init__(self, miner: Miner='', stream=None, body=None):
+    def __init__(self, miner: Miner = "", stream=None, body=None):
         self.miner = miner
         self.stream = stream
         self.body = body
-        self.id = body['params']['id']
-        self.nonce = body['params']['nonce']
+        self.id = body["params"]["id"]
+        self.nonce = body["params"]["nonce"]
 
 
 class NonceProcessingQueue(ProcessingQueue):
     def __init__(self):
         self.queue = {}
-        self.last_popped = ''
+        self.last_popped = ""
 
     def add(self, item: NonceProcessingQueueItem):
         if (item.id, item.nonce) == self.last_popped:
@@ -124,11 +123,8 @@ class ProcessingQueues:
         self.config = get_config()
         self.block_queue = BlockProcessingQueue()
         self.transaction_queue = TransactionProcessingQueue()
-        self.queues = [
-            self.block_queue,
-            self.transaction_queue
-        ]
-        if 'pool' in self.config.modes:
+        self.queues = [self.block_queue, self.transaction_queue]
+        if "pool" in self.config.modes:
             self.nonce_queue = NonceProcessingQueue()
             self.queues.append(self.nonce_queue)
 
