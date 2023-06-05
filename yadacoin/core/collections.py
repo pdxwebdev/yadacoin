@@ -10,6 +10,7 @@ class Collections(Enum):
     CHAT_FILE = "chat_file"
     CONTRACT = "contract"
     CONTRACT_SIGNED = "contract_signed"
+    FILE_REQUEST = "file_request"
     GENERIC = ""
     GROUP = "group"
     GROUP_CALENDAR = "group_event_meeting"

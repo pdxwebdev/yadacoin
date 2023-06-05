@@ -32,7 +32,7 @@ class RCPWebSocketServer(WebSocketHandler):
         self.peer = None
 
     async def open(self):
-        pass  # removing cookies! Yada does not do cookies or sessions! EVER!
+        pass
 
     async def on_message(self, data):
         if not data:
@@ -137,7 +137,7 @@ class RCPWebSocketServer(WebSocketHandler):
             "route_server_confirm", {"credit_balance": credit_balance}, body=body
         )
 
-    async def route(self, body):
+    async def route(self, body, source="websocket"):
         # our peer SHOULD only ever been a service provider if we're offering a websocket but we'll give other options here
         route_server_confirm_out = {}
         if self.config.shares_required:
@@ -153,85 +153,32 @@ class RCPWebSocketServer(WebSocketHandler):
             route_server_confirm_out = {"credit_balance": credit_balance}
 
         params = body.get("params")
+        route = params.get("route")
         transaction = Transaction.from_dict(params["transaction"])
+        group = None
+        for rid in route.split(":"):
+            if rid in self.config.websocketServer.inbound_streams[User.__name__]:
+                peer_stream = self.config.websocketServer.inbound_streams[
+                    User.__name__
+                ][rid]
+                if peer_stream.peer.rid != transaction.requester_rid:
+                    await peer_stream.write_params("route", params)
+            if rid in self.config.websocketServer.inbound_streams[Group.__name__]:
+                group = self.config.websocketServer.inbound_streams[Group.__name__][rid]
+            if group and rid in group:
+                peer_stream = group[rid]
+                await peer_stream.write_params("route", params)
         await self.config.mongo.async_db.miner_transactions.replace_one(
             {"id": transaction.transaction_signature},
             transaction.to_dict(),
             upsert=True,
         )
-        if isinstance(self.config.peer, Seed):
-            pass
-            # for rid, peer_stream in self.config.nodeServer.inbound_streams[Seed.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
+        if isinstance(self.config.peer, User) and source == "websocket":
+            for rid, peer_stream in self.config.nodeClient.outbound_streams[
+                ServiceProvider.__name__
+            ].items():
+                await BaseRPC().write_params(peer_stream, "route", params)
 
-            # for rid, peer_stream in self.config.nodeServer.inbound_streams[SeedGateway.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
-
-            # for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
-
-        elif isinstance(self.config.peer, SeedGateway):
-            pass
-            # for rid, peer_stream in self.config.nodeServer.inbound_streams[ServiceProvider.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
-
-            # for rid, peer_stream in self.config.nodeClient.outbound_streams[Seed.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
-
-        elif isinstance(self.config.peer, ServiceProvider):
-            pass
-            # for rid, peer_stream in self.config.nodeServer.inbound_streams[User.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
-
-            # for rid, peer_stream in self.config.nodeClient.outbound_streams[SeedGateway.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
-
-            if (
-                transaction.requested_rid
-                in self.config.websocketServer.inbound_streams[Group.__name__]
-            ):
-                for rid, peer_stream in list(
-                    self.config.websocketServer.inbound_streams[Group.__name__][
-                        transaction.requested_rid
-                    ].values()
-                ):
-                    if rid == transaction.requester_rid:
-                        continue
-                    await peer_stream.write_params("route", params)
-
-            if (
-                transaction.requested_rid
-                in self.config.websocketServer.inbound_streams[User.__name__]
-            ):
-                peer_stream = self.config.websocketServer.inbound_streams[
-                    User.__name__
-                ][transaction.requested_rid]
-                if peer_stream.peer.rid != transaction.requester_rid:
-                    await peer_stream.write_params("route", params)
-
-            if "group" in params:
-                group = Group.from_dict(
-                    {"host": None, "port": None, "identity": params["group"]}
-                )
-                params2 = params.copy()
-                to = User.from_dict(
-                    {"host": None, "port": None, "identity": params["to"]}
-                )
-                peer_stream = self.config.websocketServer.inbound_streams[
-                    Group.__name__
-                ][group.rid].get(to.rid)
-                if peer_stream:
-                    await peer_stream.write_params("route", params2)
-
-        elif isinstance(self.config.peer, User):
-            pass
-            # for rid, peer_stream in self.config.nodeClient.outbound_streams[ServiceProvider.__name__].items():
-            #     await BaseRPC().write_params(peer_stream, 'route', params)
-
-        else:
-            self.config.app_log.error("inbound peer is not defined, disconnecting")
-            self.close()
-            return {}
         await self.write_result(
             "route_server_confirm", route_server_confirm_out, body=body
         )
@@ -316,9 +263,11 @@ class RCPWebSocketServer(WebSocketHandler):
         group = Identity.from_dict(body.get("params"))
 
         members = {}
+        members.update(self.append_to_group(group, Collections.FILE_REQUEST.value))
         members.update(self.append_to_group(group, Collections.GROUP_CHAT.value))
         members.update(self.append_to_group(group, Collections.GROUP_MAIL.value))
         members.update(self.append_to_group(group, Collections.GROUP_CALENDAR.value))
+        members.update(self.append_to_group(group, Collections.GROUP_CHAT_FILE.value))
 
         await self.write_result("join_confirmed", {"members": members}, body=body)
 

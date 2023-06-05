@@ -10,7 +10,7 @@ from yadacoin.tcpsocket.base import RPCSocketServer, RPCSocketClient, BaseRPC
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.block import Block
 from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User
+from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Group
 from yadacoin.core.config import get_config
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.identity import Identity
@@ -623,6 +623,101 @@ class NodeRPC(BaseRPC):
 
     async def disconnect(self, body, stream):
         await self.remove_peer(stream)
+
+    async def route(self, body, stream):
+        # check if rid in peers
+        # if rid is in the list, decrypt
+        # find the decrypted rid in peer list
+        # route the resulting transaction if rid is found
+        # if not found, check the websocket peers for rid
+        # forward to websocket if rid is found
+        # if not found in websockets, rerturn not found
+        params = body.get("params")
+        route = params["route"]
+        transaction = Transaction.from_dict(params["transaction"])
+        if isinstance(self.config.peer, Seed):
+            if isinstance(stream.peer, SeedGateway):
+                # Being routed out to seed layer from user node
+                for rid, peer_stream in self.config.nodeServer.inbound_streams[
+                    Seed.__name__
+                ].items():
+                    if peer_stream == stream:
+                        continue
+                    await BaseRPC().write_params(peer_stream, "route", params)
+
+                for rid, peer_stream in self.config.nodeClient.outbound_streams[
+                    Seed.__name__
+                ].items():
+                    if peer_stream == stream:
+                        continue
+                    await BaseRPC().write_params(peer_stream, "route", params)
+            elif isinstance(stream.peer, Seed):
+                # Being routed in from seed. We should be in the route selector
+                for rid, peer_stream in self.config.nodeServer.inbound_streams[
+                    SeedGateway.__name__
+                ].items():
+                    if peer_stream == stream:
+                        continue
+                    await BaseRPC().write_params(peer_stream, "route", params)
+
+        elif isinstance(self.config.peer, SeedGateway):
+            if isinstance(stream.peer, Seed):
+                for rid, peer_stream in self.config.nodeServer.inbound_streams[
+                    ServiceProvider.__name__
+                ].items():
+                    if peer_stream == stream:
+                        continue
+                    await BaseRPC().write_params(peer_stream, "route", params)
+
+            elif isinstance(stream.peer, ServiceProvider):
+                for rid, peer_stream in self.config.nodeClient.outbound_streams[
+                    Seed.__name__
+                ].items():
+                    if peer_stream == stream:
+                        continue
+                    await BaseRPC().write_params(peer_stream, "route", params)
+
+        elif isinstance(self.config.peer, ServiceProvider):
+            if isinstance(stream.peer, SeedGateway):
+                for rid, peer_stream in self.config.nodeServer.inbound_streams[
+                    User.__name__
+                ].items():
+                    if peer_stream == stream:
+                        continue
+                    await BaseRPC().write_params(peer_stream, "route", params)
+
+                ws_stream = await self.get_ws_stream(route)
+                if ws_stream:
+                    await BaseRPC().write_params(peer_stream, "route", params)
+
+            elif isinstance(stream.peer, User):
+                for rid, peer_stream in self.config.nodeClient.outbound_streams[
+                    SeedGateway.__name__
+                ].items():
+                    if peer_stream == stream:
+                        continue
+                    await BaseRPC().write_params(peer_stream, "route", params)
+
+        elif isinstance(self.config.peer, User):
+            if isinstance(stream.peer, ServiceProvider):
+                ws_stream = await self.get_ws_stream(route)
+                if ws_stream:
+                    await ws_stream.route(body, source="tcpsocket")
+
+    async def get_ws_stream(self, route):
+        if "web" not in self.config.modes:
+            return False
+
+        ws_users = self.config.websocketServer.inbound_streams[User.__name__]
+        if not ws_users:
+            return False
+
+        group = None
+        for rid in route.split(":"):
+            if rid in self.config.websocketServer.inbound_streams[Group.__name__]:
+                group = self.config.websocketServer.inbound_streams[Group.__name__][rid]
+            if group and rid in group:
+                return group[rid]
 
 
 class NodeSocketServer(RPCSocketServer, NodeRPC):

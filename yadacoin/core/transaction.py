@@ -98,6 +98,8 @@ class Transaction(object):
         miner_signature="",
         contract_generated=False,
         relationship_hash="",
+        never_expire=False,
+        private=False,
     ):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
@@ -151,6 +153,8 @@ class Transaction(object):
         self.coinbase = coinbase
         self.miner_signature = miner_signature
         self.contract_generated = contract_generated
+        self.never_expire = never_expire
+        self.private = private
 
     @classmethod
     async def generate(
@@ -179,6 +183,8 @@ class Transaction(object):
         miner_signature="",
         contract_generated=False,
         do_money=True,
+        never_expire=False,
+        private=False,
     ):
         cls_inst = cls()
         cls_inst.config = get_config()
@@ -236,6 +242,9 @@ class Transaction(object):
             )
         else:
             cls_inst.transaction_signature = ""
+
+        cls_inst.never_expire = never_expire
+        cls_inst.private = private
         return cls_inst
 
     async def do_money(self):
@@ -378,6 +387,8 @@ class Transaction(object):
             miner_signature=txn.get("miner_signature", ""),
             contract_generated=txn.get("contract_generated", ""),
             relationship_hash=txn.get("relationship_hash", ""),
+            private=txn.get("private", False),
+            never_expire=txn.get("never_expire", False),
         )
 
     def in_the_future(self):
@@ -833,6 +844,7 @@ class Transaction(object):
             "rid": self.rid,
             "id": self.transaction_signature,  # Beware: changing name between object/dict view is very error prone
             "relationship": relationship,
+            "relationship_hash": self.relationship_hash,
             "public_key": self.public_key,
             "dh_public_key": self.dh_public_key,
             "fee": float(self.fee),
@@ -840,6 +852,8 @@ class Transaction(object):
             "inputs": [x.to_dict() for x in self.inputs],
             "outputs": [x.to_dict() for x in self.outputs],
             "version": self.version,
+            "private": self.private,
+            "never_expire": self.never_expire,
         }
         if self.dh_public_key:
             ret["dh_public_key"] = self.dh_public_key

@@ -217,16 +217,52 @@ https://yadacoin.io/download
 - websocket_host_port
   - type: string
   - default: 'ws://localhost:8000/websocket'
-  - description: Specify the host and port of your websocket
+  - description: Specify the host and port of your websocket.
 - tcp_traffic_debug
   - type: bool
   - default: undefined
-  - description: Specify if you want all tcp traffic in debug logging
+  - description: Specify if you want all tcp traffic in debug logging.
 - websocket_traffic_debug
   - type: bool
   - default: undefined
-  - description: Specify if you want all websocket traffic in debug logging
+  - description: Specify if you want all websocket traffic in debug logging.
 - mongo_debug
   - type: bool
   - default: undefined
-  - description: Specify if you want all Mongo DB queries to be logged and profiled
+  - description: Specify if you want all Mongo DB queries to be logged and profiled.
+- peers_wait
+  - type: integer
+  - default: 3
+  - description: Specify the number of seconds to wait before attempting to reconnect to peers.
+- status_wait
+  - type: integer
+  - default: 10
+  - description: Specify the number of seconds to wait before printing status message to terminal.
+- queue_processor_wait
+  - type: integer
+  - default: 10
+  - description: Specify the number of seconds to wait before checking for new transactions to process.
+- block_checker_wait
+  - type: integer
+  - default: 1
+  - description: Specify the number of seconds to wait before checking the for block height changes and updating peers.
+- message_sender_wait
+  - type: integer
+  - default: 10
+  - description: Specify the number of seconds to wait before retrying messages for transactions, blocks, etc.
+- pool_payer_wait
+  - type: integer
+  - default: 120
+  - description: Specify the number of seconds to wait before running the pool payout process.
+- cache_validator_wait
+  - type: integer
+  - default: 30
+  - description: Specify the number of seconds to wait before running the cache validator process.
+- mempool_cleaner_wait
+  - type: integer
+  - default: 1200
+  - description: Specify the number of seconds to wait before clearing the mempool of old and invalid transactions.
+- nonce_processor_wait
+  - type: integer
+  - default: 1
+  - description: Specify the number of seconds to wait before checking for new share submissions to process.

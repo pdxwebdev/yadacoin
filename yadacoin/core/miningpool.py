@@ -427,6 +427,8 @@ class MiningPool(object):
             transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
             if not isinstance(transaction_obj, Transaction):
                 continue
+            if transaction_obj.private == True:
+                transaction_obj.relationship = ""
 
             transaction_objs.setdefault(transaction_obj.requested_rid, [])
             transaction_objs[transaction_obj.requested_rid].append(transaction_obj)

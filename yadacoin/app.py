@@ -170,7 +170,7 @@ class NodeApplication(Application):
             except:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(3)
+            await tornado.gen.sleep(self.config.peers_wait)
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
@@ -203,7 +203,7 @@ class NodeApplication(Application):
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(10)
+            await tornado.gen.sleep(self.config.status_wait)
 
     async def background_block_checker(self):
         """Responsible for miner updates"""
@@ -243,7 +243,7 @@ class NodeApplication(Application):
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(1)
+            await tornado.gen.sleep(self.config.block_checker_wait)
 
     async def background_message_sender(self):
         latest_block_height = self.config.LatestBlock.block.index
@@ -335,7 +335,7 @@ class NodeApplication(Application):
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(10)
+            await tornado.gen.sleep(self.config.message_sender_wait)
 
     async def remove_peer(self, stream):
         stream.close()
@@ -412,7 +412,7 @@ class NodeApplication(Application):
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.block_queue.time_sum_end()
 
-            await tornado.gen.sleep(10)
+            await tornado.gen.sleep(self.config.queue_processor_wait)
 
     async def background_pool_payer(self):
         """Responsible for paying miners"""
@@ -431,10 +431,11 @@ class NodeApplication(Application):
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(120)
+            await tornado.gen.sleep(self.config.pool_payer_wait)
 
     async def background_cache_validator(self):
         """Responsible for validating the cache and clearing it when necessary"""
+
         while True:
             self.config.app_log.debug("background_cache_validator")
             if not hasattr(self.config, "cache_inited"):
@@ -510,7 +511,7 @@ class NodeApplication(Application):
                 self.config.app_log.error("error in background_cache_validator")
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(30)
+            await tornado.gen.sleep(self.config.cache_validator_wait)
 
     async def background_mempool_cleaner(self):
         """Responsible for removing failed transactions from the mempool"""
@@ -524,7 +525,7 @@ class NodeApplication(Application):
             except Exception as e:
                 self.config.app_log.error(format_exc())
 
-            await tornado.gen.sleep(1200)
+            await tornado.gen.sleep(self.config.mempool_cleaner_wait)
 
     async def background_nonce_processor(self):
         """Responsible for processing all share submissions from miners"""
@@ -540,7 +541,7 @@ class NodeApplication(Application):
             except:
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.nonce_queue.time_sum_end()
-            await tornado.gen.sleep(1)
+            await tornado.gen.sleep(self.config.nonce_processor_wait)
 
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
