@@ -73,7 +73,7 @@ class Peer:
         if my_peer.get("peer_type") == "seed":
             if not config.username_signature in config.seeds:
                 raise Exception(
-                    "You are not a valid Seed. Could not find you in the list of Seed"
+                    "You are not a valid Seed. Could not find you in the list of Seeds"
                 )
             my_peer["seed_gateway"] = config.seeds[
                 config.username_signature
@@ -82,14 +82,14 @@ class Peer:
         elif my_peer.get("peer_type") == "seed_gateway":
             if not config.username_signature in config.seed_gateways:
                 raise Exception(
-                    "You are not a valid SeedGateway. Could not find you in the list of SeedGateways"
+                    "You are not a valid SeedGateway. Could not find you in the list of seed_gateways"
                 )
             my_peer["seed"] = config.seed_gateways[config.username_signature].seed
             return SeedGateway.from_dict(my_peer, is_me=True)
         elif my_peer.get("peer_type") == "service_provider":
             if not config.username_signature in config.service_providers:
                 raise Exception(
-                    "You are not a valid SeedGateway. Could not find you in the list of SeedGateways"
+                    "You are not a valid SeedGateway. Could not find you in the list of service_providers"
                 )
             my_peer["seed_gateway"] = config.service_providers[
                 config.username_signature
@@ -953,7 +953,7 @@ class Peers:
                     "host": "seedau.hashyada.com",
                     "port": 8002,
                     "identity": {
-                        "username": "hashyadaseedaus",
+                        "username": "",
                         "username_signature": "MEUCIQDndXZRuUTF/l8ANXHvOaWW4+u/8yJPHhGoo80L4AdwrgIgGJtUm+1h/PGrBaqtKwZuNVYcDh6t/yEM/aT3ryYVCMU=",
                         "public_key": "029fa1eed6c2129f2eb00729c06bd945282c193b09f4cb566738b488268ed131bf",
                     },
@@ -1006,7 +1006,7 @@ class Peers:
                     "host": "seedgatewayau.hashyada.com",
                     "port": 8004,
                     "identity": {
-                        "username": "hashyadaseedgatewayaus",
+                        "username": "",
                         "username_signature": "MEQCIAfwzpFwXbBqKpAWAK10D89EiVw4TzJZL6lnAyMzangsAiBclX/x4vn+KT0y92bDrB6vaX6zQ9otAndoOyI8wonTFw==",
                         "public_key": "02ea1f0f1214196f8e59616ec1b670e06f9decd250d1eaa345cf6a4667523bbecb",
                     },
@@ -1063,7 +1063,7 @@ class Peers:
                     "host": "serviceproviderau.hashyada.com",
                     "port": 8006,
                     "identity": {
-                        "username": "hashyadaSPaus",
+                        "username": "",
                         "username_signature": "MEUCIQDvnHZnh1T5dilboTJdYhNT1Rf18SZxDLpNf6TT90RZZwIgXuIvlOVyxepRkskItsTUSaSlZdl9EkzlTP4UEFZ9zmQ=",
                         "public_key": "02852ea36ef2ccb1274f473d7c65f7fa59731cdfd99c2fc04fd30b097b3b457e6a",
                     },
