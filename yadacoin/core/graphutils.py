@@ -647,7 +647,8 @@ class GraphUtils(object):
         async for txn in self.config.mongo.async_db.miner_transactions.find(
             query, {"_id": 0}
         ):
-            yield txn
+            if txn.get("relationship"):
+                yield txn
         async for block in self.config.mongo.async_db.blocks.find(
             blocks_query, {"_id": 0}
         ):
@@ -657,7 +658,8 @@ class GraphUtils(object):
                     or (requested_rid and requested_rid == txn.get("requested_rid"))
                     or (requester_rid and requester_rid == txn.get("requester_rid"))
                 ):
-                    yield txn
+                    if txn.get("relationship"):
+                        yield txn
 
     def get_transactions_by_rid(
         self,
