@@ -87,9 +87,8 @@ class GetPeersHandler(BaseHandler):
         """
         :return:
         """
-        self.render_as_json(
-            {"peers": [], "error": "please update to version 4.0 https://yadacoin.io"}
-        )
+        peers = await self.config.peer.get_all_streams()
+        self.render_as_json({"peers": [x.peer.to_dict() for x in peers]})
 
 
 class GetStatusHandler(BaseHandler):
