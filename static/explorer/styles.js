@@ -539,7 +539,7 @@ if(false) {}
 /*! no static exports found */
 /***/ (function(module, exports, __webpack_require__) {
 
-module.exports = __webpack_require__(/*! /home/mvogel/yadacoin/explorer/src/styles.css */"./src/styles.css");
+module.exports = __webpack_require__(/*! /media/john/4tb/home/mvogel/yadacoin/plugins/explorer/src/styles.css */"./src/styles.css");
 
 
 /***/ })

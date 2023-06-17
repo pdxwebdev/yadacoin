@@ -121,10 +121,10 @@ class NodeRPC(BaseRPC):
             TransactionProcessingQueueItem(txn, stream)
         )
 
-        ws_users = self.config.websocketServer.inbound_streams[User.__name__]
-
         if "web" not in self.config.modes:
             return
+
+        ws_users = self.config.websocketServer.inbound_streams[User.__name__]
 
         peer_stream = None
         if txn.requested_rid in ws_users:

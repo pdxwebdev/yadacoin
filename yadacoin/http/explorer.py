@@ -35,6 +35,18 @@ class HashrateAPIHandler(BaseHandler):
         )
 
 
+class ExplorerHandler(BaseHandler):
+    async def get(self):
+        """
+        :return:
+        """
+        self.render(
+            "explorer/index.html",
+            title="YadaCoin - Explorer",
+            mixpanel="explorer page",
+        )
+
+
 class ExplorerSearchHandler(BaseHandler):
     async def get(self):
         term = self.get_argument("term", False)
@@ -274,7 +286,7 @@ class ExplorerSearchHandler(BaseHandler):
                     }
                 )
         except:
-            return self.render_as_json({})
+            pass
 
         try:
             re.search(r"[A-Fa-f0-9]+", term).group(0)
@@ -296,7 +308,7 @@ class ExplorerSearchHandler(BaseHandler):
                     }
                 )
         except:
-            return self.render_as_json({})
+            pass
 
         try:
             res = await self.config.mongo.async_db.miner_transactions.count_documents(
@@ -329,6 +341,106 @@ class ExplorerSearchHandler(BaseHandler):
                             changetime(x)
                             async for x in self.config.mongo.async_db.miner_transactions.find(
                                 {"rid": term}, {"_id": 0}
+                            )
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            base64.b64decode(term.replace(" ", "+"))
+            res = await self.config.mongo.async_db.failed_transactions.count_documents(
+                {"txn.id": term.replace(" ", "+")}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "failed_id",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.failed_transactions.find(
+                                {"txn.id": term.replace(" ", "+")}, {"_id": 0}
+                            )
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            re.search(r"[A-Fa-f0-9]{64}", term).group(0)
+            res = await self.config.mongo.async_db.failed_transactions.count_documents(
+                {"txn.hash": term}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "failed_hash",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.failed_transactions.find(
+                                {"txn.hash": term}, {"_id": 0}
+                            )
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            re.search(r"[A-Fa-f0-9]+", term).group(0)
+            res = await self.config.mongo.async_db.failed_transactions.count_documents(
+                {"txn.outputs.to": term}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "failed_outputs_to",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.failed_transactions.find(
+                                {"txn.outputs.to": term}, {"_id": 0}
+                            )
+                            .sort("index", -1)
+                            .limit(10)
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            res = await self.config.mongo.async_db.failed_transactions.count_documents(
+                {"txn.public_key": term}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "failed_public_key",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.failed_transactions.find(
+                                {"txn.public_key": term}, {"_id": 0}
+                            )
+                        ],
+                    }
+                )
+        except:
+            pass
+
+        try:
+            res = await self.config.mongo.async_db.failed_transactions.count_documents(
+                {"txn.rid": term}
+            )
+            if res:
+                return self.render_as_json(
+                    {
+                        "resultType": "failed_rid",
+                        "result": [
+                            changetime(x)
+                            async for x in self.config.mongo.async_db.failed_transactions.find(
+                                {"txn.rid": term}, {"_id": 0}
                             )
                         ],
                     }
@@ -396,6 +508,7 @@ class ExplorerLast50(BaseHandler):
 
 EXPLORER_HANDLERS = [
     (r"/api-stats", HashrateAPIHandler),
+    (r"/explorer", ExplorerHandler),
     (r"/explorer-search", ExplorerSearchHandler),
     (r"/explorer-get-balance", ExplorerGetBalance),
     (r"/explorer-latest", ExplorerLatestHandler),

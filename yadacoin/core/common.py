@@ -10,11 +10,14 @@ def ts_to_utc(timestamp):
 
 
 # Temp. Kept for compatibility reasons
-def changetime(block):
-    block["time"] = datetime.utcfromtimestamp(int(block["time"])).strftime(
+def changetime(thing):
+    if thing.get("txn"):
+        thing.update(thing["txn"])
+        del thing["txn"]
+    thing["time"] = datetime.utcfromtimestamp(int(thing["time"])).strftime(
         "%Y-%m-%dT%H:%M:%S UTC"
     )
-    return block
+    return thing
 
 
 def abstract_block(block):

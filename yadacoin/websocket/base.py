@@ -173,6 +173,12 @@ class RCPWebSocketServer(WebSocketHandler):
             transaction.to_dict(),
             upsert=True,
         )
+        if transaction.private == True:
+            await self.config.mongo.async_db.private_transactions.replace_one(
+                {"id": transaction.transaction_signature},
+                transaction.to_dict(),
+                upsert=True,
+            )
         if isinstance(self.config.peer, User) and source == "websocket":
             for rid, peer_stream in self.config.nodeClient.outbound_streams[
                 ServiceProvider.__name__
