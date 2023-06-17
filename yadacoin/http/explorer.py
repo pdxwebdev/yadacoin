@@ -359,7 +359,8 @@ class ExplorerSearchHandler(BaseHandler):
                         "result": [
                             changetime(x)
                             async for x in self.config.mongo.async_db.failed_transactions.find(
-                                {"txn.id": term.replace(" ", "+")}, {"_id": 0}
+                                {"txn.id": term.replace(" ", "+")},
+                                {"_id": 0, "txn._id": 0},
                             )
                         ],
                     }
