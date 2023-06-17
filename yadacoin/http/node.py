@@ -203,6 +203,13 @@ class RebroadcastTransactions(BaseHandler):
         return self.render_as_json({"status": "success"})
 
 
+class RebroadcastFailedTransactions(BaseHandler):
+    async def get(self):
+        txn_id = self.get_query_argument("id").replace(" ", "+")
+        await self.config.TU.rebroadcast_failed(self.config, txn_id)
+        return self.render_as_json({"status": "success"})
+
+
 class GetCurrentSmartContractTransactions(BaseHandler):
     async def get(self):
         return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
@@ -262,6 +269,7 @@ NODE_HANDLERS = [
     (r"/get-pending-transaction", GetPendingTransactionHandler),
     (r"/get-pending-transaction-ids", GetPendingTransactionIdsHandler),
     (r"/rebroadcast-transactions", RebroadcastTransactions),
+    (r"/rebroadcast-failed-transaction", RebroadcastFailedTransactions),
     (r"/get-current-smart-contract-transactions", GetCurrentSmartContractTransactions),
     (r"/get-current-smart-contract-transaction", GetCurrentSmartContractTransaction),
     (r"/get-expired-smart-contract-transactions", GetExpiredSmartContractTransactions),

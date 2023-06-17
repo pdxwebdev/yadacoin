@@ -189,6 +189,24 @@ class TU(object):  # Transaction Utilities
                 time.sleep(0.1)
 
     @classmethod
+    async def rebroadcast_failed(cls, config, id):
+        from yadacoin.core.transaction import Transaction
+
+        async for txn in config.mongo.async_db.failed_transactions.find(
+            {"txn.id": id.replace(" ", "+")}
+        ):
+            x = Transaction.from_dict(txn["txn"])
+            async for peer_stream in config.peer.get_sync_peers():
+                await config.nodeShared.write_params(
+                    peer_stream, "newtxn", {"transaction": x.to_dict()}
+                )
+                if peer_stream.peer.protocol_version > 1:
+                    config.nodeClient.retry_messages[
+                        (peer_stream.peer.rid, "newtxn", x.transaction_signature)
+                    ] = {"transaction": x.to_dict()}
+                time.sleep(0.1)
+
+    @classmethod
     async def get_current_smart_contract_txns(cls, config, start_index):
         return config.mongo.async_db.blocks.aggregate(
             [

@@ -380,7 +380,8 @@ class ExplorerSearchHandler(BaseHandler):
                         "result": [
                             changetime(x)
                             async for x in self.config.mongo.async_db.failed_transactions.find(
-                                {"txn.hash": term}, {"_id": 0}
+                                {"txn.hash": term},
+                                {"_id": 0, "txn._id": 0},
                             )
                         ],
                     }
@@ -400,7 +401,8 @@ class ExplorerSearchHandler(BaseHandler):
                         "result": [
                             changetime(x)
                             async for x in self.config.mongo.async_db.failed_transactions.find(
-                                {"txn.outputs.to": term}, {"_id": 0}
+                                {"txn.outputs.to": term},
+                                {"_id": 0, "txn._id": 0},
                             )
                             .sort("index", -1)
                             .limit(10)
@@ -421,7 +423,8 @@ class ExplorerSearchHandler(BaseHandler):
                         "result": [
                             changetime(x)
                             async for x in self.config.mongo.async_db.failed_transactions.find(
-                                {"txn.public_key": term}, {"_id": 0}
+                                {"txn.public_key": term},
+                                {"_id": 0, "txn._id": 0},
                             )
                         ],
                     }
@@ -440,7 +443,8 @@ class ExplorerSearchHandler(BaseHandler):
                         "result": [
                             changetime(x)
                             async for x in self.config.mongo.async_db.failed_transactions.find(
-                                {"txn.rid": term}, {"_id": 0}
+                                {"txn.rid": term},
+                                {"_id": 0, "txn._id": 0},
                             )
                         ],
                     }
