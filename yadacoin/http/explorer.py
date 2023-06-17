@@ -245,8 +245,7 @@ class ExplorerSearchHandler(BaseHandler):
                     }
                 )
         except Exception as e:
-            self.app_log.debug(e)
-            return self.render_as_json({})
+            pass
 
         try:
             base64.b64decode(term.replace(" ", "+"))
@@ -266,7 +265,7 @@ class ExplorerSearchHandler(BaseHandler):
                     }
                 )
         except:
-            return self.render_as_json({})
+            pass
 
         try:
             re.search(r"[A-Fa-f0-9]{64}", term).group(0)
