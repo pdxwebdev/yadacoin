@@ -90,9 +90,15 @@ class StratumServer(RPCSocketServer):
         if not hasattr(stream, "peer"):
             return
         if stream.peer.address_only in StratumServer.inbound_streams[Miner.__name__]:
-            del StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only][
+            if (
                 stream.peer.worker
-            ]
+                in StratumServer.inbound_streams[Miner.__name__][
+                    stream.peer.address_only
+                ]
+            ):
+                del StratumServer.inbound_streams[Miner.__name__][
+                    stream.peer.address_only
+                ][stream.peer.worker]
             if (
                 len(
                     StratumServer.inbound_streams[Miner.__name__][
