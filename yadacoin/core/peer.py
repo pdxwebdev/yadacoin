@@ -501,9 +501,7 @@ class Seed(Peer):
         return list(
             list(self.config.nodeServer.inbound_streams[Seed.__name__].values())
             + list(
-                self.config.nodeServer.inbound_streams[
-                    ServiceProvider.__name__
-                ].values()
+                self.config.nodeServer.inbound_streams[SeedGateway.__name__].values()
             )
         )
 
