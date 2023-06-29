@@ -87,8 +87,14 @@ class GetPeersHandler(BaseHandler):
         """
         :return:
         """
-        peers = await self.config.peer.get_all_streams()
-        self.render_as_json({"peers": [x.peer.to_dict() for x in peers]})
+        inbound_peers = await self.config.peer.get_all_inbound_streams()
+        outbound_peers = await self.config.peer.get_all_outbound_streams()
+        self.render_as_json(
+            {
+                "inbound_peers": [x.peer.to_dict() for x in inbound_peers],
+                "outbound_peers": [x.peer.to_dict() for x in outbound_peers],
+            }
+        )
 
 
 class GetStatusHandler(BaseHandler):
