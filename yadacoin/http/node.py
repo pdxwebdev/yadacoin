@@ -93,7 +93,8 @@ class GetPeersHandler(BaseHandler):
             {
                 "inbound_peers": [x.peer.to_dict() for x in inbound_peers],
                 "outbound_peers": [x.peer.to_dict() for x in outbound_peers],
-            }
+            },
+            4,
         )
 
 
