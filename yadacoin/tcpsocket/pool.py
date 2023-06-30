@@ -194,16 +194,16 @@ class StratumServer(RPCSocketServer):
             stream.peer = Miner(
                 address=body["params"].get("login"), agent=body["params"].get("agent")
             )
+            self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
+            StratumServer.inbound_streams[Miner.__name__].setdefault(
+                stream.peer.address_only, {}
+            )
+            StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only][
+                stream.peer.worker
+            ] = stream
+            await StratumServer.update_miner_count()
         except:
             rpc_data["error"] = {"message": "Invalid wallet address or invalid format"}
-        self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
-        StratumServer.inbound_streams[Miner.__name__].setdefault(
-            stream.peer.address_only, {}
-        )
-        StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only][
-            stream.peer.worker
-        ] = stream
-        await StratumServer.update_miner_count()
         await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
 
     async def keepalived(self, body, stream):
