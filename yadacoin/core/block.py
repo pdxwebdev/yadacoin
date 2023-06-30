@@ -5,28 +5,27 @@ import time
 import binascii
 import pyrx
 
-from sys import exc_info
-from os import path
 from decimal import Decimal, getcontext
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from logging import getLogger
-from yadacoin.contracts.base import Contract
+from datetime import timedelta
+from tornado.iostream import StreamClosedError
+from tornado.util import TimeoutError
 
 from yadacoin.core.chain import CHAIN
 import yadacoin.core.config
 from yadacoin.core.transaction import (
     Transaction,
-    NotEnoughMoneyException,
+    Output,
     InvalidTransactionException,
-    MissingInputTransactionException,
-    InvalidTransactionSignatureException,
     TransactionAddressInvalidException,
 )
 from yadacoin.core.transactionutils import TU
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.config import get_config
+from yadacoin.core.nodes import Nodes
 
 
 def quantize_eight(value):
@@ -71,6 +70,10 @@ class FastGraphRule2(Exception):
 
 
 class ExternalInputSpentException(Exception):
+    pass
+
+
+class UnknownOutputAddressException(Exception):
     pass
 
 
@@ -215,17 +218,64 @@ class Block(object):
             [float(transaction_obj.fee) for transaction_obj in transaction_objs]
         )
         block_reward = CHAIN.get_block_reward(index)
+
+        if config.LatestBlock.block.index >= CHAIN.PAY_MASTER_NODES_FORK:
+            nodes = Nodes.get_all_nodes_for_block_height(config.LatestBlock.block.index)
+            outputs = [
+                Output.from_dict(
+                    {
+                        "value": (block_reward * 0.9) + float(fee_sum),
+                        "to": str(
+                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+                        ),
+                    }
+                )
+            ]
+            masternode_reward_total = block_reward * 0.1
+            masternode_reward_divided = masternode_reward_total / len(nodes)
+
+            for node in nodes:
+                from tornado.tcpclient import TCPClient
+
+                try:
+                    stream = await TCPClient().connect(
+                        node.host, node.port, timeout=timedelta(seconds=1)
+                    )
+                except StreamClosedError as e:
+                    print(e)
+                except TimeoutError as e:
+                    print(e)
+                except Exception as e:
+                    print(e)
+
+                outputs.append(
+                    Output.from_dict(
+                        {
+                            "value": float(masternode_reward_divided),
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(node.identity.public_key)
+                                )
+                            ),
+                        }
+                    )
+                )
+        else:
+            outputs = [
+                Output.from_dict(
+                    {
+                        "value": block_reward + float(fee_sum),
+                        "to": str(
+                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+                        ),
+                    }
+                )
+            ]
+
         coinbase_txn = await Transaction.generate(
             public_key=public_key,
             private_key=private_key,
-            outputs=[
-                {
-                    "value": block_reward + float(fee_sum),
-                    "to": str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-                    ),
-                }
-            ],
+            outputs=outputs,
             coinbase=True,
         )
         transaction_objs.append(coinbase_txn)
@@ -393,12 +443,12 @@ class Block(object):
 
     @staticmethod
     def is_coinbase(block, txn):
+        config = get_config()
         return (
             block.public_key == txn.public_key
             and str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key)))
             in [x.to for x in txn.outputs]
             and len(txn.inputs) == 0
-            and len(txn.outputs) == 1
         )
 
     def generate_hash_from_header(self, height, header, nonce):
@@ -475,9 +525,16 @@ class Block(object):
             except:
                 raise Exception("block signature2 is invalid")
 
+        if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
+            masernodes_by_address = (
+                Nodes.get_all_nodes_indexed_by_address_for_block_height(self.index)
+            )
+
         # verify reward
         coinbase_sum = 0
         fee_sum = 0.0
+        masternode_fee_sum = 0
+        masternode_sums = {}
         for txn in self.transactions:
             if int(self.index) >= CHAIN.TXN_V3_FORK and int(txn.version) < 3:
                 raise Exception(
@@ -492,8 +549,22 @@ class Block(object):
                 pass
 
             if txn.coinbase:
-                for output in txn.outputs:
-                    coinbase_sum += float(output.value)
+                if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
+                    block_creator_address = str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
+                    )
+                    for output in txn.outputs:
+                        if output.to == block_creator_address:
+                            coinbase_sum += float(output.value)
+                        elif output.to in masernodes_by_address:
+                            if output.to not in masternode_sums:
+                                masternode_sums[output.to] = 0
+                            masternode_sums[output.to] += output.value
+                        else:
+                            raise UnknownOutputAddressException()
+                else:
+                    for output in txn.outputs:
+                        coinbase_sum += float(output.value)
             elif txn.contract_generated:
                 if self.index >= CHAIN.TXN_V3_FORK_CHECK_MINER_SIGNATURE:
                     result = verify_signature(
@@ -527,13 +598,27 @@ class Block(object):
         0.02099999 50.021 50.0
         Integrate block error 1 ('Coinbase output total does not equal block reward + transaction fees', 0.020999999999999998, 0.021000000000000796)
         """
-        if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
-            print(fee_sum, coinbase_sum, reward)
-            raise Exception(
-                "Coinbase output total does not equal block reward + transaction fees",
-                fee_sum,
-                (coinbase_sum - reward),
-            )
+
+        if self.config.LatestBlock.block.index >= CHAIN.PAY_MASTER_NODES_FORK:
+            masternode_sum = sum(x for x in masternode_sums.values())
+            if quantize_eight(fee_sum) != quantize_eight(
+                (coinbase_sum + masternode_sum) - reward
+            ):
+                print(fee_sum, coinbase_sum, reward)
+                raise Exception(
+                    "Coinbase output total does not equal block reward + transaction fees",
+                    fee_sum,
+                    (coinbase_sum - reward),
+                )
+
+        else:
+            if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
+                print(fee_sum, coinbase_sum, reward)
+                raise Exception(
+                    "Coinbase output total does not equal block reward + transaction fees",
+                    fee_sum,
+                    (coinbase_sum - reward),
+                )
 
     def get_transaction_hashes(self):
         """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""

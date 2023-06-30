@@ -100,6 +100,7 @@ class Transaction(object):
         relationship_hash="",
         never_expire=False,
         private=False,
+        masternode_fee=0.0,
     ):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
@@ -114,6 +115,7 @@ class Transaction(object):
         self.public_key = public_key
         self.dh_public_key = dh_public_key if dh_public_key else ""
         self.fee = float(fee)
+        self.masternode_fee = float(masternode_fee)
         self.requester_rid = requester_rid if requester_rid else ""
         self.requested_rid = requested_rid if requested_rid else ""
         self.hash = txn_hash
@@ -179,12 +181,13 @@ class Transaction(object):
         relationship="",
         no_relationship=False,
         exact_match=False,
-        version=4,
+        version=5,
         miner_signature="",
         contract_generated=False,
         do_money=True,
         never_expire=False,
         private=False,
+        masternode_fee=0.0,
     ):
         cls_inst = cls()
         cls_inst.config = get_config()
@@ -200,6 +203,7 @@ class Transaction(object):
         cls_inst.private_key = private_key
         cls_inst.value = value
         cls_inst.fee = float(fee)
+        cls_inst.masternode_fee = float(masternode_fee)
         cls_inst.dh_private_key = dh_private_key
         cls_inst.to = to
         cls_inst.time = int(time.time())
@@ -382,7 +386,7 @@ class Transaction(object):
             txn_hash=txn.get("hash", ""),
             inputs=txn.get("inputs", []),
             outputs=txn.get("outputs", []),
-            coinbase=txn.get("coinbase", ""),
+            coinbase=txn.get("coinbase", False),
             version=txn.get("version"),
             miner_signature=txn.get("miner_signature", ""),
             contract_generated=txn.get("contract_generated", ""),
@@ -602,7 +606,34 @@ class Transaction(object):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship
-        if self.version == 4:
+        if self.version == 5:
+            if relationship:
+                relationship_hash = hashlib.sha256(relationship.encode()).digest().hex()
+                if relationship_hash != self.relationship_hash:
+                    raise InvalidRelationshipHashException()
+            else:
+                relationship_hash = self.relationship_hash
+            hashout = (
+                hashlib.sha256(
+                    (
+                        self.public_key
+                        + str(self.time)
+                        + self.dh_public_key
+                        + self.rid
+                        + relationship_hash
+                        + "{0:.8f}".format(self.fee)
+                        + "{0:.8f}".format(self.masternode_fee)
+                        + self.requester_rid
+                        + self.requested_rid
+                        + inputs_concat
+                        + outputs_concat
+                        + str(self.version)
+                    ).encode("utf-8")
+                )
+                .digest()
+                .hex()
+            )
+        elif self.version == 4:
             if relationship:
                 relationship_hash = hashlib.sha256(relationship.encode()).digest().hex()
                 if relationship_hash != self.relationship_hash:
@@ -848,6 +879,7 @@ class Transaction(object):
             "public_key": self.public_key,
             "dh_public_key": self.dh_public_key,
             "fee": float(self.fee),
+            "masternode_fee": float(self.masternode_fee),
             "hash": self.hash,
             "inputs": [x.to_dict() for x in self.inputs],
             "outputs": [x.to_dict() for x in self.outputs],
