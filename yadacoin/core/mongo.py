@@ -175,6 +175,16 @@ class Mongo(object):
         except:
             pass
 
+        __index = IndexModel([("index", DESCENDING)], name="__index")
+        try:
+            self.db.share_payout.create_indexes(
+                [
+                    __index,
+                ]
+            )
+        except:
+            pass
+
         __txn_id = IndexModel([("txn.id", ASCENDING)], name="__txn_id")
         try:
             self.db.transactions_by_rid_cache.create_indexes([__txn_id])

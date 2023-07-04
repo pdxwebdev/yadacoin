@@ -219,7 +219,7 @@ class Block(object):
         )
         block_reward = CHAIN.get_block_reward(index)
 
-        if config.LatestBlock.block.index >= CHAIN.PAY_MASTER_NODES_FORK:
+        if index >= CHAIN.PAY_MASTER_NODES_FORK:
             nodes = Nodes.get_all_nodes_for_block_height(config.LatestBlock.block.index)
             outputs = [
                 Output.from_dict(
@@ -232,8 +232,8 @@ class Block(object):
                 )
             ]
             masternode_reward_total = block_reward * 0.1
-            masternode_reward_divided = masternode_reward_total / len(nodes)
 
+            successful_nodes = []
             for node in nodes:
                 from tornado.tcpclient import TCPClient
 
@@ -247,14 +247,17 @@ class Block(object):
                     print(e)
                 except Exception as e:
                     print(e)
+                successful_nodes.append(node)
 
+            masternode_reward_divided = masternode_reward_total / len(successful_nodes)
+            for successful_node in successful_nodes:
                 outputs.append(
                     Output.from_dict(
                         {
                             "value": float(masternode_reward_divided),
                             "to": str(
                                 P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(node.identity.public_key)
+                                    bytes.fromhex(successful_node.identity.public_key)
                                 )
                             ),
                         }
@@ -599,7 +602,7 @@ class Block(object):
         Integrate block error 1 ('Coinbase output total does not equal block reward + transaction fees', 0.020999999999999998, 0.021000000000000796)
         """
 
-        if self.config.LatestBlock.block.index >= CHAIN.PAY_MASTER_NODES_FORK:
+        if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
             masternode_sum = sum(x for x in masternode_sums.values())
             if quantize_eight(fee_sum) != quantize_eight(
                 (coinbase_sum + masternode_sum) - reward
