@@ -268,7 +268,7 @@ class Peer:
         return seed_gateway
 
     async def ensure_peers_connected(self):
-        peers = await self.get_outbound_peers()
+        peers = {x.rid: x for x in (await self.get_outbound_peers()).values()}
         if not peers:
             return
         outbound_class = await self.get_outbound_class()
@@ -277,6 +277,8 @@ class Peer:
         stream_collection = {
             **self.config.nodeClient.outbound_streams[outbound_class.__name__],
             **self.config.nodeClient.outbound_pending[outbound_class.__name__],
+            **self.config.nodeServer.inbound_streams[outbound_class.__name__],
+            **self.config.nodeServer.inbound_pending[outbound_class.__name__],
         }
         self.config.nodeClient.outbound_ignore[outbound_class.__name__] = {
             k: v

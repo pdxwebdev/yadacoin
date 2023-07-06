@@ -129,7 +129,7 @@ class Seeds(Nodes):
             ),
             Seed.from_dict(
                 {
-                    "host": "130.61.185.86",
+                    "host": "seed.crbrain.online",
                     "port": 8000,
                     "identity": {
                         "username": "",
@@ -222,7 +222,7 @@ class SeedGateways(Nodes):
             ),
             SeedGateway.from_dict(
                 {
-                    "host": "130.61.60.17",
+                    "host": "seedgateway.crbrain.online",
                     "port": 8000,
                     "identity": {
                         "username": "",
@@ -321,7 +321,7 @@ class ServiceProviders(Nodes):
             ),
             ServiceProvider.from_dict(
                 {
-                    "host": "130.61.44.123",
+                    "host": "serviceprovider.crbrain.online",
                     "port": 8000,
                     "identity": {
                         "username": "",

@@ -29,7 +29,7 @@ from hashlib import sha256
 from logging.handlers import RotatingFileHandler
 from os import path
 from sys import exit, stdout
-from time import time
+from time import time, sleep
 
 import webbrowser
 import pyrx
@@ -118,14 +118,25 @@ class NodeApplication(Application):
         if test:
             return
         if "node" in self.config.modes:
+            self.config.node_disabled = False
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
             self.init_groups()
-            self.init_peer()
-            self.config.app_log.info(
-                "Node: {}:{}".format(self.config.peer_host, self.config.peer_port)
-            )
+            try:
+                self.init_peer()
+                self.config.app_log.info(
+                    "Node: {}:{}".format(self.config.peer_host, self.config.peer_port)
+                )
+            except Exception as e:
+                self.config.node_disabled = True
+                self.config.app_log.info("{}, starting without node enabled.".format(e))
+
+            if not self.config.node_disabled:
+                self.config.node_server_instance = self.config.nodeServer()
+                self.config.node_server_instance.bind(self.config.peer_port)
+                self.config.node_server_instance.start(1)
+
         if "pool" in self.config.modes:
             self.init_pool()
         if "web" in self.config.modes:
@@ -617,7 +628,7 @@ class NodeApplication(Application):
             ThreadPoolExecutor(max_workers=1)
         )
 
-        if "node" in self.config.modes:
+        if "node" in self.config.modes and not self.config.node_disabled:
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
 
             tornado.ioloop.IOLoop.current().spawn_callback(
@@ -840,9 +851,6 @@ class NodeApplication(Application):
                     self.config.nodeServer.inbound_pending[x.__name__] = {}
                 if x.__name__ not in self.config.nodeServer.inbound_streams:
                     self.config.nodeServer.inbound_streams[x.__name__] = {}
-            self.config.node_server_instance = self.config.nodeServer()
-            self.config.node_server_instance.bind(self.config.peer_port)
-            self.config.node_server_instance.start(1)
 
         self.config.websocketServer = RCPWebSocketServer
         self.config.app_log = logging.getLogger("tornado.application")
