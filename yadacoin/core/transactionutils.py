@@ -153,7 +153,7 @@ class TU(object):  # Transaction Utilities
                 )
 
         txns_to_clean = config.mongo.async_db.miner_transactions.find(
-            {"time": {"$lte": time.time()}, "never_expire": {"$ne": True}}
+            {"time": {"$lte": time.time() - 60 * 60}, "never_expire": {"$ne": True}}
         )
         async for txn_to_clean in txns_to_clean:
             to_delete.append(
