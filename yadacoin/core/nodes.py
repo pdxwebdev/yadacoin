@@ -90,7 +90,7 @@ class Seeds(Nodes):
                 }
             ),
         ],
-        443500: [
+        443600: [
             Seed.from_dict(
                 {
                     "host": "yadacoin.io",
@@ -183,7 +183,7 @@ class SeedGateways(Nodes):
                 }
             ),
         ],
-        443500: [
+        443600: [
             SeedGateway.from_dict(
                 {
                     "host": "remotelyrich.com",
@@ -279,7 +279,7 @@ class ServiceProviders(Nodes):
                 }
             ),
         ],
-        443500: [
+        443600: [
             ServiceProvider.from_dict(
                 {
                     "host": "centeridentity.com",
