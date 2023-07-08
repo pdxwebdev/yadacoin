@@ -265,7 +265,10 @@ class Peer:
         return seed_gateway
 
     async def ensure_peers_connected(self):
-        peers = {x.rid: x for x in (await self.get_outbound_peers()).values()}
+        peers = {
+            self.config.peer.identity.generate_rid(x.identity.username_signature): x
+            for x in (await self.get_outbound_peers()).values()
+        }
         if not peers:
             return
         outbound_class = await self.get_outbound_class()
