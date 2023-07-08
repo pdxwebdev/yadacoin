@@ -118,7 +118,6 @@ class NodeApplication(Application):
         if test:
             return
         if "node" in self.config.modes:
-            self.config.node_disabled = False
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
@@ -129,13 +128,11 @@ class NodeApplication(Application):
                     "Node: {}:{}".format(self.config.peer_host, self.config.peer_port)
                 )
             except Exception as e:
-                self.config.node_disabled = True
                 self.config.app_log.info("{}, starting without node enabled.".format(e))
 
-            if not self.config.node_disabled:
-                self.config.node_server_instance = self.config.nodeServer()
-                self.config.node_server_instance.bind(self.config.peer_port)
-                self.config.node_server_instance.start(1)
+            self.config.node_server_instance = self.config.nodeServer()
+            self.config.node_server_instance.bind(self.config.peer_port)
+            self.config.node_server_instance.start(1)
 
         if "pool" in self.config.modes:
             self.init_pool()
@@ -628,7 +625,7 @@ class NodeApplication(Application):
             ThreadPoolExecutor(max_workers=1)
         )
 
-        if "node" in self.config.modes and not self.config.node_disabled:
+        if "node" in self.config.modes:
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
 
             tornado.ioloop.IOLoop.current().spawn_callback(

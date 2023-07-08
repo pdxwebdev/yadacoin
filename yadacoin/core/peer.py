@@ -70,33 +70,30 @@ class Peer:
             "protocol_version": 3,
             "node_version": config.node_version,
         }
-        if my_peer.get("peer_type") == "seed":
+        if config.peer_type == "seed":
             if not config.username_signature in config.seeds:
-                raise Exception(
-                    "You are not a valid Seed. Could not find you in the list of Seeds"
-                )
+                config.peer_type = "user"
+                return User.from_dict(my_peer, is_me=True)
             my_peer["seed_gateway"] = config.seeds[
                 config.username_signature
             ].seed_gateway
             return Seed.from_dict(my_peer, is_me=True)
-        elif my_peer.get("peer_type") == "seed_gateway":
+        elif config.peer_type == "seed_gateway":
             if not config.username_signature in config.seed_gateways:
-                raise Exception(
-                    "You are not a valid SeedGateway. Could not find you in the list of seed_gateways"
-                )
+                config.peer_type = "user"
+                return User.from_dict(my_peer, is_me=True)
             my_peer["seed"] = config.seed_gateways[config.username_signature].seed
             return SeedGateway.from_dict(my_peer, is_me=True)
-        elif my_peer.get("peer_type") == "service_provider":
+        elif config.peer_type == "service_provider":
             if not config.username_signature in config.service_providers:
-                raise Exception(
-                    "You are not a valid SeedGateway. Could not find you in the list of service_providers"
-                )
+                config.peer_type = "user"
+                return User.from_dict(my_peer, is_me=True)
             my_peer["seed_gateway"] = config.service_providers[
                 config.username_signature
             ].seed_gateway
             my_peer["seed"] = config.service_providers[config.username_signature].seed
             return ServiceProvider.from_dict(my_peer, is_me=True)
-        elif my_peer.get("peer_type") == "user" or True:  # default if not specified
+        elif config.peer_type == "user" or True:  # default if not specified
             return User.from_dict(my_peer, is_me=True)
 
     @classmethod
