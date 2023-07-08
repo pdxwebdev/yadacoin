@@ -191,7 +191,7 @@ class Seeds(Nodes):
             Seed.from_dict(
                 {
                     "host": "yadanodeone.cryptovault.app",
-                    "port": 8000,
+                    "port": 8080,
                     "identity": {
                         "username": "",
                         "username_signature": "MEQCICCXzIpmoNdU2sZsI35lqIl1bt5W1MW49NhjO95S2wlSAiAY04erBPVYvLWJ1SJCm5FtgJ3hyikVH3sw/fGlNUYuGQ==",
@@ -346,7 +346,7 @@ class SeedGateways(Nodes):
             SeedGateway.from_dict(
                 {
                     "host": "yadanodetwo.cryptovault.app",
-                    "port": 8000,
+                    "port": 8080,
                     "identity": {
                         "username": "",
                         "username_signature": "MEQCIFvpbWRQU9Ty4JXxoGH4YXgR8RiLoLBm11RNKBVeaz4GAiAyGMbhXc+J+z5VIh2GGJi9uDsqdPpEweerViSrxpxzPQ==",
@@ -512,7 +512,7 @@ class ServiceProviders(Nodes):
             ServiceProvider.from_dict(
                 {
                     "host": "yadanodethree.cryptovault.app",
-                    "port": 8000,
+                    "port": 8080,
                     "identity": {
                         "username": "",
                         "username_signature": "MEQCIG5VITo79hYorFepmBB6zRqSl/PSbRPpz5gTaSteJQlaAiAmuQnTZFCuccjTtufWJ8CI+w/ddka/AoNQgat3H+18Jw==",
