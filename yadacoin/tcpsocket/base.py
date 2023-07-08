@@ -302,6 +302,9 @@ class RPCSocketClient(TCPClient):
                     peer.__class__.__name__, peer.to_json()
                 )
             )
+            self.outbound_ignore[peer.__class__.__name__][
+                peer.identity.username_signature
+            ] = time.time()
         except TimeoutError:
             if not stream:
                 stream = DummyStream(peer)

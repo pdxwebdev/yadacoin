@@ -277,8 +277,8 @@ class Peer:
             **self.config.nodeServer.inbound_streams[outbound_class.__name__],
             **self.config.nodeServer.inbound_pending[outbound_class.__name__],
         }
-        self.config.nodeClient.outbound_ignore[outbound_class.__name__] = {
-            k: v
+        outbound_ignored = {
+            self.config.peer.identity.generate_rid(k): v
             for k, v in self.config.nodeClient.outbound_ignore[
                 outbound_class.__name__
             ].items()
@@ -288,7 +288,7 @@ class Peer:
             stream_collection,
             limit,
             peers,
-            self.config.nodeClient.outbound_ignore[outbound_class.__name__],
+            outbound_ignored,
         )
 
     async def connect(self, stream_collection, limit, peers, ignored_peers):
