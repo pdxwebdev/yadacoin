@@ -20,7 +20,8 @@ class Nodes:
     }
 
     @classmethod
-    def get_nodes_for_block_height(cls, height, fork_point=None):
+    def get_nodes_for_block_height(cls, height):
+        fork_point = cls.get_fork_for_block_height(height)
         if fork_point is None:
             fork_point = cls.get_fork_for_block_height(height)
         if fork_point not in cls._get_nodes_for_block_height_cache[cls.__name__]:
@@ -31,12 +32,11 @@ class Nodes:
 
     @classmethod
     def get_all_nodes_for_block_height(cls, height):
-        fork_point = cls.get_fork_for_block_height(height)
         return (
-            Seeds.get_nodes_for_block_height(height, fork_point)
-            + SeedGateways.get_nodes_for_block_height(height, fork_point)
-            + ServiceProviders.get_nodes_for_block_height(height, fork_point),
-        )[fork_point]
+            Seeds.get_nodes_for_block_height(height)
+            + SeedGateways.get_nodes_for_block_height(height)
+            + ServiceProviders.get_nodes_for_block_height(height),
+        )[0]
 
     @classmethod
     def get_all_nodes_indexed_by_address_for_block_height(cls, height):
