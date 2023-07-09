@@ -262,7 +262,7 @@ class RPCSocketClient(TCPClient):
                 == peer.identity.username_signature
             ):
                 return
-            if (self.config.peer.host, self.config.peer.host) == (peer.host, peer.port):
+            if (self.config.peer.host, self.config.peer.port) == (peer.host, peer.port):
                 return
             stream = DummyStream(peer)
             stream.last_activity = int(time.time())
