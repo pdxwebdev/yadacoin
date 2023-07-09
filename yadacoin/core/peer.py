@@ -114,10 +114,9 @@ class Peer:
 
     @property
     def rid(self):
-        if hasattr(self.config, "peer"):
-            return self.identity.generate_rid(
-                self.config.peer.identity.username_signature
-            )
+        config = get_config()
+        if hasattr(config, "peer"):
+            return self.identity.generate_rid(config.peer.identity.username_signature)
 
     @classmethod
     def create_upnp_mapping(cls, config):
