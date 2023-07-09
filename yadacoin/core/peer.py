@@ -269,12 +269,6 @@ class Peer:
             self.config.peer.identity.generate_rid(x.identity.username_signature): x
             for x in (await self.get_outbound_peers()).values()
         }
-
-        # ensure rid is assigned
-        for x in peers.values():
-            x.rid = self.config.peer.identity.generate_rid(
-                x.identity.username_signature
-            )
         if not peers:
             return
         outbound_class = await self.get_outbound_class()
