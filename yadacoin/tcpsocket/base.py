@@ -172,7 +172,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     id_attr = getattr(stream.peer, stream.peer.id_attribute)
                     if (
                         id_attr
-                        not in self.inbound_streams[stream.peer.__class__.__name__]
+                        not in self.config.nodeServer.inbound_streams[
+                            stream.peer.__class__.__name__
+                        ]
                     ):
                         await self.write_params(stream, "disconnect", {})
                         await self.remove_peer(stream)
@@ -203,10 +205,20 @@ class RPCSocketServer(TCPServer, BaseRPC):
         if not hasattr(stream, "peer"):
             return
         id_attr = getattr(stream.peer, stream.peer.id_attribute)
-        if id_attr in self.inbound_streams[stream.peer.__class__.__name__]:
-            del self.inbound_streams[stream.peer.__class__.__name__][id_attr]
-        if id_attr in self.inbound_pending[stream.peer.__class__.__name__]:
-            del self.inbound_pending[stream.peer.__class__.__name__][id_attr]
+        if (
+            id_attr
+            in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
+        ):
+            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][
+                id_attr
+            ]
+        if (
+            id_attr
+            in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
+        ):
+            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][
+                id_attr
+            ]
 
 
 class DummyStream:

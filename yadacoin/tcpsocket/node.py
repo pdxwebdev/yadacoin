@@ -486,11 +486,11 @@ class NodeRPC(BaseRPC):
 
         limit = self.config.peer.__class__.type_limit(peerCls)
         self.config.app_log.info(
-            f"limit num peers {limit}, currently at {len(NodeSocketServer.inbound_streams[peerCls.__name__])}"
+            f"limit num peers {limit}, currently at {len(self.config.nodeServer.inbound_streams[peerCls.__name__])}"
         )
         if (
-            len(NodeSocketServer.inbound_pending[peerCls.__name__])
-            + len(NodeSocketServer.inbound_streams[peerCls.__name__])
+            len(self.config.nodeServer.inbound_pending[peerCls.__name__])
+            + len(self.config.nodeServer.inbound_streams[peerCls.__name__])
         ) >= limit:
             if not self.config.peer.is_linked_peer(stream.peer):
                 self.config.app_log.info("sent capacity message, stream closed")
@@ -500,24 +500,17 @@ class NodeRPC(BaseRPC):
 
         if (
             generic_peer.rid
-            in NodeSocketServer.inbound_pending[stream.peer.__class__.__name__]
+            in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
         ):
             await self.remove_peer(stream, close=False)
             return {}
 
         if (
             generic_peer.rid
-            in NodeSocketServer.inbound_streams[stream.peer.__class__.__name__]
+            in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
         ):
             await self.remove_peer(stream, close=False)
             return {}
-
-        if (
-            generic_peer.identity.username_signature
-            in self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__]
-        ):
-            await self.remove_peer(stream, close=False)
-            return
 
         if (
             generic_peer.rid
@@ -548,7 +541,9 @@ class NodeRPC(BaseRPC):
             stream.close()
             return {}
 
-        NodeSocketServer.inbound_streams[peerCls.__name__][stream.peer.rid] = stream
+        self.config.nodeServer.inbound_streams[peerCls.__name__][
+            stream.peer.rid
+        ] = stream
         self.config.app_log.info(
             "Connected to {}: {}".format(
                 stream.peer.__class__.__name__, stream.peer.to_json()
