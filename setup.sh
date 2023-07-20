@@ -32,11 +32,18 @@ cd yadacoin
 sudo bash -c "cat > /lib/systemd/system/yadanode.service" << EOL
 [Unit]
 Description=Yada_Node
+StartLimitIntervalSec=500
+StartLimitBurst=5
+
 [Service]
 Type=simple
 WorkingDirectory=/etc/yadacoin
 ExecStart=python3 yadacoin/app.py --config=config/config.json
 KillMode=process
+Restart=always
+Restart=on-failure
+RestartSec=5s
+
 [Install]
 WantedBy=multi-user.target
 EOL
