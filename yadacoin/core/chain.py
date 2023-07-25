@@ -278,7 +278,7 @@ class CHAIN(object):
         )  # 1 hour and 30 min at 10 min per block - Faster reaction to drops in blocktime, we want to make "instamine" harder
         target_time = 10 * 60  # 10 min
         # That should not happen
-        if int(block.time) - int(last_block.time) > 3600:
+        if int(block.time) - int(last_block.time) > 3600 and block.index <= 446400:
             cls.config.app_log.debug("Block time over max. Max target set.")
             return int(max_target)
         # decrease after 2x target - can be 3 as well
