@@ -28,6 +28,7 @@ class CHAIN(object):
     REQUIRE_NODE_VERSION_566 = 424200
     LITTLE_HASH_DIFF_FIX = 430000
     PAY_MASTER_NODES_FORK = 443001
+    END_MAX_TARGET_FORK = 446400
 
     RETARGET_PERIOD = 2016  # blocks
     TWO_WEEKS = 1209600  # seconds
@@ -278,7 +279,10 @@ class CHAIN(object):
         )  # 1 hour and 30 min at 10 min per block - Faster reaction to drops in blocktime, we want to make "instamine" harder
         target_time = 10 * 60  # 10 min
         # That should not happen
-        if int(block.time) - int(last_block.time) > 3600 and block.index <= 446400:
+        if (
+            int(block.time) - int(last_block.time) > 3600
+            and block.index <= CHAIN.END_MAX_TARGET_FORK
+        ):
             cls.config.app_log.debug("Block time over max. Max target set.")
             return int(max_target)
         # decrease after 2x target - can be 3 as well

@@ -629,7 +629,6 @@ class NodeRPC(BaseRPC):
         # if not found in websockets, rerturn not found
         params = body.get("params")
         route = params["route"]
-        transaction = Transaction.from_dict(params["transaction"])
         if isinstance(self.config.peer, Seed):
             if isinstance(stream.peer, SeedGateway):
                 # Being routed out to seed layer from user node
