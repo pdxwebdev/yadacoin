@@ -14,6 +14,7 @@ not already exist. Each User can only have one Account.
 {
     "uid": "`user id`",
 }
+```
 
 ## Success Response
 
