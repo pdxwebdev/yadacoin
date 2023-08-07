@@ -9,7 +9,11 @@ not already exist. Each User can only have one Account.
 
 **Header** : `Authorization: bearer JWT_TOKEN`
 
-**Request data** : `No request data needed`
+**Request data** :
+```json
+{
+    "uid": "`user id`",
+}
 
 ## Success Response
 
