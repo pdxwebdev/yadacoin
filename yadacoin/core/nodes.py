@@ -372,6 +372,18 @@ class Seeds(Nodes):
                     "seed_gateway": "MEUCIQC4unLqHmurNumWFIqyTwNJFTOttVhfIyMWxfpqDlxh2AIgHpK8UOO8geA916203XcjIb8cpbeKKjT1nKHH6f1a+ds=",
                 }
             ),
+                Seed.from_dict(
+                {
+                    "host": "seed.friendspool.club",
+                    "port": 8000,
+                    "identity": {
+                        "username": "jvx-node01",
+                        "username_signature": "MEUCIQDPBUWV9XpFBLkrwbWalS/NrVST87JTYwWBjiPlSZD/BwIgYdGYC/Kuy4C3CYNzUpQFg/oRC+oPvsMERyYURGN0G8I=",
+                        "public_key": "034f740341e3e5d317e0284fd7420352a8f4af15e2d754f0f852c956ecd66c66c4",
+                    },
+                    "seed_gateway": "MEUCIQCWPClBEn7FVXuICcLTLxgxAINccOVsjrpHftPcATFLnQIgCUYxh+SFiJhXnd0vGpjxxJq9rQGm2P7dGmqyG3VehTw=",
+                }
+            ),
         ],
     }
 
@@ -697,6 +709,18 @@ class SeedGateways(Nodes):
                         "public_key": "030efaa3bf8b3d2833aa2f30434dfde2fc89f39a12985f8c0e037f3a351f861e71",
                     },
                     "seed": "MEUCIQCS++mJ1UNC1qywcYFr46l6rOadA0TYGchrA4RSWbsFqQIgM+VqpSkFdvsML5XHHtYFG5oXbQbjdQgXWQIHPuhfFHg=",
+                }
+                 ),
+            SeedGateway.from_dict(
+                {
+                    "host": "seedgateway.friendspool.club",
+                    "port": 8010,
+                    "identity": {
+                        "username": "jv-seedgateway",
+                        "username_signature": "MEUCIQCWPClBEn7FVXuICcLTLxgxAINccOVsjrpHftPcATFLnQIgCUYxh+SFiJhXnd0vGpjxxJq9rQGm2P7dGmqyG3VehTw=",
+                        "public_key": "02ca31aaee2f8cda90080cbc3732f7b107cb254adee6d2efce142a59e76cd86b38",
+                    },
+                    "seed": "MEUCIQDPBUWV9XpFBLkrwbWalS/NrVST87JTYwWBjiPlSZD/BwIgYdGYC/Kuy4C3CYNzUpQFg/oRC+oPvsMERyYURGN0G8I=",
                 }
             ),
         ],
@@ -1050,6 +1074,19 @@ class ServiceProviders(Nodes):
                     },
                     "seed_gateway": "MEUCIQC4unLqHmurNumWFIqyTwNJFTOttVhfIyMWxfpqDlxh2AIgHpK8UOO8geA916203XcjIb8cpbeKKjT1nKHH6f1a+ds=",
                     "seed": "MEUCIQCS++mJ1UNC1qywcYFr46l6rOadA0TYGchrA4RSWbsFqQIgM+VqpSkFdvsML5XHHtYFG5oXbQbjdQgXWQIHPuhfFHg=",
+                }
+            ),
+            ServiceProvider.from_dict(
+                {
+                    "host": "serviceprovider.friendspool.club",
+                    "port": 8011,
+                    "identity": {
+                        "username": "jv-serviceprovider",
+                        "username_signature": "MEUCIQDO6Nj9pcRZCo6TtOf9ayy17h0PfyKmgxVHSH81EtdITgIgM9TrMrfomG9AnIj697tbmDW4LZOz8+ao48iApGHfdXk=",
+                        "public_key": "0388318e5a7cbfc2a0a7501d0ebad6495f17d09fb068f295efad23b90bfd572eb4",
+                    },
+                    "seed_gateway": "MEUCIQCWPClBEn7FVXuICcLTLxgxAINccOVsjrpHftPcATFLnQIgCUYxh+SFiJhXnd0vGpjxxJq9rQGm2P7dGmqyG3VehTw=",
+                    "seed": "MEUCIQDPBUWV9XpFBLkrwbWalS/NrVST87JTYwWBjiPlSZD/BwIgYdGYC/Kuy4C3CYNzUpQFg/oRC+oPvsMERyYURGN0G8I=",
                 }
             ),
         ],
