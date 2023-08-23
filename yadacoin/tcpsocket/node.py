@@ -1,26 +1,22 @@
 import base64
-import json
 import time
 from uuid import uuid4
 
-from tornado.iostream import StreamClosedError
 from coincurve import verify_signature
+from tornado.iostream import StreamClosedError
 
-from yadacoin.tcpsocket.base import RPCSocketServer, RPCSocketClient, BaseRPC
-from yadacoin.core.chain import CHAIN
 from yadacoin.core.block import Block
-from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Group
-from yadacoin.core.config import get_config
-from yadacoin.core.transactionutils import TU
-from yadacoin.core.identity import Identity
-from yadacoin.core.transaction import Transaction
 from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.peer import Group, Peer, Seed, SeedGateway, ServiceProvider, User
 from yadacoin.core.processingqueue import (
     BlockProcessingQueueItem,
-    TransactionProcessingQueue,
     TransactionProcessingQueueItem,
 )
+from yadacoin.core.transaction import Transaction
+from yadacoin.core.transactionutils import TU
+from yadacoin.tcpsocket.base import BaseRPC, RPCSocketClient, RPCSocketServer
 
 
 class NodeRPC(BaseRPC):

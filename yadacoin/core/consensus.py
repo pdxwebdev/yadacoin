@@ -1,40 +1,20 @@
 import sys
 
 sys.setrecursionlimit(1000000)
-from sys import exc_info
-from os import path
+import datetime
 import json
 import logging
-import datetime
-from traceback import format_exc
 from time import time
-from urllib3.exceptions import *
-from asyncio import sleep as async_sleep
+from traceback import format_exc
 
-from asyncstdlib import anext
-from bitcoin.wallet import P2PKHBitcoinAddress
-from pymongo.errors import DuplicateKeyError
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
-from tornado.httputil import HTTPHeaders
-from tornado import ioloop
 from tornado.iostream import StreamClosedError
 
+from yadacoin.core.block import Block
+from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
-from yadacoin.core.blockchain import Blockchain
-from yadacoin.core.block import Block
-from yadacoin.core.transaction import (
-    InvalidTransactionException,
-    InvalidTransactionSignatureException,
-    MissingInputTransactionException,
-    NotEnoughMoneyException,
-)
-from yadacoin.core.latestblock import LatestBlock
-from yadacoin.tcpsocket.node import NodeSocketServer
-from yadacoin.core.peer import Peer
-from yadacoin.tcpsocket.base import BaseRPC
+from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.tcpsocket.pool import StratumServer
-from yadacoin.core.processingqueue import BlockProcessingQueue, BlockProcessingQueueItem
 
 
 class Consensus(object):
@@ -541,16 +521,16 @@ class Consensus(object):
                     return True
                 try:
                     await self.config.mp.refresh()
-                except Exception as e:
+                except Exception:
                     self.app_log.warning("{}".format(format_exc()))
 
                 try:
                     await StratumServer.block_checker()
-                except Exception as e:
+                except Exception:
                     self.app_log.warning("{}".format(format_exc()))
 
             return True
-        except Exception as e:
+        except Exception:
             from traceback import format_exc
 
             self.app_log.warning("{}".format(format_exc()))

@@ -1,17 +1,16 @@
 ﻿"""
 Async Yadacoin node poc
 """
+import binascii
 import hashlib
-import sys
 import importlib
-import pkgutil
 import json
 import logging
-import os
-import ssl
 import ntpath
-import binascii
-import socket
+import os
+import pkgutil
+import ssl
+import sys
 
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
@@ -22,68 +21,61 @@ try:
     resource.setrlimit(resource.RLIMIT_NOFILE, (131072, 131072))
 except:
     pass
+from concurrent.futures import ThreadPoolExecutor
 from datetime import datetime
-from traceback import format_exc
-from asyncio import sleep as async_sleep
 from hashlib import sha256
 from logging.handlers import RotatingFileHandler
 from os import path
-from sys import exit, stdout
-from time import time, sleep
+from time import time
+from traceback import format_exc
 
-import webbrowser
-import pyrx
-from Crypto.PublicKey.ECC import EccKey
-from tornado.httpclient import AsyncHTTPClient, HTTPRequest
 import tornado.ioloop
 import tornado.locks
 import tornado.log
-from tornado.iostream import StreamClosedError
+from bitcoin import core
+from Crypto.PublicKey.ECC import EccKey
+from tornado.httpclient import AsyncHTTPClient
+from tornado.httpserver import HTTPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
-from tornado.httpserver import HTTPServer
-from concurrent.futures import ThreadPoolExecutor
-from bitcoin import core
 
+import pyrx
 import yadacoin.core.blockchainutils
-import yadacoin.core.transactionutils
 import yadacoin.core.config
-from yadacoin.core.crypt import Crypt, RIPEMD160
-from yadacoin.core.consensus import Consensus
+import yadacoin.core.transactionutils
+from plugins.yadacoinpool import handlers
+from yadacoin import version
 from yadacoin.core.chain import CHAIN
+from yadacoin.core.consensus import Consensus
+from yadacoin.core.crypt import RIPEMD160, Crypt
 from yadacoin.core.graphutils import GraphUtils
-from yadacoin.core.mongo import Mongo
-from yadacoin.core.miningpoolpayout import PoolPayer
-from yadacoin.core.miningpool import MiningPool
+from yadacoin.core.health import Health
 from yadacoin.core.latestblock import LatestBlock
+from yadacoin.core.miningpool import MiningPool
+from yadacoin.core.miningpoolpayout import PoolPayer
+from yadacoin.core.mongo import Mongo
 from yadacoin.core.peer import (
+    Group,
+    Miner,
     Peer,
+    Peers,
     Seed,
     SeedGateway,
     ServiceProvider,
     User,
-    Miner,
-    Peers,
-    Group,
 )
-from yadacoin.core.identity import Identity
-from yadacoin.core.health import Health
 from yadacoin.core.processingqueue import ProcessingQueues
 from yadacoin.core.smtp import Email
-from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.product import PRODUCT_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
-from yadacoin.websocket.base import WEBSOCKET_HANDLERS
-from yadacoin.tcpsocket.node import NodeSocketServer, NodeSocketClient, NodeRPC
-from yadacoin.websocket.base import RCPWebSocketServer
+from yadacoin.http.web import WEB_HANDLERS
+from yadacoin.tcpsocket.node import NodeRPC, NodeSocketClient, NodeSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
-from yadacoin import version
-from plugins.yadacoinpool import handlers
-
+from yadacoin.websocket.base import WEBSOCKET_HANDLERS, RCPWebSocketServer
 
 core.Hash160 = RIPEMD160.ripemd160
 hashlib.ripemd160 = RIPEMD160.ripemd160
@@ -208,7 +200,7 @@ class NodeApplication(Application):
                 else:
                     self.config.app_log.warning(json.dumps(status, indent=4))
                 self.config.status_busy = False
-            except Exception as e:
+            except Exception:
                 self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(self.config.status_wait)
@@ -248,13 +240,12 @@ class NodeApplication(Application):
                     )
 
                 self.config.health.block_checker.last_activity = int(time())
-            except Exception as e:
+            except Exception:
                 self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(self.config.block_checker_wait)
 
     async def background_message_sender(self):
-        latest_block_height = self.config.LatestBlock.block.index
         while True:
             self.config.app_log.debug("background_message_sender")
             try:
@@ -340,7 +331,7 @@ class NodeApplication(Application):
 
                 self.config.health.message_sender.last_activity = int(time())
 
-            except Exception as e:
+            except Exception:
                 self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(self.config.message_sender_wait)
@@ -406,7 +397,7 @@ class NodeApplication(Application):
                 if not skip:
                     await self.config.consensus.sync_bottom_up()
                     self.config.health.consensus.last_activity = time()
-            except Exception as e:
+            except Exception:
                 self.config.app_log.error(format_exc())
 
             try:
@@ -436,7 +427,7 @@ class NodeApplication(Application):
                     await self.config.pp.do_payout()
 
                 self.config.health.pool_payer.last_activity = int(time())
-            except Exception as e:
+            except Exception:
                 self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(self.config.pool_payer_wait)
@@ -466,7 +457,7 @@ class NodeApplication(Application):
                             {"cache_time": {"$exists": False}}
                         )
                     self.config.cache_inited = True
-                except Exception as e:
+                except Exception:
                     self.config.app_log.error(format_exc())
 
             """
@@ -515,7 +506,7 @@ class NodeApplication(Application):
                                 ]
 
                 self.config.health.cache_validator.last_activity = int(time())
-            except Exception as e:
+            except Exception:
                 self.config.app_log.error("error in background_cache_validator")
                 self.config.app_log.error(format_exc())
 
@@ -530,7 +521,7 @@ class NodeApplication(Application):
                 await self.config.TU.clean_mempool(self.config)
                 await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
                 self.config.health.mempool_cleaner.last_activity = int(time())
-            except Exception as e:
+            except Exception:
                 self.config.app_log.error(format_exc())
 
             await tornado.gen.sleep(self.config.mempool_cleaner_wait)

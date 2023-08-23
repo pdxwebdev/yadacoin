@@ -1,0 +1,34 @@
+repos:
+  - repo: https://github.com/myint/autoflake.git
+    rev: "v2.2.0" # Ensure this matches the version you want.
+    hooks:
+      - id: autoflake
+        name: autoflake
+        entry: autoflake --in-place --recursive
+        args:
+          [
+            "--remove-all-unused-imports",
+            "--remove-unused-variables",
+            "--exclude=__init__.py",
+          ]
+        language: python
+        types: [python]
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.12.0
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
+  - repo: https://github.com/psf/black
+    rev: 23.7.0
+    hooks:
+      - id: black
+        args: ["--line-length", "88"]
+  - repo: local
+    hooks:
+      - id: commit-msg-hook
+        name: commit-msg-hook
+        stages: [commit-msg]
+        language: script
+        entry: hooks/enforce_commit_message.sh

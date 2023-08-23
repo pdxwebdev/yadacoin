@@ -1,22 +1,17 @@
-import json
-import socket
 import base64
+import json
 import time
 from datetime import timedelta
-from json.decoder import JSONDecodeError
-from uuid import uuid4
-from collections import OrderedDict
 from traceback import format_exc
+from uuid import uuid4
 
-from tornado.tcpserver import TCPServer
-from tornado.tcpclient import TCPClient
-from tornado.iostream import StreamClosedError
-from tornado.util import TimeoutError
 from coincurve import verify_signature
+from tornado.iostream import StreamClosedError
+from tornado.tcpclient import TCPClient
+from tornado.tcpserver import TCPServer
+from tornado.util import TimeoutError
 
-from yadacoin.core.config import get_config, Config
-from yadacoin.core.chain import CHAIN
-
+from yadacoin.core.config import get_config
 
 REQUEST_RESPONSE_MAP = {
     "blockresponse": "getblock",

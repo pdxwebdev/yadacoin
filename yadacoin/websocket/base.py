@@ -1,24 +1,22 @@
-import json
 import base64
-import functools
 import hashlib
+import json
+from asyncio import sleep as async_sleep
 from traceback import format_exc
 
-from tornado import gen, ioloop
-from tornado.websocket import WebSocketHandler, WebSocketClosedError
-from coincurve import verify_signature
 from bitcoin.wallet import P2PKHBitcoinAddress
-from yadacoin.core.collections import Collections
-from yadacoin.core.graphutils import GraphUtils
+from coincurve import verify_signature
+from ecdsa import SECP256k1, VerifyingKey
+from ecdsa.util import sigdecode_der
+from tornado import ioloop
+from tornado.websocket import WebSocketClosedError, WebSocketHandler
 
-from yadacoin.core.identity import Identity
-from yadacoin.core.peer import Peer, Seed, SeedGateway, ServiceProvider, User, Group
+from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
+from yadacoin.core.identity import Identity
+from yadacoin.core.peer import Group, SeedGateway, ServiceProvider, User
 from yadacoin.core.transaction import Transaction
 from yadacoin.tcpsocket.base import BaseRPC
-from asyncio import sleep as async_sleep
-from ecdsa import VerifyingKey, SECP256k1
-from ecdsa.util import sigdecode_der
 
 
 class RCPWebSocketServer(WebSocketHandler):

@@ -1,13 +1,14 @@
-import base58
 import binascii
 import hashlib
-import time
 from enum import Enum
-from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
+
+import base58
+from bitcoin.wallet import P2PKHBitcoinAddress
+
+from yadacoin.contracts.base import Contract, PayoutOperators, PayoutType
+from yadacoin.core.block import quantize_eight
 from yadacoin.core.collections import Collections
 from yadacoin.core.identity import Identity, PrivateIdentity
-from yadacoin.contracts.base import Contract, ContractTypes, PayoutOperators, PayoutType
-from yadacoin.core.block import quantize_eight
 
 
 class AssetProofTypes(Enum):
@@ -120,7 +121,7 @@ class WrappedTokenContract(Contract):
         return await self.generate_transaction(contract_txn, trigger_txn)
 
     async def generate_transaction(self, contract_txn, trigger_txn):
-        from yadacoin.core.transaction import Transaction, Input, Output
+        from yadacoin.core.transaction import Input, Output, Transaction
         from yadacoin.core.transactionutils import TU
 
         address = str(

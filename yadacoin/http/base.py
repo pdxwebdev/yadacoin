@@ -3,15 +3,11 @@ Base handler ancestor, factorize common functions
 """
 
 import json
-import base64
 import logging
 
 from tornado.web import RequestHandler
 
 from yadacoin.core.config import get_config
-from yadacoin.core.identity import Identity
-from yadacoin.core.peer import User
-from coincurve import verify_signature
 
 
 class BaseHandler(RequestHandler):

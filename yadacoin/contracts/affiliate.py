@@ -1,22 +1,16 @@
-import base64
-import time
 import binascii
-import base58
 import hashlib
+import time
 from enum import Enum
-from bitcoin.signmessage import BitcoinMessage, VerifyMessage
+
+import base58
 from bitcoin.wallet import P2PKHBitcoinAddress
-from coincurve.utils import verify_signature
 
 from yadacoin.contracts.base import Contract, ContractTypes, PayoutOperators, PayoutType
-from yadacoin.core.collections import Collections
-from yadacoin.core.identity import Identity, PrivateIdentity
-from yadacoin.core.transaction import (
-    InvalidTransactionException,
-    InvalidTransactionSignatureException,
-    Output,
-)
 from yadacoin.core.block import quantize_eight
+from yadacoin.core.collections import Collections
+from yadacoin.core.identity import PrivateIdentity
+from yadacoin.core.transaction import Output
 
 
 class AffiliatePoofTypes(Enum):
@@ -189,8 +183,6 @@ class AffiliateContract(Contract):
             pass
 
         if outputs:
-            total_payout = sum([x.value for x in outputs])
-
             payout_txn = await Transaction.generate(
                 fee=0,
                 outputs=outputs,
@@ -366,7 +358,7 @@ class AffiliateContract(Contract):
         return await self.expire(contract_txn)
 
     async def expire(self, contract_txn):
-        from yadacoin.core.transaction import Transaction, Output
+        from yadacoin.core.transaction import Output, Transaction
         from yadacoin.core.transactionutils import TU
 
         address = str(

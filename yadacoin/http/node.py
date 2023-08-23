@@ -3,14 +3,13 @@ Handlers required by the core chain operations
 """
 
 import json
-from time import sleep, time
+
 from tornado import escape
 
-from yadacoin.http.base import BaseHandler
-from yadacoin.core.common import ts_to_utc
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
+from yadacoin.http.base import BaseHandler
 
 
 class GetLatestBlockHandler(BaseHandler):

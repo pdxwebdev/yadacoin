@@ -1,19 +1,19 @@
+import base64
 import binascii
 import hashlib
 import json
-import base64
-import requests
-from logging import getLogger
 from time import time
 
 import base58
+import requests
 from bip32utils import BIP32Key
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
-from mnemonic import Mnemonic
-from yadacoin import version
-from ecdsa import VerifyingKey, SECP256k1
+from ecdsa import SECP256k1, VerifyingKey
 from ecdsa.util import sigdecode_der
+from mnemonic import Mnemonic
+
+from yadacoin import version
 
 CONFIG = None
 

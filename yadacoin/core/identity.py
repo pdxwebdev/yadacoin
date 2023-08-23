@@ -1,13 +1,12 @@
-import hashlib
 import binascii
+import hashlib
+
 import base58
-from mnemonic import Mnemonic
 from bip32utils import BIP32Key
-from bitcoin.wallet import P2PKHBitcoinAddress
-from coincurve import PrivateKey, PublicKey
+from coincurve import PublicKey
+from mnemonic import Mnemonic
 
 from yadacoin.core.collections import Collections
-from yadacoin.core.config import get_config
 from yadacoin.core.transactionutils import TU
 
 

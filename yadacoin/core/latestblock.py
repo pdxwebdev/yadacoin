@@ -1,5 +1,3 @@
-import json
-
 from yadacoin.core.config import get_config
 
 

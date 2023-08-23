@@ -1,15 +1,9 @@
 from logging import getLogger
 
+from yadacoin.core.block import Block
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
-from yadacoin.core.block import Block
-from yadacoin.core.transaction import (
-    Transaction,
-    Input,
-    Output,
-    NotEnoughMoneyException,
-)
-from yadacoin.core.transactionutils import TU
+from yadacoin.core.transaction import NotEnoughMoneyException, Transaction
 
 
 class NonMatchingDifficultyException(Exception):

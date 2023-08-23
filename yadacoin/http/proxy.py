@@ -26,37 +26,38 @@
 # THE SOFTWARE.
 
 import asyncio
-import os
-from socketserver import UDPServer
-import sys
-import socket
-from time import time
-import qrcode
 import base64
-import uuid
 import json
+import os
+import socket
+import sys
+import uuid
 from asyncio import sleep as async_sleep
 from io import BytesIO
+from socketserver import UDPServer
+from time import time
+
+import qrcode
 
 if sys.version_info[0] == 2:
     from urlparse import urlparse
 else:
     from urllib.parse import urlparse
+
 import dns.resolver
+import tornado.httpclient
 import tornado.httpserver
+import tornado.httputil
 import tornado.ioloop
 import tornado.iostream
 import tornado.web
-import tornado.httpclient
-import tornado.httputil
-from coincurve.utils import verify_signature
-from yadacoin.core.config import get_config
-from yadacoin.core.peer import User, Group
-from yadacoin.core.identity import Identity
-from yadacoin.core.transactionutils import TU
-from yadacoin.core.collections import Collections
-from yadacoin.udp.base import UDPServer
 
+from yadacoin.core.collections import Collections
+from yadacoin.core.config import get_config
+from yadacoin.core.identity import Identity
+from yadacoin.core.peer import Group, User
+from yadacoin.core.transactionutils import TU
+from yadacoin.udp.base import UDPServer
 
 __all__ = ["ProxyHandler"]
 whitelist_group = Identity.from_dict(

@@ -2,24 +2,20 @@
 Handlers required by the web operations
 """
 
-import uuid
-import os
+import datetime
+import hashlib
 import json
 import time
-import hashlib
-import datetime
-from coincurve import verify_signature
-import jwt
-import base64
-from binascii import unhexlify
-from yadacoin.http.base import BaseHandler
-from yadacoin.core.graphutils import GraphUtils as GU
-from yadacoin.core.blockchainutils import BU
-from yadacoin.core.identity import Identity
-from yadacoin.core.config import Config
-from eccsnacks.curve25519 import scalarmult_base, scalarmult
-from yadacoin.core.transactionutils import TU
+import uuid
 
+import jwt
+
+from eccsnacks.curve25519 import scalarmult_base
+from yadacoin.core.config import Config
+from yadacoin.core.graphutils import GraphUtils as GU
+from yadacoin.core.identity import Identity
+from yadacoin.core.transactionutils import TU
+from yadacoin.http.base import BaseHandler
 
 challenges = {}
 
@@ -181,7 +177,6 @@ class RemoteMultifactorAuthHandler(BaseHandler):
             "Content-Type, Depth, User-Agent, X-File-Size, X-Requested-With, X-Requested-By, If-Modified-Since, X-File-Name, Cache-Control",
         )
         self.set_header("Access-Control-Max-Age", 600)
-        config = self.config
 
         result = await self.config.mongo.async_db.verify_message_cache.find_one(
             {"message.signIn": signin_code}

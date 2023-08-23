@@ -1,4 +1,5 @@
 from bitcoin.wallet import P2PKHBitcoinAddress
+
 from yadacoin.core.peer import Seed, SeedGateway, ServiceProvider
 
 

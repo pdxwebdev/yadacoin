@@ -1,8 +1,9 @@
 import smtplib
 from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
-from yadacoin.core.config import get_config
 from traceback import format_exc
+
+from yadacoin.core.config import get_config
 
 
 class Email:
@@ -23,7 +24,7 @@ class Email:
             connection.login(self.config.email.username, self.config.email.password)
             connection.send_message(mimemsg)
             connection.quit()
-        except Exception as e:
+        except Exception:
             await self.config.mongo.async_site_db.failed_emails.insert_one(
                 {
                     "from": mail_from,

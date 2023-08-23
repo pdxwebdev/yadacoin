@@ -1,19 +1,21 @@
-import json
 import base64
-import bson
-from time import time
-from logging import getLogger
+import json
 from binascii import unhexlify
+from logging import getLogger
+from time import time
+
+import bson
+
 from eccsnacks.curve25519 import scalarmult
-from yadacoin.core.transactionutils import TU
+from yadacoin.core.config import get_config
 from yadacoin.core.crypt import Crypt
+from yadacoin.core.transaction import Transaction
+from yadacoin.core.transactionutils import TU
 
 # from bitcoin.wallet import P2PKHBitcoinAddress
 # from bson.son import SON
 # from coincurve import PrivateKey
 
-from yadacoin.core.config import get_config
-from yadacoin.core.transaction import Transaction
 
 # Circular reference
 # from yadacoin.block import Block
@@ -1320,9 +1322,9 @@ class GraphUtils(object):
         return sent, received
 
     async def sia_upload(self, filename, file):
-        from requests.auth import HTTPBasicAuth
-        from siaskynet import SkynetClient, utils
         from urllib.parse import quote
+
+        from siaskynet import SkynetClient, utils
 
         sc = SkynetClient(self.config.skynet_url)
         filename = quote(quote(filename, safe=""), safe="")
@@ -1336,7 +1338,7 @@ class GraphUtils(object):
                 },
             )
             return utils.strip_prefix(skylink)
-        except Exception as e:
+        except Exception:
             pass
 
         skylink = sc.upload(

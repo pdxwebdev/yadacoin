@@ -1,23 +1,18 @@
 import base64
 import hashlib
-import time
-import binascii
-import base58
 from enum import Enum
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from yadacoin.contracts.asset import Asset
+
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity, PrivateIdentity
 from yadacoin.core.transaction import (
     InvalidTransactionException,
     InvalidTransactionSignatureException,
-    Output,
     Transaction,
 )
-from yadacoin.core.transactionutils import TU
 
 
 class PayoutOperators(Enum):

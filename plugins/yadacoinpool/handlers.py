@@ -1,11 +1,12 @@
 import os
 import time
-import requests
 
-from tornado.web import Application, StaticFileHandler
-from yadacoin.http.base import BaseHandler
-from yadacoin.core.chain import CHAIN
+import requests
+from tornado.web import StaticFileHandler
+
 from yadacoin import version
+from yadacoin.core.chain import CHAIN
+from yadacoin.http.base import BaseHandler
 
 
 class BaseWebHandler(BaseHandler):

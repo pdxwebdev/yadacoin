@@ -1,25 +1,21 @@
-import json
-import hashlib
-import os
 import base64
+import hashlib
+import json
 import time
-from traceback import format_exc
-from logging import getLogger
 from enum import Enum
+from logging import getLogger
+from traceback import format_exc
 
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import verify_signature
-from eccsnacks.curve25519 import scalarmult_base
-from yadacoin.core.collections import Collections
+from ecdsa import SECP256k1, VerifyingKey
+from ecdsa.util import sigdecode_der
 
-from yadacoin.core.crypt import Crypt
-from yadacoin.core.identity import Identity
-from yadacoin.core.transactionutils import TU
-from yadacoin.core.config import get_config
 from yadacoin.core.chain import CHAIN
-from ecdsa import VerifyingKey, SECP256k1
-from ecdsa.util import sigencode_der, sigdecode_der
+from yadacoin.core.collections import Collections
+from yadacoin.core.config import get_config
+from yadacoin.core.transactionutils import TU
 
 
 def fix_float1(value):
@@ -437,7 +433,6 @@ class Transaction(object):
     @staticmethod
     async def handle_exception(e, txn):
         config = get_config()
-        app_log = getLogger("tornado.application")
         await config.mongo.async_db.failed_transactions.insert_one(
             {
                 "reason": f"{e.__class__.__name__}",
@@ -833,7 +828,6 @@ class Transaction(object):
 
     async def find_unspent_missing_index(self, txn_hash, exclude_ids=[]):
         blocks = self.config.mongo.async_db.blocks.find({"transactions.hash": txn_hash})
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
 
         async def get_txns(txns):
             for txn in txns:

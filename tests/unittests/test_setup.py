@@ -1,19 +1,14 @@
-import sys
-import os.path
-import json
-import tornado
 from random import randrange
 
+import tornado
 from tornado import testing
 
-from yadacoin.core.transaction import Transaction
-from yadacoin.core.chain import CHAIN
-from yadacoin.app import NodeApplication
-from yadacoin.core.blockchain import Blockchain
-from yadacoin.core.block import Block
-from yadacoin.core.config import CONFIG, Config
 import yadacoin.core.config
-
+from yadacoin.app import NodeApplication
+from yadacoin.core.block import Block
+from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import Config
 
 yadacoin.core.config.CONFIG = Config.generate()
 
@@ -34,8 +29,8 @@ class BaseTestCase(testing.AsyncHTTPTestCase):
             index=124499,
             force_version=4,
             nonce=1,
-            prev_hash='',
-            target=CHAIN.MAX_TARGET
+            prev_hash="",
+            target=CHAIN.MAX_TARGET,
         )
 
     async def create_blockchain(self, start_index, num_blocks, fork_block):
@@ -52,7 +47,7 @@ class BaseTestCase(testing.AsyncHTTPTestCase):
                     force_version=4,
                     nonce=randrange(1, 1000000),
                     target=CHAIN.MAX_TARGET - 1,
-                    prev_hash=fork_block.hash
+                    prev_hash=fork_block.hash,
                 )
             else:
                 block = await Block.generate(
@@ -64,16 +59,20 @@ class BaseTestCase(testing.AsyncHTTPTestCase):
                     force_version=4,
                     nonce=randrange(1, 1000000),
                     target=CHAIN.MAX_TARGET - 1,
-                    prev_hash=block.hash
+                    prev_hash=block.hash,
                 )
             blocks.append(block)
 
         return await Blockchain.init_async(blocks, partial=True)
-    
+
     async def sort_blockchains_by_difficulty(self, *args):
-        return [x['blockchain'] for x in sorted([
-            {
-                'blockchain': x, 
-                'difficulty': await x.get_difficulty()
-            } for x in args
-        ], key=lambda bc: bc['difficulty'])]
+        return [
+            x["blockchain"]
+            for x in sorted(
+                [
+                    {"blockchain": x, "difficulty": await x.get_difficulty()}
+                    for x in args
+                ],
+                key=lambda bc: bc["difficulty"],
+            )
+        ]

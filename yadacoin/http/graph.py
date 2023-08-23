@@ -7,28 +7,25 @@ import hashlib
 import json
 import os
 import time
-import requests
 import uuid
-from binascii import unhexlify
+
+import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from eccsnacks.curve25519 import scalarmult_base, scalarmult
-from logging import getLogger
-from threading import Thread
-from yadacoin.core.collections import Collections
-from yadacoin.core.graphutils import GraphUtils
-from yadacoin.core.peer import Group, User, Peers
 
-from yadacoin.http.base import BaseHandler
+from eccsnacks.curve25519 import scalarmult_base
+from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
+from yadacoin.core.peer import Group, Peers, User
 from yadacoin.core.transaction import (
-    Transaction,
     InvalidTransactionException,
     InvalidTransactionSignatureException,
     MissingInputTransactionException,
+    Transaction,
 )
 from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
+from yadacoin.http.base import BaseHandler
 
 
 class GraphConfigHandler(BaseHandler):
@@ -175,8 +172,8 @@ class GraphRIDWalletHandler(BaseGraphHandler):
 
 class RegistrationHandler(BaseHandler):
     async def get(self):
-        rid = self.get_secure_cookie("user_rid")
-        dh_public_key = self.get_secure_cookie("dh_public_key")
+        # self.get_secure_cookie("user_rid")
+        # self.get_secure_cookie("dh_public_key")
         # data = json.loads(base64.b64decode(self.request.headers['Authorization']))
         # dh_private_key = hashlib.sha256(self.config.wif.encode() + data['alias']['username_signature'].encode()).hexdigest()
         # shared_secret = scalarmult(
@@ -706,7 +703,7 @@ class SignRawTransactionHandler(BaseHandler):
                         fastgraph = FastGraph.from_dict(0, signature["txn"])
                         try:
                             fastgraph.verify()
-                        except Exception as e:
+                        except Exception:
                             raise
                             return "did not verify", 400
                         result = mongo.db.fastgraph_transactions.find_one(
@@ -749,12 +746,12 @@ class FastGraphHandler(BaseGraphHandler):
     async def post(self):
         # after the necessary signatures are gathered, the transaction is sent here.
         mongo = self.config.mongo
-        graph = await self.get_base_graph()
+        await self.get_base_graph()
         fastgraph = json.loads(self.request.body.decode("utf-8"))
         fastgraph = FastGraph.from_dict(0, fastgraph)
         try:
             fastgraph.verify()
-        except Exception as e:
+        except Exception:
             raise
             return "did not verify", 400
         result = mongo.db.fastgraph_transactions.find_one({"txn.hash": fastgraph.hash})
@@ -1007,7 +1004,7 @@ class SiaUploadHandler(BaseGraphHandler):
             skylink = await self.config.GU.sia_upload(
                 filename=self.get_query_argument("filename"), file=json_body["file"]
             )
-        except Exception as e:
+        except Exception:
             self.set_status(400)
             return self.render_as_json(
                 {"status": "error", "message": "sia node not responding"}

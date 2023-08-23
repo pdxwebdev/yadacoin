@@ -1,5 +1,6 @@
-import git
 from pathlib import Path
+
+import git
 
 repo = git.Repo(Path(__file__).resolve().parent.parent, odbt=git.db.GitDB)
 tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)

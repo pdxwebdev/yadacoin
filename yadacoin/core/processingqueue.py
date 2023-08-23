@@ -1,10 +1,10 @@
 from time import time
-from yadacoin.core.blockchain import Blockchain
-from yadacoin.core.transaction import Transaction
-from yadacoin.core.job import Job
-from yadacoin.core.miner import Miner
+
 from yadacoin.core.block import Block
+from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import get_config
+from yadacoin.core.miner import Miner
+from yadacoin.core.transaction import Transaction
 
 
 class ProcessingQueue:

@@ -1,13 +1,13 @@
 from time import time
-from types import GeneratorType
-from asyncstdlib import tee, anext, islice
 
+from asyncstdlib import anext, islice
+
+from yadacoin.core.block import Block
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
-from yadacoin.core.block import Block
 from yadacoin.core.transaction import (
-    InvalidTransactionSignatureException,
     InvalidTransactionException,
+    InvalidTransactionSignatureException,
     MissingInputTransactionException,
     NotEnoughMoneyException,
 )

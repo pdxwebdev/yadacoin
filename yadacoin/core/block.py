@@ -1,31 +1,31 @@
-import json
-import hashlib
 import base64
-import time
 import binascii
-import pyrx
-
+import hashlib
+import json
+import time
+from datetime import timedelta
 from decimal import Decimal, getcontext
+from logging import getLogger
+
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from logging import getLogger
-from datetime import timedelta
 from tornado.iostream import StreamClosedError
 from tornado.util import TimeoutError
 
-from yadacoin.core.chain import CHAIN
+import pyrx
 import yadacoin.core.config
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.latestblock import LatestBlock
+from yadacoin.core.nodes import Nodes
 from yadacoin.core.transaction import (
-    Transaction,
-    Output,
     InvalidTransactionException,
+    Output,
+    Transaction,
     TransactionAddressInvalidException,
 )
 from yadacoin.core.transactionutils import TU
-from yadacoin.core.latestblock import LatestBlock
-from yadacoin.core.config import get_config
-from yadacoin.core.nodes import Nodes
 
 
 def quantize_eight(value):
@@ -177,7 +177,6 @@ class Block(object):
         target=0,
     ):
         config = get_config()
-        app_log = getLogger("tornado.application")
         if force_version is None:
             version = CHAIN.get_version_for_height(index)
         else:
@@ -446,7 +445,6 @@ class Block(object):
 
     @staticmethod
     def is_coinbase(block, txn):
-        config = get_config()
         return (
             block.public_key == txn.public_key
             and str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(block.public_key)))
@@ -536,7 +534,6 @@ class Block(object):
         # verify reward
         coinbase_sum = 0
         fee_sum = 0.0
-        masternode_fee_sum = 0
         masternode_sums = {}
         for txn in self.transactions:
             if int(self.index) >= CHAIN.TXN_V3_FORK and int(txn.version) < 3:

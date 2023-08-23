@@ -1,7 +1,7 @@
-import os
 from time import time
-from pymongo import MongoClient, IndexModel, ASCENDING, DESCENDING
+
 from motor.motor_tornado import MotorClient
+from pymongo import ASCENDING, DESCENDING, IndexModel, MongoClient
 
 from yadacoin.core.config import get_config
 

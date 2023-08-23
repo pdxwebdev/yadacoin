@@ -1,10 +1,11 @@
-import hashlib
 import base64
+import hashlib
 import random
 import sys
 import time
-from coincurve.keys import PrivateKey
+
 from coincurve._libsecp256k1 import ffi
+from coincurve.keys import PrivateKey
 
 
 class TU(object):  # Transaction Utilities

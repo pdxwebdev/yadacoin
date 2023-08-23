@@ -1,14 +1,14 @@
-import json
 import hashlib
+import json
 import time
-import tornado.ioloop
-from enum import Enum
 from collections import OrderedDict
+from enum import Enum
 from logging import getLogger
+
+import tornado.ioloop
 
 from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity
-from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.transaction import Transaction
 
 
@@ -130,8 +130,6 @@ class Peer:
         except:
             config.igd = ""
         if config.use_pnp:
-            import socket
-
             # deploy as an eventlet WSGI server
             try:
                 server_port = config.peer_port
@@ -163,7 +161,7 @@ class Peer:
                         "UPnP YadaCoin Serve port %u" % eport,
                         "",
                     )
-            except Exception as e:
+            except Exception:
                 config.serve_host = config.serve_host
                 config.serve_port = config.serve_port
                 config.peer_host = config.peer_host
@@ -741,10 +739,6 @@ class ServiceProvider(Peer):
                     yield self.config.nodeServer.inbound_streams[User.__name__][rid]
 
     async def get_service_provider_request_peers(self, peer, payload):
-        # check if the calculated service provider for the group is me
-        if payload.get("group"):
-            group = Group.from_dict(payload.get("group"))
-
         if isinstance(peer, User):
             for peer_stream in list(
                 self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()
@@ -981,7 +975,6 @@ class Peers:
 
     @classmethod
     def get_groups(cls):
-        config = get_config()
         groups = [
             Group.from_dict(
                 {

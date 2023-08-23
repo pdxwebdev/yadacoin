@@ -1,27 +1,30 @@
+import argparse
+import binascii
+import getpass
+import hashlib
 import json
 import os
-import hashlib
-import binascii
+import sys
+
 import base58
+
 # import subprocess
 import requests
-import argparse
-import getpass
-import sys
-sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + '/..')
+
+sys.path.insert(0, os.path.dirname(os.path.realpath(__file__)) + "/..")
 # from bitcoin.wallet import P2PKHBitcoinAddress
-from coincurve import PrivateKey, PublicKey
+from coincurve import PrivateKey
+
 # from urllib2 import urlopen
 from yadacoin.core.config import Config
 
 
 class Wif:
-
-    DEFAULT = 'Prompt if not specified'
+    DEFAULT = "Prompt if not specified"
 
     def __init__(self, value):
         if value == self.DEFAULT:
-            value = getpass.getpass('WIF/Secret key [Enter to auto-generate]: ')
+            value = getpass.getpass("WIF/Secret key [Enter to auto-generate]: ")
         self.value = value
 
     def __str__(self):
@@ -33,47 +36,58 @@ def from_wif(wif):
 
 
 def to_wif(private_key_static):
-    extended_key = "80"+private_key_static+"01"
+    extended_key = "80" + private_key_static + "01"
     first_sha256 = hashlib.sha256(binascii.unhexlify(extended_key)).hexdigest()
     second_sha256 = hashlib.sha256(binascii.unhexlify(first_sha256)).hexdigest()
-    final_key = extended_key+second_sha256[:8]
+    final_key = extended_key + second_sha256[:8]
     wif = base58.b58encode(binascii.unhexlify(final_key))
     return wif
 
 
 if __name__ == "__main__":
-
     parser = argparse.ArgumentParser(
-        formatter_class=argparse.ArgumentDefaultsHelpFormatter)
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
 
     subparsers = parser.add_subparsers()
-    new_parser = subparsers.add_parser('new')
-    new_parser.set_defaults(which='new')
-    new_parser.add_argument('username', help='Specify username')
-    new_parser.add_argument('-p', '--password', type=Wif, help='Specify wif/Secret key [Enter to auto-generate]',
-                            default=Wif.DEFAULT)
+    new_parser = subparsers.add_parser("new")
+    new_parser.set_defaults(which="new")
+    new_parser.add_argument("username", help="Specify username")
+    new_parser.add_argument(
+        "-p",
+        "--password",
+        type=Wif,
+        help="Specify wif/Secret key [Enter to auto-generate]",
+        default=Wif.DEFAULT,
+    )
 
-    update_parser = subparsers.add_parser('update')
-    update_parser.set_defaults(which='update')
-    update_parser.add_argument('config', help='config file')
-    update_parser.add_argument('username', help='Specify username')
+    update_parser = subparsers.add_parser("update")
+    update_parser.set_defaults(which="update")
+    update_parser.add_argument("config", help="config file")
+    update_parser.add_argument("username", help="Specify username")
 
-    auto_parser = subparsers.add_parser('auto')
-    auto_parser.set_defaults(which='auto')
-    auto_parser.add_argument('-f', '--force', help='Forcefully create file, possibly overwriting existing, use with caution!')
-    auto_parser.add_argument('-c', '--create', help='Create a new config file if one does not already exist')
-    auto_parser.add_argument('-m', '--mongodb-host', help='Specify a mongodb host')
-    auto_parser.add_argument('-u', '--username', help='Specify a username')
-    auto_parser.add_argument('-d', '--db_name', help='Specify a database name')
+    auto_parser = subparsers.add_parser("auto")
+    auto_parser.set_defaults(which="auto")
+    auto_parser.add_argument(
+        "-f",
+        "--force",
+        help="Forcefully create file, possibly overwriting existing, use with caution!",
+    )
+    auto_parser.add_argument(
+        "-c", "--create", help="Create a new config file if one does not already exist"
+    )
+    auto_parser.add_argument("-m", "--mongodb-host", help="Specify a mongodb host")
+    auto_parser.add_argument("-u", "--username", help="Specify a username")
+    auto_parser.add_argument("-d", "--db_name", help="Specify a database name")
 
     args = parser.parse_args()
 
     """
     TODO: add other apis in case this one is down. Allow to override from optional command line param
     """
-    public_ip = requests.get('https://api.ipify.org').text
+    public_ip = requests.get("https://api.ipify.org").text
 
-    if args.which == 'new': 
+    if args.which == "new":
         if args.password.value:
             num = from_wif(args.password.value)
         else:
@@ -81,34 +95,27 @@ if __name__ == "__main__":
         pk = PrivateKey.from_hex(num)
         config = Config.generate(pk.to_hex())
         config.username = args.username
-    elif args.which == 'update':
+    elif args.which == "update":
         with open(args.config) as f:
             identity = json.loads(f.read())
-            config = Config.generate(xprv=identity['xprv'])
-            if 'username' in identity and identity['username']:
-                username = identity['username']
+            config = Config.generate(xprv=identity["xprv"])
+            if "username" in identity and identity["username"]:
+                username = identity["username"]
             else:
                 username = args.username
             config.username = username
             config.username_signature = config.get_bulletin_secret()
             print(config.to_json())
-    elif args.which == 'auto':
-        config = Config.generate(
-            db_name=args.db_name,
-            username=args.username
-        )
-        filename = 'config.json'
+    elif args.which == "auto":
+        config = Config.generate(db_name=args.db_name, username=args.username)
+        filename = "config.json"
         kwargs = {}
         if args.force:
-            with open(args.force, 'w') as f:
+            with open(args.force, "w") as f:
                 f.write(config.to_json())
         elif args.create:
             if not os.path.isfile(args.create):
-                with open(args.create, 'w') as f:
+                with open(args.create, "w") as f:
                     f.write(config.to_json())
         else:
             print(config.to_json())
-
-
-
-

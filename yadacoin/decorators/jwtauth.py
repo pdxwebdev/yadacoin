@@ -1,5 +1,4 @@
 import jwt
-from coincurve import PublicKey
 
 secret_key = "my_secret_key"
 options = {
@@ -27,8 +26,6 @@ def jwtauthwallet(handler_class):
 
                 token = parts[1]
                 try:
-                    from Crypto.PublicKey import ECC
-
                     handler.jwt = jwt.decode(
                         token,
                         handler.config.jwt_public_key,
@@ -82,8 +79,6 @@ def jwtauthwebuser(handler_class):
                 token = parts[1]
                 rid = parts[2]
                 try:
-                    from Crypto.PublicKey import ECC
-
                     handler.jwt = jwt.decode(
                         token,
                         handler.config.jwt_public_key,

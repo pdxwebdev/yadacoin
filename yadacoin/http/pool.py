@@ -1,17 +1,8 @@
 """
 Handlers required by the pool operations
 """
-import json
 
-from tornado import escape
-from coincurve import PrivateKey, PublicKey
 
-from yadacoin.core.miningpool import MiningPool
-from yadacoin.core.miningpoolpayout import PoolPayer
-from yadacoin.core.transactionutils import TU
-from yadacoin.core.block import Block
-from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import Config
 from yadacoin.http.base import BaseHandler
 
 

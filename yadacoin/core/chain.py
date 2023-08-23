@@ -109,7 +109,8 @@ class CHAIN(object):
             raise ValueError("Unknown network")
         except Exception as e:
             print(e)
-            import sys, os
+            import os
+            import sys
 
             exc_type, exc_obj, exc_tb = sys.exc_info()
             fname = os.path.split(exc_tb.tb_frame.f_code.co_filename)[1]

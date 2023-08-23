@@ -1,4 +1,3 @@
-from enum import Enum
 import hashlib
 
 from yadacoin.core.collections import Collections

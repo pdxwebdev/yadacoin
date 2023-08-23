@@ -1,16 +1,15 @@
-import json
 import base64
-import re
+import json
+from logging import getLogger
+from time import time
 
 # from yadacoin.transactionutils import TU
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey
-from logging import getLogger
 
+from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
-from yadacoin.core.blockchain import Blockchain
-from time import sleep, time
 
 GLOBAL_BU = None
 
@@ -389,11 +388,8 @@ class BlockChainUtils(object):
         from_index=None,
         extra_blocks=None,
     ):
-        from yadacoin.core.transaction import Transaction
-
         if not isinstance(input_ids, list):
             input_ids = [input_ids]
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
         query = [
             {
                 "$match": {

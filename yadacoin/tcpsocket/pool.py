@@ -1,21 +1,15 @@
 import json
-import traceback
 import time
-import base58
-import hashlib
-import binascii
+import traceback
 
-import tornado.ioloop
 from tornado.iostream import StreamClosedError
 
-from yadacoin.core.transactionutils import TU
-from yadacoin.core.config import Config
-from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
-from yadacoin.tcpsocket.base import RPCSocketServer
+from yadacoin.core.config import Config, get_config
 from yadacoin.core.miner import Miner
-from yadacoin.core.processingqueue import NonceProcessingQueue, NonceProcessingQueueItem
 from yadacoin.core.peer import Peer
+from yadacoin.core.processingqueue import NonceProcessingQueueItem
+from yadacoin.core.transactionutils import TU
+from yadacoin.tcpsocket.base import RPCSocketServer
 
 
 class StratumServer(RPCSocketServer):

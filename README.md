@@ -1,10 +1,17 @@
 # yadacoin
+
 ## Setup
+
 ### Ubuntu install command:
+
 `wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/setup.sh | bash`
+
 ### Ubuntu install with bootstrap data command:
+
 `wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/setupwithbootstrap.sh | bash`
+
 ### Windows installer:
+
 https://yadacoin.io/download
 
 ## Configuration
@@ -266,3 +273,11 @@ https://yadacoin.io/download
   - type: integer
   - default: 1
   - description: Specify the number of seconds to wait before checking for new share submissions to process.
+
+## Development Environment
+
+We use Black, Autoflake, isort, and commit message enforcement as pre-commit hooks. To install the hooks, run the following commands:
+`pip install install pre-commit`
+`pre-commit install`
+`pre-commit autoupdate`
+`pre-commit install -t commit-msg`

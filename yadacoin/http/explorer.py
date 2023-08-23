@@ -5,9 +5,9 @@ Handlers required by the explorer operations
 import base64
 import re
 
-from yadacoin.http.base import BaseHandler
-from yadacoin.core.common import changetime, abstract_block
 from yadacoin.core.chain import CHAIN
+from yadacoin.core.common import changetime
+from yadacoin.http.base import BaseHandler
 
 
 class HashrateAPIHandler(BaseHandler):
@@ -244,7 +244,7 @@ class ExplorerSearchHandler(BaseHandler):
                         ],
                     }
                 )
-        except Exception as e:
+        except Exception:
             pass
 
         try:

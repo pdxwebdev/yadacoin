@@ -1,20 +1,19 @@
-from traceback import format_exc
-import uuid
-import random
-import json
-from time import time
 import binascii
+import json
+import random
+import uuid
 from logging import getLogger
+from time import time
 
-from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import get_config
+from yadacoin.core.job import Job
+from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
 from yadacoin.tcpsocket.pool import StratumServer
-from yadacoin.core.job import Job
-from yadacoin.core.processingqueue import BlockProcessingQueueItem
 
 
 class MiningPool(object):
@@ -191,7 +190,7 @@ class MiningPool(object):
                 }
             try:
                 await block_candidate.verify()
-            except Exception as e:
+            except Exception:
                 if accepted and self.config.network == "mainnet":
                     return {
                         "hash": hash1,
@@ -288,7 +287,7 @@ class MiningPool(object):
             )
             self.block_factory.header = self.block_factory.generate_header()
             self.refreshing = False
-        except Exception as e:
+        except Exception:
             self.refreshing = False
             from traceback import format_exc
 

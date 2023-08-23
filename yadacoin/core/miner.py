@@ -1,4 +1,6 @@
-import random, string
+import random
+import string
+
 from yadacoin.core.peer import Miner as MinerBase
 
 

@@ -1,21 +1,16 @@
-import base64
-import time
 import binascii
-import base58
 import hashlib
+import time
 from enum import Enum
-from bitcoin.signmessage import BitcoinMessage, VerifyMessage
+
+import base58
 from bitcoin.wallet import P2PKHBitcoinAddress
-from coincurve.utils import verify_signature
-from yadacoin.core.collections import Collections
-from yadacoin.contracts.base import Contract, ContractTypes, PayoutOperators, PayoutType
+
 from yadacoin.contracts.asset import Asset
-from yadacoin.core.identity import Identity, PrivateIdentity
-from yadacoin.core.transaction import (
-    InvalidTransactionException,
-    InvalidTransactionSignatureException,
-)
+from yadacoin.contracts.base import Contract, ContractTypes, PayoutOperators, PayoutType
 from yadacoin.core.block import quantize_eight
+from yadacoin.core.collections import Collections
+from yadacoin.core.identity import Identity, PrivateIdentity
 
 
 class AssetProofTypes(Enum):
@@ -121,7 +116,7 @@ class ChangeOwnershipContract(Contract):
         return await self.generate_transaction(contract_txn, bid)
 
     async def generate_transaction(self, contract_txn, trigger_txn):
-        from yadacoin.core.transaction import Transaction, Input, Output
+        from yadacoin.core.transaction import Input, Output, Transaction
         from yadacoin.core.transactionutils import TU
 
         address = str(
@@ -190,7 +185,7 @@ class ChangeOwnershipContract(Contract):
             raise Exception("No winning bid for this auction")
 
     async def get_first_come_bid(self, contract_txn):
-        from yadacoin.core.transaction import Transaction, Input, Output
+        from yadacoin.core.transaction import Transaction
 
         earliest_time = 10000000000000
         earliest_height = 10000000000000
@@ -199,7 +194,7 @@ class ChangeOwnershipContract(Contract):
             purchase_txn_obj = Transaction.ensure_instance(
                 purchase_txn_block.get("transactions")
             )
-            purchase_amount = await self.get_amount(contract_txn, purchase_txn_obj)
+            await self.get_amount(contract_txn, purchase_txn_obj)
 
             if purchase_txn_block["index"] < earliest_height:
                 winning_purchase_txn = purchase_txn_obj
@@ -228,7 +223,7 @@ class ChangeOwnershipContract(Contract):
             raise Exception("Incorrect winning bid for this auction")
 
     async def get_auction_bid(self, contract_txn):
-        from yadacoin.core.transaction import Transaction, Input, Output
+        from yadacoin.core.transaction import Transaction
 
         highest_amount = 0
         lowest_time_for_highest_amount = 100000000000
@@ -309,8 +304,6 @@ class ChangeOwnershipContract(Contract):
         return await self.generate_transaction(contract_txn, bid)
 
     async def get_purchase_txns(self, contract_txn):
-        from yadacoin.core.transaction import Transaction, Output
-
         purchase_txn_blocks = self.config.mongo.async_db.blocks.aggregate(
             [
                 {

@@ -2,21 +2,23 @@
 Handlers required by the wallet operations
 """
 
-import hashlib
 import binascii
-import base58
-import json
 import datetime
-import jwt
+import hashlib
+import json
 import time
-from yadacoin.core.config import get_config
+
+import base58
+import jwt
 from bip32utils import BIP32Key
-from bitcoin.wallet import CBitcoinSecret, P2PKHBitcoinAddress
-from yadacoin.http.base import BaseHandler
-from yadacoin.core.transaction import Transaction, NotEnoughMoneyException
-from yadacoin.decorators.jwtauth import jwtauthwallet
-from yadacoin.core.transactionutils import TU
+from bitcoin.wallet import P2PKHBitcoinAddress
+
+from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity
+from yadacoin.core.transaction import Transaction
+from yadacoin.core.transactionutils import TU
+from yadacoin.decorators.jwtauth import jwtauthwallet
+from yadacoin.http.base import BaseHandler
 
 
 class WalletHandler(BaseHandler):
