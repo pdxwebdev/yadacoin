@@ -18,6 +18,9 @@ class BlockChainException(Exception):
 
 
 class Blockchain(object):
+    config = None
+    mongo = None
+
     def __init__(self, blocks=None, partial=False):
         self.config = get_config()
         self.mongo = self.config.mongo

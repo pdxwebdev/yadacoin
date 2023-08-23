@@ -7,6 +7,7 @@ from time import time
 import base58
 import requests
 from bip32utils import BIP32Key
+from bitcoin import core
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey, PublicKey
 from ecdsa import SECP256k1, VerifyingKey
@@ -14,6 +15,10 @@ from ecdsa.util import sigdecode_der
 from mnemonic import Mnemonic
 
 from yadacoin import version
+from yadacoin.core.crypt import RIPEMD160
+
+core.Hash160 = RIPEMD160.ripemd160
+hashlib.ripemd160 = RIPEMD160.ripemd160
 
 CONFIG = None
 

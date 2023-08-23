@@ -1,12 +1,11 @@
 import unittest
-from unittest import (
-    IsolatedAsyncioTestCase,  # python 3.8 requiredsudo apt install python3.8
-)
 
 from yadacoin.core.consensus import Consensus
 
+from ..test_setup import AsyncTestCase
 
-class TestTransaction(IsolatedAsyncioTestCase):
+
+class TestTransaction(AsyncTestCase):
     async def test___init__(self):
         c = Consensus()
         self.assertIsInstance(c, Consensus)

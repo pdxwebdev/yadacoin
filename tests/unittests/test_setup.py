@@ -1,6 +1,14 @@
+import sys
+
+sys.path.append("../../")
 from random import randrange
+from unittest import (
+    IsolatedAsyncioTestCase,  # python 3.8 requiredsudo apt install python3.8,
+)
+from unittest import mock
 
 import tornado
+from mongomock import MongoClient
 from tornado import testing
 
 import yadacoin.core.config
@@ -8,9 +16,18 @@ from yadacoin.app import NodeApplication
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import Config
+from yadacoin.core.config import Config, get_config
 
-yadacoin.core.config.CONFIG = Config.generate()
+
+class AsyncTestCase(IsolatedAsyncioTestCase):
+    @mock.patch(
+        "yadacoin.core.blockchain.Blockchain.mongo", new_callable=lambda: MongoClient
+    )
+    async def asyncSetUp(self, mongo):
+        mongo.async_db = mock.MagicMock()
+        mongo.async_db.blocks = mock.MagicMock()
+        yadacoin.core.config.CONFIG = Config.generate()
+        get_config().mongo = mongo
 
 
 class BaseTestCase(testing.AsyncHTTPTestCase):

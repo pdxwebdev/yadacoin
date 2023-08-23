@@ -32,3 +32,10 @@ repos:
         stages: [commit-msg]
         language: script
         entry: hooks/enforce_commit_message.sh
+  - repo: local
+    hooks:
+      - id: run-tests
+        name: Run Tests
+        entry: ./run-tests.sh
+        language: script
+        stages: [pre-push]

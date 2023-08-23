@@ -2,7 +2,6 @@
 Async Yadacoin node poc
 """
 import binascii
-import hashlib
 import importlib
 import json
 import logging
@@ -32,7 +31,6 @@ from traceback import format_exc
 import tornado.ioloop
 import tornado.locks
 import tornado.log
-from bitcoin import core
 from Crypto.PublicKey.ECC import EccKey
 from tornado.httpclient import AsyncHTTPClient
 from tornado.httpserver import HTTPServer
@@ -47,7 +45,7 @@ from plugins.yadacoinpool import handlers
 from yadacoin import version
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.consensus import Consensus
-from yadacoin.core.crypt import RIPEMD160, Crypt
+from yadacoin.core.crypt import Crypt
 from yadacoin.core.graphutils import GraphUtils
 from yadacoin.core.health import Health
 from yadacoin.core.latestblock import LatestBlock
@@ -76,9 +74,6 @@ from yadacoin.http.web import WEB_HANDLERS
 from yadacoin.tcpsocket.node import NodeRPC, NodeSocketClient, NodeSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin.websocket.base import WEBSOCKET_HANDLERS, RCPWebSocketServer
-
-core.Hash160 = RIPEMD160.ripemd160
-hashlib.ripemd160 = RIPEMD160.ripemd160
 
 define("debug", default=False, help="debug mode", type=bool)
 define("verbose", default=False, help="verbose mode", type=bool)

@@ -1,13 +1,12 @@
 import unittest
-from unittest import (
-    IsolatedAsyncioTestCase,  # python 3.8 requiredsudo apt install python3.8
-)
 
 import yadacoin.core.config
 from yadacoin.core.transaction import Transaction
 
+from ..test_setup import AsyncTestCase
 
-class TestTransaction(IsolatedAsyncioTestCase):
+
+class TestTransaction(AsyncTestCase):
     async def test___init__(self):
         txn = Transaction()
         self.assertIsInstance(txn, Transaction)
