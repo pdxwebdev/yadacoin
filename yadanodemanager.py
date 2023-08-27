@@ -32,9 +32,11 @@ class YadaNodeManager:
         original_commit = (
             subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
         )
+        subprocess.run(["git", "stash"])  # Stash any uncommitted changes
         subprocess.run(
             ["git", "pull", "origin", "master"]
         )  # Pull latest changes from master branch
+        subprocess.run(["git", "stash", "pop"])  # Pop the stashed changes
         latest_commit = (
             subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
         )
