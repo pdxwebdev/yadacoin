@@ -1,66 +1,65 @@
-import argparse
-import json
 import os
 import subprocess
 import time
 
 
-class DockerManager:
-    def __init__(self, repo_path, service_name, config_path):
-        self.repo_path = repo_path
-        self.service_name = service_name
-        self.config = self.load_config(config_path)
+class YadaNodeManager:
+    def __init__(self):
+        self.repo_path = "/etc/yadacoin"
+        self.container_name = "yada-node"
+        self.update_interval_seconds = 3600
 
-    def load_config(self, path):
-        with open(path, "r") as file:
-            return json.load(file)
+    def is_container_running(self):
+        try:
+            output = (
+                subprocess.check_output(
+                    ["docker", "ps", "-q", "-f", f"name={self.container_name}"]
+                )
+                .decode()
+                .strip()
+            )
+            return bool(output)
+        except:
+            return False
 
-    def update_and_restart(self):
+    def git_pull_latest(self):
         os.chdir(self.repo_path)
-        result = subprocess.run(["git", "pull"], capture_output=True, text=True)
-        if "Already up to date." not in result.stdout:
-            self.restart_container()
-        else:
-            print("No need to restart, codebase is up to date.")
+        original_commit = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+        )
+        subprocess.run(
+            ["git", "pull", "origin", "master", "--tags"]
+        )  # Pull changes from master branch and update tags
+        latest_commit = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
+        )
+        return original_commit != latest_commit
 
     def restart_container(self):
         subprocess.run(["docker-compose", "down"], cwd=self.repo_path)
         subprocess.run(["docker-compose", "up", "-d"], cwd=self.repo_path)
 
-    def is_container_running(self):
-        result = subprocess.run(
-            ["docker", "ps", "-f", f"name={self.service_name}"],
-            capture_output=True,
-            text=True,
-        )
-        return self.service_name in result.stdout
-
     def ensure_container_running(self):
         if not self.is_container_running():
-            print(f"Container {self.service_name} is not running. Starting it up...")
+            print(f"Container {self.container_name} is not running. Starting it up...")
             self.restart_container()
 
     def run(self):
-        try:
+        while True:
             self.ensure_container_running()
-            while True:
-                self.update_and_restart()
-                time.sleep(3600)  # hardcoded interval of 1 hour
-        except KeyboardInterrupt:
-            print("Script terminated by user.")
+            if self.git_pull_latest():
+                print("Codebase updated. Restarting Docker container...")
+                self.restart_container()
+            else:
+                print(
+                    "No updates found. Checking again in {} seconds.".format(
+                        self.update_interval_seconds
+                    )
+                )
+
+            time.sleep(self.update_interval_seconds)
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Docker Manager script.")
-    parser.add_argument(
-        "config_file",
-        type=str,
-        help="Path to the config file relative to the script directory.",
-    )
-    args = parser.parse_args()
-
-    script_directory = os.path.dirname(os.path.abspath(__file__))
-    config_path = os.path.join(script_directory, args.config_file)
-
-    manager = DockerManager(script_directory, "yada-node", config_path)
+    manager = YadaNodeManager()
     manager.run()
