@@ -27,20 +27,16 @@ class YadaNodeManager:
     def git_pull_latest(self):
         os.chdir(self.repo_path)
         subprocess.run(
-            ["git", "fetch", "origin", "master", "--tags"], stdout=subprocess.DEVNULL
+            ["git", "fetch", "origin", "master", "--tags"]
         )  # Fetch changes from master branch and update tags
         original_commit = (
             subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
         )
+        subprocess.run(["git", "stash"])  # Stash any uncommitted changes
         subprocess.run(
-            ["git", "stash"], stdout=subprocess.DEVNULL
-        )  # Stash any uncommitted changes
-        subprocess.run(
-            ["git", "pull", "origin", "master"], stdout=subprocess.DEVNULL
+            ["git", "pull", "origin", "master"]
         )  # Pull latest changes from master branch
-        subprocess.run(
-            ["git", "stash", "pop"], stdout=subprocess.DEVNULL
-        )  # Pop the stashed changes
+        subprocess.run(["git", "stash", "pop"])  # Pop the stashed changes
         latest_commit = (
             subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
         )
