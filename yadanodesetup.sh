@@ -40,7 +40,7 @@ After=network.target
 [Service]
 User=root
 WorkingDirectory=$APP_DIR
-ExecStart=/usr/bin/python3 yadanodemanager.py --config config.json
+ExecStart=/usr/bin/python3 yadanodemanager.py
 Restart=always
 
 [Install]
