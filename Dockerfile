@@ -9,13 +9,12 @@ RUN apt-get update && \
 # Set the working directory in the container
 WORKDIR /app
 
-COPY requirements.txt .
-
-# Create a virtual environment
-RUN python -m venv /app/venv
-
 # Install the required Python packages
-RUN /app/venv/bin/pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
 
-# Activate the virtual environment for the CMD
-CMD ["/app/venv/bin/python", "yadacoin/app.py", "--config=config/config.json"]
+# Copy the application code into the container
+COPY . .
+
+# Command to run the application
+CMD ["python", "yadacoin/app.py", "--config=config/config.json"]
