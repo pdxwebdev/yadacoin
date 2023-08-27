@@ -1,9 +1,29 @@
 #!/bin/bash
 
-# Default directory
-DEFAULT_DIR="/etc/yadacoin"
+# Ensure the script is run with superuser privileges
+if [ "$EUID" -ne 0 ]; then
+    echo "Please run this script as root."
+    exit
+fi
 
-# Step 1: Install Docker
+# Step 0: Install git if it isn't already
+if ! command -v git &> /dev/null; then
+    echo "Git is not installed. Installing Git..."
+    sudo apt update
+    sudo apt install -y git
+else
+    echo "Git is already installed."
+fi
+
+# Step 1: Clone the Yadacoin repository
+if [ ! -d "/etc/yadacoin" ]; then
+    echo "Cloning the Yadacoin repository..."
+    sudo git clone https://github.com/pdxwebdev/yadacoin /etc/yadacoin
+else
+    echo "/etc/yadacoin directory already exists."
+fi
+
+# Step 2: Install Docker
 if ! command -v docker &> /dev/null; then
     echo "Docker is not installed. Installing Docker..."
     sudo apt update
@@ -16,56 +36,31 @@ else
     echo "Docker is already installed."
 fi
 
-# Step 2: Create directory if it doesn't exist
-if [ ! -d "$DEFAULT_DIR" ]; then
-    echo "Creating default directory at $DEFAULT_DIR..."
-    sudo mkdir -p $DEFAULT_DIR
-fi
+# Step 3: Set up user permissions
+sudo usermod -aG docker $USER
+sudo chown $USER:$USER /var/run/docker.sock
+sudo chown -R $USER:$USER /etc/yadacoin
 
-# Step 3: Change directory permissions
-echo "Setting proper permissions for the default directory..."
-sudo chown -R $(whoami) $DEFAULT_DIR
-
-# Step 4: Add the current user to the docker group
-if id -nG "$USER" | grep -qw docker; then
-    echo "User is already in the docker group!"
-else
-    # Create docker group if it doesn't exist
-    if ! grep -q "^docker:" /etc/group; then
-        echo "Docker group does not exist. Creating it..."
-        sudo groupadd docker
-    fi
-
-    echo "Adding user to the docker group..."
-    sudo usermod -aG docker $USER
-    echo "You may need to log out and log back in to apply the group changes!"
-fi
-
-# Step 5: Set up the systemd service
-SERVICE_FILE_NAME="yadanodemanager.service"
-
-echo "Setting up systemd service..."
-
-cat <<EOL | sudo tee "/etc/systemd/system/$SERVICE_FILE_NAME" > /dev/null
+# Step 4: Create and enable systemd service
+SERVICE_FILE_CONTENT=$(cat <<EOF
 [Unit]
-Description=Yada Node Process Manager
-After=network.target
+Description=Yadanode Manager
 
 [Service]
-ExecStart=/usr/bin/python3 $DEFAULT_DIR/yadanodemanager.py $DEFAULT_DIR/config/config.json
-WorkingDirectory=$DEFAULT_DIR
+ExecStart=/usr/bin/python3 /etc/yadacoin/yadanodemanager.py /etc/yadacoin/config/config.json
+WorkingDirectory=/etc/yadacoin
 Restart=always
 User=$USER
-Group=$(id -gn $USER)
+Group=$USER
 
 [Install]
 WantedBy=multi-user.target
-EOL
+EOF
+)
 
+echo "${SERVICE_FILE_CONTENT}" > /etc/systemd/system/yadanodemanager.service
 sudo systemctl daemon-reload
-sudo systemctl enable yadanodemanager
-sudo systemctl start yadanodemanager
+sudo systemctl enable yadanodemanager.service
+sudo systemctl start yadanodemanager.service
 
-echo "Yada Node Process Manager is now set up as a systemd service and has been started."
-
-echo "Setup completed. Please restart your machine or log out and log back in for group changes to take effect, if necessary."
+echo "Setup complete. The Yadacoin Node Manager is now running."
