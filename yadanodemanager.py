@@ -41,12 +41,15 @@ class YadaNodeManager:
     def rebuild_docker_image(self):
         subprocess.run(["docker-compose", "down"], cwd=self.repo_path)
         subprocess.run(["docker-compose", "build"], cwd=self.repo_path)
+        self.start_docker_image()
+
+    def start_docker_image(self):
         subprocess.run(["docker-compose", "up", "-d"], cwd=self.repo_path)
 
     def ensure_container_running(self):
         if not self.is_container_running():
             print(f"Container {self.container_name} is not running. Starting it up...")
-            self.rebuild_docker_image()
+            self.start_docker_image()
 
     def run(self):
         while True:
