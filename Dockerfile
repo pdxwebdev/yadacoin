@@ -11,9 +11,11 @@ WORKDIR /app
 
 COPY requirements.txt .
 
-# Create a virtual environment and install the required Python packages
-RUN /app/venv/bin/python -m venv venv && \
-    /app/venv/bin/pip install --no-cache-dir -r requirements.txt
+# Create a virtual environment
+RUN python -m venv /app/venv
+
+# Install the required Python packages
+RUN /app/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Activate the virtual environment for the CMD
 CMD ["/bin/bash", "-c", "/app/venv/bin/activate && /app/venv/bin/python yadacoin/app.py --config=config/config.json"]
