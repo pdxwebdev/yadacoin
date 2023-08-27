@@ -3,7 +3,7 @@ FROM python:3.9-slim
 
 # Install Git
 RUN apt-get update && \
-    apt-get install -y git && \
+    apt-get install -y git libssl-dev cmake libjpeg-dev build-essential && \
     apt-get clean
 
 # Set the working directory in the container
