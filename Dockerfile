@@ -18,4 +18,4 @@ RUN python -m venv /app/venv
 RUN /app/venv/bin/pip install --no-cache-dir -r requirements.txt
 
 # Activate the virtual environment for the CMD
-CMD ["/bin/bash", "-c", "/app/venv/bin/activate && /app/venv/bin/python yadacoin/app.py --config=config/config.json"]
+CMD ["/app/venv/bin/python", "yadacoin/app.py", "--config=config/config.json"]
