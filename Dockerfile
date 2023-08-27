@@ -9,6 +9,8 @@ RUN apt-get update && \
 # Set the working directory in the container
 WORKDIR /app
 
+COPY requirements.txt .
+
 # Create a virtual environment and install the required Python packages
 RUN python -m venv venv && \
     . venv/bin/activate && \
