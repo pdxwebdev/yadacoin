@@ -11,6 +11,9 @@ services:
       - mongodb
     environment:
       - MONGODB_URI=mongodb://mongodb:27017/yadacoin
+      - PYTHONUNBUFFERED=0
+      - MOTOR_MAX_WORKERS=1
+      - PYTHONPATH=/etc/yadacoin
 
   mongodb:
     image: mongo:latest
