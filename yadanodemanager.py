@@ -24,32 +24,38 @@ class YadaNodeManager:
 
     def git_pull_latest(self):
         os.chdir(self.repo_path)
+        subprocess.run(
+            ["git", "fetch", "origin", "master", "--tags"]
+        )  # Fetch changes from master branch and update tags
         original_commit = (
             subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
         )
         subprocess.run(
-            ["git", "pull", "origin", "master", "--tags"]
-        )  # Pull changes from master branch and update tags
+            ["git", "pull", "origin", "master"]
+        )  # Pull latest changes from master branch
         latest_commit = (
             subprocess.check_output(["git", "rev-parse", "HEAD"]).decode().strip()
         )
         return original_commit != latest_commit
 
-    def restart_container(self):
+    def rebuild_docker_image(self):
         subprocess.run(["docker-compose", "down"], cwd=self.repo_path)
+        subprocess.run(["docker-compose", "build"], cwd=self.repo_path)
         subprocess.run(["docker-compose", "up", "-d"], cwd=self.repo_path)
 
     def ensure_container_running(self):
         if not self.is_container_running():
             print(f"Container {self.container_name} is not running. Starting it up...")
-            self.restart_container()
+            self.rebuild_docker_image()
 
     def run(self):
         while True:
             self.ensure_container_running()
             if self.git_pull_latest():
-                print("Codebase updated. Restarting Docker container...")
-                self.restart_container()
+                print(
+                    "Codebase updated. Rebuilding Docker image and restarting container..."
+                )
+                self.rebuild_docker_image()
             else:
                 print(
                     "No updates found. Checking again in {} seconds.".format(
