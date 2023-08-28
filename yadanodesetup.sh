@@ -18,6 +18,9 @@ cd "$APP_DIR"
 # Clone the repository
 git clone https://github.com/pdxwebdev/yadacoin .
 
+# Download blockchain data
+curl https://yadacoin.io/yadacoinstatic/bootstrap.tar.gz | tar -xz
+
 # Create a systemd service for the process manager
 SERVICE_FILE="/etc/systemd/system/yadanodemanager.service"
 cat << EOF > "$SERVICE_FILE"
