@@ -17,4 +17,4 @@ RUN pip install --no-cache-dir -r requirements.txt --src /usr/local/src
 COPY . .
 
 # Command to run the application
-CMD ["python", "yadacoin/app.py", "--config=config/config.json"]
+CMD ["python", "yadacoin/app.py", "--config=config/config.json", "--mongohost=mongodb"]
