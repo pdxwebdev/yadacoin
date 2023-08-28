@@ -28,6 +28,7 @@ from os import path
 from time import time
 from traceback import format_exc
 
+import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -37,7 +38,6 @@ from tornado.httpserver import HTTPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
-import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -93,6 +93,12 @@ define(
 define("verify", default=False, help="Verify chain, default False", type=bool)
 define("server", default=False, help="Is server for testing", type=bool)
 define("client", default=False, help="Is client for testing", type=bool)
+define(
+    "mongohost",
+    default="",
+    help="Value to override mongodb_host config value",
+    type=str,
+)
 
 
 class NodeApplication(Application):
@@ -584,6 +590,8 @@ class NodeApplication(Application):
                 self.config.network = options.network
 
         self.config.reset = options.reset
+        if options.mongohost:
+            self.config.mongodb_host = options.mongohost
 
     def init_consensus(self):
         tornado.ioloop.IOLoop.current().run_sync(self.config.consensus.async_init)
