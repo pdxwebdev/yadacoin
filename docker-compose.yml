@@ -16,11 +16,14 @@ services:
       - PYTHONPATH=/etc/yadacoin
 
   mongodb:
-    image: mongo:latest
+    image: mongo:4.4
     ports:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+      - /etc/yadacoin/dump:/mongodump
+      - ./mongo-init:/docker-entrypoint-initdb.d
+
 
 volumes:
   mongodb_data:

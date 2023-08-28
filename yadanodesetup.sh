@@ -24,12 +24,17 @@ cat << EOF > "$SERVICE_FILE"
 [Unit]
 Description=YadaCoin Node Manager
 After=network.target
+StartLimitIntervalSec=500
+StartLimitBurst=5
 
 [Service]
 User=root
 WorkingDirectory=$APP_DIR
 ExecStart=/usr/bin/python3 yadanodemanager.py
+KillMode=process
 Restart=always
+Restart=on-failure
+RestartSec=5s
 
 [Install]
 WantedBy=multi-user.target
