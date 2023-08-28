@@ -1,12 +1,13 @@
-version: "3"
+version: "3.4"  # Use version 3.4 or later to support health checks.
 
 services:
+
   yada-node:
     build: .
     volumes:
       - .:/app
     ports:
-      - "8000:8000" # Assuming the Tornado app runs on port 8000
+      - "8000:8000"
     depends_on:
       - mongodb
     environment:
@@ -21,9 +22,20 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
-      - /etc/yadacoin/dump:/mongodump
-      - ./mongo-init:/docker-entrypoint-initdb.d
+    healthcheck:
+      test: ["CMD", "mongo", "--eval", "db.adminCommand('ping')"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
 
+  restore:
+    image: mongo:latest
+    command: sh -c 'mongorestore --host mongodb /mongodump'
+    depends_on:
+      mongodb:
+        condition: service_healthy
+    volumes:
+      - /etc/yadacoin/dump:/mongodump
 
 volumes:
   mongodb_data:
