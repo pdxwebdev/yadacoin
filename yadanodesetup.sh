@@ -8,7 +8,7 @@ fi
 
 # Install required packages
 apt update
-apt install -y python3 python3-pip git
+apt install -y python3 python3-pip git docker docker-compose
 
 # Create the directory for your application
 APP_DIR="/etc/yadacoin"
