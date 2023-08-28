@@ -1,6 +1,9 @@
+import os
 import sys
 
-sys.path.append("../../")
+module_path = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.join(module_path, "../../"))
+
 from random import randrange
 from unittest import (
     IsolatedAsyncioTestCase,  # python 3.8 requiredsudo apt install python3.8,
