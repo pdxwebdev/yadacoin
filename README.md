@@ -2,13 +2,9 @@
 
 ## Setup
 
-### Ubuntu install command:
+### Ubuntu 22 install command:
 
-`wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/setup.sh | bash`
-
-### Ubuntu install with bootstrap data command:
-
-`wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/setupwithbootstrap.sh | bash`
+`sudo wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash`
 
 ### Windows installer:
 
