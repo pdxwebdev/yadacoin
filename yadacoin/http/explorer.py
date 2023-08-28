@@ -48,11 +48,40 @@ class ExplorerHandler(BaseHandler):
 
 
 class ExplorerSearchHandler(BaseHandler):
+    async def get_wallet_balance(self, term):
+        re.search(r"[A-Fa-f0-9]+", term).group(0)
+        res = await self.config.mongo.async_db.blocks.count_documents(
+            {"transactions.outputs.to": term}
+        )
+        if res:
+            balance = await self.config.BU.get_wallet_balance(term)
+            return self.render_as_json(
+                {
+                    "balance": "{0:.8f}".format(balance),
+                    "resultType": "txn_outputs_to",
+                    "result": [
+                        changetime(x)
+                        async for x in self.config.mongo.async_db.blocks.find(
+                            {"transactions.outputs.to": term}, {"_id": 0}
+                        )
+                        .sort("index", -1)
+                        .limit(10)
+                    ],
+                }
+            )
+
     async def get(self):
         term = self.get_argument("term", False)
         if not term:
             self.render_as_json({})
             return
+
+        result_type = self.get_argument("result_type", False)
+        if result_type == "get_wallet_balance":
+            try:
+                return await self.get_wallet_balance(term)
+            except Exception:
+                raise
 
         try:
             res = await self.config.mongo.async_db.blocks.count_documents(
@@ -224,26 +253,9 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
-            re.search(r"[A-Fa-f0-9]+", term).group(0)
-            res = await self.config.mongo.async_db.blocks.count_documents(
-                {"transactions.outputs.to": term}
-            )
+            res = await self.get_wallet_balance(term)
             if res:
-                balance = await self.config.BU.get_wallet_balance(term)
-                return self.render_as_json(
-                    {
-                        "balance": "{0:.8f}".format(balance),
-                        "resultType": "txn_outputs_to",
-                        "result": [
-                            changetime(x)
-                            async for x in self.config.mongo.async_db.blocks.find(
-                                {"transactions.outputs.to": term}, {"_id": 0}
-                            )
-                            .sort("index", -1)
-                            .limit(10)
-                        ],
-                    }
-                )
+                return res
         except Exception:
             pass
 
