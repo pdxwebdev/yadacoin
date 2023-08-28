@@ -8,7 +8,7 @@ fi
 
 # Install required packages
 apt update
-apt install -y python3 python3-venv python3-pip git cmake
+apt install -y python3 python3-pip git
 
 # Create the directory for your application
 APP_DIR="/etc/yadacoin"
@@ -17,18 +17,6 @@ cd "$APP_DIR"
 
 # Clone the repository
 git clone https://github.com/pdxwebdev/yadacoin .
-
-# Create a virtual environment
-python3 -m venv venv
-
-# Activate the virtual environment
-source venv/bin/activate
-
-# Install required packages
-pip install --no-cache-dir -r requirements.txt
-
-# Deactivate the virtual environment
-deactivate
 
 # Create a systemd service for the process manager
 SERVICE_FILE="/etc/systemd/system/yadanodemanager.service"

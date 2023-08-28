@@ -279,7 +279,7 @@ https://yadacoin.io/download
 We use Black, Autoflake, isort, and commit message enforcement as pre-commit hooks. To install the hooks, run the following commands:
 
 ```
-pip install install pre-commit mongomock black autoflake isort pytest
+pip install pre-commit mongomock black autoflake isort pytest
 pre-commit install
 pre-commit install --hook-type pre-push
 pre-commit install -t commit-msg
