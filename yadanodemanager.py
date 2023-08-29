@@ -76,6 +76,10 @@ class YadaNodeManager:
 
     def start_docker_image(self):
         subprocess.run(
+            ["docker-compose", "-p", self.project_name, "down", "yada-node"],
+            cwd=self.repo_path,
+        )
+        subprocess.run(
             ["docker-compose", "-p", self.project_name, "up", "-d", "yada-node"],
             cwd=self.repo_path,
         )
@@ -85,7 +89,30 @@ class YadaNodeManager:
             print(f"Project {self.project_name} is not running. Starting it up...")
             self.start_docker_image()
 
+    def stop_previous_containers(self):
+        try:
+            output = (
+                subprocess.check_output(
+                    ["docker", "ps", "-aq", "-f", f"name={self.project_name}"]
+                )
+                .decode()
+                .strip()
+            )
+            if output:
+                subprocess.run(
+                    [
+                        "docker",
+                        "rm",
+                        "-f",
+                        output,
+                    ],  # Stop and remove previous containers
+                    cwd=self.repo_path,
+                )
+        except Exception as e:
+            print(f"Error while stopping previous containers: {e}")
+
     def run(self):
+        self.stop_previous_containers()  # Stop and remove previous containers
         while True:
             self.ensure_project_running()
             if self.git_pull_latest():
