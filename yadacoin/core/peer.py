@@ -91,10 +91,7 @@ class Peer:
                 config.username_signature
             ].seed
             return ServiceProvider.from_dict(my_peer, is_me=True)
-        elif (
-            config.peer_type == PEER_TYPES.POOL.value
-            or MODES.POOL.value in config.modes
-        ):
+        elif config.peer_type == PEER_TYPES.POOL.value or config.pool_payout == True:
             return Pool.from_dict(my_peer, is_me=True)
         elif (
             config.peer_type == PEER_TYPES.USER.value or True
