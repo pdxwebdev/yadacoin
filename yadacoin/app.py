@@ -28,7 +28,6 @@ from os import path
 from time import time
 from traceback import format_exc
 
-import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -38,6 +37,7 @@ from tornado.httpserver import HTTPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
+import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -64,6 +64,7 @@ from yadacoin.core.peer import (
 )
 from yadacoin.core.processingqueue import ProcessingQueues
 from yadacoin.core.smtp import Email
+from yadacoin.enums.modes import MODES
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
@@ -110,7 +111,7 @@ class NodeApplication(Application):
         self.init_config_properties(test=test)
         if test:
             return
-        if "node" in self.config.modes:
+        if MODES.NODE.value in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
@@ -127,9 +128,10 @@ class NodeApplication(Application):
             self.config.node_server_instance.bind(self.config.peer_port)
             self.config.node_server_instance.start(1)
 
-        if "pool" in self.config.modes:
+        if MODES.POOL.value in self.config.modes:
             self.init_pool()
-        if "web" in self.config.modes:
+
+        if MODES.WEB.value in self.config.modes:
             if os.path.exists(path.join(path.dirname(__file__), "..", "static")):
                 static_path = path.join(path.dirname(__file__), "..", "static")
             else:
@@ -619,7 +621,7 @@ class NodeApplication(Application):
             ThreadPoolExecutor(max_workers=1)
         )
 
-        if "node" in self.config.modes:
+        if MODES.NODE.value in self.config.modes:
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_status)
 
             tornado.ioloop.IOLoop.current().spawn_callback(
@@ -644,7 +646,7 @@ class NodeApplication(Application):
                 self.background_message_sender
             )
 
-            if "pool" in self.config.modes:
+            if MODES.POOL.value in self.config.modes:
                 tornado.ioloop.IOLoop.current().spawn_callback(
                     self.background_nonce_processor
                 )
@@ -733,13 +735,13 @@ class NodeApplication(Application):
         self.config.app_log.info(
             "API: http://{}:{}".format(self.config.serve_host, self.config.serve_port)
         )
-        if "web" in self.config.modes:
+        if MODES.WEB.value in self.config.modes:
             self.config.app_log.info(
                 "Wallet: http://{}:{}/app".format(
                     self.config.serve_host, self.config.serve_port
                 )
             )
-        if "proxy" in self.config.modes:
+        if MODES.PROXY.value in self.config.modes:
             self.config.app_log.info(
                 "Proxy: {}:{}".format(self.config.serve_host, self.config.proxy_port)
             )
@@ -769,7 +771,7 @@ class NodeApplication(Application):
         self.config.http_server = HTTPServer(self)
         self.config.http_server.listen(self.config.serve_port, self.config.serve_host)
         if (
-            "ssl" in self.config.modes
+            MODES.SSL.value in self.config.modes
             and hasattr(self.config, "ssl")
             and self.config.ssl.is_valid()
         ):
@@ -817,7 +819,7 @@ class NodeApplication(Application):
             Consensus.init_async
         )
         self.config.cipher = Crypt(self.config.wif)
-        if "node" in self.config.modes:
+        if MODES.NODE.value in self.config.modes:
             self.config.pyrx = pyrx.PyRX()
             self.config.pyrx.get_rx_hash(
                 "header",
@@ -846,12 +848,12 @@ class NodeApplication(Application):
         self.config.websocketServer = RCPWebSocketServer
         self.config.app_log = logging.getLogger("tornado.application")
         self.config.challenges = {}
-        if "web" in self.config.modes:
+        if MODES.WEB.value in self.config.modes:
             for x in [User, Group]:
                 if x.__name__ not in self.config.websocketServer.inbound_streams:
                     self.config.websocketServer.inbound_streams[x.__name__] = {}
 
-        if "proxy" in self.config.modes:
+        if MODES.PROXY.value in self.config.modes:
             from yadacoin.http.proxy import ProxyConfig, ProxyHandler
 
             proxy_app = Application(
@@ -870,7 +872,7 @@ class NodeApplication(Application):
                 self.config.proxy.black_list[x["domain"]] = x
             self.config.proxy_server.inbound_peers = {User.__name__: {}}
 
-        if "dns" in self.config.modes:
+        if MODES.DNS.value in self.config.modes:
             from yadacoin.udp.base import UDPServer
 
             self.config.udpServer = UDPServer

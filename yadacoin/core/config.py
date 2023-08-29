@@ -16,6 +16,7 @@ from mnemonic import Mnemonic
 
 from yadacoin import version
 from yadacoin.core.crypt import RIPEMD160
+from yadacoin.enums.modes import MODES
 
 core.Hash160 = RIPEMD160.ripemd160
 hashlib.ripemd160 = RIPEMD160.ripemd160
@@ -30,7 +31,13 @@ def get_config():
 class Config(object):
     def __init__(self, config):
         self.start_time = int(time())
-        self.modes = config.get("modes", ["node", "web", "pool"])
+        self.modes = config.get(
+            "modes",
+            [
+                MODES.NODE.value,
+                MODES.WEB.value,
+            ],
+        )
         self.root_app = config.get("root_app", "")
         self.seed = config.get("seed", "")
         self.xprv = config.get("xprv", "")

@@ -15,6 +15,7 @@ from yadacoin.core.config import Config
 from yadacoin.core.graphutils import GraphUtils as GU
 from yadacoin.core.identity import Identity
 from yadacoin.core.transactionutils import TU
+from yadacoin.enums.modes import MODES
 from yadacoin.http.base import BaseHandler
 
 challenges = {}
@@ -24,7 +25,7 @@ class BaseWebHandler(BaseHandler):
     async def prepare(self):
         if (
             self.request.protocol == "http"
-            and "ssl" in self.config.modes
+            and MODES.SSL.value in self.config.modes
             and self.config.ssl.is_valid()
         ):
             self.redirect(

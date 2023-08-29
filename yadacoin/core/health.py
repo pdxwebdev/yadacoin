@@ -226,7 +226,7 @@ class Health:
             self.cache_validator,
             self.mempool_cleaner,
         ]
-        if "pool" in self.config.modes:
+        if MODES.POOL.value in self.config.modes:
             self.nonce_processor = NonceProcessorHealth()
             self.health_items.append(self.nonce_processor)
 

@@ -16,6 +16,7 @@ from yadacoin.core.processingqueue import (
 )
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
+from yadacoin.enums.modes import MODES
 from yadacoin.tcpsocket.base import BaseRPC, RPCSocketClient, RPCSocketServer
 
 
@@ -117,7 +118,7 @@ class NodeRPC(BaseRPC):
             TransactionProcessingQueueItem(txn, stream)
         )
 
-        if "web" not in self.config.modes:
+        if MODES.WEB.value not in self.config.modes:
             return
 
         ws_users = self.config.websocketServer.inbound_streams[User.__name__]
@@ -695,7 +696,7 @@ class NodeRPC(BaseRPC):
                     await ws_stream.route(body, source="tcpsocket")
 
     async def get_ws_stream(self, route):
-        if "web" not in self.config.modes:
+        if MODES.WEB.value not in self.config.modes:
             return False
 
         ws_users = self.config.websocketServer.inbound_streams[User.__name__]

@@ -2,7 +2,6 @@ import hashlib
 import json
 import time
 from collections import OrderedDict
-from enum import Enum
 from logging import getLogger
 
 import tornado.ioloop
@@ -10,13 +9,8 @@ import tornado.ioloop
 from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
-
-
-class PEER_TYPES(Enum):
-    SEED = "seed"
-    SEED_GATEWAY = "seed_gateway"
-    SERVICE_PROVIDER = "service_provider"
-    USER = "user"
+from yadacoin.enums.modes import MODES
+from yadacoin.enums.peertypes import PEER_TYPES
 
 
 class Peer:
@@ -70,30 +64,41 @@ class Peer:
             "protocol_version": 3,
             "node_version": config.node_version,
         }
-        if config.peer_type == "seed":
+        if config.peer_type == PEER_TYPES.SEED.value:
             if not config.username_signature in config.seeds:
-                config.peer_type = "user"
+                config.peer_type = PEER_TYPES.USER.value
                 return User.from_dict(my_peer, is_me=True)
-            my_peer["seed_gateway"] = config.seeds[
+            my_peer[PEER_TYPES.SEED_GATEWAY.value] = config.seeds[
                 config.username_signature
             ].seed_gateway
             return Seed.from_dict(my_peer, is_me=True)
-        elif config.peer_type == "seed_gateway":
+        elif config.peer_type == PEER_TYPES.SEED_GATEWAY.value:
             if not config.username_signature in config.seed_gateways:
-                config.peer_type = "user"
+                config.peer_type = PEER_TYPES.USER.value
                 return User.from_dict(my_peer, is_me=True)
-            my_peer["seed"] = config.seed_gateways[config.username_signature].seed
+            my_peer[PEER_TYPES.SEED.value] = config.seed_gateways[
+                config.username_signature
+            ].seed
             return SeedGateway.from_dict(my_peer, is_me=True)
-        elif config.peer_type == "service_provider":
+        elif config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value:
             if not config.username_signature in config.service_providers:
-                config.peer_type = "user"
+                config.peer_type = PEER_TYPES.USER.value
                 return User.from_dict(my_peer, is_me=True)
-            my_peer["seed_gateway"] = config.service_providers[
+            my_peer[PEER_TYPES.SEED_GATEWAY.value] = config.service_providers[
                 config.username_signature
             ].seed_gateway
-            my_peer["seed"] = config.service_providers[config.username_signature].seed
+            my_peer[PEER_TYPES.SEED.value] = config.service_providers[
+                config.username_signature
+            ].seed
             return ServiceProvider.from_dict(my_peer, is_me=True)
-        elif config.peer_type == "user" or True:  # default if not specified
+        elif (
+            config.peer_type == PEER_TYPES.POOL.value
+            or MODES.POOL.value in config.modes
+        ):
+            return Pool.from_dict(my_peer, is_me=True)
+        elif (
+            config.peer_type == PEER_TYPES.USER.value or True
+        ):  # default if not specified
             return User.from_dict(my_peer, is_me=True)
 
     @classmethod
@@ -102,8 +107,8 @@ class Peer:
             peer["host"],
             peer["port"],
             Identity.from_dict(peer["identity"]),
-            seed=peer.get("seed"),
-            seed_gateway=peer.get("seed_gateway"),
+            seed=peer.get(PEER_TYPES.SEED.value),
+            seed_gateway=peer.get(PEER_TYPES.SEED_GATEWAY.value),
             http_host=peer.get("http_host"),
             http_port=peer.get("http_port"),
             secure=peer.get("secure"),
@@ -147,7 +152,7 @@ class Peer:
                 )
                 config.peer_host = u.externalipaddress()
 
-                if "web" in config.modes:
+                if MODES.WEB.value in config.modes:
                     server_port = config.serve_port
                     eport = server_port
                     r = u.getspecificportmapping(eport, "TCP")
@@ -308,8 +313,8 @@ class Peer:
             "port": self.port,
             "identity": self.identity.to_dict,
             "rid": self.rid,
-            "seed": self.seed,
-            "seed_gateway": self.seed_gateway,
+            PEER_TYPES.SEED.value: self.seed,
+            PEER_TYPES.SEED_GATEWAY.value: self.seed_gateway,
             "http_host": self.http_host,
             "http_port": self.http_port,
             "secure": self.secure,
@@ -436,7 +441,9 @@ class Seed(Peer):
                 # typically, the originator will grab all mutual service providers of the originator and the recipient of the message
                 # and send "through" every service provider so the recipient will receive the message on all services
 
-                bridge_seed_gateway = Peer.from_dict(payload.get("seed_gateway"))
+                bridge_seed_gateway = Peer.from_dict(
+                    payload.get(PEER_TYPES.SEED_GATEWAY.value)
+                )
                 bridge_seed = self.config.seeds[
                     self.config.seed_gateways[
                         bridge_seed_gateway.identity.username_signature
@@ -880,6 +887,69 @@ class User(Peer):
         return False
 
 
+class Pool(Peer):
+    id_attribute = "rid"
+
+    async def get_outbound_class(self):
+        return ServiceProvider
+
+    async def get_inbound_class(self):
+        return User
+
+    async def get_outbound_peers(self):
+        return self.config.service_providers
+
+    async def get_inbound_streams(self):
+        return list(self.config.nodeServer.inbound_streams[User.__name__].values())
+
+    async def get_outbound_streams(self):
+        return list(
+            self.config.nodeClient.outbound_streams[ServiceProvider.__name__].values()
+        )
+
+    async def get_inbound_pending(self):
+        return list(self.config.nodeServer.inbound_pending[User.__name__].values())
+
+    async def get_outbound_pending(self):
+        return list(
+            self.config.nodeClient.outbound_pending[ServiceProvider.__name__].values()
+        )
+
+    @classmethod
+    def type_limit(cls, peer):
+        if peer == ServiceProvider:
+            return 3
+        elif peer == User:
+            return get_config().max_peers or 100000
+        else:
+            return 0
+
+    @classmethod
+    def compatible_types(cls):
+        return [ServiceProvider]
+
+    async def get_sync_peers(self):
+        for y in list(
+            self.config.nodeClient.outbound_streams[ServiceProvider.__name__].values()
+        ):
+            yield y
+
+    async def get_peer_by_id(self, id_attr):
+        return self.config.nodeClient.outbound_streams[ServiceProvider.__name__].get(
+            id_attr
+        )
+
+    async def get_route_peers(self, peer, payload):
+        for y in list(self.config.nodeClient.outbound_streams[User.__name__].values()):
+            yield y
+
+        for y in list(self.config.nodeServer.inbound_streams[User.__name__].values()):
+            yield y
+
+    def is_linked_peer(self, peer):
+        return False
+
+
 class Miner(Peer):
     id_attribute = "address"
 
@@ -1008,7 +1078,7 @@ class Peers:
                     ].identity.username_signature
                 )
                 routes.append(f"{seed_rid}:{outbound_peer.rid}")
-            elif config.peer_type == PEER_TYPES.USER.value:
+            elif config.peer_type in [PEER_TYPES.USER.value, PEER_TYPES.POOL.value]:
                 seed_rid = config.seeds[outbound_peer.seed].identity.generate_rid(
                     config.seed_gateways[
                         outbound_peer.seed_gateway

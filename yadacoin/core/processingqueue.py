@@ -5,6 +5,7 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import get_config
 from yadacoin.core.miner import Miner
 from yadacoin.core.transaction import Transaction
+from yadacoin.enums.modes import MODES
 
 
 class ProcessingQueue:
@@ -124,7 +125,7 @@ class ProcessingQueues:
         self.block_queue = BlockProcessingQueue()
         self.transaction_queue = TransactionProcessingQueue()
         self.queues = [self.block_queue, self.transaction_queue]
-        if "pool" in self.config.modes:
+        if MODES.POOL.value in self.config.modes:
             self.nonce_queue = NonceProcessingQueue()
             self.queues.append(self.nonce_queue)
 
