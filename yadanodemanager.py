@@ -16,11 +16,18 @@ class YadaNodeManager:
         unique_id = uuid.uuid4().hex
         return f"{self.base_project_name}_{unique_id}"
 
-    def is_container_running(self):
+    def is_project_running(self):
         try:
             output = (
                 subprocess.check_output(
-                    ["docker", "ps", "-q", "-f", f"name={self.container_name}"]
+                    [
+                        "docker-compose",
+                        "-p",
+                        self.project_name,
+                        "ps",
+                        "-q",
+                        self.service_name,
+                    ]
                 )
                 .decode()
                 .strip()
@@ -73,14 +80,14 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
 
-    def ensure_container_running(self):
-        if not self.is_container_running():
+    def ensure_project_running(self):
+        if not self.is_project_running():
             print(f"Container {self.container_name} is not running. Starting it up...")
             self.start_docker_image()
 
     def run(self):
         while True:
-            self.ensure_container_running()
+            self.ensure_project_running()
             if self.git_pull_latest():
                 print(
                     "Codebase updated. Rebuilding Docker image and restarting container..."
