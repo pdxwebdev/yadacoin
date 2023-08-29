@@ -83,7 +83,7 @@ class YadaNodeManager:
         )
 
     def is_mongodump_directory_present(self):
-        mongodump_path = os.path.join(self.repo_path, "mongodump")
+        mongodump_path = os.path.join(self.repo_path, "dump")
         return os.path.exists(mongodump_path)
 
     def start_restore_service(self):
