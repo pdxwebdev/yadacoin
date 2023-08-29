@@ -29,7 +29,7 @@ services:
 
   restore:
     image: mongo:latest
-    command: sh -c 'mongorestore --host mongodb /mongodump > /dev/null 2>&1 && rm -rf /mongodump'
+    command: sh -c 'mongorestore --host mongodb /mongodump > /dev/null 2>&1'
     depends_on:
       mongodb:
         condition: service_healthy

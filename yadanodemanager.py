@@ -91,6 +91,10 @@ class YadaNodeManager:
             ["docker-compose", "up", "restore"],
             cwd=self.repo_path,
         )
+        subprocess.run(
+            ["rm", "-rf", "/dump"],
+            cwd=self.repo_path,
+        )
 
     def run(self):
         self.stop_previous_containers()  # Stop and remove previous containers
