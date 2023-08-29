@@ -8,7 +8,7 @@ class YadaNodeManager:
     def __init__(self):
         self.repo_path = "/etc/yadacoin"
         self.base_project_name = "yadanodemanager"  # Base project name
-        self.project_name = self.generate_project_name()
+        self.project_name = self.generate_project_name()  # Generate project name once
         self.service_name = "yada-node"
         self.update_interval_seconds = 3600
 
@@ -82,7 +82,7 @@ class YadaNodeManager:
 
     def ensure_project_running(self):
         if not self.is_project_running():
-            print(f"Container {self.container_name} is not running. Starting it up...")
+            print(f"Project {self.project_name} is not running. Starting it up...")
             self.start_docker_image()
 
     def run(self):
