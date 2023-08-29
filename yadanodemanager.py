@@ -91,8 +91,9 @@ class YadaNodeManager:
             ["docker-compose", "up", "restore"],
             cwd=self.repo_path,
         )
+        mongodump_path = os.path.join(self.repo_path, "dump")
         subprocess.run(
-            ["rm", "-rf", "/dump"],
+            ["rm", "-rf", mongodump_path],
             cwd=self.repo_path,
         )
 
