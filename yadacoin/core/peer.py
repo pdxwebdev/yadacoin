@@ -31,6 +31,7 @@ class Peer:
         secure=None,
         protocol_version=3,
         node_version=(0, 0, 0),
+        peer_type=None,
     ):
         self.host = host
         self.port = port
@@ -45,6 +46,7 @@ class Peer:
         self.protocol_version = protocol_version
         self.authenticated = False
         self.node_version = tuple([int(x) for x in node_version])
+        self.peer_type = peer_type
 
     @staticmethod
     def my_peer():
@@ -111,6 +113,7 @@ class Peer:
             secure=peer.get("secure"),
             protocol_version=peer.get("protocol_version", 1),
             node_version=peer.get("node_version", (0, 0, 0)),
+            peer_type=peer.get("peer_type"),
         )
         return inst
 
@@ -317,6 +320,7 @@ class Peer:
             "secure": self.secure,
             "protocol_version": self.protocol_version,
             "node_version": self.node_version,
+            "peer_type": self.peer_type,
         }
 
     def to_string(self):

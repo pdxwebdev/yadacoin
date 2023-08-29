@@ -9,7 +9,15 @@ from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import get_config
-from yadacoin.core.peer import Group, Peer, Seed, SeedGateway, ServiceProvider, User
+from yadacoin.core.peer import (
+    Group,
+    Peer,
+    Pool,
+    Seed,
+    SeedGateway,
+    ServiceProvider,
+    User,
+)
 from yadacoin.core.processingqueue import (
     BlockProcessingQueueItem,
     TransactionProcessingQueueItem,
@@ -17,6 +25,7 @@ from yadacoin.core.processingqueue import (
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
 from yadacoin.enums.modes import MODES
+from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.tcpsocket.base import BaseRPC, RPCSocketClient, RPCSocketServer
 
 
@@ -459,8 +468,10 @@ class NodeRPC(BaseRPC):
         elif isinstance(self.config.peer, ServiceProvider):
             if generic_peer.identity.username_signature in self.config.seed_gateways:
                 peerCls = SeedGateway
-            else:
+            elif generic_peer.peer_type == PEER_TYPES.USER.value:
                 peerCls = User
+            elif generic_peer.peer_type == PEER_TYPES.POOL.value:
+                peerCls = Pool
 
         elif isinstance(self.config.peer, User):
             peerCls = User
