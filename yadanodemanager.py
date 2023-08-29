@@ -7,7 +7,7 @@ import uuid
 class YadaNodeManager:
     def __init__(self):
         self.repo_path = "/etc/yadacoin"
-        self.base_project_name = "yadanodemanager"  # Base project name
+        self.base_project_name = "yadanodemanager"  # Base project name.
         self.project_name = self.generate_project_name()  # Generate project name once
         self.service_name = "yada-node"
         self.update_interval_seconds = 3600
