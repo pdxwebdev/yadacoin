@@ -82,8 +82,20 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
 
+    def is_mongodump_directory_present(self):
+        mongodump_path = os.path.join(self.repo_path, "mongodump")
+        return os.path.exists(mongodump_path)
+
+    def start_restore_service(self):
+        subprocess.run(
+            ["docker-compose", "-p", self.project_name, "up", "restore"],
+            cwd=self.repo_path,
+        )
+
     def run(self):
         self.stop_previous_containers()  # Stop and remove previous containers
+        if self.is_mongodump_directory_present():
+            self.start_restore_service()  # Start the restore service if directory exists
         while True:
             if not self.ensure_container_running():
                 print(
