@@ -88,7 +88,7 @@ class YadaNodeManager:
 
     def start_restore_service(self):
         subprocess.run(
-            ["docker-compose", "-p", self.project_name, "up", "restore"],
+            ["docker-compose", "up", "restore"],
             cwd=self.repo_path,
         )
 
