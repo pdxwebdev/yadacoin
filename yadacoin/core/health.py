@@ -3,6 +3,7 @@ import time
 import tornado.ioloop
 
 from yadacoin.core.config import get_config
+from yadacoin.enums.modes import MODES
 
 
 class HealthItem:
