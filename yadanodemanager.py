@@ -76,10 +76,6 @@ class YadaNodeManager:
 
     def start_docker_image(self):
         subprocess.run(
-            ["docker-compose", "-p", self.project_name, "down", "yada-node"],
-            cwd=self.repo_path,
-        )
-        subprocess.run(
             ["docker-compose", "-p", self.project_name, "up", "-d", "yada-node"],
             cwd=self.repo_path,
         )
