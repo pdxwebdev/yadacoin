@@ -5,7 +5,7 @@ import time
 
 class YadaNodeManager:
     def __init__(self):
-        self.repo_path = "/etc/yadacoin"
+        self.repo_path = os.path.dirname(os.path.abspath(__file__))
         self.service_name = "yada-node"
         self.update_interval_seconds = 3600
 
