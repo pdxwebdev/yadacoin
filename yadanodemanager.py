@@ -54,7 +54,7 @@ class YadaNodeManager:
         )
         subprocess.run(["git", "stash"])  # Stash any uncommitted changes
         subprocess.run(
-            ["git", "pull", "origin", "master"]
+            ["git", "pull", "origin", "master", "--tags"]
         )  # Pull latest changes from master branch
         subprocess.run(["git", "stash", "pop"])  # Pop the stashed changes
         latest_commit = (
