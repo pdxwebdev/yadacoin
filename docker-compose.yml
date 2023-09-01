@@ -1,4 +1,4 @@
-version: "3.4" # Use version 3.4 or later to support health checks.
+version: "3.4"
 
 services:
   yada-node:
@@ -16,6 +16,11 @@ services:
       - PYTHONUNBUFFERED=0
       - MOTOR_MAX_WORKERS=1
       - PYTHONPATH=/etc/yadacoin
+    logging:
+      driver: json-file
+      options:
+        max-size: "200k"
+        max-file: "10"
 
   mongodb:
     image: mongo:latest
@@ -28,6 +33,11 @@ services:
       interval: 10s
       timeout: 10s
       retries: 5
+    logging:
+      driver: json-file
+      options:
+        max-size: "200k"
+        max-file: "10"
 
   restore:
     image: mongo:latest
