@@ -67,24 +67,27 @@ class Peer:
             "node_version": config.node_version,
         }
         if config.peer_type == PEER_TYPES.SEED.value:
-            if not config.username_signature in config.seeds:
+            if config.username_signature not in config.seeds:
                 config.peer_type = PEER_TYPES.USER.value
+                my_peer.update({"peer_type": PEER_TYPES.USER.value})
                 return User.from_dict(my_peer, is_me=True)
             my_peer[PEER_TYPES.SEED_GATEWAY.value] = config.seeds[
                 config.username_signature
             ].seed_gateway
             return Seed.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.SEED_GATEWAY.value:
-            if not config.username_signature in config.seed_gateways:
+            if config.username_signature not in config.seed_gateways:
                 config.peer_type = PEER_TYPES.USER.value
+                my_peer.update({"peer_type": PEER_TYPES.USER.value})
                 return User.from_dict(my_peer, is_me=True)
             my_peer[PEER_TYPES.SEED.value] = config.seed_gateways[
                 config.username_signature
             ].seed
             return SeedGateway.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value:
-            if not config.username_signature in config.service_providers:
+            if config.username_signature not in config.service_providers:
                 config.peer_type = PEER_TYPES.USER.value
+                my_peer.update({"peer_type": PEER_TYPES.USER.value})
                 return User.from_dict(my_peer, is_me=True)
             my_peer[PEER_TYPES.SEED_GATEWAY.value] = config.service_providers[
                 config.username_signature
@@ -94,6 +97,10 @@ class Peer:
             ].seed
             return ServiceProvider.from_dict(my_peer, is_me=True)
         elif config.peer_type == PEER_TYPES.POOL.value or config.pool_payout == True:
+            config.peer_type = (
+                PEER_TYPES.POOL.value
+            )  # in case peer_type is 'user' and pool_payout is enabled
+            my_peer.update({"peer_type": PEER_TYPES.POOL.value})
             return Pool.from_dict(my_peer, is_me=True)
         elif (
             config.peer_type == PEER_TYPES.USER.value or True
