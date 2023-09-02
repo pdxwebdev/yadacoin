@@ -476,7 +476,7 @@ class Seeds(Nodes):
                     "host": "seed.friendspool.club",
                     "port": 8000,
                     "identity": {
-                        "username": "jvx-node01",
+                        "username": "",
                         "username_signature": "MEUCIQDPBUWV9XpFBLkrwbWalS/NrVST87JTYwWBjiPlSZD/BwIgYdGYC/Kuy4C3CYNzUpQFg/oRC+oPvsMERyYURGN0G8I=",
                         "public_key": "034f740341e3e5d317e0284fd7420352a8f4af15e2d754f0f852c956ecd66c66c4",
                     },
@@ -913,7 +913,7 @@ class SeedGateways(Nodes):
                     "host": "seedgateway.friendspool.club",
                     "port": 8010,
                     "identity": {
-                        "username": "jv-seedgateway",
+                        "username": "",
                         "username_signature": "MEUCIQCWPClBEn7FVXuICcLTLxgxAINccOVsjrpHftPcATFLnQIgCUYxh+SFiJhXnd0vGpjxxJq9rQGm2P7dGmqyG3VehTw=",
                         "public_key": "02ca31aaee2f8cda90080cbc3732f7b107cb254adee6d2efce142a59e76cd86b38",
                     },
@@ -1384,7 +1384,7 @@ class ServiceProviders(Nodes):
                     "host": "serviceprovider.friendspool.club",
                     "port": 8011,
                     "identity": {
-                        "username": "jv-serviceprovider",
+                        "username": "",
                         "username_signature": "MEUCIQDO6Nj9pcRZCo6TtOf9ayy17h0PfyKmgxVHSH81EtdITgIgM9TrMrfomG9AnIj697tbmDW4LZOz8+ao48iApGHfdXk=",
                         "public_key": "0388318e5a7cbfc2a0a7501d0ebad6495f17d09fb068f295efad23b90bfd572eb4",
                     },
