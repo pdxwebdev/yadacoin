@@ -8,7 +8,7 @@ from yadacoin.core.config import get_config
 from ..test_setup import AsyncTestCase
 
 
-class TestBlockchain(AsyncTestCase):
+class TestBlockchainUtils(AsyncTestCase):
     async def setBlock(self):
         self.block = await Block.from_dict(
             {
