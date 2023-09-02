@@ -679,7 +679,7 @@ class ServiceProvider(Peer):
     def type_limit(cls, peer):
         if peer == SeedGateway:
             return 1
-        elif peer == User:
+        elif peer in [User, Pool]:
             return get_config().max_peers or 100000
         else:
             return 0

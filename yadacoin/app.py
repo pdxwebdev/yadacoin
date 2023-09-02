@@ -57,6 +57,7 @@ from yadacoin.core.peer import (
     Miner,
     Peer,
     Peers,
+    Pool,
     Seed,
     SeedGateway,
     ServiceProvider,
@@ -832,14 +833,14 @@ class NodeApplication(Application):
             self.config.nodeShared = NodeRPC()
             self.config.nodeClient = NodeSocketClient()
 
-            for x in [Seed, SeedGateway, ServiceProvider, User, Miner]:
+            for x in [Seed, SeedGateway, ServiceProvider, User, Miner, Pool]:
                 if x.__name__ not in self.config.nodeClient.outbound_streams:
                     self.config.nodeClient.outbound_ignore[x.__name__] = {}
                 if x.__name__ not in self.config.nodeClient.outbound_streams:
                     self.config.nodeClient.outbound_pending[x.__name__] = {}
                 if x.__name__ not in self.config.nodeClient.outbound_streams:
                     self.config.nodeClient.outbound_streams[x.__name__] = {}
-            for x in [Seed, SeedGateway, ServiceProvider, User, Miner]:
+            for x in [Seed, SeedGateway, ServiceProvider, User, Miner, Pool]:
                 if x.__name__ not in self.config.nodeServer.inbound_pending:
                     self.config.nodeServer.inbound_pending[x.__name__] = {}
                 if x.__name__ not in self.config.nodeServer.inbound_streams:
