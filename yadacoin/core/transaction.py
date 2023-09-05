@@ -97,6 +97,7 @@ class Transaction(object):
         never_expire=False,
         private=False,
         masternode_fee=0.0,
+        exact_match=False,
     ):
         self.app_log = getLogger("tornado.application")
         self.config = get_config()
@@ -153,6 +154,7 @@ class Transaction(object):
         self.contract_generated = contract_generated
         self.never_expire = never_expire
         self.private = private
+        self.exact_match = exact_match
 
     @classmethod
     async def generate(
@@ -247,6 +249,14 @@ class Transaction(object):
         cls_inst.private = private
         return cls_inst
 
+    async def get_mempool_transaction_ids(self):
+        miner_transactions = self.mongo.async_db.miner_transactions.find(
+            {"public_key": self.public_key}
+        )
+        async for mtxn in miner_transactions:
+            for mtxninput in mtxn["inputs"]:
+                yield mtxninput["id"]
+
     async def do_money(self):
         if self.coinbase:
             self.inputs = []
@@ -257,61 +267,24 @@ class Transaction(object):
         my_address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         )
-        miner_transactions = self.mongo.async_db.miner_transactions.find(
-            {"public_key": self.public_key}
-        )
-        mtxn_ids = []
-        async for mtxn in miner_transactions:
-            for mtxninput in mtxn["inputs"]:
-                mtxn_ids.append(mtxninput["id"])
 
+        mtxn_ids = self.get_mempool_transaction_ids()
         input_sum = 0
         inputs = []
-        enough = False
         if self.inputs:
-            async for y in self.get_inputs(self.inputs):
-                txn = await self.config.BU.get_transaction_by_id(y.id, instance=True)
-                if not txn:
-                    raise MissingInputTransactionException()
-
-                if isinstance(y, ExternalInput):
-                    await y.verify()
-                    address = str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key))
-                    )
-                else:
-                    address = my_address
-
-                input_sum = await self.collect_needed_inputs(
-                    y, txn, address, input_sum, inputs, outputs_and_fee_total
-                )
-                if input_sum >= outputs_and_fee_total:
-                    enough = True
-                    break
-
-            if not enough:
-                raise NotEnoughMoneyException("not enough money")
-            self.inputs = inputs
+            input_sum = await self.evaluate_inputs(
+                input_sum, my_address, inputs, outputs_and_fee_total
+            )
         else:
-            async for input_txn in self.config.BU.get_wallet_unspent_transactions(
-                my_address, no_zeros=True, ids=mtxn_ids
-            ):
-                input_sum = await self.collect_needed_inputs(
-                    Input.from_dict(input_txn.to_dict()),
-                    input_txn,
-                    my_address,
-                    input_sum,
-                    inputs,
-                    outputs_and_fee_total,
-                )
-                if input_sum >= outputs_and_fee_total:
-                    enough = True
-                    break
+            input_sum = await self.generate_inputs(
+                input_sum,
+                my_address,
+                [x async for x in mtxn_ids],
+                inputs,
+                outputs_and_fee_total,
+            )
 
-            if not enough:
-                raise NotEnoughMoneyException("not enough money")
-
-            self.inputs = inputs
+        self.inputs = inputs
 
         if not self.inputs and not self.coinbase and outputs_and_fee_total > 0:
             raise NotEnoughMoneyException(
@@ -332,7 +305,47 @@ class Transaction(object):
             return_change_output = Output(to=my_address, value=remainder)
             self.outputs.append(return_change_output)
 
-    async def collect_needed_inputs(
+    async def evaluate_inputs(
+        self, input_sum, my_address, inputs, outputs_and_fee_total
+    ):
+        async for y in self.get_inputs(self.inputs):
+            txn = await self.config.BU.get_transaction_by_id(y.id, instance=True)
+            if not txn:
+                raise MissingInputTransactionException()
+
+            address = my_address
+
+            input_sum = await self.sum_inputs(
+                y, txn, address, input_sum, inputs, outputs_and_fee_total
+            )
+            if input_sum >= outputs_and_fee_total:
+                return input_sum
+
+        raise NotEnoughMoneyException("not enough money")
+
+    async def generate_inputs(
+        self, input_sum, my_address, mtxn_ids, inputs, outputs_and_fee_total
+    ):
+        async for input_txn in self.config.BU.get_wallet_unspent_transactions(
+            my_address, no_zeros=True, ids=mtxn_ids
+        ):
+            txn = await self.config.BU.get_transaction_by_id(
+                input_txn.transaction_signature, instance=True
+            )
+            input_sum = await self.sum_inputs(
+                Input.from_dict(txn.to_dict()),
+                input_txn,
+                my_address,
+                input_sum,
+                inputs,
+                outputs_and_fee_total,
+            )
+            if input_sum >= outputs_and_fee_total:
+                return input_sum
+
+        raise NotEnoughMoneyException("not enough money")
+
+    async def sum_inputs(
         self, input_obj, input_txn, my_address, input_sum, inputs, outputs_and_fee_total
     ):
         if isinstance(input_obj, ExternalInput):
