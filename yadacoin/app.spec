@@ -12,7 +12,7 @@ a = Analysis(['app.py'],
 	     binaries=[('C:\\Windows\\System32\\msvcp120.dll', 'msvcp120.dll',),
                         ('C:\\Windows\\System32\\msvcr120.dll', 'msvcr120.dll',),
                         ('..\\winlibs\\libeay32.dll', '.',),
-                        ('..\\winlibbs\\libsecp256k1.dll', 'coincurve',)],
+                        ('..\\winlibs\\libsecp256k1.dll', 'coincurve',)],
              datas=[
           ('plugins/yadacoinpool/templates', 'plugins/yadacoinpool/templates'),
           ('plugins/yadacoinpool/static', 'plugins/yadacoinpool/static'),
