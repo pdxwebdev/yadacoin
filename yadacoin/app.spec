@@ -38,7 +38,7 @@ exe = EXE(pyz,
           upx=True,
           console=True,
           exclude_binaries=True,
-          icon='yadacoin\\static\\icon.ico' )
+          icon='..\\static\\icon.ico' )
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,
