@@ -1,0 +1,1 @@
+c:\Python37_64\Scripts\pyinstaller.exe yadacoin\app.spec --clean
