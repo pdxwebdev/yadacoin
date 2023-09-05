@@ -16,7 +16,10 @@ from ..test_setup import AsyncTestCase
 
 async def mock_get_wallet_unspent_transactions(*args, **kwargs):
     for x in [
-        Transaction(outputs=[Output(value=1, to="1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4")])
+        {
+            "id": "MEUCIQDZbaCDMmJJ+QJHldj1EWu0yG7enlwRAXoO1/B617KaxgIgBLB4L2ICWpDZf5Eo2bcXgUmKd91ayrOG/6jhaIZAPb0=",
+            "outputs": [{"value": 1, "to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4"}],
+        }
     ]:
         yield x
 

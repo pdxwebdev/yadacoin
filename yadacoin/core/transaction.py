@@ -330,11 +330,11 @@ class Transaction(object):
             my_address, no_zeros=True, ids=mtxn_ids
         ):
             txn = await self.config.BU.get_transaction_by_id(
-                input_txn.transaction_signature, instance=True
+                input_txn["id"], instance=True
             )
             input_sum = await self.sum_inputs(
                 Input.from_dict(txn.to_dict()),
-                input_txn,
+                txn,
                 my_address,
                 input_sum,
                 inputs,
