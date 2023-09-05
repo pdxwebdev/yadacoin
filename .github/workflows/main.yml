@@ -27,7 +27,7 @@ jobs:
           pip install pyinstaller
 
       - name: Build with PyInstaller
-        run: pyinstaller --onefile app.spec # or use the .spec file if you have one
+        run: pyinstaller app.spec # or use the .spec file if you have one
 
       - name: Zip the contents of dist directory
         run: |
