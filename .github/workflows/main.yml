@@ -22,8 +22,9 @@ jobs:
 
       - name: Install dependencies
         run: |
+          grep -vE "pyrx" requirements.txt > filtered_requirements.txt
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
+          pip install -r filtered_requirements.txt
           pip install pyinstaller
 
       - name: Build with PyInstaller
@@ -33,6 +34,9 @@ jobs:
         run: |
           cd dist
           7z a ../yadacoin-windows.zip ./*
+
+      - name: Add README to the zip
+        run: 7z u dist_contents.zip winlibs/pyrx.cp37-win_amd64.pyd
 
       - name: Upload Release Asset
         uses: actions/upload-release-asset@v1
