@@ -4,20 +4,21 @@ import os
 spec_root = os.path.abspath(SPECPATH)
 print(spec_root)
 block_cipher = None
-
+with open('site_packages_path.txt', 'r') as f:
+    site_packages_path = f.read().strip()
 
 a = Analysis(['app.py'],
              pathex=[spec_root],
 	     binaries=[('C:\\Windows\\System32\\msvcp120.dll', 'msvcp120.dll',),
                         ('C:\\Windows\\System32\\msvcr120.dll', 'msvcr120.dll',),
-                        ('C:\\Users\\john\\source\\repos\\yadacoin\\libeay32.dll', '.',),
-                        ('C:\\Users\\john\\source\\repos\\yadacoin\\libsecp256k1.dll', 'coincurve',)],
+                        ('winlibs\\libeay32.dll', '.',),
+                        ('winlibbs\\libsecp256k1.dll', 'coincurve',)],
              datas=[
-          ('c:/Users/john/source/repos/yadacoin/plugins/yadacoinpool/templates', 'plugins/yadacoinpool/templates'),
-          ('c:/Users/john/source/repos/yadacoin/plugins/yadacoinpool/static', 'plugins/yadacoinpool/static'),
-		('c:/Users/john/source/repos/yadacoin/static', 'static/'),
-		('c:/Users/john/source/repos/yadacoin/templates/app.html', 'templates/'),
-		('c:/Python37_64/Lib/site-packages/mnemonic/wordlist/english.txt', 'mnemonic/wordlist/'),
+          ('plugins/yadacoinpool/templates', 'plugins/yadacoinpool/templates'),
+          ('plugins/yadacoinpool/static', 'plugins/yadacoinpool/static'),
+		('static', 'static/'),
+		('templates/app.html', 'templates/'),
+		(os.path.join(site_packages_path, 'mnemonic', 'wordlist', 'english.txt'), 'mnemonic/wordlist/'),
 	     ],
              hiddenimports=[],
              hookspath=[],
@@ -37,7 +38,7 @@ exe = EXE(pyz,
           upx=True,
           console=True,
           exclude_binaries=True,
-          icon='c:\\Users\\john\\source\\repos\\yadacoin\\static\\icon.ico' )
+          icon='yadacoin\\static\\icon.ico' )
 coll = COLLECT(exe,
                a.binaries,
                a.zipfiles,
