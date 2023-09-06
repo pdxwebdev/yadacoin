@@ -1,5 +1,7 @@
 # yadacoin
 
+[![Build and Release](https://github.com/pdxwebdev/yadacoin/actions/workflows/main.yml/badge.svg)](https://github.com/pdxwebdev/yadacoin/actions/workflows/main.yml)
+
 ## Setup
 
 ### Ubuntu 22 install command:
