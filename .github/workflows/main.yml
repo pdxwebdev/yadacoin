@@ -37,14 +37,14 @@ jobs:
           cd dist
           7z a ../yadacoin-windows.zip ./*
 
-      - name: Add README to the zip
-        run: 7z u dist_contents.zip winlibs/pyrx.cp37-win_amd64.pyd
+      - name: Add additional file to the zip
+        run: 7z u yadacoin-windows.zip winlibs/pyrx.cp37-win_amd64.pyd
 
       - name: Upload Release Asset
         if: github.event_name == 'release'
         uses: actions/upload-release-asset@v1
         with:
           upload_url: ${{ github.event.release.upload_url }}
-          asset_path: ./yadacoin-windows.zip
+          asset_path: yadacoin-windows.zip
           asset_name: yadacoin-windows.zip
           asset_content_type: application/zip
