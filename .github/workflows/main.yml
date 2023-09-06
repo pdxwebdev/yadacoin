@@ -40,6 +40,7 @@ jobs:
       - name: Add additional file to the zip
         run: |
           move winlibs/pyrx.cp37-win_amd64.pyd YadaCoin/
+          move VERSION YadaCoin/
           7z u yadacoin-windows.zip ./YadaCoin/
           rm -r YadaCoin/
 
