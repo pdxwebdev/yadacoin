@@ -1,0 +1,12 @@
+name: Release Test
+
+on:
+  release:
+    types: [created]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Echo a message
+        run: echo "Release was created!"
