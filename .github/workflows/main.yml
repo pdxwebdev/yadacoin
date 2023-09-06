@@ -39,7 +39,11 @@ jobs:
           7z a ../yadacoin-windows.zip ./*
 
       - name: Add additional file to the zip
-        run: 7z u yadacoin-windows.zip YadaCoin/pyrx.cp37-win_amd64.pyd -i!winlibs/pyrx.cp37-win_amd64.pyd
+        run: |
+          mkdir YadaCoin
+          move winlibs/pyrx.cp37-win_amd64.pyd YadaCoin/
+          7z u yadacoin-windows.zip ./YadaCoin/
+          rm -r YadaCoin/
 
       - name: Upload Release Asset
         if: github.event_name == 'release'
