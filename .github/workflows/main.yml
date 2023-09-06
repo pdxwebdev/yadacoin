@@ -1,7 +1,6 @@
 name: Build and Release
 
 on:
-  push:
   release:
     types: [published]
   workflow_dispatch:
@@ -40,7 +39,6 @@ jobs:
 
       - name: Add additional file to the zip
         run: |
-          mkdir YadaCoin
           move winlibs/pyrx.cp37-win_amd64.pyd YadaCoin/
           7z u yadacoin-windows.zip ./YadaCoin/
           rm -r YadaCoin/
