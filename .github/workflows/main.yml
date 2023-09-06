@@ -23,6 +23,7 @@ jobs:
       - name: Install dependencies
         run: |
           grep -vE "pyrx" requirements.txt > filtered_requirements.txt
+          sed -i '/^-e /d' filtered_requirements.txt
           python -m pip install --upgrade pip
           pip install -r filtered_requirements.txt
           pip install pyinstaller
