@@ -16,7 +16,6 @@ motor
 websocket-client
 aiohttp
 websockets
-miniupnpc
 pyfcm
 pycryptodome
 jws

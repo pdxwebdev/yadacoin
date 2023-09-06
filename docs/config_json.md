@@ -36,8 +36,6 @@ The comments are not valid json, they are only there to explain each parameter
     # IP and port the web server will listen on
     "serve_host": "192.168.1.173",
     "serve_port": 8000,
-    # pnp should only be used for specific configs
-    "use_pnp": false,
     "callbackurl": "http://0.0.0.0:5000/create-relationship",
 
     # This is important, because it's no duplicate if behind a nat, and public ip != listen ip 
