@@ -1,8 +1,7 @@
+import os
 from pathlib import Path
-
-import git
-
-repo = git.Repo(Path(__file__).resolve().parent.parent, odbt=git.db.GitDB)
-tags = sorted(repo.tags, key=lambda t: t.commit.committed_datetime)
-latest_tag = tags[-1]
-version = tuple([int(x) for x in latest_tag.name[1:].split(".")])
+version_path = os.path.join(Path(__file__).resolve().parent.parent, 'VERSION')
+with open(version_path, 'r') as file:
+    version_str = file.readline().strip()
+parts = version_str.split('.')
+version = tuple(map(int, parts))
