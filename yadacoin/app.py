@@ -800,7 +800,6 @@ class NodeApplication(Application):
         self.config.pool_server.listen(self.config.stratum_pool_port)
 
     def init_peer(self):
-        Peer.create_upnp_mapping(self.config)
         self.config.peer = Peer.my_peer()
 
     def init_config_properties(self, test=False):

@@ -131,55 +131,6 @@ class Peer:
             return self.identity.generate_rid(config.peer.identity.username_signature)
 
     @classmethod
-    def create_upnp_mapping(cls, config):
-        from miniupnpc import UPnP
-
-        config = get_config()
-        try:
-            u = UPnP(None, None, 200, 0)
-            u.discover()
-            config.igd = u.selectigd()
-        except:
-            config.igd = ""
-        if config.use_pnp:
-            # deploy as an eventlet WSGI server
-            try:
-                server_port = config.peer_port
-                eport = server_port
-                r = u.getspecificportmapping(eport, "TCP")
-                if r:
-                    u.deleteportmapping(eport, "TCP")
-                u.addportmapping(
-                    eport,
-                    "TCP",
-                    u.lanaddr,
-                    server_port,
-                    "UPnP YadaCoin Serve port %u" % eport,
-                    "",
-                )
-                config.peer_host = u.externalipaddress()
-
-                if MODES.WEB.value in config.modes:
-                    server_port = config.serve_port
-                    eport = server_port
-                    r = u.getspecificportmapping(eport, "TCP")
-                    if r:
-                        u.deleteportmapping(eport, "TCP")
-                    u.addportmapping(
-                        eport,
-                        "TCP",
-                        u.lanaddr,
-                        server_port,
-                        "UPnP YadaCoin Serve port %u" % eport,
-                        "",
-                    )
-            except Exception:
-                config.serve_host = config.serve_host
-                config.serve_port = config.serve_port
-                config.peer_host = config.peer_host
-                config.peer_port = config.peer_port
-
-    @classmethod
     def type_limit(cls, peer):
         raise NotImplementedError()
 

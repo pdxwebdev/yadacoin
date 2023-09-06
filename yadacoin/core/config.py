@@ -43,7 +43,6 @@ class Config(object):
         self.xprv = config.get("xprv", "")
         self.username = config.get("username", "")
         self.network = config.get("network", "mainnet")
-        self.use_pnp = config.get("use_pnp", False)
         self.ssl = SSLConfig.from_dict(config.get("ssl"))
         self.origin = config.get("origin", False)
         self.max_inbound = config.get("max_inbound", 10)
@@ -278,19 +277,13 @@ class Config(object):
             raise Exception("No key")
 
         try:
-            u = UPnP(None, None, 200, 0)
-            u.discover()
-            u.selectigd()
-            peer_host = u.externalipaddress()
-        except:
-            try:
-                import urllib.request
+            import urllib.request
 
-                peer_host = (
-                    urllib.request.urlopen("https://ident.me").read().decode("utf8")
-                )
-            except:
-                peer_host = ""
+            peer_host = (
+                urllib.request.urlopen("https://ident.me").read().decode("utf8")
+            )
+        except:
+            peer_host = ""
 
         return cls(
             {
@@ -305,7 +298,6 @@ class Config(object):
                 "api_whitelist": [],
                 "serve_host": "0.0.0.0",
                 "serve_port": 8001,
-                "use_pnp": False,
                 "ssl": SSLConfig().to_dict(),
                 "origin": "",
                 "sia_api_key": "",
@@ -353,7 +345,6 @@ class Config(object):
         cls.seed = config.get("seed", "")
         cls.xprv = config.get("xprv", "")
         cls.username = config.get("username", "")
-        cls.use_pnp = config.get("use_pnp", False)
         cls.ssl = SSLConfig.from_dict(config.get("ssl"))
         cls.origin = config.get("origin", True)
         cls.network = config.get("network", "mainnet")
@@ -527,7 +518,6 @@ class Config(object):
             "peer_type": self.peer_type,
             "serve_host": self.serve_host,
             "serve_port": self.serve_port,
-            "use_pnp": self.use_pnp,
             "ssl": self.ssl.to_dict(),
             "origin": self.origin,
             "fcm_key": self.fcm_key,
