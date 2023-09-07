@@ -28,7 +28,7 @@ jobs:
           grep -vE "pyrx" requirements.txt > filtered_requirements.txt
           python -m pip install --upgrade pip
           pip install -r filtered_requirements.txt
-          pip install pyinstaller
+          pip install pyinstaller pytest
 
       - name: Run unit tests with pytest
         run: pytest tests/unittests
