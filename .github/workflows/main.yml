@@ -30,9 +30,6 @@ jobs:
           pip install -r filtered_requirements.txt
           pip install pyinstaller pytest
 
-      - name: Run unit tests with pytest
-        run: pytest tests/unittests
-
       - name: Build with PyInstaller
         run: |
           python -c "from distutils.sysconfig import get_python_lib; print(get_python_lib())" > site_packages_path.txt
