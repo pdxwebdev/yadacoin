@@ -20,9 +20,6 @@ jobs:
         with:
           python-version: "3.8"
 
-      - name: Install 7-Zip
-        run: choco install 7zip -y
-
       - name: Install dependencies
         run: |
           grep -vE "pyrx" requirements.txt > filtered_requirements.txt
