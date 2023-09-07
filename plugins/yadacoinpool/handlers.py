@@ -126,7 +126,10 @@ class PoolInfoHandler(BaseWebHandler):
             )
             network_hash_rate = 0
 
-        pool_perecentage = pool_hash_rate / network_hash_rate * 100
+        try:
+            pool_perecentage = pool_hash_rate / network_hash_rate * 100
+        except:
+            pool_perecentage = 0
 
         if pool_hash_rate == 0:
             avg_pool_block_time = 0
