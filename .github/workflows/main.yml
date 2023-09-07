@@ -1,4 +1,4 @@
-name: Build and Release
+name: Build and Release Windows
 
 on:
   push:
@@ -18,7 +18,7 @@ jobs:
       - name: Set up Python
         uses: actions/setup-python@v2
         with:
-          python-version: "3.7" # Adjust according to your project's needs
+          python-version: "3.7"
 
       - name: Install 7-Zip
         run: choco install 7zip -y

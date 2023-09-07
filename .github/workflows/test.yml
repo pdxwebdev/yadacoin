@@ -1,12 +1,34 @@
-name: Release Test
+name: Tests
 
 on:
+  push:
+    branches:
+      - master
   release:
     types: [published]
+  workflow_dispatch:
 
 jobs:
-  test:
-    runs-on: ubuntu-latest
+  build:
+    runs-on: windows-latest
     steps:
-      - name: Echo a message
-        run: echo "Release was created!"
+      - name: Checkout code
+        uses: actions/checkout@v2
+
+      - name: Set up Python
+        uses: actions/setup-python@v2
+        with:
+          python-version: "3.8"
+
+      - name: Install 7-Zip
+        run: choco install 7zip -y
+
+      - name: Install dependencies
+        run: |
+          grep -vE "pyrx" requirements.txt > filtered_requirements.txt
+          python -m pip install --upgrade pip
+          pip install -r filtered_requirements.txt
+          pip install pytest
+
+      - name: Run unit tests with pytest
+        run: pytest tests/unittests
