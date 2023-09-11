@@ -42,6 +42,10 @@ class BaseRPC:
         await self.write_as_json(stream, method, data, "params")
 
     async def write_as_json(self, stream, method, data, rpc_type, req_id=None):
+        if isinstance(stream, DummyStream):
+            self.config.app_log.warning(
+                "Stream is an instance of DummyStream, cannot send data."
+            )
         rpc_data = {
             "id": req_id if req_id else str(uuid4()),
             "method": method,
