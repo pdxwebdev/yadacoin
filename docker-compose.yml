@@ -21,6 +21,16 @@ services:
       options:
         max-size: "200k"
         max-file: "10"
+    sysctls:
+      vm.nr_hugepages: 1280
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: 512M
+        reservations:
+          memory: 256M
+    memswap_limit: 1G
 
   mongodb:
     image: mongo:latest
@@ -38,6 +48,14 @@ services:
       options:
         max-size: "200k"
         max-file: "10"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.40"
+          memory: 512M
+        reservations:
+          memory: 256M
+    memswap_limit: 1G
 
   restore:
     image: mongo:latest
