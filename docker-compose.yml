@@ -21,8 +21,6 @@ services:
       options:
         max-size: "200k"
         max-file: "10"
-    sysctls:
-      vm.nr_hugepages: 1280
     deploy:
       resources:
         limits:
