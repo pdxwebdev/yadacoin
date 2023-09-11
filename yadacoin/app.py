@@ -344,7 +344,9 @@ class NodeApplication(Application):
 
     async def remove_peer(self, stream, reason=None):
         if reason:
-            await self.config.nodeShared.write_params("disconnect", {"reason": reason})
+            await self.config.nodeShared.write_params(
+                stream, "disconnect", {"reason": reason}
+            )
         stream.close()
         if not hasattr(stream, "peer"):
             return
