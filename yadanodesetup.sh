@@ -6,6 +6,9 @@ if [ "$EUID" -ne 0 ]; then
   exit
 fi
 
+# hugepages reservation
+sudo bash -c "echo vm.nr_hugepages=1280 >> /etc/sysctl.conf"
+
 # Install required packages
 apt update
 apt install -y docker-compose
