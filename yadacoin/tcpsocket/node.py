@@ -510,28 +510,44 @@ class NodeRPC(BaseRPC):
             generic_peer.rid
             in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
         ):
-            await self.remove_peer(stream, close=False)
+            await self.remove_peer(
+                stream,
+                close=False,
+                reason=f"{generic_peer.rid} not in nodeServer.inbound_pending",
+            )
             return {}
 
         if (
             generic_peer.rid
             in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
         ):
-            await self.remove_peer(stream, close=False)
+            await self.remove_peer(
+                stream,
+                close=False,
+                reason=f"{generic_peer.rid} not in nodeServer.inbound_streams",
+            )
             return {}
 
         if (
             generic_peer.rid
             in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]
         ):
-            await self.remove_peer(stream, close=False)
+            await self.remove_peer(
+                stream,
+                close=False,
+                reason=f"{generic_peer.rid} not in nodeServer.outbound_pending",
+            )
             return
 
         if (
             generic_peer.rid
             in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]
         ):
-            await self.remove_peer(stream, close=False)
+            await self.remove_peer(
+                stream,
+                close=False,
+                reason=f"{generic_peer.rid} not in nodeServer.outbound_streams",
+            )
             return
 
         try:
@@ -562,11 +578,18 @@ class NodeRPC(BaseRPC):
     async def challenge(self, body, stream):
         try:
             self.ensure_protocol_version(body, stream)
+        except:
+            await self.remove_peer(
+                stream, reason="NodeRPC challenge: ensure_protocol version"
+            )
+        try:
             params = body.get("params", {})
             challenge = params.get("token")
             signed_challenge = TU.generate_signature(challenge, self.config.private_key)
         except:
-            await self.remove_peer(stream)
+            await self.remove_peer(
+                stream, reason="NodeRPC challenge: generate_signature"
+            )
         if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,
@@ -625,7 +648,7 @@ class NodeRPC(BaseRPC):
         stream.peer.protocol_version = protocol_version
 
     async def disconnect(self, body, stream):
-        await self.remove_peer(stream)
+        await self.remove_peer(stream, reason="NodeRPC disconnect")
 
     async def route(self, body, stream):
         # check if rid in peers
@@ -766,11 +789,18 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
     async def challenge(self, body, stream):
         try:
             self.ensure_protocol_version(body, stream)
+        except:
+            await self.remove_peer(
+                stream, reason="NodeSocketClient challenge: ensure_protocol_version"
+            )
+        try:
             params = body.get("params", {})
             challenge = params.get("token")
             signed_challenge = TU.generate_signature(challenge, self.config.private_key)
         except:
-            await self.remove_peer(stream)
+            await self.remove_peer(
+                stream, reason="NodeSocketClient challenge: generate_signature"
+            )
         if stream.peer.protocol_version > 1:
             await self.write_params(
                 stream,

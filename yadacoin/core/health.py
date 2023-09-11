@@ -51,7 +51,9 @@ class TCPServerHealth(HealthItem):
 
         for stream in streams:
             if time.time() - stream.last_activity > 720:
-                await self.config.node_server_instance.remove_peer(stream)
+                await self.config.node_server_instance.remove_peer(
+                    stream, reason="Stale stream detected in TCPServer, peer removed"
+                )
                 self.report_bad_health(
                     "Stale stream detected in TCPServer, peer removed"
                 )
@@ -77,7 +79,9 @@ class TCPClientHealth(HealthItem):
             streams = await self.config.peer.get_all_outbound_streams()
             for stream in streams:
                 if time.time() - stream.last_activity > self.timeout:
-                    await self.config.nodeClient.remove_peer(stream)
+                    await self.config.nodeClient.remove_peer(
+                        stream, reason="TCPClientHealth: Stream timeout"
+                    )
 
             return self.report_status(False)
 
@@ -87,7 +91,9 @@ class TCPClientHealth(HealthItem):
         streams = await self.config.peer.get_all_outbound_streams()
         self.config.app_log.info(streams)
         for stream in streams:
-            await self.config.nodeClient.remove_peer(stream)
+            await self.config.nodeClient.remove_peer(
+                stream, reason="TCPClientHealth: reset"
+            )
 
 
 class ConsenusHealth(HealthItem):

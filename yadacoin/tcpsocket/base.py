@@ -68,7 +68,7 @@ class BaseRPC:
             return
         except:
             if hasattr(stream, "peer"):
-                await self.remove_peer(stream)
+                await self.remove_peer(stream, reason="BaseRPC: unhandled exception 1")
             else:
                 stream.close()
             self.config.app_log.debug(format_exc())
@@ -82,7 +82,9 @@ class BaseRPC:
                     f"SENT {stream.peer.host} {method} {data} {rpc_type} {req_id}"
                 )
 
-    async def remove_peer(self, stream, close=True):
+    async def remove_peer(self, stream, close=True, reason=None):
+        if reason:
+            await self.write_params(stream, "disconnect", {"reason": reason})
         if close:
             stream.close()
         if not hasattr(stream, "peer"):
@@ -171,8 +173,10 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             stream.peer.__class__.__name__
                         ]
                     ):
-                        await self.write_params(stream, "disconnect", {})
-                        await self.remove_peer(stream)
+                        await self.remove_peer(
+                            stream,
+                            reason=f"{id_attr} not in nodeServer.inbound_streams",
+                        )
                 await getattr(self, method)(body, stream)
             except StreamClosedError:
                 if hasattr(stream, "peer"):
@@ -190,11 +194,13 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             stream.peer.__class__.__name__, stream.peer.to_json()
                         )
                     )
-                await self.remove_peer(stream)
+                await self.remove_peer(stream, reason="BaseRPC: unhandled exception 2")
                 self.config.app_log.debug("{}".format(format_exc()))
                 break
 
-    async def remove_peer(self, stream, close=True):
+    async def remove_peer(self, stream, close=True, reason=None):
+        if reason:
+            await self.write_params(stream, "disconnect", {"reason": reason})
         if close:
             stream.close()
         if not hasattr(stream, "peer"):
@@ -290,7 +296,9 @@ class RPCSocketClient(TCPClient):
                 )
             except:
                 self.config.app_log.warning("invalid peer identity signature")
-                await self.remove_peer(stream)
+                await self.remove_peer(
+                    stream, reason="RPCSocketClient: invalid peer identity signature"
+                )
                 return
             if id_attr in self.outbound_pending[peer.__class__.__name__]:
                 del self.outbound_pending[peer.__class__.__name__][id_attr]
@@ -316,7 +324,9 @@ class RPCSocketClient(TCPClient):
             if not stream:
                 stream = DummyStream(peer)
 
-            await self.remove_peer(stream)
+            await self.remove_peer(
+                stream, reason="RPCSocketClient: unhandled exception 1"
+            )
             self.config.app_log.warning(
                 "Timeout connecting to {}: {}".format(
                     peer.__class__.__name__, peer.to_json()
@@ -333,7 +343,9 @@ class RPCSocketClient(TCPClient):
                     )
                 )
 
-            await self.remove_peer(stream)
+            await self.remove_peer(
+                stream, reason="RPCSocketClient: unhandled exception 2"
+            )
             self.config.app_log.debug("{}".format(format_exc()))
 
     async def wait_for_data(self, stream):
@@ -372,11 +384,18 @@ class RPCSocketClient(TCPClient):
                         )
                     )
 
-                await self.remove_peer(stream)
+                await self.remove_peer(
+                    stream, reason="RPCSocketClient: unhandled exception 3"
+                )
                 self.config.app_log.debug("{}".format(format_exc()))
                 break
 
-    async def remove_peer(self, stream, close=True):
+    async def remove_peer(self, stream, close=True, reason=None):
+        if reason:
+            try:
+                await self.write_params(stream, "disconnect", {"reason": reason})
+            except:
+                self.config.app_log.debug("{}".format(format_exc()))
         if close:
             stream.close()
         if not hasattr(stream, "peer"):

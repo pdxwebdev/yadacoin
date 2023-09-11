@@ -459,7 +459,9 @@ class RCPWebSocketServer(WebSocketHandler):
         ):
             await stream.write_params("newblock", payload)
 
-    def remove_peer(self, peer):
+    def remove_peer(self, peer, reason=None):
+        if reason:
+            self.write_params("disconnect", {"reason": reason})
         if not peer:
             get_config().app_log.warning("Failed removing websocket peer.")
             return

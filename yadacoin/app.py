@@ -272,7 +272,8 @@ class NodeApplication(Application):
                                 await self.remove_peer(
                                     self.config.nodeServer.inbound_streams[peer_cls][
                                         x[0]
-                                    ]
+                                    ],
+                                    reason="background_message_sender nodeServer",
                                 )
                                 continue
                             if len(x) > 3:
@@ -312,7 +313,8 @@ class NodeApplication(Application):
                                 await self.remove_peer(
                                     self.config.nodeClient.outbound_streams[peer_cls][
                                         x[0]
-                                    ]
+                                    ],
+                                    reason="background_message_sender nodeClient",
                                 )
                                 continue
                             if len(x) > 3:
@@ -340,7 +342,9 @@ class NodeApplication(Application):
 
             await tornado.gen.sleep(self.config.message_sender_wait)
 
-    async def remove_peer(self, stream):
+    async def remove_peer(self, stream, reason=None):
+        if reason:
+            await self.config.nodeShared.write_params("disconnect", {"reason": reason})
         stream.close()
         if not hasattr(stream, "peer"):
             return
