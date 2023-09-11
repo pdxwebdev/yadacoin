@@ -649,8 +649,8 @@ class NodeRPC(BaseRPC):
 
     async def disconnect(self, body, stream):
         params = body.get("params", {})
-        if params.reason("reason"):
-            self.config.app_log.info(f"disconnect: {params.reason('reason')}")
+        if params.get("reason"):
+            self.config.app_log.info(f"disconnect: {params.get('reason')}")
         await self.remove_peer(stream, reason="NodeRPC disconnect")
 
     async def route(self, body, stream):
