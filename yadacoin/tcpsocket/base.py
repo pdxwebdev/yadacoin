@@ -71,7 +71,7 @@ class BaseRPC:
                 await self.remove_peer(stream, reason="BaseRPC: unhandled exception 1")
             else:
                 stream.close()
-            self.config.app_log.debug(format_exc())
+            self.config.app_log.warning(format_exc())
             return
         if (
             hasattr(self.config, "tcp_traffic_debug")
@@ -195,7 +195,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                         )
                     )
                 await self.remove_peer(stream, reason="BaseRPC: unhandled exception 2")
-                self.config.app_log.debug("{}".format(format_exc()))
+                self.config.app_log.warning("{}".format(format_exc()))
                 break
 
     async def remove_peer(self, stream, close=True, reason=None):
@@ -346,7 +346,7 @@ class RPCSocketClient(TCPClient):
             await self.remove_peer(
                 stream, reason="RPCSocketClient: unhandled exception 2"
             )
-            self.config.app_log.debug("{}".format(format_exc()))
+            self.config.app_log.warning("{}".format(format_exc()))
 
     async def wait_for_data(self, stream):
         while True:
@@ -387,7 +387,7 @@ class RPCSocketClient(TCPClient):
                 await self.remove_peer(
                     stream, reason="RPCSocketClient: unhandled exception 3"
                 )
-                self.config.app_log.debug("{}".format(format_exc()))
+                self.config.app_log.warning("{}".format(format_exc()))
                 break
 
     async def remove_peer(self, stream, close=True, reason=None):
@@ -395,7 +395,7 @@ class RPCSocketClient(TCPClient):
             try:
                 await self.write_params(stream, "disconnect", {"reason": reason})
             except:
-                self.config.app_log.debug("{}".format(format_exc()))
+                self.config.app_log.warning("{}".format(format_exc()))
         if close:
             stream.close()
         if not hasattr(stream, "peer"):
