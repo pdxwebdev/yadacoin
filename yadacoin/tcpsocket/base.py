@@ -46,6 +46,7 @@ class BaseRPC:
             self.config.app_log.warning(
                 "Stream is an instance of DummyStream, cannot send data."
             )
+            return
         rpc_data = {
             "id": req_id if req_id else str(uuid4()),
             "method": method,
