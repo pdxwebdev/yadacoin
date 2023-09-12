@@ -483,6 +483,7 @@ class NodeRPC(BaseRPC):
         if not peerCls:
             self.config.app_log.error("unknown peer type")
             self.config.app_log.error(generic_peer)
+            self.config.app_log.error(params.get("peer"))
             stream.close()
             return {}
 
