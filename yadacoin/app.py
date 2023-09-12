@@ -275,6 +275,9 @@ class NodeApplication(Application):
                                     ],
                                     reason=f"background_message_sender nodeServer {x}",
                                 )
+                                self.config.app_log.warning(
+                                    f"peer removed: background_message_sender nodeServer {x}"
+                                )
                                 continue
                             if len(x) > 3:
                                 await self.config.nodeShared.write_result(
@@ -315,6 +318,9 @@ class NodeApplication(Application):
                                         x[0]
                                     ],
                                     reason=f"background_message_sender nodeClient {x}",
+                                )
+                                self.config.app_log.warning(
+                                    f"peer removed: background_message_sender nodeClient {x}"
                                 )
                                 continue
                             if len(x) > 3:
