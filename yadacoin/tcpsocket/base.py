@@ -201,6 +201,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     )
                 await self.remove_peer(stream, reason="BaseRPC: unhandled exception 2")
                 self.config.app_log.warning("{}".format(format_exc()))
+                self.config.app_log.warning(data)
                 break
 
     async def remove_peer(self, stream, close=True, reason=None):
