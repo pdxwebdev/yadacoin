@@ -7,7 +7,7 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # hugepages reservation
-sudo bash -c "echo vm.nr_hugepages=512 >> /etc/sysctl.conf"
+sudo bash -c "echo vm.nr_hugepages=256 >> /etc/sysctl.conf"
 
 # Install required packages
 apt update
