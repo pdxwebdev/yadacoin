@@ -273,7 +273,7 @@ class NodeApplication(Application):
                                     self.config.nodeServer.inbound_streams[peer_cls][
                                         x[0]
                                     ],
-                                    reason="background_message_sender nodeServer",
+                                    reason=f"background_message_sender nodeServer {x}",
                                 )
                                 continue
                             if len(x) > 3:
@@ -314,7 +314,7 @@ class NodeApplication(Application):
                                     self.config.nodeClient.outbound_streams[peer_cls][
                                         x[0]
                                     ],
-                                    reason="background_message_sender nodeClient",
+                                    reason=f"background_message_sender nodeClient {x}",
                                 )
                                 continue
                             if len(x) > 3:

@@ -295,7 +295,10 @@ class RPCSocketClient(TCPClient):
                             peer.__class__.__name__
                         )
                     )
-                    stream.close()
+                    await self.remove_peer(
+                        stream,
+                        reason="RPCSocketClient: invalid peer identity signature",
+                    )
                     return
                 self.config.app_log.info(
                     "new {} peer is valid".format(peer.__class__.__name__)
