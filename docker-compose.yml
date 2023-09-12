@@ -28,7 +28,7 @@ services:
           memory: 256M
         reservations:
           memory: 256M
-    memswap_limit: 1G
+    memswap_limit: 0
 
   mongodb:
     image: mongo:latest
@@ -53,7 +53,7 @@ services:
           memory: 512M
         reservations:
           memory: 256M
-    memswap_limit: 1G
+    memswap_limit: 0
 
   restore:
     image: mongo:latest
