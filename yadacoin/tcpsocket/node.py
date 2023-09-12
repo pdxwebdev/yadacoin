@@ -513,7 +513,7 @@ class NodeRPC(BaseRPC):
             await self.remove_peer(
                 stream,
                 close=False,
-                reason=f"{generic_peer.rid} not in nodeServer.inbound_pending",
+                reason=f"{generic_peer.rid} in nodeServer.inbound_pending",
             )
             return {}
 
@@ -524,7 +524,7 @@ class NodeRPC(BaseRPC):
             await self.remove_peer(
                 stream,
                 close=False,
-                reason=f"{generic_peer.rid} not in nodeServer.inbound_streams",
+                reason=f"{generic_peer.rid} in nodeServer.inbound_streams",
             )
             return {}
 
@@ -535,7 +535,7 @@ class NodeRPC(BaseRPC):
             await self.remove_peer(
                 stream,
                 close=False,
-                reason=f"{generic_peer.rid} not in nodeServer.outbound_pending",
+                reason=f"{generic_peer.rid} in nodeServer.outbound_pending",
             )
             return
 
@@ -546,7 +546,7 @@ class NodeRPC(BaseRPC):
             await self.remove_peer(
                 stream,
                 close=False,
-                reason=f"{generic_peer.rid} not in nodeServer.outbound_streams",
+                reason=f"{generic_peer.rid} in nodeServer.outbound_streams",
             )
             return
 
@@ -579,7 +579,7 @@ class NodeRPC(BaseRPC):
         try:
             self.ensure_protocol_version(body, stream)
         except:
-            await self.remove_peer(
+            return await self.remove_peer(
                 stream, reason="NodeRPC challenge: ensure_protocol version"
             )
         try:
@@ -587,7 +587,7 @@ class NodeRPC(BaseRPC):
             challenge = params.get("token")
             signed_challenge = TU.generate_signature(challenge, self.config.private_key)
         except:
-            await self.remove_peer(
+            return await self.remove_peer(
                 stream, reason="NodeRPC challenge: generate_signature"
             )
         if stream.peer.protocol_version > 1:
@@ -793,7 +793,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
         try:
             self.ensure_protocol_version(body, stream)
         except:
-            await self.remove_peer(
+            return await self.remove_peer(
                 stream, reason="NodeSocketClient challenge: ensure_protocol_version"
             )
         try:
@@ -801,7 +801,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             challenge = params.get("token")
             signed_challenge = TU.generate_signature(challenge, self.config.private_key)
         except:
-            await self.remove_peer(
+            return await self.remove_peer(
                 stream, reason="NodeSocketClient challenge: generate_signature"
             )
         if stream.peer.protocol_version > 1:
