@@ -99,10 +99,6 @@ class Consensus(object):
             if body["method"] == "blockresponse":
                 payload = body.get("result", {})
                 block = payload.get("block")
-                if not block:
-                    return
-                if block["index"] > (self.config.LatestBlock.block.index + 100):
-                    return
                 if stream.peer.protocol_version > 1:
                     await self.config.nodeShared.write_result(
                         stream,
@@ -110,6 +106,10 @@ class Consensus(object):
                         body.get("result", {}),
                         body["id"],
                     )
+                if not block:
+                    return
+                if block["index"] > (self.config.LatestBlock.block.index + 100):
+                    return
                 block = await Block.from_dict(block)
                 if not await self.config.consensus.insert_consensus_block(
                     block, stream.peer
