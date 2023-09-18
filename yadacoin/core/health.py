@@ -7,7 +7,7 @@ from yadacoin.enums.modes import MODES
 
 
 class HealthItem:
-    last_activity = time.time()
+    last_activity = int(time.time())
     timeout = 120
     status = True
     ignore = False
@@ -45,12 +45,12 @@ class TCPServerHealth(HealthItem):
         if not streams:
             return self.report_status(True, ignore=True)
 
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("TCP Server health check failed")
             return self.report_status(False)
 
         for stream in streams:
-            if time.time() - stream.last_activity > 720:
+            if int(time.time()) - stream.last_activity > 720:
                 await self.config.node_server_instance.remove_peer(
                     stream, reason="Stale stream detected in TCPServer, peer removed"
                 )
@@ -78,7 +78,7 @@ class TCPClientHealth(HealthItem):
             self.report_bad_health("TCP Client health check failed")
             streams = await self.config.peer.get_all_outbound_streams()
             for stream in streams:
-                if time.time() - stream.last_activity > self.timeout:
+                if int(time.time()) - stream.last_activity > self.timeout:
                     await self.config.nodeClient.remove_peer(
                         stream, reason="TCPClientHealth: Stream timeout"
                     )
@@ -98,7 +98,7 @@ class TCPClientHealth(HealthItem):
 
 class ConsenusHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("Consensus health check failed")
             return self.report_status(False)
 
@@ -111,7 +111,7 @@ class ConsenusHealth(HealthItem):
 
 class PeerHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             tornado.ioloop.IOLoop.current().spawn_callback(
                 self.config.application.background_peers
             )
@@ -123,7 +123,7 @@ class PeerHealth(HealthItem):
 
 class BlockCheckerHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("Background block checker health check failed")
             return self.report_status(False)
 
@@ -132,7 +132,7 @@ class BlockCheckerHealth(HealthItem):
 
 class MessageSenderHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             tornado.ioloop.IOLoop.current().spawn_callback(
                 self.config.application.background_message_sender
             )
@@ -146,7 +146,7 @@ class MessageSenderHealth(HealthItem):
 
 class BlockInserterHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("Background block inserter health check failed")
             return self.report_status(False)
 
@@ -155,7 +155,7 @@ class BlockInserterHealth(HealthItem):
 
 class TransactionProcessorHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health(
                 "Background transaction processor health check failed"
             )
@@ -166,7 +166,7 @@ class TransactionProcessorHealth(HealthItem):
 
 class NonceProcessorHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("Background nonce processor health check failed")
             return self.report_status(False)
 
@@ -178,7 +178,7 @@ class PoolPayerHealth(HealthItem):
         if not self.config.pp:
             return self.report_status(True, ignore=True)
 
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("Background pool payer health check failed")
             return self.report_status(False)
 
@@ -187,7 +187,7 @@ class PoolPayerHealth(HealthItem):
 
 class CacheValidatorHealth(HealthItem):
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("Background cache validator health check failed")
             return self.report_status(False)
 
@@ -198,7 +198,7 @@ class MempoolCleanerHealth(HealthItem):
     timeout = 3600
 
     async def check_health(self):
-        if time.time() - self.last_activity > self.timeout:
+        if int(time.time()) - self.last_activity > self.timeout:
             self.report_bad_health("Background mempool cleaner health check failed")
             return self.report_status(False)
 
