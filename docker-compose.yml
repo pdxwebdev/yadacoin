@@ -25,9 +25,6 @@ services:
       resources:
         limits:
           cpus: "0.40"
-          memory: 256M
-        reservations:
-          memory: 256M
     memswap_limit: 0
 
   mongodb:
@@ -36,6 +33,7 @@ services:
       - "27017:27017"
     volumes:
       - mongodb_data:/data/db
+    command: --wiredTigerCacheSizeGB .25
     healthcheck:
       test: ["CMD", "mongosh", "--eval", "db.adminCommand('ping')"]
       interval: 10s
