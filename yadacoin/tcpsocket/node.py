@@ -157,7 +157,7 @@ class NodeRPC(BaseRPC):
             await self.process_transaction_queue_item(item)
 
             i += 1
-            if i >= 100:
+            if i >= 200:
                 self.config.app_log.info(
                     "process_transaction_queue: max loops exceeded, exiting"
                 )
