@@ -113,7 +113,7 @@ class GetStatusHandler(BaseHandler):
                 },
                 {"_id": 0},
             )
-            self.render_as_json([x async for x in status], indent=4)
+            return self.render_as_json([x async for x in status], indent=4)
         status = await self.config.mongo.async_db.node_status.find_one(
             {"archived": {"$exists": bool(archived)}},
             {"_id": 0},
