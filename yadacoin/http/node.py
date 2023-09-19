@@ -3,6 +3,7 @@ Handlers required by the core chain operations
 """
 
 import json
+import time
 
 from tornado import escape
 
@@ -102,23 +103,15 @@ class GetStatusHandler(BaseHandler):
         """
         :return:
         """
-        # TODO: complete and cache
-        status = await self.config.get_status()
-        status["health"] = self.config.health.to_dict()
-        status["latest_block"] = self.config.LatestBlock.block.to_dict()
-        status["queues"] = self.config.processing_queues.to_status_dict()
-        status["message_sender"] = {
-            "nodeServer": {
-                "num_messages": len(list(self.config.nodeServer.retry_messages))
-            },
-            "nodeClient": {
-                "num_messages": len(list(self.config.nodeClient.retry_messages))
-            },
-        }
-        status["slow_queries"] = {
-            "count": len(self.config.mongo.async_db.slow_queries),
-            "detail": self.config.mongo.async_db.slow_queries,
-        }
+        from_time = self.get_query_argument("from_time", None)
+        if from_time:
+            status = self.config.mongo.async_db.node_status.find(
+                {"timestamp": {"$gte": int(time.time()) - int(from_time)}}, {"_id": 0}
+            )
+            self.render_as_json([x async for x in status], indent=4)
+        status = await self.config.mongo.async_db.node_status.find_one(
+            {}, {"_id": 0}, sort=[("timestamp", -1)]
+        )
         self.render_as_json(status, indent=4)
 
 

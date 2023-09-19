@@ -178,10 +178,12 @@ class NodeApplication(Application):
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
+        await self.config.mongo.async_db.node_status.delete_many({})
         while True:
             self.config.app_log.debug("background_status")
             try:
                 status = await self.config.get_status()
+                status["timestamp"] = int(time())
                 status[
                     "processing_queues"
                 ] = self.config.processing_queues.to_status_dict()
@@ -203,6 +205,7 @@ class NodeApplication(Application):
                     self.config.app_log.info(json.dumps(status, indent=4))
                 else:
                     self.config.app_log.warning(json.dumps(status, indent=4))
+                await self.config.mongo.async_db.node_status.insert_one(status)
                 self.config.status_busy = False
             except Exception:
                 self.config.app_log.error(format_exc())
