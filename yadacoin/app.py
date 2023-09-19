@@ -179,7 +179,9 @@ class NodeApplication(Application):
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
         await self.config.mongo.async_db.node_status.delete_many({"archived": True})
-        await self.config.mongo.async_db.node_status.update_many({}, {"archived": True})
+        await self.config.mongo.async_db.node_status.update_many(
+            {}, {"$set": {"archived": True}}
+        )
         while True:
             self.config.app_log.debug("background_status")
             try:
