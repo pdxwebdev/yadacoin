@@ -405,6 +405,16 @@ class Collection:
         self.do_logging("update_one", args, kwargs)
         return result
 
+    async def update_many(self, *args, **kwargs):
+        self.set_start_time()
+        result = await self._db.get_collection(self.collection).update_many(
+            *args, **kwargs
+        )
+        if self.collection == "child_keys":
+            return result
+        self.do_logging("update_many", args, kwargs)
+        return result
+
     def aggregate(self, *args, **kwargs):
         self.set_start_time()
         result = self._db.get_collection(self.collection).aggregate(*args, **kwargs)
