@@ -28,6 +28,7 @@ from os import path
 from time import time
 from traceback import format_exc
 
+import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -37,7 +38,6 @@ from tornado.httpserver import HTTPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
-import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -178,7 +178,8 @@ class NodeApplication(Application):
 
     async def background_status(self):
         """This background co-routine is responsible for status collection and display"""
-        await self.config.mongo.async_db.node_status.delete_many({})
+        await self.config.mongo.async_db.node_status.delete_many({"archived": True})
+        await self.config.mongo.async_db.node_status.update_many({}, {"archived": True})
         while True:
             self.config.app_log.debug("background_status")
             try:

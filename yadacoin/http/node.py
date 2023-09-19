@@ -104,13 +104,20 @@ class GetStatusHandler(BaseHandler):
         :return:
         """
         from_time = self.get_query_argument("from_time", None)
+        archived = self.get_query_argument("archived", False)
         if from_time:
             status = self.config.mongo.async_db.node_status.find(
-                {"timestamp": {"$gte": int(time.time()) - int(from_time)}}, {"_id": 0}
+                {
+                    "timestamp": {"$gte": int(time.time()) - int(from_time)},
+                    "archived": {"$exists": bool(archived)},
+                },
+                {"_id": 0},
             )
             self.render_as_json([x async for x in status], indent=4)
         status = await self.config.mongo.async_db.node_status.find_one(
-            {}, {"_id": 0}, sort=[("timestamp", -1)]
+            {"archived": {"$exists": bool(archived)}},
+            {"_id": 0},
+            sort=[("timestamp", -1)],
         )
         self.render_as_json(status, indent=4)
 
