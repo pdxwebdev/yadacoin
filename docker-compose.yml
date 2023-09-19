@@ -59,8 +59,7 @@ services:
   backup:
     image: mongo:latest
     depends_on:
-      mongodb:
-        - mongodb
+      - mongodb
     volumes:
       - /etc/yadacoin:/etc/yadacoin
     command: sh -c 'mongodump --host mongodb --db=yadacoin --collection=blocks && tar -czvf /etc/yadacoin/bootstrap.tar.gz dump && mv /etc/yadacoin/bootstrap.tar.gz /etc/yadacoin/static/bootstrap.tar.gz'
