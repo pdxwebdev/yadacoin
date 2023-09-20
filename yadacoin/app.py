@@ -28,6 +28,7 @@ from os import path
 from time import time
 from traceback import format_exc
 
+import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -37,7 +38,6 @@ from tornado.httpserver import HTTPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
-import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -73,6 +73,7 @@ from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.product import PRODUCT_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
 from yadacoin.http.web import WEB_HANDLERS
+from yadacoin.managers.docker import Docker
 from yadacoin.tcpsocket.node import NodeRPC, NodeSocketClient, NodeSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin.websocket.base import WEBSOCKET_HANDLERS, RCPWebSocketServer
@@ -182,6 +183,8 @@ class NodeApplication(Application):
         await self.config.mongo.async_db.node_status.update_many(
             {}, {"$set": {"archived": True}}
         )
+        if Docker.is_inside_docker():
+            self.config.docker = Docker()
         while True:
             self.config.app_log.debug("background_status")
             try:
@@ -216,6 +219,10 @@ class NodeApplication(Application):
                     self.config.app_log.info(json.dumps(status, indent=4))
                 else:
                     self.config.app_log.warning(json.dumps(status, indent=4))
+                if Docker.is_inside_docker():
+                    self.config.docker.set_container_stats()
+                    status["docker"] = self.config.docker.stats
+
                 await self.config.mongo.async_db.node_status.insert_one(status)
                 self.config.status_busy = False
             except Exception:
