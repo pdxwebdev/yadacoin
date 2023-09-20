@@ -58,7 +58,7 @@ class Docker:
     def set_container_stats(self):
         for container in self.client.containers.list():
             try:
-                setattr(self.stats, container.name, DockerStats(container))
+                self.stats[container.name] = DockerStats(container)
             except self.docker.errors.NotFound:
                 pass
 
