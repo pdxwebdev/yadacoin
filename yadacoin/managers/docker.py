@@ -11,7 +11,7 @@ class DockerStats:
         self.mem_percent = (self.mem_usage / self.mem_limit) * 100.0
 
     def calculate_cpu_percent(self, stats):
-        cpu_count = len(stats["cpu_stats"]["cpu_usage"]["percpu_usage"])
+        cpu_count = stats["cpu_stats"]["online_cpus"]
         cpu_percent = 0.0
         cpu_delta = float(stats["cpu_stats"]["cpu_usage"]["total_usage"]) - float(
             stats["precpu_stats"]["cpu_usage"]["total_usage"]
@@ -24,9 +24,17 @@ class DockerStats:
             cpu_percent = cpu_delta / system_delta * cpu_count * 100.0
         return cpu_percent
 
+    def to_dict(self):
+        return {
+            "cpu_percent": self.cpu_percent,
+            "mem_usage": self.mem_usage,
+            "mem_limit": self.mem_limit,
+            "mem_percent": self.mem_percent,
+        }
+
 
 class Docker:
-    stats = {"yada-node": None, "mongodb": None}
+    stats = {}
 
     def __init__(self):
         import docker as _docker
@@ -48,8 +56,8 @@ class Docker:
             return os.path.exists("/.dockerenv")
 
     def set_container_stats(self):
-        for container in self.client.containers.list():
+        for container in self.client.containers.all():
             try:
-                self.stats[container.name] = DockerStats(container)
+                setattr(self.stats, container.name, DockerStats(container))
             except self.docker.errors.NotFound:
-                self.stats[container.name] = "Container not found"
+                pass
