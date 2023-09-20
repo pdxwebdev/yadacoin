@@ -48,7 +48,7 @@ class Docker:
             return os.path.exists("/.dockerenv")
 
     def set_container_stats(self):
-        for container in self.client.containers.all():
+        for container in self.client.containers.list():
             try:
                 self.stats[container.name] = DockerStats(container)
             except self.docker.errors.NotFound:
