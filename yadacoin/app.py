@@ -215,13 +215,15 @@ class NodeApplication(Application):
                     "nodeServer": self.config.nodeServer.disconnect_tracker.to_dict(),
                     "nodeClient": self.config.nodeClient.disconnect_tracker.to_dict(),
                 }
+
+                if Docker.is_inside_docker():
+                    self.config.docker.set_container_stats()
+                    status["docker"] = self.config.docker.stats.to_dict()
+
                 if status["health"]["status"]:
                     self.config.app_log.info(json.dumps(status, indent=4))
                 else:
                     self.config.app_log.warning(json.dumps(status, indent=4))
-                if Docker.is_inside_docker():
-                    self.config.docker.set_container_stats()
-                    status["docker"] = self.config.docker.stats
 
                 await self.config.mongo.async_db.node_status.insert_one(status)
                 self.config.status_busy = False
