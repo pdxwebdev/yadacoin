@@ -218,7 +218,7 @@ class NodeApplication(Application):
 
                 if Docker.is_inside_docker():
                     self.config.docker.set_container_stats()
-                    status["docker"] = self.config.docker.stats.to_dict()
+                    status["docker"] = self.config.docker.to_dict()
 
                 if status["health"]["status"]:
                     self.config.app_log.info(json.dumps(status, indent=4))
