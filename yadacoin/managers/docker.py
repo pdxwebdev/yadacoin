@@ -61,3 +61,6 @@ class Docker:
                 setattr(self.stats, container.name, DockerStats(container))
             except self.docker.errors.NotFound:
                 pass
+
+    def to_dict(self):
+        return {x: y.to_dict() for x, y in self.stats}
