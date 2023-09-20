@@ -28,7 +28,6 @@ from os import path
 from time import time
 from traceback import format_exc
 
-import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -38,6 +37,7 @@ from tornado.httpserver import HTTPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
+import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -203,6 +203,14 @@ class NodeApplication(Application):
                 status["slow_queries"] = {
                     "count": len(self.config.mongo.async_db.slow_queries),
                     "detail": self.config.mongo.async_db.slow_queries,
+                }
+                status["transaction_tracker"] = {
+                    "nodeServer": self.config.nodeServer.newtxn_tracker.to_dict(),
+                    "nodeClient": self.config.nodeClient.newtxn_tracker.to_dict(),
+                }
+                status["disconnect_tracker"] = {
+                    "nodeServer": self.config.nodeServer.disconnect_tracker.to_dict(),
+                    "nodeClient": self.config.nodeClient.disconnect_tracker.to_dict(),
                 }
                 if status["health"]["status"]:
                     self.config.app_log.info(json.dumps(status, indent=4))

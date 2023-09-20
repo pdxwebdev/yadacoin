@@ -122,12 +122,12 @@ class Consensus(object):
             elif body["method"] == "newblock":
                 payload = body.get("params", {}).get("payload", {})
                 block = payload.get("block")
-                if not block:
-                    return
                 if stream.peer.protocol_version > 1:
                     await self.config.nodeShared.write_result(
                         stream, "newblock_confirmed", body.get("params", {}), body["id"]
                     )
+                if not block:
+                    return
 
                 block = await Block.from_dict(block)
 
