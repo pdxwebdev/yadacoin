@@ -36,7 +36,16 @@ class Docker:
 
     @staticmethod
     def is_inside_docker():
-        return os.path.exists("/.dockerenv")
+        result = False
+        try:
+            with open("/proc/1/cgroup", "rt") as f:
+                result = "docker" in f.read()
+        except Exception:
+            pass
+        if result:
+            return result
+        else:
+            return os.path.exists("/.dockerenv")
 
     def set_container_stats(self):
         for service_name in self.stats.keys():
