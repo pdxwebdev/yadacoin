@@ -63,4 +63,4 @@ class Docker:
                 pass
 
     def to_dict(self):
-        return {x: y.to_dict() for x, y in self.stats}
+        return {x: y.to_dict() for x, y in self.stats.items()}
