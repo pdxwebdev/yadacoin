@@ -31,3 +31,4 @@ eciespy
 dnspython
 networkutil
 setuptools_rust
+docker

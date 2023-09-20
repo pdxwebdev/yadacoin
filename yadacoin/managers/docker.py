@@ -29,9 +29,9 @@ class Docker:
     stats = {"yada-node": None, "mongodb": None}
 
     def __init__(self):
-        import docker
+        import docker as _docker
 
-        self.docker = docker
+        self.docker = _docker
         self.client = self.docker.DockerClient(base_url="unix://var/run/docker.sock")
 
     @staticmethod
