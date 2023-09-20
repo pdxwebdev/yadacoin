@@ -18,7 +18,7 @@ function App() {
   const [messageSenderData, setMessageSenderData] = useState(null);
   const [slowQueryData, setSlowQueryData] = useState(null);
   const [sampleSize, setSampleSize] = useState(10000000);
-  const [url, setUrl] = useState("https://centeridentity.com");
+  const [url, setUrl] = useState("http://localhost:8001");
   const [archived, setArchived] = useState(false);
   const resetData = useCallback(async (sampleSize, url, archived) => {
     const arch = archived ? "&archived=true" : "";
