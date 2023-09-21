@@ -68,7 +68,7 @@ class YadaNodeManager:
             cwd=self.repo_path,
         )
         subprocess.run(
-            ["docker-compose", "build", self.service_name],
+            ["docker-compose", "build", "--no-cache", self.service_name],
             cwd=self.repo_path,
         )
         subprocess.run(
