@@ -79,7 +79,9 @@ class StratumServer(RPCSocketServer):
         )
 
     @classmethod
-    async def remove_peer(cls, stream):
+    async def remove_peer(cls, stream, reason=None):
+        if reason:
+            get_config().app_log.warning(f"remove_peer: {reason}")
         stream.close()
         if not hasattr(stream, "peer"):
             return
