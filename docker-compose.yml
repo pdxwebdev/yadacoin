@@ -43,9 +43,6 @@ services:
       resources:
         limits:
           cpus: "0.40"
-          memory: 512M
-        reservations:
-          memory: 256M
     memswap_limit: 0
 
   restore:
