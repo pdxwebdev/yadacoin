@@ -9,7 +9,6 @@ import tornado.ioloop
 from yadacoin.core.config import get_config
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
-from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
 
 
@@ -264,6 +263,14 @@ class Peer:
                 tornado.ioloop.IOLoop.current().spawn_callback(
                     self.config.nodeClient.connect, peers[peer]
                 )
+
+    @staticmethod
+    async def is_synced():
+        streams = get_config().peer.get_sync_peers()
+        async for stream in streams:
+            if not stream.synced:
+                return False
+        return True
 
     def to_dict(self):
         return {

@@ -137,7 +137,8 @@ class Config(object):
 
         self.peers_wait = config.get("peers_wait", 3)
         self.status_wait = config.get("status_wait", 10)
-        self.queue_processor_wait = config.get("queue_processor_wait", 10)
+        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
+        self.block_queue_processor_wait = config.get("block_queue_processor_wait", 10)
         self.block_checker_wait = config.get("block_checker_wait", 1)
         self.message_sender_wait = config.get("message_sender_wait", 10)
         self.pool_payer_wait = config.get("pool_payer_wait", 120)
@@ -279,9 +280,7 @@ class Config(object):
         try:
             import urllib.request
 
-            peer_host = (
-                urllib.request.urlopen("https://ident.me").read().decode("utf8")
-            )
+            peer_host = urllib.request.urlopen("https://ident.me").read().decode("utf8")
         except:
             peer_host = ""
 
@@ -408,7 +407,8 @@ class Config(object):
 
         cls.peers_wait = config.get("peers_wait", 3)
         cls.status_wait = config.get("status_wait", 10)
-        cls.queue_processor_wait = config.get("queue_processor_wait", 10)
+        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
+        cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 10)
         cls.block_checker_wait = config.get("block_checker_wait", 1)
         cls.message_sender_wait = config.get("message_sender_wait", 10)
         cls.pool_payer_wait = config.get("pool_payer_wait", 120)

@@ -99,13 +99,6 @@ class Consensus(object):
             if body["method"] == "blockresponse":
                 payload = body.get("result", {})
                 block = payload.get("block")
-                if stream.peer.protocol_version > 1:
-                    await self.config.nodeShared.write_result(
-                        stream,
-                        "blockresponse_confirmed",
-                        body.get("result", {}),
-                        body["id"],
-                    )
                 if not block:
                     return
                 if block["index"] > (self.config.LatestBlock.block.index + 100):
@@ -234,7 +227,7 @@ class Consensus(object):
         )
         return True
 
-    async def sync_bottom_up(self):
+    async def sync_bottom_up(self, synced):
         # bottom up syncing
 
         last_latest = self.latest_block
@@ -291,7 +284,7 @@ class Consensus(object):
             #    getblocks <--- rpc request
             #    blocksresponse <--- rpc response
             #    process_block_queue
-            if (time() - self.last_network_search) > 30:
+            if (time() - self.last_network_search) > 30 or not synced:
                 self.last_network_search = time()
                 return await self.search_network_for_new()
 

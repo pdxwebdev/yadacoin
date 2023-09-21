@@ -412,9 +412,9 @@ class NodeApplication(Application):
                 id_attr
             ]
 
-    async def background_queue_processor(self):
+    async def background_txn_queue_processor(self):
         while True:
-            self.config.app_log.debug("background_queue_processor")
+            self.config.app_log.debug("background_txn_queue_processor")
             try:
                 if self.config.processing_queues.transaction_queue.queue:
                     self.config.processing_queues.transaction_queue.time_sum_start()
@@ -424,8 +424,13 @@ class NodeApplication(Application):
             except:
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.transaction_queue.time_sum_end()
+            await tornado.gen.sleep(self.config.txn_queue_processor_wait)
 
+    async def background_block_queue_processor(self):
+        while True:
+            self.config.app_log.debug("background_block_queue_processor")
             try:
+                synced = await Peer.is_synced()
                 skip = False
                 if self.config.processing_queues.block_queue.queue:
                     if (
@@ -433,8 +438,8 @@ class NodeApplication(Application):
                         < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD
                     ):
                         skip = True
-                if not skip:
-                    await self.config.consensus.sync_bottom_up()
+                if not skip or not synced:
+                    await self.config.consensus.sync_bottom_up(synced)
                     self.config.health.consensus.last_activity = time()
             except Exception:
                 self.config.app_log.error(format_exc())
@@ -450,7 +455,10 @@ class NodeApplication(Application):
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.block_queue.time_sum_end()
 
-            await tornado.gen.sleep(self.config.queue_processor_wait)
+            if not synced:
+                await tornado.gen.sleep(0.1)
+                continue
+            await tornado.gen.sleep(self.config.block_queue_processor_wait)
 
     async def background_pool_payer(self):
         """Responsible for paying miners"""
@@ -673,7 +681,11 @@ class NodeApplication(Application):
             )
 
             tornado.ioloop.IOLoop.current().spawn_callback(
-                self.background_queue_processor
+                self.background_txn_queue_processor
+            )
+
+            tornado.ioloop.IOLoop.current().spawn_callback(
+                self.background_block_queue_processor
             )
 
             tornado.ioloop.IOLoop.current().spawn_callback(self.background_peers)

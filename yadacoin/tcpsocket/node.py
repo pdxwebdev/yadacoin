@@ -425,11 +425,13 @@ class NodeRPC(BaseRPC):
     async def blockresponse(self, body, stream):
         # get blocks should be done only by syncing peers
         result = body.get("result", {})
-        if not result.get("block"):
-            self.config.app_log.info(f"blockresponse, no block, {stream.peer.host}")
+        if stream.peer.protocol_version > 1:
             await self.config.nodeShared.write_result(
                 stream, "blockresponse_confirmed", body.get("result", {}), body["id"]
             )
+
+        if not result.get("block"):
+            self.config.app_log.info(f"blockresponse, no block, {stream.peer.host}")
             return
 
         self.config.processing_queues.block_queue.add(
