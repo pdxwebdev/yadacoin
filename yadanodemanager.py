@@ -64,7 +64,7 @@ class YadaNodeManager:
 
     def rebuild_docker_image(self):
         subprocess.run(
-            ["docker-compose", "down", self.service_name],
+            ["docker-compose", "down"],
             cwd=self.repo_path,
         )
         subprocess.run(
