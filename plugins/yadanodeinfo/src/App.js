@@ -17,6 +17,8 @@ function App() {
   const [heightData, setHeightData] = useState(null);
   const [messageSenderData, setMessageSenderData] = useState(null);
   const [slowQueryData, setSlowQueryData] = useState(null);
+  const [dockerPythonData, setDockerPythonData] = useState(null);
+  const [dockerMongodbData, setDockerMongodbData] = useState(null);
   const [sampleSize, setSampleSize] = useState(10000000);
   const [url, setUrl] = useState("http://localhost:8001");
   const [archived, setArchived] = useState(false);
@@ -67,6 +69,21 @@ function App() {
       };
     });
     setSlowQueryData(slow_query_data);
+    if (raw_data[0] && !raw_data[0].docker) return;
+    const docker_python_data = raw_data.map((item) => {
+      return {
+        cpu_percent: item.docker["yadacoin_yada-node_1"].cpu_percent,
+        mem_percent: item.docker["yadacoin_yada-node_1"].mem_percent,
+      };
+    });
+    setDockerPythonData(docker_python_data);
+    const docker_mongodb_data = raw_data.map((item) => {
+      return {
+        cpu_percent: item.docker["yadacoin_mongodb_1"].cpu_percent,
+        mem_percent: item.docker["yadacoin_mongodb_1"].mem_percent,
+      };
+    });
+    setDockerMongodbData(docker_mongodb_data);
   }, []);
   useEffect(() => {
     (async () => {
@@ -219,7 +236,7 @@ function App() {
           </LineChart>
         </div>
         <div>
-          <h2>Slow Query Data</h2>
+          <h2>Slow Queries</h2>
           <LineChart width={400} height={300} data={slowQueryData}>
             <CartesianGrid strokeDasharray="3 3" />
             <XAxis dataKey="time" />
@@ -229,6 +246,34 @@ function App() {
             <Line type="monotone" dataKey="count" stroke="#8884d8" />
           </LineChart>
         </div>
+        {dockerPythonData && (
+          <div>
+            <h2>Python Docker Container</h2>
+            <LineChart width={400} height={300} data={dockerPythonData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="cpu_percent" stroke="#8884d8" />
+              <Line type="monotone" dataKey="mem_percent" stroke="#82ca9d" />
+            </LineChart>
+          </div>
+        )}
+        {dockerMongodbData && (
+          <div>
+            <h2>MongoDB Docker Container</h2>
+            <LineChart width={400} height={300} data={dockerMongodbData}>
+              <CartesianGrid strokeDasharray="3 3" />
+              <XAxis dataKey="time" />
+              <YAxis />
+              <Tooltip />
+              <Legend />
+              <Line type="monotone" dataKey="cpu_percent" stroke="#8884d8" />
+              <Line type="monotone" dataKey="mem_percent" stroke="#82ca9d" />
+            </LineChart>
+          </div>
+        )}
       </div>
     </div>
   );

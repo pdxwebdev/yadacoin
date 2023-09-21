@@ -454,7 +454,7 @@ class Transaction(object):
         )
         config.app_log.warning("Exception {}".format(e))
 
-    async def verify(self):
+    async def verify(self, check_input_spent=False):
         from yadacoin.contracts.base import Contract
 
         verify_hash = await self.generate_hash()
@@ -532,6 +532,13 @@ class Transaction(object):
                     raise MissingInputTransactionException(
                         "Input not found on blockchain: {}".format(txn.id)
                     )
+
+            if check_input_spent:
+                is_input_spent = await self.config.BU.is_input_spent(
+                    txn_input.id, self.public_key
+                )
+                if is_input_spent:
+                    raise Exception("Input already spent")
 
             found = False
             for output in txn_input.outputs:
