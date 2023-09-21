@@ -193,7 +193,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             stream,
                             reason=f"{id_attr} not in nodeServer.inbound_streams",
                         )
-                if not hasattr(stream, "peer") and method != "connect":
+                if not hasattr(stream, "peer") and method not in ["login", "connect"]:
                     await self.remove_peer(stream)
                     break
                 await getattr(self, method)(body, stream)
