@@ -28,7 +28,6 @@ from os import path
 from time import time
 from traceback import format_exc
 
-import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -38,6 +37,7 @@ from tornado.httpserver import HTTPServer
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
+import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
