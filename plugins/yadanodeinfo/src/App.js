@@ -88,12 +88,12 @@ function App() {
   useEffect(() => {
     (async () => {
       if (txnData) return;
-      await resetData(sampleSize);
+      await resetData(sampleSize, url, archived);
       setInterval(async () => {
-        await resetData(sampleSize);
+        await resetData(sampleSize, url, archived);
       }, 10000);
     })();
-  }, [resetData, txnData, sampleSize]);
+  }, [resetData, txnData, sampleSize, url]);
 
   return (
     <div className="App">
