@@ -14,7 +14,7 @@ from ecdsa.util import sigdecode_der
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.transactionutils import TU
 
 
@@ -100,7 +100,7 @@ class Transaction(object):
         exact_match=False,
     ):
         self.app_log = getLogger("tornado.application")
-        self.config = get_config()
+        self.config = Config()
         self.mongo = self.config.mongo
         if not txn_time:
             txn_time = 0
@@ -188,7 +188,7 @@ class Transaction(object):
         masternode_fee=0.0,
     ):
         cls_inst = cls()
-        cls_inst.config = get_config()
+        cls_inst.config = Config()
         cls_inst.mongo = cls_inst.config.mongo
         cls_inst.app_log = getLogger("tornado.application")
         cls_inst.username_signature = username_signature
@@ -441,7 +441,7 @@ class Transaction(object):
 
     @staticmethod
     async def handle_exception(e, txn):
-        config = get_config()
+        config = Config()
         await config.mongo.async_db.failed_transactions.insert_one(
             {
                 "reason": f"{e.__class__.__name__}",
@@ -928,7 +928,7 @@ class Input(object):
 class ExternalInput(Input):
     def __init__(self, public_key, address, txn_id, signature):
         # TODO: error, superclass init missing
-        self.config = get_config()
+        self.config = Config()
         self.mongo = self.config.mongo
         self.public_key = public_key
         self.id = txn_id

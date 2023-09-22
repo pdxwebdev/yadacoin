@@ -4,7 +4,7 @@ from asyncstdlib import anext, islice
 
 from yadacoin.core.block import Block
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.transaction import (
     InvalidTransactionException,
     InvalidTransactionSignatureException,
@@ -22,7 +22,7 @@ class Blockchain(object):
     mongo = None
 
     def __init__(self, blocks=None, partial=False):
-        self.config = get_config()
+        self.config = Config()
         self.mongo = self.config.mongo
         if isinstance(blocks, list):
             self.init_blocks = blocks
@@ -131,7 +131,7 @@ class Blockchain(object):
 
     @staticmethod
     async def test_block(block, extra_blocks=[], simulate_last_block=None):
-        config = get_config()
+        config = Config()
         try:
             await block.verify()
         except Exception as e:
@@ -165,7 +165,7 @@ class Blockchain(object):
 
         delta_t = int(time()) - int(last_block.time)
         special_target = CHAIN.special_target(
-            block.index, block.target, delta_t, get_config().network
+            block.index, block.target, delta_t, Config().network
         )
 
         if block.index >= 35200 and delta_t < 600 and block.special_min:

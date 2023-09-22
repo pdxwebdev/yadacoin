@@ -12,7 +12,7 @@ from tornado.tcpclient import TCPClient
 from tornado.tcpserver import TCPServer
 from tornado.util import TimeoutError
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 
 REQUEST_RESPONSE_MAP = {
     "blockresponse": "getblock",
@@ -34,7 +34,7 @@ REQUEST_ONLY = [
 
 class BaseRPC:
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
 
     async def write_result(self, stream, method, data, req_id):
         await self.write_as_json(stream, method, data, "result", req_id)

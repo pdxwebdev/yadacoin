@@ -2,7 +2,7 @@ import time
 
 import tornado.ioloop
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.enums.modes import MODES
 
 
@@ -13,7 +13,7 @@ class HealthItem:
     ignore = False
 
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
 
     def report_bad_health(self, message):
         self.config.app_log.error(message)
@@ -207,7 +207,7 @@ class MempoolCleanerHealth(HealthItem):
 
 class Health:
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
         self.status = True
         self.tcp_server = TCPServerHealth()
         self.tcp_client = TCPClientHealth()

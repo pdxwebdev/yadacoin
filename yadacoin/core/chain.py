@@ -1,7 +1,7 @@
 """
 This is a class to store the global chain params
 """
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 
 
 class CHAIN(object):
@@ -222,7 +222,7 @@ class CHAIN(object):
         ]
 
         if block_index is None:
-            block_index = get_config().LatestBlock.block.index + 1
+            block_index = Config().LatestBlock.block.index + 1
 
         try:
             for t, block_reward in enumerate(block_rewards):
@@ -241,7 +241,7 @@ class CHAIN(object):
     def get_block_reward(cls, block_index=None):
         """Returns the reward matching a given block height, next block if None is provided"""
         if block_index is None:
-            block_index = get_config().LatestBlock.block.index + 1
+            block_index = Config().LatestBlock.block.index + 1
         index = block_index // 210000
         reward = int(50.0 * 1e8 / 2**index) / 1e8
         return reward
@@ -265,7 +265,7 @@ class CHAIN(object):
         block,  # This is the block we are currently mining, not on chain yet, with current time in it.
         extra_blocks=None,
     ):
-        cls.config = get_config()
+        cls.config = Config()
         if extra_blocks is None:
             extra_blocks = []
         from yadacoin.core.block import Block
@@ -318,7 +318,7 @@ class CHAIN(object):
                 break
 
         if not block_from_retarget_period_ago:
-            block_data = await get_config().mongo.async_db.blocks.find_one(
+            block_data = await Config().mongo.async_db.blocks.find_one(
                 {"index": start_index - retarget_period}
             )
             if not block_data:
@@ -338,7 +338,7 @@ class CHAIN(object):
                 break
 
         if not block_from_retarget_period2_ago:
-            block_data = await get_config().mongo.async_db.blocks.find_one(
+            block_data = await Config().mongo.async_db.blocks.find_one(
                 {"index": start_index - retarget_period2}
             )
             if not block_data:
@@ -362,7 +362,7 @@ class CHAIN(object):
                         found = True
                         break
                 if not found:
-                    this_block = await get_config().mongo.async_db.blocks.find_one(
+                    this_block = await Config().mongo.async_db.blocks.find_one(
                         {"index": i}
                     )
                     if this_block:
@@ -380,7 +380,7 @@ class CHAIN(object):
                         found = True
                         break
                 if not found:
-                    this_block = await get_config().mongo.async_db.blocks.find_one(
+                    this_block = await Config().mongo.async_db.blocks.find_one(
                         {"index": i}
                     )
                     if this_block:
@@ -412,13 +412,13 @@ class CHAIN(object):
     async def get_target(cls, height, last_block, block, extra_blocks=None) -> int:
         from yadacoin.core.block import Block
 
-        cls.config = get_config()
+        cls.config = Config()
         # change target
         max_target = CHAIN.MAX_TARGET
-        if get_config().network in ["regnet", "testnet"]:
+        if Config().network in ["regnet", "testnet"]:
             return int(max_target)
 
-        max_block_time = CHAIN.target_block_time(get_config().network)
+        max_block_time = CHAIN.target_block_time(Config().network)
         retarget_period = CHAIN.RETARGET_PERIOD  # blocks
         max_seconds = CHAIN.TWO_WEEKS  # seconds
         min_seconds = CHAIN.HALF_WEEK  # seconds
@@ -436,9 +436,7 @@ class CHAIN(object):
                     height, last_block.index, block.index, block.time
                 )
             )
-            block_data = await get_config().BU.get_block_by_index(
-                height - retarget_period
-            )
+            block_data = await Config().BU.get_block_by_index(height - retarget_period)
             block_from_2016_ago = None
             if block_data:
                 block_from_2016_ago = await Block.from_dict(block_data)
@@ -483,7 +481,7 @@ class CHAIN(object):
                 or block_to_check.target == max_target
                 or not block_to_check.target
             ):
-                block_data = await get_config().mongo.async_db.blocks.find_one(
+                block_data = await Config().mongo.async_db.blocks.find_one(
                     {
                         "$and": [
                             {"index": {"$lte": start_index}},
@@ -536,7 +534,7 @@ class CHAIN(object):
                 and block.special_min
             ):
                 special_target = CHAIN.special_target(
-                    block.index, block.target, delta_t, get_config().network
+                    block.index, block.target, delta_t, Config().network
                 )
                 return special_target
 
@@ -552,7 +550,7 @@ class CHAIN(object):
                     or block_to_check.target == max_target
                     or not block_to_check.target
                 ):
-                    block_data = await get_config().mongo.async_db.blocks.find_one(
+                    block_data = await Config().mongo.async_db.blocks.find_one(
                         {"index": start_index}
                     )
                     prev_block = None

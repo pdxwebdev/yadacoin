@@ -7,7 +7,7 @@ from time import time
 import bson
 
 from eccsnacks.curve25519 import scalarmult
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.crypt import Crypt
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
@@ -27,7 +27,7 @@ class GraphUtils(object):
     database = None
 
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
         self.mongo = self.config.mongo
         self.app_log = getLogger("tornado.application")
 

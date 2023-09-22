@@ -2,7 +2,7 @@ from logging import getLogger
 
 from yadacoin.core.block import Block
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.transaction import NotEnoughMoneyException, Transaction
 
 
@@ -16,7 +16,7 @@ class PartialPayoutException(Exception):
 
 class PoolPayer(object):
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
         self.app_log = getLogger("tornado.application")
 
     async def do_payout(self, already_paid_height=None):

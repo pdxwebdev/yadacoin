@@ -6,7 +6,7 @@ from logging import getLogger
 
 import tornado.ioloop
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.peertypes import PEER_TYPES
@@ -40,7 +40,7 @@ class Peer:
         self.http_host = http_host
         self.http_port = http_port
         self.secure = secure
-        self.config = get_config()
+        self.config = Config()
         self.app_log = getLogger("tornado.application")
         self.protocol_version = protocol_version
         self.authenticated = False
@@ -49,7 +49,7 @@ class Peer:
 
     @staticmethod
     def my_peer():
-        config = get_config()
+        config = Config()
         my_peer = {
             "host": config.peer_host,
             "port": config.peer_port,
@@ -125,7 +125,7 @@ class Peer:
 
     @property
     def rid(self):
-        config = get_config()
+        config = Config()
         if hasattr(config, "peer"):
             return self.identity.generate_rid(config.peer.identity.username_signature)
 
@@ -150,13 +150,13 @@ class Peer:
 
     @staticmethod
     async def get_miner_streams():
-        config = get_config()
+        config = Config()
         miners = config.nodeServer.inbound_streams[Miner.__name__].values()
         return list([worker for miner in miners for worker in miner.values()])
 
     @staticmethod
     async def get_miner_pending():
-        config = get_config()
+        config = Config()
         miners = config.nodeServer.inbound_pending[Miner.__name__].values()
         return list([worker for miner in miners for worker in miner.values()])
 
@@ -266,7 +266,7 @@ class Peer:
 
     @staticmethod
     async def is_synced():
-        streams = get_config().peer.get_sync_peers()
+        streams = Config().peer.get_sync_peers()
         async for stream in streams:
             if not stream.synced:
                 return False
@@ -335,7 +335,7 @@ class Seed(Peer):
     @classmethod
     def type_limit(cls, peer):
         if peer == Seed:
-            return get_config().max_peers or 100000
+            return Config().max_peers or 100000
         elif peer == SeedGateway:
             return 1
         else:
@@ -535,7 +535,7 @@ class SeedGateway(Peer):
         if peer == Seed:
             return 1
         elif peer == ServiceProvider:
-            return get_config().max_peers or 100000
+            return Config().max_peers or 100000
         else:
             return 0
 
@@ -638,7 +638,7 @@ class ServiceProvider(Peer):
         if peer == SeedGateway:
             return 1
         elif peer in [User, Pool]:
-            return get_config().max_peers or 100000
+            return Config().max_peers or 100000
         else:
             return 0
 
@@ -823,7 +823,7 @@ class User(Peer):
         if peer == ServiceProvider:
             return 1
         elif peer == User:
-            return get_config().max_peers or 100000
+            return Config().max_peers or 100000
         else:
             return 0
 
@@ -886,7 +886,7 @@ class Pool(Peer):
         if peer == ServiceProvider:
             return 3
         elif peer == User:
-            return get_config().max_peers or 100000
+            return Config().max_peers or 100000
         else:
             return 0
 
@@ -943,7 +943,7 @@ class Miner(Peer):
 class Peers:
     @staticmethod
     def get_config_seeds():
-        config = get_config()
+        config = Config()
         seeds = []
         if hasattr(config, "network_seeds"):
             seeds = [Seed.from_dict(x) for x in config.network_seeds]
@@ -953,13 +953,13 @@ class Peers:
     def get_seeds(cls):
         from yadacoin.core.nodes import Seeds
 
-        config = get_config()
+        config = Config()
         seeds = Seeds.get_nodes_for_block_height(config.LatestBlock.block.index)
         return OrderedDict({x.identity.username_signature: x for x in seeds})
 
     @staticmethod
     def get_config_seed_gateways():
-        config = get_config()
+        config = Config()
         seed_gateways = []
         if hasattr(config, "network_seed_gateways"):
             seed_gateways = [
@@ -971,7 +971,7 @@ class Peers:
     def get_seed_gateways(cls):
         from yadacoin.core.nodes import SeedGateways
 
-        config = get_config()
+        config = Config()
         seed_gateways = SeedGateways.get_nodes_for_block_height(
             config.LatestBlock.block.index
         )
@@ -979,7 +979,7 @@ class Peers:
 
     @staticmethod
     def get_config_service_providers():
-        config = get_config()
+        config = Config()
         service_providers = []
         if hasattr(config, "network_service_providers"):
             service_providers = [
@@ -993,7 +993,7 @@ class Peers:
     def get_service_providers(cls):
         from yadacoin.core.nodes import ServiceProviders
 
-        config = get_config()
+        config = Config()
         service_providers = ServiceProviders.get_nodes_for_block_height(
             config.LatestBlock.block.index
         )
@@ -1003,7 +1003,7 @@ class Peers:
 
     @staticmethod
     def get_config_groups():
-        config = get_config()
+        config = Config()
         groups = []
         if hasattr(config, "network_groups"):
             groups = [Group.from_dict(x) for x in config.network_groups]
@@ -1029,7 +1029,7 @@ class Peers:
 
     @staticmethod
     async def get_routes():
-        config = get_config()
+        config = Config()
         outbound_peers = await config.peer.get_outbound_peers()
         routes = []
         for outbound_peer in outbound_peers.values():

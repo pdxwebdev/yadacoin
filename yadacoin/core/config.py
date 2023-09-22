@@ -21,15 +21,19 @@ from yadacoin.enums.modes import MODES
 core.Hash160 = RIPEMD160.ripemd160
 hashlib.ripemd160 = RIPEMD160.ripemd160
 
-CONFIG = None
 
+class Config:
+    _instance = None
 
-def get_config():
-    return CONFIG
+    def __new__(cls, *args, **kwargs):
+        if cls._instance is None:
+            cls._instance = super(Config, cls).__new__(cls)
+        return cls._instance
 
-
-class Config(object):
-    def __init__(self, config):
+    def __init__(self, config=None):
+        if hasattr(self, "initialized"):
+            return
+        self.initialized = True
         self.start_time = int(time())
         self.modes = config.get(
             "modes",

@@ -1,4 +1,4 @@
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 
 
 class LatestBlock:
@@ -7,7 +7,7 @@ class LatestBlock:
 
     @classmethod
     async def set_config(cls):
-        cls.config = get_config()
+        cls.config = Config()
 
     @classmethod
     async def block_checker(cls):

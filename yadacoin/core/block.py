@@ -16,7 +16,7 @@ from tornado.util import TimeoutError
 import pyrx
 import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.transaction import (
@@ -120,7 +120,7 @@ class Block(object):
         special_target: int = 0,
     ):
         self = cls()
-        self.config = get_config()
+        self.config = Config()
         self.app_log = getLogger("tornado.application")
         self.version = version
         self.time = int(block_time)
@@ -176,7 +176,7 @@ class Block(object):
         nonce=None,
         target=0,
     ):
-        config = get_config()
+        config = Config()
         if force_version is None:
             version = CHAIN.get_version_for_height(index)
         else:
@@ -240,12 +240,18 @@ class Block(object):
                     stream = await TCPClient().connect(
                         node.host, node.port, timeout=timedelta(seconds=1)
                     )
-                except StreamClosedError as e:
-                    print(e)
-                except TimeoutError as e:
-                    print(e)
-                except Exception as e:
-                    print(e)
+                except StreamClosedError:
+                    config.app_log.warning(
+                        f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
+                    )
+                except TimeoutError:
+                    config.app_log.warning(
+                        f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
+                    )
+                except Exception:
+                    config.app_log.warning(
+                        f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
+                    )
                 successful_nodes.append(node)
 
             masternode_reward_divided = masternode_reward_total / len(successful_nodes)
@@ -306,7 +312,7 @@ class Block(object):
     async def validate_transactions(
         txns, transaction_objs, used_sigs, used_inputs, index, xtime
     ):
-        config = get_config()
+        config = Config()
         for transaction_obj in txns:
             try:
                 if transaction_obj.transaction_signature in used_sigs:

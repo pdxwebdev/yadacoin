@@ -12,7 +12,7 @@ from tornado import ioloop
 from tornado.websocket import WebSocketClosedError, WebSocketHandler
 
 from yadacoin.core.collections import Collections
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
 from yadacoin.core.peer import Group, SeedGateway, ServiceProvider, User
 from yadacoin.core.transaction import Transaction
@@ -26,7 +26,7 @@ class RCPWebSocketServer(WebSocketHandler):
 
     def __init__(self, application, request):
         super(RCPWebSocketServer, self).__init__(application, request)
-        self.config = get_config()
+        self.config = Config()
         self.peer = None
 
     async def open(self):
@@ -455,13 +455,13 @@ class RCPWebSocketServer(WebSocketHandler):
     async def send_block(block):
         payload = {"payload": {"block": block.to_dict()}}
         for stream in list(
-            get_config().websocketServer.inbound_streams[User.__name__].values()
+            Config().websocketServer.inbound_streams[User.__name__].values()
         ):
             await stream.write_params("newblock", payload)
 
     def remove_peer(self, peer):
         if not peer:
-            get_config().app_log.warning("Failed removing websocket peer.")
+            Config().app_log.warning("Failed removing websocket peer.")
             return
         id_attr = getattr(peer, peer.id_attribute)
         if id_attr in self.inbound_streams[peer.__class__.__name__]:

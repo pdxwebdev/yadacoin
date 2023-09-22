@@ -223,6 +223,10 @@ https://yadacoin.io/download
   - type: bool
   - default: undefined
   - description: Specify if you want all tcp traffic in debug logging.
+- debug_memory
+  - type: bool
+  - default: undefined
+  - description: Specify if you want a complete breakdown of memory usage by object type in status output.
 - websocket_traffic_debug
   - type: bool
   - default: undefined

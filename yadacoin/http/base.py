@@ -7,7 +7,7 @@ import logging
 
 from tornado.web import RequestHandler
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 
 
 class BaseHandler(RequestHandler):
@@ -20,7 +20,7 @@ class BaseHandler(RequestHandler):
             origin = origin[:-1]
         self.app_log = logging.getLogger("tornado.application")
         self.app_log.info(self._request_summary())
-        self.config = get_config()
+        self.config = Config()
         self.yadacoin_vars = self.settings["yadacoin_vars"]
         self.settings["page_title"] = self.settings["app_title"]
         self.set_header("Access-Control-Allow-Origin", origin)

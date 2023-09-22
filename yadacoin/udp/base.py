@@ -7,7 +7,7 @@ from dns.message import from_wire, make_response
 from dns.rcode import NXDOMAIN
 from networkutil.addressing import get_my_addresses
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.peer import User
 
 DEFAULT_FORWARDER = "0.0.0.0"
@@ -105,7 +105,7 @@ class UDPServer(asyncio.DatagramProtocol):
 
             # Create query
             query = DNSQuery(data=data, client_address=address, interface=interface)
-            get_config().app_log.debug(query.question.name)
+            Config().app_log.debug(query.question.name)
             if query.question.name[-2].decode() == "yadaproxy":
                 UDPServer.inbound_streams[User.__name__][address[0]] = str(
                     "".join([x.decode() for x in query.question.name[:2]])

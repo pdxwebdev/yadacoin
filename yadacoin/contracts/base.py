@@ -6,7 +6,7 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 
 from yadacoin.core.collections import Collections
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity, PrivateIdentity
 from yadacoin.core.transaction import (
     InvalidTransactionException,
@@ -32,7 +32,7 @@ class ContractTypes(Enum):
 
 class Contract:
     def __init__(self, version, expiry, contract_type, identity, creator):
-        self.config = get_config()
+        self.config = Config()
 
         if not isinstance(version, int):
             self.report_init_error("version")
@@ -129,7 +129,7 @@ class Contract:
 
     @staticmethod
     async def get_smart_contract(transaction_obj):
-        smart_contract_block = await get_config().mongo.async_db.blocks.find_one(
+        smart_contract_block = await Config().mongo.async_db.blocks.find_one(
             {
                 "transactions.requested_rid": transaction_obj.requested_rid,
                 "transactions": {
@@ -141,7 +141,7 @@ class Contract:
                 "transactions": {
                     "$elemMatch": {
                         "relationship.smart_contract.expiry": {
-                            "$gt": get_config().LatestBlock.block.index
+                            "$gt": Config().LatestBlock.block.index
                         }
                     }
                 },

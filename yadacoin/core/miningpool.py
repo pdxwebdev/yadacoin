@@ -8,7 +8,7 @@ from time import time
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.job import Job
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
@@ -20,7 +20,7 @@ class MiningPool(object):
     @classmethod
     async def init_async(cls):
         self = cls()
-        self.config = get_config()
+        self.config = Config()
         self.mongo = self.config.mongo
         self.app_log = getLogger("tornado.application")
         self.target_block_time = CHAIN.target_block_time(self.config.network)

@@ -3,12 +3,12 @@ from time import time
 from motor.motor_tornado import MotorClient
 from pymongo import ASCENDING, DESCENDING, IndexModel, MongoClient
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 
 
 class Mongo(object):
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
         self.client = MongoClient(self.config.mongodb_host)
         self.db = self.client[self.config.database]
         self.site_db = self.client[self.config.site_database]
@@ -297,7 +297,7 @@ class Mongo(object):
 class AsyncDB:
     def __init__(self, async_client):
         self.async_client = async_client
-        self._config = get_config()
+        self._config = Config()
         self.slow_queries = []
 
     def __getattr__(self, __name: str):
@@ -317,7 +317,7 @@ class AsyncDB:
 
 class Collection:
     def __init__(self, async_client, collection):
-        self._config = get_config()
+        self._config = Config()
         self._db = async_client[self._config.database]
         self.collection = collection
 

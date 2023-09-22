@@ -53,7 +53,7 @@ import tornado.iostream
 import tornado.web
 
 from yadacoin.core.collections import Collections
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
 from yadacoin.core.peer import Group, User
 from yadacoin.core.transactionutils import TU
@@ -101,7 +101,7 @@ def parse_proxy(proxy):
 def fetch_request(url, **kwargs):
     proxy = get_proxy(url)
     if proxy:
-        get_config().app_log.debug("Forward request via upstream proxy %s", proxy)
+        Config().app_log.debug("Forward request via upstream proxy %s", proxy)
         tornado.httpclient.AsyncHTTPClient.configure(
             "tornado.curl_httpclient.CurlAsyncHTTPClient"
         )
@@ -136,7 +136,7 @@ class AuthHandler(tornado.web.RequestHandler):
         return "data:image/png;base64," + base64.b64encode(out.getvalue()).decode()
 
     async def get(self):
-        config = get_config()
+        config = Config()
         return self.render(
             "auth.html",
             proxy_address=f"{config.peer_host}:{config.proxy_port}",
@@ -146,7 +146,7 @@ class AuthHandler(tornado.web.RequestHandler):
     async def post(self):
         data = json.loads(self.request.body)
         user_identity = Identity.from_dict(data)
-        config = get_config()
+        config = Config()
         challenge = str(uuid.uuid4())
         challenge_signature = TU.generate_signature(challenge, config.private_key)
         url = f"{config.peer_host}:{config.serve_port}/websocket"
@@ -179,7 +179,7 @@ class ProxyHandler(tornado.web.RequestHandler):
         return None  # disable tornado Etag
 
     async def get(self):
-        config = get_config()
+        config = Config()
         config.app_log.debug(
             "Handle %s request to %s", self.request.method, self.request.uri
         )
@@ -343,7 +343,7 @@ class ProxyHandler(tornado.web.RequestHandler):
 
     async def connect(self):
         client = self.request.connection.stream
-        config = get_config()
+        config = Config()
         config.app_log.debug("Start CONNECT to %s", self.request.uri)
         host, port = self.request.uri.split(":")
         rid = blacklist_group.generate_rid(
@@ -444,7 +444,7 @@ class ProxyHandler(tornado.web.RequestHandler):
             await start_tunnel()
 
     async def proxy_signature_request(self, auth_data, link):
-        config = get_config()
+        config = Config()
         if link not in config.websocketServer.inbound_streams[User.__name__]:
             self.set_status(407)
             return self.finish()

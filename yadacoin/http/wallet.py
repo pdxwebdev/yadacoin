@@ -13,7 +13,7 @@ import jwt
 from bip32utils import BIP32Key
 from bitcoin.wallet import P2PKHBitcoinAddress
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
@@ -533,7 +533,7 @@ class ValidateAddressHandler(BaseHandler):
     async def get(self):
         address = self.get_argument("address")
         return self.render_as_json(
-            {"status": get_config().address_is_valid(address), "address": address}
+            {"status": Config().address_is_valid(address), "address": address}
         )
 
 

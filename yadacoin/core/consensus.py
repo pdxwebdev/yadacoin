@@ -12,7 +12,7 @@ from tornado.iostream import StreamClosedError
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.tcpsocket.pool import StratumServer
 
@@ -27,7 +27,7 @@ class Consensus(object):
         self = cls()
         self.app_log = logging.getLogger("tornado.application")
         self.debug = debug
-        self.config = get_config()
+        self.config = Config()
         self.mongo = self.config.mongo
         self.prevent_genesis = prevent_genesis
         self.target = target

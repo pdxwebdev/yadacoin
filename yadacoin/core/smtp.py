@@ -3,12 +3,12 @@ from email.mime.multipart import MIMEMultipart
 from email.mime.text import MIMEText
 from traceback import format_exc
 
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 
 
 class Email:
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
 
     async def send_mail(self, mail_from, mail_to, mail_subject, mail_body):
         mimemsg = MIMEMultipart()

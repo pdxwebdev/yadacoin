@@ -2,7 +2,7 @@ from time import time
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.miner import Miner
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.modes import MODES
@@ -121,7 +121,7 @@ class NonceProcessingQueue(ProcessingQueue):
 
 class ProcessingQueues:
     def __init__(self):
-        self.config = get_config()
+        self.config = Config()
         self.block_queue = BlockProcessingQueue()
         self.transaction_queue = TransactionProcessingQueue()
         self.queues = [self.block_queue, self.transaction_queue]

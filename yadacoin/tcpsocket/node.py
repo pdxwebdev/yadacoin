@@ -8,7 +8,7 @@ from tornado.iostream import StreamClosedError
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 from yadacoin.core.peer import (
     Group,
     Peer,
@@ -50,7 +50,7 @@ class NodeRPC(BaseRPC):
 
     def __init__(self):
         super(NodeRPC, self).__init__()
-        self.config = get_config()
+        self.config = Config()
 
     config = None
 
@@ -795,7 +795,7 @@ class NodeSocketServer(RPCSocketServer, NodeRPC):
 
     def __init__(self):
         super(NodeSocketServer, self).__init__()
-        self.config = get_config()
+        self.config = Config()
 
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
@@ -805,7 +805,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
 
     def __init__(self):
         super(NodeSocketClient, self).__init__()
-        self.config = get_config()
+        self.config = Config()
 
     async def connect(self, peer: Peer):
         try:
@@ -827,7 +827,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
 
             await self.wait_for_data(stream)
         except StreamClosedError:
-            get_config().app_log.error(
+            Config().app_log.error(
                 "Cannot connect to {}: {}".format(
                     peer.__class__.__name__, peer.to_json()
                 )

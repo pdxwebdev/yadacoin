@@ -4,7 +4,7 @@ import traceback
 
 from tornado.iostream import StreamClosedError
 
-from yadacoin.core.config import Config, get_config
+from yadacoin.core.config import Config
 from yadacoin.core.miner import Miner
 from yadacoin.core.peer import Peer
 from yadacoin.core.processingqueue import NonceProcessingQueueItem
@@ -18,12 +18,12 @@ class StratumServer(RPCSocketServer):
 
     def __init__(self):
         super(StratumServer, self).__init__()
-        self.config = get_config()
+        self.config = Config()
 
     @classmethod
     async def block_checker(cls):
         if not cls.config:
-            cls.config = get_config()
+            cls.config = Config()
 
         if time.time() - cls.config.mp.block_factory.time > 600:
             await cls.config.mp.refresh()
@@ -37,7 +37,7 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def send_jobs(cls):
         if not cls.config:
-            cls.config = get_config()
+            cls.config = Config()
         for miner in list(StratumServer.inbound_streams[Miner.__name__].values()):
             for stream in miner.values():
                 try:
@@ -62,7 +62,7 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def update_miner_count(cls):
         if not cls.config:
-            cls.config = get_config()
+            cls.config = Config()
         await cls.config.mongo.async_db.pool_stats.update_one(
             {"stat": "worker_count"},
             {
@@ -81,7 +81,7 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def remove_peer(cls, stream, reason=None):
         if reason:
-            get_config().app_log.warning(f"remove_peer: {reason}")
+            Config().app_log.warning(f"remove_peer: {reason}")
         stream.close()
         if not hasattr(stream, "peer"):
             return
