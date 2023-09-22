@@ -230,8 +230,8 @@ class NodeApplication(Application):
                 "nodeClient": self.config.nodeClient.disconnect_tracker.to_dict(),
             }
             if Docker.is_inside_docker():
-                self.config.docker.set_container_stats()
-                status["docker"] = self.config.docker.to_dict()
+                self.config.background_status.docker.set_container_stats()
+                status["docker"] = self.config.background_status.docker.to_dict()
 
             if hasattr(self.config, "debug_memory") and self.config.debug_memory:
                 from pympler import muppy, summary
