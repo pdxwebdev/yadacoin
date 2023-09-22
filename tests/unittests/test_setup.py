@@ -19,7 +19,7 @@ from yadacoin.app import NodeApplication
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
-from yadacoin.core.config import Config, get_config
+from yadacoin.core.config import Config
 
 
 class AsyncTestCase(IsolatedAsyncioTestCase):
@@ -30,7 +30,7 @@ class AsyncTestCase(IsolatedAsyncioTestCase):
         mongo.async_db = mock.MagicMock()
         mongo.async_db.blocks = mock.MagicMock()
         yadacoin.core.config.CONFIG = Config.generate()
-        get_config().mongo = mongo
+        Config().mongo = mongo
 
 
 class BaseTestCase(testing.AsyncHTTPTestCase):
