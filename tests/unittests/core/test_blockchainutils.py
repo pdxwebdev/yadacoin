@@ -3,7 +3,7 @@ import unittest
 
 from yadacoin.app import NodeApplication
 from yadacoin.core.block import Block
-from yadacoin.core.config import get_config
+from yadacoin.core.config import Config
 
 from ..test_setup import AsyncTestCase
 
@@ -690,7 +690,7 @@ class TestBlockchainUtils(AsyncTestCase):
 
     async def test_is_input_spent(self):
         NodeApplication(test=True)
-        config = get_config()
+        config = Config()
         await self.setBlock()
         start = time.time()
         await config.BU.is_input_spent(
@@ -702,7 +702,7 @@ class TestBlockchainUtils(AsyncTestCase):
 
     async def test_get_wallet_unspent_transactions(self):
         NodeApplication(test=True)
-        config = get_config()
+        config = Config()
         await self.setBlock()
         start = time.time()
         [
