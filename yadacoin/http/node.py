@@ -281,5 +281,4 @@ NODE_HANDLERS = [
     (r"/get-expired-smart-contract-transactions", GetExpiredSmartContractTransactions),
     (r"/get-expired-smart-contract-transaction", GetExpiredSmartContractTransaction),
     (r"/get-trigger-transactions", GetSmartContractTriggerTransaction),
-    (r"/test-timeout", TestTimeoutHandler),
 ]
