@@ -10,6 +10,7 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.job import Job
+from yadacoin.core.peer import Peer
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
@@ -273,7 +274,7 @@ class MiningPool(object):
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
-            if self.refreshing:
+            if self.refreshing or not await Peer.is_synced():
                 return
             self.refreshing = True
             await self.config.LatestBlock.block_checker()
