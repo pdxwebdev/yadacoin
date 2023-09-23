@@ -37,7 +37,7 @@ class BaseHandler(RequestHandler):
         self.set_header("Access-Control-Max-Age", 600)
         self.jwt = {}
 
-    async def prepare(self):
+    async def prepare(self, exceptions=None):
         if (
             self.config.api_whitelist
             and self.request.remote_ip not in self.config.api_whitelist
@@ -45,10 +45,13 @@ class BaseHandler(RequestHandler):
             self.status_code = 400
             self.render_as_json({"status": "error", "message": "Not on the whitelist."})
 
+        if exceptions is None:
+            exceptions = []
         if (
             self.request.protocol == "http"
             and MODES.SSL.value in self.config.modes
             and self.config.ssl.is_valid()
+            and self.request.path not in exceptions
         ):
             self.redirect(
                 "https://" + self.request.host + self.request.uri, permanent=False
