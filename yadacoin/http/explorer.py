@@ -4,6 +4,7 @@ Handlers required by the explorer operations
 
 import base64
 import re
+import time
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.common import changetime
@@ -11,28 +12,35 @@ from yadacoin.http.base import BaseHandler
 
 
 class HashrateAPIHandler(BaseHandler):
-    async def get(self):
+    async def refresh(self):
         from yadacoin.core.block import Block
 
-        config = self.config
         blocks = [
             await Block.from_dict(x)
-            async for x in config.mongo.async_db.blocks.find({})
+            async for x in self.config.mongo.async_db.blocks.find({})
             .sort([("index", -1)])
             .limit(48)
         ]
-        hash_rate = config.BU.get_hash_rate(blocks)
         difficulty = int(CHAIN.MAX_TARGET / blocks[0].target)
-        self.render_as_json(
-            {
-                "stats": {
-                    "network_hash_rate": hash_rate,
-                    "difficulty": difficulty,
-                    "height": blocks[0].index,
-                    "circulating": CHAIN.get_circulating_supply(blocks[0].index),
-                }
+
+        hash_rate = self.config.BU.get_hash_rate(blocks)
+        self.config.HashRateAPIHandler = {
+            "cache": {
+                "time": time.time(),
+                "circulating": CHAIN.get_circulating_supply(blocks[0].index),
+                "height": blocks[0].index,
+                "network_hash_rate": hash_rate,
+                "difficulty": difficulty,
             }
-        )
+        }
+
+    async def get(self):
+        self.config
+        if not hasattr(self.config, "HashRateAPIHandler"):
+            await self.refresh()
+        elif time.time() - self.config.HashRateAPIHandler["cache"]["time"] > 600:
+            await self.refresh()
+        self.render_as_json({"stats": self.config.HashRateAPIHandler["cache"]})
 
 
 class ExplorerHandler(BaseHandler):

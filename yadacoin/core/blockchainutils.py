@@ -515,4 +515,4 @@ class BlockChainUtils(object):
             prev_time = int(block.time)
 
         # total work(number of hashes) over time gives us the hashrate
-        return int(sum_work / sum_time)
+        return int(sum_work / sum_time) if len(blocks) > 1 else 0

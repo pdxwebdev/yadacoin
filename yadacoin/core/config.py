@@ -150,6 +150,9 @@ class Config:
         self.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         self.nonce_processor_wait = config.get("nonce_processor_wait", 1)
 
+        self.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
+        self.http_request_timeout = config.get("http_request_timeout", 3000)
+
         for key, val in config.items():
             if not hasattr(self, key):
                 setattr(self, key, val)
@@ -419,6 +422,9 @@ class Config:
         cls.cache_validator_wait = config.get("cache_validator_wait", 30)
         cls.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         cls.nonce_processor_wait = config.get("nonce_processor_wait", 1)
+
+        cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
+        cls.http_request_timeout = config.get("http_request_timeout", 3000)
 
     @staticmethod
     def address_is_valid(address):

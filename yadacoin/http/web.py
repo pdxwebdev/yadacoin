@@ -9,30 +9,15 @@ import time
 import uuid
 
 import jwt
-
 from eccsnacks.curve25519 import scalarmult_base
+
 from yadacoin.core.config import Config
 from yadacoin.core.graphutils import GraphUtils as GU
 from yadacoin.core.identity import Identity
 from yadacoin.core.transactionutils import TU
-from yadacoin.enums.modes import MODES
 from yadacoin.http.base import BaseHandler
 
 challenges = {}
-
-
-class BaseWebHandler(BaseHandler):
-    async def prepare(self):
-        if (
-            self.request.protocol == "http"
-            and MODES.SSL.value in self.config.modes
-            and self.config.ssl.is_valid()
-        ):
-            self.redirect(
-                "https://" + self.request.host + self.request.uri, permanent=False
-            )
-
-        await super(BaseWebHandler, self).prepare()
 
 
 class HomeHandler(BaseHandler):
@@ -204,7 +189,7 @@ class RemoteMultifactorAuthHandler(BaseHandler):
         return self.render_as_json({"authenticated": False})
 
 
-class TwoFactorAuthHandler(BaseWebHandler):
+class TwoFactorAuthHandler(BaseHandler):
     async def post(self):
         """
         :return:
@@ -314,7 +299,7 @@ class HashrateAPIHandler(BaseHandler):
         )
 
 
-class AppHandler(BaseWebHandler):
+class AppHandler(BaseHandler):
     async def get(self):
         """
         :return:
@@ -322,7 +307,7 @@ class AppHandler(BaseWebHandler):
         self.render("app.html")
 
 
-class App2FAHandler(BaseWebHandler):
+class App2FAHandler(BaseHandler):
     async def prepare(self):
         if self.request.protocol == "https":
             self.redirect(
@@ -336,7 +321,7 @@ class App2FAHandler(BaseWebHandler):
         self.render("app2fa.html")
 
 
-class GetRecoveryTransaction(BaseWebHandler):
+class GetRecoveryTransaction(BaseHandler):
     async def get(self):
         """
         :return:
@@ -352,7 +337,7 @@ class GetRecoveryTransaction(BaseWebHandler):
         return self.render_as_json(txn)
 
 
-class ProxyChallengeHandler(BaseWebHandler):
+class ProxyChallengeHandler(BaseHandler):
     async def post(self):
         data = json.loads(self.request.body)
         alias = Identity.from_dict(data["alias"])
@@ -372,7 +357,7 @@ class ProxyChallengeHandler(BaseWebHandler):
         return self.finish()
 
 
-class ProxyWhiteList(BaseWebHandler):
+class ProxyWhiteList(BaseHandler):
     async def get(self):
         term = self.get_query_argument("term", None)
         query = {}
@@ -409,7 +394,7 @@ class ProxyWhiteList(BaseWebHandler):
             self.config.proxy.white_list[x["domain"]] = x
 
 
-class ProxyBlackList(BaseWebHandler):
+class ProxyBlackList(BaseHandler):
     async def get(self):
         term = self.get_query_argument("term", None)
         query = {}
@@ -446,7 +431,7 @@ class ProxyBlackList(BaseWebHandler):
             self.config.proxy.black_list[x["domain"]] = x
 
 
-class ProxyRejectedList(BaseWebHandler):
+class ProxyRejectedList(BaseHandler):
     async def get(self):
         term = self.get_query_argument("term", None)
         proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one(
@@ -469,7 +454,7 @@ class ProxyRejectedList(BaseWebHandler):
         )
 
 
-class ProxyAllowedList(BaseWebHandler):
+class ProxyAllowedList(BaseHandler):
     async def get(self):
         term = self.get_query_argument("term", None)
         proxy_mode = await self.config.mongo.async_site_db.proxy_config.find_one(
@@ -492,7 +477,7 @@ class ProxyAllowedList(BaseWebHandler):
         )
 
 
-class ProxyConfig(BaseWebHandler):
+class ProxyConfig(BaseHandler):
     async def get(self):
         async for x in self.config.mongo.async_site_db.proxy_config.find(
             {}, {"_id": 0}
@@ -515,12 +500,12 @@ class ProxyConfig(BaseWebHandler):
         return self.render_as_json({"status": True})
 
 
-class ProxyAppHandler(BaseWebHandler):
+class ProxyAppHandler(BaseHandler):
     async def get(self):
         return self.render("proxy.html")
 
 
-class AuthHandler(BaseWebHandler):
+class AuthHandler(BaseHandler):
     async def get(self):
         return self.render(
             "auth.html",

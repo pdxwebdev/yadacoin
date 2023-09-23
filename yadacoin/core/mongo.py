@@ -339,6 +339,7 @@ class Collection:
 
     async def find_one(self, *args, **kwargs):
         self.set_start_time()
+        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).find_one(
             *args, **kwargs
         )
@@ -349,6 +350,7 @@ class Collection:
 
     def find(self, *args, **kwargs):
         self.set_start_time()
+        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = self._db.get_collection(self.collection).find(*args, **kwargs)
         if self.collection == "child_keys":
             return result
@@ -357,16 +359,26 @@ class Collection:
 
     async def count_documents(self, *args, **kwargs):
         self.set_start_time()
-        result = await self._db.get_collection(self.collection).count_documents(
-            *args, **kwargs
+        pipeline = [
+            {"$match": args[0]},
+            {"$group": {"_id": None, "count": {"$sum": 1}}},
+        ]
+        cursor = self._db.get_collection(self.collection).aggregate(
+            pipeline, maxTimeMS=self._config.mongo_query_timeout
         )
+        result = 0
+        async for doc in cursor:
+            result = doc.get("count", 0)
+            break
         if self.collection == "child_keys":
             return result
+
         self.do_logging("count_documents", args, kwargs)
         return result
 
     async def delete_many(self, *args, **kwargs):
         self.set_start_time()
+        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).delete_many(
             *args, **kwargs
         )
@@ -377,6 +389,7 @@ class Collection:
 
     async def insert_one(self, *args, **kwargs):
         self.set_start_time()
+        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).insert_one(
             *args, **kwargs
         )
@@ -387,6 +400,7 @@ class Collection:
 
     async def replace_one(self, *args, **kwargs):
         self.set_start_time()
+        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).replace_one(
             *args, **kwargs
         )
@@ -397,6 +411,7 @@ class Collection:
 
     async def update_one(self, *args, **kwargs):
         self.set_start_time()
+        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).update_one(
             *args, **kwargs
         )
@@ -407,6 +422,7 @@ class Collection:
 
     async def update_many(self, *args, **kwargs):
         self.set_start_time()
+        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).update_many(
             *args, **kwargs
         )
@@ -417,7 +433,9 @@ class Collection:
 
     def aggregate(self, *args, **kwargs):
         self.set_start_time()
-        result = self._db.get_collection(self.collection).aggregate(*args, **kwargs)
+        result = self._db.get_collection(self.collection).aggregate(
+            *args, **kwargs, maxTimeMS=self._config.mongo_query_timeout
+        )
         if self.collection == "child_keys":
             return result
         self.do_logging("aggregate", args, kwargs)
