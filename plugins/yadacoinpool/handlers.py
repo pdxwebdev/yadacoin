@@ -11,7 +11,7 @@ from yadacoin.http.base import BaseHandler
 
 class BaseWebHandler(BaseHandler):
     async def prepare(self):
-        await super().prepare()
+        await super().prepare(exceptions=["/pool-info"])
 
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
