@@ -705,7 +705,7 @@ class TestBlockchainUtils(AsyncTestCase):
         config = Config()
         await self.setBlock()
         start = time.time()
-        config.mongo_query_timeout = 100
+        config.mongo_query_timeout = 1000000  # in miliseconds
         [
             x
             async for x in config.BU.get_wallet_unspent_transactions(
