@@ -378,7 +378,6 @@ class Collection:
 
     async def delete_many(self, *args, **kwargs):
         self.set_start_time()
-        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).delete_many(
             *args, **kwargs
         )
@@ -389,7 +388,6 @@ class Collection:
 
     async def insert_one(self, *args, **kwargs):
         self.set_start_time()
-        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).insert_one(
             *args, **kwargs
         )
@@ -400,7 +398,6 @@ class Collection:
 
     async def replace_one(self, *args, **kwargs):
         self.set_start_time()
-        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).replace_one(
             *args, **kwargs
         )
@@ -411,7 +408,6 @@ class Collection:
 
     async def update_one(self, *args, **kwargs):
         self.set_start_time()
-        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).update_one(
             *args, **kwargs
         )
@@ -422,7 +418,6 @@ class Collection:
 
     async def update_many(self, *args, **kwargs):
         self.set_start_time()
-        kwargs["max_time_ms"] = self._config.mongo_query_timeout
         result = await self._db.get_collection(self.collection).update_many(
             *args, **kwargs
         )
