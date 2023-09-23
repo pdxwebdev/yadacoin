@@ -10,11 +10,8 @@ from yadacoin.http.base import BaseHandler
 
 
 class BaseWebHandler(BaseHandler):
-    def prepare(self):
-        if self.request.protocol == "http" and self.config.ssl.is_valid():
-            self.redirect(
-                "https://" + self.request.host + self.request.uri, permanent=False
-            )
+    async def prepare(self):
+        await super().prepare()
 
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
