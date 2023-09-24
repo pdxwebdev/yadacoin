@@ -9,8 +9,8 @@ import time
 import uuid
 
 import jwt
-from eccsnacks.curve25519 import scalarmult_base
 
+from eccsnacks.curve25519 import scalarmult_base
 from yadacoin.core.config import Config
 from yadacoin.core.graphutils import GraphUtils as GU
 from yadacoin.core.identity import Identity
