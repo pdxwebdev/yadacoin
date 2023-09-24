@@ -172,6 +172,47 @@ class NodeApplication(Application):
             self.init_jwt()
         self.init_ioloop()
 
+    async def remove_peer(self, stream, reason=None):
+        if reason:
+            await self.config.nodeShared.write_params(
+                stream, "disconnect", {"reason": reason}
+            )
+        stream.close()
+        if not hasattr(stream, "peer"):
+            return
+        id_attr = getattr(stream.peer, stream.peer.id_attribute)
+        if (
+            id_attr
+            in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
+        ):
+            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][
+                id_attr
+            ]
+
+        if (
+            id_attr
+            in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
+        ):
+            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][
+                id_attr
+            ]
+
+        if (
+            id_attr
+            in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]
+        ):
+            del self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__][
+                id_attr
+            ]
+
+        if (
+            id_attr
+            in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]
+        ):
+            del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][
+                id_attr
+            ]
+
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
 
@@ -415,47 +456,6 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
         self.config.background_message_sender.busy = False
 
-    async def remove_peer(self, stream, reason=None):
-        if reason:
-            await self.config.nodeShared.write_params(
-                stream, "disconnect", {"reason": reason}
-            )
-        stream.close()
-        if not hasattr(stream, "peer"):
-            return
-        id_attr = getattr(stream.peer, stream.peer.id_attribute)
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_streams[stream.peer.__class__.__name__][
-                id_attr
-            ]
-
-        if (
-            id_attr
-            in self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][
-                id_attr
-            ]
-
-        if (
-            id_attr
-            in self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__][
-                id_attr
-            ]
-
-        if (
-            id_attr
-            in self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__]
-        ):
-            del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][
-                id_attr
-            ]
-
     async def background_txn_queue_processor(self):
         self.config.app_log.debug("background_txn_queue_processor")
         if not hasattr(self.config, "background_txn_queue_processor"):
@@ -508,8 +508,8 @@ class NodeApplication(Application):
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.block_queue.time_sum_end()
 
+            synced = await Peer.is_synced()
             if not synced:
-                await tornado.gen.sleep(0.1)
                 continue
             break
         self.config.background_block_queue_processor.busy = False
