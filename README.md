@@ -271,6 +271,14 @@ https://yadacoin.io/download
   - type: integer
   - default: 1
   - description: Specify the number of seconds to wait before checking for new share submissions to process.
+- mongo_query_timeout
+  - type: integer
+  - default: 30000
+  - description: Specify the max number of milliseconds of execution time for all mongo queries.
+- http_request_timeout
+  - type: integer
+  - default: 3000
+  - description: Specify the max number of milliseconds of execution time for all http requests.
 
 ## Development Environment
 
