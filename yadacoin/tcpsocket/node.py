@@ -195,7 +195,8 @@ class NodeRPC(BaseRPC):
         stream = item.stream
         try:
             await txn.verify(check_input_spent=True)
-        except:
+        except Exception as e:
+            await Transaction.handle_exception(e, txn)
             return
 
         if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
@@ -308,7 +309,7 @@ class NodeRPC(BaseRPC):
             try:
                 await txn.verify()
             except Exception as e:
-                Transaction.handle_exception(e, txn)
+                await Transaction.handle_exception(e, txn)
                 continue
             payload = {"transaction": txn.to_dict()}
             await self.write_params(peer_stream, "newtxn", payload)
