@@ -743,6 +743,9 @@ class ServiceProvider(Peer):
         for y in list(self.config.nodeServer.inbound_streams[User.__name__].values()):
             yield y
 
+        for y in list(self.config.nodeServer.inbound_streams[Pool.__name__].values()):
+            yield y
+
         for y in list(
             self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()
         ):
@@ -751,6 +754,9 @@ class ServiceProvider(Peer):
     async def get_peer_by_id(self, id_attr):
         if self.config.nodeServer.inbound_streams[User.__name__].get(id_attr):
             return self.config.nodeServer.inbound_streams[User.__name__].get(id_attr)
+
+        if self.config.nodeServer.inbound_streams[Pool.__name__].get(id_attr):
+            return self.config.nodeServer.inbound_streams[Pool.__name__].get(id_attr)
 
         if self.config.nodeClient.outbound_streams[SeedGateway.__name__].get(id_attr):
             return self.config.nodeClient.outbound_streams[SeedGateway.__name__].get(
