@@ -353,7 +353,9 @@ class Transaction(object):
 
         for txn_output in input_txn.outputs:
             if txn_output.to == address and float(txn_output.value) > 0.0:
-                if equal(txn_output.value, outputs_and_fee_total):
+                if self.exact_match and not equal(
+                    txn_output.value, outputs_and_fee_total
+                ):
                     continue
                 input_sum += txn_output.value
 
