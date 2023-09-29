@@ -696,8 +696,10 @@ class NodeApplication(Application):
             self.config.mongodb_host = options.mongohost
 
     def init_consensus(self):
-        tornado.ioloop.IOLoop.current().run_sync(self.config.consensus.async_init)
-        if self.options.verify:
+        self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(
+            Consensus.init_async
+        )
+        if options.verify:
             self.config.app_log.info("Verifying existing blockchain")
             tornado.ioloop.IOLoop.current().run_sync(
                 self.config.consensus.verify_existing_blockchain
@@ -927,9 +929,7 @@ class NodeApplication(Application):
         if test:
             return
         tornado.ioloop.IOLoop.current().run_sync(self.config.LatestBlock.block_checker)
-        self.config.consensus = tornado.ioloop.IOLoop.current().run_sync(
-            Consensus.init_async
-        )
+        self.init_consensus()
         self.config.cipher = Crypt(self.config.wif)
         if MODES.NODE.value in self.config.modes:
             self.config.pyrx = pyrx.PyRX()

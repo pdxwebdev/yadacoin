@@ -18,17 +18,8 @@ from yadacoin.core.config import Config
 from yadacoin.core.transactionutils import TU
 
 
-def fix_float1(value):
-    return ".".join(
-        [
-            "{0:.9f}".format(value).split(".")[0],
-            "{0:.9f}".format(value).split(".")[1][:8],
-        ]
-    )
-
-
-def fix_float2(value):
-    return "{0:.8f}".format(value)
+def equal(a, b, epsilon=5e-9):
+    return abs(a - b) < epsilon
 
 
 class TransactionAddressInvalidException(Exception):
@@ -292,7 +283,7 @@ class Transaction(object):
             )
 
         remainder = input_sum - outputs_and_fee_total
-        if float(fix_float1(remainder)) == 0 and float(fix_float2(remainder)) == 0:
+        if equal(remainder, 0):
             remainder = 0.0
 
         found = False
@@ -318,7 +309,9 @@ class Transaction(object):
             input_sum = await self.sum_inputs(
                 y, txn, address, input_sum, inputs, outputs_and_fee_total
             )
-            if input_sum >= outputs_and_fee_total:
+            if input_sum > outputs_and_fee_total or equal(
+                input_sum, outputs_and_fee_total
+            ):
                 return input_sum
 
         raise NotEnoughMoneyException("not enough money")
@@ -340,7 +333,9 @@ class Transaction(object):
                 inputs,
                 outputs_and_fee_total,
             )
-            if input_sum >= outputs_and_fee_total:
+            if input_sum > outputs_and_fee_total or equal(
+                input_sum, outputs_and_fee_total
+            ):
                 return input_sum
 
         raise NotEnoughMoneyException("not enough money")
@@ -358,18 +353,16 @@ class Transaction(object):
 
         for txn_output in input_txn.outputs:
             if txn_output.to == address and float(txn_output.value) > 0.0:
-                fix1 = fix_float1(txn_output.value)
-                fix2 = fix_float2(txn_output.value)
-                fixtotal1 = fix_float1(outputs_and_fee_total)
-                fixtotal2 = fix_float2(outputs_and_fee_total)
-                if self.exact_match and fix1 != fixtotal1 and fix2 != fixtotal2:
+                if equal(txn_output.value, outputs_and_fee_total):
                     continue
                 input_sum += txn_output.value
 
                 if input_txn not in inputs:
                     inputs.append(input_obj)
 
-                if input_sum >= outputs_and_fee_total:
+                if input_sum > outputs_and_fee_total or equal(
+                    input_sum, outputs_and_fee_total
+                ):
                     return input_sum
         return input_sum
 
@@ -600,9 +593,7 @@ class Transaction(object):
             total_output += float(txn.value)
 
         total = float(total_output) + float(self.fee)
-        if fix_float1(total_input) != fix_float1(total) and fix_float2(
-            total_input
-        ) != fix_float2(total):
+        if not equal(total_input, total):
             raise TotalValueMismatchException(
                 "inputs and outputs sum must match %s, %s, %s, %s"
                 % (total_input, float(total_output), float(self.fee), total)

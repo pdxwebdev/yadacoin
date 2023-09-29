@@ -1,3 +1,10 @@
+import os
+import sys
+
+module_path = os.path.dirname(os.path.abspath(__file__))
+print(module_path)
+sys.path.append(os.path.join(module_path, "../../"))
+
 import unittest
 
 from yadacoin.core.blockchainutils import BlockChainUtils
