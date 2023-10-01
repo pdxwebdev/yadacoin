@@ -49,7 +49,7 @@ class Consensus(object):
             self.config.mongo.async_db.blocks.find({}).sort([("index", 1)])
         )
         result = await existing_blockchain.verify()
-        if result["verified"]:
+        if result.get("verified"):
             print(
                 "Block height: %s | time: %s"
                 % (
@@ -71,7 +71,7 @@ class Consensus(object):
             else:
                 self.app_log.critical(
                     "{} - reset False, not truncating - DID NOT VERIFY".format(
-                        result["message"]
+                        result.get("message")
                     )
                 )
             self.config.BU.latest_block = None
