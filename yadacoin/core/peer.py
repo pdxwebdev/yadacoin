@@ -167,7 +167,9 @@ class Peer:
         raise NotImplementedError()
 
     async def get_all_inbound_streams(self):
-        return await self.get_inbound_streams() + await self.get_inbound_pending()
+        return [x async for x in self.get_inbound_streams()] + [
+            x async for x in self.get_inbound_pending()
+        ]
 
     async def get_all_outbound_streams(self):
         return await self.get_outbound_streams() + await self.get_outbound_pending()
@@ -618,7 +620,15 @@ class ServiceProvider(Peer):
         }
 
     async def get_inbound_streams(self):
-        return list(self.config.nodeServer.inbound_streams[User.__name__].values())
+        for peer_stream in list(
+            self.config.nodeServer.inbound_streams[User.__name__].values()
+        ):
+            yield peer_stream
+
+        for peer_stream in list(
+            self.config.nodeServer.inbound_streams[Pool.__name__].values()
+        ):
+            yield peer_stream
 
     async def get_outbound_streams(self):
         return list(
@@ -626,7 +636,15 @@ class ServiceProvider(Peer):
         )
 
     async def get_inbound_pending(self):
-        return list(self.config.nodeServer.inbound_pending[User.__name__].values())
+        for peer_stream in list(
+            self.config.nodeServer.inbound_pending[User.__name__].values()
+        ):
+            yield peer_stream
+
+        for peer_stream in list(
+            self.config.nodeServer.inbound_pending[Pool.__name__].values()
+        ):
+            yield peer_stream
 
     async def get_outbound_pending(self):
         return list(
