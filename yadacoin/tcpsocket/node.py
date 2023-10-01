@@ -218,7 +218,7 @@ class NodeRPC(BaseRPC):
             for stream in streams:
                 yield stream
 
-        async for peer_stream in make_gen(await self.config.peer.get_inbound_streams()):
+        async for peer_stream in self.config.peer.get_inbound_streams():
             if peer_stream.peer.rid == stream.peer.rid:
                 continue
             if peer_stream.peer.protocol_version > 1:
