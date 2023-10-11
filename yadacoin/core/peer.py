@@ -612,7 +612,7 @@ class ServiceProvider(Peer):
         return SeedGateway
 
     async def get_inbound_class(self):
-        return User
+        return [User, Pool]
 
     async def get_outbound_peers(self, nonce=None):
         if not self.seed_gateway:
@@ -669,7 +669,7 @@ class ServiceProvider(Peer):
         return [ServiceProvider, User]
 
     async def get_route_peers(self, peer, payload):
-        if isinstance(peer, User):
+        if isinstance(peer, User) or isinstance(peer, Pool):
             for peer_stream in list(
                 self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()
             ):
@@ -734,7 +734,7 @@ class ServiceProvider(Peer):
                     yield self.config.nodeServer.inbound_streams[User.__name__][rid]
 
     async def get_service_provider_request_peers(self, peer, payload):
-        if isinstance(peer, User):
+        if isinstance(peer, User) or isinstance(peer, Pool):
             for peer_stream in list(
                 self.config.nodeClient.outbound_streams[SeedGateway.__name__].values()
             ):
@@ -753,6 +753,16 @@ class ServiceProvider(Peer):
         elif isinstance(peer, SeedGateway):
             for peer_stream in list(
                 self.config.nodeServer.inbound_streams[User.__name__].values()
+            ):
+                yield peer_stream
+
+            for peer_stream in list(
+                self.config.websocketServer.inbound_streams[User.__name__].values()
+            ):
+                yield peer_stream
+
+            for peer_stream in list(
+                self.config.nodeServer.inbound_streams[Pool.__name__].values()
             ):
                 yield peer_stream
 
