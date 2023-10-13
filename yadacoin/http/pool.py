@@ -133,6 +133,17 @@ class PoolPayoutsHandler(BaseHandler):
                 out.append(result)
         self.render_as_json({"results": out})
 
+class PoolBlocksHandler(BaseHandler):
+    async def get(self):
+        pool_blocks = (
+            await self.config.mongo.async_db.pool_blocks
+            .find()
+            .sort("index", -1)
+            .limit(100)
+            .to_list(100)
+        )
+        self.render_as_json({"blocks": pool_blocks})
+
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):
         start_index = self.get_query_argument("start_index")
@@ -143,5 +154,6 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
 POOL_HANDLERS = [
     (r"/miner-stats-for-address", MinerStatsHandler),
     (r"/payouts-for-address", PoolPayoutsHandler),
+    (r"/pool-blocks", PoolBlocksHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
 ]
