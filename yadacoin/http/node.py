@@ -113,14 +113,51 @@ class GetStatusHandler(BaseHandler):
                 },
                 {"_id": 0},
             )
-            return self.render_as_json([x async for x in status], indent=4)
-        status = await self.config.mongo.async_db.node_status.find_one(
-            {"archived": {"$exists": bool(archived)}},
-            {"_id": 0},
-            sort=[("timestamp", -1)],
-        )
-        self.render_as_json(status, indent=4)
+            status_data = [x async for x in status]
+        else:
+            status_data = await self.config.mongo.async_db.node_status.find_one(
+                {"archived": {"$exists": bool(archived)}},
+                {"_id": 0},
+                sort=[("timestamp", -1)],
+            )
 
+        await self.config.LatestBlock.block_checker()
+        pool_public_key = (
+            self.config.pool_public_key
+            if hasattr(self.config, "pool_public_key")
+            else self.config.public_key
+        )
+
+        mining_time_interval = 600
+        shares_count = await self.config.mongo.async_db.shares.count_documents(
+            {"time": {"$gte": time.time() - mining_time_interval}}
+        )
+        if shares_count > 0:
+            pool_hash_rate = (shares_count * self.config.pool_diff) / mining_time_interval
+        else:
+            pool_hash_rate = 0
+
+        pool_blocks_found_list = await self.config.mongo.async_db.pool_blocks.find(
+            {"public_key": pool_public_key},
+            {"_id": 0, "time": 1, "found_time": 1, "index": 1}
+        ).sort([("index", -1)]).to_list(5)
+
+        response_data = {
+            "pool": {
+                "hashes_per_second": pool_hash_rate,
+                "last_five_blocks": [
+                    {"timestamp": x["found_time"], "height": x["index"]}
+                    for x in pool_blocks_found_list[:5]
+                ],
+                "fee": self.config.pool_take,
+                "reward": CHAIN.get_block_reward(
+                    self.config.LatestBlock.block.index
+                ),
+            },
+            "status": status_data
+        }
+
+        self.render_as_json(response_data, indent=4)
 
 class NewBlockHandler(BaseHandler):
     async def post(self):
