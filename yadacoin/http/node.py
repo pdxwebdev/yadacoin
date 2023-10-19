@@ -317,15 +317,11 @@ class GetMonitoringHandler(BaseHandler):
             ).sort([("index", -1)]).to_list(5)
     
         pool_data = {"hashes_per_second": pool_hash_rate,
-            "last_block": [
-                {"timestamp": x["time"], "height": x["index"]}
-                for x in pool_blocks_found_list[:1]
-            ],
+            "last_block_time" : pool_blocks_found_list[0]["time"],
+            "last_block_height" : pool_blocks_found_list[0]["index"],
             "fee": self.config.pool_take,
-            "reward": CHAIN.get_block_reward(
-                self.config.LatestBlock.block.index
-            ),
-        },
+            "reward": CHAIN.get_block_reward(self.config.LatestBlock.block.index),
+        }
             
         # Create output data
         op_data = {
