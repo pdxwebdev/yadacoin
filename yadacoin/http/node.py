@@ -311,22 +311,21 @@ class GetMonitoringHandler(BaseHandler):
         else:
             pool_hash_rate = 0
 
-        pool_blocks_found_list = await self.config.mongo.async_db.pool_blocks.find(
+        pool_blocks_found_list = await self.config.mongo.async_db.blocks.find(
             {"public_key": pool_public_key},
-            {"_id": 0, "time": 1, "found_time": 1, "index": 1}
-        ).sort([("index", -1)]).to_list(5)
-
-        
+            {"_id": 0, "time": 1, "index": 1}
+            ).sort([("index", -1)]).to_list(5)
+    
         pool_data = {"hashes_per_second": pool_hash_rate,
-                "last_five_blocks": [
-                    {"timestamp": x["found_time"], "height": x["index"]}
-                    for x in pool_blocks_found_list[:1]
-                ],
-                "fee": self.config.pool_take,
-                "reward": CHAIN.get_block_reward(
-                    self.config.LatestBlock.block.index
-                ),
-            },
+            "last_five_blocks": [
+                {"timestamp": x["time"], "height": x["index"]}
+                for x in pool_blocks_found_list[:1]
+            ],
+            "fee": self.config.pool_take,
+            "reward": CHAIN.get_block_reward(
+                self.config.LatestBlock.block.index
+            ),
+        },
             
         # Create output data
         op_data = {
