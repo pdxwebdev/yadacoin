@@ -317,7 +317,7 @@ class GetMonitoringHandler(BaseHandler):
             ).sort([("index", -1)]).to_list(5)
     
         pool_data = {"hashes_per_second": pool_hash_rate,
-            "last_five_blocks": [
+            "last_block": [
                 {"timestamp": x["time"], "height": x["index"]}
                 for x in pool_blocks_found_list[:1]
             ],
