@@ -32,3 +32,4 @@ dnspython
 networkutil
 setuptools_rust
 docker
+cachetools
