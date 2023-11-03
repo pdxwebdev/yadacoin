@@ -301,6 +301,7 @@ class Consensus(object):
             try:
                 peer.syncing = True
                 await self.request_blocks(peer)
+                break # there is no point in downloading the same blocks from each node, TODO use random node selection or download a different blocks interval from each of them
             except StreamClosedError:
                 peer.close()
             except Exception as e:
