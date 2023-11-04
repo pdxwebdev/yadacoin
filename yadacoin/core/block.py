@@ -240,8 +240,8 @@ class Block(object):
                     stream = await TCPClient().connect(
                         node.host, node.port, timeout=timedelta(seconds=1)
                     )
-                    successful_nodes.append(node)
-                    stream.close()
+                    successful_nodes.append(node) # now the list only contains nodes that have been successfully connected.
+                    stream.close() # we close the connection, it turns out that connections left open sometimes lead to network card failure.
                 except StreamClosedError:
                     config.app_log.warning(
                         f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
