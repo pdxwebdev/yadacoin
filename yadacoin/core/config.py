@@ -143,10 +143,11 @@ class Config:
         self.peers_wait = config.get("peers_wait", 3)
         self.status_wait = config.get("status_wait", 10)
         self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
-        self.block_queue_processor_wait = config.get("block_queue_processor_wait", 10)
+        self.block_queue_processor_wait = config.get("block_queue_processor_wait", 15)
         self.block_checker_wait = config.get("block_checker_wait", 1)
         self.message_sender_wait = config.get("message_sender_wait", 10)
         self.pool_payer_wait = config.get("pool_payer_wait", 1800)
+        self.pool_info_checker_wait = config.get("pool_info_checker_wait", 30)
         self.cache_validator_wait = config.get("cache_validator_wait", 30)
         self.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         self.nonce_processor_wait = config.get("nonce_processor_wait", 1)
@@ -329,6 +330,7 @@ class Config:
                 "pool_payout": False,
                 "pool_take": 0.01,
                 "pool_payer_wait": 1800,
+                "pool_info_checker_wait": 30,
                 "block_confirmation": 6,
                 "max_miners": 100,
                 "max_peers": 20,
@@ -418,10 +420,11 @@ class Config:
         cls.peers_wait = config.get("peers_wait", 3)
         cls.status_wait = config.get("status_wait", 10)
         cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
-        cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 10)
+        cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 15)
         cls.block_checker_wait = config.get("block_checker_wait", 1)
         cls.message_sender_wait = config.get("message_sender_wait", 10)
         cls.pool_payer_wait = config.get("pool_payer_wait", 1800)
+        cls.pool_info_checker_wait = config.get("pool_info_checker_wait", 30)
         cls.cache_validator_wait = config.get("cache_validator_wait", 30)
         cls.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         cls.nonce_processor_wait = config.get("nonce_processor_wait", 1)

@@ -6,6 +6,7 @@ import time
 from datetime import timedelta
 from decimal import Decimal, getcontext
 from logging import getLogger
+from cachetools import TTLCache
 
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
@@ -26,6 +27,8 @@ from yadacoin.core.transaction import (
     TransactionAddressInvalidException,
 )
 from yadacoin.core.transactionutils import TU
+
+cache = TTLCache(maxsize=1, ttl=1800)
 
 
 def quantize_eight(value):
@@ -232,27 +235,34 @@ class Block(object):
             ]
             masternode_reward_total = block_reward * 0.1
 
-            successful_nodes = []
-            for node in nodes:
-                from tornado.tcpclient import TCPClient
+            successful_nodes = cache.get("successful_nodes")
 
-                try:
-                    stream = await TCPClient().connect(
-                        node.host, node.port, timeout=timedelta(seconds=1)
-                    )
-                except StreamClosedError:
-                    config.app_log.warning(
-                        f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                except TimeoutError:
-                    config.app_log.warning(
-                        f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                except Exception:
-                    config.app_log.warning(
-                        f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                successful_nodes.append(node)
+            if successful_nodes is None:
+                config.app_log.info("Cache is empty, perform the testing of nodes and save the result in the cache.")
+                successful_nodes = []
+                for node in nodes:
+                    from tornado.tcpclient import TCPClient
+
+                    try:
+                        stream = await TCPClient().connect(
+                            node.host, node.port, timeout=timedelta(seconds=1)
+                        )
+                        successful_nodes.append(node)
+                        stream.close()
+                    except StreamClosedError:
+                        config.app_log.warning(
+                            f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
+                        )
+                    except TimeoutError:
+                        config.app_log.warning(
+                            f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
+                        )
+                    except Exception:
+                        config.app_log.warning(
+                            f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
+                        )
+                config.app_log.info("Save the result in cache.")
+                cache["successful_nodes"] = successful_nodes
 
             masternode_reward_divided = masternode_reward_total / len(successful_nodes)
             for successful_node in successful_nodes:

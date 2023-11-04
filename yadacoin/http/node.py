@@ -129,6 +129,7 @@ class GetStatusHandler(BaseHandler):
         )
 
         mining_time_interval = 600
+
         shares_count = await self.config.mongo.async_db.shares.count_documents(
             {"time": {"$gte": time.time() - mining_time_interval}}
         )
@@ -158,6 +159,7 @@ class GetStatusHandler(BaseHandler):
         }
 
         self.render_as_json(response_data, indent=4)
+
 
 class NewBlockHandler(BaseHandler):
     async def post(self):

@@ -372,6 +372,9 @@ class NodeRPC(BaseRPC):
                 ] = {}
 
     async def blocksresponse(self, body, stream):
+        # Logowanie rozpoczęcia funkcji
+        self.config.app_log.info("blocksresponse function started")
+
         # get blocks should be done only by syncing peers
         result = body.get("result")
         blocks = result.get("blocks")
@@ -384,7 +387,10 @@ class NodeRPC(BaseRPC):
             self.config.consensus.syncing = False
             stream.synced = True
             await self.send_mempool(stream)
+            # Logowanie zakończenia funkcji
+            self.config.app_log.info("blocksresponse function finished")
             return
+
         self.config.consensus.syncing = True
         blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = blocks[0]
@@ -403,12 +409,16 @@ class NodeRPC(BaseRPC):
         if not status:
             await self.fill_gap(first_inbound_block.index, stream)
             self.config.consensus.syncing = False
+            # Logowanie zakończenia funkcji w przypadku błędu
+            self.config.app_log.info("blocksresponse function finished with an error")
             return False
 
         self.config.processing_queues.block_queue.add(
             BlockProcessingQueueItem(inbound_blockchain, stream, body)
         )
         self.config.consensus.syncing = False
+        # Logowanie zakończenia funkcji
+        self.config.app_log.info("blocksresponse function finished")
 
     async def blocksresponse_confirmed(self, body, stream):
         params = body.get("result")

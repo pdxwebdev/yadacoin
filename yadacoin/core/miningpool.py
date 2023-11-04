@@ -1,9 +1,11 @@
 import binascii
+import time
 import json
 import random
 import uuid
+import asyncio
 from logging import getLogger
-from time import time
+from decimal import Decimal
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
@@ -25,7 +27,7 @@ class MiningPool(object):
         self.mongo = self.config.mongo
         self.app_log = getLogger("tornado.application")
         self.target_block_time = CHAIN.target_block_time(self.config.network)
-        self.max_target = CHAIN.MAX_TARGET
+        self.max_target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
         self.inbound = {}
         self.connected_ips = {}
         self.last_block_time = 0
@@ -37,7 +39,8 @@ class MiningPool(object):
             self.index = last_block.index
         self.last_refresh = 0
         self.block_factory = None
-        await self.refresh()
+        if await Peer.is_synced():
+            await self.refresh()
         return self
 
     def get_status(self):
@@ -64,15 +67,19 @@ class MiningPool(object):
                 "method": body.get("method"),
                 "jsonrpc": body.get("jsonrpc"),
             }
-            data["result"] = await self.process_nonce(miner, nonce, job)
-            if not data["result"]:
-                data["error"] = {"message": "Invalid hash for current block"}
-            try:
-                await stream.write("{}\n".format(json.dumps(data)).encode())
-            except:
-                pass
-            if "error" in data:
+            if job and job.index != self.config.LatestBlock.block.index + 1:
+                self.app_log.warning("Received job with incorrect block height. Resending job to miner.")
                 await StratumServer.send_job(stream)
+            else:
+                data["result"] = await self.process_nonce(miner, nonce, job)
+                if not data["result"]:
+                    data["error"] = {"message": "Invalid hash for current block"}
+                try:
+                    await stream.write("{}\n".format(json.dumps(data)).encode())
+                except:
+                    pass
+                if "error" in data:
+                    await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
 
@@ -84,6 +91,7 @@ class MiningPool(object):
                 return
 
             item = self.config.processing_queues.nonce_queue.pop()
+
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce.encode().hex()
@@ -137,16 +145,7 @@ class MiningPool(object):
 
         accepted = False
 
-        target = int(
-            "0x"
-            + (
-                f"0000000000000000000000000000000000000000000000000000000000000000"
-                + f"{hex(0x10000000000000001 // self.config.pool_diff)[2:64]}FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF"[
-                    :64
-                ]
-            )[-64:],
-            16,
-        )
+        target = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
             test_hash = int(Blockchain.little_hash(block_candidate.hash), 16)
@@ -164,7 +163,7 @@ class MiningPool(object):
                         "index": block_candidate.index,
                         "hash": block_candidate.hash,
                         "nonce": nonce,
-                        "time": int(time()),
+                        "time": int(time.time()),
                     }
                 },
                 upsert=True,
@@ -303,10 +302,10 @@ class MiningPool(object):
         if self.block_factory is None:
             # await self.refresh()
             return {}
+        target = hex(int(self.block_factory.target))[2:].rjust(64, "0")
+        self.config.app_log.debug("Target: %s", target)
         res = {
-            "target": hex(int(self.block_factory.target))[2:].rjust(
-                64, "0"
-            ),  # target is now in hex format
+            "target": target,  # target is now in hex format
             "special_target": hex(int(self.block_factory.special_target))[2:].rjust(
                 64, "0"
             ),  # target is now in hex format
@@ -335,7 +334,7 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = hex(random.randrange(1000000, 1000000000000000))[2:]
+        extra_nonce = hex(random.randrange(10000, 1000000))[2:]
         header = self.block_factory.header.replace("{nonce}", "{00}" + extra_nonce)
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
@@ -360,6 +359,9 @@ class MiningPool(object):
             "extra_nonce": extra_nonce,
             "algo": "rx/yada",
         }
+
+        self.config.app_log.info(f"Generated job: {res}")
+
         return await Job.from_dict(res)
 
     async def set_target_as_previous_non_special_min(self):
@@ -564,6 +566,134 @@ class MiningPool(object):
         except Exception as e:
             await Transaction.handle_exception(e, transaction_obj)
 
+    async def update_pool_stats(self):
+        await self.config.LatestBlock.block_checker()
+
+        expected_blocks = 144
+        mining_time_interval = 600
+        shares_count = await self.config.mongo.async_db.shares.count_documents(
+            {"time": {"$gte": time.time() - mining_time_interval}}
+        )
+        if shares_count > 0:
+            pool_hash_rate = (
+                shares_count * self.config.pool_diff
+            ) / mining_time_interval
+        else:
+            pool_hash_rate = 0
+
+        daily_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
+            {"time": {"$gte": time.time() - (600 * 144)}}
+        )
+        avg_block_time = daily_blocks_found / expected_blocks * 600
+        if daily_blocks_found > 0:
+            net_target = self.config.LatestBlock.block.target
+        avg_blocks_found = self.config.mongo.async_db.blocks.find(
+            {"time": {"$gte": time.time() - (600 * 36)}},
+            projection={"_id": 0, "target": 1}
+        )
+
+        avg_block_targets = [block["target"] async for block in avg_blocks_found]
+        if avg_block_targets:
+            avg_net_target = sum(int(target, 16) for target in avg_block_targets) / len(avg_block_targets)
+            avg_net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / avg_net_target
+            )
+            net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / net_target
+            )
+            avg_network_hash_rate = (
+                len(avg_block_targets)
+                / 36
+                * avg_net_difficulty
+                * 2**16
+                / avg_block_time
+            )
+            network_hash_rate = net_difficulty * 2**16 / 600
+        else:
+            avg_network_hash_rate = 1
+            net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+            )
+            network_hash_rate = 0
+
+
+        # Oto aktualizacja danych w bazie "pool_info"
+        await self.config.mongo.async_db.pool_info.insert_one(
+            {
+                "pool_hash_rate": pool_hash_rate,
+                "network_hash_rate": network_hash_rate,
+                "net_difficulty": net_difficulty,
+                "avg_network_hash_rate": avg_network_hash_rate,
+                "time": int(time.time()),
+            }
+        )
+
+    async def update_miners_stats(self):
+        miner_hashrate_seconds = 1200
+        current_time = int(time.time())  # Aktualny czas
+
+        hashrate_query = {"time": {"$gt": current_time - miner_hashrate_seconds}}
+
+        # Grupowanie shares na górników i pracowników
+        hashrate_cursor = self.config.mongo.async_db.shares.aggregate([
+            {"$match": hashrate_query},
+            {"$group": {
+                "_id": {
+                    "address": {"$ifNull": [{"$arrayElemAt": [{"$split": ["$address", "."]}, 0]}, "No address"]},
+                    "worker": {"$ifNull": [{"$arrayElemAt": [{"$split": ["$address", "."]}, 1]}, "No worker"]}
+                },
+                "number_of_shares": {"$sum": 1}
+            }}
+        ])
+
+        worker_hashrate = {}
+        miner_stats = []  # Lista dla miner_stats
+        total_hashrate = 0
+
+        async for doc in hashrate_cursor:
+            address = doc["_id"]["address"]
+            worker_name = doc["_id"]["worker"]
+            number_of_shares = doc["number_of_shares"]
+
+            worker_hashrate_individual = number_of_shares * self.config.pool_diff // miner_hashrate_seconds
+            total_hashrate += worker_hashrate_individual
+
+            if address not in worker_hashrate:
+                worker_hashrate[address] = {}
+
+            if worker_name not in worker_hashrate[address]:
+                worker_hashrate[address][worker_name] = {
+                    "worker_hashrate": 0
+                }
+
+            worker_hashrate[address][worker_name]["worker_hashrate"] += worker_hashrate_individual
+
+        # Zapisz dane do miner_stats
+        for address, worker_data in worker_hashrate.items():
+            address_stats = []
+            total_address_hashrate = 0  # Dodaj total hash rate dla adresu
+            for worker_name, data in worker_data.items():
+                hashrate_data = {
+                    "worker_name": worker_name,
+                    "worker_hashrate": data["worker_hashrate"],
+                }
+                address_stats.append(hashrate_data)
+                total_address_hashrate += data["worker_hashrate"]
+            miner_stats.append({"miner_address": address, "worker_stats": address_stats, "total_hashrate": total_address_hashrate})
+
+        # Tworzenie dokumentu miner_stats
+        miners_stats_data = {
+            "time": int(time.time()),
+            "miner_stats": miner_stats,
+            "total_hashrate": total_hashrate
+        }
+
+        # Zapisz dane w nowym formacie
+        await self.config.mongo.async_db.miners_stats.insert_one(miners_stats_data)
+
     async def accept_block(self, block):
         self.app_log.info("Candidate submitted for index: {}".format(block.index))
         self.app_log.info("Transactions:")
@@ -580,4 +710,37 @@ class MiningPool(object):
 
         await self.config.websocketServer.send_block(block)
 
-        await self.refresh()
+        await self.save_block_to_database(block)
+
+        #await self.refresh()
+
+    async def save_block_to_database(self, block):
+        block_data = block.to_dict()
+        block_data['found_time'] = int(time.time())
+        block_data['status'] = "Pending"
+
+        await self.config.mongo.async_db.pool_blocks.insert_one(block_data)
+
+    async def update_block_status(self):
+        pool_blocks_collection = self.config.mongo.async_db.pool_blocks
+        latest_block_index = self.config.LatestBlock.block.index
+        pending_blocks_list = await pool_blocks_collection.find({"status": {"$in": ["Pending", None]}}).to_list(None)
+        
+        for block in pending_blocks_list:
+            confirmations = latest_block_index - block['index']
+            
+            if confirmations >= 6:
+                matching_block = await self.config.mongo.async_db.blocks.find_one({"index": block['index']})
+                
+                if matching_block and matching_block['hash'] == block['hash']:
+                    await pool_blocks_collection.update_one(
+                        {"_id": block['_id']},
+                        {"$set": {"status": "Accepted"}}
+                    )
+                else:
+                    await pool_blocks_collection.update_one(
+                        {"_id": block['_id']},
+                        {"$set": {"status": "Orphan"}}
+                    )
+
+                self.app_log.info(f"Block with index {block['index']} updated to status: {block['status']}")

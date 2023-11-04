@@ -137,12 +137,28 @@ class PoolBlocksHandler(BaseHandler):
     async def get(self):
         pool_blocks = (
             await self.config.mongo.async_db.pool_blocks
-            .find()
+            .find({}, {"_id": 0, "index": 1, "time": 1, "found_time": 1, "target": 1, "transactions": 1, "status": 1, "hash": 1})
             .sort("index", -1)
-            .limit(100)
-            .to_list(100)
+            .to_list(None)
         )
-        self.render_as_json({"blocks": pool_blocks})
+        
+        formatted_blocks = []
+        for block in pool_blocks:
+            formatted_blocks.append({
+                "index": block["index"],
+                "time": block["time"],
+                "found_time": block["found_time"],
+                "target": block["target"],
+                "transactions": block["transactions"],
+                "status": block["status"],
+                "hash": block["hash"]
+            })
+        
+        pool_address = {
+            "pool_address": self.config.address,
+        }
+
+        self.render_as_json({"pool": pool_address, "blocks": formatted_blocks})
 
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):

@@ -233,12 +233,6 @@ class Mongo(object):
         except:
             pass
 
-        __timestamp = IndexModel([("timestamp", DESCENDING)], name="__timestamp")
-        try:
-            self.db.node_status.create_indexes([__timestamp])
-        except:
-            raise
-
         # TODO: add indexes for peers
 
         # See https://motor.readthedocs.io/en/stable/tutorial-tornado.html

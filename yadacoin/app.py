@@ -355,7 +355,7 @@ class NodeApplication(Application):
                 await self.config.nodeShared.send_block_to_peers(
                     self.config.LatestBlock.block
                 )
-            elif int(time()) - self.config.background_block_checker.last_send > 60:
+            elif int(time()) - self.config.background_block_checker.last_send > 300: # from now on, we optionally send a new block every 5 minutes
                 self.config.background_block_checker.last_send = int(time())
                 await self.config.nodeShared.send_block_to_peers(
                     self.config.LatestBlock.block
@@ -364,6 +364,18 @@ class NodeApplication(Application):
             self.config.health.block_checker.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
+        # will significantly affect the processing speed of a new block when it is broadcast by another node, changing from 10 seconds to 1.
+        try:
+            if self.config.processing_queues.block_queue.queue:
+                if (time() - self.config.health.block_inserter.last_activity) >= 1:
+                    self.config.processing_queues.block_queue.time_sum_start()
+                    await self.config.consensus.process_block_queue()
+                    self.config.processing_queues.block_queue.time_sum_end()
+            self.config.health.block_inserter.last_activity = int(time())
+        except:
+            self.config.app_log.error(format_exc())
+            self.config.processing_queues.block_queue.time_sum_end()
+
         self.config.background_block_checker.busy = False
 
     async def background_message_sender(self):
@@ -481,38 +493,37 @@ class NodeApplication(Application):
         if self.config.background_block_queue_processor.busy:
             return
         self.config.background_block_queue_processor.busy = True
-        while True:
-            try:
-                synced = await Peer.is_synced()
-                skip = False
-                if self.config.processing_queues.block_queue.queue:
-                    if (
-                        time() - self.config.health.consensus.last_activity
-                        < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD
-                    ):
-                        skip = True
-                if not skip or not synced:
-                    await self.config.consensus.sync_bottom_up(synced)
-                    self.config.health.consensus.last_activity = time()
-            except Exception:
-                self.config.app_log.error(format_exc())
-
-            try:
-                if self.config.processing_queues.block_queue.queue:
-                    if (time() - self.config.health.block_inserter.last_activity) > 1:
-                        self.config.processing_queues.block_queue.time_sum_start()
-                        await self.config.consensus.process_block_queue()
-                        self.config.processing_queues.block_queue.time_sum_end()
-                self.config.health.block_inserter.last_activity = int(time())
-            except:
-                self.config.app_log.error(format_exc())
-                self.config.processing_queues.block_queue.time_sum_end()
-
+        try:
             synced = await Peer.is_synced()
-            if not synced:
-                continue
-            break
+            skip = False
+            if self.config.processing_queues.block_queue.queue:
+                if (
+                    time() - self.config.health.consensus.last_activity
+                    < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD
+                ):
+                    skip = True
+            if not skip or not synced:
+                await self.config.consensus.sync_bottom_up(synced)
+                self.config.health.consensus.last_activity = time()
+        except Exception:
+            self.config.app_log.error(format_exc())
+
         self.config.background_block_queue_processor.busy = False
+
+    async def background_pool_info_checker(self):
+        self.config.app_log.debug("background_pool_info_checker")
+        if not hasattr(self.config, "background_pool_info_checker"):
+            self.config.background_pool_info_checker = WorkerVars(busy=False)
+        if self.config.background_pool_info_checker.busy:
+            return
+        self.config.background_pool_info_checker.busy = True
+        try:
+            await self.config.mp.update_pool_stats()
+            await self.config.mp.update_miners_stats()
+        except Exception as e:
+            self.config.app_log.error(f"Error in background_pool_info_checker: {str(e)}")
+        self.config.background_pool_info_checker.busy = False
+
 
     async def background_pool_payer(self):
         """Responsible for paying miners"""
@@ -651,7 +662,7 @@ class NodeApplication(Application):
         tornado.log.enable_pretty_logging(logger=self.config.app_log)
         logfile = path.abspath("yada_app.log")
         # Rotate log after reaching 512K, keep 5 old copies.
-        rotateHandler = RotatingFileHandler(logfile, "a", 512 * 1024, 5)
+        rotateHandler = RotatingFileHandler(logfile, "a", 5 * 1024 * 1024, 10)
         formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
         rotateHandler.setFormatter(formatter)
         self.config.app_log.addHandler(rotateHandler)
@@ -720,7 +731,7 @@ class NodeApplication(Application):
 
     def init_ioloop(self):
         tornado.ioloop.IOLoop.current().set_default_executor(
-            ThreadPoolExecutor(max_workers=1)
+            ThreadPoolExecutor(max_workers=2)
         )
 
         if MODES.NODE.value in self.config.modes:
@@ -764,6 +775,12 @@ class NodeApplication(Application):
                     self.config.nonce_processor_wait * 1000,
                 ).start()
 
+                PeriodicCallback(
+                    self.background_pool_info_checker,
+                    self.config.pool_info_checker_wait * 1000
+                ).start()
+
+
         if self.config.pool_payout:
             self.config.app_log.info("PoolPayout activated")
             self.config.pp = PoolPayer()
@@ -771,8 +788,8 @@ class NodeApplication(Application):
             PeriodicCallback(
                 self.background_pool_payer, self.config.pool_payer_wait * 1000
             ).start()
-        while True:
-            tornado.ioloop.IOLoop.current().start()
+
+        tornado.ioloop.IOLoop.current().start()
 
     def init_jwt(self):
         jwt_key = EccKey(curve="p256", d=int(self.config.private_key, 16))

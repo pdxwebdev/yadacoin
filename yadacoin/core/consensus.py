@@ -4,6 +4,7 @@ sys.setrecursionlimit(1000000)
 import datetime
 import json
 import logging
+import asyncio
 from time import time
 from traceback import format_exc
 
@@ -11,6 +12,7 @@ from tornado.iostream import StreamClosedError
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.peer import Peer
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
@@ -137,11 +139,15 @@ class Consensus(object):
                     return
 
                 if block.index < self.config.LatestBlock.block.index:
-                    await self.config.nodeShared.write_params(
-                        stream,
-                        "newblock",
-                        {"payload": {"block": self.config.LatestBlock.block.to_dict()}},
-                    )
+                    try:
+                        await self.config.nodeShared.write_params(
+                            stream,
+                            "newblock",
+                            {"payload": {"block": self.config.LatestBlock.block.to_dict()}},
+                        )
+                    except Exception as e:
+                        self.config.app_log.error(f"Error sending response: {e}")
+
                     self.config.app_log.info(
                         f"block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}"
                     )
@@ -205,18 +211,30 @@ class Consensus(object):
             }
         )
         if existing:
+            self.app_log.info(
+                "Block with index %s, signature %s, and peer %s already exists in consensus."
+                % (block.index, block.signature, peer.to_string())
+            )
             return True
+
         try:
             await block.verify()
-        except:
+        except Exception as e:
+            self.app_log.error(
+                "Failed to verify block with index %s, signature %s, and peer %s: %s"
+                % (block.index, block.signature, peer.to_string(), str(e))
+            )
             return False
+
         self.app_log.info(
-            "inserting new consensus block for height and peer: %s %s"
+            "Inserting new consensus block for height %s and peer %s."
             % (block.index, peer.to_string())
         )
+
         await self.mongo.async_db.consensus.delete_many(
             {"index": block.index, "peer.rid": peer.rid}
         )
+
         await self.mongo.async_db.consensus.insert_one(
             {
                 "block": block.to_dict(),
@@ -225,6 +243,7 @@ class Consensus(object):
                 "peer": peer.to_dict(),
             }
         )
+
         return True
 
     async def sync_bottom_up(self, synced):
@@ -284,8 +303,9 @@ class Consensus(object):
             #    getblocks <--- rpc request
             #    blocksresponse <--- rpc response
             #    process_block_queue
-            if (time() - self.last_network_search) > 30 or not synced:
+            if (time() - self.last_network_search) >= 60 or not synced:
                 self.last_network_search = time()
+                self.app_log.info("Calling search_network_for_new")
                 return await self.search_network_for_new()
 
     async def search_network_for_new(self):
@@ -301,6 +321,7 @@ class Consensus(object):
             try:
                 peer.syncing = True
                 await self.request_blocks(peer)
+                break # there is no point in downloading the same blocks from each node, TODO use random node selection or download a different blocks interval from each of them
             except StreamClosedError:
                 peer.close()
             except Exception as e:
@@ -510,10 +531,9 @@ class Consensus(object):
             self.app_log.info("New block inserted for height: {}".format(block.index))
 
             if self.config.mp:
-                if self.syncing or (hasattr(stream, "syncing") and stream.syncing):
-                    return True
                 try:
                     await self.config.mp.refresh()
+                    await self.config.mp.update_block_status()
                 except Exception:
                     self.app_log.warning("{}".format(format_exc()))
 

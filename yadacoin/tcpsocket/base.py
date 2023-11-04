@@ -139,11 +139,11 @@ class RPCSocketServer(TCPServer, BaseRPC):
 
         # OPTIONAL: Adjust keepalive settings if needed
         if hasattr(socket, "TCP_KEEPIDLE"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 60)
+            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 120)
         if hasattr(socket, "TCP_KEEPINTVL"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 15)
+            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
         if hasattr(socket, "TCP_KEEPCNT"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 5)
+            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 1)
 
         stream.synced = False
         stream.syncing = False
@@ -153,7 +153,11 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 data = await stream.read_until(b"\n")
                 stream.last_activity = int(time.time())
                 self.config.health.tcp_server.last_activity = time.time()
-                body = json.loads(data)
+                try:
+                    body = json.loads(data)
+                except json.JSONDecodeError as e:
+                    self.config.app_log.warning("Failed to parse JSON data: {}".format(str(e)))
+                    continue
                 method = body.get("method")
                 if "result" in body:
                     if method in REQUEST_RESPONSE_MAP:
