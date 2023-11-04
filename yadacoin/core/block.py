@@ -240,6 +240,8 @@ class Block(object):
                     stream = await TCPClient().connect(
                         node.host, node.port, timeout=timedelta(seconds=1)
                     )
+                    successful_nodes.append(node)
+                    stream.close()
                 except StreamClosedError:
                     config.app_log.warning(
                         f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
@@ -252,7 +254,6 @@ class Block(object):
                     config.app_log.warning(
                         f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
                     )
-                successful_nodes.append(node)
 
             masternode_reward_divided = masternode_reward_total / len(successful_nodes)
             for successful_node in successful_nodes:
