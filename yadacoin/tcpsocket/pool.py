@@ -25,7 +25,7 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = Config()
 
-        if time.time() - cls.config.mp.block_factory.time > 900:
+        if time.time() - cls.config.mp.block_factory.time > 1200:
             await cls.config.mp.refresh()
 
         if cls.current_header != cls.config.mp.block_factory.header:
@@ -52,9 +52,7 @@ class StratumServer(RPCSocketServer):
         cls.current_header = cls.config.mp.block_factory.header
         result = {"id": job.id, "job": job.to_dict()}
         rpc_data = {"id": 1, "method": "job", "jsonrpc": 2.0, "result": result}
-
         cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
-        cls.config.app_log.debug(f"Job data: {job.to_dict()}")
 
         for _ in range(3):
             try:

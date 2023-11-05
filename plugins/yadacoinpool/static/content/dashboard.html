@@ -79,23 +79,26 @@
             <div id="pool-payout-scheme"></div>
         </div>
     </div>
+        <div class="column3" style="font-size: 24px; margin-top: 10px;">Pool Hashrate History</div>
+        <div class="column3">
+            <canvas id="hashrate-chart" style="width: 100%; max-height: 250px;"></canvas>
+        </div>
 </div>
 
 <script>
-    function formatHashRate(hashrate) {
-        let unit = 'H/s';
+function formatHashRate(hashrate) {
+    let unit = 'H/s';
 
-        if (hashrate >= 1000000) {
-          hashrate /= 1000000;
-          unit = 'MH/s';
-        } else if (hashrate >= 1000) {
-          hashrate /= 1000;
-          unit = 'KH/s';
-        }
-
-        return hashrate.toFixed(2) + ' ' + unit;
+    if (hashrate >= 1000000) {
+      hashrate /= 1000000;
+      unit = 'MH/s';
+    } else if (hashrate >= 1000) {
+      hashrate /= 1000;
+      unit = 'KH/s';
     }
 
+    return hashrate.toFixed(2) + ' ' + unit;
+}
 
     $.get('/pool-info').then((data) => {
         $('#pool-hash-rate').html(formatHashRate(data.pool.hashes_per_second));
@@ -147,5 +150,47 @@
         const payoutFrequency = data.pool.payout_frequency;
         const formattedFrequency = formatTime(payoutFrequency);
         $('#pool-payout-frequency').html('Payout every: ' + formattedFrequency);
+
+        const hashrateHistory = data.pool.hashrate_history;
+
+        // Wybierz co około co 20 pomiarów
+        const times = hashrateHistory
+            .map(entry => new Date(entry.time * 1000).toLocaleTimeString())
+            .filter((_, index) => index % 20 === 0);
+
+        const hashRates = hashrateHistory
+            .map(entry => entry.pool_hash_rate)
+            .filter((_, index) => index % 20 === 0);
+
+        // Utwórz wykres
+        const ctx = document.getElementById('hashrate-chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: times, // Czasy na osi X (bez opisu)
+                datasets: [{
+                    label: 'Pool Hashrate',
+                    data: hashRates, // Przekształcone wartości hashrate na osi Y
+                    fill: true, // Wypełnienie obszaru pod linią
+                    borderColor: '#333', // Kolor linii
+                    tension: 0.1, // Gładkość linii
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        display: false,
+                        reverse: true, // Odwróć oś X
+                    },
+                    y: {
+                        display: false,
+                        beginAtZero: true,
+                    }
+                }
+            }
+        });
     });
+
 </script>

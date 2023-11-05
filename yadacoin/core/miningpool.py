@@ -303,7 +303,7 @@ class MiningPool(object):
             # await self.refresh()
             return {}
         target = hex(int(self.block_factory.target))[2:].rjust(64, "0")
-        self.config.app_log.debug("Target: %s", target)
+        self.config.app_log.info("Target: %s", target)
         res = {
             "target": target,  # target is now in hex format
             "special_target": hex(int(self.block_factory.special_target))[2:].rjust(
@@ -334,7 +334,7 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = hex(random.randrange(10000, 1000000))[2:]
+        extra_nonce = hex(random.randrange(1000000, 100000000))[2:]
         header = self.block_factory.header.replace("{nonce}", "{00}" + extra_nonce)
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
@@ -619,8 +619,6 @@ class MiningPool(object):
             )
             network_hash_rate = 0
 
-
-        # Oto aktualizacja danych w bazie "pool_info"
         await self.config.mongo.async_db.pool_info.insert_one(
             {
                 "pool_hash_rate": pool_hash_rate,
@@ -633,11 +631,10 @@ class MiningPool(object):
 
     async def update_miners_stats(self):
         miner_hashrate_seconds = 1200
-        current_time = int(time.time())  # Aktualny czas
+        current_time = int(time.time())
 
         hashrate_query = {"time": {"$gt": current_time - miner_hashrate_seconds}}
 
-        # Grupowanie shares na górników i pracowników
         hashrate_cursor = self.config.mongo.async_db.shares.aggregate([
             {"$match": hashrate_query},
             {"$group": {
@@ -650,7 +647,7 @@ class MiningPool(object):
         ])
 
         worker_hashrate = {}
-        miner_stats = []  # Lista dla miner_stats
+        miner_stats = []
         total_hashrate = 0
 
         async for doc in hashrate_cursor:
@@ -671,10 +668,9 @@ class MiningPool(object):
 
             worker_hashrate[address][worker_name]["worker_hashrate"] += worker_hashrate_individual
 
-        # Zapisz dane do miner_stats
         for address, worker_data in worker_hashrate.items():
             address_stats = []
-            total_address_hashrate = 0  # Dodaj total hash rate dla adresu
+            total_address_hashrate = 0
             for worker_name, data in worker_data.items():
                 hashrate_data = {
                     "worker_name": worker_name,
@@ -684,14 +680,12 @@ class MiningPool(object):
                 total_address_hashrate += data["worker_hashrate"]
             miner_stats.append({"miner_address": address, "worker_stats": address_stats, "total_hashrate": total_address_hashrate})
 
-        # Tworzenie dokumentu miner_stats
         miners_stats_data = {
             "time": int(time.time()),
             "miner_stats": miner_stats,
             "total_hashrate": total_hashrate
         }
 
-        # Zapisz dane w nowym formacie
         await self.config.mongo.async_db.miners_stats.insert_one(miners_stats_data)
 
     async def accept_block(self, block):
@@ -729,7 +723,7 @@ class MiningPool(object):
         for block in pending_blocks_list:
             confirmations = latest_block_index - block['index']
             
-            if confirmations >= 6:
+            if confirmations >= self.config.block_confirmation:
                 matching_block = await self.config.mongo.async_db.blocks.find_one({"index": block['index']})
                 
                 if matching_block and matching_block['hash'] == block['hash']:

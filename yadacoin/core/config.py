@@ -126,7 +126,7 @@ class Config:
         self.max_miners = config.get("max_miners", 100)
         self.max_peers = config.get("max_peers", 20)
         self.pool_diff = config.get("pool_diff", 100000)
-        self.block_confirmation = config.get("block_confirmation", 6)
+        self.block_confirmation = config.get("block_confirmation", 12)
 
         self.restrict_graph_api = config.get("restrict_graph_api", False)
 
@@ -331,7 +331,7 @@ class Config:
                 "pool_take": 0.01,
                 "pool_payer_wait": 1800,
                 "pool_info_checker_wait": 30,
-                "block_confirmation": 6,
+                "block_confirmation": 12,
                 "max_miners": 100,
                 "max_peers": 20,
                 "pool_diff": 100000,
@@ -400,7 +400,7 @@ class Config:
         cls.max_miners = config.get("max_miners", 100)
         cls.max_peers = config.get("max_peers", 20)
         cls.pool_diff = config.get("pool_diff", 100000)
-        cls.block_confirmation = config.get("block_confirmation", 6)
+        cls.block_confirmation = config.get("block_confirmation", 12)
 
         cls.restrict_graph_api = config.get("restrict_graph_api", False)
 
