@@ -39,8 +39,7 @@ class MiningPool(object):
             self.index = last_block.index
         self.last_refresh = 0
         self.block_factory = None
-        if await Peer.is_synced():
-            await self.refresh()
+        await self.refresh()
         return self
 
     def get_status(self):
@@ -334,11 +333,11 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = hex(random.randrange(1000000, 100000000))[2:]
+        extra_nonce = hex(random.randrange(1000000, 1000000000))[2:]
         header = self.block_factory.header.replace("{nonce}", "{00}" + extra_nonce)
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
-            target = hex(0x10000000000000001 // self.config.pool_diff)
+            target = "0x0000" + hex(0x10000000000000001 // self.config.pool_diff)[2:]
         elif self.config.pool_diff <= 69905:
             target = hex(
                 0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000
