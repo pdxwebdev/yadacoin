@@ -72,17 +72,17 @@ class PoolInfoHandler(BaseWebHandler):
         avg_network_hash_rate = latest_pool_info.get("avg_network_hash_rate", 0)
         net_difficulty = latest_pool_info.get("net_difficulty", 0)
 
-        twenty_four_hours_ago = time.time() - 24 * 60 * 60  # 24 godziny w sekundach
+        twenty_four_hours_ago = time.time() - 24 * 60 * 60
 
         history_query = {
             "time": {"$gte": twenty_four_hours_ago},
-            "pool_hash_rate": {"$exists": True}  # Upewnij się, że istnieje pole pool_hash_rate
+            "pool_hash_rate": {"$exists": True}
         }
 
         cursor = self.config.mongo.async_db.pool_info.find(
             history_query,
             {"_id": 0, "time": 1, "pool_hash_rate": 1}
-        ).sort([("time", -1)])  # Sortowanie względem czasu rosnąco
+        ).sort([("time", -1)])
 
         hashrate_history = await cursor.to_list(None)
 

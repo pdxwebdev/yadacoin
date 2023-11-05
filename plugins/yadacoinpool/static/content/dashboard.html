@@ -153,7 +153,6 @@ function formatHashRate(hashrate) {
 
         const hashrateHistory = data.pool.hashrate_history;
 
-        // Wybierz co około co 20 pomiarów
         const times = hashrateHistory
             .map(entry => new Date(entry.time * 1000).toLocaleTimeString())
             .filter((_, index) => index % 20 === 0);
@@ -162,18 +161,17 @@ function formatHashRate(hashrate) {
             .map(entry => entry.pool_hash_rate)
             .filter((_, index) => index % 20 === 0);
 
-        // Utwórz wykres
         const ctx = document.getElementById('hashrate-chart').getContext('2d');
         const chart = new Chart(ctx, {
             type: 'line',
             data: {
-                labels: times, // Czasy na osi X (bez opisu)
+                labels: times,
                 datasets: [{
                     label: 'Pool Hashrate',
-                    data: hashRates, // Przekształcone wartości hashrate na osi Y
-                    fill: true, // Wypełnienie obszaru pod linią
-                    borderColor: '#333', // Kolor linii
-                    tension: 0.1, // Gładkość linii
+                    data: hashRates,
+                    fill: true,
+                    borderColor: '#333',
+                    tension: 0.1,
                 }]
             },
             options: {
@@ -182,7 +180,7 @@ function formatHashRate(hashrate) {
                 scales: {
                     x: {
                         display: false,
-                        reverse: true, // Odwróć oś X
+                        reverse: true,
                     },
                     y: {
                         display: false,
