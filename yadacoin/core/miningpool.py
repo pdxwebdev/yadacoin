@@ -274,7 +274,7 @@ class MiningPool(object):
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
-            if self.refreshing or not await Peer.is_synced():
+            if self.refreshing:
                 return
             self.refreshing = True
             await self.config.LatestBlock.block_checker()
@@ -339,7 +339,7 @@ class MiningPool(object):
         header = self.block_factory.header.replace("{nonce}", "{00}" + extra_nonce)
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
-            target = "0x0000" + hex(0x1000000000001 // self.config.pool_diff)[2:]
+            target = "0x0000" + hex(0x10000000000000001 // self.config.pool_diff)[2:]
         elif self.config.pool_diff <= 69905:
             target = hex(
                 0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000
