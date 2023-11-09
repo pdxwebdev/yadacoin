@@ -71,7 +71,7 @@ class StratumServer(RPCSocketServer):
         if not cls.config:
             cls.config = Config()
         await cls.config.mongo.async_db.pool_stats.update_one(
-            {"stat": "worker_count"},
+            {"stat": "miner_count"},
             {
                 "$set": {
                     "value": len(StratumServer.inbound_streams[Miner.__name__].keys())
@@ -80,8 +80,12 @@ class StratumServer(RPCSocketServer):
             upsert=True,
         )
         await cls.config.mongo.async_db.pool_stats.update_one(
-            {"stat": "miner_count"},
-            {"$set": {"value": len(await Peer.get_miner_streams())}},
+            {"stat": "worker_count"},
+            {
+                "$set": {
+                    "value": len(await Peer.get_miner_streams())
+                }
+            },
             upsert=True,
         )
 
