@@ -335,25 +335,20 @@ class NodeApplication(Application):
         """
         self.config.app_log.debug("background_block_checker")
         if not hasattr(self.config, "background_block_checker"):
-            self.config.background_block_checker = WorkerVars(busy=False, last_send=0)
+            self.config.background_block_checker = WorkerVars(busy=False, last_send=0, last_block_height=0)
+
         if self.config.background_block_checker.busy:
             return
         self.config.background_block_checker.busy = True
+
         try:
-            self.config.background_block_checker.last_block_height = 0
-            if LatestBlock.block:
-                self.config.background_block_checker.last_block_height = (
-                    LatestBlock.block.index
-                )
-            await LatestBlock.block_checker()
-            if (
-                self.config.background_block_checker.last_block_height
-                != LatestBlock.block.index
-            ):
+            current_block_index = LatestBlock.block.index
+
+            if self.config.background_block_checker.last_block_height != current_block_index:
                 self.config.app_log.info(
                     "Latest block height: %s | time: %s"
                     % (
-                        self.config.LatestBlock.block.index,
+                        current_block_index,
                         datetime.fromtimestamp(
                             int(self.config.LatestBlock.block.time)
                         ).strftime("%Y-%m-%d %H:%M:%S"),
@@ -362,7 +357,16 @@ class NodeApplication(Application):
                 await self.config.nodeShared.send_block_to_peers(
                     self.config.LatestBlock.block
                 )
-            elif int(time()) - self.config.background_block_checker.last_send > 60:
+                synced = await Peer.is_synced()
+                if synced:
+                    self.config.app_log.info("Node synced, sending mempool.")
+                    await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
+                if not synced:
+                    self.config.app_log.info("Node not synced, mempool will not be sent.")
+
+                self.config.background_block_checker.last_block_height = current_block_index
+
+            elif int(time()) - self.config.background_block_checker.last_send > 120:
                 self.config.background_block_checker.last_send = int(time())
                 await self.config.nodeShared.send_block_to_peers(
                     self.config.LatestBlock.block
@@ -371,6 +375,7 @@ class NodeApplication(Application):
             self.config.health.block_checker.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
+
         self.config.background_block_checker.busy = False
 
     async def background_message_sender(self):
@@ -484,40 +489,42 @@ class NodeApplication(Application):
     async def background_block_queue_processor(self):
         self.config.app_log.debug("background_block_queue_processor")
         if not hasattr(self.config, "background_block_queue_processor"):
-            self.config.background_block_queue_processor = WorkerVars(busy=False)
+            self.config.background_block_queue_processor = WorkerVars(busy=False, consensus_last_activity=int(time()))
         if self.config.background_block_queue_processor.busy:
             return
         self.config.background_block_queue_processor.busy = True
-        while True:
-            try:
-                synced = await Peer.is_synced()
-                skip = False
-                if self.config.processing_queues.block_queue.queue:
-                    if (
-                        time() - self.config.health.consensus.last_activity
-                        < CHAIN.FORCE_CONSENSUS_TIME_THRESHOLD
-                    ):
-                        skip = True
-                if not skip or not synced:
-                    await self.config.consensus.sync_bottom_up(synced)
-                    self.config.health.consensus.last_activity = time()
-            except Exception:
-                self.config.app_log.error(format_exc())
 
-            try:
-                if self.config.processing_queues.block_queue.queue:
-                    self.config.processing_queues.block_queue.time_sum_start()
-                    await self.config.consensus.process_block_queue()
-                    self.config.processing_queues.block_queue.time_sum_end()
-                self.config.health.block_inserter.last_activity = int(time())
-            except:
-                self.config.app_log.error(format_exc())
-                self.config.processing_queues.block_queue.time_sum_end()
-
+        try:
             synced = await Peer.is_synced()
-            if not synced and self.config.processing_queues.block_queue.queue:
-                continue
-            break
+            skip = True
+            if time() - self.config.background_block_queue_processor.consensus_last_activity >= 60:
+                self.config.background_block_queue_processor.consensus_last_activity = int(time())
+                skip = False
+            else:
+                self.config.app_log.info(f"Synced: {synced}, Skip: {skip}")
+            if not skip or not synced:
+                await self.config.consensus.sync_bottom_up(synced)
+                self.config.app_log.info("Syncing bottom-up.")
+                self.config.health.consensus.last_activity = time()
+                self.config.app_log.info(
+                    f"consensus.last_activity: {self.config.health.consensus.last_activity}"
+                )
+        except Exception:
+            self.config.app_log.error(format_exc())
+
+        try:
+            if self.config.processing_queues.block_queue.queue:
+                self.config.processing_queues.block_queue.time_sum_start()
+                await self.config.consensus.process_block_queue()
+                self.config.processing_queues.block_queue.time_sum_end()
+            self.config.health.block_inserter.last_activity = int(time())
+            self.config.app_log.info(
+                f"block_inserter.last_activity: {self.config.health.block_inserter.last_activity}"
+            )
+        except:
+            self.config.app_log.error(format_exc())
+            self.config.processing_queues.block_queue.time_sum_end()
+
         self.config.background_block_queue_processor.busy = False
 
     async def background_pool_payer(self):
@@ -625,7 +632,7 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
-            await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
+            #await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
