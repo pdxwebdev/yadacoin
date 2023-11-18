@@ -345,29 +345,28 @@ class NodeApplication(Application):
             current_block_index = LatestBlock.block.index
 
             if self.config.background_block_checker.last_block_height != current_block_index:
-                self.config.app_log.info(
-                    "Latest block height: %s | time: %s"
-                    % (
-                        current_block_index,
-                        datetime.fromtimestamp(
-                            int(self.config.LatestBlock.block.time)
-                        ).strftime("%Y-%m-%d %H:%M:%S"),
-                    )
-                )
-                await self.config.nodeShared.send_block_to_peers(
-                    self.config.LatestBlock.block
-                )
-
                 if self.config.background_block_checker.first_run:
                     self.config.background_block_checker.first_run = False
                     synced = False
                 else:
                     synced = await Peer.is_synced()
                 if synced:
+                    self.config.app_log.info(
+                        "Latest block height: %s | time: %s"
+                        % (
+                            current_block_index,
+                            datetime.fromtimestamp(
+                                int(self.config.LatestBlock.block.time)
+                            ).strftime("%Y-%m-%d %H:%M:%S"),
+                        )
+                    )
+                    await self.config.nodeShared.send_block_to_peers(
+                        self.config.LatestBlock.block
+                    )
                     self.config.app_log.info("Node synced, sending mempool.")
                     await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
                 if not synced:
-                    self.config.app_log.info("Node not synced, mempool will not be sent.")
+                    self.config.app_log.info("Sending a new block and mempool prohibited, synchronization in progress")
 
                 self.config.background_block_checker.last_block_height = current_block_index
 
@@ -507,6 +506,19 @@ class NodeApplication(Application):
         self.config.background_block_queue_processor.busy = True
 
         try:
+            if self.config.processing_queues.block_queue.queue:
+                self.config.processing_queues.block_queue.time_sum_start()
+                await self.config.consensus.process_block_queue()
+                self.config.processing_queues.block_queue.time_sum_end()
+            self.config.health.block_inserter.last_activity = int(time())
+            self.config.app_log.info(
+                f"block_inserter.last_activity: {self.config.health.block_inserter.last_activity}"
+            )
+        except:
+            self.config.app_log.error(format_exc())
+            self.config.processing_queues.block_queue.time_sum_end()
+
+        try:
             synced = await Peer.is_synced()
             skip = True
             if time() - self.config.background_block_queue_processor.consensus_last_activity >= 60:
@@ -523,19 +535,6 @@ class NodeApplication(Application):
                 )
         except Exception:
             self.config.app_log.error(format_exc())
-
-        try:
-            if self.config.processing_queues.block_queue.queue:
-                self.config.processing_queues.block_queue.time_sum_start()
-                await self.config.consensus.process_block_queue()
-                self.config.processing_queues.block_queue.time_sum_end()
-            self.config.health.block_inserter.last_activity = int(time())
-            self.config.app_log.info(
-                f"block_inserter.last_activity: {self.config.health.block_inserter.last_activity}"
-            )
-        except:
-            self.config.app_log.error(format_exc())
-            self.config.processing_queues.block_queue.time_sum_end()
 
         self.config.background_block_queue_processor.busy = False
 
