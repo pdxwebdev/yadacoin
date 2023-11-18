@@ -102,11 +102,11 @@ class MiningPool(object):
             .decode()
             .replace(job.start_nonce, "{nonce}")
         )
-        self.config.app_log.info(f"Start Nonce for job {job.index}: {job.start_nonce}")
-        self.config.app_log.info(f"Header for job {job.index}: {header}")
-        self.config.app_log.info(f"Nonce for job {job.index}: {nonce}")
+        self.config.app_log.debug(f"Start Nonce for job {job.index}: {job.start_nonce}")
+        self.config.app_log.debug(f"Header for job {job.index}: {header}")
+        self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
-        self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
+        self.config.app_log.debug(f"Hash1 for job {job.index}: {hash1}")
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
         else:
