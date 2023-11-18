@@ -141,9 +141,9 @@ class Config:
 
         self.peers_wait = config.get("peers_wait", 3)
         self.status_wait = config.get("status_wait", 10)
-        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
+        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 1)
         self.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
-        self.block_checker_wait = config.get("block_checker_wait", 1)
+        self.block_checker_wait = config.get("block_checker_wait", 2)
         self.message_sender_wait = config.get("message_sender_wait", 10)
         self.pool_payer_wait = config.get("pool_payer_wait", 120)
         self.cache_validator_wait = config.get("cache_validator_wait", 30)
@@ -414,9 +414,9 @@ class Config:
 
         cls.peers_wait = config.get("peers_wait", 3)
         cls.status_wait = config.get("status_wait", 10)
-        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
+        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 1)
         cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
-        cls.block_checker_wait = config.get("block_checker_wait", 1)
+        cls.block_checker_wait = config.get("block_checker_wait", 2)
         cls.message_sender_wait = config.get("message_sender_wait", 10)
         cls.pool_payer_wait = config.get("pool_payer_wait", 120)
         cls.cache_validator_wait = config.get("cache_validator_wait", 30)
