@@ -19,12 +19,12 @@ class PoolPayer(object):
         self.config = Config()
         self.app_log = getLogger("tornado.application")
 
-    async def do_payout(self, already_paid_height=None):
+    async def do_payout(self, already_paid_height=None, start_index=None):
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
 
-        if not already_paid_height:
+        if not start_index:
             already_paid_height = (
                 await self.config.mongo.async_db.share_payout.find_one(
                     {}, sort=[("index", -1)]
@@ -33,9 +33,9 @@ class PoolPayer(object):
             if not already_paid_height:
                 already_paid_height = {}
             else:
-                already_paid_height = {"index": max(already_paid_height.get("index", []))}
-
-        self.app_log.debug("already_paid_height: %s", already_paid_height)
+                already_paid_height = {"index": max(already_paid_height.get("index", 0))}
+        else:
+            already_paid_height = {"index": start_index}
 
         won_blocks = self.config.mongo.async_db.blocks.aggregate(
             [

@@ -8,8 +8,8 @@ class Job:
         inst.blob = job["blob"]
         inst.seed_hash = job["seed_hash"]
         inst.index = job["height"]
-        inst.extra_nonce = job["extra_nonce"]
         inst.algo = job["algo"]
+        inst.start_nonce = job["start_nonce"]
         return inst
 
     def to_dict(self):
@@ -20,6 +20,5 @@ class Job:
             "blob": self.blob,
             "seed_hash": self.seed_hash,
             "height": self.index,
-            "extra_nonce": self.extra_nonce,
             "algo": self.algo,
         }

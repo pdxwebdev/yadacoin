@@ -4,6 +4,8 @@ import json
 import random
 import uuid
 import asyncio
+import secrets
+
 from logging import getLogger
 from decimal import Decimal
 
@@ -79,8 +81,8 @@ class MiningPool(object):
                     await stream.write("{}\n".format(json.dumps(data)).encode())
                 except:
                     pass
-                if "error" in data:
-                    await StratumServer.send_job(stream)
+                #if "error" in data:
+                    #await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
 
@@ -95,14 +97,16 @@ class MiningPool(object):
 
 
     async def process_nonce(self, miner, nonce, job):
-        nonce = nonce + job.extra_nonce.encode().hex()
         header = (
             binascii.unhexlify(job.blob)
             .decode()
-            .replace("{00}", "{nonce}")
-            .replace(job.extra_nonce, "")
+            .replace(job.start_nonce, "{nonce}")
         )
+        self.config.app_log.info(f"Start Nonce for job {job.index}: {job.start_nonce}")
+        self.config.app_log.info(f"Header for job {job.index}: {header}")
+        self.config.app_log.info(f"Nonce for job {job.index}: {nonce}")
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
+        self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
         else:
@@ -335,11 +339,11 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = hex(random.randrange(10000000, 100000000))[2:]
-        header = self.block_factory.header.replace("{nonce}", "{00}" + extra_nonce)
+        start_nonce = secrets.token_hex(2)
+        header = self.block_factory.header.replace("{nonce}", start_nonce)
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
-            target = "0x0000" + hex(0x10000000000000001 // self.config.pool_diff)[2:]
+            target = '471b47acc5a70000'
         elif self.config.pool_diff <= 69905:
             target = hex(
                 0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000
@@ -357,7 +361,7 @@ class MiningPool(object):
             "seed_hash": seed_hash,
             "height": self.config.LatestBlock.block.index
             + 1,  # This is the height of the one we are mining
-            "extra_nonce": extra_nonce,
+            "start_nonce": start_nonce,
             "algo": "rx/yada",
         }
 

@@ -383,10 +383,10 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
             stream.synced = True
-            await self.send_mempool(stream)
+            #await self.send_mempool(stream)
             return
-
         self.config.consensus.syncing = True
+        stream.synced = False
         blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = blocks[0]
         forward_blocks_chain = await self.config.consensus.build_remote_chain(
