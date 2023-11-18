@@ -335,7 +335,7 @@ class NodeApplication(Application):
         """
         self.config.app_log.debug("background_block_checker")
         if not hasattr(self.config, "background_block_checker"):
-            self.config.background_block_checker = WorkerVars(busy=False, last_send=0, last_block_height=0)
+            self.config.background_block_checker = WorkerVars(busy=False, last_send=int(time()), last_block_height=0, first_run=True)
 
         if self.config.background_block_checker.busy:
             return
@@ -357,7 +357,12 @@ class NodeApplication(Application):
                 await self.config.nodeShared.send_block_to_peers(
                     self.config.LatestBlock.block
                 )
-                synced = await Peer.is_synced()
+
+                if self.config.background_block_checker.first_run:
+                    self.config.background_block_checker.first_run = False
+                    synced = False
+                else:
+                    synced = await Peer.is_synced()
                 if synced:
                     self.config.app_log.info("Node synced, sending mempool.")
                     await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
@@ -366,11 +371,18 @@ class NodeApplication(Application):
 
                 self.config.background_block_checker.last_block_height = current_block_index
 
-            elif int(time()) - self.config.background_block_checker.last_send > 120:
+            elif int(time()) - self.config.background_block_checker.last_send > 600:
                 self.config.background_block_checker.last_send = int(time())
+                self.config.app_log.info("Time condition met, sending Last Block to peers.")
                 await self.config.nodeShared.send_block_to_peers(
                     self.config.LatestBlock.block
                 )
+                synced = await Peer.is_synced()
+                if synced:
+                    self.config.app_log.info("Node synced, sending mempool.")
+                    await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
+                if not synced:
+                    self.config.app_log.info("Node not synced, mempool will not be sent.")
 
             self.config.health.block_checker.last_activity = int(time())
         except Exception:
