@@ -192,6 +192,9 @@ class Mongo(object):
             pass
 
         __id = IndexModel([("id", ASCENDING)], name="__id")
+        __hash = IndexModel([("hash", ASCENDING)], name="__hash")
+        __outputs_to = IndexModel([("outputs.to", ASCENDING)], name="__outputs_to")
+        __public_key = IndexModel([("public_key", ASCENDING)], name="__public_key")
         __rid = IndexModel([("rid", ASCENDING)], name="__rid")
         __requested_rid = IndexModel(
             [("requested_rid", ASCENDING)], name="__requested_rid"
@@ -208,6 +211,9 @@ class Mongo(object):
             self.db.miner_transactions.create_indexes(
                 [
                     __id,
+                    __hash,
+                    __outputs_to,
+                    __public_key,
                     __rid,
                     __requested_rid,
                     __requester_rid,
@@ -220,6 +226,9 @@ class Mongo(object):
             pass
 
         __id = IndexModel([("txn.id", ASCENDING)], name="__id")
+        __hash = IndexModel([("txn.hash", ASCENDING)], name="__hash")
+        __outputs_to = IndexModel([("txn.outputs.to", ASCENDING)], name="__outputs_to")
+        __public_key = IndexModel([("txn.public_key", ASCENDING)], name="__public_key")
         __rid = IndexModel([("txn.rid", ASCENDING)], name="__rid")
         __requested_rid = IndexModel(
             [("txn.requested_rid", ASCENDING)], name="__requested_rid"
@@ -236,6 +245,9 @@ class Mongo(object):
             self.db.failed_transactions.create_indexes(
                 [
                     __id,
+                    __hash,
+                    __outputs_to,
+                    __public_key,
                     __rid,
                     __requested_rid,
                     __requester_rid,
