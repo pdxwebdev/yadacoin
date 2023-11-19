@@ -10,6 +10,7 @@ class Job:
         inst.index = job["height"]
         inst.algo = job["algo"]
         inst.start_nonce = job["start_nonce"]
+        inst.miner_diff = job["miner_diff"]
         return inst
 
     def to_dict(self):

@@ -48,7 +48,7 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def send_job(cls, stream):
-        job = await cls.config.mp.block_template(stream.peer.agent)
+        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
         result = {"id": job.id, "job": job.to_dict()}
@@ -184,8 +184,13 @@ class StratumServer(RPCSocketServer):
             )
             await StratumServer.remove_peer(stream)
             return
+        custom_diff = None  # Domyślna wartość custom_diff
+        if "@" in body["params"].get("login"):
+            parts = body["params"].get("login").split("@")
+            body["params"]["login"] = parts[0]
+            custom_diff = int(parts[1]) if len(parts) > 1 else 0
         await StratumServer.block_checker()
-        job = await StratumServer.config.mp.block_template(body["params"].get("agent"))
+        job = await StratumServer.config.mp.block_template(body["params"].get("agent"), custom_diff)
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
         stream.jobs[job.id] = job
@@ -199,8 +204,9 @@ class StratumServer(RPCSocketServer):
 
         try:
             stream.peer = Miner(
-                address=body["params"].get("login"), agent=body["params"].get("agent")
+                address=body["params"].get("login"), agent=body["params"].get("agent"), custom_diff=custom_diff
             )
+            stream.peer.custom_diff = custom_diff
             self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
             StratumServer.inbound_streams[Miner.__name__].setdefault(
                 stream.peer.address_only, {}

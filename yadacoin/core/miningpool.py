@@ -168,6 +168,7 @@ class MiningPool(object):
                         "index": block_candidate.index,
                         "hash": block_candidate.hash,
                         "nonce": nonce,
+                        "weight": job.miner_diff,
                         "time": int(time.time()),
                     }
                 },
@@ -323,8 +324,8 @@ class MiningPool(object):
         }
         return res
 
-    async def block_template(self, agent):
-        """Returns info for current block to mine"""
+    async def block_template(self, agent, custom_diff):
+        """Returns info for the current block to mine"""
         if self.block_factory is None:
             await self.refresh()
         if not self.block_factory.target:
@@ -332,25 +333,28 @@ class MiningPool(object):
                 self.config.LatestBlock.block
             )
 
-        job = await self.generate_job(agent)
+        job = await self.generate_job(agent, custom_diff)
         return job
 
-    async def generate_job(self, agent):
+    async def generate_job(self, agent, custom_diff):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
         start_nonce = secrets.token_hex(2)
         header = self.block_factory.header.replace("{nonce}", start_nonce)
 
+        #miner_diff = int(custom_diff) if custom_diff is not None else self.config.pool_diff
+        miner_diff = self.config.pool_diff
+
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
-            target = "0000" + hex(0x10000000000000001 // self.config.pool_diff)[2:]
-        elif self.config.pool_diff <= 69905:
+            target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
+        elif miner_diff <= 69905:
             target = hex(
-                0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000
+                0x10000000000000001 // miner_diff - 0x0000F00000000000
             )[2:].zfill(48)
         else:
             target = "-" + hex(
-                0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000
+                0x10000000000000001 // miner_diff - 0x0000F00000000000
             )[3:].zfill(48)
 
         res = {
@@ -363,6 +367,7 @@ class MiningPool(object):
             + 1,  # This is the height of the one we are mining
             "start_nonce": start_nonce,
             "algo": "rx/yada",
+            "miner_diff": miner_diff,
         }
 
         self.config.app_log.info(f"Generated job: {res}")
@@ -575,14 +580,27 @@ class MiningPool(object):
         await self.config.LatestBlock.block_checker()
 
         expected_blocks = 144
-        mining_time_interval = 600
-        shares_count = await self.config.mongo.async_db.shares.count_documents(
-            {"time": {"$gte": time.time() - mining_time_interval}}
-        )
-        if shares_count > 0:
-            pool_hash_rate = (
-                shares_count * self.config.pool_diff
-            ) / mining_time_interval
+        mining_time_interval = 1200
+
+        pipeline = [
+            {
+                "$match": {
+                    "time": {"$gte": time.time() - mining_time_interval}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_weight": {"$sum": "$weight"}
+                }
+            }
+        ]
+
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+
+        if result and len(result) > 0:
+            total_weight = result[0]["total_weight"]
+            pool_hash_rate = total_weight / mining_time_interval
         else:
             pool_hash_rate = 0
 

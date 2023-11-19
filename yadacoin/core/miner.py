@@ -8,10 +8,15 @@ class Miner(MinerBase):
     address = ""
     address_only = ""
     agent = ""
+    custom_diff = ""
     id_attribute = "address_only"
 
-    def __init__(self, address, agent=""):
+    def __init__(self, address, agent="", custom_diff=""):
         super(Miner, self).__init__()
+        if "@" in address:  # Dodane sprawdzenie obecności @ w adresie
+            parts = address.split("@")
+            address = parts[0]
+            self.custom_diff = int(parts[1]) if len(parts) > 1 else 0
         if "." in address:
             self.address = address
             self.address_only = address.split(".")[0]
@@ -33,7 +38,7 @@ class Miner(MinerBase):
         self.agent = agent
 
     def to_json(self):
-        return {"address": self.address_only, "worker": self.worker}
+        return {"address": self.address_only, "worker": self.worker, "custom_diff": self.custom_diff}
 
 
 class InvalidAddressException(Exception):
