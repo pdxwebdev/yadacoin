@@ -207,6 +207,7 @@ class Mongo(object):
         try:
             self.db.miner_transactions.create_indexes(
                 [
+                    __id,
                     __rid,
                     __requested_rid,
                     __requester_rid,
@@ -234,6 +235,7 @@ class Mongo(object):
         try:
             self.db.failed_transactions.create_indexes(
                 [
+                    __id,
                     __rid,
                     __requested_rid,
                     __requester_rid,
