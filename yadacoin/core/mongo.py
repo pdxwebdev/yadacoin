@@ -191,6 +191,7 @@ class Mongo(object):
         except:
             pass
 
+        __id = IndexModel([("id", ASCENDING)], name="__id")
         __rid = IndexModel([("rid", ASCENDING)], name="__rid")
         __requested_rid = IndexModel(
             [("requested_rid", ASCENDING)], name="__requested_rid"
@@ -217,6 +218,7 @@ class Mongo(object):
         except:
             pass
 
+        __id = IndexModel([("txn.id", ASCENDING)], name="__id")
         __rid = IndexModel([("txn.rid", ASCENDING)], name="__rid")
         __requested_rid = IndexModel(
             [("txn.requested_rid", ASCENDING)], name="__requested_rid"
