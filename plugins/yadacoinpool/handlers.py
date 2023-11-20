@@ -3,13 +3,11 @@ import time
 
 import requests
 from tornado.web import StaticFileHandler
-from cachetools import TTLCache
 
 from yadacoin import version
 from yadacoin.core.chain import CHAIN
 from yadacoin.http.base import BaseHandler
 
-cache = TTLCache(maxsize=1, ttl=3600)
 
 class BaseWebHandler(BaseHandler):
     async def prepare(self):
@@ -31,11 +29,16 @@ class PoolStatsInterfaceHandler(BaseWebHandler):
             mixpanel="pool stats page",
         )
 
+
+cache = {"market_data": None}
+last_refresh = time.time()
+
+
 class MarketInfoHandler(BaseWebHandler):
     async def get(self):
         market_data = cache.get("market_data")
 
-        if market_data is None:
+        if market_data is None or time.time() - last_refresh > 3600:
             market_data = await self.fetch_market_data()
             cache["market_data"] = market_data
 
@@ -45,20 +48,20 @@ class MarketInfoHandler(BaseWebHandler):
         headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
         }
-        response = requests.get("https://safe.trade/api/v2/peatio/public/markets/tickers", headers=headers)
+        response = requests.get(
+            "https://safe.trade/api/v2/peatio/public/markets/tickers", headers=headers
+        )
 
         if response.status_code == 200:
             market_data = {
                 "last_btc": float(response.json()["ydabtc"]["ticker"]["last"]),
-                "last_usdt": float(response.json()["ydausdt"]["ticker"]["last"])
+                "last_usdt": float(response.json()["ydausdt"]["ticker"]["last"]),
             }
         else:
-            market_data = {
-                "last_btc": 0,
-                "last_usdt": 0
-            }
-        
+            market_data = {"last_btc": 0, "last_usdt": 0}
+
         return market_data
+
 
 class PoolInfoHandler(BaseWebHandler):
     async def get(self):
