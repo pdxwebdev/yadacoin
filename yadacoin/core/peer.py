@@ -268,8 +268,8 @@ class Peer:
 
     @staticmethod
     async def is_synced():
-        streams = Config().peer.get_sync_peers()
-        async for stream in streams:
+        streams = await Config().peer.get_outbound_streams()
+        for stream in streams:
             if not stream.synced:
                 return False
         return True

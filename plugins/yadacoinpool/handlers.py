@@ -30,29 +30,41 @@ class PoolStatsInterfaceHandler(BaseWebHandler):
         )
 
 
+cache = {"market_data": None}
+last_refresh = time.time()
+
+
+class MarketInfoHandler(BaseWebHandler):
+    async def get(self):
+        market_data = cache.get("market_data")
+
+        if market_data is None or time.time() - last_refresh > 3600:
+            market_data = await self.fetch_market_data()
+            cache["market_data"] = market_data
+
+        self.render_as_json(market_data)
+
+    async def fetch_market_data(self):
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
+        }
+        response = requests.get(
+            "https://safe.trade/api/v2/peatio/public/markets/tickers", headers=headers
+        )
+
+        if response.status_code == 200:
+            market_data = {
+                "last_btc": float(response.json()["ydabtc"]["ticker"]["last"]),
+                "last_usdt": float(response.json()["ydausdt"]["ticker"]["last"]),
+            }
+        else:
+            market_data = {"last_btc": 0, "last_usdt": 0}
+
+        return market_data
+
+
 class PoolInfoHandler(BaseWebHandler):
     async def get(self):
-        def get_ticker():
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
-            }
-            return requests.get(
-                "https://safe.trade/api/v2/peatio/public/markets/tickers",
-                headers=headers,
-            )
-
-        try:
-            if not hasattr(self.config, "ticker"):
-                self.config.ticker = get_ticker()
-                self.config.last_update = time.time()
-            if (time.time() - self.config.last_update) > (600 * 6):
-                self.config.ticker = get_ticker()
-                self.config.last_update = time.time()
-            last_btc = float(self.config.ticker.json()["ydabtc"]["ticker"]["last"])
-            last_usdt = float(self.config.ticker.json()["ydausdt"]["ticker"]["last"])
-        except:
-            last_btc = 0
-            last_usdt = 0
         await self.config.LatestBlock.block_checker()
         pool_public_key = (
             self.config.pool_public_key
@@ -198,7 +210,6 @@ class PoolInfoHandler(BaseWebHandler):
                     "current_hashes_per_second": network_hash_rate,
                     "difficulty": net_difficulty,
                 },
-                "market": {"last_btc": last_btc, "last_usdt": last_usdt},
                 "coin": {
                     "algo": "randomx YDA",
                     "circulating": CHAIN.get_circulating_supply(
@@ -211,6 +222,7 @@ class PoolInfoHandler(BaseWebHandler):
 
 
 HANDLERS = [
+    (r"/market-info", MarketInfoHandler),
     (r"/pool-info", PoolInfoHandler),
     (r"/", PoolStatsInterfaceHandler),
     (
