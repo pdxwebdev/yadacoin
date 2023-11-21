@@ -200,23 +200,35 @@ class Consensus(object):
         existing = await self.mongo.async_db.consensus.find_one(
             {
                 "index": block.index,
-                "peer.rid": peer.rid,
                 "id": block.signature,
             }
         )
+
         if existing:
+            self.app_log.debug(
+                "Block with index %s, id %s already exists in consensus."
+                % (block.index, block.signature)
+            )
             return True
+
         try:
             await block.verify()
-        except:
+        except Exception as e:
+            self.app_log.error(
+                "Failed to verify block with index %s, id %s for peer %s: %s"
+                % (block.index, block.signature, peer.to_string(), str(e))
+            )
             return False
-        self.app_log.info(
-            "inserting new consensus block for height and peer: %s %s"
-            % (block.index, peer.to_string())
+
+        self.app_log.debug(
+            "Inserting new consensus block for index %s, id %s for peer %s."
+            % (block.index, block.signature, peer.to_string())
         )
+
         await self.mongo.async_db.consensus.delete_many(
-            {"index": block.index, "peer.rid": peer.rid}
+            {"index": block.index}
         )
+
         await self.mongo.async_db.consensus.insert_one(
             {
                 "block": block.to_dict(),
@@ -225,6 +237,7 @@ class Consensus(object):
                 "peer": peer.to_dict(),
             }
         )
+
         return True
 
     async def sync_bottom_up(self, synced):
