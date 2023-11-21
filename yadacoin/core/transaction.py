@@ -458,7 +458,7 @@ class Transaction(object):
 
         if len(self.inputs) > CHAIN.MAX_INPUTS:
             raise TooManyInputsException(
-                "Maximum inputs of {CHAIN.MAX_INPUTS} exceeded."
+                f"Maximum inputs of {CHAIN.MAX_INPUTS} exceeded."
             )
 
         verify_hash = await self.generate_hash()
