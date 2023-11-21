@@ -73,6 +73,8 @@ class CHAIN(object):
 
     FORCE_CONSENSUS_TIME_THRESHOLD = 30
 
+    MAX_INPUTS = 100
+
     @classmethod
     def target_block_time(cls, network: str):
         """What is the target block time for a specific network?"""
