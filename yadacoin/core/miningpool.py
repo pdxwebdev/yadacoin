@@ -399,10 +399,17 @@ class MiningPool(object):
         mempool_smart_contract_objs = {}
         transaction_objs = {}
         used_sigs = []
+
+        check_max_inputs = False
+        if self.config.LatestBlock.block.index + 1 > CHAIN.CHECK_MAX_INPUTS_FORK:
+            check_max_inputs = True
+
         async for txn in self.mongo.async_db.miner_transactions.find(
             {"relationship.smart_contract": {"$exists": True}}
         ).sort([("fee", -1), ("time", 1)]):
-            transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
+            transaction_obj = await self.verify_pending_transaction(
+                txn, used_sigs, check_max_inputs
+            )
             if not isinstance(transaction_obj, Transaction):
                 continue
 
@@ -424,7 +431,9 @@ class MiningPool(object):
         async for txn in self.mongo.async_db.miner_transactions.find(
             {"relationship.smart_contract": {"$exists": False}}
         ).sort([("fee", -1), ("time", 1)]):
-            transaction_obj = await self.verify_pending_transaction(txn, used_sigs)
+            transaction_obj = await self.verify_pending_transaction(
+                txn, used_sigs, check_max_inputs
+            )
             if not isinstance(transaction_obj, Transaction):
                 continue
             if transaction_obj.private == True:
@@ -490,7 +499,7 @@ class MiningPool(object):
             + generated_txns
         )
 
-    async def verify_pending_transaction(self, txn, used_sigs):
+    async def verify_pending_transaction(self, txn, used_sigs, check_max_inputs=False):
         try:
             if isinstance(txn, Transaction):
                 transaction_obj = txn
@@ -511,7 +520,7 @@ class MiningPool(object):
                 await transaction_obj.is_contract_generated()
             )
 
-            await transaction_obj.verify()
+            await transaction_obj.verify(check_max_inputs=check_max_inputs)
 
             if transaction_obj.transaction_signature in used_sigs:
                 self.config.app_log.warning("duplicate transaction found and removed")
