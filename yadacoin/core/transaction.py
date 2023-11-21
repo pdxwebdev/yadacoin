@@ -58,6 +58,10 @@ class InvalidRelationshipHashException(Exception):
     pass
 
 
+class TooManyInputsException(Exception):
+    pass
+
+
 class TransactionConsts(Enum):
     RELATIONSHIP_MAX_SIZE = 20480
 
@@ -451,6 +455,11 @@ class Transaction(object):
 
     async def verify(self, check_input_spent=False):
         from yadacoin.contracts.base import Contract
+
+        if len(self.inputs) > CHAIN.MAX_INPUTS:
+            raise TooManyInputsException(
+                "Maximum inputs of {CHAIN.MAX_INPUTS} exceeded."
+            )
 
         verify_hash = await self.generate_hash()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
