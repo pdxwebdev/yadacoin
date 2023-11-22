@@ -22,7 +22,6 @@ from yadacoin.core.transaction import (
     InvalidTransactionException,
     InvalidTransactionSignatureException,
     MissingInputTransactionException,
-    TooManyInputsException,
     Transaction,
 )
 from yadacoin.core.transactionutils import TU
@@ -160,9 +159,11 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                     if output["to"] == address and float(output["value"]) > 0.0:
                         regular_txns.append(txn)
                         if len(regular_txns) > CHAIN.MAX_INPUTS:
-                            raise TooManyInputsException(
-                                f"Maximum inputs of {CHAIN.MAX_INPUTS} exceeded."
-                            )
+                            wallet = {
+                                "status": False,
+                                "message": f"Maximum inputs of {CHAIN.MAX_INPUTS} exceeded.",
+                            }
+                            return self.render_as_json(wallet, indent=4)
 
             for output in txn["outputs"]:
                 if output["to"] == address:
