@@ -66,7 +66,11 @@ class TU(object):  # Transaction Utilities
         exact_match=False,
         outputs=None,
     ):
-        from yadacoin.core.transaction import NotEnoughMoneyException, Transaction
+        from yadacoin.core.transaction import (
+            NotEnoughMoneyException,
+            TooManyInputsException,
+            Transaction,
+        )
 
         if from_address == config.address:
             public_key = config.public_key
@@ -109,7 +113,7 @@ class TU(object):  # Transaction Utilities
             check_max_inputs = True
         try:
             await transaction.verify(check_max_inputs=check_max_inputs)
-        except NotEnoughMoneyException as e:
+        except TooManyInputsException as e:
             return {"status": "error", "message": e}
         except:
             return {"error": "invalid transaction"}
