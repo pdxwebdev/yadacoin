@@ -7,6 +7,8 @@ import time
 from coincurve._libsecp256k1 import ffi
 from coincurve.keys import PrivateKey
 
+from yadacoin.core.chain import CHAIN
+
 
 class TU(object):  # Transaction Utilities
     @classmethod
@@ -101,9 +103,13 @@ class TU(object):  # Transaction Utilities
             return {"status": "error", "message": "not enough money"}
         except:
             raise
+
+        check_max_inputs = False
+        if config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
+            check_max_inputs = True
         try:
-            await transaction.verify()
-        except:
+            await transaction.verify(check_max_inputs=check_max_inputs)
+        except Exception:
             return {"error": "invalid transaction"}
 
         if not dry_run:
