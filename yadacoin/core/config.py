@@ -139,7 +139,7 @@ class Config:
         self.dns_resolvers = config.get("dns_resolvers", [])
         self.dns_bypass_ips = config.get("dns_bypass_ips", [])
 
-        self.peers_wait = config.get("peers_wait", 3)
+        self.peers_wait = config.get("peers_wait", 30)
         self.status_wait = config.get("status_wait", 10)
         self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
         self.block_queue_processor_wait = config.get("block_queue_processor_wait", 10)
@@ -412,7 +412,7 @@ class Config:
         cls.dns_resolvers = config.get("dns_resolvers", [])
         cls.dns_bypass_ips = config.get("dns_bypass_ips", [])
 
-        cls.peers_wait = config.get("peers_wait", 3)
+        cls.peers_wait = config.get("peers_wait", 30)
         cls.status_wait = config.get("status_wait", 10)
         cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
         cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
