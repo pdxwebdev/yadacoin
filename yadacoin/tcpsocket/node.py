@@ -870,7 +870,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             )
 
     async def capacity(self, body, stream):
-        NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][
+        self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
             stream.peer.identity.username_signature
         ] = time.time()
         self.config.app_log.warning(

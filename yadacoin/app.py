@@ -28,7 +28,6 @@ from os import path
 from time import time
 from traceback import format_exc
 
-import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -39,6 +38,7 @@ from tornado.ioloop import PeriodicCallback
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
+import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -211,6 +211,9 @@ class NodeApplication(Application):
             del self.config.nodeClient.outbound_streams[stream.peer.__class__.__name__][
                 id_attr
             ]
+            self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
+                stream.peer.identity.username_signature
+            ]
 
         if (
             id_attr
@@ -218,6 +221,9 @@ class NodeApplication(Application):
         ):
             del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][
                 id_attr
+            ]
+            self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
+                stream.peer.identity.username_signature
             ]
 
     async def background_peers(self):

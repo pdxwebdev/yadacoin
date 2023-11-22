@@ -14,6 +14,7 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 
 from eccsnacks.curve25519 import scalarmult_base
+from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -144,6 +145,8 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                     if x["to"] == address:
                         pending_balance += float(x["value"])
 
+        if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
+            pass
         regular_txns = []
         chain_balance = 0
         async for txn in self.config.BU.get_wallet_unspent_transactions(
@@ -155,6 +158,12 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                 for output in txn["outputs"]:
                     if output["to"] == address and float(output["value"]) > 0.0:
                         regular_txns.append(txn)
+                        if len(regular_txns) > CHAIN.MAX_INPUTS:
+                            wallet = {
+                                "status": False,
+                                "message": f"Maximum inputs of {CHAIN.MAX_INPUTS} exceeded.",
+                            }
+                            return self.render_as_json(wallet, indent=4)
 
             for output in txn["outputs"]:
                 if output["to"] == address:
