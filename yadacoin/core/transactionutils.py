@@ -110,7 +110,7 @@ class TU(object):  # Transaction Utilities
         try:
             await transaction.verify(check_max_inputs=check_max_inputs)
         except NotEnoughMoneyException as e:
-            {"status": "error", "message": e}
+            return {"status": "error", "message": e}
         except:
             return {"error": "invalid transaction"}
 
