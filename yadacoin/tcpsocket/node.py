@@ -9,6 +9,8 @@ from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
+from yadacoin.core.latestblock import LatestBlock
+from yadacoin.core.nodes import Nodes
 from yadacoin.core.peer import (
     Group,
     Peer,
@@ -214,27 +216,55 @@ class NodeRPC(BaseRPC):
             {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
         )
 
-        async def make_gen(streams):
-            for stream in streams:
-                yield stream
+        if self.config.peer_type in [PEER_TYPES.USER.value, PEER_TYPES.POOL.value]:
+            return
 
-        async for peer_stream in self.config.peer.get_inbound_streams():
-            if peer_stream.peer.rid == stream.peer.rid:
-                continue
-            if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[
-                    (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
-                ] = {"transaction": txn.to_dict()}
+        seed_nodes = Nodes.get_all_nodes_indexed_by_address_for_block_height(
+            self.config.LatestBlock.block.index
+        )
 
-        async for peer_stream in make_gen(
-            await self.config.peer.get_outbound_streams()
+        if (
+            stream.peer.my_peer().peer_type == PEER_TYPES.SEED.value
+            and stream.peer.public_key in seed_nodes
         ):
-            if peer_stream.peer.rid == stream.peer.rid:
-                continue
-            if peer_stream.peer.protocol_version > 1:
-                self.config.nodeClient.retry_messages[
-                    (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
-                ] = {"transaction": txn.to_dict()}
+            async for peer_stream in self.config.peer.get_inbound_streams():
+                if peer_stream.peer.rid == stream.peer.rid:
+                    continue
+                if peer_stream.peer.protocol_version > 1:
+                    self.retry_messages[
+                        (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
+                    ] = {"transaction": txn.to_dict()}
+                    self.config.app_log.info(
+                        f"Transaction {txn.transaction_signature} sent to inbound peer {peer_stream.peer.rid}"
+                    )
+        else:
+            async def make_gen(streams):
+                for stream in streams:
+                    yield stream
+
+            async for peer_stream in self.config.peer.get_inbound_streams():
+                if peer_stream.peer.rid == stream.peer.rid:
+                    continue
+                if peer_stream.peer.protocol_version > 1:
+                    self.retry_messages[
+                        (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
+                    ] = {"transaction": txn.to_dict()}
+                    self.config.app_log.info(
+                        f"Transaction {txn.transaction_signature} sent to inbound peer {peer_stream.peer.rid}"
+                    )
+
+            async for peer_stream in make_gen(
+                await self.config.peer.get_outbound_streams()
+            ):
+                if peer_stream.peer.rid == stream.peer.rid:
+                    continue
+                if peer_stream.peer.protocol_version > 1:
+                    self.config.nodeClient.retry_messages[
+                        (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
+                    ] = {"transaction": txn.to_dict()}
+                    self.config.app_log.info(
+                        f"Transaction {txn.transaction_signature} sent to outbound peer {peer_stream.peer.rid}"
+                    )
 
     async def newtxn_confirmed(self, body, stream):
         result = body.get("result", {})
@@ -383,7 +413,7 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
             stream.synced = True
-            await self.send_mempool(stream)
+            #await self.send_mempool(stream)
             return
         self.config.consensus.syncing = True
         blocks = [await Block.from_dict(x) for x in blocks]
