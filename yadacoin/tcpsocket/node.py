@@ -196,7 +196,7 @@ class NodeRPC(BaseRPC):
         txn = item.transaction
         stream = item.stream
         try:
-            await txn.verify(check_input_spent=True)
+            await txn.verify(check_input_spent=True, check_max_inputs=True)
         except Exception as e:
             await Transaction.handle_exception(e, txn)
             return
@@ -215,17 +215,19 @@ class NodeRPC(BaseRPC):
         await self.config.mongo.async_db.miner_transactions.replace_one(
             {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
         )
-
+        # as user/pool we do not send transactions back
         if self.config.peer_type in [PEER_TYPES.USER.value, PEER_TYPES.POOL.value]:
             return
-
-        seed_nodes = Nodes.get_all_nodes_indexed_by_address_for_block_height(
-            self.config.LatestBlock.block.index
-        )
-
+        # if we are a "seed" and the sender of the transaction is another "seed", we send the transaction only to inbound streams (SG)
         if (
-            stream.peer.my_peer().peer_type == PEER_TYPES.SEED.value
-            and stream.peer.public_key in seed_nodes
+            self.config.peer_type == PEER_TYPES.SEED.value
+            and stream.peer.my_peer().peer_type == PEER_TYPES.SEED.value
+            and stream.peer.public_key in [
+                seed.identity.public_key
+                for seed in Nodes.get_all_nodes_for_block_height(
+                    self.config.LatestBlock.block.index
+                )
+            ]
         ):
             async for peer_stream in self.config.peer.get_inbound_streams():
                 if peer_stream.peer.rid == stream.peer.rid:
