@@ -213,7 +213,7 @@ class NodeApplication(Application):
             ]
             self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
                 stream.peer.identity.username_signature
-            ]
+            ] = int(time())
 
         if (
             id_attr
@@ -224,7 +224,7 @@ class NodeApplication(Application):
             ]
             self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
                 stream.peer.identity.username_signature
-            ]
+            ] = int(time())
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
