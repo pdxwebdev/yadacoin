@@ -29,7 +29,9 @@ class BaseHandler(RequestHandler):
         self.settings["page_title"] = self.settings["app_title"]
         self.set_header("Access-Control-Allow-Origin", origin)
         self.set_header("Access-Control-Allow-Credentials", "true")
-        self.set_header("Access-Control-Allow-Methods", "GET, POST, OPTIONS, DELETE")
+        self.set_header(
+            "Access-Control-Allow-Methods", "GET, POST, PUT, OPTIONS, DELETE"
+        )
         self.set_header("Access-Control-Expose-Headers", "Content-Type")
         self.set_header(
             "Access-Control-Allow-Headers",

@@ -7,14 +7,15 @@ if [ "$EUID" -ne 0 ]; then
 fi
 
 # hugepages reservation
-sudo bash -c "echo vm.nr_hugepages=256 >> /etc/sysctl.conf"
+sudo bash -c "echo vm.nr_hugepages=0 >> /etc/sysctl.conf"
 
 # Install required packages
 apt update
 apt install -y docker-compose
 
 # Create the directory for your application
-APP_DIR="/etc/yadacoin"
+DEFAULT_APP_DIR="/etc/yadacoin"
+APP_DIR="${1:-$DEFAULT_APP_DIR}"
 mkdir -p "$APP_DIR"
 cd "$APP_DIR"
 
@@ -37,7 +38,7 @@ StartLimitBurst=5
 User=root
 WorkingDirectory=$APP_DIR
 ExecStart=/usr/bin/python3 yadanodemanager.py
-ExecStop=/usr/bin/docker-compose -f /etc/yadacoin/docker-compose.yml down
+ExecStop=/usr/bin/docker-compose -f $APP_DIR/docker-compose.yml down
 KillMode=process
 Restart=always
 Restart=on-failure
