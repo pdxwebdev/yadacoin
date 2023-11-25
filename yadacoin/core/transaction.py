@@ -440,6 +440,8 @@ class Transaction(object):
 
     @staticmethod
     async def handle_exception(e, txn):
+        if isinstance(e, TooManyInputsException):
+            txn.inputs = []
         config = Config()
         await config.mongo.async_db.failed_transactions.insert_one(
             {
