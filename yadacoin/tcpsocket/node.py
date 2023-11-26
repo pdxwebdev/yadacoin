@@ -203,6 +203,10 @@ class NodeRPC(BaseRPC):
             await Transaction.handle_exception(e, txn)
             return
 
+        if await txn.is_transaction_duplicate():
+            self.config.app_log.warning("Transaction exist in mempool. Skipping further processing.")
+            return 
+
         if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
             if not hasattr(txn, "version"):
                 return
