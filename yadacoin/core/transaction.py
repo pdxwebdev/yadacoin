@@ -455,6 +455,12 @@ class Transaction(object):
         )
         config.app_log.warning("Exception {}".format(e))
 
+    async def is_transaction_duplicate(self):
+        existing_transaction = await self.config.mongo.async_db.miner_transactions.find_one(
+            {"id": self.transaction_signature}
+        )
+        return existing_transaction is not None
+
     async def verify(self, check_input_spent=False, check_max_inputs=False):
         from yadacoin.contracts.base import Contract
 
