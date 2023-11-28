@@ -203,6 +203,10 @@ class NodeRPC(BaseRPC):
             await Transaction.handle_exception(e, txn)
             return
 
+        if await txn.is_transaction_duplicate():
+            self.config.app_log.warning("Transaction exist in mempool. Skipping further processing.")
+            return 
+
         if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
             if not hasattr(txn, "version"):
                 return
@@ -390,7 +394,7 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
             stream.synced = True
-            await self.send_mempool(stream)
+            #await self.send_mempool(stream)
             return
         self.config.consensus.syncing = True
         blocks = [await Block.from_dict(x) for x in blocks]
