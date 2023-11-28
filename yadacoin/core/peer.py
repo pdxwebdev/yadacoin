@@ -246,7 +246,7 @@ class Peer:
             for k, v in self.config.nodeClient.outbound_ignore[
                 outbound_class.__name__
             ].items()
-            if (time.time() - v) < 30
+            if (time.time() - v) < 120
         }
         await self.connect(
             stream_collection,
@@ -270,9 +270,9 @@ class Peer:
     async def is_synced():
         streams = await Config().peer.get_outbound_streams()
         for stream in streams:
-            if not stream.synced:
-                return False
-        return True
+            if stream.synced:
+                return True
+        return False
 
     def to_dict(self):
         return {
