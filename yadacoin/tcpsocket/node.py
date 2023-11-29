@@ -427,7 +427,6 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
             stream.synced = True
-            #await self.send_mempool(stream)
             return
         self.config.consensus.syncing = True
         blocks = [await Block.from_dict(x) for x in blocks]
