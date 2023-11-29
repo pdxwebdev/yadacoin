@@ -28,8 +28,7 @@ from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.tcpsocket.base import BaseRPC, RPCSocketClient, RPCSocketServer
 
-
-class DisconnectTracker:
+class NodeServerDisconnectTracker:
     by_host = {}
     by_reason = {}
 
@@ -37,7 +36,23 @@ class DisconnectTracker:
         return {"by_host": self.by_host, "by_reason": self.by_reason}
 
 
-class NewTxnTracker:
+class NodeServerNewTxnTracker:
+    by_host = {}
+    by_txn_id = {}
+
+    def to_dict(self):
+        return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+
+
+class NodeClientDisconnectTracker:
+    by_host = {}
+    by_reason = {}
+
+    def to_dict(self):
+        return {"by_host": self.by_host, "by_reason": self.by_reason}
+
+
+class NodeClientNewTxnTracker:
     by_host = {}
     by_txn_id = {}
 
@@ -47,6 +62,7 @@ class NewTxnTracker:
 
 class NodeRPC(BaseRPC):
     retry_messages = {}
+    confirmed_peers = set()
 
     def __init__(self):
         super(NodeRPC, self).__init__()
@@ -203,12 +219,6 @@ class NodeRPC(BaseRPC):
             await Transaction.handle_exception(e, txn)
             return
 
-        if await txn.is_transaction_duplicate():
-            self.config.app_log.warning(
-                "Transaction exist in mempool. Skipping further processing."
-            )
-            return
-
         if self.config.LatestBlock.block.index >= CHAIN.TXN_V3_FORK:
             if not hasattr(txn, "version"):
                 return
@@ -230,6 +240,14 @@ class NodeRPC(BaseRPC):
 
         async for peer_stream in self.config.peer.get_inbound_streams():
             if peer_stream.peer.rid == stream.peer.rid:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in inbound stream as it is the sender."
+                )
+                continue
+            elif (stream.peer.rid, "newtxn", txn.transaction_signature) in self.confirmed_peers:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in inbound stream as it has already confirmed the transaction."
+                )
                 continue
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[
@@ -240,6 +258,14 @@ class NodeRPC(BaseRPC):
             await self.config.peer.get_outbound_streams()
         ):
             if peer_stream.peer.rid == stream.peer.rid:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in outbound stream as it is the sender."
+                )
+                continue
+            elif (stream.peer.rid, "newtxn", txn.transaction_signature) in self.confirmed_peers:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in outbound stream as it has already confirmed the transaction."
+                )
                 continue
             if peer_stream.peer.protocol_version > 1:
                 self.config.nodeClient.retry_messages[
@@ -258,6 +284,11 @@ class NodeRPC(BaseRPC):
             del self.retry_messages[
                 (stream.peer.rid, "newtxn", transaction.transaction_signature)
             ]
+
+        self.confirmed_peers.add((stream.peer.rid, "newtxn", transaction.transaction_signature))
+        self.config.app_log.debug(
+            f"Transaction {transaction.transaction_signature} confirmed by peer {stream.peer.rid}. Peer added to the list of confirmed peers."
+        )
 
     async def newblock(self, body, stream):
         payload = body.get("params", {}).get("payload", {})
@@ -803,8 +834,8 @@ class NodeRPC(BaseRPC):
 
 class NodeSocketServer(RPCSocketServer, NodeRPC):
     retry_messages = {}
-    newtxn_tracker = NewTxnTracker()
-    disconnect_tracker = DisconnectTracker()
+    disconnect_tracker = NodeServerDisconnectTracker()
+    newtxn_tracker = NodeServerNewTxnTracker()
 
     def __init__(self):
         super(NodeSocketServer, self).__init__()
@@ -813,8 +844,8 @@ class NodeSocketServer(RPCSocketServer, NodeRPC):
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
     retry_messages = {}
-    newtxn_tracker = NewTxnTracker()
-    disconnect_tracker = DisconnectTracker()
+    disconnect_tracker = NodeClientDisconnectTracker()
+    newtxn_tracker = NodeClientNewTxnTracker()
 
     def __init__(self):
         super(NodeSocketClient, self).__init__()

@@ -631,11 +631,28 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
-            await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
         self.config.background_mempool_cleaner.busy = False
+
+    async def background_mempool_sender(self):
+        """Responsible for rebroadcasting mempool transactions"""
+        self.config.app_log.debug("background_mempool_sender")
+        
+        if not hasattr(self.config, "background_mempool_sender"):
+            self.config.background_mempool_sender = WorkerVars(busy=False)
+
+        if self.config.background_mempool_sender.busy:
+            return
+        self.config.background_mempool_sender.busy = True
+        try:
+            await self.config.TU.rebroadcast_mempool(
+                self.config, NodeRPC.confirmed_peers, include_zero=True
+            )
+        except Exception:
+            self.config.app_log.error(format_exc())
+        self.config.background_mempool_sender.busy = False
 
     async def background_nonce_processor(self):
         """Responsible for processing all share submissions from miners"""
@@ -752,6 +769,10 @@ class NodeApplication(Application):
 
             PeriodicCallback(
                 self.background_mempool_cleaner, self.config.mempool_cleaner_wait * 1000
+            ).start()
+
+            PeriodicCallback(
+                self.background_mempool_sender, self.config.mempool_sender_wait * 1000
             ).start()
 
             PeriodicCallback(

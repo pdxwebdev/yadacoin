@@ -3,6 +3,7 @@ import hashlib
 import random
 import sys
 import time
+import asyncio
 
 from coincurve._libsecp256k1 import ffi
 from coincurve.keys import PrivateKey
@@ -185,7 +186,7 @@ class TU(object):  # Transaction Utilities
         config.last_mempool_clean = time.time()
 
     @classmethod
-    async def rebroadcast_mempool(cls, config, include_zero=False):
+    async def rebroadcast_mempool(cls, config, confirmed_peers, include_zero=False):
         from yadacoin.core.transaction import Transaction
 
         query = {"outputs.value": {"$gt": 0}}
@@ -195,6 +196,12 @@ class TU(object):  # Transaction Utilities
         async for txn in config.mongo.async_db.miner_transactions.find(query):
             x = Transaction.from_dict(txn)
             async for peer_stream in config.peer.get_sync_peers():
+                if (peer_stream.peer.rid, "newtxn", x.transaction_signature) in confirmed_peers:
+                    config.app_log.debug(
+                        f"Skipping peer {peer_stream.peer.rid} in rebroadcast_mempool as it has already confirmed the transaction."
+                    )
+                    continue
+
                 await config.nodeShared.write_params(
                     peer_stream, "newtxn", {"transaction": x.to_dict()}
                 )
@@ -202,7 +209,8 @@ class TU(object):  # Transaction Utilities
                     config.nodeClient.retry_messages[
                         (peer_stream.peer.rid, "newtxn", x.transaction_signature)
                     ] = {"transaction": x.to_dict()}
-                time.sleep(0.1)
+                await asyncio.sleep(1)
+        return
 
     @classmethod
     async def rebroadcast_failed(cls, config, id):
