@@ -233,6 +233,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_peers"):
             self.config.background_peers = WorkerVars(busy=False)
         if self.config.background_peers.busy:
+            self.config.app_log.debug("background_peers - busy")
             return
         self.config.background_peers.busy = True
         try:
@@ -254,6 +255,7 @@ class NodeApplication(Application):
             if Docker.is_inside_docker():
                 self.config.background_status.docker = Docker()
         if self.config.background_status.busy:
+            self.config.app_log.debug("background_status - busy")
             return
         self.config.background_status.busy = True
         try:
@@ -343,6 +345,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_block_checker"):
             self.config.background_block_checker = WorkerVars(busy=False, last_send=0)
         if self.config.background_block_checker.busy:
+            self.config.app_log.debug("background_block_checker - busy")
             return
         self.config.background_block_checker.busy = True
         try:
@@ -384,6 +387,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_message_sender"):
             self.config.background_message_sender = WorkerVars(busy=False)
         if self.config.background_message_sender.busy:
+            self.config.app_log.debug("background_message_sender - busy")
             return
         self.config.background_message_sender.busy = True
         try:
@@ -474,6 +478,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_txn_queue_processor"):
             self.config.background_txn_queue_processor = WorkerVars(busy=False)
         if self.config.background_txn_queue_processor.busy:
+            self.config.app_log.debug("background_txn_queue_processor - busy")
             return
         self.config.background_txn_queue_processor.busy = True
         try:
@@ -492,6 +497,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_block_queue_processor"):
             self.config.background_block_queue_processor = WorkerVars(busy=False)
         if self.config.background_block_queue_processor.busy:
+            self.config.app_log.debug("background_block_queue_processor - busy")
             return
         self.config.background_block_queue_processor.busy = True
         while True:
@@ -537,6 +543,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_pool_payer"):
             self.config.background_pool_payer = WorkerVars(busy=False)
         if self.config.background_pool_payer.busy:
+            self.config.app_log.debug("background_pool_payer - busy")
             return
         self.config.background_pool_payer.busy = True
         try:
@@ -555,6 +562,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_cache_validator"):
             self.config.background_cache_validator = WorkerVars(busy=False)
         if self.config.background_cache_validator.busy:
+            self.config.app_log.debug("background_cache_validator - busy")
             return
         self.config.background_cache_validator.busy = True
         if not hasattr(self.config, "cache_inited"):
@@ -627,6 +635,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_mempool_cleaner"):
             self.config.background_mempool_cleaner = WorkerVars(busy=False)
         if self.config.background_mempool_cleaner.busy:
+            self.config.app_log.debug("background_mempool_cleaner - busy")
             return
         self.config.background_mempool_cleaner.busy = True
         try:
@@ -639,11 +648,12 @@ class NodeApplication(Application):
     async def background_mempool_sender(self):
         """Responsible for rebroadcasting mempool transactions"""
         self.config.app_log.debug("background_mempool_sender")
-        
+
         if not hasattr(self.config, "background_mempool_sender"):
             self.config.background_mempool_sender = WorkerVars(busy=False)
 
         if self.config.background_mempool_sender.busy:
+            self.config.app_log.debug("background_mempool_sender - busy")
             return
         self.config.background_mempool_sender.busy = True
         try:
@@ -661,6 +671,7 @@ class NodeApplication(Application):
         if not hasattr(self.config, "background_nonce_processor"):
             self.config.background_nonce_processor = WorkerVars(busy=False)
         if self.config.background_nonce_processor.busy:
+            self.config.app_log.debug("background_nonce_processor - busy")
             return
         self.config.background_nonce_processor.busy = True
         try:
