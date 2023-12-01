@@ -396,6 +396,7 @@ class NodeApplication(Application):
                 if not message:
                     if x in self.config.nodeServer.retry_messages:
                         del self.config.nodeServer.retry_messages[x]
+                    self.config.app_log.debug("background_message_sender - continue 1")
                     continue
                 message.setdefault("retry_attempts", 0)
                 message["retry_attempts"] += 1
@@ -413,6 +414,9 @@ class NodeApplication(Application):
                             )
                             self.config.app_log.warning(
                                 f"peer removed: background_message_sender nodeServer {x}"
+                            )
+                            self.config.app_log.debug(
+                                "background_message_sender - continue 2"
                             )
                             continue
                         if len(x) > 3:
@@ -434,6 +438,7 @@ class NodeApplication(Application):
                 if not message:
                     if x in self.config.nodeClient.retry_messages:
                         del self.config.nodeClient.retry_messages[x]
+                    self.config.app_log.debug("background_message_sender - continue 3")
                     continue
                 message.setdefault("retry_attempts", 0)
                 message["retry_attempts"] += 1
