@@ -242,9 +242,8 @@ class Health:
             if not await x.check_health() and not x.ignore:
                 await x.reset()
                 self.status = False
-                return False
         self.status = True
-        return True
+        return self.status
 
     def to_dict(self):
         out = {x.__class__.__name__: x.to_dict() for x in self.health_items}

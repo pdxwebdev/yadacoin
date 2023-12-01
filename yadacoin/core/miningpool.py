@@ -516,10 +516,6 @@ class MiningPool(object):
                 self.config.app_log.warning("transaction version too old, skipping")
                 return
 
-            transaction_obj.contract_generated = (
-                await transaction_obj.is_contract_generated()
-            )
-
             await transaction_obj.verify(check_max_inputs=check_max_inputs)
 
             if transaction_obj.transaction_signature in used_sigs:
