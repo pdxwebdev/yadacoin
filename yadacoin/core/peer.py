@@ -246,7 +246,7 @@ class Peer:
             for k, v in self.config.nodeClient.outbound_ignore[
                 outbound_class.__name__
             ].items()
-            if (time.time() - v) < 120 # we try to reconnect to the ignored node after 5 minutes
+            if (time.time() - v) < 120
         }
         await self.connect(
             stream_collection,

@@ -343,8 +343,7 @@ class MiningPool(object):
         start_nonce = secrets.token_hex(2)
         header = self.block_factory.header.replace("{nonce}", start_nonce)
 
-        #miner_diff = int(custom_diff) if custom_diff is not None else self.config.pool_diff
-        miner_diff = self.config.pool_diff
+        miner_diff = max(int(custom_diff), 70000) if custom_diff is not None else self.config.pool_diff
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
@@ -735,8 +734,50 @@ class MiningPool(object):
         block_data = block.to_dict()
         block_data['found_time'] = int(time.time())
         block_data['status'] = "Pending"
+        try:
+            effort_data = await self.block_effort(block.index, block.target)
+            block_data.update(effort_data)
+        except Exception as e:
+            self.app_log.error(f"Error calculating effort: {e}")
 
         await self.config.mongo.async_db.pool_blocks.insert_one(block_data)
+
+    async def block_effort(self, block_index, block_target):
+        latest_block = await self.config.mongo.async_db.pool_blocks.find(
+            {},
+            {"_id": 0, "index": 1},
+        ).sort([("index", -1)]).limit(1).to_list(1)
+
+        if latest_block:
+            round_start = latest_block[0]['index'] + 1
+        else:
+            round_start = 0
+
+        total_weight = await self.calculate_total_weight(round_start, block_index)
+
+        self.config.app_log.debug(f"block_target: {block_target}")
+        self.config.app_log.info(f"block_index: {block_index}")
+        self.config.app_log.info(f"round_start: {round_start}")
+        self.config.app_log.info(f"total_weight: {total_weight}")
+
+
+        block_difficulty = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF / block_target
+        total_block_hash = block_difficulty * 2**16
+        block_effort = (total_weight * 100) / total_block_hash
+        self.config.app_log.info(f"block_effort: {block_effort}")
+
+        return {
+            'effort': block_effort,
+        }
+
+    async def calculate_total_weight(self, round_start, round_end):
+        pipeline = [
+            {"$match": {"index": {"$gte": round_start, "$lt": round_end}}},
+            {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
+        ]
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+        return result[0]["total_weight"] if result else 0
+
 
     async def update_block_status(self):
         pool_blocks_collection = self.config.mongo.async_db.pool_blocks

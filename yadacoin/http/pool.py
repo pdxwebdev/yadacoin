@@ -136,7 +136,7 @@ class PoolBlocksHandler(BaseHandler):
     async def get(self):
         pool_blocks = (
             await self.config.mongo.async_db.pool_blocks
-            .find({}, {"_id": 0, "index": 1, "time": 1, "found_time": 1, "target": 1, "transactions": 1, "status": 1, "hash": 1})
+            .find({}, {"_id": 0, "index": 1, "time": 1, "found_time": 1, "target": 1, "transactions": 1, "status": 1, "hash": 1, "effort": 1})
             .sort("index", -1)
             .to_list(None)
         )
@@ -150,7 +150,8 @@ class PoolBlocksHandler(BaseHandler):
                 "target": block["target"],
                 "transactions": block["transactions"],
                 "status": block["status"],
-                "hash": block["hash"]
+                "hash": block["hash"],
+                "effort": block["effort"] if "effort" in block else "N/A"
             })
         
         pool_address = {

@@ -330,7 +330,11 @@ class Block(object):
                         "duplicate transaction found and removed"
                     )
 
-                await transaction_obj.verify()
+                check_max_inputs = False
+                if index > CHAIN.CHECK_MAX_INPUTS_FORK:
+                    check_max_inputs = True
+                await transaction_obj.verify(check_max_inputs=check_max_inputs)
+
                 for output in transaction_obj.outputs:
                     if not config.address_is_valid(output.to):
                         raise TransactionAddressInvalidException(

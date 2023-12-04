@@ -28,8 +28,7 @@ from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.tcpsocket.base import BaseRPC, RPCSocketClient, RPCSocketServer
 
-
-class DisconnectTracker:
+class NodeServerDisconnectTracker:
     by_host = {}
     by_reason = {}
 
@@ -37,7 +36,23 @@ class DisconnectTracker:
         return {"by_host": self.by_host, "by_reason": self.by_reason}
 
 
-class NewTxnTracker:
+class NodeServerNewTxnTracker:
+    by_host = {}
+    by_txn_id = {}
+
+    def to_dict(self):
+        return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+
+
+class NodeClientDisconnectTracker:
+    by_host = {}
+    by_reason = {}
+
+    def to_dict(self):
+        return {"by_host": self.by_host, "by_reason": self.by_reason}
+
+
+class NodeClientNewTxnTracker:
     by_host = {}
     by_txn_id = {}
 
@@ -47,6 +62,7 @@ class NewTxnTracker:
 
 class NodeRPC(BaseRPC):
     retry_messages = {}
+    confirmed_peers = set()
 
     def __init__(self):
         super(NodeRPC, self).__init__()
@@ -193,8 +209,12 @@ class NodeRPC(BaseRPC):
     async def process_transaction_queue_item(self, item):
         txn = item.transaction
         stream = item.stream
+
+        check_max_inputs = False
+        if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
+            check_max_inputs = True
         try:
-            await txn.verify(check_input_spent=True)
+            await txn.verify(check_input_spent=True, check_max_inputs=check_max_inputs)
         except Exception as e:
             await Transaction.handle_exception(e, txn)
             return
@@ -220,6 +240,14 @@ class NodeRPC(BaseRPC):
 
         async for peer_stream in self.config.peer.get_inbound_streams():
             if peer_stream.peer.rid == stream.peer.rid:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in inbound stream as it is the sender."
+                )
+                continue
+            elif (stream.peer.rid, "newtxn", txn.transaction_signature) in self.confirmed_peers:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in inbound stream as it has already confirmed the transaction."
+                )
                 continue
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[
@@ -230,6 +258,14 @@ class NodeRPC(BaseRPC):
             await self.config.peer.get_outbound_streams()
         ):
             if peer_stream.peer.rid == stream.peer.rid:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in outbound stream as it is the sender."
+                )
+                continue
+            elif (stream.peer.rid, "newtxn", txn.transaction_signature) in self.confirmed_peers:
+                self.config.app_log.debug(
+                    f"Skipping peer {stream.peer.rid} in outbound stream as it has already confirmed the transaction."
+                )
                 continue
             if peer_stream.peer.protocol_version > 1:
                 self.config.nodeClient.retry_messages[
@@ -248,6 +284,11 @@ class NodeRPC(BaseRPC):
             del self.retry_messages[
                 (stream.peer.rid, "newtxn", transaction.transaction_signature)
             ]
+
+        self.confirmed_peers.add((stream.peer.rid, "newtxn", transaction.transaction_signature))
+        self.config.app_log.debug(
+            f"Transaction {transaction.transaction_signature} confirmed by peer {stream.peer.rid}. Peer added to the list of confirmed peers."
+        )
 
     async def newblock(self, body, stream):
         payload = body.get("params", {}).get("payload", {})
@@ -304,10 +345,13 @@ class NodeRPC(BaseRPC):
         )
 
     async def send_mempool(self, peer_stream):
+        check_max_inputs = False
+        if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
+            check_max_inputs = True
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
             try:
-                await txn.verify()
+                await txn.verify(check_max_inputs=check_max_inputs)
             except Exception as e:
                 await Transaction.handle_exception(e, txn)
                 continue
@@ -330,6 +374,9 @@ class NodeRPC(BaseRPC):
     async def send_block_to_peer(self, block, peer_stream):
         payload = {"payload": {"block": block.to_dict()}}
         await self.write_params(peer_stream, "newblock", payload)
+        self.config.app_log.info(
+            f"Sent block with index {block.index} to peer {peer_stream.peer.rid}."
+        )
         if peer_stream.peer.protocol_version > 1:
             self.retry_messages[
                 (peer_stream.peer.rid, "newblock", block.hash)
@@ -383,10 +430,8 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
             stream.synced = True
-            #await self.send_mempool(stream)
             return
         self.config.consensus.syncing = True
-        stream.synced = False
         blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = blocks[0]
         forward_blocks_chain = await self.config.consensus.build_remote_chain(
@@ -792,8 +837,8 @@ class NodeRPC(BaseRPC):
 
 class NodeSocketServer(RPCSocketServer, NodeRPC):
     retry_messages = {}
-    newtxn_tracker = NewTxnTracker()
-    disconnect_tracker = DisconnectTracker()
+    disconnect_tracker = NodeServerDisconnectTracker()
+    newtxn_tracker = NodeServerNewTxnTracker()
 
     def __init__(self):
         super(NodeSocketServer, self).__init__()
@@ -802,8 +847,8 @@ class NodeSocketServer(RPCSocketServer, NodeRPC):
 
 class NodeSocketClient(RPCSocketClient, NodeRPC):
     retry_messages = {}
-    newtxn_tracker = NewTxnTracker()
-    disconnect_tracker = DisconnectTracker()
+    disconnect_tracker = NodeClientDisconnectTracker()
+    newtxn_tracker = NodeClientNewTxnTracker()
 
     def __init__(self):
         super(NodeSocketClient, self).__init__()
@@ -871,7 +916,7 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
             )
 
     async def capacity(self, body, stream):
-        NodeSocketClient.outbound_ignore[stream.peer.__class__.__name__][
+        self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
             stream.peer.identity.username_signature
         ] = time.time()
         self.config.app_log.warning(

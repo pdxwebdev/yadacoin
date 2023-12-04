@@ -10,6 +10,7 @@
             <th>Height</th>
             <th>Reward</th>
             <th>Block Hash</th>
+            <th>Effort</th>
             <th>Status</th>
         </tr>
     </table>
@@ -19,68 +20,79 @@
 
 <script>
   $.get('/pool-blocks').then((data) => {
-    const max_target_hex = '0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
+      const max_target_hex = '0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
       const max_target = parseInt(max_target_hex, 16);
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
 
-    function groupBlocksByDate(blocks, acceptedOnly = false) {
-      const groupedBlocks = {};
+      function groupBlocksByDate(blocks, acceptedOnly = false) {
+          const groupedBlocks = {};
 
-      for (let i = 0; i < blocks.length; i++) {
-        const block = blocks[i];
-        if (!acceptedOnly || (acceptedOnly && block.status === 'Accepted')) {
-          const foundDate = new Date(block.found_time * 1000);
-          const dateKey = foundDate.toISOString().split('T')[0];
+          for (let i = 0; i < blocks.length; i++) {
+              const block = blocks[i];
+              if (!acceptedOnly || (acceptedOnly && block.status === 'Accepted')) {
+                  const foundDate = new Date(block.found_time * 1000);
+                  const dateKey = foundDate.toISOString().split('T')[0];
 
-          if (!groupedBlocks[dateKey]) {
-            groupedBlocks[dateKey] = [];
+                  if (!groupedBlocks[dateKey]) {
+                      groupedBlocks[dateKey] = [];
+                  }
+
+                  groupedBlocks[dateKey].push(block);
+              }
           }
 
-          groupedBlocks[dateKey].push(block);
-        }
+          return groupedBlocks;
       }
 
-      return groupedBlocks;
-    }
+      var poolAddress = data.pool.pool_address;
+      if (data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Difficulty</th><th>Height</th><th>Reward</th><th>Effort</th><th>Block Hash</th><th>Status</th></tr>');
 
-    var poolAddress = data.pool.pool_address;
-    if (data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Difficulty</th><th>Height</th><th>Reward</th><th>Block Hash</th><th>Status</th></tr>');
+      const filteredBlocks = data.blocks.filter(block => {
+          const foundDate = new Date(block.found_time * 1000);
+          const foundInLast30Days = foundDate >= thirtyDaysAgo;
+          return foundInLast30Days;
+      });
 
-    const filteredBlocks = data.blocks.filter(block => {
-      const foundDate = new Date(block.found_time * 1000);
-      const foundInLast30Days = foundDate >= thirtyDaysAgo;
-      return foundInLast30Days;
-    });
+      for (var i = 0; i < filteredBlocks.length; i++) {
+          var newDate = new Date();
+          newDate.setTime(filteredBlocks[i].time * 1000);
+          dateString = newDate.toLocaleString();
+          var foundDate = new Date();
+          foundDate.setTime(filteredBlocks[i].found_time * 1000);
+          foundDateString = foundDate.toLocaleString();
+          var reward = getRewardFromTransactions(filteredBlocks[i].transactions, poolAddress);
+          var status = filteredBlocks[i].status;
 
-    for (var i = 0; i < filteredBlocks.length; i++) {
-      var newDate = new Date();
-      newDate.setTime(filteredBlocks[i].time * 1000);
-      dateString = newDate.toLocaleString();
-      var foundDate = new Date();
-      foundDate.setTime(filteredBlocks[i].found_time * 1000);
-      foundDateString = foundDate.toLocaleString();
-      var reward = getRewardFromTransactions(filteredBlocks[i].transactions, poolAddress);
-      var status = filteredBlocks[i].status;
+          var difficulty = "N/A";
+          if (filteredBlocks[i].target) {
+              var target = parseInt(filteredBlocks[i].target, 16);
+              difficulty = (max_target / target).toFixed(3);
+          }
 
-      var difficulty = "N/A";
-      if (filteredBlocks[i].target) {
-        var target = parseInt(filteredBlocks[i].target, 16);
-        difficulty = (max_target / target).toFixed(3);
+          var effort = filteredBlocks[i].effort !== undefined ? parseFloat(filteredBlocks[i].effort).toFixed(2) + "%" : "N/A";
+
+          var statusColor = '';
+          if (status === 'Pending') {
+              statusColor = 'orange';
+          } else if (status === 'Accepted') {
+              statusColor = 'green';
+          } else if (status === 'Orphan') {
+              statusColor = 'red';
+          }
+
+          var effortColor = '';
+          if (filteredBlocks[i].effort > 155) {
+              effortColor = 'red';
+          } else if (filteredBlocks[i].effort > 105) {
+              effortColor = 'orange';
+          } else {
+              effortColor = 'green';
+          }
+
+          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td style="color:' + effortColor + '">' + effort + '</td><td style="color:' + statusColor + '">' + status + '</td></tr>');
       }
-
-      var statusColor = '';
-      if (status === 'Pending') {
-        statusColor = 'orange';
-      } else if (status === 'Accepted') {
-        statusColor = 'green';
-      } else if (status === 'Orphan') {
-        statusColor = 'red';
-      }
-
-      $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td style="color:' + statusColor + '">' + status + '</td></tr>');
-    }
 
     function getRewardFromTransactions(transactions, poolAddress) {
       var highestReward = 0.0;

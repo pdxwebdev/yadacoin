@@ -177,7 +177,7 @@ class PoolPayerHealth(HealthItem):
     def __init__(self):
         super().__init__()
         self.config = Config()
-        self.timeout = self.config.pool_payer_wait + 10
+        self.timeout = self.config.pool_payer_wait + 20
     async def check_health(self):
         if not self.config.pp:
             return self.report_status(True, ignore=True)

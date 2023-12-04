@@ -12,7 +12,6 @@ from tornado.iostream import StreamClosedError
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
-from yadacoin.core.peer import Peer
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
@@ -133,23 +132,21 @@ class Consensus(object):
                     return
 
                 if block.index > (self.config.LatestBlock.block.index + 100):
+                    difference = block.index - self.config.LatestBlock.block.index
                     self.config.app_log.info(
-                        "newblock, block index greater than latest block + 100"
+                        f"Received a new block with index {block.index}. Remaining blocks to synchronize: {difference}"
                     )
                     return
 
                 if block.index < self.config.LatestBlock.block.index:
-                    try:
-                        await self.config.nodeShared.write_params(
-                            stream,
-                            "newblock",
-                            {"payload": {"block": self.config.LatestBlock.block.to_dict()}},
-                        )
-                    except Exception as e:
-                        self.config.app_log.error(f"Error sending response: {e}")
-
                     self.config.app_log.info(
                         f"block index less than our latest block index: {block.index} < {self.config.LatestBlock.block.index} | {stream.peer.identity.to_dict}"
+                    )
+                    return
+
+                if block.signature == self.config.LatestBlock.block.signature and block.index == self.config.LatestBlock.block.index:
+                    self.config.app_log.info(
+                        "Received block is the same as the latest block"
                     )
                     return
 
@@ -206,15 +203,14 @@ class Consensus(object):
         existing = await self.mongo.async_db.consensus.find_one(
             {
                 "index": block.index,
-                "hash": block.hash,
                 "id": block.signature,
             }
         )
 
         if existing:
-            self.app_log.info(
-                "Block with index %s, id %s, hash %s already exists in consensus for peer %s."
-                % (block.index, block.signature, block.hash, peer.to_string())
+            self.app_log.debug(
+                "Block with index %s, id %s already exists in consensus."
+                % (block.index, block.signature)
             )
             return True
 
@@ -222,14 +218,14 @@ class Consensus(object):
             await block.verify()
         except Exception as e:
             self.app_log.error(
-                "Failed to verify block with index %s, id %s, hash %s for peer %s: %s"
-                % (block.index, block.signature, block.hash, peer.to_string(), str(e))
+                "Failed to verify block with index %s, id %s for peer %s: %s"
+                % (block.index, block.signature, peer.to_string(), str(e))
             )
             return False
 
-        self.app_log.info(
-            "Inserting new consensus block for index %s, id %s, hash %s for peer %s."
-            % (block.index, block.signature, block.hash, peer.to_string())
+        self.app_log.debug(
+            "Inserting new consensus block for index %s, id %s for peer %s."
+            % (block.index, block.signature, peer.to_string())
         )
 
         await self.mongo.async_db.consensus.delete_many(
@@ -304,7 +300,7 @@ class Consensus(object):
             #    getblocks <--- rpc request
             #    blocksresponse <--- rpc response
             #    process_block_queue
-            if (time() - self.last_network_search) >= 60 or not synced:
+            if (time() - self.last_network_search) >= 90 or not synced:
                 self.last_network_search = time()
                 self.app_log.info("Calling search_network_for_new")
                 return await self.search_network_for_new()
@@ -322,11 +318,12 @@ class Consensus(object):
             try:
                 peer.syncing = True
                 await self.request_blocks(peer)
-                break # there is no point in downloading the same blocks from each node, TODO use random node selection or download a different blocks interval from each of them
+                
             except StreamClosedError:
                 peer.close()
             except Exception as e:
                 self.config.app_log.warning(e)
+                break
             self.config.health.consensus.last_activity = time()
 
     async def request_blocks(self, peer):

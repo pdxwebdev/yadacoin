@@ -113,52 +113,13 @@ class GetStatusHandler(BaseHandler):
                 },
                 {"_id": 0},
             )
-            status_data = [x async for x in status]
-        else:
-            status_data = await self.config.mongo.async_db.node_status.find_one(
-                {"archived": {"$exists": bool(archived)}},
-                {"_id": 0},
-                sort=[("timestamp", -1)],
-            )
-
-        await self.config.LatestBlock.block_checker()
-        pool_public_key = (
-            self.config.pool_public_key
-            if hasattr(self.config, "pool_public_key")
-            else self.config.public_key
+            return self.render_as_json([x async for x in status], indent=4)
+        status = await self.config.mongo.async_db.node_status.find_one(
+            {"archived": {"$exists": bool(archived)}},
+            {"_id": 0},
+            sort=[("timestamp", -1)],
         )
-
-        mining_time_interval = 600
-
-        shares_count = await self.config.mongo.async_db.shares.count_documents(
-            {"time": {"$gte": time.time() - mining_time_interval}}
-        )
-        if shares_count > 0:
-            pool_hash_rate = (shares_count * self.config.pool_diff) / mining_time_interval
-        else:
-            pool_hash_rate = 0
-
-        pool_blocks_found_list = await self.config.mongo.async_db.pool_blocks.find(
-            {"public_key": pool_public_key},
-            {"_id": 0, "time": 1, "found_time": 1, "index": 1}
-        ).sort([("index", -1)]).to_list(5)
-
-        response_data = {
-            "pool": {
-                "hashes_per_second": pool_hash_rate,
-                "last_five_blocks": [
-                    {"timestamp": x["found_time"], "height": x["index"]}
-                    for x in pool_blocks_found_list[:5]
-                ],
-                "fee": self.config.pool_take,
-                "reward": CHAIN.get_block_reward(
-                    self.config.LatestBlock.block.index
-                ),
-            },
-            "status": status_data
-        }
-
-        self.render_as_json(response_data, indent=4)
+        self.render_as_json(status, indent=4)
 
 
 class NewBlockHandler(BaseHandler):
@@ -303,6 +264,84 @@ class GetSmartContractTriggerTransaction(BaseHandler):
         return self.render_as_json({"transactions": trigger_txns})
 
 
+class GetMonitoringHandler(BaseHandler):
+    async def get(self):
+        # Node Data
+        node_status = self.config.mongo.async_db.node_status.aggregate(
+            [
+                {"$sort": {"timestamp": -1}},
+                {"$limit": 1},
+                {
+                    "$project": {
+                        "_id": 0,
+                        "message_sender": 0,
+                        "slow_queries": 0,
+                        "transaction_tracker": 0,
+                        "disconnect_tracker": 0,
+                        "processing_queues": 0,
+                    }
+                },
+            ]
+        )
+        node_data = [x async for x in node_status]
+        node_data = node_data[0]
+
+        # Peer Data
+        inbound_peers = await self.config.peer.get_all_inbound_streams()
+        outbound_peers = await self.config.peer.get_all_outbound_streams()
+
+        peer_data = {
+            "inbound_peers": [x.peer.to_dict() for x in inbound_peers],
+            "outbound_peers": [x.peer.to_dict() for x in outbound_peers],
+        }
+
+        # Pool Data Calcs
+        await self.config.LatestBlock.block_checker()
+        pool_public_key = (
+            self.config.pool_public_key
+            if hasattr(self.config, "pool_public_key")
+            else self.config.public_key
+        )
+
+        latest_pool_info = await self.config.mongo.async_db.pool_info.find_one(
+            filter={},
+            sort=[("time", -1)]
+        )
+        
+        pool_hash_rate = latest_pool_info.get("pool_hash_rate", 0)
+
+        pool_blocks_found_list = (
+            await self.config.mongo.async_db.pool_blocks.find(
+                {"public_key": pool_public_key}, {"_id": 0, "found_time": 1, "index": 1}
+            )
+            .sort([("index", -1)])
+            .to_list(5)
+        )
+
+        lbt = 0
+        lbh = 0
+        if pool_blocks_found_list:
+            lbt = pool_blocks_found_list[0]["found_time"]
+            lbh = pool_blocks_found_list[0]["index"]
+
+        pool_data = {
+            "hashes_per_second": pool_hash_rate,
+            "last_block_time": lbt,
+            "last_block_height": lbh,
+            "fee": self.config.pool_take,
+            "reward": CHAIN.get_block_reward(self.config.LatestBlock.block.index),
+        }
+
+        # Create output data
+        op_data = {
+            "address": self.config.address,
+            "node": node_data,
+            "peers": peer_data,
+            "pool": pool_data,
+        }
+        self.render_as_json(op_data, indent=4)
+
+
 NODE_HANDLERS = [
     (r"/get-latest-block", GetLatestBlockHandler),
     (r"/get-blocks", GetBlocksHandler),
@@ -320,4 +359,5 @@ NODE_HANDLERS = [
     (r"/get-expired-smart-contract-transactions", GetExpiredSmartContractTransactions),
     (r"/get-expired-smart-contract-transaction", GetExpiredSmartContractTransaction),
     (r"/get-trigger-transactions", GetSmartContractTriggerTransaction),
+    (r"/get-monitoring", GetMonitoringHandler),
 ]

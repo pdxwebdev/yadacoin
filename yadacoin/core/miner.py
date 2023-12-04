@@ -13,7 +13,7 @@ class Miner(MinerBase):
 
     def __init__(self, address, agent="", custom_diff=""):
         super(Miner, self).__init__()
-        if "@" in address:  # Dodane sprawdzenie obecności @ w adresie
+        if "@" in address:
             parts = address.split("@")
             address = parts[0]
             self.custom_diff = int(parts[1]) if len(parts) > 1 else 0

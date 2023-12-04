@@ -150,6 +150,7 @@ class Config:
         self.pool_info_checker_wait = config.get("pool_info_checker_wait", 30)
         self.cache_validator_wait = config.get("cache_validator_wait", 30)
         self.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
+        self.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         self.nonce_processor_wait = config.get("nonce_processor_wait", 1)
 
         self.mongo_query_timeout = config.get("mongo_query_timeout", 30000)
@@ -427,6 +428,7 @@ class Config:
         cls.pool_info_checker_wait = config.get("pool_info_checker_wait", 30)
         cls.cache_validator_wait = config.get("cache_validator_wait", 30)
         cls.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
+        cls.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         cls.nonce_processor_wait = config.get("nonce_processor_wait", 1)
 
         cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)

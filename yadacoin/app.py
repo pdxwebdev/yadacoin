@@ -328,7 +328,7 @@ class NodeApplication(Application):
         """
         self.config.app_log.debug("background_block_checker")
         if not hasattr(self.config, "background_block_checker"):
-            self.config.background_block_checker = WorkerVars(busy=False, last_send=int(time()), last_block_height=0, first_run=True)
+            self.config.background_block_checker = WorkerVars(busy=False, last_send=int(time()), last_block_height=None, last_block_hash=None, first_run=True)
 
         if self.config.background_block_checker.busy:
             return
@@ -336,8 +336,12 @@ class NodeApplication(Application):
 
         try:
             current_block_index = LatestBlock.block.index
+            current_block_hash = LatestBlock.block.hash
 
-            if self.config.background_block_checker.last_block_height != current_block_index:
+            if (
+                self.config.background_block_checker.last_block_height != current_block_index
+                or self.config.background_block_checker.last_block_hash != self.config.LatestBlock.block.hash
+            ):
                 if self.config.background_block_checker.first_run:
                     self.config.background_block_checker.first_run = False
                     synced = False
@@ -356,12 +360,11 @@ class NodeApplication(Application):
                     await self.config.nodeShared.send_block_to_peers(
                         self.config.LatestBlock.block
                     )
-                    self.config.app_log.info("Node synced, sending mempool.")
-                    await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
                 if not synced:
-                    self.config.app_log.info("Sending a new block and mempool prohibited, synchronization in progress")
+                    self.config.app_log.info("Sending a new block prohibited, synchronization in progress")
 
                 self.config.background_block_checker.last_block_height = current_block_index
+                self.config.background_block_checker.last_block_hash = current_block_hash
 
             elif int(time()) - self.config.background_block_checker.last_send > 600:
                 self.config.background_block_checker.last_send = int(time())
@@ -369,13 +372,6 @@ class NodeApplication(Application):
                 await self.config.nodeShared.send_block_to_peers(
                     self.config.LatestBlock.block
                 )
-                synced = await Peer.is_synced()
-                if synced:
-                    self.config.app_log.info("Node synced, sending mempool.")
-                    await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
-                if not synced:
-                    self.config.app_log.info("Node not synced, mempool will not be sent.")
-
             self.config.health.block_checker.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
@@ -383,94 +379,123 @@ class NodeApplication(Application):
         self.config.background_block_checker.busy = False
 
     async def background_message_sender(self):
-        self.config.app_log.debug("background_message_sender")
+        self.config.app_log.info("background_message_sender - Start")
+        
         if not hasattr(self.config, "background_message_sender"):
             self.config.background_message_sender = WorkerVars(busy=False)
+        
         if self.config.background_message_sender.busy:
+            self.config.app_log.info("background_message_sender - Already busy, returning")
             return
+        
         self.config.background_message_sender.busy = True
+        start_time = int(time())
+        
         try:
-            for x in self.config.nodeServer.retry_messages.copy():
-                message = self.config.nodeServer.retry_messages.get(x)
-                if not message:
-                    if x in self.config.nodeServer.retry_messages:
-                        del self.config.nodeServer.retry_messages[x]
-                    continue
-                message.setdefault("retry_attempts", 0)
-                message["retry_attempts"] += 1
-                for peer_cls in list(
-                    self.config.nodeServer.inbound_streams.keys()
-                ).copy():
-                    if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
-                        if message["retry_attempts"] > 3:
-                            for y in self.config.nodeServer.retry_messages.copy():
-                                if y[0] == x[0]:
-                                    del self.config.nodeServer.retry_messages[y]
-                            await self.remove_peer(
-                                self.config.nodeServer.inbound_streams[peer_cls][x[0]],
-                                reason=f"background_message_sender nodeServer {x}",
-                            )
-                            self.config.app_log.warning(
-                                f"peer removed: background_message_sender nodeServer {x}"
-                            )
-                            continue
-                        if len(x) > 3:
-                            await self.config.nodeShared.write_result(
-                                self.config.nodeServer.inbound_streams[peer_cls][x[0]],
-                                x[1],
-                                message,
-                                x[3],
-                            )
-                        else:
-                            await self.config.nodeShared.write_params(
-                                self.config.nodeServer.inbound_streams[peer_cls][x[0]],
-                                x[1],
-                                message,
-                            )
+            sent_messages_count = 0
+            try:
+                for x in self.config.nodeServer.retry_messages.copy():
+                    message = self.config.nodeServer.retry_messages.get(x)
+                    self.config.app_log.info(f"Processing retry_message for nodeServer: {x}")
+                    if not message:
+                        if x in self.config.nodeServer.retry_messages:
+                            del self.config.nodeServer.retry_messages[x]
+                        continue
+                    message.setdefault("retry_attempts", 0)
+                    message["retry_attempts"] += 1
+                    for peer_cls in list(self.config.nodeServer.inbound_streams.keys()).copy():
+                        if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
+                            if message["retry_attempts"] > 2:
+                                for y in self.config.nodeServer.retry_messages.copy():
+                                    if y[0] == x[0]:
+                                        del self.config.nodeServer.retry_messages[y]
+                                await self.remove_peer(
+                                    self.config.nodeServer.inbound_streams[peer_cls][x[0]],
+                                    reason=f"background_message_sender nodeServer {x}",
+                                )
+                                self.config.app_log.warning(
+                                    f"peer removed: background_message_sender nodeServer {x}"
+                                )
+                                continue
+                            if len(x) > 3:
+                                await self.config.nodeShared.write_result(
+                                    self.config.nodeServer.inbound_streams[peer_cls][x[0]],
+                                    x[1],
+                                    message,
+                                    x[3],
+                                )
+                            else:
+                                await self.config.nodeShared.write_params(
+                                    self.config.nodeServer.inbound_streams[peer_cls][x[0]],
+                                    x[1],
+                                    message,
+                                )
+                            sent_messages_count += 1
+            except Exception as e:
+                self.config.app_log.error(f"Error in nodeServer.retry_messages loop: {e}")
+                self.config.background_message_sender.busy = False
+                return
 
-            for x in self.config.nodeClient.retry_messages.copy():
-                message = self.config.nodeClient.retry_messages.get(x)
-                if not message:
-                    if x in self.config.nodeClient.retry_messages:
-                        del self.config.nodeClient.retry_messages[x]
-                    continue
-                message.setdefault("retry_attempts", 0)
-                message["retry_attempts"] += 1
-                for peer_cls in list(
-                    self.config.nodeClient.outbound_streams.keys()
-                ).copy():
-                    if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
-                        if message["retry_attempts"] > 3:
-                            for y in self.config.nodeClient.retry_messages.copy():
-                                if y[0] == x[0]:
-                                    del self.config.nodeClient.retry_messages[y]
-                            await self.remove_peer(
-                                self.config.nodeClient.outbound_streams[peer_cls][x[0]],
-                                reason=f"background_message_sender nodeClient {x}",
-                            )
-                            self.config.app_log.warning(
-                                f"peer removed: background_message_sender nodeClient {x}"
-                            )
-                            continue
-                        if len(x) > 3:
-                            await self.config.nodeShared.write_result(
-                                self.config.nodeClient.outbound_streams[peer_cls][x[0]],
-                                x[1],
-                                message,
-                                x[3],
-                            )
-                        else:
-                            await self.config.nodeShared.write_params(
-                                self.config.nodeClient.outbound_streams[peer_cls][x[0]],
-                                x[1],
-                                message,
-                            )
+            try:            
+                for x in self.config.nodeClient.retry_messages.copy():
+                    message = self.config.nodeClient.retry_messages.get(x)
+                    self.config.app_log.info(f"Processing retry_message for nodeClient: {x}")
+                    if not message:
+                        if x in self.config.nodeClient.retry_messages:
+                            del self.config.nodeClient.retry_messages[x]
+                        continue
+                    message.setdefault("retry_attempts", 0)
+                    message["retry_attempts"] += 1
+                    for peer_cls in list(self.config.nodeClient.outbound_streams.keys()).copy():
+                        if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                            if message["retry_attempts"] > 2:
+                                for y in self.config.nodeClient.retry_messages.copy():
+                                    if y[0] == x[0]:
+                                        if y in self.config.nodeClient.retry_messages:
+                                            del self.config.nodeClient.retry_messages[y]
+                                            self.config.app_log.info(f"Removed entry for {y} from retry_messages dictionary.")
+                                        else:
+                                            self.config.app_log.info(f"Entry for {y} does not exist in retry_messages dictionary.")
+                                        await self.remove_peer(
+                                            self.config.nodeClient.outbound_streams[peer_cls][x[0]],
+                                            reason=f"background_message_sender nodeClient {x}",
+                                        )
+                                        self.config.app_log.warning(
+                                            f"peer removed: background_message_sender nodeClient {x}"
+                                        )
+                                        continue
+
+                            if len(x) > 3:
+                                await self.config.nodeShared.write_result(
+                                    self.config.nodeClient.outbound_streams[peer_cls][x[0]],
+                                    x[1],
+                                    message,
+                                    x[3],
+                                )
+                            else:
+                                await self.config.nodeShared.write_params(
+                                    self.config.nodeClient.outbound_streams[peer_cls][x[0]],
+                                    x[1],
+                                    message,
+                                )
+                            sent_messages_count += 1
+            except Exception as e:
+                self.config.app_log.error(f"Error in nodeClient.retry_messages loop: {e}")
+                self.config.background_message_sender.busy = False
+                return
 
             self.config.health.message_sender.last_activity = int(time())
+            
+            self.config.app_log.debug(
+                f"background_message_sender - Sent {sent_messages_count} messages. Time elapsed: {int(time()) - start_time} seconds"
+            )
 
         except Exception:
             self.config.app_log.error(format_exc())
-        self.config.background_message_sender.busy = False
+            
+        finally:
+            self.config.background_message_sender.busy = False
+            self.config.app_log.info("background_message_sender - End")
 
     async def background_txn_queue_processor(self):
         self.config.app_log.debug("background_txn_queue_processor")
@@ -514,7 +539,7 @@ class NodeApplication(Application):
         try:
             synced = await Peer.is_synced()
             skip = True
-            if time() - self.config.background_block_queue_processor.consensus_last_activity >= 60:
+            if time() - self.config.background_block_queue_processor.consensus_last_activity >= 15:
                 self.config.background_block_queue_processor.consensus_last_activity = int(time())
                 skip = False
             else:
@@ -540,7 +565,7 @@ class NodeApplication(Application):
         self.config.background_pool_info_checker.busy = True
         try:
             await self.config.mp.update_pool_stats()
-            await self.config.mp.update_miners_stats()
+            #await self.config.mp.update_miners_stats()
         except Exception as e:
             self.config.app_log.error(f"Error in background_pool_info_checker: {str(e)}")
         self.config.background_pool_info_checker.busy = False
@@ -651,11 +676,30 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
-            #await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
         self.config.background_mempool_cleaner.busy = False
+
+    async def background_mempool_sender(self):
+        """Responsible for rebroadcasting mempool transactions"""
+        self.config.app_log.debug("background_mempool_sender")
+        
+        if not hasattr(self.config, "background_mempool_sender"):
+            self.config.background_mempool_sender = WorkerVars(busy=False)
+
+        if self.config.background_mempool_sender.busy:
+            return
+
+        self.config.background_mempool_sender.busy = True
+
+        try:
+            await self.config.TU.rebroadcast_mempool(
+                self.config, NodeRPC.confirmed_peers, include_zero=True
+            )
+        except Exception:
+            self.config.app_log.error(format_exc())
+        self.config.background_mempool_sender.busy = False
 
     async def background_nonce_processor(self):
         """Responsible for processing all share submissions from miners"""
@@ -770,6 +814,10 @@ class NodeApplication(Application):
 
             PeriodicCallback(
                 self.background_mempool_cleaner, self.config.mempool_cleaner_wait * 1000
+            ).start()
+
+            PeriodicCallback(
+                self.background_mempool_sender, self.config.mempool_sender_wait * 1000
             ).start()
 
             PeriodicCallback(

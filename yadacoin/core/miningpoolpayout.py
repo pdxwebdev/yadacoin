@@ -266,15 +266,22 @@ class PoolPayer(object):
         await self.broadcast_transaction(transaction)
 
     async def get_share_list_for_height(self, index):
+        previous_block_index = await self.find_previous_block_index(index)
+        
+        if previous_block_index is None:
+            return {}
+
         raw_shares = []
         async for x in self.config.mongo.async_db.shares.find(
-            {"index": index, "address": {"$ne": None}}
+            {"index": {"$gte": previous_block_index, "$lte": index}, "address": {"$ne": None}}
         ).sort([("index", 1)]):
             raw_shares.append(x)
         if not raw_shares:
             return False
-        total_difficulty = self.get_difficulty([x for x in raw_shares])
+
         shares = {}
+        total_weight = 0
+
         for share in raw_shares:
             address = share["address"].split(".")[0]
             if not self.config.address_is_valid(address):
@@ -292,19 +299,51 @@ class PoolPayer(object):
                     "blocks": [],
                 }
             shares[address]["blocks"].append(share)
+            total_weight += share["weight"]
 
-        add_up = 0
+        self.config.app_log.info(f"Total weight for height {index}: {total_weight}")
+
         for address, item in shares.items():
-            test_difficulty = self.get_difficulty(item["blocks"])
-            shares[address]["payout_share"] = float(test_difficulty) / float(
-                total_difficulty
+            item["total_weight"] = sum(share["weight"] for share in item["blocks"])
+            item["payout_share"] = float(item["total_weight"]) / float(total_weight)
+            self.config.app_log.info(
+                f"Miner {address} - Total weight: {item['total_weight']}, Payout share: {item['payout_share']}"
             )
-            add_up += test_difficulty
 
-        if add_up == total_difficulty:
-            return shares
+        self.config.app_log.debug(f"get_share_list_for_height - Returning shares: {shares}")
+        return shares
+
+    async def find_previous_block_index(self, current_block_index):
+        pool_public_key = (
+            self.config.pool_public_key
+            if hasattr(self.config, "pool_public_key")
+            else self.config.public_key
+        )
+
+        pool_blocks_found_list = (
+            await self.config.mongo.async_db.blocks.find(
+                {"public_key": pool_public_key, "index": {"$lt": current_block_index}},
+                {"_id": 0, "index": 1},
+            )
+            .sort([("index", -1)])
+            .limit(1)
+            .to_list(1)
+        )
+
+        if pool_blocks_found_list:
+            previous_block_index = pool_blocks_found_list[0]["index"] + 1
+            self.config.app_log.info(
+                f"Previous block index for current block {current_block_index}: {previous_block_index}"
+            )
+            return previous_block_index
         else:
-            raise NonMatchingDifficultyException()
+            self.config.app_log.info(
+                f"No previous block found for current block {current_block_index}"
+            )
+            return None
+
+
+
 
     def get_difficulty(self, blocks):
         difficulty = 0
@@ -315,7 +354,7 @@ class PoolPayer(object):
 
     async def already_used(self, txn):
         return await self.config.mongo.async_db.blocks.find_one(
-            {"transactions.inputs.id": txn.transaction_signature}
+            {"transactions.inputs.id": txn.transaction_signature, "transactions.outputs.to": self.config.address}
         )
 
     async def broadcast_transaction(self, transaction):
