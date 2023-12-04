@@ -676,6 +676,7 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
+            await self.config.mp.clean_pool_info()
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())

@@ -651,6 +651,13 @@ class MiningPool(object):
             }
         )
 
+    async def clean_pool_info(self):
+        current_time = time.time()
+        retention_time = current_time - (48 * 60 * 60)  # 48 hours in seconds
+
+        result = await self.config.mongo.async_db.pool_info.delete_many({"time": {"$lt": retention_time}})
+        self.config.app_log.info(f"Deleted {result.deleted_count} documents from the pool_info collection")
+
     async def update_miners_stats(self):
         miner_hashrate_seconds = 1200
         current_time = int(time.time())
