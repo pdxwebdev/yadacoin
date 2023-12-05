@@ -87,7 +87,7 @@ class Transaction(object):
         seed_rid="",
         version=None,
         miner_signature="",
-        contract_generated=False,
+        contract_generated=None,
         relationship_hash="",
         never_expire=False,
         private=False,
@@ -176,7 +176,7 @@ class Transaction(object):
         exact_match=False,
         version=5,
         miner_signature="",
-        contract_generated=False,
+        contract_generated=None,
         do_money=True,
         never_expire=False,
         private=False,
@@ -393,7 +393,7 @@ class Transaction(object):
             coinbase=txn.get("coinbase", False),
             version=txn.get("version"),
             miner_signature=txn.get("miner_signature", ""),
-            contract_generated=txn.get("contract_generated", ""),
+            contract_generated=txn.get("contract_generated"),
             relationship_hash=txn.get("relationship_hash", ""),
             private=txn.get("private", False),
             never_expire=txn.get("never_expire", False),
@@ -407,10 +407,17 @@ class Transaction(object):
         for x in inputs:
             yield x
 
-    async def is_contract_generated(self):
-        if await self.get_generating_contract():
-            return True
-        return False
+    @property
+    async def contract_generated(self):
+        if self._contract_generated is None:
+            if await self.get_generating_contract():
+                self._contract_generated = True
+            self._contract_generated = False
+        return self._contract_generated
+
+    @contract_generated.setter
+    def contract_generated(self, value):
+        self._contract_generated = value
 
     async def get_generating_contract(self):
         from yadacoin.contracts.base import Contract
