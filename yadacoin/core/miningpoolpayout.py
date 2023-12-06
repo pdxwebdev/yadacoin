@@ -302,8 +302,21 @@ class PoolPayer(object):
         return difficulty
 
     async def already_used(self, txn):
-        return await self.config.mongo.async_db.blocks.find_one(
-            {"transactions.inputs.id": txn.transaction_signature}
+        return await self.config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        "transactions.inputs.id": txn.transaction_signature,
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inputs.id": txn.transaction_signature,
+                        "transactions.public_key": self.config.public_key,
+                    }
+                },
+            ]
         )
 
     async def broadcast_transaction(self, transaction):
