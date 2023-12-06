@@ -302,7 +302,7 @@ class PoolPayer(object):
         return difficulty
 
     async def already_used(self, txn):
-        return await self.config.mongo.async_db.blocks.aggregate(
+        results = self.config.mongo.async_db.blocks.aggregate(
             [
                 {
                     "$match": {
@@ -318,6 +318,7 @@ class PoolPayer(object):
                 },
             ]
         )
+        return [x async for x in results]
 
     async def broadcast_transaction(self, transaction):
         self.app_log.debug(f"broadcast_transaction {transaction.transaction_signature}")
