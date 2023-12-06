@@ -177,6 +177,7 @@ class PoolInfoHandler(BaseWebHandler):
                     "version": ".".join([str(x) for x in version]),
                 },
                 "pool": {
+                    "pool_address": self.config.address,
                     "hashes_per_second": pool_hash_rate,
                     "miner_count": miner_count_pool_stat["value"],
                     "worker_count": worker_count_pool_stat["value"],
@@ -194,7 +195,7 @@ class PoolInfoHandler(BaseWebHandler):
                     ],
                     "blocks_found": total_blocks_found,
                     "fee": self.config.pool_take,
-                    "payout_frequency": self.config.payout_frequency,
+                    "payout_frequency": self.config.pool_payer_wait,
                     "payouts": payouts,
                     "blocks": pool_blocks_found_list[:100],
                     "pool_perecentage": pool_perecentage,
