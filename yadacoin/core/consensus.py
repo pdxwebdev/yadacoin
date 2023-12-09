@@ -17,6 +17,10 @@ from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.tcpsocket.pool import StratumServer
 
 
+class MaxIterationsExceededException(Exception):
+    pass
+
+
 class Consensus(object):
     lowest = CHAIN.MAX_TARGET
 
@@ -101,14 +105,19 @@ class Consensus(object):
                 block = payload.get("block")
                 if not block:
                     return
-                if block["index"] > (self.config.LatestBlock.block.index + 100):
-                    return
                 block = await Block.from_dict(block)
+
+                if block.index > (self.config.LatestBlock.block.index + 100):
+                    self.config.app_log.info(
+                        "blockresponse, block index greater than latest block + 100"
+                    )
+                    return
+
                 if not await self.config.consensus.insert_consensus_block(
                     block, stream.peer
                 ):
                     self.config.app_log.info(
-                        "newblock, error inserting consensus block"
+                        "blockresponse, error inserting consensus block"
                     )
                     return
 
@@ -225,9 +234,7 @@ class Consensus(object):
             % (block.index, block.signature, peer.to_string())
         )
 
-        await self.mongo.async_db.consensus.delete_many(
-            {"index": block.index}
-        )
+        await self.mongo.async_db.consensus.delete_many({"index": block.index})
 
         await self.mongo.async_db.consensus.insert_one(
             {
@@ -339,6 +346,8 @@ class Consensus(object):
     async def build_remote_chain(self, block: Block):
         # now we just need to see how far this chain extends
         blocks = [block]
+        max_iterations = 100
+        i = 0
         while True:
             # get the heighest block from this chain
             local_block = await self.config.mongo.async_db.blocks.find_one(
@@ -358,6 +367,14 @@ class Consensus(object):
                     blocks.append(consensus_block)
             if not local_block and not consensus_block:
                 break
+            i += 1
+            if i > max_iterations:
+                self.app_log.error(
+                    "MaxIterationsExceededException: Too many iterations building blockchain from block."
+                )
+                raise MaxIterationsExceededException(
+                    "Too many iterations building blockchain from block."
+                )
 
         blocks.sort(key=lambda x: x.index)
 

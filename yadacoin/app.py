@@ -44,6 +44,8 @@ import yadacoin.core.config
 import yadacoin.core.transactionutils
 from plugins.yadacoinpool import handlers
 from yadacoin import version
+from yadacoin.core.block import Block
+from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.consensus import Consensus
 from yadacoin.core.crypt import Crypt
@@ -64,8 +66,13 @@ from yadacoin.core.peer import (
     ServiceProvider,
     User,
 )
-from yadacoin.core.processingqueue import ProcessingQueues
+from yadacoin.core.processingqueue import (
+    BlockProcessingQueueItem,
+    ProcessingQueues,
+    TransactionProcessingQueueItem,
+)
 from yadacoin.core.smtp import Email
+from yadacoin.core.transaction import Transaction
 from yadacoin.enums.modes import MODES
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
@@ -382,6 +389,54 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
         self.config.background_block_checker.busy = False
 
+    async def background_newtxn_stress_test(self):
+        for peer_cls in list(self.config.nodeClient.outbound_streams.keys()).copy():
+            for rid in self.config.nodeClient.outbound_streams[peer_cls]:
+                for x in range(50):
+                    txn = await Transaction.generate(
+                        private_key=self.config.private_key,
+                        public_key=self.config.public_key,
+                    )
+                    # self.config.nodeClient.retry_messages[
+                    #     (rid, "newtxn", txn.transaction_signature)
+                    # ] = {
+                    #     "transaction": txn.to_dict(),
+                    #     "test": True,
+                    # }
+                    self.config.processing_queues.transaction_queue.add(
+                        TransactionProcessingQueueItem(
+                            txn, self.config.nodeClient.outbound_streams[peer_cls][rid]
+                        )
+                    )
+
+    async def background_newblock_stress_test(self):
+        # only tests outbound currently
+        for peer_cls in list(self.config.nodeClient.outbound_streams.keys()).copy():
+            for rid in self.config.nodeClient.outbound_streams[peer_cls]:
+                for x in range(50):
+                    txn = await Transaction.generate(
+                        private_key=self.config.private_key,
+                        public_key=self.config.public_key,
+                    )
+                    block = await Block.generate(
+                        private_key=self.config.private_key,
+                        public_key=self.config.public_key,
+                        transactions=[txn],
+                        index=600000,
+                    )
+                    # self.config.nodeClient.retry_messages[
+                    #     (rid, "newtxn", txn.transaction_signature)
+                    # ] = {
+                    #     "transaction": txn.to_dict(),
+                    #     "test": True,
+                    # }
+                    self.config.processing_queues.block_queue.add(
+                        BlockProcessingQueueItem(
+                            Blockchain(block),
+                            self.config.nodeClient.outbound_streams[peer_cls][rid],
+                        )
+                    )
+
     async def background_message_sender(self):
         self.config.app_log.debug("background_message_sender")
         if not hasattr(self.config, "background_message_sender"):
@@ -457,6 +512,8 @@ class NodeApplication(Application):
                             self.config.app_log.warning(
                                 f"peer removed: background_message_sender nodeClient {x}"
                             )
+                            continue
+                        if message.get("test"):
                             continue
                         if len(x) > 3:
                             await self.config.nodeShared.write_result(
@@ -822,6 +879,19 @@ class NodeApplication(Application):
             PeriodicCallback(
                 self.background_pool_payer, self.config.pool_payer_wait * 1000
             ).start()
+
+        if (
+            hasattr(self.config, "stress_test_newtxn")
+            and self.config.stress_test_newtxn
+        ):
+            PeriodicCallback(self.background_newtxn_stress_test, 3000).start()
+
+        if (
+            hasattr(self.config, "stress_test_newblock")
+            and self.config.stress_test_newblock
+        ):
+            PeriodicCallback(self.background_newblock_stress_test, 3000).start()
+
         while True:
             tornado.ioloop.IOLoop.current().start()
 
