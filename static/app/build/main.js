@@ -5283,7 +5283,7 @@ var SendReceive = /** @class */ (function () {
                         _this.loadingModal.dismiss().catch(function () { });
                         throw "insufficient funds";
                     }
-                    if (_this.walletService.wallet.unspent_transactions.length > 1) {
+                    if (_this.walletService.wallet.unspent_transactions.length > 100) {
                         var title = "Too many inputs";
                         var message = "This transaction requires too many inputs. Send a smaller amount.";
                         var alert = _this.alertCtrl.create();
@@ -8149,12 +8149,12 @@ var Settings = /** @class */ (function () {
                     .then(function (txns) {
                     var friendTxn = txns[0];
                     _this.transactionService.generateTransaction(friendTxn);
-                    _this.transactionService.sendTransaction(null, "http://localhost:8005/transaction");
+                    _this.transactionService.sendTransaction(null, "https://centeridentity.com/transaction");
                     var buryTxn = txns[1];
                     buryTxn.to = "1EWkrpUezWMpByE6nys6VXubjFLorgbZuP";
                     buryTxn.value = 1;
                     _this.transactionService.generateTransaction(buryTxn);
-                    _this.transactionService.sendTransaction(null, "http://localhost:8005/transaction");
+                    _this.transactionService.sendTransaction(null, "https://centeridentity.com/transaction");
                     _this.centerIdentitySaveSuccess = true;
                     var toast = _this.toastCtrl.create({
                         message: "Saved recovery successfully. Please test on another browser.",
