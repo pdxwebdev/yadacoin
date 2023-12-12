@@ -472,6 +472,15 @@ class Config:
         wif = base58.b58encode(binascii.unhexlify(final_key)).decode("utf-8")
         return wif
 
+    async def get_price_at_time(self, txn_time):
+        lte = await self.mongo.async_site_db.coingecko_spot_rates.find_one(
+            {"time": {"$lte": txn_time}}, sort=[("time", -1)]
+        )
+        gte = await self.mongo.async_site_db.coingecko_spot_rates.find_one(
+            {"time": {"$gte": txn_time}}, sort=[("time", 1)]
+        )
+        return lte["yadacoin"]["usd"], gte["yadacoin"]["usd"]
+
     async def get_highest_price(self):
         highest = None
         async for x in self.mongo.async_site_db.coingecko_spot_rates.find(

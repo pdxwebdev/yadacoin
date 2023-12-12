@@ -28,6 +28,7 @@ from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.tcpsocket.base import BaseRPC, RPCSocketClient, RPCSocketServer
 
+
 class NodeServerDisconnectTracker:
     by_host = {}
     by_reason = {}
@@ -244,7 +245,11 @@ class NodeRPC(BaseRPC):
                     f"Skipping peer {stream.peer.rid} in inbound stream as it is the sender."
                 )
                 continue
-            elif (stream.peer.rid, "newtxn", txn.transaction_signature) in self.confirmed_peers:
+            elif (
+                stream.peer.rid,
+                "newtxn",
+                txn.transaction_signature,
+            ) in self.confirmed_peers:
                 self.config.app_log.debug(
                     f"Skipping peer {stream.peer.rid} in inbound stream as it has already confirmed the transaction."
                 )
@@ -262,7 +267,11 @@ class NodeRPC(BaseRPC):
                     f"Skipping peer {stream.peer.rid} in outbound stream as it is the sender."
                 )
                 continue
-            elif (stream.peer.rid, "newtxn", txn.transaction_signature) in self.confirmed_peers:
+            elif (
+                stream.peer.rid,
+                "newtxn",
+                txn.transaction_signature,
+            ) in self.confirmed_peers:
                 self.config.app_log.debug(
                     f"Skipping peer {stream.peer.rid} in outbound stream as it has already confirmed the transaction."
                 )
@@ -285,7 +294,9 @@ class NodeRPC(BaseRPC):
                 (stream.peer.rid, "newtxn", transaction.transaction_signature)
             ]
 
-        self.confirmed_peers.add((stream.peer.rid, "newtxn", transaction.transaction_signature))
+        self.confirmed_peers.add(
+            (stream.peer.rid, "newtxn", transaction.transaction_signature)
+        )
         self.config.app_log.debug(
             f"Transaction {transaction.transaction_signature} confirmed by peer {stream.peer.rid}. Peer added to the list of confirmed peers."
         )
