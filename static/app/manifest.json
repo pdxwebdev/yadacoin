@@ -1,13 +1,24 @@
 {
-  "name": "Ionic",
-  "short_name": "Ionic",
+  "name": "YadaCoin",
+  "short_name": "YadaCoin",
+  "description": "Description of your app from template",
   "start_url": "index.html",
+  "scope": "index.html",
+  "icons": [
+    {
+      "src": "img/logo.png",
+      "sizes": "192x192",
+      "type": "image/png"
+    },
+    {
+      "src": "img/splash.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ],
+  "default_locale": "en",
   "display": "standalone",
-  "icons": [{
-    "src": "assets/yadacoinemoji.png",
-    "sizes": "512x512",
-    "type": "image/png"
-  }],
-  "background_color": "#4e8ef7",
-  "theme_color": "#4e8ef7"
+  "background_color": "#FFF",
+  "theme_color": "#000",
+  "orientation": "landscape"
 }

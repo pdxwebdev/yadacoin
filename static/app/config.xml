@@ -13,11 +13,11 @@
     <allow-intent href="mailto:*" />
     <allow-intent href="geo:*" />
     <allow-intent href="myapp:*" />
-    <allow-navigation href="http://10.232.25.206:8100" />
-    <allow-navigation href="http://10.8.0.1:8100" />
     <preference name="webviewbounce" value="false" />
     <preference name="UIWebViewBounce" value="false" />
     <preference name="DisallowOverscroll" value="true" />
     <preference name="android-minSdkVersion" value="16" />
     <preference name="BackupWebStorage" value="none" />
+    <allow-navigation href="http://10.232.25.206:8100" />
+    <allow-navigation href="http://10.8.0.1:8100" />
 </widget>
