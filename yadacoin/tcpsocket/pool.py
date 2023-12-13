@@ -23,17 +23,17 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def block_checker(cls):
-        if not cls.config:
-            cls.config = Config()
+        try:
+            if not cls.config:
+                cls.config = Config()
 
-        if time.time() - cls.config.mp.block_factory.time > 900:
-            await cls.config.mp.refresh()
+            if time.time() - cls.config.mp.block_factory.time > 1500:
+                await cls.config.mp.refresh()
 
-        if cls.current_header != cls.config.mp.block_factory.header:
-            try:
+            if cls.current_header != cls.config.mp.block_factory.header:
                 await cls.send_jobs()
-            except:
-                cls.config.app_log.warning(traceback.format_exc())
+        except Exception as e:
+            cls.config.app_log.warning(f"Error in block checker: {e}")
 
     @classmethod
     async def send_jobs(cls):
@@ -48,23 +48,20 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def send_job(cls, stream):
-        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff)
-        stream.jobs[job.id] = job
-        cls.current_header = cls.config.mp.block_factory.header
-        result = {"id": job.id, "job": job.to_dict()}
-        rpc_data = {"id": 1, "method": "job", "jsonrpc": 2.0, "result": result}
-        cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
-
-        for _ in range(3):
-            try:
-                await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
-                break
-            except StreamClosedError:
-                await StratumServer.remove_peer(stream)
-                break
-            except Exception as e:
-                cls.config.app_log.warning(f"Error sending job to miner: {e}")
-                await asyncio.sleep(2)
+        try:
+            job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff)
+            stream.jobs[job.id] = job
+            cls.current_header = cls.config.mp.block_factory.header
+            result = {"id": job.id, "job": job.to_dict()}
+            rpc_data = {"id": 1, "method": "job", "jsonrpc": 2.0, "result": result}
+            cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
+            await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
+        except StreamClosedError:
+            await StratumServer.remove_peer(stream, reason="StreamClosedError")
+        except Exception as e:
+            cls.config.app_log.warning(f"Error sending job: {e}")
+            if job.id in stream.jobs:
+                del stream.jobs[job.id]
 
     @classmethod
     async def update_miner_count(cls):
@@ -74,7 +71,7 @@ class StratumServer(RPCSocketServer):
             {"stat": "miner_count"},
             {
                 "$set": {
-                    "value": len(StratumServer.inbound_streams[Miner.__name__].keys())
+                    "value": len(StratumServer.inbound_streams[Miner.__name__])
                 }
             },
             upsert=True,
@@ -94,31 +91,20 @@ class StratumServer(RPCSocketServer):
         if reason:
             Config().app_log.warning(f"remove_peer: {reason}")
         stream.close()
-        if not hasattr(stream, "peer"):
-            return
-        if stream.peer.address_only in StratumServer.inbound_streams[Miner.__name__]:
-            if (
-                stream.peer.worker
-                in StratumServer.inbound_streams[Miner.__name__][
-                    stream.peer.address_only
-                ]
-            ):
-                del StratumServer.inbound_streams[Miner.__name__][
-                    stream.peer.address_only
-                ][stream.peer.worker]
-            if (
-                len(
-                    StratumServer.inbound_streams[Miner.__name__][
-                        stream.peer.address_only
-                    ].keys()
-                )
-                == 0
-            ):
-                del StratumServer.inbound_streams[Miner.__name__][
-                    stream.peer.address_only
-                ]
-        await StratumServer.update_miner_count()
+        
+        if hasattr(stream, "peer") and hasattr(stream.peer, "address_only"):
+            if stream.peer.address_only in StratumServer.inbound_streams[Miner.__name__]:
+                worker_dict = StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only]
+                worker_key = stream.peer.worker
 
+                if worker_key in worker_dict:
+                    del worker_dict[worker_key]
+
+                if len(worker_dict.keys()) == 0:
+                    del StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only]
+        
+        await StratumServer.update_miner_count()
+    
     async def getblocktemplate(self, body, stream):
         return await StratumServer.config.mp.block_template(stream.peer.info)
 

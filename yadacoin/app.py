@@ -10,6 +10,7 @@ import os
 import pkgutil
 import ssl
 import sys
+import asyncio
 
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
@@ -115,6 +116,7 @@ class NodeApplication(Application):
     def __init__(self, test=False):
         options.parse_command_line(final=False)
 
+        self.background_processing_lock = asyncio.Lock()
         self.init_config(options)
         self.configure_logging()
         self.init_config_properties(test=test)
@@ -332,54 +334,77 @@ class NodeApplication(Application):
 
         if self.config.background_block_checker.busy:
             return
-        self.config.background_block_checker.busy = True
+        async with self.background_processing_lock:
+            self.config.background_block_checker.busy = True
 
-        try:
-            current_block_index = LatestBlock.block.index
-            current_block_hash = LatestBlock.block.hash
+            try:
+                current_block_index = LatestBlock.block.index
+                current_block_hash = LatestBlock.block.hash
 
-            if (
-                self.config.background_block_checker.last_block_height != current_block_index
-                or self.config.background_block_checker.last_block_hash != self.config.LatestBlock.block.hash
-            ):
-                if self.config.background_block_checker.first_run:
-                    self.config.background_block_checker.first_run = False
-                    synced = False
-                else:
-                    synced = await Peer.is_synced()
-                if synced:
-                    self.config.app_log.info(
-                        "Latest block height: %s | time: %s"
-                        % (
-                            current_block_index,
-                            datetime.fromtimestamp(
-                                int(self.config.LatestBlock.block.time)
-                            ).strftime("%Y-%m-%d %H:%M:%S"),
+                if (
+                    self.config.background_block_checker.last_block_height != current_block_index
+                    or self.config.background_block_checker.last_block_hash != self.config.LatestBlock.block.hash
+                ):
+                    if self.config.background_block_checker.first_run:
+                        self.config.background_block_checker.first_run = False
+                        synced = False
+                    else:
+                        synced = await Peer.is_synced()
+                    if synced:
+                        self.config.app_log.info(
+                            "Latest block height: %s | time: %s"
+                            % (
+                                current_block_index,
+                                datetime.fromtimestamp(
+                                    int(self.config.LatestBlock.block.time)
+                                ).strftime("%Y-%m-%d %H:%M:%S"),
+                            )
                         )
-                    )
+                        await self.config.nodeShared.send_block_to_peers(
+                            self.config.LatestBlock.block
+                        )
+                        try:
+                            await self.config.mp.refresh()
+                        except Exception:
+                            self.config.app_log.warning("{}".format(format_exc()))
+
+                        try:
+                            await StratumServer.block_checker()
+                        except Exception:
+                            self.config.app_log.warning("{}".format(format_exc()))
+
+                    if not synced:
+                        self.config.app_log.info("Sending a new block prohibited, synchronization in progress")
+
+                    self.config.background_block_checker.last_block_height = current_block_index
+                    self.config.background_block_checker.last_block_hash = current_block_hash
+
+                elif int(time()) - self.config.background_block_checker.last_send > 600:
+                    self.config.background_block_checker.last_send = int(time())
+                    self.config.app_log.info("Time condition met, sending Last Block to peers.")
                     await self.config.nodeShared.send_block_to_peers(
                         self.config.LatestBlock.block
                     )
-                if not synced:
-                    self.config.app_log.info("Sending a new block prohibited, synchronization in progress")
+                self.config.health.block_checker.last_activity = int(time())
+            except Exception:
+                self.config.app_log.error(format_exc())
 
-                self.config.background_block_checker.last_block_height = current_block_index
-                self.config.background_block_checker.last_block_hash = current_block_hash
-
-            elif int(time()) - self.config.background_block_checker.last_send > 600:
-                self.config.background_block_checker.last_send = int(time())
-                self.config.app_log.info("Time condition met, sending Last Block to peers.")
-                await self.config.nodeShared.send_block_to_peers(
-                    self.config.LatestBlock.block
+            try:
+                if self.config.processing_queues.block_queue.queue:
+                    self.config.processing_queues.block_queue.time_sum_start()
+                    await self.config.consensus.process_block_queue()
+                    self.config.processing_queues.block_queue.time_sum_end()
+                self.config.health.block_inserter.last_activity = int(time())
+                self.config.app_log.debug(
+                    f"block_inserter.last_activity: {self.config.health.block_inserter.last_activity}"
                 )
-            self.config.health.block_checker.last_activity = int(time())
-        except Exception:
-            self.config.app_log.error(format_exc())
+            except:
+                self.config.app_log.error(format_exc())
+                self.config.processing_queues.block_queue.time_sum_end()
 
-        self.config.background_block_checker.busy = False
+            self.config.background_block_checker.busy = False
 
     async def background_message_sender(self):
-        self.config.app_log.info("background_message_sender - Start")
         
         if not hasattr(self.config, "background_message_sender"):
             self.config.background_message_sender = WorkerVars(busy=False)
@@ -396,7 +421,7 @@ class NodeApplication(Application):
             try:
                 for x in self.config.nodeServer.retry_messages.copy():
                     message = self.config.nodeServer.retry_messages.get(x)
-                    self.config.app_log.info(f"Processing retry_message for nodeServer: {x}")
+                    self.config.app_log.debug(f"Processing retry_message for nodeServer: {x}")
                     if not message:
                         if x in self.config.nodeServer.retry_messages:
                             del self.config.nodeServer.retry_messages[x]
@@ -439,7 +464,7 @@ class NodeApplication(Application):
             try:            
                 for x in self.config.nodeClient.retry_messages.copy():
                     message = self.config.nodeClient.retry_messages.get(x)
-                    self.config.app_log.info(f"Processing retry_message for nodeClient: {x}")
+                    self.config.app_log.debug(f"Processing retry_message for nodeClient: {x}")
                     if not message:
                         if x in self.config.nodeClient.retry_messages:
                             del self.config.nodeClient.retry_messages[x]
@@ -495,7 +520,6 @@ class NodeApplication(Application):
             
         finally:
             self.config.background_message_sender.busy = False
-            self.config.app_log.info("background_message_sender - End")
 
     async def background_txn_queue_processor(self):
         self.config.app_log.debug("background_txn_queue_processor")
@@ -521,40 +545,28 @@ class NodeApplication(Application):
             self.config.background_block_queue_processor = WorkerVars(busy=False, consensus_last_activity=int(time()))
         if self.config.background_block_queue_processor.busy:
             return
-        self.config.background_block_queue_processor.busy = True
+        async with self.background_processing_lock:
+            self.config.background_block_queue_processor.busy = True
 
-        try:
-            if self.config.processing_queues.block_queue.queue:
-                self.config.processing_queues.block_queue.time_sum_start()
-                await self.config.consensus.process_block_queue()
-                self.config.processing_queues.block_queue.time_sum_end()
-            self.config.health.block_inserter.last_activity = int(time())
-            self.config.app_log.debug(
-                f"block_inserter.last_activity: {self.config.health.block_inserter.last_activity}"
-            )
-        except:
-            self.config.app_log.error(format_exc())
-            self.config.processing_queues.block_queue.time_sum_end()
+            try:
+                synced = await Peer.is_synced()
+                skip = True
+                if time() - self.config.background_block_queue_processor.consensus_last_activity >= 15:
+                    self.config.background_block_queue_processor.consensus_last_activity = int(time())
+                    skip = False
+                else:
+                    self.config.app_log.debug(f"Synced: {synced}, Skip: {skip}")
+                if not skip or not synced:
+                    await self.config.consensus.sync_bottom_up(synced)
+                    self.config.app_log.debug("Syncing bottom-up.")
+                    self.config.health.consensus.last_activity = time()
+                    self.config.app_log.debug(
+                        f"consensus.last_activity: {self.config.health.consensus.last_activity}"
+                    )
+            except Exception:
+                self.config.app_log.error(format_exc())
 
-        try:
-            synced = await Peer.is_synced()
-            skip = True
-            if time() - self.config.background_block_queue_processor.consensus_last_activity >= 15:
-                self.config.background_block_queue_processor.consensus_last_activity = int(time())
-                skip = False
-            else:
-                self.config.app_log.debug(f"Synced: {synced}, Skip: {skip}")
-            if not skip or not synced:
-                await self.config.consensus.sync_bottom_up(synced)
-                self.config.app_log.debug("Syncing bottom-up.")
-                self.config.health.consensus.last_activity = time()
-                self.config.app_log.debug(
-                    f"consensus.last_activity: {self.config.health.consensus.last_activity}"
-                )
-        except Exception:
-            self.config.app_log.error(format_exc())
-
-        self.config.background_block_queue_processor.busy = False
+            self.config.background_block_queue_processor.busy = False
 
     async def background_pool_info_checker(self):
         self.config.app_log.debug("background_pool_info_checker")

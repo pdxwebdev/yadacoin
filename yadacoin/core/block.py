@@ -28,7 +28,7 @@ from yadacoin.core.transaction import (
 )
 from yadacoin.core.transactionutils import TU
 
-cache = TTLCache(maxsize=1, ttl=1800)
+cache = TTLCache(maxsize=1, ttl=21600)
 
 
 def quantize_eight(value):

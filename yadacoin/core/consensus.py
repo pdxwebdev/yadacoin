@@ -16,6 +16,7 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.tcpsocket.pool import StratumServer
+from yadacoin.core.peer import Peer
 
 
 class Consensus(object):
@@ -272,7 +273,7 @@ class Consensus(object):
             latest_consensus = await Block.from_dict(latest_consensus["block"])
             if self.debug:
                 self.app_log.info(
-                    "Latest consensus_block {}".format(latest_consensus.index)
+                    f"Latest consensus_block {latest_consensus.index}"
                 )
 
             records = await self.mongo.async_db.consensus.find(
@@ -290,7 +291,7 @@ class Consensus(object):
                     self.config.processing_queues.block_queue.add(
                         BlockProcessingQueueItem(Blockchain(record["block"]), stream)
                     )
-
+            self.app_log.info("Synchronization from bottom to top completed successfully.")
             return True
         else:
             #  this path is for syncing only.
@@ -300,7 +301,7 @@ class Consensus(object):
             #    getblocks <--- rpc request
             #    blocksresponse <--- rpc response
             #    process_block_queue
-            if (time() - self.last_network_search) >= 90 or not synced:
+            if (time() - self.last_network_search) >= 15 or not synced:
                 self.last_network_search = time()
                 self.app_log.info("Calling search_network_for_new")
                 return await self.search_network_for_new()
@@ -530,13 +531,7 @@ class Consensus(object):
 
             if self.config.mp:
                 try:
-                    await self.config.mp.refresh()
                     await self.config.mp.update_block_status()
-                except Exception:
-                    self.app_log.warning("{}".format(format_exc()))
-
-                try:
-                    await StratumServer.block_checker()
                 except Exception:
                     self.app_log.warning("{}".format(format_exc()))
 

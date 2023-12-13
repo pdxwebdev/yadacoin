@@ -139,11 +139,11 @@ class RPCSocketServer(TCPServer, BaseRPC):
 
         # OPTIONAL: Adjust keepalive settings if needed
         if hasattr(socket, "TCP_KEEPIDLE"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 120)
+            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 300)
         if hasattr(socket, "TCP_KEEPINTVL"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 10)
+            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 30)
         if hasattr(socket, "TCP_KEEPCNT"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 1)
+            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 2)
 
         stream.synced = False
         stream.syncing = False
@@ -153,12 +153,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 data = await stream.read_until(b"\n")
                 stream.last_activity = int(time.time())
                 self.config.health.tcp_server.last_activity = time.time()
-                try:
-                    body = json.loads(data)
-                except json.JSONDecodeError as e:
-                    self.config.app_log.warning("Failed to parse JSON data: {}".format(str(e)))
-                    await self.handle_invalid_json(data, stream)  # Now handling invalid JSON
-                    continue
+                body = json.loads(data)
                 method = body.get("method")
                 if "result" in body:
                     if method in REQUEST_RESPONSE_MAP:
@@ -205,28 +200,19 @@ class RPCSocketServer(TCPServer, BaseRPC):
             except StreamClosedError:
                 if hasattr(stream, "peer"):
                     self.config.app_log.warning(
-                        "Disconnected from {}: {}".format(
-                            stream.peer.__class__.__name__, stream.peer.to_json()
-                        )
+                        f"Disconnected from {stream.peer.__class__.__name__}: {stream.peer.to_json()}"
                     )
-                await self.remove_peer(stream)
+                await self.remove_peer(stream, reason="StreamClosedError")
                 break
-            except:
+            except Exception as e:
                 if hasattr(stream, "peer"):
                     self.config.app_log.warning(
-                        "Bad data from {}: {}".format(
-                            stream.peer.__class__.__name__, stream.peer.to_json()
-                        )
+                        f"Bad data from {stream.peer.__class__.__name__}: {stream.peer.to_json()}"
                     )
-                await self.remove_peer(stream, reason="BaseRPC: unhandled exception 2")
-                self.config.app_log.warning("{}".format(format_exc()))
+                await self.remove_peer(stream, reason=f"Unhandled exception: {str(e)}")
+                self.config.app_log.warning(format_exc())
                 self.config.app_log.warning(data)
                 break
-
-    async def handle_invalid_json(self, data, stream):
-        self.config.app_log.warning(f"Invalid JSON data received: {data}")
-        if hasattr(stream, "peer") and hasattr(stream.peer, "to_json"):
-            self.config.app_log.warning(f"Stream peer: {stream.peer.to_json()}")
 
     async def remove_peer(self, stream, close=True, reason=None):
         if reason:

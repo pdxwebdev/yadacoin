@@ -41,6 +41,7 @@ class MiningPool(object):
             self.index = last_block.index
         self.last_refresh = 0
         self.block_factory = None
+        self.stale_share_counter = {}
         await self.refresh()
         return self
 
@@ -68,12 +69,16 @@ class MiningPool(object):
                 "method": body.get("method"),
                 "jsonrpc": body.get("jsonrpc"),
             }
+            
             if job and job.index != self.block_factory.index:
-                self.app_log.warning("Received job with incorrect block height.")
-                if job.index != self.config.LatestBlock.block.index + 1:
+                self.stale_share_counter[miner.address] += 1
+                self.app_log.warning(f"Received stale share from miner {miner.address}. Counter: {self.stale_share_counter[miner.address]}")
+                if self.stale_share_counter[miner.address] >= 3:
                     self.app_log.warning("Resending job to miner.")
                     await StratumServer.send_job(stream)
             else:
+                self.stale_share_counter[miner.address] = 0
+
                 data["result"] = await self.process_nonce(miner, nonce, job)
                 if not data["result"]:
                     data["error"] = {"message": "Invalid hash for current block"}
@@ -94,7 +99,6 @@ class MiningPool(object):
                 return
 
             item = self.config.processing_queues.nonce_queue.pop()
-
 
     async def process_nonce(self, miner, nonce, job):
         header = (
@@ -150,7 +154,7 @@ class MiningPool(object):
 
         accepted = False
 
-        target = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
+        target = 0xFFFF000000000000000000000000000000000000000000000000000000000000
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
             test_hash = int(Blockchain.little_hash(block_candidate.hash), 16)
@@ -343,7 +347,7 @@ class MiningPool(object):
         start_nonce = secrets.token_hex(2)
         header = self.block_factory.header.replace("{nonce}", start_nonce)
 
-        miner_diff = max(int(custom_diff), 70000) if custom_diff is not None else self.config.pool_diff
+        miner_diff = max(int(custom_diff), 5000) if custom_diff is not None else self.config.pool_diff
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
@@ -367,9 +371,10 @@ class MiningPool(object):
             "start_nonce": start_nonce,
             "algo": "rx/yada",
             "miner_diff": miner_diff,
+            "agent": agent,
         }
 
-        self.config.app_log.info(f"Generated job: {res}")
+        self.config.app_log.debug(f"Generated job: {res}")
 
         return await Job.from_dict(res)
 
