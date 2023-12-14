@@ -90,7 +90,6 @@ class TransactionProcessingQueue(ProcessingQueue):
         self.last_popped = key
         return item
 
-
 class NonceProcessingQueueItem:
     def __init__(self, miner: Miner = "", stream=None, body=None):
         self.miner = miner
@@ -99,25 +98,22 @@ class NonceProcessingQueueItem:
         self.id = body["params"]["id"]
         self.nonce = body["params"]["nonce"]
 
-
 class NonceProcessingQueue(ProcessingQueue):
     def __init__(self):
         self.queue = {}
-        self.last_popped = ""
 
     def add(self, item: NonceProcessingQueueItem):
-        if (item.id, item.nonce) == self.last_popped:
-            return
-        self.queue.setdefault((item.id, item.nonce), item)
-        return True
+        key = (item.id, item.nonce)
+        if key not in self.queue:
+            self.queue[key] = item
+            return True
+        return False
 
     def pop(self):
         if not self.queue:
             return None
         key, item = self.queue.popitem()
-        self.last_popped = key
         return item
-
 
 class ProcessingQueues:
     def __init__(self):
