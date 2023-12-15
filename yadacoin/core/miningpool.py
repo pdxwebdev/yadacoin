@@ -347,7 +347,7 @@ class MiningPool(object):
         start_nonce = secrets.token_hex(2)
         header = self.block_factory.header.replace("{nonce}", start_nonce)
 
-        miner_diff = max(int(custom_diff), 5000) if custom_diff is not None else self.config.pool_diff
+        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
@@ -783,12 +783,20 @@ class MiningPool(object):
         }
 
     async def calculate_total_weight(self, round_start, round_end):
-        pipeline = [
-            {"$match": {"index": {"$gte": round_start, "$lt": round_end}}},
-            {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
-        ]
+        if round_start == round_end:
+            pipeline = [
+                {"$match": {"index": round_start}},
+                {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
+            ]
+        else:
+            pipeline = [
+                {"$match": {"index": {"$gte": round_start, "$lte": round_end}}},
+                {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
+            ]
+
         result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
         return result[0]["total_weight"] if result else 0
+
 
 
     async def update_block_status(self):
