@@ -135,15 +135,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
     config = None
 
     async def handle_stream(self, stream, address):
-        stream.socket.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
-
-        # OPTIONAL: Adjust keepalive settings if needed
-        if hasattr(socket, "TCP_KEEPIDLE"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPIDLE, 300)
-        if hasattr(socket, "TCP_KEEPINTVL"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPINTVL, 30)
-        if hasattr(socket, "TCP_KEEPCNT"):
-            stream.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_KEEPCNT, 2)
+        self.config.app_log.info(f"New connection from {address}")
 
         stream.synced = False
         stream.syncing = False

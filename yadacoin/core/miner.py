@@ -11,8 +11,9 @@ class Miner(MinerBase):
     custom_diff = ""
     id_attribute = "address_only"
 
-    def __init__(self, address, agent="", custom_diff=""):
+    def __init__(self, address, agent="", custom_diff="", peer_id=""):
         super(Miner, self).__init__()
+        self.peer_id = peer_id
         if "@" in address:
             parts = address.split("@")
             address = parts[0]
@@ -38,7 +39,7 @@ class Miner(MinerBase):
         self.agent = agent
 
     def to_json(self):
-        return {"address": self.address_only, "worker": self.worker, "custom_diff": self.custom_diff}
+        return {"address": self.address_only, "worker": self.worker, "agent": self.agent, "custom_diff": self.custom_diff, "peer_id": self.peer_id}
 
 
 class InvalidAddressException(Exception):
