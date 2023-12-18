@@ -716,23 +716,27 @@ class NodeApplication(Application):
 
     async def background_nonce_processor(self):
         """Responsible for processing all share submissions from miners"""
-
-        self.config.app_log.debug("background_nonce_processor")
+        
+        self.config.app_log.warning("background_nonce_processor")
         if not hasattr(self.config, "background_nonce_processor"):
             self.config.background_nonce_processor = WorkerVars(busy=False)
         if self.config.background_nonce_processor.busy:
+            self.config.app_log.info("background_nonce_processor is already busy")
             return
         self.config.background_nonce_processor.busy = True
         try:
             if self.config.processing_queues.nonce_queue.queue:
-                self.config.processing_queues.nonce_queue.time_sum_start()
                 await self.config.mp.process_nonce_queue()
-                self.config.processing_queues.nonce_queue.time_sum_end()
-            self.config.health.nonce_processor.last_activity = int(time())
+                self.config.health.nonce_processor.last_activity = int(time())
+            else:
+                # Set last_activity even if the queue is empty
+                self.config.health.nonce_processor.last_activity = int(time())
         except:
             self.config.app_log.error(format_exc())
             self.config.processing_queues.nonce_queue.time_sum_end()
-        self.config.background_nonce_processor.busy = False
+        finally:
+            self.config.background_nonce_processor.busy = False
+
 
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()

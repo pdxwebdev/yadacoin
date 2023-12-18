@@ -15,6 +15,7 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.job import Job
 from yadacoin.core.peer import Peer
+from yadacoin.core.health import Health
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
@@ -51,10 +52,11 @@ class MiningPool(object):
         return status
 
     async def process_nonce_queue(self):
-        item = self.config.processing_queues.nonce_queue.pop()
+        item = await self.config.processing_queues.nonce_queue.pop()
         i = 0  # max loops
         while item:
             self.config.processing_queues.nonce_queue.inc_num_items_processed()
+            await self.config.processing_queues.nonce_queue.time_sum_start()
             body = item.body
             stream = item.stream
             miner = item.miner
@@ -101,6 +103,8 @@ class MiningPool(object):
                     await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
+            await self.config.processing_queues.nonce_queue.time_sum_end()
+            self.config.health.nonce_processor.last_activity = int(time.time())
 
             i += 1
             if i >= 1000:
@@ -109,7 +113,7 @@ class MiningPool(object):
                 )
                 return
 
-            item = self.config.processing_queues.nonce_queue.pop()
+            item = await self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):
         header = (

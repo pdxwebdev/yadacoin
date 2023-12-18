@@ -153,7 +153,7 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def submit(self, body, stream):
-        self.config.processing_queues.nonce_queue.add(
+        await self.config.processing_queues.nonce_queue.add(
             NonceProcessingQueueItem(miner=stream.peer, stream=stream, body=body)
         )
 
