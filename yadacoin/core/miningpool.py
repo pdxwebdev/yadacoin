@@ -506,9 +506,11 @@ class MiningPool(object):
             elif isinstance(txn, dict):
                 transaction_obj = Transaction.from_dict(txn)
             else:
-                self.config.app_log.warning("transaction unrecognizable, skipping")
-                return
-
+                raise Exception()
+        except:
+            self.config.app_log.warning("transaction unrecognizable, skipping")
+            return
+        try:
             if (
                 self.config.LatestBlock.block.index + 1 >= CHAIN.TXN_V3_FORK
                 and transaction_obj.version < 3

@@ -384,7 +384,7 @@ class Transaction(object):
             relationship=txn.get("relationship", ""),
             public_key=txn.get("public_key"),
             dh_public_key=txn.get("dh_public_key"),
-            fee=float(txn.get("fee")),
+            fee=float(txn.get("fee", 0)),
             requester_rid=txn.get("requester_rid", ""),
             requested_rid=txn.get("requested_rid", ""),
             txn_hash=txn.get("hash", ""),
