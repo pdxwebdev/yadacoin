@@ -2204,7 +2204,7 @@ class ServiceProviders(Nodes):
                 ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.funckyman.xyz",
-                        "port": 8006,
+                        "port": 8007,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCJpJ8EYXEB9dgeVOTjiycxsVf8y/3yulsO1BtlryGlxAIgJzou0GBjJJZDgcym8dvr6eOPIZ8HZFXQdRzInE1eAV4=",
