@@ -1,5 +1,6 @@
 import json
 import time
+import uuid
 import traceback
 
 from tornado.iostream import StreamClosedError
@@ -47,12 +48,14 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def send_job(cls, stream):
-        job = await cls.config.mp.block_template(stream.peer.agent)
+        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.peer_id)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
-        result = {"id": job.id, "job": job.to_dict()}
-        rpc_data = {"id": 1, "method": "job", "jsonrpc": 2.0, "result": result}
+        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index}
+        rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
         try:
+            cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
+            cls.config.app_log.debug(f"RPC Data: {json.dumps(rpc_data)}")
             await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
         except StreamClosedError:
             await StratumServer.remove_peer(stream)
@@ -173,8 +176,9 @@ class StratumServer(RPCSocketServer):
             )
             await StratumServer.remove_peer(stream)
             return
+        peer_id = str(uuid.uuid4())
         await StratumServer.block_checker()
-        job = await StratumServer.config.mp.block_template(body["params"].get("agent"))
+        job = await StratumServer.config.mp.block_template(body["params"].get("agent"), peer_id)
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
         stream.jobs[job.id] = job
@@ -188,7 +192,7 @@ class StratumServer(RPCSocketServer):
 
         try:
             stream.peer = Miner(
-                address=body["params"].get("login"), agent=body["params"].get("agent")
+                address=body["params"].get("login"), agent=body["params"].get("agent"), peer_id=peer_id
             )
             self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
             StratumServer.inbound_streams[Miner.__name__].setdefault(
@@ -200,6 +204,7 @@ class StratumServer(RPCSocketServer):
             await StratumServer.update_miner_count()
         except:
             rpc_data["error"] = {"message": "Invalid wallet address or invalid format"}
+        self.config.app_log.debug(f"Login RPC Data: {json.dumps(rpc_data)}")
         await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
 
     async def keepalived(self, body, stream):

@@ -2,7 +2,8 @@ class Job:
     @classmethod
     async def from_dict(cls, job):
         inst = cls()
-        inst.id = job["job_id"]
+        inst.id = job["peer_id"]
+        inst.job_id = job["job_id"]
         inst.diff = job["difficulty"]
         inst.target = job["target"]
         inst.blob = job["blob"]
@@ -14,8 +15,7 @@ class Job:
 
     def to_dict(self):
         return {
-            "job_id": self.id,
-            "difficulty": self.diff,
+            "job_id": self.job_id,
             "target": self.target,
             "blob": self.blob,
             "seed_hash": self.seed_hash,
