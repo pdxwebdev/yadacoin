@@ -2,6 +2,7 @@ import base64
 import json
 import socket
 import time
+import asyncio
 from datetime import timedelta
 from traceback import format_exc
 from uuid import uuid4
@@ -185,6 +186,8 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             stream,
                             reason=f"{id_attr} not in nodeServer.inbound_streams",
                         )
+                    else:
+                        await asyncio.sleep(0.1)
                 if not hasattr(stream, "peer") and method not in ["login", "connect"]:
                     await self.remove_peer(stream)
                     break
