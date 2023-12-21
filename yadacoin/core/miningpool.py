@@ -20,6 +20,7 @@ from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
 from yadacoin.tcpsocket.pool import StratumServer
+from tornado.iostream import StreamClosedError
 
 
 class MiningPool(object):
@@ -80,27 +81,30 @@ class MiningPool(object):
                     await StratumServer.send_job(stream)
             else:
                 self.stale_share_counter[miner.address] = 0
-
-                data["result"] = await self.process_nonce(miner, nonce, job)
-                if not data["result"]:
-                    data["error"] = {"message": "Invalid hash for current block"}
-                try:
-                    await stream.write("{}\n".format(json.dumps(data)).encode())
-                except StreamClosedError:
-                    if hasattr(stream, "peer"):
-                        self.config.app_log.warning(
-                            "Disconnected from {}: {}".format(
-                                stream.peer.__class__.__name__, stream.peer.to_json()
+                if job and job.index != self.block_factory.index:
+                    self.app_log.warning(f"Received stale share from miner {miner.address}. Sending 'Stale share' error message.")
+                    data["error"] = {"message": "Stale share"}
+                else:
+                    data["result"] = await self.process_nonce(miner, nonce, job)
+                    if not data["result"]:
+                        data["error"] = {"message": "Invalid hash for current block"}
+                    try:
+                        await stream.write("{}\n".format(json.dumps(data)).encode())
+                    except StreamClosedError:
+                        if hasattr(stream, "peer"):
+                            self.config.app_log.warning(
+                                "Disconnected from {}: {}".format(
+                                    stream.peer.__class__.__name__, stream.peer.to_json()
+                                )
                             )
-                        )
-                    self.config.app_log.warning("StreamClosedError during stream write.")
-                except Exception as e:
-                    self.config.app_log.error(f"Error during stream write: {e}")
+                        self.config.app_log.warning("StreamClosedError during stream write.")
+                    except Exception as e:
+                        self.config.app_log.error(f"Error during stream write: {e}")
 
-                except:
-                    pass
-                if "error" in data:
-                    await StratumServer.send_job(stream)
+                    except:
+                        pass
+                    if "error" in data:
+                        await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
             await self.config.processing_queues.nonce_queue.time_sum_end()
@@ -364,7 +368,7 @@ class MiningPool(object):
 
         miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
 
-        if "XMRigCC/3" in agent or "XMRig/3" in agent:
+        if "XMRigCC/3" in agent or "XMRig/3" in agent or "xmrigcc-proxy" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
         elif miner_diff <= 69905:
             target = hex(
