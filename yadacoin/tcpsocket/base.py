@@ -176,6 +176,13 @@ class RPCSocketServer(TCPServer, BaseRPC):
                                 f"SERVER RECEIVED {stream.peer.address} {method} {body}"
                             )
                     id_attr = getattr(stream.peer, stream.peer.id_attribute)
+                    inbound_streams = self.config.nodeServer.inbound_streams.get(
+                        stream.peer.__class__.__name__, {}
+                    )
+
+                    self.config.app_log.debug(
+                        f"Inbound Streams Dictionary: {inbound_streams}"
+                    )
                     if (
                         id_attr
                         not in self.config.nodeServer.inbound_streams[

@@ -368,7 +368,7 @@ class MiningPool(object):
 
         miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
 
-        if "XMRigCC/3" in agent or "XMRig/3" in agent or "xmrigcc-proxy" in agent:
+        if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
         elif miner_diff <= 69905:
             target = hex(

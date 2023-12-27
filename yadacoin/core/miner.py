@@ -9,7 +9,7 @@ class Miner(MinerBase):
     address_only = ""
     agent = ""
     custom_diff = ""
-    id_attribute = "address_only"
+    id_attribute = "peer_id"
 
     def __init__(self, address, agent="", custom_diff="", peer_id=""):
         super(Miner, self).__init__()
