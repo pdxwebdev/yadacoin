@@ -225,6 +225,15 @@ class StratumServer(RPCSocketServer):
         self.config.app_log.info(f"Login RPC Data: {json.dumps(rpc_data)}")
         await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
 
+    async def keepalived(self, body, stream):
+        rpc_data = {
+            "id": body.get("id"),
+            "method": body.get("method"),
+            "jsonrpc": body.get("jsonrpc"),
+            "result": {"status": "KEEPALIVED"},
+        }
+        await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
+
     @classmethod
     async def status(cls):
         unique_miner_addresses = set()
