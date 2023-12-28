@@ -54,7 +54,7 @@ class MiningPool(object):
             stream = item.stream
             miner = item.miner
             nonce = body["params"].get("nonce")
-            job = stream.jobs[body["params"]["id"]]
+            job = stream.jobs[body["params"]["id"] or body["params"]["job_id"]]
             if type(nonce) is not str:
                 result = {"error": True, "message": "nonce is wrong data type"}
             if len(nonce) > CHAIN.MAX_NONCE_LEN:
@@ -319,7 +319,7 @@ class MiningPool(object):
         }
         return res
 
-    async def block_template(self, agent):
+    async def block_template(self, agent, peer_id):
         """Returns info for current block to mine"""
         if self.block_factory is None:
             await self.refresh()
@@ -328,10 +328,10 @@ class MiningPool(object):
                 self.config.LatestBlock.block
             )
 
-        job = await self.generate_job(agent)
+        job = await self.generate_job(agent, peer_id)
         return job
 
-    async def generate_job(self, agent):
+    async def generate_job(self, agent, peer_id):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
@@ -351,6 +351,7 @@ class MiningPool(object):
 
         res = {
             "job_id": job_id,
+            "peer_id": peer_id,
             "difficulty": difficulty,
             "target": target,  # can only be 16 characters long
             "blob": header.encode().hex(),

@@ -10,7 +10,7 @@ class Miner(MinerBase):
     agent = ""
     id_attribute = "address_only"
 
-    def __init__(self, address, agent=""):
+    def __init__(self, address, agent="", peer_id=""):
         super(Miner, self).__init__()
         if "." in address:
             self.address = address
@@ -31,9 +31,10 @@ class Miner(MinerBase):
             if not self.config.address_is_valid(self.address):
                 raise InvalidAddressException()
         self.agent = agent
+        self.peer_id = peer_id
 
     def to_json(self):
-        return {"address": self.address_only, "worker": self.worker}
+        return {"address": self.address_only, "worker": self.worker, "agent": self.agent, "peer_id": self.peer_id}
 
 
 class InvalidAddressException(Exception):

@@ -185,8 +185,6 @@
                 else if(data.network.current_hashes_per_second >= 1000000) {
                     $('#current-network-hash-rate').html((data.network.current_hashes_per_second / 1000000).toFixed(2) + ' MH/sec');
                 }
-                $('#market-last-btc').html(data.market.last_btc.toFixed(8));
-                $('#market-last-usdt').html(data.market.last_usdt.toFixed(8));
 
                 if(data.pool.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Height</th><th>Reward</th><th>Block Hash</th></tr>');
                     for(var i=0; i < data.pool.blocks.length; i++) {
