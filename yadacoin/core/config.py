@@ -472,37 +472,37 @@ class Config:
         wif = base58.b58encode(binascii.unhexlify(final_key)).decode("utf-8")
         return wif
 
-    async def get_price_at_time(self, txn_time):
+    async def get_price_at_time(self, txn_time, coin="yadacoin"):
         lte = await self.mongo.async_site_db.coingecko_spot_rates.find_one(
-            {"time": {"$lte": txn_time}}, sort=[("time", -1)]
+            {"time": {"$lte": txn_time}, coin: {"$exists": True}}, sort=[("time", -1)]
         )
         gte = await self.mongo.async_site_db.coingecko_spot_rates.find_one(
-            {"time": {"$gte": txn_time}}, sort=[("time", 1)]
+            {"time": {"$gte": txn_time}, coin: {"$exists": True}}, sort=[("time", 1)]
         )
-        return lte["yadacoin"]["usd"], gte["yadacoin"]["usd"]
+        return lte[coin]["usd"], gte[coin]["usd"]
 
-    async def get_highest_price(self):
+    async def get_highest_price(self, coin="yadacoin"):
         highest = None
         async for x in self.mongo.async_site_db.coingecko_spot_rates.find(
-            {"time": {"$gte": time() - (3600 * 4)}}
+            {"time": {"$gte": time() - (3600 * 4)}, coin: {"$exists": True}}
         ):
-            if highest is None or x["yadacoin"]["usd"] > highest:
-                highest = x["yadacoin"]["usd"]
+            if highest is None or x[coin]["usd"] > highest:
+                highest = x[coin]["usd"]
         return highest
 
-    async def get_lowest_price(self):
+    async def get_lowest_price(self, coin="yadacoin"):
         lowest = None
         async for x in self.mongo.async_site_db.coingecko_spot_rates.find(
-            {"time": {"$gte": time() - (3600 * 4)}}
+            {"time": {"$gte": time() - (3600 * 4)}, coin: {"$exists": True}}
         ):
-            if lowest is None or x["yadacoin"]["usd"] < lowest:
-                lowest = x["yadacoin"]["usd"]
+            if lowest is None or x[coin]["usd"] < lowest:
+                lowest = x[coin]["usd"]
         return lowest
 
-    async def refresh_price(self):
+    async def refresh_price(self, coin="yadacoin"):
         async def get_ticker():
             r = requests.get(
-                "https://api.coingecko.com/api/v3/simple/price?ids=yadacoin&vs_currencies=usd"
+                f"https://api.coingecko.com/api/v3/simple/price?ids={coin}&vs_currencies=usd"
             )
             if r.status_code == 200:
                 result = r.json()

@@ -16,6 +16,7 @@ class Job:
     def to_dict(self):
         return {
             "job_id": self.job_id,
+            "difficulty": self.diff,
             "target": self.target,
             "blob": self.blob,
             "seed_hash": self.seed_hash,
