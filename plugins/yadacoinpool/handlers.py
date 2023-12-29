@@ -41,23 +41,34 @@ class MarketInfoHandler(BaseWebHandler):
         self.render_as_json(market_data)
 
     async def fetch_market_data(self):
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
-        }
-        response = requests.get("https://safe.trade/api/v2/peatio/public/markets/tickers", headers=headers)
+        symbols = ["YDA_USDT", "YDA_BTC"]
+        market_data = {}
 
-        if response.status_code == 200:
-            market_data = {
-                "last_btc": float(response.json()["ydabtc"]["ticker"]["last"]),
-                "last_usdt": float(response.json()["ydausdt"]["ticker"]["last"])
+        for symbol in symbols:
+            url = f"https://api.xeggex.com/api/v2/market/getbysymbol/{symbol}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
             }
-        else:
-            market_data = {
-                "last_btc": 0,
-                "last_usdt": 0
-            }
-        
-        return market_data
+
+            response = requests.get(url, headers=headers)
+
+            if response.status_code == 200:
+                market_data[symbol.lower()] = {
+                    "last_btc": float(response.json()["lastPrice"]) if symbol == "YDA_BTC" else 0,
+                    "last_usdt": float(response.json()["lastPrice"]) if symbol == "YDA_USDT" else 0
+                }
+            else:
+                market_data[symbol.lower()] = {
+                    "last_btc": 0,
+                    "last_usdt": 0
+                }
+
+        formatted_data = {
+            "last_btc": market_data["yda_btc"]["last_btc"],
+            "last_usdt": market_data["yda_usdt"]["last_usdt"]
+        }
+
+        return formatted_data
 
 class PoolInfoHandler(BaseWebHandler):
     async def get(self):

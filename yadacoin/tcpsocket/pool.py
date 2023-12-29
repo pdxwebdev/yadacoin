@@ -28,7 +28,7 @@ class StratumServer(RPCSocketServer):
             if not cls.config:
                 cls.config = Config()
 
-            if time.time() - cls.config.mp.block_factory.time > 900:
+            if time.time() - cls.config.mp.block_factory.time > 1500:
                 await cls.config.mp.refresh()
 
             if cls.current_header != cls.config.mp.block_factory.header:
@@ -48,22 +48,25 @@ class StratumServer(RPCSocketServer):
                     cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
-    async def send_job(cls, stream):
-        try:
-            job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id)
-            stream.jobs[job.id] = job
-            cls.current_header = cls.config.mp.block_factory.header
-            params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index}
-            rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
-            cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
-            cls.config.app_log.info(f"RPC Data: {json.dumps(rpc_data)}")
-            await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
-        except StreamClosedError:
-            await StratumServer.remove_peer(stream, reason="StreamClosedErrorSendJob")
-        except Exception as e:
-            cls.config.app_log.warning(f"Error sending job: {e}")
-            if job.id in stream.jobs:
-                del stream.jobs[job.id]
+    async def send_job(cls, stream, max_retries=3):
+        for _ in range(max_retries):
+            try:
+                job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id)
+                stream.jobs[job.id] = job
+                cls.current_header = cls.config.mp.block_factory.header
+                params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index}
+                rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
+                cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
+                cls.config.app_log.info(f"RPC Data: {json.dumps(rpc_data)}")
+                await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
+                return
+            except StreamClosedError:
+                await StratumServer.remove_peer(stream, reason="StreamClosedErrorSendJob")
+                return
+            except Exception as e:
+                cls.config.app_log.warning(f"Error sending job: {e}")
+
+        await StratumServer.remove_peer(stream, reason="MaxRetriesExceeded")
 
     @classmethod
     async def update_miner_count(cls):
@@ -212,8 +215,9 @@ class StratumServer(RPCSocketServer):
             stream.peer.peer_id = peer_id
             self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
             
-            StratumServer.inbound_streams[Miner.__name__].setdefault(peer_id, {})
-            
+            StratumServer.inbound_streams[Miner.__name__].setdefault(
+                peer_id, {}
+            )
             StratumServer.inbound_streams[Miner.__name__][peer_id][
                 stream.peer.address_only, stream.peer.worker
             ] = stream

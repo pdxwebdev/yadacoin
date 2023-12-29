@@ -13,6 +13,7 @@ class Miner(MinerBase):
 
     def __init__(self, address, agent="", custom_diff="", peer_id=""):
         super(Miner, self).__init__()
+        self.agent = agent
         self.peer_id = peer_id
         if "@" in address:
             parts = address.split("@")
@@ -28,7 +29,7 @@ class Miner(MinerBase):
             from yadacoin.tcpsocket.pool import StratumServer
 
             N = 17
-            StratumServer.inbound_streams[Miner.__name__].setdefault(address, {})
+            StratumServer.inbound_streams[Miner.__name__].setdefault(peer_id, {})
             self.worker = "".join(
                 random.choices(string.ascii_uppercase + string.digits, k=N)
             )
@@ -36,7 +37,6 @@ class Miner(MinerBase):
             self.address_only = address
             if not self.config.address_is_valid(self.address):
                 raise InvalidAddressException()
-        self.agent = agent
 
     def to_json(self):
         return {"address": self.address_only, "worker": self.worker, "agent": self.agent, "custom_diff": self.custom_diff, "peer_id": self.peer_id}

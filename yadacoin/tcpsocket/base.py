@@ -176,9 +176,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                                 f"SERVER RECEIVED {stream.peer.address} {method} {body}"
                             )
                     id_attr = getattr(stream.peer, stream.peer.id_attribute)
-                    inbound_streams = self.config.nodeServer.inbound_streams.get(
-                        stream.peer.__class__.__name__, {}
-                    )
+                    inbound_streams = self.config.nodeServer.inbound_streams
 
                     self.config.app_log.debug(
                         f"Inbound Streams Dictionary: {inbound_streams}"
@@ -194,7 +192,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             reason=f"{id_attr} not in nodeServer.inbound_streams",
                         )
                     else:
-                        await asyncio.sleep(0.1)
+                        await asyncio.sleep(0.05)
                 if not hasattr(stream, "peer") and method not in ["login", "connect"]:
                     await self.remove_peer(stream)
                     break
