@@ -57,7 +57,8 @@ class StratumServer(RPCSocketServer):
                 params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index}
                 rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
                 cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
-                cls.config.app_log.info(f"RPC Data: {json.dumps(rpc_data)}")
+                cls.config.app_log.debug(f"RPC Data: {json.dumps(rpc_data)}")
+                cls.config.app_log.debug(f"Jobs Dictionary: {stream.jobs}")
                 await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
                 return
             except StreamClosedError:
@@ -226,7 +227,7 @@ class StratumServer(RPCSocketServer):
         except:
             rpc_data["error"] = {"message": "Invalid wallet address or invalid format"}
 
-        self.config.app_log.info(f"Login RPC Data: {json.dumps(rpc_data)}")
+        self.config.app_log.debug(f"Login RPC Data: {json.dumps(rpc_data)}")
         await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
 
     async def keepalived(self, body, stream):

@@ -718,7 +718,7 @@ class NodeRPC(BaseRPC):
                 )
             )
             await self.send_block_to_peer(self.config.LatestBlock.block, stream)
-            await self.get_next_block(self.config.LatestBlock.block)
+            #await self.get_next_block(self.config.LatestBlock.block)
         else:
             stream.close()
 

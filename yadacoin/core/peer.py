@@ -957,7 +957,7 @@ class Pool(Peer):
 
 
 class Miner(Peer):
-    id_attribute = "peer_id"
+    id_attribute = "address"
 
     async def get_outbound_class(self):
         return ServiceProvider
