@@ -303,7 +303,7 @@ class Consensus(object):
             #    process_block_queue
             if (time() - self.last_network_search) >= 15 or not synced:
                 self.last_network_search = time()
-                self.app_log.info("Calling search_network_for_new")
+                self.app_log.debug("Calling search_network_for_new")
                 return await self.search_network_for_new()
 
     async def search_network_for_new(self):

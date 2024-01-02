@@ -145,6 +145,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
             try:
                 data = await stream.read_until(b"\n")
                 stream.last_activity = int(time.time())
+                self.config.app_log.debug(f"Updated last_activity for {stream} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
                 self.config.health.tcp_server.last_activity = time.time()
                 body = json.loads(data)
                 method = body.get("method")

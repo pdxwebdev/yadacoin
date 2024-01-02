@@ -120,12 +120,9 @@ class MiningPool(object):
             item = await self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):
-        header = (
-            binascii.unhexlify(job.blob)
-            .decode()
-            .replace(job.start_nonce, "{nonce}")
-        )
-        self.config.app_log.debug(f"Start Nonce for job {job.index}: {job.start_nonce}")
+        nonce = nonce + job.extra_nonce
+        header = self.block_factory.header
+        self.config.app_log.debug(f"Start Nonce for job {job.index}: {job.extra_nonce}")
         self.config.app_log.debug(f"Header for job {job.index}: {header}")
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
@@ -363,9 +360,10 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        start_nonce = secrets.token_hex(2)
-        header = self.block_factory.header.replace("{nonce}", start_nonce)
-
+        extra_nonce = str(random.randrange(1000, 9999))
+        header = self.block_factory.header
+        self.config.app_log.info(f"Job header: {header}")
+        blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
         miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
 
         if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
@@ -384,11 +382,11 @@ class MiningPool(object):
             "peer_id": peer_id,
             "difficulty": difficulty,
             "target": target,  # can only be 16 characters long
-            "blob": header.encode().hex(),
+            "blob": blob,
             "seed_hash": seed_hash,
             "height": self.config.LatestBlock.block.index
             + 1,  # This is the height of the one we are mining
-            "start_nonce": start_nonce,
+            "extra_nonce": extra_nonce,
             "algo": "rx/yada",
             "miner_diff": miner_diff,
             "agent": agent,

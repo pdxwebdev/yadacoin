@@ -10,7 +10,7 @@ class Job:
         inst.seed_hash = job["seed_hash"]
         inst.index = job["height"]
         inst.algo = job["algo"]
-        inst.start_nonce = job["start_nonce"]
+        inst.extra_nonce = job["extra_nonce"]
         inst.miner_diff = job["miner_diff"]
         return inst
 
@@ -21,5 +21,6 @@ class Job:
             "blob": self.blob,
             "seed_hash": self.seed_hash,
             "height": self.index,
+            "extra_nonce": self.extra_nonce,
             "algo": self.algo,
         }
