@@ -17,6 +17,7 @@ from yadacoin.tcpsocket.base import RPCSocketServer
 class StratumServer(RPCSocketServer):
     current_header = ""
     config = None
+    block_checker_in_use = False
 
     def __init__(self):
         super(StratumServer, self).__init__()
@@ -25,6 +26,12 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def block_checker(cls):
         try:
+            if cls.block_checker_in_use:
+                cls.config.app_log.info("Skipping block_checker, already in use")
+                return
+
+            cls.block_checker_in_use = True
+
             if not cls.config:
                 cls.config = Config()
 
@@ -35,6 +42,8 @@ class StratumServer(RPCSocketServer):
                 await cls.send_jobs()
         except Exception as e:
             cls.config.app_log.warning(f"Error in block checker: {e}")
+        finally:
+            cls.block_checker_in_use = False
 
     @classmethod
     async def send_jobs(cls):
