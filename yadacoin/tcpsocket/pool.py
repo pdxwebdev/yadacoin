@@ -40,13 +40,14 @@ class StratumServer(RPCSocketServer):
     async def send_jobs(cls):
         if not cls.config:
             cls.config = Config()
+        tasks = []
         for miner in list(StratumServer.inbound_streams[Miner.__name__].values()):
             for stream in miner.values():
                 try:
-                    await asyncio.sleep(0.1)
-                    await cls.send_job(stream)
+                    tasks.append(cls.send_job(stream))
                 except:
                     cls.config.app_log.warning(traceback.format_exc())
+        await asyncio.gather(*tasks)
 
     @classmethod
     async def send_job(cls, stream, max_retries=3):
