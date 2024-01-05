@@ -28,7 +28,7 @@ class StratumServer(RPCSocketServer):
             if not cls.config:
                 cls.config = Config()
 
-            if time.time() - cls.config.mp.block_factory.time > 1800:
+            if time.time() - cls.config.mp.block_factory.time > 1500:
                 await cls.config.mp.refresh()
 
             if cls.current_header != cls.config.mp.block_factory.header:
@@ -43,6 +43,7 @@ class StratumServer(RPCSocketServer):
         for miner in list(StratumServer.inbound_streams[Miner.__name__].values()):
             for stream in miner.values():
                 try:
+                    await asyncio.sleep(0.1)
                     await cls.send_job(stream)
                 except:
                     cls.config.app_log.warning(traceback.format_exc())

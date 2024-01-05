@@ -1373,7 +1373,7 @@ class SeedGateways(Nodes):
                 SeedGateway.from_dict(
                     {
                         "host": "yada-bravo.mynodes.live",
-                        "port": 8080,
+                        "port": 8000,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIFvpbWRQU9Ty4JXxoGH4YXgR8RiLoLBm11RNKBVeaz4GAiAyGMbhXc+J+z5VIh2GGJi9uDsqdPpEweerViSrxpxzPQ==",
@@ -2126,7 +2126,7 @@ class ServiceProviders(Nodes):
                 ServiceProvider.from_dict(
                     {
                         "host": "yada-charlie.mynodes.live",
-                        "port": 8080,
+                        "port": 8000,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIG5VITo79hYorFepmBB6zRqSl/PSbRPpz5gTaSteJQlaAiAmuQnTZFCuccjTtufWJ8CI+w/ddka/AoNQgat3H+18Jw==",
@@ -2139,7 +2139,7 @@ class ServiceProviders(Nodes):
                 ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.yada.toksyk.pl",
-                        "port": 8080,
+                        "port": 8000,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIEH/G/iTuiJSdcC0Q3tZ+HepDYetUf5kN2s195pT8SjnAiArhoo4Dm6PbNYIPNDlbuOLzcBiO/A7ONYmviBYDCTW9Q==",

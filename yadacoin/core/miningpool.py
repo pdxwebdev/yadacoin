@@ -72,46 +72,22 @@ class MiningPool(object):
                 "method": body.get("method"),
                 "jsonrpc": body.get("jsonrpc"),
             }
-            
-            if job and job.index != self.block_factory.index:
-                self.stale_share_counter[miner.address] += 1
-                self.app_log.warning(f"Received stale share from miner {miner.address}. Counter: {self.stale_share_counter[miner.address]}")
-                if self.stale_share_counter[miner.address] >= 3:
-                    self.app_log.warning("Resending job to miner.")
-                    await StratumServer.send_job(stream)
-            else:
-                self.stale_share_counter[miner.address] = 0
-                if job and job.index != self.block_factory.index:
-                    self.app_log.warning(f"Received stale share from miner {miner.address}. Sending 'Stale share' error message.")
-                    data["error"] = {"message": "Stale share"}
-                else:
-                    data["result"] = await self.process_nonce(miner, nonce, job)
-                    if not data["result"]:
-                        data["error"] = {"message": "Invalid hash for current block"}
-                    try:
-                        await stream.write("{}\n".format(json.dumps(data)).encode())
-                    except StreamClosedError:
-                        if hasattr(stream, "peer"):
-                            self.config.app_log.warning(
-                                "Disconnected from {}: {}".format(
-                                    stream.peer.__class__.__name__, stream.peer.to_json()
-                                )
-                            )
-                        self.config.app_log.warning("StreamClosedError during stream write.")
-                    except Exception as e:
-                        self.config.app_log.error(f"Error during stream write: {e}")
-
-                    except:
-                        pass
-                    if "error" in data:
-                        await StratumServer.send_job(stream)
+            data["result"] = await self.process_nonce(miner, nonce, job)
+            if not data["result"]:
+                data["error"] = {"message": "Invalid hash for current block"}
+            try:
+                await stream.write("{}\n".format(json.dumps(data)).encode())
+            except:
+                pass
+            if "error" in data:
+                await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
             await self.config.processing_queues.nonce_queue.time_sum_end()
             self.config.health.nonce_processor.last_activity = int(time.time())
 
             i += 1
-            if i >= 1000:
+            if i >= 10000:
                 self.config.app_log.info(
                     "process_nonce_queue: max loops exceeded, exiting"
                 )
@@ -122,8 +98,7 @@ class MiningPool(object):
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce
         header = self.block_factory.header
-        self.config.app_log.debug(f"Start Nonce for job {job.index}: {job.extra_nonce}")
-        self.config.app_log.debug(f"Header for job {job.index}: {header}")
+        self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
         self.config.app_log.debug(f"Hash1 for job {job.index}: {hash1}")
@@ -362,7 +337,7 @@ class MiningPool(object):
         job_id = str(uuid.uuid4())
         extra_nonce = str(random.randrange(1000, 9999))
         header = self.block_factory.header
-        self.config.app_log.info(f"Job header: {header}")
+        self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
         miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
 
