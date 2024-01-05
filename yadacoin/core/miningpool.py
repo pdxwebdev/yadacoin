@@ -82,7 +82,6 @@ class MiningPool(object):
             if "error" in data:
                 await StratumServer.send_job(stream)
 
-            await StratumServer.block_checker()
             await self.config.processing_queues.nonce_queue.time_sum_end()
             self.config.health.nonce_processor.last_activity = int(time.time())
 

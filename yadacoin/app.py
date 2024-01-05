@@ -402,6 +402,12 @@ class NodeApplication(Application):
                 self.config.app_log.error(format_exc())
                 self.config.processing_queues.block_queue.time_sum_end()
 
+            try:
+                self.config.app_log.debug("Running StratumServer.block_checker()")
+                await StratumServer.block_checker()
+            except Exception:
+                self.config.app_log.warning("Error in StratumServer.block_checker: {}".format(format_exc()))
+
             self.config.background_block_checker.busy = False
 
     async def background_message_sender(self):
