@@ -53,16 +53,15 @@ class MiningPool(object):
         return status
 
     async def process_nonce_queue(self):
-        item = await self.config.processing_queues.nonce_queue.pop()
+        item = self.config.processing_queues.nonce_queue.pop()
         i = 0  # max loops
         while item:
             self.config.processing_queues.nonce_queue.inc_num_items_processed()
-            await self.config.processing_queues.nonce_queue.time_sum_start()
             body = item.body
             stream = item.stream
             miner = item.miner
             nonce = body["params"].get("nonce")
-            job = stream.jobs[body["params"]["id"] or body["params"]["job_id"]]
+            job = stream.jobs[body["params"]["job_id"]]
             if type(nonce) is not str:
                 result = {"error": True, "message": "nonce is wrong data type"}
             if len(nonce) > CHAIN.MAX_NONCE_LEN:
@@ -82,17 +81,16 @@ class MiningPool(object):
             if "error" in data:
                 await StratumServer.send_job(stream)
 
-            await self.config.processing_queues.nonce_queue.time_sum_end()
-            self.config.health.nonce_processor.last_activity = int(time.time())
+            #await StratumServer.block_checker()
 
             i += 1
-            if i >= 10000:
+            if i >= 1000:
                 self.config.app_log.info(
                     "process_nonce_queue: max loops exceeded, exiting"
                 )
                 return
 
-            item = await self.config.processing_queues.nonce_queue.pop()
+            item = self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce
@@ -338,7 +336,7 @@ class MiningPool(object):
         header = self.block_factory.header
         self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
-        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
+        miner_diff = max(int(custom_diff), 500) if custom_diff is not None else self.config.pool_diff
 
         if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
@@ -576,7 +574,7 @@ class MiningPool(object):
         await self.config.LatestBlock.block_checker()
 
         expected_blocks = 144
-        mining_time_interval = 1200
+        mining_time_interval = 600
 
         pipeline = [
             {

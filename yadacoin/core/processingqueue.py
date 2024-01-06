@@ -1,5 +1,4 @@
 from time import time
-import asyncio
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
@@ -22,10 +21,14 @@ class ProcessingQueue:
     def inc_num_items_processed(self):
         self.num_items_processed += 1
 
+    def to_dict(self):
+        return {"queue": self.queue}
+
     def to_status_dict(self):
         return {
             "queue_item_count": len(self.queue.values()),
-            "average_processing_time": "%.4f" % (self.time_sum / (self.num_items_processed or 1)),
+            "average_processing_time": "%.4f"
+            % (self.time_sum / (self.num_items_processed or 1)),
             "num_items_processed": self.num_items_processed,
         }
 
@@ -87,6 +90,7 @@ class TransactionProcessingQueue(ProcessingQueue):
         self.last_popped = key
         return item
 
+
 class NonceProcessingQueueItem:
     def __init__(self, miner: Miner = "", stream=None, body=None):
         self.miner = miner
@@ -95,36 +99,25 @@ class NonceProcessingQueueItem:
         self.id = body["params"]["id"]
         self.nonce = body["params"]["nonce"]
 
+
 class NonceProcessingQueue(ProcessingQueue):
     def __init__(self):
-        self.queue = asyncio.Queue()
-        self.start_time = None
-        self.time_sum = 0
+        self.queue = {}
+        self.last_popped = ""
 
-    async def time_sum_start(self):
-        self.start_time = time()
+    def add(self, item: NonceProcessingQueueItem):
+        if (item.id, item.nonce) == self.last_popped:
+            return
+        self.queue.setdefault((item.id, item.nonce), item)
+        return True
 
-    async def time_sum_end(self):
-        if hasattr(self, 'start_time'):
-            self.time_sum += time() - self.start_time
-
-    async def add(self, item: NonceProcessingQueueItem):
-        key = (item.id, item.nonce)
-        await self.queue.put(item)
-
-    async def pop(self):
-        try:
-            item = await self.queue.get()
-            return item
-        except asyncio.QueueEmpty:
+    def pop(self):
+        if not self.queue:
             return None
+        key, item = self.queue.popitem()
+        self.last_popped = key
+        return item
 
-    def to_status_dict(self):
-        return {
-            "queue_item_count": self.queue.qsize(),
-            "average_processing_time": "%.4f" % (self.time_sum / (self.num_items_processed or 1)),
-            "num_items_processed": self.num_items_processed,
-        }
 
 class ProcessingQueues:
     def __init__(self):
@@ -141,7 +134,5 @@ class ProcessingQueues:
         return out
 
     def to_status_dict(self):
-        out = {}
-        for x in self.queues:
-            out[x.__class__.__name__] = x.to_status_dict()
+        out = {x.__class__.__name__: x.to_status_dict() for x in self.queues}
         return out

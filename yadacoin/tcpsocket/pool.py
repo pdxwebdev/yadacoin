@@ -17,7 +17,6 @@ from yadacoin.tcpsocket.base import RPCSocketServer
 class StratumServer(RPCSocketServer):
     current_header = ""
     config = None
-    block_checker_in_use = False
 
     def __init__(self):
         super(StratumServer, self).__init__()
@@ -26,12 +25,6 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def block_checker(cls):
         try:
-            if cls.block_checker_in_use:
-                cls.config.app_log.info("Skipping block_checker, already in use")
-                return
-
-            cls.block_checker_in_use = True
-
             if not cls.config:
                 cls.config = Config()
 
@@ -42,43 +35,33 @@ class StratumServer(RPCSocketServer):
                 await cls.send_jobs()
         except Exception as e:
             cls.config.app_log.warning(f"Error in block checker: {e}")
-        finally:
-            cls.block_checker_in_use = False
 
     @classmethod
     async def send_jobs(cls):
         if not cls.config:
             cls.config = Config()
-        tasks = []
         for miner in list(StratumServer.inbound_streams[Miner.__name__].values()):
             for stream in miner.values():
                 try:
-                    tasks.append(cls.send_job(stream))
+                    await cls.send_job(stream)
                 except:
                     cls.config.app_log.warning(traceback.format_exc())
-        await asyncio.gather(*tasks)
 
     @classmethod
-    async def send_job(cls, stream, max_retries=3):
-        for _ in range(max_retries):
-            try:
-                job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id)
-                stream.jobs[job.id] = job
-                cls.current_header = cls.config.mp.block_factory.header
-                params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "extra_nonce": job.extra_nonce, "height": job.index}
-                rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
-                cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
-                cls.config.app_log.debug(f"RPC Data: {json.dumps(rpc_data)}")
-                cls.config.app_log.debug(f"Jobs Dictionary: {stream.jobs}")
-                await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
-                return
-            except StreamClosedError:
-                await StratumServer.remove_peer(stream, reason="StreamClosedErrorSendJob")
-                return
-            except Exception as e:
-                cls.config.app_log.warning(f"Error sending job: {e}")
-
-        await StratumServer.remove_peer(stream, reason="MaxRetriesExceeded")
+    async def send_job(cls, stream):
+        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id)
+        stream.jobs[job.job_id] = job
+        cls.current_header = cls.config.mp.block_factory.header
+        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "extra_nonce": job.extra_nonce, "height": job.index}
+        rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
+        try:
+            cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
+            cls.config.app_log.debug(f"RPC Data: {json.dumps(rpc_data)}")
+            await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
+        except StreamClosedError:
+            await StratumServer.remove_peer(stream)
+        except Exception:
+            cls.config.app_log.warning(traceback.format_exc())
 
     @classmethod
     async def update_miner_count(cls):
@@ -168,7 +151,7 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def submit(self, body, stream):
-        await self.config.processing_queues.nonce_queue.add(
+        self.config.processing_queues.nonce_queue.add(
             NonceProcessingQueueItem(miner=stream.peer, stream=stream, body=body)
         )
 
@@ -207,7 +190,7 @@ class StratumServer(RPCSocketServer):
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
 
-        stream.jobs[job.id] = job
+        stream.jobs[job.job_id] = job
         result = {"id": job.id, "job": job.to_dict()}
         rpc_data = {
             "id": body.get("id"),
