@@ -28,7 +28,7 @@ class StratumServer(RPCSocketServer):
             if not cls.config:
                 cls.config = Config()
 
-            if time.time() - cls.config.mp.block_factory.time > 1500:
+            if time.time() - cls.config.mp.block_factory.time > 900:
                 await cls.config.mp.refresh()
 
             if cls.current_header != cls.config.mp.block_factory.header:
@@ -50,13 +50,14 @@ class StratumServer(RPCSocketServer):
     @classmethod
     async def send_job(cls, stream):
         job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id)
-        stream.jobs[job.job_id] = job
+        stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
         params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "extra_nonce": job.extra_nonce, "height": job.index}
         rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
         try:
             cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
             cls.config.app_log.debug(f"RPC Data: {json.dumps(rpc_data)}")
+            cls.config.app_log.debug(f"Jobs dictionary for Peer {stream.peer.peer_id}: {stream.jobs}")
             await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
         except StreamClosedError:
             await StratumServer.remove_peer(stream)
@@ -190,7 +191,7 @@ class StratumServer(RPCSocketServer):
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
 
-        stream.jobs[job.job_id] = job
+        stream.jobs[job.id] = job
         result = {"id": job.id, "job": job.to_dict()}
         rpc_data = {
             "id": body.get("id"),

@@ -61,7 +61,8 @@ class MiningPool(object):
             stream = item.stream
             miner = item.miner
             nonce = body["params"].get("nonce")
-            job = stream.jobs[body["params"]["job_id"]]
+            job_id = body["params"]["id"]
+            job = stream.jobs[job_id]
             if type(nonce) is not str:
                 result = {"error": True, "message": "nonce is wrong data type"}
             if len(nonce) > CHAIN.MAX_NONCE_LEN:
@@ -73,15 +74,15 @@ class MiningPool(object):
             }
             data["result"] = await self.process_nonce(miner, nonce, job)
             if not data["result"]:
-                data["error"] = {"message": "Invalid hash for current block"}
+                data["error"] = {"code": "-1", "message": "Low difficulty share"}
             try:
                 await stream.write("{}\n".format(json.dumps(data)).encode())
             except:
                 pass
             if "error" in data:
-                await StratumServer.send_job(stream)
+                self.remove_keys_with_job_id(job_id)
 
-            #await StratumServer.block_checker()
+            await StratumServer.block_checker()
 
             i += 1
             if i >= 1000:
@@ -91,6 +92,13 @@ class MiningPool(object):
                 return
 
             item = self.config.processing_queues.nonce_queue.pop()
+
+    def remove_keys_with_job_id(self, job_id):
+        keys_to_remove = [key for key in self.config.processing_queues.nonce_queue.queue.keys() if key[0] == job_id]
+        for key in keys_to_remove:
+            self.config.processing_queues.nonce_queue.queue.pop(key, None)
+
+        self.config.app_log.warning(f"Removed {len(keys_to_remove)} items with job_id {job_id} from the nonce queue")
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce
@@ -142,7 +150,7 @@ class MiningPool(object):
 
         accepted = False
 
-        target = 0xFFFF000000000000000000000000000000000000000000000000000000000000
+        target = 0x000FFFF000000000000000000000000000000000000000000000000000000000
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
             test_hash = int(Blockchain.little_hash(block_candidate.hash), 16)
@@ -336,7 +344,7 @@ class MiningPool(object):
         header = self.block_factory.header
         self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
-        miner_diff = max(int(custom_diff), 500) if custom_diff is not None else self.config.pool_diff
+        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
 
         if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
@@ -652,6 +660,13 @@ class MiningPool(object):
 
         result = await self.config.mongo.async_db.pool_info.delete_many({"time": {"$lt": retention_time}})
         self.config.app_log.info(f"Deleted {result.deleted_count} documents from the pool_info collection")
+
+    async def clean_shares(self):
+        current_time = time.time()
+        retention_time = current_time - (2 * 24 * 60 * 60)  # 14 days in seconds
+
+        result = await self.config.mongo.async_db.shares.delete_many({"time": {"$lt": retention_time}})
+        self.config.app_log.info(f"Deleted {result.deleted_count} documents from the shares collection")
 
     async def update_miners_stats(self):
         miner_hashrate_seconds = 1200
