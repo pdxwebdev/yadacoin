@@ -663,7 +663,7 @@ class MiningPool(object):
 
     async def clean_shares(self):
         current_time = time.time()
-        retention_time = current_time - (2 * 24 * 60 * 60)  # 14 days in seconds
+        retention_time = current_time - (14 * 24 * 60 * 60)  # 14 days in seconds
 
         result = await self.config.mongo.async_db.shares.delete_many({"time": {"$lt": retention_time}})
         self.config.app_log.info(f"Deleted {result.deleted_count} documents from the shares collection")

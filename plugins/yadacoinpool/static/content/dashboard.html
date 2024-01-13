@@ -1,5 +1,4 @@
 <div id="dashboard" class="content-section">
-    <h2 style="color: red;">You can set a custom difficulty level. More information in the "Getting started" section</h2>
     <div class="column">
         <div class="box">
             <h5><b>POOL HASH RATE</b></h5>
@@ -81,10 +80,9 @@
             <div id="pool-payout-scheme"></div>
         </div>
     </div>
-        <div class="column3" style="font-size: 24px; margin-top: 10px;">Pool Hashrate History</div>
-        <div class="column3">
-            <canvas id="hashrate-chart" style="width: 100%; max-height: 250px;"></canvas>
-        </div>
+    <div class="column3" style="font-size: 24px; margin-top: 10px;"><b>LAST 24H POOL HASHRATE</b></div>
+        <canvas id="hashrate-chart" style="width: 100%; max-height: 250px;"></canvas>
+    </div>
 </div>
 
 <script>
@@ -165,15 +163,13 @@ function formatHashRate(hashrate) {
 
         const ctx = document.getElementById('hashrate-chart').getContext('2d');
         const chart = new Chart(ctx, {
-            type: 'line',
+            type: 'bar',
             data: {
                 labels: times,
                 datasets: [{
                     label: 'Pool Hashrate',
                     data: hashRates,
-                    fill: true,
-                    borderColor: '#333',
-                    tension: 0.1,
+                    backgroundColor: '#333',
                 }]
             },
             options: {
@@ -188,7 +184,12 @@ function formatHashRate(hashrate) {
                         display: false,
                         beginAtZero: true,
                     }
-                }
+                },
+                plugins: {
+                    legend: {
+                        display: false,
+                    },
+                },
             }
         });
     });
