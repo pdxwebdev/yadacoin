@@ -134,15 +134,28 @@ class PoolPayoutsHandler(BaseHandler):
 
 class PoolBlocksHandler(BaseHandler):
     async def get(self):
+        thirty_days_ago_timestamp = time.time() - (30 * 24 * 60 * 60)
+
         pool_blocks = (
             await self.config.mongo.async_db.pool_blocks
-            .find({}, {"_id": 0, "index": 1, "time": 1, "found_time": 1, "target": 1, "transactions": 1, "status": 1, "hash": 1, "effort": 1})
+            .find(
+                {"found_time": {"$gte": thirty_days_ago_timestamp}},
+                {"_id": 0, "index": 1, "time": 1, "found_time": 1, "target": 1, "transactions": 1, "status": 1, "hash": 1, "effort": 1, "miner_address": 1}
+            )
             .sort("index", -1)
             .to_list(None)
         )
-        
+
+        total_effort = 0
+        valid_effort_count = 0
+
         formatted_blocks = []
         for block in pool_blocks:
+            if "effort" in block:
+                total_effort += block["effort"]
+                valid_effort_count += 1
+            miner_address = block.get("miner_address", "unknown")
+
             formatted_blocks.append({
                 "index": block["index"],
                 "time": block["time"],
@@ -151,14 +164,20 @@ class PoolBlocksHandler(BaseHandler):
                 "transactions": block["transactions"],
                 "status": block["status"],
                 "hash": block["hash"],
-                "effort": block["effort"] if "effort" in block else "N/A"
+                "effort": block["effort"] if "effort" in block else "N/A",
+                "miner_address": miner_address
             })
-        
-        pool_address = {
+
+        average_effort = total_effort / valid_effort_count if valid_effort_count > 0 else "N/A"
+        block_confirmation = self.config.block_confirmation
+
+        pool_info = {
             "pool_address": self.config.address,
+            "average_effort": average_effort,
+            "block_confirmation": block_confirmation,
         }
 
-        self.render_as_json({"pool": pool_address, "blocks": formatted_blocks})
+        self.render_as_json({"pool": pool_info, "blocks": formatted_blocks})
 
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):

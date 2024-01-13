@@ -1,4 +1,29 @@
 <div id="poolBlocksContent">
+    <div class="column">
+        <div class="box">
+            <h5><b>BLOCKS FOUND</b></h5>
+            <div id="blocks-found"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>LAST BLOCK FOUND BY POOL</b></h5>
+            <div id="last-block"></div>
+            <h5 id="last-block-time"></h5>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>MATURITY REQUIREMENT</b></h5>
+            <div id="maturity"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>AVARAGE LUCK</b></h5>
+            <div id="avg-effort"></div>
+        </div>
+    </div>
     <div style="font-size: 24px;">Blocks found in the last 30 days</div>
     <div id="chart-container" style="margin-bottom: 20px;">
         <canvas id="myBarChart"></canvas>
@@ -10,6 +35,7 @@
             <th>Height</th>
             <th>Reward</th>
             <th>Block Hash</th>
+            <th>Finder</th>
             <th>Effort</th>
             <th>Status</th>
         </tr>
@@ -19,6 +45,18 @@
 
 
 <script>
+  $.get('/pool-info').then((poolInfoData) => {
+      $('#blocks-found').html(poolInfoData.pool.blocks_found);
+
+      if (poolInfoData.pool.last_five_blocks.length > 0) {
+          var newDate = new Date();
+          newDate.setTime(poolInfoData.pool.last_five_blocks[0].timestamp * 1000);
+          var dateString = newDate.toLocaleString();
+          $('#last-block').html(poolInfoData.pool.last_five_blocks[0].height);
+          $('#last-block-time').html(dateString);
+      }
+  });
+
   $.get('/pool-blocks').then((data) => {
       const max_target_hex = '0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
       const max_target = parseInt(max_target_hex, 16);
@@ -47,7 +85,10 @@
       }
 
       var poolAddress = data.pool.pool_address;
-      if (data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Difficulty</th><th>Height</th><th>Reward</th><th>Effort</th><th>Block Hash</th><th>Status</th></tr>');
+      $('#maturity').html(data.pool.block_confirmation);
+      $('#avg-effort').html(data.pool.average_effort.toFixed(2) + ' %');
+
+      if (data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Difficulty</th><th>Height</th><th>Reward</th><th>Finder</th><th>Effort</th><th>Block Hash</th><th>Status</th></tr>');
 
       const filteredBlocks = data.blocks.filter(block => {
           const foundDate = new Date(block.found_time * 1000);
@@ -91,8 +132,15 @@
               effortColor = 'green';
           }
 
-          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td style="color:' + effortColor + '">' + effort + '</td><td style="color:' + statusColor + '">' + status + '</td></tr>');
+          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="color:' + statusColor + '">' + status + '</td></tr>');
       }
+
+    function getMinerAddress(minerAddress) {
+        if (minerAddress && minerAddress.length >= 16) {
+            return minerAddress.substring(0, 5) + 'XxxxxxX' + minerAddress.slice(-10);
+        }
+        return 'Unknown';
+    }
 
     function getRewardFromTransactions(transactions, poolAddress) {
       var highestReward = 0.0;
@@ -167,6 +215,11 @@
             y: {
               beginAtZero: true
             }
+          },
+          plugins: {
+              legend: {
+                  display: false,
+              },
           },
           maintainAspectRatio: false,
         }

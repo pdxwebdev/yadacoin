@@ -754,10 +754,19 @@ class MiningPool(object):
         try:
             effort_data = await self.block_effort(block.index, block.target)
             block_data.update(effort_data)
+            miner_address = await self.get_miner_address(block.hash)
+            block_data['miner_address'] = miner_address
         except Exception as e:
             self.app_log.error(f"Error calculating effort: {e}")
 
         await self.config.mongo.async_db.pool_blocks.insert_one(block_data)
+
+    async def get_miner_address(self, block_hash):
+        share_data = await self.config.mongo.async_db.shares.find_one(
+            {"hash": block_hash},
+            {"_id": 0, "address": 1}
+        )
+        return share_data['address'] if share_data else None
 
     async def block_effort(self, block_index, block_target):
         latest_block = await self.config.mongo.async_db.pool_blocks.find(
