@@ -41,7 +41,8 @@ class NodeServerNewTxnTracker:
     by_txn_id = {}
 
     def to_dict(self):
-        return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+        #return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+        return {"by_host": self.by_host}
 
 
 class NodeClientDisconnectTracker:
@@ -57,7 +58,8 @@ class NodeClientNewTxnTracker:
     by_txn_id = {}
 
     def to_dict(self):
-        return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+        #return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+        return {"by_host": self.by_host}
 
 
 class NodeRPC(BaseRPC):

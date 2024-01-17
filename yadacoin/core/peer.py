@@ -924,7 +924,7 @@ class Pool(Peer):
     @classmethod
     def type_limit(cls, peer):
         if peer == ServiceProvider:
-            return 3
+            return 6
         elif peer == User:
             return Config().max_peers or 100000
         else:
