@@ -8,6 +8,7 @@ import secrets
 
 from logging import getLogger
 from decimal import Decimal
+from datetime import datetime, timedelta
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
@@ -15,6 +16,7 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.job import Job
 from yadacoin.core.peer import Peer
+from yadacoin.core.miner import Miner
 from yadacoin.core.health import Health
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
@@ -24,6 +26,7 @@ from tornado.iostream import StreamClosedError
 
 
 class MiningPool(object):
+
     @classmethod
     async def init_async(cls):
         self = cls()
@@ -43,7 +46,6 @@ class MiningPool(object):
             self.index = last_block.index
         self.last_refresh = 0
         self.block_factory = None
-        self.stale_share_counter = {}
         await self.refresh()
         return self
 
@@ -53,20 +55,23 @@ class MiningPool(object):
         return status
 
     async def process_nonce_queue(self):
-        item = self.config.processing_queues.nonce_queue.pop()
+        item = await self.config.processing_queues.nonce_queue.pop()
         i = 0  # max loops
         while item:
+            await self.config.processing_queues.nonce_queue.time_sum_start()
             self.config.processing_queues.nonce_queue.inc_num_items_processed()
             body = item.body
-            stream = item.stream
             miner = item.miner
+            stream = item.stream
             nonce = body["params"].get("nonce")
             job_id = body["params"]["id"]
             job = stream.jobs[job_id]
             if type(nonce) is not str:
                 result = {"error": True, "message": "nonce is wrong data type"}
+                self.update_failed_share_count(miner.peer_id)
             if len(nonce) > CHAIN.MAX_NONCE_LEN:
                 result = {"error": True, "message": "nonce is too long"}
+                self.update_failed_share_count(miner.peer_id)
             data = {
                 "id": body.get("id"),
                 "method": body.get("method"),
@@ -79,26 +84,19 @@ class MiningPool(object):
                 await stream.write("{}\n".format(json.dumps(data)).encode())
             except:
                 pass
-            if "error" in data:
-                self.remove_keys_with_job_id(job_id)
 
             await StratumServer.block_checker()
+            await self.config.processing_queues.nonce_queue.time_sum_end()
+            self.config.health.nonce_processor.last_activity = int(time.time())
 
             i += 1
-            if i >= 1000:
+            if i >= 5000:
                 self.config.app_log.info(
                     "process_nonce_queue: max loops exceeded, exiting"
                 )
                 return
 
-            item = self.config.processing_queues.nonce_queue.pop()
-
-    def remove_keys_with_job_id(self, job_id):
-        keys_to_remove = [key for key in self.config.processing_queues.nonce_queue.queue.keys() if key[0] == job_id]
-        for key in keys_to_remove:
-            self.config.processing_queues.nonce_queue.queue.pop(key, None)
-
-        self.config.app_log.warning(f"Removed {len(keys_to_remove)} items with job_id {job_id} from the nonce queue")
+            item = await self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce
@@ -150,7 +148,7 @@ class MiningPool(object):
 
         accepted = False
 
-        target = 0x000FFFF000000000000000000000000000000000000000000000000000000000
+        target = 0x0000FFFF00000000000000000000000000000000000000000000000000000000
 
         if block_candidate.index >= CHAIN.BLOCK_V5_FORK:
             test_hash = int(Blockchain.little_hash(block_candidate.hash), 16)
@@ -324,7 +322,7 @@ class MiningPool(object):
         }
         return res
 
-    async def block_template(self, agent, custom_diff, peer_id):
+    async def block_template(self, agent, custom_diff, peer_id, miner_diff):
         """Returns info for the current block to mine"""
         if self.block_factory is None:
             await self.refresh()
@@ -333,18 +331,18 @@ class MiningPool(object):
                 self.config.LatestBlock.block
             )
 
-        job = await self.generate_job(agent, custom_diff, peer_id)
+        job = await self.generate_job(agent, custom_diff, peer_id, miner_diff)
         return job
 
-    async def generate_job(self, agent, custom_diff, peer_id):
+    async def generate_job(self, agent, custom_diff, peer_id, miner_diff):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = str(random.randrange(1000, 9999))
+        extra_nonce = str(random.randrange(100000, 999999))
         header = self.block_factory.header
         self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
-        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
+        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else miner_diff
 
         if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)

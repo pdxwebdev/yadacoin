@@ -6,6 +6,7 @@ import asyncio
 
 from tornado.iostream import StreamClosedError
 
+from collections import defaultdict
 from yadacoin.core.config import Config
 from yadacoin.core.miner import Miner
 from yadacoin.core.peer import Peer
@@ -17,6 +18,8 @@ from yadacoin.tcpsocket.base import RPCSocketServer
 class StratumServer(RPCSocketServer):
     current_header = ""
     config = None
+    SUBMISSION_LIMIT = 5
+    submission_counts = defaultdict(list)
 
     def __init__(self):
         super(StratumServer, self).__init__()
@@ -49,7 +52,8 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def send_job(cls, stream):
-        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id)
+        stream.peer.calculate_new_miner_diff()
+        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id, stream.peer.miner_diff)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
         params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "extra_nonce": job.extra_nonce, "height": job.index}
@@ -102,10 +106,13 @@ class StratumServer(RPCSocketServer):
             peer_id = stream.peer.peer_id
             Config().app_log.warning(f"Removing peer with peer_id: {peer_id}")
 
-            stream.close()
-
-            if peer_id in StratumServer.inbound_streams[Miner.__name__]:
+            if (
+                StratumServer.inbound_streams.get(Miner.__name__)
+                and peer_id in StratumServer.inbound_streams[Miner.__name__]
+            ):
                 del StratumServer.inbound_streams[Miner.__name__][peer_id]
+
+            stream.close()
 
         await StratumServer.update_miner_count()
     
@@ -152,9 +159,14 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def submit(self, body, stream):
-        self.config.processing_queues.nonce_queue.add(
+        miner_diff = stream.peer.miner_diff
+
+        await self.config.processing_queues.nonce_queue.add(
             NonceProcessingQueueItem(miner=stream.peer, stream=stream, body=body)
         )
+        current_time = time.time()
+        share_info = {"miner_diff": miner_diff, "timestamp": current_time}
+        stream.peer.add_share_to_history(share_info)
 
     async def login(self, body, stream):
         if len(await Peer.get_miner_streams()) > self.config.max_miners:
@@ -177,6 +189,7 @@ class StratumServer(RPCSocketServer):
 
         custom_diff = None
         peer_id = str(uuid.uuid4())
+        miner_diff = self.config.pool_diff
 
         if "@" in body["params"].get("login"):
             parts = body["params"].get("login").split("@")
@@ -185,7 +198,7 @@ class StratumServer(RPCSocketServer):
 
         await StratumServer.block_checker()
         job = await StratumServer.config.mp.block_template(
-            body["params"].get("agent"), custom_diff, peer_id
+            body["params"].get("agent"), custom_diff, peer_id, miner_diff
         )
 
         if not hasattr(stream, "jobs"):
@@ -206,7 +219,9 @@ class StratumServer(RPCSocketServer):
                 agent=body["params"].get("agent"),
                 custom_diff=custom_diff,
                 peer_id=peer_id,
+                miner_diff=self.config.pool_diff
             )
+            stream.peer.miner_diff = self.config.pool_diff
             stream.peer.custom_diff = custom_diff
             stream.peer.peer_id = peer_id
             self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
@@ -245,3 +260,26 @@ class StratumServer(RPCSocketServer):
             "miners": len(unique_miner_addresses),
             "workers": len(await Peer.get_miner_streams()),
         }
+
+    async def check_submission_limit(self, body, stream, address):
+        if hasattr(stream, "peer") and hasattr(stream.peer, "peer_id"):
+            peer_id = stream.peer.peer_id
+
+            self.submission_counts[peer_id] = [
+                ts for ts in self.submission_counts[peer_id] if time.time() - ts <= 1
+            ]
+
+            if len(self.submission_counts[peer_id]) >= self.SUBMISSION_LIMIT:
+                data = {
+                    "id": body.get("id"),
+                    "method": body.get("method"),
+                    "jsonrpc": body.get("jsonrpc"),
+                }
+                data["error"] = {"code": "-1", "message": "Submission limit exceeded, IP banned for 60 seconds"}
+                await stream.write("{}\n".format(json.dumps(data)).encode())
+                await self.remove_peer(stream, reason="Banned miner")
+                
+                StratumServer.banned_miners[address[0]] = time.time() + 60
+                self.config.app_log.info(f"Banned Miners Dictionary: {StratumServer.banned_miners}")
+            else:
+                self.submission_counts[peer_id].append(time.time())

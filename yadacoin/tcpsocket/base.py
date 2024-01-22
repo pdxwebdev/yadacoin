@@ -131,12 +131,22 @@ class BaseRPC:
 
 
 class RPCSocketServer(TCPServer, BaseRPC):
+    banned_miners = {}
     inbound_streams = {}
     inbound_pending = {}
     config = None
 
     async def handle_stream(self, stream, address):
         self.config.app_log.info(f"New connection from {address}")
+        if address[0] in self.config.nodeServer.banned_miners:
+            ban_expiration = self.config.nodeServer.banned_miners[address[0]]
+            if time.time() < ban_expiration:
+                self.config.app_log.info(f"Connection from {address[0]} rejected: Miner is banned.")
+                stream.close()
+                return
+            else:
+                del self.config.nodeServer.banned_miners[address[0]]
+                self.config.app_log.info(f"Miner {address[0]} ban has expired.")
 
         stream.synced = False
         stream.syncing = False
@@ -145,7 +155,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
             try:
                 data = await stream.read_until(b"\n")
                 stream.last_activity = int(time.time())
-                self.config.app_log.debug(f"Updated last_activity for {stream} at {time.strftime('%Y-%m-%d %H:%M:%S')}")
+                self.config.app_log.debug(
+                    f"Updated last_activity for {stream} at {time.strftime('%Y-%m-%d %H:%M:%S')}"
+                )
                 self.config.health.tcp_server.last_activity = time.time()
                 body = json.loads(data)
                 method = body.get("method")
@@ -159,6 +171,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             ]
                 if not hasattr(self, method):
                     continue
+
                 if hasattr(stream, "peer"):
                     if hasattr(stream.peer, "host"):
                         if (
@@ -169,6 +182,8 @@ class RPCSocketServer(TCPServer, BaseRPC):
                                 f"SERVER RECEIVED {stream.peer.host} {method} {body}"
                             )
                     if hasattr(stream.peer, "address"):
+                        await self.check_submission_limit(body, stream, address)
+
                         if (
                             hasattr(self.config, "tcp_traffic_debug")
                             and self.config.tcp_traffic_debug == True
@@ -176,6 +191,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             self.config.app_log.debug(
                                 f"SERVER RECEIVED {stream.peer.address} {method} {body}"
                             )
+
                     id_attr = getattr(stream.peer, stream.peer.id_attribute)
                     inbound_streams = self.config.nodeServer.inbound_streams
 
@@ -192,12 +208,11 @@ class RPCSocketServer(TCPServer, BaseRPC):
                             stream,
                             reason=f"{id_attr} not in nodeServer.inbound_streams",
                         )
-                    else:
-                        await asyncio.sleep(0.05)
                 if not hasattr(stream, "peer") and method not in ["login", "connect"]:
                     await self.remove_peer(stream)
                     break
                 await getattr(self, method)(body, stream)
+
             except StreamClosedError:
                 if hasattr(stream, "peer"):
                     self.config.app_log.warning(
@@ -210,7 +225,9 @@ class RPCSocketServer(TCPServer, BaseRPC):
                     self.config.app_log.warning(
                         f"Bad data from {stream.peer.__class__.__name__}: {stream.peer.to_json()}"
                     )
-                await self.remove_peer(stream, reason=f"Unhandled exception: {str(e)}")
+                await self.remove_peer(
+                    stream, reason=f"Unhandled exception: {str(e)}"
+                )
                 self.config.app_log.warning(format_exc())
                 self.config.app_log.warning(data)
                 break

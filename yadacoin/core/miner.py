@@ -1,20 +1,25 @@
+import time
 import random
 import string
 
+from logging import getLogger
 from yadacoin.core.peer import Miner as MinerBase
-
 
 class Miner(MinerBase):
     address = ""
     address_only = ""
     agent = ""
     custom_diff = ""
+    miner_diff = ""
     id_attribute = "peer_id"
 
-    def __init__(self, address, agent="", custom_diff="", peer_id=""):
+    def __init__(self, address, agent="", custom_diff="", peer_id="", miner_diff=""):
         super(Miner, self).__init__()
+        self.miner_diff = miner_diff
+        self.shares_history = []
         self.agent = agent
         self.peer_id = peer_id
+        self.miner_diff = miner_diff
         if "@" in address:
             parts = address.split("@")
             address = parts[0]
@@ -39,8 +44,37 @@ class Miner(MinerBase):
                 raise InvalidAddressException()
 
     def to_json(self):
-        return {"address": self.address_only, "worker": self.worker, "agent": self.agent, "custom_diff": self.custom_diff, "peer_id": self.peer_id}
+        return {
+            "address": self.address_only,
+            "worker": self.worker,
+            "agent": self.agent,
+            "custom_diff": self.custom_diff,
+            "miner_diff": self.miner_diff,
+            "peer_id": self.peer_id,
+        }
 
+    def add_share_to_history(self, share):
+        self.shares_history.append(share)
+        self.app_log.debug(f"Shares history for {self.peer_id}: {self.shares_history}")
+
+    def calculate_new_miner_diff(self):
+        self.shares_history = [share for share in self.shares_history if share["timestamp"] > (time.time() - 300)]
+
+        if any(share["timestamp"] < (time.time() - 150) for share in self.shares_history):
+            recent_shares = [share for share in self.shares_history]
+
+            total_share_size = sum(share["miner_diff"] for share in recent_shares)
+            average_share_size = total_share_size / 15
+            new_miner_diff = max(average_share_size, 70000)
+            new_miner_diff = round(new_miner_diff / 1000) * 1000
+
+            self.config.app_log.info(f"New miner_diff calculated: {new_miner_diff} for Miner:{self.peer_id}")
+            self.miner_diff = new_miner_diff
+
+            return new_miner_diff
+        else:
+            self.config.app_log.info(f"Using current miner_diff: {self.miner_diff}")
+            return self.miner_diff
 
 class InvalidAddressException(Exception):
     pass
