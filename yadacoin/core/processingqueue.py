@@ -11,6 +11,7 @@ from yadacoin.enums.modes import MODES
 
 class ProcessingQueue:
     num_items_processed = 0
+    num_invalid_items = 0
     time_sum = 0
 
     def time_sum_start(self):
@@ -21,6 +22,9 @@ class ProcessingQueue:
 
     def inc_num_items_processed(self):
         self.num_items_processed += 1
+
+    def inc_num_invalid_items(self):
+        self.num_invalid_items += 1
 
     def to_dict(self):
         return {"queue": self.queue}
@@ -130,6 +134,7 @@ class NonceProcessingQueue(ProcessingQueue):
             "queue_item_count": self.queue.qsize(),
             "average_processing_time": "%.4f" % (self.time_sum / (self.num_items_processed or 1)),
             "num_items_processed": self.num_items_processed,
+            "num_invalid_items": self.num_invalid_items,
         }
 
 

@@ -79,7 +79,8 @@ class MiningPool(object):
             }
             data["result"] = await self.process_nonce(miner, nonce, job)
             if not data["result"]:
-                data["error"] = {"code": "-1", "message": "Low difficulty share"}
+                data["error"] = {"code": "-1", "message": "Share rejected due to invalid data or expiration."}
+                self.config.processing_queues.nonce_queue.inc_num_invalid_items()
             try:
                 await stream.write("{}\n".format(json.dumps(data)).encode())
             except:
@@ -342,7 +343,7 @@ class MiningPool(object):
         header = self.block_factory.header
         self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
-        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else miner_diff
+        miner_diff = max(int(custom_diff), 70000) if custom_diff is not None else miner_diff
 
         if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
             target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
