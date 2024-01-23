@@ -54,8 +54,11 @@
     </div>
     <div class="column">
       <div class="box">
-        <h5><b>BLOCK REAWORD</b></h5>
-        <div><span  id="network-reward"></span> YDA</div>
+        <h5><b>BLOCK REWARD</b></h5>
+        <h4>
+            <div>MINERS: <b><span id="miners-reward"></span></b></div>
+            <div>MASTER NODES: <b><span id="master-nodes-reward"></span></b></div>
+        </h4>
       </div>
     </div>
     <div class="column">
@@ -162,7 +165,12 @@
                 }
                 $('#network-difficulty').html(data.network.difficulty.toFixed(3));
                 $('#network-height').html(data.network.height);
-                $('#network-reward').html(data.network.reward);
+                var blockReward = parseFloat(data.network.reward);
+                var MinersReward = (90 / 100) * blockReward;
+                var NodesReward = (10 / 100) * blockReward;
+                $('#miners-reward').html(MinersReward.toFixed(2) + ' YDA');
+                $('#master-nodes-reward').html(NodesReward.toFixed(2) + ' YDA');
+                var poolAddress = data.pool.pool_address;
                 var newDate = new Date();
                 newDate.setTime(data.network.last_block*1000);
                 dateString = newDate.toLocaleString();
@@ -191,8 +199,26 @@
                         var newDate = new Date();
                         newDate.setTime(data.pool.blocks[i].time*1000);
                         dateString = newDate.toLocaleString();
-                        $('#blocks-table').append('<tr><td>' + dateString + '</td><td>' + data.pool.blocks[i].index + '</a></td><td>N/a</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.pool.blocks[i].hash + '">' + data.pool.blocks[i].hash + '</td></tr>');
+                        var reward = getRewardFromTransactions(data.pool.blocks[i].transactions, poolAddress);
+                        $('#blocks-table').append('<tr><td>' + dateString + '</td><td>' + data.pool.blocks[i].index + '</a></td><<td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.pool.blocks[i].hash + '">' + data.pool.blocks[i].hash + '</td></tr>');
                     }
+
+                    function getRewardFromTransactions(transactions, poolAddress) {
+                      var highestReward = 0.0;
+
+                      for (var i = 0; i < transactions.length; i++) {
+                        for (var j = 0; j < transactions[i].outputs.length; j++) {
+                          if (transactions[i].outputs[j].to === poolAddress) {
+                            var currentReward = transactions[i].outputs[j].value;
+                            if (currentReward > highestReward) {
+                              highestReward = currentReward;
+                            }
+                          }
+                        }
+                      }
+                      return highestReward + ' YDA';
+                    }
+
                     var pagelength = 5;
                     var pageIndex = 1;
                     var selector = "tr:gt(" + pagelength + ")";

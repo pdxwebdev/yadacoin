@@ -86,14 +86,14 @@ class MiningPool(object):
             item = self.config.processing_queues.nonce_queue.pop()
 
     async def process_nonce(self, miner, nonce, job):
-        nonce = nonce + job.extra_nonce.encode().hex()
-        header = (
-            binascii.unhexlify(job.blob)
-            .decode()
-            .replace("{00}", "{nonce}")
-            .replace(job.extra_nonce, "")
-        )
+        nonce = nonce + job.extra_nonce
+        header = self.block_factory.header
+        self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
+        self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
+
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
+        self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
+
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
         else:
@@ -164,6 +164,7 @@ class MiningPool(object):
                         "index": block_candidate.index,
                         "hash": block_candidate.hash,
                         "nonce": nonce,
+                        "weight": job.miner_diff,
                         "time": int(time()),
                     }
                 },
@@ -333,20 +334,23 @@ class MiningPool(object):
 
     async def generate_job(self, agent, peer_id):
         difficulty = int(self.max_target / self.block_factory.target)
+        custom_diff = None
+        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = hex(random.randrange(1000000, 1000000000000000))[2:]
-        header = self.block_factory.header.replace("{nonce}", "{00}" + extra_nonce)
+        extra_nonce = str(random.randrange(100001, 999999))
+        header = self.block_factory.header
+        blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
 
         if "XMRigCC/3" in agent or "XMRig/3" in agent:
-            target = hex(0x10000000000000001 // self.config.pool_diff)
-        elif self.config.pool_diff <= 69905:
+            target = hex(0x10000000000000001 // miner_diff)
+        elif miner_diff <= 69905:
             target = hex(
-                0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000
+                0x10000000000000001 // miner_diff - 0x0000F00000000000
             )[2:].zfill(48)
         else:
             target = "-" + hex(
-                0x10000000000000001 // self.config.pool_diff - 0x0000F00000000000
+                0x10000000000000001 // miner_diff - 0x0000F00000000000
             )[3:].zfill(48)
 
         res = {
@@ -354,11 +358,12 @@ class MiningPool(object):
             "peer_id": peer_id,
             "difficulty": difficulty,
             "target": target,  # can only be 16 characters long
-            "blob": header.encode().hex(),
+            "blob": blob,
             "seed_hash": seed_hash,
             "height": self.config.LatestBlock.block.index
             + 1,  # This is the height of the one we are mining
             "extra_nonce": extra_nonce,
+            "miner_diff": miner_diff,
             "algo": "rx/yada",
         }
         return await Job.from_dict(res)
