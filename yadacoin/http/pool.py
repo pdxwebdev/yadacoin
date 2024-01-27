@@ -7,18 +7,29 @@ import time
 from yadacoin.http.base import BaseHandler
 
 class MinerStatsHandler(BaseHandler):
+
     async def get(self):
         address = self.get_query_argument("address")
 
         miner_hashrate_seconds = 1200
-        hide_worker_after_seconds = 3600  # jedna godzina w sekundach
-
         current_time = time.time()
+
+        miner_stats_document = await self.config.mongo.async_db.miner_stats.find_one({"address": address})
+
+        last_updated = 0
+        existing_workers = set()
+        worker_stats = {}
+
+        if miner_stats_document:
+            last_updated = miner_stats_document.get("last_updated", 0)
+            worker_stats = miner_stats_document.get("workers", {})
+            existing_workers = set(worker_stats.keys())
 
         hashrate_query = {
             "time": {"$gt": current_time - miner_hashrate_seconds},
             "$or": [{"address": address}, {"address_only": address}]
         }
+
         hashrate_aggregation = [
             {"$match": hashrate_query},
             {"$group": {
@@ -45,26 +56,21 @@ class MinerStatsHandler(BaseHandler):
             worker_hashrate_individual = total_weight // miner_hashrate_seconds
             total_hashrate += worker_hashrate_individual
 
-            if worker_name not in worker_hashrate:
-                worker_hashrate[worker_name] = {
-                    "worker_hashrate": 0,
-                    "worker_share": 0,
-                    "last_share_time": 0
-                }
-
-            worker_hashrate[worker_name]["worker_hashrate"] += worker_hashrate_individual
-            worker_hashrate[worker_name]["last_share_time"] = max(
-                worker_hashrate[worker_name]["last_share_time"],
-                last_share_time
-            )
+            worker_hashrate[worker_name] = {
+                "worker_hashrate": worker_hashrate_individual,
+                "worker_share": 0,
+                "last_share_time": last_share_time
+            }
 
         shares_query = {
             "$or": [
                 {"address": address},
                 {"address_only": address},
-                {"address": {"$regex": f"^{address}\..*"}}
-            ]
+                {"address": {"$regex": f"^{address}\..*"}},
+            ],
+            "time": {"$gt": last_updated}
         }
+
         shares_aggregation = [
             {"$match": shares_query},
             {"$group": {
@@ -72,7 +78,9 @@ class MinerStatsHandler(BaseHandler):
                     "address": "$address",
                     "worker": {"$ifNull": ["$worker", "No worker"]}
                 },
-                "worker_share": {"$sum": 1}
+                "worker_share": {"$sum": 1},
+                "total_weight": {"$sum": "$weight"},
+                "last_share_time": {"$max": "$time"}
             }}
         ]
 
@@ -90,32 +98,57 @@ class MinerStatsHandler(BaseHandler):
 
             if worker_name not in worker_shares:
                 worker_shares[worker_name] = {
-                    "worker_share": 0
+                    "worker_share": 0,
+                    "last_share_time": 0
                 }
 
             worker_shares[worker_name]["worker_share"] += doc["worker_share"]
             total_share += doc["worker_share"]
+            worker_shares[worker_name]["last_share_time"] = max(
+                worker_shares[worker_name]["last_share_time"],
+                doc["last_share_time"]
+            )
 
-        miner_stats = []
-        for worker_name in set(worker_hashrate.keys()) | set(worker_shares.keys()):
-            worker_hashrate_val = worker_hashrate.get(worker_name, {}).get("worker_hashrate", 0)
-            worker_share_val = worker_shares.get(worker_name, {}).get("worker_share", 0)
-            last_share_time = worker_hashrate.get(worker_name, {}).get("last_share_time", 0)
-            if time.time() - last_share_time > hide_worker_after_seconds:
-                continue
-            status = "Offline" if worker_hashrate_val == 0 else "Online"
+        for worker_name, worker_share_stats in worker_shares.items():
+            if worker_name not in worker_stats:
+                worker_stats[worker_name] = {
+                    "worker_share": 0,
+                    "last_share_time": 0,
+                    "worker_hashrate": 0
+                }
 
-            stats = {
+            worker_stats[worker_name]["worker_share"] += worker_share_stats["worker_share"]
+            worker_stats[worker_name]["last_share_time"] = max(
+                worker_stats[worker_name]["last_share_time"],
+                worker_share_stats["last_share_time"]
+            )
+
+            worker_stats[worker_name]["worker_hashrate"] = worker_hashrate.get(worker_name, {}).get("worker_hashrate", 0)
+
+        for missing_worker in existing_workers - set(worker_shares.keys()):
+            worker_stats[missing_worker] = miner_stats_document.get("workers", {}).get(missing_worker, {})
+
+        total_share += sum(worker_stats[worker_name]["worker_share"] for worker_name in worker_stats)
+
+        await self.config.mongo.async_db.miner_stats.update_one(
+            {"address": address},
+            {"$set": {"last_updated": current_time, "workers": worker_stats}},
+            upsert=True
+        )
+
+        miner_stats_response = [
+            {
                 "worker_name": worker_name,
-                "worker_hashrate": worker_hashrate_val,
-                "worker_share": worker_share_val,
-                "status": status,
-                "last_share_time": last_share_time
+                "worker_hashrate": worker_stats["worker_hashrate"],
+                "worker_share": worker_stats["worker_share"],
+                "status": "Offline" if worker_stats["worker_hashrate"] == 0 else "Online",
+                "last_share_time": worker_stats["last_share_time"]
             }
-            miner_stats.append(stats)
+            for worker_name, worker_stats in worker_stats.items()
+        ]
 
         self.render_as_json({
-            "miner_stats": miner_stats,
+            "miner_stats": miner_stats_response,
             "total_hashrate": int(total_hashrate),
             "total_share": int(total_share)
         })

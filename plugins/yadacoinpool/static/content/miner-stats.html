@@ -129,12 +129,18 @@
       $('#miner-stats-table').html('');
       $('#miner-stats-table').append('<tr><th>Worker Name</th><th>Hashrate</th><th>Shares</th><th>Last Share</th><th>Status</th></tr>');
 
+      var oneHourInSeconds = 3600;
+
       for (var i = 0; i < data.miner_stats.length; i++) {
         var workerName = data.miner_stats[i].worker_name;
         var hashrate = formatHashRate(data.miner_stats[i].worker_hashrate);
         var shares = data.miner_stats[i].worker_share;
         var lastShare = formatLastShare(data.miner_stats[i].last_share_time);
         var status = data.miner_stats[i].status;
+
+        if (data.miner_stats[i].last_share_time < (Date.now() / 1000 - oneHourInSeconds)) {
+          continue;
+        }
 
         var statusColor = '';
         if (status === 'Online') {
