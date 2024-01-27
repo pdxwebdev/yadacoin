@@ -160,7 +160,7 @@ class PoolInfoHandler(BaseWebHandler):
                     "hashes_per_second": pool_hash_rate,
                     "miner_count": miner_count_pool_stat["value"],
                     "worker_count": worker_count_pool_stat["value"],
-                    "payout_scheme": "PPLNS",
+                    "payout_scheme": self.config.payout_scheme,
                     "pool_fee": self.config.pool_take,
                     "min_payout": 0,
                     "url": getattr(

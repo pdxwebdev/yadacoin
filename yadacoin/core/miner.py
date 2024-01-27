@@ -58,15 +58,18 @@ class Miner(MinerBase):
         self.app_log.debug(f"Shares history for {self.peer_id}: {self.shares_history}")
 
     def calculate_new_miner_diff(self):
-        self.shares_history = [share for share in self.shares_history if share["timestamp"] > (time.time() - 300)]
+        self.shares_history = [share for share in self.shares_history if share["timestamp"] > (time.time() - 600)]
 
-        if any(share["timestamp"] < (time.time() - 150) for share in self.shares_history):
+        if any(share["timestamp"] < (time.time() - 300) for share in self.shares_history):
             recent_shares = [share for share in self.shares_history]
 
             total_share_size = sum(share["miner_diff"] for share in recent_shares)
-            average_share_size = total_share_size / 15
+            average_share_size = total_share_size / 10 / ( 60 / self.config.expected_share_time)
             new_miner_diff = max(average_share_size, 70000)
             new_miner_diff = round(new_miner_diff / 1000) * 1000
+
+            if self.custom_diff is not None:
+                new_miner_diff = self.custom_diff
 
             self.config.app_log.info(f"New miner_diff calculated: {new_miner_diff} for Miner:{self.peer_id}")
             self.miner_diff = new_miner_diff

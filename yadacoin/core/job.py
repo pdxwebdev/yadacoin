@@ -7,6 +7,7 @@ class Job:
         inst.diff = job["difficulty"]
         inst.target = job["target"]
         inst.blob = job["blob"]
+        inst.header = job["header"]
         inst.seed_hash = job["seed_hash"]
         inst.index = job["height"]
         inst.algo = job["algo"]

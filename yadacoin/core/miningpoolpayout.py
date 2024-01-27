@@ -266,7 +266,12 @@ class PoolPayer(object):
         await self.broadcast_transaction(transaction)
 
     async def get_share_list_for_height(self, index):
-        previous_block_index = await self.find_previous_block_index(index)
+        if self.config.payout_scheme == "pplns":
+            previous_block_index = index - 24
+            self.config.app_log.info(f"PPLNS payment scheme used.")
+        else:
+            previous_block_index = await self.find_previous_block_index(index)
+            self.config.app_log.info(f"PROP payment scheme used.")
         
         if previous_block_index is None:
             return {}
@@ -300,7 +305,7 @@ class PoolPayer(object):
                 }
             shares[address]["blocks"].append(share)
             total_weight += share["weight"]
-
+        self.config.app_log.info(f"Share range for payout: {previous_block_index} - {index}")
         self.config.app_log.info(f"Total weight for height {index}: {total_weight}")
 
         for address, item in shares.items():
@@ -332,25 +337,12 @@ class PoolPayer(object):
 
         if pool_blocks_found_list:
             previous_block_index = pool_blocks_found_list[0]["index"] + 1
-            self.config.app_log.info(
-                f"Previous block index for current block {current_block_index}: {previous_block_index}"
-            )
             return previous_block_index
         else:
             self.config.app_log.info(
                 f"No previous block found for current block {current_block_index}"
             )
             return None
-
-
-
-
-    def get_difficulty(self, blocks):
-        difficulty = 0
-        for block in blocks:
-            target = int(block["hash"], 16)
-            difficulty += CHAIN.MAX_TARGET - target
-        return difficulty
 
     async def already_used(self, txn):
         results = self.config.mongo.async_db.blocks.aggregate(

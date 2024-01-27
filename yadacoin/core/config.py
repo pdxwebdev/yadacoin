@@ -122,10 +122,12 @@ class Config:
         self.shares_required = config.get("shares_required", False)
         self.pool_payout = config.get("pool_payout", False)
         self.pool_take = config.get("pool_take", 0.01)
+        self.payout_scheme = config.get("payout_scheme", "pplns")
         self.payout_frequency = config.get("payout_frequency", 300) # unused anymore
         self.max_miners = config.get("max_miners", 100)
         self.max_peers = config.get("max_peers", 20)
         self.pool_diff = config.get("pool_diff", 100000)
+        self.expected_share_time = config.get("expected_share_time", 25) # expected share time in seconds. For example: if you set 20, the target difficulty for the miner will be set to reach one share every 25 seconds.
         self.block_confirmation = config.get("block_confirmation", 12)
 
         self.restrict_graph_api = config.get("restrict_graph_api", False)
@@ -397,10 +399,12 @@ class Config:
         cls.shares_required = config.get("shares_required", False)
         cls.pool_payout = config.get("pool_payout", False)
         cls.pool_take = config.get("pool_take", 0.01)
+        cls.payout_scheme = config.get("payout_scheme", "pplns")
         cls.payout_frequency = config.get("payout_frequency", 300) # unused anymore
         cls.max_miners = config.get("max_miners", 100)
         cls.max_peers = config.get("max_peers", 20)
         cls.pool_diff = config.get("pool_diff", 100000)
+        cls.expected_share_time = config.get("expected_share_time", 25)
         cls.block_confirmation = config.get("block_confirmation", 12)
 
         cls.restrict_graph_api = config.get("restrict_graph_api", False)

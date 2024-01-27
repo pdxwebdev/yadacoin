@@ -9,45 +9,38 @@ from yadacoin.http.base import BaseHandler
 class MinerStatsHandler(BaseHandler):
     async def get(self):
         address = self.get_query_argument("address")
-        query = {
-            "$or": [
-                {"address": address},
-                {"address_only": address},
-                {"address": {"$regex": f"^{address}\..*"}}
-            ]
-        }
 
         miner_hashrate_seconds = 1200
-        hashrate_query = {"time": {"$gt": time.time() - miner_hashrate_seconds}}
-        if "." in address:
-            hashrate_query["address"] = address
-            shares_query = {"address": address}
-        else:
-            hashrate_query["$or"] = [{"address": address}, {"address_only": address}]
-            shares_query = {
-                "$or": [
-                    {"address": address},
-                    {"address_only": address},
-                    {"address": {"$regex": f"^{address}\..*"}}
-                ]
-            }
+        hide_worker_after_seconds = 3600  # jedna godzina w sekundach
 
-        hashrate_cursor = self.config.mongo.async_db.shares.aggregate([
+        current_time = time.time()
+
+        hashrate_query = {
+            "time": {"$gt": current_time - miner_hashrate_seconds},
+            "$or": [{"address": address}, {"address_only": address}]
+        }
+        hashrate_aggregation = [
             {"$match": hashrate_query},
             {"$group": {
-                "_id": {"address": "$address", "worker": {"$ifNull": [{"$arrayElemAt": [{"$split": ["$address", "."]}, 1]}, "No worker"]}},
+                "_id": {
+                    "address": "$address",
+                    "worker": {"$ifNull": [{"$arrayElemAt": [{"$split": ["$address", "."]}, 1]}, "No worker"]}
+                },
                 "total_weight": {"$sum": "$weight"},
+                "last_share_time": {"$max": "$time"}
             }}
-        ])
+        ]
+
+        hashrate_cursor = self.config.mongo.async_db.shares.aggregate(hashrate_aggregation)
+        hashrate_result = await hashrate_cursor.to_list(None)
 
         worker_hashrate = {}
         total_hashrate = 0
-        total_share = 0
-        total_hash = 0
 
-        async for doc in hashrate_cursor:
+        for doc in hashrate_result:
             worker_name = doc["_id"]["worker"]
             total_weight = doc["total_weight"]
+            last_share_time = doc["last_share_time"]
 
             worker_hashrate_individual = total_weight // miner_hashrate_seconds
             total_hashrate += worker_hashrate_individual
@@ -56,23 +49,40 @@ class MinerStatsHandler(BaseHandler):
                 worker_hashrate[worker_name] = {
                     "worker_hashrate": 0,
                     "worker_share": 0,
-                    "worker_hash": 0
+                    "last_share_time": 0
                 }
 
             worker_hashrate[worker_name]["worker_hashrate"] += worker_hashrate_individual
-            worker_hashrate[worker_name]["worker_hash"] += total_weight
+            worker_hashrate[worker_name]["last_share_time"] = max(
+                worker_hashrate[worker_name]["last_share_time"],
+                last_share_time
+            )
 
-        shares_cursor = self.config.mongo.async_db.shares.aggregate([
+        shares_query = {
+            "$or": [
+                {"address": address},
+                {"address_only": address},
+                {"address": {"$regex": f"^{address}\..*"}}
+            ]
+        }
+        shares_aggregation = [
             {"$match": shares_query},
             {"$group": {
-                "_id": {"address": "$address", "worker": {"$ifNull": ["$worker", "No worker"]}},
-                "worker_share": {"$sum": 1},
+                "_id": {
+                    "address": "$address",
+                    "worker": {"$ifNull": ["$worker", "No worker"]}
+                },
+                "worker_share": {"$sum": 1}
             }}
-        ])
+        ]
+
+        shares_cursor = self.config.mongo.async_db.shares.aggregate(shares_aggregation)
+        shares_result = await shares_cursor.to_list(None)
 
         worker_shares = {}
+        total_share = 0
 
-        async for doc in shares_cursor:
+        for doc in shares_result:
             worker_name = doc["_id"]["worker"]
 
             if "." in doc["_id"]["address"]:
@@ -80,37 +90,35 @@ class MinerStatsHandler(BaseHandler):
 
             if worker_name not in worker_shares:
                 worker_shares[worker_name] = {
-                    "worker_share": 0,
+                    "worker_share": 0
                 }
 
             worker_shares[worker_name]["worker_share"] += doc["worker_share"]
             total_share += doc["worker_share"]
 
-        total_hash = sum(worker_hash_val["worker_hash"] for worker_hash_val in worker_hashrate.values())
-
         miner_stats = []
         for worker_name in set(worker_hashrate.keys()) | set(worker_shares.keys()):
             worker_hashrate_val = worker_hashrate.get(worker_name, {}).get("worker_hashrate", 0)
             worker_share_val = worker_shares.get(worker_name, {}).get("worker_share", 0)
-            worker_hash_val = worker_hashrate.get(worker_name, {}).get("worker_hash", 0)
+            last_share_time = worker_hashrate.get(worker_name, {}).get("last_share_time", 0)
+            if time.time() - last_share_time > hide_worker_after_seconds:
+                continue
             status = "Offline" if worker_hashrate_val == 0 else "Online"
 
             stats = {
                 "worker_name": worker_name,
                 "worker_hashrate": worker_hashrate_val,
                 "worker_share": worker_share_val,
-                "worker_hash": worker_hash_val,
-                "status": status
+                "status": status,
+                "last_share_time": last_share_time
             }
             miner_stats.append(stats)
 
         self.render_as_json({
             "miner_stats": miner_stats,
             "total_hashrate": int(total_hashrate),
-            "total_share": int(total_share),
-            "total_hash": int(total_hash)
+            "total_share": int(total_share)
         })
-
 
 class PoolPayoutsHandler(BaseHandler):
     async def get(self):
@@ -121,7 +129,7 @@ class PoolPayoutsHandler(BaseHandler):
         out = []
         results = self.config.mongo.async_db.share_payout.find(
             {"txn.outputs.to": address}, {"_id": 0}
-        ).sort([("index", -1)])
+        ).sort([("index", -1)]).limit(150)
         async for result in results:
             if (
                 await self.config.mongo.async_db.blocks.count_documents(

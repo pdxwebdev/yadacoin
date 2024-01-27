@@ -65,7 +65,7 @@ class MiningPool(object):
             stream = item.stream
             nonce = body["params"].get("nonce")
             job_id = body["params"]["id"]
-            job = stream.jobs[job_id]
+            job = stream.jobs[body["params"]["id"] or body["params"]["job_id"]]
             if type(nonce) is not str:
                 result = {"error": True, "message": "nonce is wrong data type"}
                 self.update_failed_share_count(miner.peer_id)
@@ -101,7 +101,7 @@ class MiningPool(object):
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce
-        header = self.block_factory.header
+        header = job.header
         self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
@@ -339,7 +339,8 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = str(random.randrange(100000, 999999))
+        #extra_nonce = str(random.randrange(100000, 999999))
+        extra_nonce = secrets.token_hex(2)
         header = self.block_factory.header
         self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
@@ -359,6 +360,7 @@ class MiningPool(object):
         res = {
             "job_id": job_id,
             "peer_id": peer_id,
+            "header": header,
             "difficulty": difficulty,
             "target": target,  # can only be 16 characters long
             "blob": blob,
