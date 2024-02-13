@@ -51,7 +51,7 @@ class StratumServer(RPCSocketServer):
         job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.peer_id)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
-        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index}
+        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index, "extra_nonce": job.extra_nonce}
         rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
         try:
             cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")

@@ -178,6 +178,7 @@ class PoolInfoHandler(BaseWebHandler):
                 },
                 "pool": {
                     "hashes_per_second": pool_hash_rate,
+                    "pool_address": self.config.address,
                     "miner_count": miner_count_pool_stat["value"],
                     "worker_count": worker_count_pool_stat["value"],
                     "payout_scheme": "PPLNS",

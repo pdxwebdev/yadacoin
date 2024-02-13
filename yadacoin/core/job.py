@@ -10,6 +10,7 @@ class Job:
         inst.seed_hash = job["seed_hash"]
         inst.index = job["height"]
         inst.extra_nonce = job["extra_nonce"]
+        inst.miner_diff = job["miner_diff"]
         inst.algo = job["algo"]
         return inst
 
