@@ -17,15 +17,13 @@ class Nodes:
     @classmethod
     def set_nodes(cls):
         cls().NODES = defaultdict(list)
-        for NODE in cls()._NODES:
-            prev_rng = (None, None)
-            for fork_point in cls().fork_points:
+        for fork_point in cls().fork_points:
+            for NODE in cls()._NODES:
                 for rng in NODE["ranges"]:
+                    if rng[1] == fork_point:
+                        continue
                     if rng[0] <= fork_point:
                         cls().NODES[fork_point].append(NODE["node"])
-                    if prev_rng[1] == fork_point:
-                        del cls().NODES[rng[0]]
-                    prev_rng = rng
 
     @classmethod
     def get_fork_for_block_height(cls, height):
@@ -236,7 +234,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(467700, None)],
+                "ranges": [(467700, 472000)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.funckyman.xyz",
@@ -450,7 +448,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(467700, None)],
+                "ranges": [(467700, 472000)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.funckyman.xyz",
@@ -674,7 +672,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(467700, None)],
+                "ranges": [(467700, 472000)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.funckyman.xyz",
