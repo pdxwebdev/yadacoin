@@ -19,11 +19,12 @@ class PoolPayer(object):
         self.config = Config()
         self.app_log = getLogger("tornado.application")
 
-    async def do_payout(self, already_paid_height=None):
+    async def do_payout(self, already_paid_height=None, start_index=None):
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
-        if not already_paid_height:
+
+        if not start_index:
             already_paid_height = (
                 await self.config.mongo.async_db.share_payout.find_one(
                     {}, sort=[("index", -1)]
@@ -31,6 +32,10 @@ class PoolPayer(object):
             )
             if not already_paid_height:
                 already_paid_height = {}
+            else:
+                already_paid_height = {"index": max(already_paid_height.get("index", 0))}
+        else:
+            already_paid_height = {"index": start_index}
 
         won_blocks = self.config.mongo.async_db.blocks.aggregate(
             [
@@ -71,26 +76,29 @@ class PoolPayer(object):
             if coinbase.outputs[0].to != self.config.address:
                 continue
             if self.config.debug:
-                self.app_log.debug(won_block.index)
-            if (
-                won_block.index + self.config.payout_frequency
-            ) <= self.config.LatestBlock.block.index:
-                if len(ready_blocks) >= self.config.payout_frequency:
-                    if self.config.debug:
-                        self.app_log.debug(
-                            "entering payout at block: {}".format(won_block.index)
-                        )
-                    do_payout = True
-                    break
-                else:
-                    if self.config.debug:
-                        self.app_log.debug(
-                            "block added for payout {}".format(won_block.index)
-                        )
-                    ready_blocks.append(won_block)
+                   self.app_log.debug(won_block.index)
+
+            confirmations = self.config.LatestBlock.block.index - won_block.index
+            if confirmations < self.config.block_confirmation: # We set the block maturation
+                if self.config.debug:
+                    self.app_log.debug("Payment stopped, block has insufficient confirmations.")
+                continue
+            if self.config.debug:
+                self.app_log.debug(
+                    "block added for payout {}".format(won_block.index)
+                )
+            ready_blocks.append(won_block)
+
+        if ready_blocks:
+            do_payout = True
 
         if not do_payout:
+            if self.config.debug:
+                self.app_log.debug("No payout is required.")
             return
+        else:
+            if self.config.debug:
+                self.app_log.debug("Payout is required.") 
 
         # check if we already paid out
         outputs = {}
@@ -156,8 +164,11 @@ class PoolPayer(object):
                     "do_payout_for_blocks passed address compare {}".format(block.index)
                 )
             pool_take = self.config.pool_take
-            total_pool_take = coinbase.outputs[0].value * pool_take
-            total_payout = coinbase.outputs[0].value - total_pool_take
+            if pool_take == 0:
+                total_payout = coinbase.outputs[0].value - 0.0001  # We charge a transaction fee only
+            else:
+                total_pool_take = coinbase.outputs[0].value * (pool_take)
+                total_payout = coinbase.outputs[0].value - total_pool_take
             coinbases.append(coinbase)
             if self.config.debug:
                 self.app_log.debug(
@@ -248,21 +259,34 @@ class PoolPayer(object):
         await self.config.mongo.async_db.miner_transactions.insert_one(
             transaction.to_dict()
         )
+        block_indexes = [block.index for block in ready_blocks]
         await self.config.mongo.async_db.share_payout.insert_one(
-            {"index": block.index, "txn": transaction.to_dict()}
+            {"index": block_indexes, "txn": transaction.to_dict()}
         )
         await self.broadcast_transaction(transaction)
 
     async def get_share_list_for_height(self, index):
+        if self.config.payout_scheme == "pplns":
+            previous_block_index = index - 24
+            self.config.app_log.info(f"PPLNS payment scheme used.")
+        else:
+            previous_block_index = await self.find_previous_block_index(index)
+            self.config.app_log.info(f"PROP payment scheme used.")
+        
+        if previous_block_index is None:
+            return {}
+
         raw_shares = []
         async for x in self.config.mongo.async_db.shares.find(
-            {"index": index, "address": {"$ne": None}}
+            {"index": {"$gte": previous_block_index, "$lte": index}, "address": {"$ne": None}}
         ).sort([("index", 1)]):
             raw_shares.append(x)
         if not raw_shares:
             return False
-        total_difficulty = self.get_difficulty([x for x in raw_shares])
+
         shares = {}
+        total_weight = 0
+
         for share in raw_shares:
             address = share["address"].split(".")[0]
             if not self.config.address_is_valid(address):
@@ -280,26 +304,45 @@ class PoolPayer(object):
                     "blocks": [],
                 }
             shares[address]["blocks"].append(share)
+            total_weight += share["weight"]
+        self.config.app_log.info(f"Share range for payout: {previous_block_index} - {index}")
+        self.config.app_log.info(f"Total weight for height {index}: {total_weight}")
 
-        add_up = 0
         for address, item in shares.items():
-            test_difficulty = self.get_difficulty(item["blocks"])
-            shares[address]["payout_share"] = float(test_difficulty) / float(
-                total_difficulty
+            item["total_weight"] = sum(share["weight"] for share in item["blocks"])
+            item["payout_share"] = float(item["total_weight"]) / float(total_weight)
+            self.config.app_log.info(
+                f"Miner {address} - Total weight: {item['total_weight']}, Payout share: {item['payout_share']}"
             )
-            add_up += test_difficulty
 
-        if add_up == total_difficulty:
-            return shares
+        self.config.app_log.debug(f"get_share_list_for_height - Returning shares: {shares}")
+        return shares
+
+    async def find_previous_block_index(self, current_block_index):
+        pool_public_key = (
+            self.config.pool_public_key
+            if hasattr(self.config, "pool_public_key")
+            else self.config.public_key
+        )
+
+        pool_blocks_found_list = (
+            await self.config.mongo.async_db.blocks.find(
+                {"public_key": pool_public_key, "index": {"$lt": current_block_index}},
+                {"_id": 0, "index": 1},
+            )
+            .sort([("index", -1)])
+            .limit(1)
+            .to_list(1)
+        )
+
+        if pool_blocks_found_list:
+            previous_block_index = pool_blocks_found_list[0]["index"] + 1
+            return previous_block_index
         else:
-            raise NonMatchingDifficultyException()
-
-    def get_difficulty(self, blocks):
-        difficulty = 0
-        for block in blocks:
-            target = int(block["hash"], 16)
-            difficulty += CHAIN.MAX_TARGET - target
-        return difficulty
+            self.config.app_log.info(
+                f"No previous block found for current block {current_block_index}"
+            )
+            return None
 
     async def already_used(self, txn):
         results = self.config.mongo.async_db.blocks.aggregate(

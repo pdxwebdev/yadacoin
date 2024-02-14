@@ -122,7 +122,9 @@ class Config:
         self.shares_required = config.get("shares_required", False)
         self.pool_payout = config.get("pool_payout", False)
         self.pool_take = config.get("pool_take", 0.01)
+        self.payout_scheme = config.get("payout_scheme", "pplns")
         self.payout_frequency = config.get("payout_frequency", 6)
+        self.block_confirmation = config.get("block_confirmation", 6)
         self.max_miners = config.get("max_miners", 100)
         self.max_peers = config.get("max_peers", 20)
         self.pool_diff = config.get("pool_diff", 100000)
@@ -139,20 +141,20 @@ class Config:
         self.dns_resolvers = config.get("dns_resolvers", [])
         self.dns_bypass_ips = config.get("dns_bypass_ips", [])
 
-        self.peers_wait = config.get("peers_wait", 30)
-        self.status_wait = config.get("status_wait", 10)
-        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
-        self.block_queue_processor_wait = config.get("block_queue_processor_wait", 10)
+        self.peers_wait = config.get("peers_wait", 15)
+        self.status_wait = config.get("status_wait", 30)
+        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 5)
+        self.block_queue_processor_wait = config.get("block_queue_processor_wait", 5)
         self.block_checker_wait = config.get("block_checker_wait", 1)
-        self.message_sender_wait = config.get("message_sender_wait", 10)
-        self.pool_payer_wait = config.get("pool_payer_wait", 120)
+        self.message_sender_wait = config.get("message_sender_wait", 5)
+        self.pool_payer_wait = config.get("pool_payer_wait", 1800)
         self.cache_validator_wait = config.get("cache_validator_wait", 30)
         self.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         self.mempool_sender_wait = config.get("mempool_sender_wait", 180)
-        self.nonce_processor_wait = config.get("nonce_processor_wait", 1)
+        self.nonce_processor_wait = config.get("nonce_processor_wait", 0.5)
 
         self.mongo_query_timeout = config.get("mongo_query_timeout", 30000)
-        self.http_request_timeout = config.get("http_request_timeout", 3000)
+        self.http_request_timeout = config.get("http_request_timeout", 30)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -393,7 +395,9 @@ class Config:
         cls.shares_required = config.get("shares_required", False)
         cls.pool_payout = config.get("pool_payout", False)
         cls.pool_take = config.get("pool_take", 0.01)
-        cls.payout_frequency = config.get("payout_frequency", 6)
+        cls.payout_scheme = config.get("payout_scheme", "pplns") # payment calculation system, PPLNS by default, can be changed to PROP
+        cls.payout_frequency = config.get("payout_frequency", 6) # unused
+        cls.block_confirmation = config.get("block_confirmation", 6) # the number of confirmations required to pay out a block
         cls.max_miners = config.get("max_miners", 100)
         cls.max_peers = config.get("max_peers", 20)
         cls.pool_diff = config.get("pool_diff", 100000)
@@ -413,20 +417,20 @@ class Config:
         cls.dns_resolvers = config.get("dns_resolvers", [])
         cls.dns_bypass_ips = config.get("dns_bypass_ips", [])
 
-        cls.peers_wait = config.get("peers_wait", 30)
-        cls.status_wait = config.get("status_wait", 10)
-        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
-        cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
+        cls.peers_wait = config.get("peers_wait", 15)
+        cls.status_wait = config.get("status_wait", 30)
+        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 5)
+        cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 5)
         cls.block_checker_wait = config.get("block_checker_wait", 1)
-        cls.message_sender_wait = config.get("message_sender_wait", 10)
-        cls.pool_payer_wait = config.get("pool_payer_wait", 120)
+        cls.message_sender_wait = config.get("message_sender_wait", 5)
+        cls.pool_payer_wait = config.get("pool_payer_wait", 1800) # payout frequency for miners, 30 minutes by default
         cls.cache_validator_wait = config.get("cache_validator_wait", 30)
         cls.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         cls.mempool_sender_wait = config.get("mempool_sender_wait", 180)
-        cls.nonce_processor_wait = config.get("nonce_processor_wait", 1)
+        cls.nonce_processor_wait = config.get("nonce_processor_wait", 0.5)
 
         cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
-        cls.http_request_timeout = config.get("http_request_timeout", 3000)
+        cls.http_request_timeout = config.get("http_request_timeout", 30) # A 30 second timeout for http is sufficient, yes! these are seconds not ms :)
 
     @staticmethod
     def address_is_valid(address):
