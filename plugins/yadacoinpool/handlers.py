@@ -181,7 +181,7 @@ class PoolInfoHandler(BaseWebHandler):
                     "pool_address": self.config.address,
                     "miner_count": miner_count_pool_stat["value"],
                     "worker_count": worker_count_pool_stat["value"],
-                    "payout_scheme": "PPLNS",
+                    "payout_scheme": self.config.payout_scheme,
                     "pool_fee": self.config.pool_take,
                     "min_payout": 0,
                     "url": getattr(
@@ -195,7 +195,7 @@ class PoolInfoHandler(BaseWebHandler):
                     ],
                     "blocks_found": total_blocks_found,
                     "fee": self.config.pool_take,
-                    "payout_frequency": self.config.payout_frequency,
+                    "payout_frequency": self.config.pool_payer_wait,
                     "payouts": payouts,
                     "blocks": pool_blocks_found_list[:100],
                     "pool_perecentage": pool_perecentage,

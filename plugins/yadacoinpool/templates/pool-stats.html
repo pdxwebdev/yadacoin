@@ -83,7 +83,7 @@
     <div class="column">
       <div class="box">
         <h5><b>PAYOUT SCHEME</b></h5>
-        <div id="pool-payout-scheme"></div>
+        <div id="pool-payout-scheme" style="text-transform: uppercase;"></div>
       </div>
     </div>
     <div class="column2">
@@ -171,6 +171,24 @@
                 $('#miners-reward').html(MinersReward.toFixed(2) + ' YDA');
                 $('#master-nodes-reward').html(NodesReward.toFixed(2) + ' YDA');
                 var poolAddress = data.pool.pool_address;
+
+                function formatTime(seconds) {
+                const minutes = Math.floor(seconds / 60);
+                const hours = Math.floor(minutes / 60);
+
+                if (hours > 0) {
+                  return hours + ' hour(s)';
+                } else if (minutes > 0) {
+                  return minutes + ' minute(s)';
+                } else {
+                  return seconds + ' second(s)';
+                }
+                }
+
+                const payoutFrequency = data.pool.payout_frequency;
+                const formattedFrequency = formatTime(payoutFrequency);
+                $('#pool-payout-frequency').html('Payout every: ' + formattedFrequency);
+
                 var newDate = new Date();
                 newDate.setTime(data.network.last_block*1000);
                 dateString = newDate.toLocaleString();
