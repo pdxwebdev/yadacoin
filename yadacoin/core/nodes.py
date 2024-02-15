@@ -362,7 +362,7 @@ class SeedGateways(Nodes):
                 "node": SeedGateway.from_dict(
                     {
                         "host": "yada-bravo.mynodes.live",
-                        "port": 8080,
+                        "port": 8000,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIFvpbWRQU9Ty4JXxoGH4YXgR8RiLoLBm11RNKBVeaz4GAiAyGMbhXc+J+z5VIh2GGJi9uDsqdPpEweerViSrxpxzPQ==",
