@@ -539,18 +539,18 @@ class Consensus(object):
 
             self.app_log.info("New block inserted for height: {}".format(block.index))
 
-            if self.config.mp:
-                if self.syncing or (hasattr(stream, "syncing") and stream.syncing):
-                    return True
-                try:
-                    await self.config.mp.refresh()
-                except Exception:
-                    self.app_log.warning("{}".format(format_exc()))
-
-                try:
-                    await StratumServer.block_checker()
-                except Exception:
-                    self.app_log.warning("{}".format(format_exc()))
+#            if self.config.mp:
+#                if self.syncing or (hasattr(stream, "syncing") and stream.syncing):
+#                    return True
+#                try:
+#                    await self.config.mp.refresh()
+#                except Exception:
+#                    self.app_log.warning("{}".format(format_exc()))
+#
+#                try:
+#                    await StratumServer.block_checker()
+#                except Exception:
+#                    self.app_log.warning("{}".format(format_exc()))
 
             return True
         except Exception:

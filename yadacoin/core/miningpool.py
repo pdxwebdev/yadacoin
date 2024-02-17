@@ -1,6 +1,7 @@
 import binascii
 import json
 import random
+import secrets
 import uuid
 from logging import getLogger
 from time import time
@@ -66,13 +67,11 @@ class MiningPool(object):
             }
             data["result"] = await self.process_nonce(miner, nonce, job)
             if not data["result"]:
-                data["error"] = {"message": "Invalid hash for current block"}
+                data["error"] = {"code": "-1", "message": "Share rejected due to invalid data or expiration."}
             try:
                 await stream.write("{}\n".format(json.dumps(data)).encode())
             except:
                 pass
-            if "error" in data:
-                await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
 
@@ -87,12 +86,12 @@ class MiningPool(object):
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce
-        header = self.block_factory.header
+        header = job.header
         self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
 
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
-        self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
+        self.config.app_log.debug(f"Hash1 for job {job.index}: {hash1}")
 
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
@@ -275,7 +274,7 @@ class MiningPool(object):
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
-            if self.refreshing or not await Peer.is_synced():
+            if self.refreshing:
                 return
             self.refreshing = True
             await self.config.LatestBlock.block_checker()
@@ -320,7 +319,7 @@ class MiningPool(object):
         }
         return res
 
-    async def block_template(self, agent, peer_id):
+    async def block_template(self, agent, custom_diff, peer_id, miner_diff):
         """Returns info for current block to mine"""
         if self.block_factory is None:
             await self.refresh()
@@ -329,21 +328,21 @@ class MiningPool(object):
                 self.config.LatestBlock.block
             )
 
-        job = await self.generate_job(agent, peer_id)
+        job = await self.generate_job(agent, custom_diff, peer_id, miner_diff)
         return job
 
-    async def generate_job(self, agent, peer_id):
+    async def generate_job(self, agent, custom_diff, peer_id, miner_diff):
         difficulty = int(self.max_target / self.block_factory.target)
-        custom_diff = None
-        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = str(random.randrange(100001, 999999))
+        extra_nonce = secrets.token_hex(2)
         header = self.block_factory.header
+        self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
+        miner_diff = max(int(custom_diff), 70000) if custom_diff is not None else miner_diff
 
-        if "XMRigCC/3" in agent or "XMRig/3" in agent:
-            target = hex(0x10000000000000001 // miner_diff)
+        if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
+            target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
         elif miner_diff <= 69905:
             target = hex(
                 0x10000000000000001 // miner_diff - 0x0000F00000000000
@@ -356,6 +355,7 @@ class MiningPool(object):
         res = {
             "job_id": job_id,
             "peer_id": peer_id,
+            "header": header,
             "difficulty": difficulty,
             "target": target,  # can only be 16 characters long
             "blob": blob,
@@ -363,9 +363,13 @@ class MiningPool(object):
             "height": self.config.LatestBlock.block.index
             + 1,  # This is the height of the one we are mining
             "extra_nonce": extra_nonce,
-            "miner_diff": miner_diff,
             "algo": "rx/yada",
+            "miner_diff": miner_diff,
+            "agent": agent,
         }
+
+        self.config.app_log.debug(f"Generated job: {res}")
+
         return await Job.from_dict(res)
 
     async def set_target_as_previous_non_special_min(self):
@@ -593,4 +597,4 @@ class MiningPool(object):
 
         await self.config.websocketServer.send_block(block)
 
-        await self.refresh()
+        #await self.refresh()

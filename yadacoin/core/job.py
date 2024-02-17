@@ -7,17 +7,17 @@ class Job:
         inst.diff = job["difficulty"]
         inst.target = job["target"]
         inst.blob = job["blob"]
+        inst.header = job["header"]
         inst.seed_hash = job["seed_hash"]
         inst.index = job["height"]
+        inst.algo = job["algo"]
         inst.extra_nonce = job["extra_nonce"]
         inst.miner_diff = job["miner_diff"]
-        inst.algo = job["algo"]
         return inst
 
     def to_dict(self):
         return {
             "job_id": self.job_id,
-            "difficulty": self.diff,
             "target": self.target,
             "blob": self.blob,
             "seed_hash": self.seed_hash,

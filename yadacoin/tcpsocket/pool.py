@@ -48,7 +48,8 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def send_job(cls, stream):
-        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.peer_id)
+        stream.peer.calculate_new_miner_diff()
+        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id, stream.peer.miner_diff)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
         params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index, "extra_nonce": job.extra_nonce}
@@ -154,9 +155,14 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def submit(self, body, stream):
+        miner_diff = stream.peer.miner_diff
+
         self.config.processing_queues.nonce_queue.add(
             NonceProcessingQueueItem(miner=stream.peer, stream=stream, body=body)
         )
+        current_time = time.time()
+        share_info = {"miner_diff": miner_diff, "timestamp": current_time}
+        stream.peer.add_share_to_history(share_info)
 
     async def login(self, body, stream):
         if len(await Peer.get_miner_streams()) > self.config.max_miners:
@@ -176,9 +182,21 @@ class StratumServer(RPCSocketServer):
             )
             await StratumServer.remove_peer(stream)
             return
+
+        custom_diff = None
         peer_id = str(uuid.uuid4())
+        miner_diff = self.config.pool_diff
+
+        if "@" in body["params"].get("login"):
+            parts = body["params"].get("login").split("@")
+            body["params"]["login"] = parts[0]
+            custom_diff = int(parts[1]) if len(parts) > 1 else 0
+
         await StratumServer.block_checker()
-        job = await StratumServer.config.mp.block_template(body["params"].get("agent"), peer_id)
+        job = await StratumServer.config.mp.block_template(
+            body["params"].get("agent"), custom_diff, peer_id, miner_diff
+        )
+
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
         stream.jobs[job.id] = job
@@ -192,9 +210,17 @@ class StratumServer(RPCSocketServer):
 
         try:
             stream.peer = Miner(
-                address=body["params"].get("login"), agent=body["params"].get("agent"), peer_id=peer_id
+                address=body["params"].get("login"),
+                agent=body["params"].get("agent"),
+                custom_diff=custom_diff,
+                peer_id=peer_id,
+                miner_diff=self.config.pool_diff
             )
+            stream.peer.miner_diff = self.config.pool_diff
+            stream.peer.custom_diff = custom_diff
+            stream.peer.peer_id = peer_id
             self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
+
             StratumServer.inbound_streams[Miner.__name__].setdefault(
                 stream.peer.address_only, {}
             )

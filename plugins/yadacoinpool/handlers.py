@@ -86,13 +86,26 @@ class PoolInfoHandler(BaseWebHandler):
         )
         expected_blocks = 144
         mining_time_interval = 600
-        shares_count = await self.config.mongo.async_db.shares.count_documents(
-            {"time": {"$gte": time.time() - mining_time_interval}}
-        )
-        if shares_count > 0:
-            pool_hash_rate = (
-                shares_count * self.config.pool_diff
-            ) / mining_time_interval
+
+        pipeline = [
+            {
+                "$match": {
+                    "time": {"$gte": time.time() - mining_time_interval}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_weight": {"$sum": "$weight"}
+                }
+            }
+        ]
+
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+
+        if result and len(result) > 0:
+            total_weight = result[0]["total_weight"]
+            pool_hash_rate = total_weight / mining_time_interval
         else:
             pool_hash_rate = 0
 
