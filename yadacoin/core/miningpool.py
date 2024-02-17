@@ -2,9 +2,9 @@ import binascii
 import json
 import random
 import secrets
+import time
 import uuid
 from logging import getLogger
-from time import time
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
