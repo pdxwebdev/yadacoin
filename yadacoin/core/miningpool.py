@@ -597,4 +597,96 @@ class MiningPool(object):
 
         await self.config.websocketServer.send_block(block)
 
+        await self.save_block_to_database(block)
+
         #await self.refresh()
+
+    async def save_block_to_database(self, block):
+        block_data = block.to_dict()
+        block_data['found_time'] = int(time.time())
+        block_data['status'] = "Pending"
+        try:
+            effort_data = await self.block_effort(block.index, block.target)
+            block_data.update(effort_data)
+            miner_address = await self.get_miner_address(block.hash)
+            block_data['miner_address'] = miner_address
+        except Exception as e:
+            self.app_log.error(f"Error calculating effort: {e}")
+
+        await self.config.mongo.async_db.pool_blocks.insert_one(block_data)
+
+    async def get_miner_address(self, block_hash):
+        share_data = await self.config.mongo.async_db.shares.find_one(
+            {"hash": block_hash},
+            {"_id": 0, "address": 1}
+        )
+        return share_data['address'] if share_data else None
+
+    async def block_effort(self, block_index, block_target):
+        latest_block = await self.config.mongo.async_db.pool_blocks.find(
+            {},
+            {"_id": 0, "index": 1},
+        ).sort([("index", -1)]).limit(1).to_list(1)
+
+        if latest_block:
+            round_start = latest_block[0]['index'] + 1
+        else:
+            round_start = 0
+
+        total_weight = await self.calculate_total_weight(round_start, block_index)
+
+        self.config.app_log.debug(f"block_target: {block_target}")
+        self.config.app_log.info(f"block_index: {block_index}")
+        self.config.app_log.info(f"round_start: {round_start}")
+        self.config.app_log.info(f"total_weight: {total_weight}")
+
+
+        block_difficulty = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF / block_target
+        total_block_hash = block_difficulty * 2**16
+        block_effort = (total_weight * 100) / total_block_hash
+        self.config.app_log.info(f"block_effort: {block_effort}")
+
+        return {
+            'effort': block_effort,
+        }
+
+    async def calculate_total_weight(self, round_start, round_end):
+        if round_start == round_end:
+            pipeline = [
+                {"$match": {"index": round_start}},
+                {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
+            ]
+        else:
+            pipeline = [
+                {"$match": {"index": {"$gte": round_start, "$lte": round_end}}},
+                {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
+            ]
+
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+        return result[0]["total_weight"] if result else 0
+
+
+
+    async def update_block_status(self):
+        pool_blocks_collection = self.config.mongo.async_db.pool_blocks
+        latest_block_index = self.config.LatestBlock.block.index
+        pending_blocks_list = await pool_blocks_collection.find({"status": {"$in": ["Pending", None]}}).to_list(None)
+        
+        for block in pending_blocks_list:
+            confirmations = latest_block_index - block['index']
+            
+            if confirmations >= self.config.block_confirmation:
+                matching_block = await self.config.mongo.async_db.blocks.find_one({"index": block['index']})
+                
+                if matching_block and matching_block['hash'] == block['hash']:
+                    await pool_blocks_collection.update_one(
+                        {"_id": block['_id']},
+                        {"$set": {"status": "Accepted"}}
+                    )
+                else:
+                    await pool_blocks_collection.update_one(
+                        {"_id": block['_id']},
+                        {"$set": {"status": "Orphan"}}
+                    )
+
+                self.app_log.info(f"Block with index {block['index']} updated to status: {block['status']}")
