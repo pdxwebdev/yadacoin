@@ -689,4 +689,4 @@ class MiningPool(object):
                         {"$set": {"status": "Orphan"}}
                     )
 
-                self.app_log.info(f"Block with index {block['index']} updated to status: {block['status']}")
+                self.app_log.info(f"Block with index {block['index']} status updated.")
