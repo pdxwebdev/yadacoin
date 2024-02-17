@@ -1,0 +1,229 @@
+<div id="poolBlocksContent">
+    <div class="column">
+        <div class="box">
+            <h5><b>BLOCKS FOUND</b></h5>
+            <div id="blocks-found"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>LAST BLOCK FOUND BY POOL</b></h5>
+            <div id="last-block"></div>
+            <h5 id="last-block-time"></h5>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>MATURITY REQUIREMENT</b></h5>
+            <div id="maturity"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>AVARAGE LUCK</b></h5>
+            <div id="avg-effort"></div>
+        </div>
+    </div>
+    <div style="font-size: 24px;">Blocks found in the last 30 days</div>
+    <div id="chart-container" style="margin-bottom: 20px;">
+        <canvas id="myBarChart"></canvas>
+    </div>
+    <table id="blocks-table">
+        <tr>
+            <th>Time Found</th>
+            <th>Difficulty</th>
+            <th>Height</th>
+            <th>Reward</th>
+            <th>Block Hash</th>
+            <th>Finder</th>
+            <th>Effort</th>
+            <th>Status</th>
+        </tr>
+    </table>
+    <center><button class="button" id="loadMore">Load More Blocks</button></center>
+</div>
+
+
+<script>
+  $.get('/pool-info').then((poolInfoData) => {
+      $('#blocks-found').html(poolInfoData.pool.blocks_found);
+
+      if (poolInfoData.pool.last_five_blocks.length > 0) {
+          var newDate = new Date();
+          newDate.setTime(poolInfoData.pool.last_five_blocks[0].timestamp * 1000);
+          var dateString = newDate.toLocaleString();
+          $('#last-block').html(poolInfoData.pool.last_five_blocks[0].height);
+          $('#last-block-time').html(dateString);
+      }
+  });
+
+  $.get('/pool-blocks').then((data) => {
+      const max_target_hex = '0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
+      const max_target = parseInt(max_target_hex, 16);
+
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      function groupBlocksByDate(blocks, acceptedOnly = false) {
+          const groupedBlocks = {};
+
+          for (let i = 0; i < blocks.length; i++) {
+              const block = blocks[i];
+              if (!acceptedOnly || (acceptedOnly && block.status === 'Accepted')) {
+                  const foundDate = new Date(block.found_time * 1000);
+                  const dateKey = foundDate.toISOString().split('T')[0];
+
+                  if (!groupedBlocks[dateKey]) {
+                      groupedBlocks[dateKey] = [];
+                  }
+
+                  groupedBlocks[dateKey].push(block);
+              }
+          }
+
+          return groupedBlocks;
+      }
+
+      var poolAddress = data.pool.pool_address;
+      $('#maturity').html(data.pool.block_confirmation);
+      $('#avg-effort').html(data.pool.average_effort.toFixed(2) + ' %');
+
+      if (data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Difficulty</th><th>Height</th><th>Reward</th><th>Finder</th><th>Effort</th><th>Block Hash</th><th>Status</th></tr>');
+
+      const filteredBlocks = data.blocks.filter(block => {
+          const foundDate = new Date(block.found_time * 1000);
+          const foundInLast30Days = foundDate >= thirtyDaysAgo;
+          return foundInLast30Days;
+      });
+
+      for (var i = 0; i < filteredBlocks.length; i++) {
+          var newDate = new Date();
+          newDate.setTime(filteredBlocks[i].time * 1000);
+          dateString = newDate.toLocaleString();
+          var foundDate = new Date();
+          foundDate.setTime(filteredBlocks[i].found_time * 1000);
+          foundDateString = foundDate.toLocaleString();
+          var reward = getRewardFromTransactions(filteredBlocks[i].transactions, poolAddress);
+          var status = filteredBlocks[i].status;
+
+          var difficulty = "N/A";
+          if (filteredBlocks[i].target) {
+              var target = parseInt(filteredBlocks[i].target, 16);
+              difficulty = (max_target / target).toFixed(3);
+          }
+
+          var effort = filteredBlocks[i].effort !== undefined ? parseFloat(filteredBlocks[i].effort).toFixed(2) + "%" : "N/A";
+
+          var statusColor = '';
+          if (status === 'Pending') {
+              statusColor = 'orange';
+          } else if (status === 'Accepted') {
+              statusColor = 'green';
+          } else if (status === 'Orphan') {
+              statusColor = 'red';
+          }
+
+          var effortColor = '';
+          if (filteredBlocks[i].effort > 155) {
+              effortColor = 'red';
+          } else if (filteredBlocks[i].effort > 105) {
+              effortColor = 'orange';
+          } else {
+              effortColor = 'green';
+          }
+
+          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="color:' + statusColor + '">' + status + '</td></tr>');
+      }
+
+    function getMinerAddress(minerAddress) {
+        if (minerAddress && minerAddress.length >= 16) {
+            return minerAddress.substring(0, 5) + 'XxxxxxX' + minerAddress.slice(-10);
+        }
+        return 'Unknown';
+    }
+
+    function getRewardFromTransactions(transactions, poolAddress) {
+      var highestReward = 0.0;
+
+      for (var i = 0; i < transactions.length; i++) {
+        for (var j = 0; j < transactions[i].outputs.length; j++) {
+          if (transactions[i].outputs[j].to === poolAddress) {
+            var currentReward = transactions[i].outputs[j].value;
+            if (currentReward > highestReward) {
+              highestReward = currentReward;
+            }
+          }
+        }
+      }
+      return highestReward + ' YDA';
+    }
+
+    var pagelength = 10;
+    var pageIndex = 1;
+    var selector = "tr:gt(" + pagelength + ")";
+    $(selector).hide();
+
+    $("#loadMore").click(function () {
+      var itemsCount = ((pageIndex * pagelength) + pagelength);
+      var selector = "tr:lt(" + itemsCount + ")";
+      $(selector).show();
+      pageIndex++;
+    });
+
+    const last30Days = [];
+    for (let i = 0; i < 31; i++) {
+      const day = new Date(thirtyDaysAgo);
+      day.setDate(thirtyDaysAgo.getDate() + i);
+      const formattedDate = day.toISOString().split('T')[0];
+      last30Days.push(formattedDate);
+    }
+
+    const groupedBlocks = groupBlocksByDate(filteredBlocks, true);
+    const dates = last30Days;
+    const blockCounts = dates.map(date => {
+      const count = groupedBlocks[date] ? groupedBlocks[date].length : 0;
+      return count;
+    });
+
+    createBarChart(dates, blockCounts);
+  });
+
+    function createBarChart(dates, blockCounts) {
+      const ctx = document.getElementById('myBarChart').getContext('2d');
+
+      const chartContainer = document.getElementById('chart-container');
+      chartContainer.style.width = '100%';
+      chartContainer.style.height = '220px';
+
+      const lightGrey = 'rgba(192, 192, 192, 0.8)';
+      const darkGrey = 'rgba(64, 64, 64, 1)';
+
+      const myBarChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: dates,
+          datasets: [{
+            label: 'Blocks found by pool',
+            data: blockCounts,
+            backgroundColor: '#A9A9A9',
+            borderColor: darkGrey,
+            borderWidth: 1
+          }]
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true
+            }
+          },
+          plugins: {
+              legend: {
+                  display: false,
+              },
+          },
+          maintainAspectRatio: false,
+        }
+      });
+    }
+</script>
+

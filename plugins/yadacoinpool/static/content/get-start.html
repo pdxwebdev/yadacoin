@@ -1,0 +1,78 @@
+<div id="GettingStartContent"></div>
+  <div class="column2">
+    <div style="font-size: 24px;">Connection Details</div>
+    <div id="chart-container" style="margin-bottom: 30px;">
+      <div style="margin-top: 20px;" class="box3">
+        <h4><b>Mining Pool Address:</b> <span id="pool-address"></span></h4>
+        <h4 style="margin-top: 30px;"><b>Algorithm: </b>rx/yada</h4>
+      </div>
+    </div>
+  </div>
+  <div class="column2">
+    <div style="font-size: 24px;">Mining Ports</div>
+    <div id="chart-container" style="margin-bottom: 30px;">
+      <div style="margin-top: 20px;" class="box3">
+        <table>
+          <tr>
+            <th>Port</th>
+            <th>Difficulty</th>
+            <th>Description</th>
+          </tr>
+          <tr>
+            <td id="pool-port"></td>
+            <td id="pool-diff"></td>
+            <td>Static Difficulty</td>
+          </tr>
+        </table>
+      </div>
+    </div>
+  </div>
+  <div class="column2">
+    <div style="font-size: 24px;">
+      Mining Application Setup
+      <a href="https://github.com/Bendr0id/xmrigCC/releases" target="_blank" style="text-decoration: none; display: inline-block; margin-left: 20px; background-color: #A9A9A9; color: white; padding: 10px 20px; border-radius: 5px; font-size: 14px;">xmrigCC</a>
+      <a href="https://github.com/doktor83/SRBMiner-Multi/releases" target="_blank" style="text-decoration: none; display: inline-block; margin-left: 20px; background-color: #A9A9A9; color: white; padding: 10px 20px; border-radius: 5px; font-size: 14px;">SRB Miner</a>
+    </div>
+    <div id="chart-container" style="margin-bottom: 30px;">
+      <div style="margin-top: 20px;" class="box3">
+        <h4>"algo": <b>"rx/yada"</b>,</h4>
+        <h4>"url": <b>"<span id="pool-url"></span>"</b>,</h4>
+        <h4>"user": <b>"YOUR_WALLET_ADDRESS.WORKER_ID@CUST_DIFF"</b>,</h4>
+        <h4>"nicehash": <b>false</b>,</h4>
+        <h4>"keepalive": <b>true</b>,</h4>
+      </div>
+    </div>
+  </div>
+  <div class="column2">
+    <div style="font-size: 24px;">
+      Custom Difficulty
+    </div>
+    <div id="chart-container" style="margin-bottom: 30px;">
+      <div style="margin-top: 20px;" class="box3">
+        <h4>To set a custom difficulty, add its value to the address in the configuration file.</h4>
+        <h4>"user": "YOUR_WALLET_ADDRESS.WORKER_ID<b>@CUST_DIFF"</b>, or</h4>
+        <h4>"user": "YOUR_WALLET_ADDRESS<b>@CUST_DIFF"</b>,</h4>
+        <h4>The minimum value is <b>70 000</b></h4>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  $.get('/pool-info').then((data) => {
+    $('#pool-url').html(data.pool.url);
+    $('#pool-diff').text(data.pool.pool_diff);
+
+    var poolUrl = data.pool.url;
+    var parts = poolUrl.split(':');
+    var address = parts[0];
+
+    $('#pool-address').text(address);
+
+    var poolUrl = data.pool.url;
+    var parts = poolUrl.split(':');
+    var port = parts[1];
+
+    $('#pool-port').text(port);
+  });
+</script>

@@ -1,0 +1,197 @@
+<div id="dashboard" class="content-section">
+    <div class="column">
+        <div class="box">
+            <h5><b>POOL HASH RATE</b></h5>
+            <div id="pool-hash-rate"></div>
+            <div id="pool-perecentage"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>BLOCKS FOUND</b></h5>
+            <div id="pool-blocks-found"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>BLOCK FOUND EVERY</b></h5>
+            <div id="pool-avg-block-time"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>LAST BLOCK FOUND BY POOL</b></h5>
+            <div id="pool-last-block"></div>
+            <h5 id="pool-last-block-time"></h5>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>NETWORK HASH RATE</b></h5>
+            <div id="avg-network-hash-rate"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>DIFFICULTY</b></h5>
+            <div id="network-difficulty"></div>
+            <div id="current-network-hash-rate"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>BLOCKCHAIN HEIGHT</b></h5>
+            <div id="network-height"></div>
+            <h5 id="network-last-block"></h5>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>BLOCK REWARD</b></h5>
+            <h4>
+                <div>MINERS: <b><span id="miners-reward"></span></b></div>
+                <div>MASTER NODES: <b><span id="master-nodes-reward"></span></b></div>
+            </h4>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>CONNECTED MINERS / WORKERS</b></h5>
+            <div><span id="pool-miner-count"></span> / <span id="pool-worker-count"></span></div>
+        </div>
+
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>POOL FEE</b></h5>
+            <div id="pool-fee"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>MINIMUM PAYOUT</b></h5>
+            <div id="pool-min-payout"></div>
+            <h5 id="pool-payout-frequency"></h5>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <h5><b>PAYOUT SCHEME</b></h5>
+            <div id="pool-payout-scheme" style="text-transform: uppercase;"></div>
+        </div>
+    </div>
+    <div class="column3" style="font-size: 24px; margin-top: 10px;"><b>LAST 24H POOL HASHRATE</b></div>
+        <canvas id="hashrate-chart" style="width: 100%; max-height: 250px;"></canvas>
+    </div>
+</div>
+
+<script>
+function formatHashRate(hashrate) {
+    let unit = 'H/s';
+
+    if (hashrate >= 1000000) {
+      hashrate /= 1000000;
+      unit = 'MH/s';
+    } else if (hashrate >= 1000) {
+      hashrate /= 1000;
+      unit = 'KH/s';
+    }
+
+    return hashrate.toFixed(2) + ' ' + unit;
+}
+
+    $.get('/pool-info').then((data) => {
+        $('#pool-hash-rate').html(formatHashRate(data.pool.hashes_per_second));
+        if (data.pool.last_five_blocks.length > 0) {
+        var newDate = new Date();
+        newDate.setTime(data.pool.last_five_blocks[0].timestamp * 1000);
+        var dateString = newDate.toLocaleString();
+        $('#pool-last-block').html(data.pool.last_five_blocks[0].height);
+        $('#pool-last-block-time').html(dateString);
+        }
+        $('#pool-miner-count').html(data.pool.miner_count);
+        $('#pool-worker-count').html(data.pool.worker_count);
+        $('#pool-payout-scheme').html(data.pool.payout_scheme);
+        $('#pool-fee').html((data.pool.pool_fee * 100).toFixed(2) + '%');
+        $('#pool-blocks-found').html(data.pool.blocks_found);
+        $('#pool-min-payout').html(data.pool.min_payout + ' YDA');
+        $('#pool-url').html(data.pool.url);
+        $('#pool-diff').text(data.pool.pool_diff);
+        $('#pool-perecentage').html('(' + data.pool.pool_perecentage.toFixed(2) + ' %)');
+        $('#pool-avg-block-time').html(data.pool.avg_block_time);
+        $('#network-difficulty').html(data.network.difficulty.toFixed(3));
+        $('#network-height').html(data.network.height);
+        var blockReward = parseFloat(data.network.reward);
+        var MinersReward = (90 / 100) * blockReward;
+        var NodesReward = (10 / 100) * blockReward;
+        $('#miners-reward').html(MinersReward.toFixed(2) + ' YDA');
+        $('#master-nodes-reward').html(NodesReward.toFixed(2) + ' YDA');
+        var newDate = new Date();
+        newDate.setTime(data.network.last_block * 1000);
+        dateString = newDate.toLocaleString();
+        $('#network-last-block').html(dateString);
+        $('#avg-network-hash-rate').html(formatHashRate(data.network.avg_hashes_per_second));
+        $('#current-network-hash-rate').html(formatHashRate(data.network.current_hashes_per_second));
+        poolAddress = data.pool.pool_address;
+
+        function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+
+        if (hours > 0) {
+          return hours + ' hour(s)';
+        } else if (minutes > 0) {
+          return minutes + ' minute(s)';
+        } else {
+          return seconds + ' second(s)';
+        }
+        }
+
+        const payoutFrequency = data.pool.payout_frequency;
+        const formattedFrequency = formatTime(payoutFrequency);
+        $('#pool-payout-frequency').html('Payout every: ' + formattedFrequency);
+
+        const hashrateHistory = data.pool.hashrate_history;
+
+        const times = hashrateHistory
+            .map(entry => new Date(entry.time * 1000).toLocaleTimeString())
+            .filter((_, index) => index % 20 === 0);
+
+        const hashRates = hashrateHistory
+            .map(entry => entry.pool_hash_rate)
+            .filter((_, index) => index % 20 === 0);
+
+        const ctx = document.getElementById('hashrate-chart').getContext('2d');
+        const chart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: times,
+                datasets: [{
+                    label: 'Pool Hashrate',
+                    data: hashRates,
+                    backgroundColor: '#333',
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        display: false,
+                        reverse: true,
+                    },
+                    y: {
+                        display: false,
+                        beginAtZero: true,
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: false,
+                    },
+                },
+            }
+        });
+    });
+
+</script>

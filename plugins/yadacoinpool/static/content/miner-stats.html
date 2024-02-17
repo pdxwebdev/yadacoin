@@ -1,0 +1,341 @@
+<div id="MinerStatsContent">
+  <div style="font-size: 24px;">Your Stats & Payment History</div>
+    <input type="text" id="address" placeholder="address" style="width: 75%; height: 35px; float: left;" />
+    <button class="button" id="get-stats-button">Get stats</button>
+      <div class="column3" style="margin-top: 30px;">
+          <table id="miner-stats-table" class="table"></table>
+      </div>
+      <div class="column2">
+          <div id="est-profit-container"></div>
+      </div>
+      <div class="column2">
+          <div id="paymentChartContainer" style="width: 100%; height: 180px;">
+            <canvas id="paymentChart"></canvas>
+          </div>
+      </div>
+      <div class="column2">
+          <div id="miner-pay-container"></div>
+      </div>
+  <div id="payouts-table-container">
+    <table id="payouts-table" class="table"></table>
+  </div>
+  <div id="pagination-container">
+    <ul id="pagination" class="pagination"></ul>
+  </div>
+</div>
+
+<script>
+  document.getElementById("get-stats-button").addEventListener("click", function(event) {
+      event.preventDefault();
+
+      var address = document.getElementById("address").value;
+
+      localStorage.setItem("minerAddress", address);
+      $.get('/market-info').then((marketData) => {
+          const marketLastBTC = marketData.last_btc;
+          const marketLastUSDT = marketData.last_usdt;
+
+          $.get('/pool-info').then((poolData) => {
+              const currentNetHashrate = poolData.network.current_hashes_per_second;
+              const avgNetHashrate = poolData.network.avg_hashes_per_second;
+
+              $.get('/payouts-for-address?address=' + address).then((payoutData) => {
+                  var currentPage = 1;
+                  createPayoutsTable(payoutData, currentPage);
+                  createMinerPayTable(payoutData, marketLastBTC, marketLastUSDT);
+                  createPaymentChart(payoutData);
+              });
+
+              $.get('/miner-stats-for-address?address=' + address).then((minerData) => {
+                  const minerHashrate = minerData.total_hashrate;
+                  createMinerStatsTable(minerData);
+                  createEstMiningProfitTable(marketLastBTC, marketLastUSDT, currentNetHashrate, avgNetHashrate, minerHashrate);
+              });
+          });
+      });
+  });
+
+    function createPayoutsTable(data, currentPage) {
+      var itemsPerPage = 10;
+      var startIndex = (currentPage - 1) * itemsPerPage;
+      var endIndex = startIndex + itemsPerPage;
+
+      if (data.results.length === 0) {
+        $('#payouts-table').html('<tr><th>Time Sent</th><th>For Block</th><th>TXN ID</th><th>Amount</th></tr>');
+      } else {
+        $('#payouts-table').html('');
+        $('#payouts-table').append('<tr><th>Time Sent</th><th>For Block</th><th>TXN ID</th><th>Amount</th></tr>');
+
+        for (var i = startIndex; i < data.results.length && i < endIndex; i++) {
+          var selectOutput = {};
+          var newDate = new Date();
+          newDate.setTime(data.results[i]['txn'].time * 1000);
+          dateString = newDate.toLocaleString();
+
+          var blockIndex = Array.isArray(data.results[i].index) ? data.results[i].index.join(', ') : data.results[i].index;
+
+          for (var j = 0; j < data.results[i]['txn'].outputs.length; j++) {
+            if (data.results[i]['txn'].outputs[j].to === $('#address').val()) {
+              selectOutput = data.results[i]['txn'].outputs[j];
+            }
+          }
+
+          $('#payouts-table').append('<tr><td>' + dateString + '</td><td>' + blockIndex + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i]['txn'].id + '">' + data.results[i]['txn'].id + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + ' YDA' + '</td></tr>');
+        }
+      }
+
+      var totalPages = Math.ceil(data.results.length / itemsPerPage);
+      var maxVisiblePages = 10;
+      var pagination = $('#pagination').html('');
+      var startPage = 1;
+
+      if (currentPage > maxVisiblePages / 2) {
+        startPage = currentPage - Math.floor(maxVisiblePages / 2);
+      }
+
+      var endPage = startPage + maxVisiblePages - 1;
+      if (endPage > totalPages) {
+        endPage = totalPages;
+        startPage = endPage - maxVisiblePages + 1;
+        if (startPage < 1) {
+          startPage = 1;
+        }
+      }
+
+      for (var page = startPage; page <= endPage; page++) {
+        var pageLink = $('<a class="page-link" href="#">' + page + '</a>');
+        var pageItem = $('<li class="page-item"></li>').append(pageLink);
+        if (page === currentPage) {
+          pageItem.addClass('active');
+        }
+
+        pagination.append(pageItem);
+      }
+
+      $('#pagination li').on('click', function () {
+        currentPage = parseInt($(this).text());
+        createPayoutsTable(data, currentPage);
+        $('html, body').animate({
+          scrollTop: $('#payouts-table-container').offset().top
+        }, 'slow');
+      });
+    }
+
+    function createMinerStatsTable(data) {
+      if (data.miner_stats.length === 0) {
+        return $('#miner-stats-table').html('<tr><th>Worker Name</th><th>Hashrate</th><th>Shares</th><th>Last Share</th><th>Status</th></tr>');
+      }
+
+      $('#miner-stats-table').html('');
+      $('#miner-stats-table').append('<tr><th>Worker Name</th><th>Hashrate</th><th>Shares</th><th>Last Share</th><th>Status</th></tr>');
+
+      var oneHourInSeconds = 3600;
+
+      for (var i = 0; i < data.miner_stats.length; i++) {
+        var workerName = data.miner_stats[i].worker_name;
+        var hashrate = formatHashRate(data.miner_stats[i].worker_hashrate);
+        var shares = data.miner_stats[i].worker_share;
+        var lastShare = formatLastShare(data.miner_stats[i].last_share_time);
+        var status = data.miner_stats[i].status;
+
+        if (data.miner_stats[i].last_share_time < (Date.now() / 1000 - oneHourInSeconds)) {
+          continue;
+        }
+
+        var statusColor = '';
+        if (status === 'Online') {
+            statusColor = 'green';
+        } else if (status === 'Offline') {
+            statusColor = 'red';
+        }
+
+        var row = '<tr><td>' + workerName + '</td><td>' + hashrate + '</td><td>' + shares + '</td><td>' + lastShare + '</td><td style="color:' + statusColor + '">' + status + '</td></tr>';
+        $('#miner-stats-table').append(row);
+      }
+
+      var totalHashrate = formatHashRate(data.total_hashrate);
+      var totalShares = data.total_share;
+
+      var totalRow = '<tr><td><b>Total:</b></td><td>' + totalHashrate + '</td><td>' + totalShares + '</td><td></td><td></td></tr>';
+      $('#miner-stats-table').append(totalRow);
+    }
+
+    function formatLastShare(lastShareTime) {
+        var currentTime = Math.floor(Date.now() / 1000);
+        var timeDifference = currentTime - lastShareTime;
+
+        if (timeDifference < 60) {
+            return timeDifference + ' seconds ago';
+        } else if (timeDifference < 3600) {
+            var minutes = Math.floor(timeDifference / 60);
+            return minutes + (minutes > 1 ? ' minutes ago' : ' minute ago');
+        } else if (timeDifference < 86400) {
+            var hours = Math.floor(timeDifference / 3600);
+            return hours + (hours > 1 ? ' hours ago' : ' hour ago');
+        } else {
+            var days = Math.floor(timeDifference / 86400);
+            return days + (days > 1 ? ' days ago' : ' day ago');
+        }
+    }
+
+    function createMinerPayTable(data, marketLastBTC, marketLastUSDT) {
+        let last24hPaid = 0;
+        let last7DaysPaid = 0;
+        let totalPaid = 0;
+
+        if (data.results.length > 0) {
+            const now = new Date();
+            const last24hDate = new Date(now - 24 * 60 * 60 * 1000);
+            const last7DaysDate = new Date(now - 7 * 24 * 60 * 60 * 1000);
+
+            for (let i = 0; i < data.results.length; i++) {
+                for (var j = 0; j < data.results[i]['txn'].outputs.length; j++) {
+                    if (data.results[i]['txn'].outputs[j].to === $('#address').val()) {
+                        const payoutDate = new Date(data.results[i]['txn'].time * 1000);
+                        const payoutAmount = parseFloat(data.results[i]['txn'].outputs[j].value);
+
+                        if (payoutDate >= last24hDate) {
+                            last24hPaid += payoutAmount;
+                        }
+
+                        if (payoutDate >= last7DaysDate) {
+                            last7DaysPaid += payoutAmount;
+                        }
+
+                        totalPaid += payoutAmount;
+                    }
+                }
+            }
+        }
+
+        const tableHTML = `
+            <table id="miner-pay" class="table">
+                <thead>
+                    <tr>
+                        <th>Time Period</th>
+                        <th>Paid</th>
+                        <th>Value USDT</th>
+                        <th>Value BTC</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Last 24h</td>
+                        <td id="last-24h-paid-value">${last24hPaid.toFixed(8)} YDA</td>
+                        <td id="last-24h-usdt">${(last24hPaid * marketLastUSDT).toFixed(8)} USD</td>
+                        <td id="last-24h-btc">${(last24hPaid * marketLastBTC).toFixed(8)} BTC</td>
+                    </tr>
+                    <tr>
+                        <td>Last Week</td>
+                        <td id="last-7-days-paid-value">${last7DaysPaid.toFixed(8)} YDA</td>
+                        <td id="last-7-days-usdt">${(last7DaysPaid * marketLastUSDT).toFixed(8)} USD</td>
+                        <td id="last-7-days-btc">${(last7DaysPaid * marketLastBTC).toFixed(8)} BTC</td>
+                    </tr>
+                    <tr>
+                        <td>Total</td>
+                        <td id="total-paid-value">${totalPaid.toFixed(8)} YDA</td>
+                        <td id="total-usdt">${(totalPaid * marketLastUSDT).toFixed(8)} USD</td>
+                        <td id="total-btc">${(totalPaid * marketLastBTC).toFixed(8)} BTC</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+
+        $('#miner-pay-container').html(tableHTML);
+    }
+
+    function createPaymentChart(data) {
+      var chartData = {
+        labels: [],
+        data: [],
+      };
+
+      var currentDate = new Date();
+      var sevenDaysAgo = new Date(currentDate - 7 * 24 * 60 * 60 * 1000);
+
+      for (var i = 0; i < data.results.length; i++) {
+        var payoutDate = new Date(data.results[i]['txn'].time * 1000);
+
+        if (payoutDate >= sevenDaysAgo) {
+          var dateStr = payoutDate.toISOString().split('T')[0];
+          if (!chartData.labels.includes(dateStr)) {
+            chartData.labels.push(dateStr);
+            chartData.data.push(0);
+          }
+          var payoutAmount = 0;
+          for (var j = 0; j < data.results[i]['txn'].outputs.length; j++) {
+            if (data.results[i]['txn'].outputs[j].to === $('#address').val()) {
+              payoutAmount += parseFloat(data.results[i]['txn'].outputs[j].value);
+            }
+          }
+          var dataIndex = chartData.labels.indexOf(dateStr);
+          chartData.data[dataIndex] += payoutAmount;
+        }
+      }
+
+      var ctx = document.getElementById('paymentChart').getContext('2d');
+      var myChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: chartData.labels,
+          datasets: [
+            {
+              label: 'Payments in YDA',
+              data: chartData.data,
+              backgroundColor: '#A9A9A9',
+              borderColor: '#333',
+              borderWidth: 1,
+            },
+          ],
+        },
+        options: {
+          scales: {
+            y: {
+              beginAtZero: true,
+            },
+          },
+          maintainAspectRatio: false,
+        },
+      });
+    }
+
+    function createEstMiningProfitTable(marketLastBTC, marketLastUSDT, currentNetHashrate, avgNetHashrate, minerHashrate) {
+
+        let estMiningProfit = 0;
+        const dailyCoins = 144 * 11.25;
+
+        estMiningProfit = minerHashrate / currentNetHashrate  * dailyCoins;
+
+        const tableHTML = `
+            <table id="est-profit" class="table">
+                <thead>
+                    <tr>
+                        <th>Estimate Mining Profits</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <tr>
+                        <td>Daily</td>
+                        <td id="daily-paid-value">${estMiningProfit.toFixed(8)} YDA</td>
+                        <td id="daily-usdt">${(estMiningProfit * marketLastUSDT).toFixed(8)} USD</td>
+                        <td id="daily-btc">${(estMiningProfit * marketLastBTC).toFixed(8)} BTC</td>
+                    </tr>
+                    <tr>
+                        <td>Weekly</td>
+                        <td id="weekly-paid-value">${(7 * estMiningProfit).toFixed(8)} YDA</td>
+                        <td id="weekly-usdt">${(7 * estMiningProfit * marketLastUSDT).toFixed(8)} USD</td>
+                        <td id="weekly-btc">${(7 * estMiningProfit * marketLastBTC).toFixed(8)} BTC</td>
+                    </tr>
+                    <tr>
+                        <td>Monthly</td>
+                        <td id="monthly-value">${(30 * estMiningProfit).toFixed(8)} YDA</td>
+                        <td id="monthly-usdt">${(30 * estMiningProfit * marketLastUSDT).toFixed(8)} USD</td>
+                        <td id="monthly-btc">${(30 * estMiningProfit * marketLastBTC).toFixed(8)} BTC</td>
+                    </tr>
+                </tbody>
+            </table>
+        `;
+
+        $('#est-profit-container').html(tableHTML);
+    }
+</script>
