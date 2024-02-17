@@ -349,6 +349,8 @@ class NodeRPC(BaseRPC):
         start_block = await self.config.mongo.async_db.blocks.find_one(
             {"index": {"$lt": end_index}}, sort=[("index", -1)]
         )
+        if end_index - 1 <= start_block["index"] + 1:
+            return
         await self.config.nodeShared.write_params(
             stream,
             "getblocks",
