@@ -8,6 +8,34 @@ from ..test_setup import AsyncTestCase
 
 
 class TestBlock(AsyncTestCase):
+    async def test_set_nodes(self):
+        Seeds().set_fork_points()
+        Seeds().set_nodes()
+        assert len(Seeds().NODES[467700]) == 11
+        assert len(Seeds().NODES[472000]) == 11
+        assert len(Seeds().NODES[477000]) == 12
+
+        Seeds()._NODES = [
+            {"ranges": [(0, 1)], "node": 1},
+            {"ranges": [(1, 3)], "node": 2},
+            {"ranges": [(0, None)], "node": 3},
+            {"ranges": [(3, None)], "node": 4},
+        ]
+        Seeds().set_fork_points()
+        Seeds().set_nodes()
+        assert len(Seeds().NODES[0]) == 2
+        assert len(Seeds().NODES[1]) == 2
+        assert len(Seeds().NODES[3]) == 2
+
+        assert Seeds().NODES[0][0] == 1
+        assert Seeds().NODES[0][1] == 3
+
+        assert Seeds().NODES[1][0] == 2
+        assert Seeds().NODES[1][1] == 3
+
+        assert Seeds().NODES[3][0] == 3
+        assert Seeds().NODES[3][1] == 4
+
     async def test_nodes_valid(self):
         for i, seed_list in Seeds().NODES.items():
             for seed in seed_list:
