@@ -34,7 +34,7 @@ class Miner(MinerBase):
             from yadacoin.tcpsocket.pool import StratumServer
 
             N = 17
-            StratumServer.inbound_streams[Miner.__name__].setdefault(peer_id, {})
+            StratumServer.inbound_streams[Miner.__name__].setdefault(address, {})
             self.worker = "".join(
                 random.choices(string.ascii_uppercase + string.digits, k=N)
             )
