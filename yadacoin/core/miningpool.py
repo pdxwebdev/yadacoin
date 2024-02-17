@@ -164,7 +164,7 @@ class MiningPool(object):
                         "hash": block_candidate.hash,
                         "nonce": nonce,
                         "weight": job.miner_diff,
-                        "time": int(time()),
+                        "time": int(time.time()),
                     }
                 },
                 upsert=True,
