@@ -19,23 +19,25 @@ class PoolPayer(object):
         self.config = Config()
         self.app_log = getLogger("tornado.application")
 
-    async def do_payout(self, already_paid_height=None, start_index=None):
+    async def do_payout(self, already_paid_height=None, start_index=None, index=None):
         # first check which blocks we won.
         # then determine if we have already paid out
         # they must be 6 blocks deep
 
-        if not start_index:
+        if not start_index and index is None:
             already_paid_height = (
                 await self.config.mongo.async_db.share_payout.find_one(
                     {}, sort=[("index", -1)]
                 )
             )
             if not already_paid_height:
-                already_paid_height = {}
+                already_paid_height = {"index": 0}
             else:
                 already_paid_height = {"index": max(already_paid_height.get("index", 0))}
-        else:
+        elif start_index is not None:
             already_paid_height = {"index": start_index}
+        elif index is not None:
+            already_paid_height = {"index": index}
 
         won_blocks = self.config.mongo.async_db.blocks.aggregate(
             [
@@ -47,7 +49,7 @@ class PoolPayer(object):
                             }
                         },
                         "transactions.outputs.to": self.config.address,
-                        "index": {"$gt": already_paid_height.get("index", 0)},
+                        "index": index if index is not None else {"$gt": already_paid_height.get("index", 0)},
                     }
                 },
                 {"$unwind": "$transactions"},
@@ -342,7 +344,7 @@ class PoolPayer(object):
             self.config.app_log.info(
                 f"No previous block found for current block {current_block_index}"
             )
-            return None
+            return 1
 
     async def already_used(self, txn):
         results = self.config.mongo.async_db.blocks.aggregate(

@@ -222,10 +222,16 @@ class PoolBlocksHandler(BaseHandler):
 
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):
-        start_index = self.get_query_argument("start_index")
-        await self.config.pp.do_payout({"index": int(start_index)})
-        self.render_as_json({"status": True})
+        start_index = self.get_query_argument("start_index", None)
+        index = self.get_query_argument("index", None)
 
+        if start_index is not None:
+            start_index = int(start_index)
+        if index is not None:
+            index = int(index)
+
+        await self.config.pp.do_payout(start_index=start_index, index=index)
+        self.render_as_json({"status": True})
 
 POOL_HANDLERS = [
     (r"/miner-stats-for-address", MinerStatsHandler),
