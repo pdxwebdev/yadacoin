@@ -113,15 +113,8 @@
           }
 
           var effort = filteredBlocks[i].effort !== undefined ? parseFloat(filteredBlocks[i].effort).toFixed(2) + "%" : "N/A";
-
-          var statusColor = '';
-          if (status === 'Pending') {
-              statusColor = 'orange';
-          } else if (status === 'Accepted') {
-              statusColor = 'green';
-          } else if (status === 'Orphan') {
-              statusColor = 'red';
-          }
+          
+          const statusIcon = getStatusIcon(status);
 
           var effortColor = '';
           if (filteredBlocks[i].effort > 155) {
@@ -132,8 +125,21 @@
               effortColor = 'green';
           }
 
-          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="color:' + statusColor + '">' + status + '</td></tr>');
+          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="text-align: center;">' + getStatusIcon(status) + '</td></tr>');
       }
+
+    function getStatusIcon(status) {
+        let statusIconPath = '';
+        if (status === 'Pending') {
+            statusIconPath = 'yadacoinpoolstatic/img/pending.png';
+        } else if (status === 'Accepted') {
+            statusIconPath = 'yadacoinpoolstatic/img/accept.png';
+        } else if (status === 'Orphan') {
+            statusIconPath = 'yadacoinpoolstatic/img/not_accept.png';
+        }
+
+        return '<img src="' + statusIconPath + '" alt="' + status + '" style="width: 20px; height: 20px;" />';
+    }
 
     function getMinerAddress(minerAddress) {
         if (minerAddress && minerAddress.length >= 16) {
