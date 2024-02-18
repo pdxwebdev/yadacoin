@@ -153,6 +153,7 @@ class Config:
         self.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         self.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         self.nonce_processor_wait = config.get("nonce_processor_wait", 0.2)
+        self.pool_info_checker_wait = config.get("pool_info_checker_wait", 30)
 
         self.mongo_query_timeout = config.get("mongo_query_timeout", 30000)
         self.http_request_timeout = config.get("http_request_timeout", 30) # A 30 second timeout for http is sufficient, yes! these are seconds not ms :)
@@ -431,6 +432,7 @@ class Config:
         cls.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         cls.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         cls.nonce_processor_wait = config.get("nonce_processor_wait", 0.2)
+        cls.pool_info_checker_wait = config.get("pool_info_checker_wait", 30)
 
         cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
         cls.http_request_timeout = config.get("http_request_timeout", 30)

@@ -770,6 +770,8 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
+            await self.config.mp.clean_pool_info()
+            await self.config.mp.clean_shares()
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
@@ -814,6 +816,21 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
             self.config.processing_queues.nonce_queue.time_sum_end()
         self.config.background_nonce_processor.busy = False
+
+    async def background_pool_info_checker(self):
+        """Responsible for saving pool statistics to the database"""
+
+        self.config.app_log.debug("background_pool_info_checker")
+        if not hasattr(self.config, "background_pool_info_checker"):
+            self.config.background_pool_info_checker = WorkerVars(busy=False)
+        if self.config.background_pool_info_checker.busy:
+            return
+        self.config.background_pool_info_checker.busy = True
+        try:
+            await self.config.mp.update_pool_stats()
+        except Exception as e:
+            self.config.app_log.error(f"Error in background_pool_info_checker: {str(e)}")
+        self.config.background_pool_info_checker.busy = False
 
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
@@ -938,6 +955,11 @@ class NodeApplication(Application):
                 PeriodicCallback(
                     self.background_nonce_processor,
                     self.config.nonce_processor_wait * 1000,
+                ).start()
+
+                PeriodicCallback(
+                    self.background_pool_info_checker,
+                    self.config.pool_info_checker_wait * 1000
                 ).start()
 
         if self.config.pool_payout:

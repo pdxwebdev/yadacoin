@@ -45,27 +45,62 @@ class MarketInfoHandler(BaseWebHandler):
         self.render_as_json(market_data)
 
     async def fetch_market_data(self):
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
-        }
-        response = requests.get(
-            "https://safe.trade/api/v2/peatio/public/markets/tickers", headers=headers
-        )
+        symbols = ["YDA_USDT", "YDA_BTC"]
+        market_data = {}
 
-        if response.status_code == 200:
-            market_data = {
-                "last_btc": float(response.json()["ydabtc"]["ticker"]["last"]),
-                "last_usdt": float(response.json()["ydausdt"]["ticker"]["last"]),
+        for symbol in symbols:
+            url = f"https://api.xeggex.com/api/v2/market/getbysymbol/{symbol}"
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/111.0.0.0 Safari/537.36"
             }
-        else:
-            market_data = {"last_btc": 0, "last_usdt": 0}
 
-        return market_data
+            response = requests.get(url, headers=headers)
 
+            if response.status_code == 200:
+                market_data[symbol.lower()] = {
+                    "last_btc": float(response.json()["lastPrice"]) if symbol == "YDA_BTC" else 0,
+                    "last_usdt": float(response.json()["lastPrice"]) if symbol == "YDA_USDT" else 0
+                }
+            else:
+                market_data[symbol.lower()] = {
+                    "last_btc": 0,
+                    "last_usdt": 0
+                }
+
+        formatted_data = {
+            "last_btc": market_data["yda_btc"]["last_btc"],
+            "last_usdt": market_data["yda_usdt"]["last_usdt"]
+        }
+
+        return formatted_data
 
 class PoolInfoHandler(BaseWebHandler):
     async def get(self):
         await self.config.LatestBlock.block_checker()
+        latest_pool_info = await self.config.mongo.async_db.pool_info.find_one(
+            filter={},
+            sort=[("time", -1)]
+        )
+        
+        pool_hash_rate = latest_pool_info.get("pool_hash_rate", 0)
+        network_hash_rate = latest_pool_info.get("network_hash_rate", 0)
+        avg_network_hash_rate = latest_pool_info.get("avg_network_hash_rate", 0)
+        net_difficulty = latest_pool_info.get("net_difficulty", 0)
+
+        twenty_four_hours_ago = time.time() - 24 * 60 * 60
+
+        history_query = {
+            "time": {"$gte": twenty_four_hours_ago},
+            "pool_hash_rate": {"$exists": True}
+        }
+
+        cursor = self.config.mongo.async_db.pool_info.find(
+            history_query,
+            {"_id": 0, "time": 1, "pool_hash_rate": 1}
+        ).sort([("time", -1)])
+
+        hashrate_history = await cursor.to_list(None)
+
         pool_public_key = (
             self.config.pool_public_key
             if hasattr(self.config, "pool_public_key")
@@ -74,79 +109,16 @@ class PoolInfoHandler(BaseWebHandler):
         total_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
             {"public_key": pool_public_key}
         )
-        pool_blocks_found_list = (
-            await self.config.mongo.async_db.blocks.find(
-                {
-                    "public_key": pool_public_key,
-                },
-                {"_id": 0},
-            )
-            .sort([("index", -1)])
-            .to_list(100)
-        )
+        pool_blocks_found_list = await self.config.mongo.async_db.pool_blocks.find(
+            {},
+            {"_id": 0, "index": 1, "found_time": 1, "time": 1}
+        ).sort([("index", -1)]).to_list(5)
+
         expected_blocks = 144
-        mining_time_interval = 600
-
-        pipeline = [
-            {
-                "$match": {
-                    "time": {"$gte": time.time() - mining_time_interval}
-                }
-            },
-            {
-                "$group": {
-                    "_id": None,
-                    "total_weight": {"$sum": "$weight"}
-                }
-            }
-        ]
-
-        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
-
-        if result and len(result) > 0:
-            total_weight = result[0]["total_weight"]
-            pool_hash_rate = total_weight / mining_time_interval
-        else:
-            pool_hash_rate = 0
-
         daily_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
             {"time": {"$gte": time.time() - (600 * 144)}}
         )
-        if daily_blocks_found > 0:
-            net_target = self.config.LatestBlock.block.target
-        avg_blocks_found = self.config.mongo.async_db.blocks.find(
-            {"time": {"$gte": time.time() - (600 * 36)}}
-        )
-        avg_blocks_found = await avg_blocks_found.to_list(length=52)
         avg_block_time = daily_blocks_found / expected_blocks * 600
-        if len(avg_blocks_found) > 0:
-            avg_net_target = 0
-            for block in avg_blocks_found:
-                avg_net_target += int(block["target"], 16)
-            avg_net_target = avg_net_target / len(avg_blocks_found)
-            avg_net_difficulty = (
-                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-                / avg_net_target
-            )
-            net_difficulty = (
-                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-                / net_target
-            )
-            avg_network_hash_rate = (
-                len(avg_blocks_found)
-                / 36
-                * avg_net_difficulty
-                * 2**16
-                / avg_block_time
-            )
-            network_hash_rate = net_difficulty * 2**16 / 600
-        else:
-            avg_network_hash_rate = 1
-            net_difficulty = (
-                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-                / 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
-            )
-            network_hash_rate = 0
 
         try:
             pool_perecentage = pool_hash_rate / network_hash_rate * 100
@@ -179,19 +151,17 @@ class PoolInfoHandler(BaseWebHandler):
         payouts = (
             await self.config.mongo.async_db.share_payout.find({}, {"_id": 0})
             .sort([("index", -1)])
-            .to_list(100)
+            .to_list(10)
         )
 
         self.render_as_json(
             {
                 "node": {
-                    "latest_block": self.config.LatestBlock.block.to_dict(),
-                    "health": self.config.health.to_dict(),
                     "version": ".".join([str(x) for x in version]),
                 },
                 "pool": {
+                    "pool_diff": self.config.pool_diff,
                     "hashes_per_second": pool_hash_rate,
-                    "pool_address": self.config.address,
                     "miner_count": miner_count_pool_stat["value"],
                     "worker_count": worker_count_pool_stat["value"],
                     "payout_scheme": self.config.payout_scheme,
@@ -203,16 +173,16 @@ class PoolInfoHandler(BaseWebHandler):
                         f"{self.config.peer_host}:{self.config.stratum_pool_port}",
                     ),
                     "last_five_blocks": [
-                        {"timestamp": x["time"], "height": x["index"]}
+                        {"timestamp": x["found_time"], "height": x["index"]}
                         for x in pool_blocks_found_list[:5]
                     ],
                     "blocks_found": total_blocks_found,
                     "fee": self.config.pool_take,
                     "payout_frequency": self.config.pool_payer_wait,
                     "payouts": payouts,
-                    "blocks": pool_blocks_found_list[:100],
                     "pool_perecentage": pool_perecentage,
                     "avg_block_time": avg_time,
+                    "hashrate_history": hashrate_history,
                 },
                 "network": {
                     "height": self.config.LatestBlock.block.index,
@@ -233,6 +203,7 @@ class PoolInfoHandler(BaseWebHandler):
                 },
             }
         )
+
 
 
 HANDLERS = [

@@ -690,3 +690,93 @@ class MiningPool(object):
                     )
 
                 self.app_log.info(f"Block with index {block['index']} status updated.")
+
+    async def update_pool_stats(self):
+        await self.config.LatestBlock.block_checker()
+
+        expected_blocks = 144
+        mining_time_interval = 600
+
+        pipeline = [
+            {
+                "$match": {
+                    "time": {"$gte": time.time() - mining_time_interval}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_weight": {"$sum": "$weight"}
+                }
+            }
+        ]
+
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+
+        if result and len(result) > 0:
+            total_weight = result[0]["total_weight"]
+            pool_hash_rate = total_weight / mining_time_interval
+        else:
+            pool_hash_rate = 0
+
+        daily_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
+            {"time": {"$gte": time.time() - (600 * 144)}}
+        )
+        avg_block_time = daily_blocks_found / expected_blocks * 600
+        if daily_blocks_found > 0:
+            net_target = self.config.LatestBlock.block.target
+        avg_blocks_found = self.config.mongo.async_db.blocks.find(
+            {"time": {"$gte": time.time() - (600 * 36)}},
+            projection={"_id": 0, "target": 1}
+        )
+
+        avg_block_targets = [block["target"] async for block in avg_blocks_found]
+        if avg_block_targets:
+            avg_net_target = sum(int(target, 16) for target in avg_block_targets) / len(avg_block_targets)
+            avg_net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / avg_net_target
+            )
+            net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / net_target
+            )
+            avg_network_hash_rate = (
+                len(avg_block_targets)
+                / 36
+                * avg_net_difficulty
+                * 2**16
+                / avg_block_time
+            )
+            network_hash_rate = net_difficulty * 2**16 / 600
+        else:
+            avg_network_hash_rate = 1
+            net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+            )
+            network_hash_rate = 0
+
+        await self.config.mongo.async_db.pool_info.insert_one(
+            {
+                "pool_hash_rate": pool_hash_rate,
+                "network_hash_rate": network_hash_rate,
+                "net_difficulty": net_difficulty,
+                "avg_network_hash_rate": avg_network_hash_rate,
+                "time": int(time.time()),
+            }
+        )
+
+    async def clean_pool_info(self):
+        current_time = time.time()
+        retention_time = current_time - (48 * 60 * 60)  # 48 hours in seconds
+
+        result = await self.config.mongo.async_db.pool_info.delete_many({"time": {"$lt": retention_time}})
+        self.config.app_log.info(f"Deleted {result.deleted_count} documents from the pool_info collection")
+
+    async def clean_shares(self):
+        current_time = time.time()
+        retention_time = current_time - (7 * 24 * 60 * 60)  # 7 days in seconds
+
+        result = await self.config.mongo.async_db.shares.delete_many({"time": {"$lt": retention_time}})
+        self.config.app_log.info(f"Deleted {result.deleted_count} documents from the shares collection")
