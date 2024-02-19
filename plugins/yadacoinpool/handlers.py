@@ -151,8 +151,29 @@ class PoolInfoHandler(BaseWebHandler):
         payouts = (
             await self.config.mongo.async_db.share_payout.find({}, {"_id": 0})
             .sort([("index", -1)])
-            .to_list(10)
+            .to_list(50)
         )
+
+        pipeline = [
+            {
+                "$unwind": "$txn.outputs"
+            },
+            {
+                "$match": {
+                    "txn.outputs.to": {"$ne": self.config.address}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_payments": {"$sum": "$txn.outputs.value"}
+                }
+            }
+        ]
+
+        result = await self.config.mongo.async_db.share_payout.aggregate(pipeline).to_list(1)
+
+        total_payments = result[0]["total_payments"] if result else 0
 
         self.render_as_json(
             {
@@ -166,7 +187,9 @@ class PoolInfoHandler(BaseWebHandler):
                     "worker_count": worker_count_pool_stat["value"],
                     "payout_scheme": self.config.payout_scheme,
                     "pool_fee": self.config.pool_take,
+                    "pool_address": self.config.address,
                     "min_payout": 0,
+                    "total_payments": total_payments,
                     "url": getattr(
                         self.config,
                         "pool_url",

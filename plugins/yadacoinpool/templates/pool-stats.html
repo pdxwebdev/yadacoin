@@ -5,23 +5,25 @@
     <script src="yadacoinpoolstatic/lib/bootstrap/dist/js/bootstrap.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
     <link href="yadacoinpoolstatic/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
-    <link rel="stylesheet" type="text/css" href="yadacoinpoolstatic/stylesheet/styles.css">
     <link rel="icon" type="image/x-icon" href="yadacoinpoolstatic/img/logo.ico">
 </head>
 <body>
     <div class="top-bar"></div>
     <div class="menu">
         <div>
-            <img src="yadacoinpoolstatic/img/logo.ico" width="50" height="50">
+            <img src="yadacoinpoolstatic/img/logo.ico" width="40" height="40" style="margin: 10px;">
             <span style="color: white;">YADA Mining Pool</span>
         </div>
         <ul>
-            <li><a href="#" data-target="dashboard" id="dashboardButton">Dashboard</a></li>
-            <li><a href="#" data-target="poolBlocks" id="poolBlocksButton">Pool Blocks</a></li>
-            <li><a href="#" data-target="minerStats" id="minerStatsButton">Miner Statistics</a></li>
-            <li><a href="#" data-target="gettingStart" id="gettingStartButton">Getting Started</a></li>
-            <li><a href="#" onclick='window.open("https://discord.gg/MWwq27j5tX"); return false;'>YadaCoin Discord</a></li>
-            <li><a href="#" onclick='window.open("https://yadacoin.io/app"); return false;'>Official Wallet</a></li>
+            <li><a href="#" data-target="dashboard" id="dashboardButton"><img src="yadacoinpoolstatic/img/dashboard.png" class="icon" alt="Dashboard"> Dashboard</a></li>
+            <li><a href="#" data-target="poolBlocks" id="poolBlocksButton"><img src="yadacoinpoolstatic/img/blocks.png" class="icon" alt="Pool Blocks"> Pool Blocks</a></li>
+            <li><a href="#" data-target="minerStats" id="minerStatsButton"><img src="yadacoinpoolstatic/img/miner_stats.png" class="icon" alt="Miner Statistics"> Miner Statistics</a></li>
+            <li><a href="#" data-target="poolPayouts" id="poolPayoutsButton"><img src="yadacoinpoolstatic/img/pool-payouts.png" class="icon" alt="Pool Payouts"> Pool Payouts</a></li>
+            <li><a href="#" data-target="gettingStart" id="gettingStartButton"><img src="yadacoinpoolstatic/img/get_start.png" class="icon" alt="Getting Started"> Getting Started</a></li>
+            <li><a href="#" data-target="faq" id="faqButton"><img src="yadacoinpoolstatic/img/faq.png" class="icon" alt="FAQ"> FAQ</a></li>
+            <li><a href="#" onclick='window.open("https://discord.gg/MWwq27j5tX"); return false;'><img src="yadacoinpoolstatic/img/discord.png" class="icon" alt="Discord"> YadaCoin Discord</a></li>
+            <li><a href="#" onclick='window.open("https://yadacoin.io/app"); return false;'><img src="yadacoinpoolstatic/img/wallet.png" class="icon" alt="Official Wallet"> Official Wallet</a></li>
+            <li><a href="/explorer"><img src="yadacoinpoolstatic/img/explorer.png" class="icon" alt="Explorer"> Explorer</a></li>
         </ul>
     </div>
     <div class="content">
@@ -36,6 +38,12 @@
         </div>
         <div id="gettingStart" class="content-section" style="display: none;">
             <div id="GettingStartContent"></div>
+        </div>
+        <div id="poolPayouts" class="content-section" style="display: none;">
+            <div id="PoolPayoutsContent"></div>
+        </div>
+        <div id="faq" class="content-section" style="display: none;">
+            <div id="FaqContent"></div>
         </div>
     </div>
     <div class="bottom-bar">
@@ -52,10 +60,8 @@
     });
 
     function loadDashboardContent() {
+        hideAllContent();
         $('#dashboard').css('display', 'block');
-        $('#poolBlocks').css('display', 'none');
-        $('#minerStats').css('display', 'none');
-        $('#gettingStart').css('display', 'none');
         $.ajax({
             url: 'yadacoinpoolstatic/content/dashboard.html',
             method: 'GET',
@@ -67,10 +73,8 @@
     }
 
     function loadPoolBlocksContent() {
+        hideAllContent();
         $('#poolBlocks').css('display', 'block');
-        $('#dashboard').css('display', 'none');
-        $('#minerStats').css('display', 'none');
-        $('#gettingStart').css('display', 'none');
         $.ajax({
             url: 'yadacoinpoolstatic/content/blocks.html',
             method: 'GET',
@@ -82,10 +86,8 @@
     }
 
     function loadMinerStatsContent() {
+        hideAllContent();
         $('#minerStats').css('display', 'block');
-        $('#poolBlocks').css('display', 'none');
-        $('#dashboard').css('display', 'none');
-        $('#gettingStart').css('display', 'none');
         $.ajax({
             url: 'yadacoinpoolstatic/content/miner-stats.html',
             method: 'GET',
@@ -97,10 +99,8 @@
     }
 
     function loadGettingStartContent() {
+        hideAllContent();
         $('#gettingStart').css('display', 'block');
-        $('#minerStats').css('display', 'none');
-        $('#poolBlocks').css('display', 'none');
-        $('#dashboard').css('display', 'none');
         $.ajax({
             url: 'yadacoinpoolstatic/content/get-start.html',
             method: 'GET',
@@ -111,6 +111,40 @@
         });
     }
 
+    function loadPoolPayoutsContent() {
+        hideAllContent();
+        $('#poolPayouts').css('display', 'block');
+        $.ajax({
+            url: 'yadacoinpoolstatic/content/pool-payouts.html',
+            method: 'GET',
+            dataType: 'html',
+            success: function (data) {
+                $('#poolPayouts').html(data);
+            },
+        });
+    }
+
+    function loadFaqContent() {
+        hideAllContent();
+        $('#faq').css('display', 'block');
+        $.ajax({
+            url: 'yadacoinpoolstatic/content/faq.html',
+            method: 'GET',
+            dataType: 'html',
+            success: function (data) {
+                $('#faq').html(data);
+            },
+        });
+    }
+
+    function hideAllContent() {
+        $('#dashboard').css('display', 'none');
+        $('#poolBlocks').css('display', 'none');
+        $('#minerStats').css('display', 'none');
+        $('#gettingStart').css('display', 'none');
+        $('#poolPayouts').css('display', 'none');
+        $('#faq').css('display', 'none');
+    }
 
     $('#dashboardButton').click(function (e) {
         e.preventDefault();
@@ -131,6 +165,16 @@
         e.preventDefault();
         loadGettingStartContent();
     });
+
+    $('#poolPayoutsButton').click(function (e) {
+        e.preventDefault();
+        loadPoolPayoutsContent();
+    });
+
+    $('#faqButton').click(function (e) {
+        e.preventDefault();
+        loadFaqContent();
+    });
 </script>
 
 </body>
@@ -143,7 +187,7 @@
   left: 0;
   height: 100%;
   background-color: #333;
-  width: 15%;
+  width: 16%;
   overflow-y: auto;
 }
 
@@ -160,7 +204,8 @@
   text-decoration: none;
   font-size: 20px;
   color: #fff;
-  display: block;
+  display: flex;
+  align-items: center;
   padding: 10px 5px 10px 15px;
 }
 
@@ -170,6 +215,12 @@
 
 .menu ul li:first-child {
   margin-top: 0;
+}
+
+.menu ul li a img.icon {
+  width: 25px;
+  height: 25px;
+  margin-right: 10px;
 }
 
 .top-bar {
@@ -194,7 +245,8 @@
 
 .content {
   float: right;
-  width: 85%;
+  top: 30px;
+  width: 84%;
   padding: 20px;
   margin-bottom: 30px;
 }
@@ -225,6 +277,10 @@ body {
   box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3);
   background: linear-gradient(45deg, #333333, #666666);
   opacity: 0.9;
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
 }
 
 .box2 {
@@ -246,6 +302,20 @@ body {
   box-sizing: border-box;
   border: 2px solid #A9A9A9;
   opacity: 0.9;
+}
+
+.watermark {
+  position: absolute;
+  top: 5px;
+  margin-right: 10px;
+  right: 0;
+  width: auto;
+  height: 90%;
+  opacity: 0.3;
+}
+
+.box-content {
+  flex: 1;
 }
 
 .column {
@@ -314,23 +384,43 @@ body {
 table {
   border-collapse: collapse;
   width: 100%;
+  margin-bottom: 20px;
 }
 
 th, td {
   text-align: left;
-  padding: 8px;
-  font-size: 14;
+  padding: 10px;
+  font-size: 14px;
+  border: 1px solid #ddd;
+  border-radius: 5px;
 }
 
-tr:nth-child(even){background-color: #A9A9A9}
+tr:nth-child(even) {
+  background-color: #A9A9A9;
+}
 
 th {
   background-color: #696969;
   color: whitesmoke;
 }
 
-li {
-  display: inline;
+a {
+  color: #0066cc;
+  text-decoration: none;
+}
+
+a:hover {
+  text-decoration: underline;
+}
+
+.payout-pagination-button {
+    padding: 8px 12px;
+    margin: 2px;
+    border: 1px solid black;
+    background-color: #808080;
+    color: white;
+    cursor: pointer;
+    border-radius: 5px;
 }
 
 </style>

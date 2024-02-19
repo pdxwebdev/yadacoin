@@ -1,25 +1,29 @@
-<div id="poolBlocksContent">
+<div id="PoolBlocksContent"></div>
     <div class="column">
         <div class="box">
+          <img src="yadacoinpoolstatic/img/blockchain-blocks.png" alt="Dashboard Watermark" class="watermark">
             <h5><b>BLOCKS FOUND</b></h5>
             <div id="blocks-found"></div>
         </div>
     </div>
     <div class="column">
         <div class="box">
-            <h5><b>LAST BLOCK FOUND BY POOL</b></h5>
+            <img src="yadacoinpoolstatic/img/blockchain-blocks.png" alt="Dashboard Watermark" class="watermark">
+            <h5><b>LAST POOL BLOCK</b></h5>
             <div id="last-block"></div>
             <h5 id="last-block-time"></h5>
         </div>
     </div>
     <div class="column">
         <div class="box">
+            <img src="yadacoinpoolstatic/img/block-check.png" alt="Dashboard Watermark" class="watermark">
             <h5><b>MATURITY REQUIREMENT</b></h5>
             <div id="maturity"></div>
         </div>
     </div>
     <div class="column">
         <div class="box">
+          <img src="yadacoinpoolstatic/img/luck.png" alt="Dashboard Watermark" class="watermark">
             <h5><b>AVARAGE LUCK</b></h5>
             <div id="avg-effort"></div>
         </div>
@@ -113,7 +117,7 @@
           }
 
           var effort = filteredBlocks[i].effort !== undefined ? parseFloat(filteredBlocks[i].effort).toFixed(2) + "%" : "N/A";
-          
+
           const statusIcon = getStatusIcon(status);
 
           var effortColor = '';
