@@ -11,7 +11,7 @@ class Miner(MinerBase):
     agent = ""
     custom_diff = ""
     miner_diff = ""
-    id_attribute = "address_only"
+    id_attribute = "peer_id"
 
     def __init__(self, address, agent="", custom_diff="", peer_id="", miner_diff=""):
         super(Miner, self).__init__()
@@ -34,7 +34,7 @@ class Miner(MinerBase):
             from yadacoin.tcpsocket.pool import StratumServer
 
             N = 17
-            StratumServer.inbound_streams[Miner.__name__].setdefault(address, {})
+            StratumServer.inbound_streams[Miner.__name__].setdefault(peer_id, {})
             self.worker = "".join(
                 random.choices(string.ascii_uppercase + string.digits, k=N)
             )
