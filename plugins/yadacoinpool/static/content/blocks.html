@@ -1,25 +1,29 @@
-<div id="poolBlocksContent">
+<div id="PoolBlocksContent"></div>
     <div class="column">
         <div class="box">
+          <img src="yadacoinpoolstatic/img/blockchain-blocks.png" alt="Dashboard Watermark" class="watermark">
             <h5><b>BLOCKS FOUND</b></h5>
             <div id="blocks-found"></div>
         </div>
     </div>
     <div class="column">
         <div class="box">
-            <h5><b>LAST BLOCK FOUND BY POOL</b></h5>
+            <img src="yadacoinpoolstatic/img/blockchain-blocks.png" alt="Dashboard Watermark" class="watermark">
+            <h5><b>LAST POOL BLOCK</b></h5>
             <div id="last-block"></div>
             <h5 id="last-block-time"></h5>
         </div>
     </div>
     <div class="column">
         <div class="box">
+            <img src="yadacoinpoolstatic/img/block-check.png" alt="Dashboard Watermark" class="watermark">
             <h5><b>MATURITY REQUIREMENT</b></h5>
             <div id="maturity"></div>
         </div>
     </div>
     <div class="column">
         <div class="box">
+          <img src="yadacoinpoolstatic/img/luck.png" alt="Dashboard Watermark" class="watermark">
             <h5><b>AVARAGE LUCK</b></h5>
             <div id="avg-effort"></div>
         </div>
@@ -114,14 +118,7 @@
 
           var effort = filteredBlocks[i].effort !== undefined ? parseFloat(filteredBlocks[i].effort).toFixed(2) + "%" : "N/A";
 
-          var statusColor = '';
-          if (status === 'Pending') {
-              statusColor = 'orange';
-          } else if (status === 'Accepted') {
-              statusColor = 'green';
-          } else if (status === 'Orphan') {
-              statusColor = 'red';
-          }
+          const statusIcon = getStatusIcon(status);
 
           var effortColor = '';
           if (filteredBlocks[i].effort > 155) {
@@ -132,8 +129,21 @@
               effortColor = 'green';
           }
 
-          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="color:' + statusColor + '">' + status + '</td></tr>');
+          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="text-align: center;">' + getStatusIcon(status) + '</td></tr>');
       }
+
+    function getStatusIcon(status) {
+        let statusIconPath = '';
+        if (status === 'Pending') {
+            statusIconPath = 'yadacoinpoolstatic/img/pending.png';
+        } else if (status === 'Accepted') {
+            statusIconPath = 'yadacoinpoolstatic/img/accept.png';
+        } else if (status === 'Orphan') {
+            statusIconPath = 'yadacoinpoolstatic/img/not_accept.png';
+        }
+
+        return '<img src="' + statusIconPath + '" alt="' + status + '" style="width: 20px; height: 20px;" />';
+    }
 
     function getMinerAddress(minerAddress) {
         if (minerAddress && minerAddress.length >= 16) {

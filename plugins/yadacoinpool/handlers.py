@@ -3,20 +3,19 @@ import time
 
 import requests
 from tornado.web import StaticFileHandler
-from cachetools import TTLCache
 
 from yadacoin import version
 from yadacoin.core.chain import CHAIN
 from yadacoin.http.base import BaseHandler
 
-cache = TTLCache(maxsize=1, ttl=3600)
 
 class BaseWebHandler(BaseHandler):
     async def prepare(self):
-        await super().prepare(exceptions=["/pool-info", "/market-info"])
+        await super().prepare(exceptions=["/pool-info"])
 
     def get_template_path(self):
         return os.path.join(os.path.dirname(__file__), "templates")
+
 
 class PoolStatsInterfaceHandler(BaseWebHandler):
     async def get(self):
@@ -30,11 +29,16 @@ class PoolStatsInterfaceHandler(BaseWebHandler):
             mixpanel="pool stats page",
         )
 
+
+cache = {"market_data": None}
+last_refresh = time.time()
+
+
 class MarketInfoHandler(BaseWebHandler):
     async def get(self):
         market_data = cache.get("market_data")
 
-        if market_data is None:
+        if market_data is None or time.time() - last_refresh > 3600:
             market_data = await self.fetch_market_data()
             cache["market_data"] = market_data
 
@@ -147,8 +151,29 @@ class PoolInfoHandler(BaseWebHandler):
         payouts = (
             await self.config.mongo.async_db.share_payout.find({}, {"_id": 0})
             .sort([("index", -1)])
-            .to_list(10)
+            .to_list(50)
         )
+
+        pipeline = [
+            {
+                "$unwind": "$txn.outputs"
+            },
+            {
+                "$match": {
+                    "txn.outputs.to": {"$ne": self.config.address}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_payments": {"$sum": "$txn.outputs.value"}
+                }
+            }
+        ]
+
+        result = await self.config.mongo.async_db.share_payout.aggregate(pipeline).to_list(1)
+
+        total_payments = result[0]["total_payments"] if result else 0
 
         self.render_as_json(
             {
@@ -162,7 +187,9 @@ class PoolInfoHandler(BaseWebHandler):
                     "worker_count": worker_count_pool_stat["value"],
                     "payout_scheme": self.config.payout_scheme,
                     "pool_fee": self.config.pool_take,
+                    "pool_address": self.config.address,
                     "min_payout": 0,
+                    "total_payments": total_payments,
                     "url": getattr(
                         self.config,
                         "pool_url",
@@ -199,6 +226,7 @@ class PoolInfoHandler(BaseWebHandler):
                 },
             }
         )
+
 
 
 HANDLERS = [
