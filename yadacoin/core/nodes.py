@@ -20,7 +20,7 @@ class Nodes:
         for fork_point in cls().fork_points:
             for NODE in cls()._NODES:
                 for rng in NODE["ranges"]:
-                    if rng[1] == fork_point:
+                    if rng[1] and rng[1] <= fork_point:
                         continue
                     if rng[0] <= fork_point:
                         cls().NODES[fork_point].append(NODE["node"])
@@ -362,7 +362,7 @@ class SeedGateways(Nodes):
                 "node": SeedGateway.from_dict(
                     {
                         "host": "yada-bravo.mynodes.live",
-                        "port": 8080,
+                        "port": 8000,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIFvpbWRQU9Ty4JXxoGH4YXgR8RiLoLBm11RNKBVeaz4GAiAyGMbhXc+J+z5VIh2GGJi9uDsqdPpEweerViSrxpxzPQ==",
