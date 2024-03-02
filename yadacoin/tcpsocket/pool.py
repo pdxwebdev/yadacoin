@@ -56,7 +56,7 @@ class StratumServer(RPCSocketServer):
         job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id, stream.peer.miner_diff)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
-        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "extra_nonce": job.extra_nonce, "height": job.index}
+        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "extra_nonce": job.extra_nonce, "height": job.index, "algo": job.algo}
         rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
         try:
             cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
@@ -101,7 +101,10 @@ class StratumServer(RPCSocketServer):
     async def remove_peer(cls, stream, reason=None):
         if reason:
             Config().app_log.warning(f"remove_peer: {reason}")
+        stream.close()
 
+        if not hasattr(stream, "peer"):
+            return
         if hasattr(stream, "peer") and hasattr(stream.peer, "peer_id"):
             peer_id = stream.peer.peer_id
             Config().app_log.warning(f"Removing peer with peer_id: {peer_id}")
@@ -111,8 +114,6 @@ class StratumServer(RPCSocketServer):
                 and peer_id in StratumServer.inbound_streams[Miner.__name__]
             ):
                 del StratumServer.inbound_streams[Miner.__name__][peer_id]
-
-            stream.close()
 
         await StratumServer.update_miner_count()
     
