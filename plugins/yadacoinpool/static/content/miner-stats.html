@@ -80,7 +80,7 @@
             }
           }
 
-          $('#payouts-table').append('<tr><td>' + dateString + '</td><td>' + blockIndex + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i]['txn'].id + '">' + data.results[i]['txn'].id + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + ' YDA' + '</td></tr>');
+          $('#payouts-table').append('<tr><td>' + dateString + '</td><td>' + blockIndex + '</td><td><a target="_blank" href="/explorer?term=' + data.results[i]['txn'].id + '">' + data.results[i]['txn'].id + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + ' YDA' + '</td></tr>');
         }
       }
 

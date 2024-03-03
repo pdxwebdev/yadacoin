@@ -129,7 +129,7 @@
               effortColor = 'green';
           }
 
-          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="text-align: center;">' + getStatusIcon(status) + '</td></tr>');
+          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="text-align: center;">' + getStatusIcon(status) + '</td></tr>');
       }
 
     function getStatusIcon(status) {
