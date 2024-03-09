@@ -278,6 +278,36 @@ class Seeds(Nodes):
                     }
                 ),
             },
+            {
+                "ranges": [(479700, None)],
+                "node": Seed.from_dict(
+                    {
+                        "host": "seed.supahash.com",
+                        "port": 8000,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEQCIE6I6sfqh69hy6VoPKY4kCNfYflcnW3vkOgCH9S3GFR6AiAGf+pDYzpuSywaAaoW6c6q0Rq07Kx+oFQndhPf4MRzDQ==",
+                            "public_key": "0281d4b412373d5330620e78159744cd821f2414d6e1fc300364bd36eb062ee411",
+                        },
+                        "seed_gateway": "MEUCIQCNas40A04R/y2YrC6e22dU/qYDrgCmrmuGQlbstgTmdwIgbh7dVw6KmU+ee6RRgOc2Vx81G8cLsCUOZdKHa6OBa3s=",
+                    }
+                ),
+            },
+            {
+                "ranges": [(480100, None)],
+                "node": Seed.from_dict(
+                    {
+                        "host": "seed.nephotim.co",
+                        "port": 8000,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEQCICV3BfyeG/d3wthW5L9nWYZYejExBHAhJVlzW5iiTjs8AiAQNq0HnPNAm91ymsKu740lgfWwYcUs8gJHuiS9tz5fAA==",
+                            "public_key": "0286fe6085cca02c0ec38b3e628b4d3392c7ee7f052b710519916d33bae3de69da",
+                        },
+                        "seed_gateway": "MEQCICHeWBWcuQu7LsziPqX7xQI8svUskEidCJVbUYRxp+D2AiA3P9o19J6Ke6KIY+RGNFE3WPziHYBHwgB6xvyWLZ5BQg==",
+                    }
+                ),
+            },
         ]
 
         Seeds.set_fork_points()
@@ -489,6 +519,36 @@ class SeedGateways(Nodes):
                             "public_key": "03fb0d840b77ede1c26638fb5f60dd02e84cf06f9083b895605bd899b900b31880",
                         },
                         "seed": "MEUCIQD91w1mGUZD/+E4KH08LiTXkJ69cgkPnBPBWXL0DZP5nQIgLD55ep9dKQUvXjznaNJ0/t5ARSy2sChqSveKRqOmnlI=",
+                    }
+                ),
+            },
+            {
+                "ranges": [(479700, None)],
+                "node": SeedGateway.from_dict(
+                    {
+                        "host": "seedgateway.supahash.com",
+                        "port": 8000,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEUCIQCNas40A04R/y2YrC6e22dU/qYDrgCmrmuGQlbstgTmdwIgbh7dVw6KmU+ee6RRgOc2Vx81G8cLsCUOZdKHa6OBa3s=",
+                            "public_key": "023e19a600c2a88e150fd903c12c2386831ddebca2ba51473ecb6a0fae7916f657",
+                        },
+                        "seed": "MEQCIE6I6sfqh69hy6VoPKY4kCNfYflcnW3vkOgCH9S3GFR6AiAGf+pDYzpuSywaAaoW6c6q0Rq07Kx+oFQndhPf4MRzDQ==",
+                    }
+                ),
+            },
+            {
+                "ranges": [(480100, None)],
+                "node": SeedGateway.from_dict(
+                    {
+                        "host": "gateway.nephotim.co",
+                        "port": 8000,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEQCICHeWBWcuQu7LsziPqX7xQI8svUskEidCJVbUYRxp+D2AiA3P9o19J6Ke6KIY+RGNFE3WPziHYBHwgB6xvyWLZ5BQg==",
+                            "public_key": "0393110452c520d98ebf69bfadf8db36719c3de1b42ef31f31e81523fb87d7b8db",
+                        },
+                        "seed": "MEQCICV3BfyeG/d3wthW5L9nWYZYejExBHAhJVlzW5iiTjs8AiAQNq0HnPNAm91ymsKu740lgfWwYcUs8gJHuiS9tz5fAA==",
                     }
                 ),
             },
@@ -716,6 +776,38 @@ class ServiceProviders(Nodes):
                         },
                         "seed_gateway": "MEQCICH8oRaWHoZTXvkx3f2g5WCEonod0nhdzyRWJBOw8ldOAiB+6YjjDVfHmceHyg3F6ZQqpH1J4gqEpwu/ass2ul5/8g==",
                         "seed": "MEUCIQD91w1mGUZD/+E4KH08LiTXkJ69cgkPnBPBWXL0DZP5nQIgLD55ep9dKQUvXjznaNJ0/t5ARSy2sChqSveKRqOmnlI=",
+                    }
+                ),
+            },
+            {
+                "ranges": [(479700, None)],
+                "node": ServiceProvider.from_dict(
+                    {
+                        "host": "serviceprovider.supahash.com",
+                        "port": 8000,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEUCIQCi7PkxJrgR7T2PDK5BCxT8DJ/oLhoa/zpuPbqb0EqapwIgM4NXxuAZn4nh+cncIgb/VkJLeQAQnqj+sNj39oRWvn8=",
+                            "public_key": "03853af02ad22e2a76fb0cf6e3f5ae5d173eb1ba2cdd2b140df266690d8063ebcf",
+                        },
+                        "seed_gateway": "MEUCIQCNas40A04R/y2YrC6e22dU/qYDrgCmrmuGQlbstgTmdwIgbh7dVw6KmU+ee6RRgOc2Vx81G8cLsCUOZdKHa6OBa3s=",
+                        "seed": "MEQCIE6I6sfqh69hy6VoPKY4kCNfYflcnW3vkOgCH9S3GFR6AiAGf+pDYzpuSywaAaoW6c6q0Rq07Kx+oFQndhPf4MRzDQ==",
+                    }
+                ),
+            },
+            {
+                "ranges": [(480100, None)],
+                "node": ServiceProvider.from_dict(
+                    {
+                        "host": "serviceprovider.nephotim.co",
+                        "port": 8000,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEQCIDLZN6Q5WLperdJbHu1mNyZsXmk7fqA6l7tXlthkArglAiAfapsk3v4s8cTLZf22R62ht2SocD2+jSX2HNc4C05SMA==",
+                            "public_key": "021aab430ef88f35eaeb183dcf6f82128d7ad02b628b6e705c90d5708fc66f4c33",
+                        },
+                        "seed_gateway": "MEQCICHeWBWcuQu7LsziPqX7xQI8svUskEidCJVbUYRxp+D2AiA3P9o19J6Ke6KIY+RGNFE3WPziHYBHwgB6xvyWLZ5BQg==",
+                        "seed": "MEQCICV3BfyeG/d3wthW5L9nWYZYejExBHAhJVlzW5iiTjs8AiAQNq0HnPNAm91ymsKu740lgfWwYcUs8gJHuiS9tz5fAA==",
                     }
                 ),
             },
