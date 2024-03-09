@@ -216,17 +216,14 @@ class ExplorerSearchHandler(BaseHandler):
                         }
                     },
                     {
-                        "$group": {
-                            "_id": None,
-                            "transactions": {
-                                "$push": "$transactions"
-                            }
-                        }
-                    },
-                    {
                         "$project": {
                             "_id": 0,
-                            "transactions": 1
+                            "result": [{
+                                "$mergeObjects": ["$transactions", {
+                                    "blockIndex": "$index",
+                                    "blockHash": "$hash"
+                                }]
+                            }],
                         }
                     }
                 ]
@@ -235,8 +232,8 @@ class ExplorerSearchHandler(BaseHandler):
             return self.render_as_json(
                 {
                     "resultType": "txn_hash",
-                    "searchedHash": term,
-                    "result": transactions[0]["transactions"],
+                    "searchedId": term,
+                    "result": transactions[0]["result"],
                 }
             )
 
@@ -265,45 +262,76 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
-            base64.b64decode(term.replace(" ", "+"))
-            res = await self.config.mongo.async_db.blocks.count_documents(
+            decoded_term = base64.b64decode(term.replace(" ", "+"))
+            searched_id = term.replace(" ", "+")
+
+            pipeline = [
                 {
-                    "$or": [
-                        {"transactions.id": term.replace(" ", "+")},
-                        {"transactions.inputs.id": term.replace(" ", "+")},
-                    ]
+                    "$match": {
+                        "$or": [
+                            {"transactions.id": searched_id},
+                            {"transactions.inputs.id": searched_id},
+                        ]
+                    }
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "blockIndex": "$index",
+                        "blockHash": "$hash",
+                        "transactions": {
+                            "$filter": {
+                                "input": "$transactions",
+                                "as": "transaction",
+                                "cond": {
+                                    "$or": [
+                                        {"$eq": ["$$transaction.id", searched_id]},
+                                        {
+                                            "$anyElementTrue": {
+                                                "$map": {
+                                                    "input": "$$transaction.inputs",
+                                                    "as": "input",
+                                                    "in": {"$eq": ["$$input.id", searched_id]},
+                                                }
+                                            }
+                                        },
+                                    ]
+                                },
+                            }
+                        },
+                    },
+                },
+                {
+                    "$unwind": "$transactions"
+                },
+                {
+                    "$project": {
+                        "_id": 0,
+                        "result": {
+                            "$mergeObjects": ["$transactions", {
+                                "blockIndex": "$blockIndex",
+                                "blockHash": "$blockHash"
+                            }]
+                        },
+                    }
+                },
+            ]
+
+            result = await self.config.mongo.async_db.blocks.aggregate(pipeline).to_list(length=None)
+            transactions = [block["result"] for block in result if block.get("result")]
+
+            return self.render_as_json(
+                {
+                    "resultType": "txn_id",
+                    "searchedId": searched_id,
+                    "result": transactions,
                 }
             )
-            if res:
-                transactions = []
-                async for block in self.config.mongo.async_db.blocks.find(
-                    {
-                        "$or": [
-                            {"transactions.id": term.replace(" ", "+")},
-                            {"transactions.inputs.id": term.replace(" ", "+")},
-                        ]
-                    },
-                    {"_id": 0, "transactions": 1},
-                ):
-                    if isinstance(block.get("transactions"), list):
-                        for transaction in block.get("transactions"):
-                            if transaction.get("id") == term.replace(" ", "+"):
-                                transactions.append(transaction)
-                            elif transaction.get("inputs") and any(inp.get("id") == term.replace(" ", "+") for inp in transaction["inputs"]):
-                                transactions.append(transaction)
-                    else:
-                        if block.get("transactions").get("id") == term.replace(" ", "+"):
-                            transactions.append(block.get("transactions"))
-                        elif block.get("transactions").get("inputs") and any(inp.get("id") == term.replace(" ", "+") for inp in block["transactions"]["inputs"]):
-                            transactions.append(block.get("transactions"))
 
-                return self.render_as_json(
-                    {
-                        "resultType": "txn_id",
-                        "searchedId": term.replace(" ", "+"),
-                        "result": transactions,
-                    }
-                )
+        except Exception as e:
+            print(f"Error processing transaction ID: {e}")
+            pass
+
         except Exception as e:
             print(f"Error processing transaction ID: {e}")
             pass
