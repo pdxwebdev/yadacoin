@@ -235,13 +235,29 @@ class PoolScanMissingTxnHandler(BaseHandler):
             else self.config.public_key
         )
 
+        start_index = self.get_query_argument("start_index", default=None)
+        
+        if start_index is not None:
+            try:
+                start_index = int(start_index)
+                if start_index < 0:
+                    raise ValueError("Start index must be a non-negative integer.")
+            except ValueError:
+                error_message = "Invalid value for 'start_index'. Please provide a non-negative integer."
+                example_usage = "Example usage: /scan-missed-txn?start_index=0"
+                self.render_as_json({"error": error_message, "instruction": example_usage})
+                return
+        else:
+            instruction_message = "Please provide a start index. Example usage: /scan-missed-txn?start_index=0"
+            self.render_as_json({"instruction": instruction_message})
+            return
+
         coinbase_transactions = self.config.mongo.async_db.blocks.find(
             {"transactions.outputs.to": pool_public_key, "transactions.inputs": []},
             {"_id": 0, "transactions": 1}
         )
 
         missing_payouts = []
-
         used_transactions = set()
 
         async for block in coinbase_transactions:
@@ -249,10 +265,14 @@ class PoolScanMissingTxnHandler(BaseHandler):
                 if not coinbase_txn.get("inputs"):
                     if coinbase_txn["public_key"] == pool_public_key:
                         missing_payouts.append(coinbase_txn)
-
                         used_transactions.add(coinbase_txn["id"])
 
-        async for block in self.config.mongo.async_db.blocks.find():
+        all_transactions = self.config.mongo.async_db.blocks.find()
+
+        if start_index is not None:
+            all_transactions = all_transactions.skip(start_index)
+
+        async for block in all_transactions:
             for txn in block["transactions"]:
                 if txn.get("inputs"):
                     for input_txn in txn["inputs"]:
