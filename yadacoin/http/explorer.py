@@ -65,7 +65,7 @@ class ExplorerSearchHandler(BaseHandler):
             blocks = await self.config.mongo.async_db.blocks.find(
                 {"transactions.outputs.to": term},
                 {"_id": 0, "index": 1, "time": 1, "hash": 1, "transactions": 1},
-            ).sort("index", -1).limit(25).to_list(length=25)
+            ).sort("index", -1).to_list(length=None)
 
             result = [
                 {
