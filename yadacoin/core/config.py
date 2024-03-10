@@ -156,7 +156,7 @@ class Config:
         self.nonce_processor_wait = config.get("nonce_processor_wait", 1)
 
         self.mongo_query_timeout = config.get("mongo_query_timeout", 30000)
-        self.http_request_timeout = config.get("http_request_timeout", 10)
+        self.http_request_timeout = config.get("http_request_timeout", 60)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -436,7 +436,7 @@ class Config:
         cls.nonce_processor_wait = config.get("nonce_processor_wait", 1)
 
         cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
-        cls.http_request_timeout = config.get("http_request_timeout", 10)
+        cls.http_request_timeout = config.get("http_request_timeout", 60)
 
     @staticmethod
     def address_is_valid(address):

@@ -227,9 +227,45 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
         self.render_as_json({"status": True})
 
 
+class PoolScanMissingTxnHandler(BaseHandler):
+    async def get(self):
+        pool_public_key = (
+            self.config.pool_public_key
+            if hasattr(self.config, "pool_public_key")
+            else self.config.public_key
+        )
+
+        coinbase_transactions = self.config.mongo.async_db.blocks.find(
+            {"transactions.outputs.to": pool_public_key, "transactions.inputs": []},
+            {"_id": 0, "transactions": 1}
+        )
+
+        missing_payouts = []
+
+        used_transactions = set()
+
+        async for block in coinbase_transactions:
+            for coinbase_txn in block["transactions"]:
+                if not coinbase_txn.get("inputs"):
+                    if coinbase_txn["public_key"] == pool_public_key:
+                        missing_payouts.append(coinbase_txn)
+
+                        used_transactions.add(coinbase_txn["id"])
+
+        async for block in self.config.mongo.async_db.blocks.find():
+            for txn in block["transactions"]:
+                if txn.get("inputs"):
+                    for input_txn in txn["inputs"]:
+                        used_transactions.add(input_txn["id"])
+
+        missing_payouts = [txn for txn in missing_payouts if txn["id"] not in used_transactions]
+
+        self.render_as_json({"missing_payouts": missing_payouts})
+
 POOL_HANDLERS = [
     (r"/miner-stats-for-address", MinerStatsHandler),
     (r"/payouts-for-address", PoolPayoutsHandler),
     (r"/pool-blocks", PoolBlocksHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
+    (r"/scan-missed-txn", PoolScanMissingTxnHandler),
 ]
