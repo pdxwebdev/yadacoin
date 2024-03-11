@@ -1,9 +1,10 @@
 import binascii
 import json
 import random
+import secrets
+import time
 import uuid
 from logging import getLogger
-from time import time
 
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
@@ -66,13 +67,11 @@ class MiningPool(object):
             }
             data["result"] = await self.process_nonce(miner, nonce, job)
             if not data["result"]:
-                data["error"] = {"message": "Invalid hash for current block"}
+                data["error"] = {"code": "-1", "message": "Share rejected due to invalid data or expiration."}
             try:
                 await stream.write("{}\n".format(json.dumps(data)).encode())
             except:
                 pass
-            if "error" in data:
-                await StratumServer.send_job(stream)
 
             await StratumServer.block_checker()
 
@@ -87,12 +86,12 @@ class MiningPool(object):
 
     async def process_nonce(self, miner, nonce, job):
         nonce = nonce + job.extra_nonce
-        header = self.block_factory.header
+        header = job.header
         self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
 
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
-        self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
+        self.config.app_log.debug(f"Hash1 for job {job.index}: {hash1}")
 
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
@@ -165,7 +164,7 @@ class MiningPool(object):
                         "hash": block_candidate.hash,
                         "nonce": nonce,
                         "weight": job.miner_diff,
-                        "time": int(time()),
+                        "time": int(time.time()),
                     }
                 },
                 upsert=True,
@@ -275,7 +274,7 @@ class MiningPool(object):
         trigger the events for the pools, even if the block index did not change."""
         # TODO: to be taken care of, no refresh atm between blocks
         try:
-            if self.refreshing or not await Peer.is_synced():
+            if self.refreshing:
                 return
             self.refreshing = True
             await self.config.LatestBlock.block_checker()
@@ -320,7 +319,7 @@ class MiningPool(object):
         }
         return res
 
-    async def block_template(self, agent, peer_id):
+    async def block_template(self, agent, custom_diff, peer_id, miner_diff):
         """Returns info for current block to mine"""
         if self.block_factory is None:
             await self.refresh()
@@ -329,21 +328,21 @@ class MiningPool(object):
                 self.config.LatestBlock.block
             )
 
-        job = await self.generate_job(agent, peer_id)
+        job = await self.generate_job(agent, custom_diff, peer_id, miner_diff)
         return job
 
-    async def generate_job(self, agent, peer_id):
+    async def generate_job(self, agent, custom_diff, peer_id, miner_diff):
         difficulty = int(self.max_target / self.block_factory.target)
-        custom_diff = None
-        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        extra_nonce = str(random.randrange(100001, 999999))
+        extra_nonce = secrets.token_hex(2)
         header = self.block_factory.header
+        self.config.app_log.debug(f"Job header: {header}")
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
+        miner_diff = max(int(custom_diff), 70000) if custom_diff is not None else miner_diff
 
-        if "XMRigCC/3" in agent or "XMRig/3" in agent:
-            target = hex(0x10000000000000001 // miner_diff)
+        if "XMRigCC/3" in agent or "XMRig/6" in agent or "xmrigcc-proxy" in agent:
+            target = hex(0x10000000000000001 // miner_diff)[2:].zfill(16)
         elif miner_diff <= 69905:
             target = hex(
                 0x10000000000000001 // miner_diff - 0x0000F00000000000
@@ -356,6 +355,7 @@ class MiningPool(object):
         res = {
             "job_id": job_id,
             "peer_id": peer_id,
+            "header": header,
             "difficulty": difficulty,
             "target": target,  # can only be 16 characters long
             "blob": blob,
@@ -363,9 +363,13 @@ class MiningPool(object):
             "height": self.config.LatestBlock.block.index
             + 1,  # This is the height of the one we are mining
             "extra_nonce": extra_nonce,
-            "miner_diff": miner_diff,
             "algo": "rx/yada",
+            "miner_diff": miner_diff,
+            "agent": agent,
         }
+
+        self.config.app_log.debug(f"Generated job: {res}")
+
         return await Job.from_dict(res)
 
     async def set_target_as_previous_non_special_min(self):
@@ -593,4 +597,186 @@ class MiningPool(object):
 
         await self.config.websocketServer.send_block(block)
 
-        await self.refresh()
+        await self.save_block_to_database(block)
+
+        #await self.refresh()
+
+    async def save_block_to_database(self, block):
+        block_data = block.to_dict()
+        block_data['found_time'] = int(time.time())
+        block_data['status'] = "Pending"
+        try:
+            effort_data = await self.block_effort(block.index, block.target)
+            block_data.update(effort_data)
+            miner_address = await self.get_miner_address(block.hash)
+            block_data['miner_address'] = miner_address
+        except Exception as e:
+            self.app_log.error(f"Error calculating effort: {e}")
+
+        await self.config.mongo.async_db.pool_blocks.insert_one(block_data)
+
+    async def get_miner_address(self, block_hash):
+        share_data = await self.config.mongo.async_db.shares.find_one(
+            {"hash": block_hash},
+            {"_id": 0, "address": 1}
+        )
+        return share_data['address'] if share_data else None
+
+    async def block_effort(self, block_index, block_target):
+        latest_block = await self.config.mongo.async_db.pool_blocks.find(
+            {},
+            {"_id": 0, "index": 1},
+        ).sort([("index", -1)]).limit(1).to_list(1)
+
+        if latest_block:
+            round_start = latest_block[0]['index'] + 1
+        else:
+            round_start = 0
+
+        total_weight = await self.calculate_total_weight(round_start, block_index)
+
+        self.config.app_log.debug(f"block_target: {block_target}")
+        self.config.app_log.info(f"block_index: {block_index}")
+        self.config.app_log.info(f"round_start: {round_start}")
+        self.config.app_log.info(f"total_weight: {total_weight}")
+
+
+        block_difficulty = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF / block_target
+        total_block_hash = block_difficulty * 2**16
+        block_effort = (total_weight * 100) / total_block_hash
+        self.config.app_log.info(f"block_effort: {block_effort}")
+
+        return {
+            'effort': block_effort,
+        }
+
+    async def calculate_total_weight(self, round_start, round_end):
+        if round_start == round_end:
+            pipeline = [
+                {"$match": {"index": round_start}},
+                {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
+            ]
+        else:
+            pipeline = [
+                {"$match": {"index": {"$gte": round_start, "$lte": round_end}}},
+                {"$group": {"_id": None, "total_weight": {"$sum": "$weight"}}}
+            ]
+
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+        return result[0]["total_weight"] if result else 0
+
+
+
+    async def update_block_status(self):
+        pool_blocks_collection = self.config.mongo.async_db.pool_blocks
+        latest_block_index = self.config.LatestBlock.block.index
+        pending_blocks_list = await pool_blocks_collection.find({"status": {"$in": ["Pending", None]}}).to_list(None)
+        
+        for block in pending_blocks_list:
+            confirmations = latest_block_index - block['index']
+            
+            if confirmations >= self.config.block_confirmation:
+                matching_block = await self.config.mongo.async_db.blocks.find_one({"index": block['index']})
+                
+                if matching_block and matching_block['hash'] == block['hash']:
+                    await pool_blocks_collection.update_one(
+                        {"_id": block['_id']},
+                        {"$set": {"status": "Accepted"}}
+                    )
+                else:
+                    await pool_blocks_collection.update_one(
+                        {"_id": block['_id']},
+                        {"$set": {"status": "Orphan"}}
+                    )
+
+                self.app_log.info(f"Block with index {block['index']} status updated.")
+
+    async def update_pool_stats(self):
+        await self.config.LatestBlock.block_checker()
+
+        expected_blocks = 144
+        mining_time_interval = 600
+
+        pipeline = [
+            {
+                "$match": {
+                    "time": {"$gte": time.time() - mining_time_interval}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_weight": {"$sum": "$weight"}
+                }
+            }
+        ]
+
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+
+        if result and len(result) > 0:
+            total_weight = result[0]["total_weight"]
+            pool_hash_rate = total_weight / mining_time_interval
+        else:
+            pool_hash_rate = 0
+
+        daily_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
+            {"time": {"$gte": time.time() - (600 * 144)}}
+        )
+        avg_block_time = daily_blocks_found / expected_blocks * 600
+        if daily_blocks_found > 0:
+            net_target = self.config.LatestBlock.block.target
+        avg_blocks_found = self.config.mongo.async_db.blocks.find(
+            {"time": {"$gte": time.time() - (600 * 36)}},
+            projection={"_id": 0, "target": 1}
+        )
+
+        avg_block_targets = [block["target"] async for block in avg_blocks_found]
+        if avg_block_targets:
+            avg_net_target = sum(int(target, 16) for target in avg_block_targets) / len(avg_block_targets)
+            avg_net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / avg_net_target
+            )
+            net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / net_target
+            )
+            avg_network_hash_rate = (
+                len(avg_block_targets)
+                / 36
+                * avg_net_difficulty
+                * 2**16
+                / avg_block_time
+            )
+            network_hash_rate = net_difficulty * 2**16 / 600
+        else:
+            avg_network_hash_rate = 1
+            net_difficulty = (
+                0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+                / 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+            )
+            network_hash_rate = 0
+
+        await self.config.mongo.async_db.pool_info.insert_one(
+            {
+                "pool_hash_rate": pool_hash_rate,
+                "network_hash_rate": network_hash_rate,
+                "net_difficulty": net_difficulty,
+                "avg_network_hash_rate": avg_network_hash_rate,
+                "time": int(time.time()),
+            }
+        )
+
+    async def clean_pool_info(self):
+        current_time = time.time()
+        retention_time = current_time - (48 * 60 * 60)  # 48 hours in seconds
+
+        result = await self.config.mongo.async_db.pool_info.delete_many({"time": {"$lt": retention_time}})
+        self.config.app_log.info(f"Deleted {result.deleted_count} documents from the pool_info collection")
+
+    async def clean_shares(self):
+        current_time = time.time()
+        retention_time = current_time - (7 * 24 * 60 * 60)  # 7 days in seconds
+
+        result = await self.config.mongo.async_db.shares.delete_many({"time": {"$lt": retention_time}})
+        self.config.app_log.info(f"Deleted {result.deleted_count} documents from the shares collection")

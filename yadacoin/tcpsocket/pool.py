@@ -48,10 +48,11 @@ class StratumServer(RPCSocketServer):
 
     @classmethod
     async def send_job(cls, stream):
-        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.peer_id)
+        stream.peer.calculate_new_miner_diff()
+        job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.custom_diff, stream.peer.peer_id, stream.peer.miner_diff)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
-        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index, "extra_nonce": job.extra_nonce}
+        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index, "extra_nonce": job.extra_nonce, "algo": job.algo}
         rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
         try:
             cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
@@ -66,18 +67,28 @@ class StratumServer(RPCSocketServer):
     async def update_miner_count(cls):
         if not cls.config:
             cls.config = Config()
+
+        unique_miner_addresses = set()
+        for peer_id, workers in StratumServer.inbound_streams[Miner.__name__].items():
+            for (address_only, worker) in workers:
+                unique_miner_addresses.add(address_only)
+
         await cls.config.mongo.async_db.pool_stats.update_one(
-            {"stat": "worker_count"},
+            {"stat": "miner_count"},
             {
                 "$set": {
-                    "value": len(StratumServer.inbound_streams[Miner.__name__].keys())
+                    "value": len(unique_miner_addresses)
                 }
             },
             upsert=True,
         )
         await cls.config.mongo.async_db.pool_stats.update_one(
-            {"stat": "miner_count"},
-            {"$set": {"value": len(await Peer.get_miner_streams())}},
+            {"stat": "worker_count"},
+            {
+                "$set": {
+                    "value": len(await Peer.get_miner_streams())
+                }
+            },
             upsert=True,
         )
 
@@ -86,29 +97,19 @@ class StratumServer(RPCSocketServer):
         if reason:
             Config().app_log.warning(f"remove_peer: {reason}")
         stream.close()
+
         if not hasattr(stream, "peer"):
             return
-        if stream.peer.address_only in StratumServer.inbound_streams[Miner.__name__]:
+        if hasattr(stream, "peer") and hasattr(stream.peer, "peer_id"):
+            peer_id = stream.peer.peer_id
+            Config().app_log.warning(f"Removing peer with peer_id: {peer_id}")
+
             if (
-                stream.peer.worker
-                in StratumServer.inbound_streams[Miner.__name__][
-                    stream.peer.address_only
-                ]
+                StratumServer.inbound_streams.get(Miner.__name__)
+                and peer_id in StratumServer.inbound_streams[Miner.__name__]
             ):
-                del StratumServer.inbound_streams[Miner.__name__][
-                    stream.peer.address_only
-                ][stream.peer.worker]
-            if (
-                len(
-                    StratumServer.inbound_streams[Miner.__name__][
-                        stream.peer.address_only
-                    ].keys()
-                )
-                == 0
-            ):
-                del StratumServer.inbound_streams[Miner.__name__][
-                    stream.peer.address_only
-                ]
+                del StratumServer.inbound_streams[Miner.__name__][peer_id]
+
         await StratumServer.update_miner_count()
 
     async def getblocktemplate(self, body, stream):
@@ -154,9 +155,14 @@ class StratumServer(RPCSocketServer):
         return result
 
     async def submit(self, body, stream):
+        miner_diff = stream.peer.miner_diff
+
         self.config.processing_queues.nonce_queue.add(
             NonceProcessingQueueItem(miner=stream.peer, stream=stream, body=body)
         )
+        current_time = time.time()
+        share_info = {"miner_diff": miner_diff, "timestamp": current_time}
+        stream.peer.add_share_to_history(share_info)
 
     async def login(self, body, stream):
         if len(await Peer.get_miner_streams()) > self.config.max_miners:
@@ -176,9 +182,21 @@ class StratumServer(RPCSocketServer):
             )
             await StratumServer.remove_peer(stream)
             return
+
+        custom_diff = None
         peer_id = str(uuid.uuid4())
+        miner_diff = self.config.pool_diff
+
+        if "@" in body["params"].get("login"):
+            parts = body["params"].get("login").split("@")
+            body["params"]["login"] = parts[0]
+            custom_diff = int(parts[1]) if len(parts) > 1 else 0
+
         await StratumServer.block_checker()
-        job = await StratumServer.config.mp.block_template(body["params"].get("agent"), peer_id)
+        job = await StratumServer.config.mp.block_template(
+            body["params"].get("agent"), custom_diff, peer_id, miner_diff
+        )
+
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
         stream.jobs[job.id] = job
@@ -192,15 +210,24 @@ class StratumServer(RPCSocketServer):
 
         try:
             stream.peer = Miner(
-                address=body["params"].get("login"), agent=body["params"].get("agent"), peer_id=peer_id
+                address=body["params"].get("login"),
+                agent=body["params"].get("agent"),
+                custom_diff=custom_diff,
+                peer_id=peer_id,
+                miner_diff=self.config.pool_diff
             )
+            stream.peer.miner_diff = self.config.pool_diff
+            stream.peer.custom_diff = custom_diff
+            stream.peer.peer_id = peer_id
             self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
+
             StratumServer.inbound_streams[Miner.__name__].setdefault(
-                stream.peer.address_only, {}
+                peer_id, {}
             )
-            StratumServer.inbound_streams[Miner.__name__][stream.peer.address_only][
-                stream.peer.worker
+            StratumServer.inbound_streams[Miner.__name__][peer_id][
+                stream.peer.address_only, stream.peer.worker
             ] = stream
+
             await StratumServer.update_miner_count()
         except:
             rpc_data["error"] = {"message": "Invalid wallet address or invalid format"}
@@ -217,19 +244,13 @@ class StratumServer(RPCSocketServer):
         await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
 
     @classmethod
-    async def status(self):
+    async def status(cls):
+        unique_miner_addresses = set()
+        for peer_id, workers in StratumServer.inbound_streams[Miner.__name__].items():
+            for (address_only, worker) in workers:
+                unique_miner_addresses.add(address_only)
+
         return {
-            "miners": len(
-                list(
-                    set(
-                        [
-                            address
-                            for address in StratumServer.inbound_streams[
-                                Miner.__name__
-                            ].keys()
-                        ]
-                    )
-                )
-            ),
+            "miners": len(unique_miner_addresses),
             "workers": len(await Peer.get_miner_streams()),
         }

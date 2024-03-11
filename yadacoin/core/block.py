@@ -76,8 +76,10 @@ class ExternalInputSpentException(Exception):
 class UnknownOutputAddressException(Exception):
     pass
 
-
 class Block(object):
+    successful_nodes = []
+    last_generated_block = None
+
     # Memory optimization
     __slots__ = (
         "app_log",
@@ -176,6 +178,7 @@ class Block(object):
         target=0,
     ):
         config = Config()
+
         if force_version is None:
             version = CHAIN.get_version_for_height(index)
         else:
@@ -231,27 +234,12 @@ class Block(object):
             ]
             masternode_reward_total = block_reward * 0.1
 
-            successful_nodes = []
-            for node in nodes:
-                from tornado.tcpclient import TCPClient
-
-                try:
-                    stream = await TCPClient().connect(
-                        node.host, node.port, timeout=timedelta(seconds=1)
-                    )
-                except StreamClosedError:
-                    config.app_log.warning(
-                        f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                except TimeoutError:
-                    config.app_log.warning(
-                        f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                except Exception:
-                    config.app_log.warning(
-                        f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                successful_nodes.append(node)
+            if not cls.successful_nodes:
+                config.app_log.info("Performing the testing of nodes and saving the result - first run.")
+                nodes = Nodes.get_all_nodes_for_block_height(config.LatestBlock.block.index)
+                successful_nodes = await cls.test_nodes(nodes, config)
+            else:
+                successful_nodes = cls.successful_nodes
 
             masternode_reward_divided = masternode_reward_total / len(successful_nodes)
             for successful_node in successful_nodes:
@@ -296,6 +284,7 @@ class Block(object):
             public_key=public_key,
             target=target,
         )
+        cls.last_generated_block = block
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
         block.header = block.generate_header()
@@ -305,7 +294,45 @@ class Block(object):
                 block.index, block.header, str(block.nonce)
             )
             block.signature = TU.generate_signature(block.hash, private_key)
+        config.app_log.debug(f"Generated Block: {block.to_json()}")
+
         return block
+
+    @classmethod
+    async def test_nodes(cls, nodes, config):
+        if LatestBlock.block.index >= CHAIN.PAY_MASTER_NODES_FORK:
+            successful_nodes = []
+            for node in nodes:
+                from tornado.tcpclient import TCPClient
+
+                try:
+                    stream = await TCPClient().connect(
+                        node.host, node.port, timeout=timedelta(seconds=1)
+                    )
+                    successful_nodes.append(node)
+                    stream.close()
+                except StreamClosedError:
+                    config.app_log.warning(
+                        f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
+                    )
+                except TimeoutError:
+                    config.app_log.warning(
+                        f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
+                    )
+                except Exception:
+                    config.app_log.warning(
+                        f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
+                    )
+
+            cls.successful_nodes = successful_nodes
+            config.app_log.info("Save the result.")
+
+            return successful_nodes
+        else:
+            config.app_log.info(
+                f"Testing nodes skipped. Current block height ({LatestBlock.block.index}) is below the specified threshold ({CHAIN.PAY_MASTER_NODES_FORK})."
+            )
+            return []
 
     @staticmethod
     async def validate_transactions(

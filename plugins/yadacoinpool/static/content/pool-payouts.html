@@ -1,0 +1,154 @@
+<div id="PoolPayoutsContent"></div>
+    <div class="column">
+        <div class="box">
+          <img src="yadacoinpoolstatic/img/banknote.png" alt="Dashboard Watermark" class="watermark">
+            <h5><b>TOTAL PAYMANTS</b></h5>
+            <div id="total-payments"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <img src="yadacoinpoolstatic/img/payout-scheme.png" alt="Dashboard Watermark" class="watermark">
+            <h5><b>PAYOUT SCHEME</b></h5>
+            <div id="payout-scheme" style="text-transform: uppercase;"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+            <img src="yadacoinpoolstatic/img/block-time.png" alt="Dashboard Watermark" class="watermark">
+            <h5><b>PAYMENT INTERVAL</b></h5>
+            <div id="payout-frequency" style="text-transform: uppercase;"></div>
+        </div>
+    </div>
+    <div class="column">
+        <div class="box">
+          <img src="yadacoinpoolstatic/img/luck.png" alt="Dashboard Watermark" class="watermark">
+            <h5><b>DENOMINATION UNIT</b></h5>
+            <div>1.000000 YDA</div>
+        </div>
+    </div>
+    <div style="font-size: 24px;">Pool payouts table</div>
+    <table id="payouts-table-body">
+        <thead>
+            <tr>
+                <th>Time Sent</th>
+                <th>Transaction ID</th>
+                <th>Amount</th>
+                <th>Fee</th>
+                <th>Payees</th>
+            </tr>
+        </thead>
+    </table>
+    <div id="payout-pagination-container" style="margin-top: 10px;"></div>
+</div>
+
+<script>
+    var tableData = [];
+    var pageSize = 10;
+    var currentPage = 1;
+
+    function updatePayoutTable(data) {
+        var tableHtml = '<table>';
+        tableHtml += '<tr><th>Time Sent</th><th>Transaction ID</th><th>Amount</th><th>Fee</th><th>Payees</th></tr>';
+
+        data.forEach((row) => {
+            tableHtml += '<tr>';
+            tableHtml += '<td>' + row['Time Sent'] + '</td>';
+            tableHtml += '<td>' + row['Transaction ID'] + '</td>';
+            tableHtml += '<td>' + row['Amount'] + '</td>';
+            tableHtml += '<td>' + row['Fee'] + '</td>';
+            tableHtml += '<td>' + row['Payees'] + '</td>';
+            tableHtml += '</tr>';
+        });
+
+        tableHtml += '</table>';
+
+        $('#payouts-table-body').html(tableHtml);
+    }
+
+    function updatePayoutPagination() {
+        var totalPages = Math.ceil(tableData.length / pageSize);
+
+        var paginationHtml = '';
+        for (var i = 1; i <= totalPages; i++) {
+            paginationHtml += '<button class="payout-pagination-button" data-page="' + i + '">' + i + '</button>';
+        }
+
+        $('#payout-pagination-container').html(paginationHtml);
+
+        $('.payout-pagination-button').click(function () {
+            var page = $(this).data('page');
+            currentPage = page;
+            updatePayoutTable(getCurrentPageData());
+            updatePayoutPagination();
+        });
+    }
+
+    function getCurrentPageData() {
+        var startIndex = (currentPage - 1) * pageSize;
+        return tableData.slice(startIndex, startIndex + pageSize);
+    }
+
+    $.get('/pool-info').then((poolInfoData) => {
+        var poolPayoutData = poolInfoData.pool.payouts;
+        $('#payout-scheme').html(poolInfoData.pool.payout_scheme);
+        $('#total-payments').html(poolInfoData.pool.total_payments.toFixed(6) + ' YDA');
+
+        const payoutFrequency = poolInfoData.pool.payout_frequency;
+        const formattedFrequency = formatTime(payoutFrequency);
+        $('#payout-frequency').html(formattedFrequency);
+
+        poolPayoutData.forEach((payout) => {
+            var timeSent = payout.txn.time;
+            var transactionHash = payout.txn.id;
+            var explorerLink = createExplorerLink(transactionHash);
+            var linkElement = document.createElement('a');
+            linkElement.href = explorerLink;
+            linkElement.innerText = transactionHash;
+
+            var amount = 0;
+            payout.txn.outputs.forEach((output) => {
+                amount += output.value;
+            });
+
+            var poolAddress = poolInfoData.pool.pool_address;
+            var poolOutputIndex = payout.txn.outputs.findIndex(output => output.to === poolAddress);
+            var fee = poolOutputIndex !== -1 ? payout.txn.outputs[poolOutputIndex].value : 0;
+            amount -= fee;
+
+            var payees = payout.txn.outputs.length - 1;
+
+            tableData.push({
+                'Time Sent': formatDateTime(new Date(timeSent * 1000)),
+                'Transaction ID': linkElement.outerHTML,
+                'Amount': amount.toFixed(6),
+                'Fee': fee.toFixed(6),
+                'Payees': payees,
+            });
+        });
+
+        updatePayoutTable(getCurrentPageData());
+        updatePayoutPagination();
+    });
+
+    function formatTime(seconds) {
+        const minutes = Math.floor(seconds / 60);
+        const hours = Math.floor(minutes / 60);
+
+        if (hours > 0) {
+            return hours + ' hour(s)';
+        } else if (minutes > 0) {
+            return minutes + ' minute(s)';
+        } else {
+            return seconds + ' second(s)';
+        }
+    }
+
+    function formatDateTime(date) {
+        return new Date(date).toLocaleString();
+    }
+
+    function createExplorerLink(transactionHash) {
+        return '/explorer?term=' + transactionHash;
+    }
+</script>
