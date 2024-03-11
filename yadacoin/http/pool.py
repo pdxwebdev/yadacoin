@@ -235,8 +235,10 @@ class PoolScanMissingTxnHandler(BaseHandler):
             else self.config.public_key
         )
 
+        self.app_log.info(f"Using pool public key: {pool_public_key}")
+
         start_index = self.get_query_argument("start_index", default=None)
-        
+
         if start_index is not None:
             try:
                 start_index = int(start_index)
@@ -252,35 +254,67 @@ class PoolScanMissingTxnHandler(BaseHandler):
             self.render_as_json({"instruction": instruction_message})
             return
 
-        coinbase_transactions = self.config.mongo.async_db.blocks.find(
-            {"transactions.outputs.to": pool_public_key, "transactions.inputs": []},
-            {"_id": 0, "transactions": 1}
-        )
+        coinbase_txn_ids = set()
+
+        pipeline = [
+            {
+                "$match": {
+                    "transactions.public_key": pool_public_key,
+                    "transactions.inputs": [],
+                    "index": {"$gte": start_index}
+                }
+            },
+            {
+                "$unwind": "$transactions"
+            },
+            {
+                "$match": {
+                    "transactions.public_key": pool_public_key,
+                    "transactions.inputs": [],
+                    "index": {"$gte": start_index}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "transactions.id": 1,
+                }
+            }
+        ]
+
+        coinbase_txns_aggregation = await self.config.mongo.async_db.blocks.aggregate(pipeline).to_list(length=None)
+
+        for doc in coinbase_txns_aggregation:
+            if "transactions" in doc:
+                coinbase_txn_ids.add(doc["transactions"].get("id"))
+                self.app_log.info(f"Coinbase Transaction ID: {doc['transactions'].get('id')}")
 
         missing_payouts = []
-        used_transactions = set()
-
-        async for block in coinbase_transactions:
-            for coinbase_txn in block["transactions"]:
-                if not coinbase_txn.get("inputs"):
-                    if coinbase_txn["public_key"] == pool_public_key:
-                        missing_payouts.append(coinbase_txn)
-                        used_transactions.add(coinbase_txn["id"])
-
-        all_transactions = self.config.mongo.async_db.blocks.find()
-
-        if start_index is not None:
-            all_transactions = all_transactions.skip(start_index)
-
-        async for block in all_transactions:
-            for txn in block["transactions"]:
-                if txn.get("inputs"):
-                    for input_txn in txn["inputs"]:
-                        used_transactions.add(input_txn["id"])
-
-        missing_payouts = [txn for txn in missing_payouts if txn["id"] not in used_transactions]
+        for txn_id in coinbase_txn_ids:
+            used_txns = await self.already_used(txn_id, pool_public_key)
+            if not used_txns:
+                missing_payouts.append({"transaction_id": txn_id})
 
         self.render_as_json({"missing_payouts": missing_payouts})
+
+    async def already_used(self, txn_id, pool_public_key):
+        results = self.config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        "transactions.inputs.id": txn_id,
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inputs.id": txn_id,
+                        "transactions.public_key": pool_public_key,
+                    }
+                },
+            ]
+        )
+        return [x async for x in results]
 
 POOL_HANDLERS = [
     (r"/miner-stats-for-address", MinerStatsHandler),
