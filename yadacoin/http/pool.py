@@ -225,17 +225,120 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
         start_index = self.get_query_argument("start_index", None)
         index = self.get_query_argument("index", None)
 
+        start_index_info = {}
+        index_info = {}
+
         if start_index is not None:
             start_index = int(start_index)
+            start_index_info = {"start_index": start_index, "info": f"This range starts from block index {start_index} and goes up to the latest block in the blockchain. Example: /scan-missed-payouts?start_index={start_index}"}
+        else:
+            start_index_info = {"info": "No start index provided. This range starts from this index and goes up to the latest block in the blockchain. Example: /scan-missed-payouts?start_index=100000"}
+
         if index is not None:
             index = int(index)
+            index_info = {"index": index, "info": f"This payout is specifically for the block at index {index}. Example: /scan-missed-payouts?index={index}"}
+        else:
+            index_info = {"info": "No index provided. This payout is specifically for the block with this index. Example: /scan-missed-payouts?index=12345."}
 
         await self.config.pp.do_payout(start_index=start_index, index=index)
-        self.render_as_json({"status": True})
+
+        response_info = {"status": True, "start_index_info": start_index_info, "index_info": index_info}
+        self.render_as_json(response_info)
+
+
+class PoolScanMissingTxnHandler(BaseHandler):
+    async def get(self):
+        pool_public_key = (
+            self.config.pool_public_key
+            if hasattr(self.config, "pool_public_key")
+            else self.config.public_key
+        )
+
+        self.app_log.debug(f"Using pool public key: {pool_public_key}")
+
+        start_index = self.get_query_argument("start_index", default=None)
+
+        if start_index is not None:
+            try:
+                start_index = int(start_index)
+                if start_index < 0:
+                    raise ValueError("Start index must be a non-negative integer.")
+            except ValueError:
+                error_message = "Invalid value for 'start_index'. Please provide a non-negative integer."
+                example_usage = "Example usage: /scan-missed-txn?start_index=0"
+                self.render_as_json({"error": error_message, "instruction": example_usage})
+                return
+        else:
+            instruction_message = "Please provide a start index. Example usage: /scan-missed-txn?start_index=0"
+            self.render_as_json({"instruction": instruction_message})
+            return
+
+        coinbase_txn_ids = set()
+
+        pipeline = [
+            {
+                "$match": {
+                    "transactions.public_key": pool_public_key,
+                    "transactions.inputs": [],
+                    "index": {"$gte": start_index}
+                }
+            },
+            {
+                "$unwind": "$transactions"
+            },
+            {
+                "$match": {
+                    "transactions.public_key": pool_public_key,
+                    "transactions.inputs": [],
+                    "index": {"$gte": start_index}
+                }
+            },
+            {
+                "$project": {
+                    "_id": 0,
+                    "transactions.id": 1,
+                }
+            }
+        ]
+
+        coinbase_txns_aggregation = await self.config.mongo.async_db.blocks.aggregate(pipeline).to_list(length=None)
+
+        for doc in coinbase_txns_aggregation:
+            if "transactions" in doc:
+                coinbase_txn_ids.add(doc["transactions"].get("id"))
+                self.app_log.debug(f"Coinbase Transaction ID: {doc['transactions'].get('id')}")
+
+        missing_payouts = []
+        for txn_id in coinbase_txn_ids:
+            used_txns = await self.already_used(txn_id, pool_public_key)
+            if not used_txns:
+                missing_payouts.append({"transaction_id": txn_id})
+
+        self.render_as_json({"missing_payouts": missing_payouts})
+
+    async def already_used(self, txn_id, pool_public_key):
+        results = self.config.mongo.async_db.blocks.aggregate(
+            [
+                {
+                    "$match": {
+                        "transactions.inputs.id": txn_id,
+                    }
+                },
+                {"$unwind": "$transactions"},
+                {
+                    "$match": {
+                        "transactions.inputs.id": txn_id,
+                        "transactions.public_key": pool_public_key,
+                    }
+                },
+            ]
+        )
+        return [x async for x in results]
 
 POOL_HANDLERS = [
     (r"/miner-stats-for-address", MinerStatsHandler),
     (r"/payouts-for-address", PoolPayoutsHandler),
     (r"/pool-blocks", PoolBlocksHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
+    (r"/scan-missed-txn", PoolScanMissingTxnHandler),
 ]
