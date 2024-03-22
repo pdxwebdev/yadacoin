@@ -54,6 +54,14 @@ https://yadacoin.io/download
   - type: string
   - default: localhost
   - description: The server where the mongo db is located.
+- mongodb_username
+  - type: string
+  - default: undefined
+  - description: The username to authenticate against mongodb.
+- mongodb_password
+  - type: string
+  - default: undefined
+  - description: The password to authenticate against mongodb.
 - api_whitelist
   - type: array
   - default: []
