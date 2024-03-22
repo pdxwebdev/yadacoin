@@ -9,7 +9,27 @@ from yadacoin.core.config import Config
 class Mongo(object):
     def __init__(self):
         self.config = Config()
-        self.client = MongoClient(self.config.mongodb_host)
+        if hasattr(self.config, "mongodb_username") and hasattr(
+            self.config, "mongodb_password"
+        ):
+            try:
+                self.client = MongoClient(self.config.mongodb_host)
+                admin_db = self.client["admin"]
+                admin_db.command(
+                    "createUser",
+                    self.config.mongodb_username,
+                    pwd=self.config.mongodb_password,
+                    roles=["root"],
+                )
+            except:
+                pass
+            self.client = MongoClient(
+                self.config.mongodb_host,
+                username=self.config.mongodb_username,
+                password=self.config.mongodb_password,
+            )
+        else:
+            self.client = MongoClient(self.config.mongodb_host)
         self.db = self.client[self.config.database]
         self.site_db = self.client[self.config.site_database]
         try:
@@ -283,8 +303,16 @@ class Mongo(object):
 
         # TODO: add indexes for peers
 
-        # See https://motor.readthedocs.io/en/stable/tutorial-tornado.html
-        self.async_client = MotorClient(self.config.mongodb_host)
+        if hasattr(self.config, "mongodb_username") and hasattr(
+            self.config, "mongodb_password"
+        ):
+            self.async_client = MotorClient(
+                self.config.mongodb_host,
+                username=self.config.mongodb_username,
+                password=self.config.mongodb_password,
+            )
+        else:
+            self.async_client = MotorClient(self.config.mongodb_host)
         self.async_db = AsyncDB(self.async_client)
         # self.async_db = self.async_client[self.config.database]
         self.async_site_db = self.async_client[self.config.site_database]
