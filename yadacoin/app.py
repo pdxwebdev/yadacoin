@@ -701,6 +701,7 @@ class NodeApplication(Application):
             return
         self.config.background_mempool_cleaner.busy = True
         try:
+            await self.config.TU.combine_oldest_transactions(self.config)
             await self.config.TU.clean_mempool(self.config)
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
