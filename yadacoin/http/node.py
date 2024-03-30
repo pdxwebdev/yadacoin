@@ -21,6 +21,14 @@ class GetLatestBlockHandler(BaseHandler):
         block = await self.config.LatestBlock.block.copy()
         self.render_as_json(block.to_dict())
 
+class GetCurrentBlockHandler(BaseHandler):
+    async def get(self):
+        from yadacoin.core.block import Block
+        try:
+            latest_block = Block.last_generated_block
+            self.render_as_json(latest_block.to_dict())
+        except Exception as e:
+            self.render_as_json({"status": "error", "message": str(e)})
 
 class GetBlocksHandler(BaseHandler):
     async def get(self):
@@ -347,6 +355,7 @@ class GetMonitoringHandler(BaseHandler):
 
 NODE_HANDLERS = [
     (r"/get-latest-block", GetLatestBlockHandler),
+    (r"/get-current-block", GetCurrentBlockHandler),
     (r"/get-blocks", GetBlocksHandler),
     (r"/get-block", GetBlockHandler),
     (r"/get-height|/getheight", GetBlockHeightHandler),
