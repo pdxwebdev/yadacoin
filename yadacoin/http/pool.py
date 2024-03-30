@@ -222,9 +222,25 @@ class PoolBlocksHandler(BaseHandler):
 
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):
-        start_index = self.get_query_argument("start_index")
-        await self.config.pp.do_payout({"index": int(start_index)})
-        self.render_as_json({"status": True})
+        start_index = self.get_query_argument("start_index", None)
+        index = self.get_query_argument("index", None)
+
+        if start_index is not None:
+            start_index = int(start_index)
+            start_index_info = {"start_index": start_index, "info": "This range starts from the specified index."}
+        else:
+            start_index_info = {"info": "No start index provided. The range starts from the beginning of the blockchain."}
+
+        if index is not None:
+            index = int(index)
+            index_info = {"index": index, "info": "This payout is specifically for the block at the specified index."}
+        else:
+            index_info = {"info": "No index provided. The payout is for the latest block in the blockchain."}
+
+        await self.config.pp.do_payout(start_index=start_index, index=index)
+
+        response_info = {"status": True, "start_index_info": start_index_info, "index_info": index_info}
+        self.render_as_json(response_info)
 
 
 class PoolScanMissingTxnHandler(BaseHandler):
@@ -316,10 +332,22 @@ class PoolScanMissingTxnHandler(BaseHandler):
         )
         return [x async for x in results]
 
+class CombineOldestTransactionsHandler(BaseHandler):
+    async def get(self):
+        try:
+            await self.config.TU.combine_oldest_transactions(self.config)
+            self.set_status(200)
+            self.write("Combine oldest transactions process started.")
+        except Exception as e:
+            self.set_status(500)
+            self.write("Error combining oldest transactions: {}".format(str(e)))
+
+
 POOL_HANDLERS = [
     (r"/miner-stats-for-address", MinerStatsHandler),
     (r"/payouts-for-address", PoolPayoutsHandler),
     (r"/pool-blocks", PoolBlocksHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
     (r"/scan-missed-txn", PoolScanMissingTxnHandler),
+    (r"/combine-oldest-transactions", CombineOldestTransactionsHandler),
 ]

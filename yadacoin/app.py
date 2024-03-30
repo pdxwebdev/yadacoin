@@ -1,6 +1,7 @@
 """
 Async Yadacoin node poc
 """
+import asyncio
 import binascii
 import importlib
 import json
@@ -10,7 +11,6 @@ import os
 import pkgutil
 import ssl
 import sys
-import asyncio
 
 currentdir = os.path.dirname(os.path.realpath(__file__))
 parentdir = os.path.dirname(currentdir)
@@ -694,6 +694,7 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
+            #await self.config.TU.combine_oldest_transactions(self.config)
             await self.config.mp.clean_pool_info()
             await self.config.mp.clean_shares()
             self.config.health.mempool_cleaner.last_activity = int(time())
