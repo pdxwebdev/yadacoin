@@ -127,6 +127,9 @@ class Config:
         self.max_peers = config.get("max_peers", 20)
         self.pool_diff = config.get("pool_diff", 100000)
 
+        self.transactions_combining_wait = config.get("transactions_combining_wait", 3600)
+        self.combined_address = config.get("combined_address", self.address)
+
         self.restrict_graph_api = config.get("restrict_graph_api", False)
 
         self.skynet_url = config.get("skynet_url", "")
@@ -397,6 +400,9 @@ class Config:
         cls.max_miners = config.get("max_miners", 100)
         cls.max_peers = config.get("max_peers", 20)
         cls.pool_diff = config.get("pool_diff", 100000)
+
+        cls.transactions_combining_wait = config.get("transactions_combining_wait", 3600)
+        cls.combined_address = config.get("combined_address", cls.address)
 
         cls.restrict_graph_api = config.get("restrict_graph_api", False)
 
