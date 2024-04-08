@@ -345,8 +345,8 @@ class TU(object):  # Transaction Utilities
 
         config.app_log.info("Found {} oldest transactions for combination.".format(len(oldest_transactions)))
 
-        # Additional check: if the number of transactions is less than 30, do not generate a transaction
-        if len(oldest_transactions) < 30:
+        # Additional check: if the number of transactions is less than 100, do not generate a transaction
+        if len(oldest_transactions) < 100:
             config.app_log.info("Insufficient number of transactions to combine.")
             return
 
