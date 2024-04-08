@@ -321,6 +321,7 @@ class TU(object):  # Transaction Utilities
     @classmethod
     async def combine_oldest_transactions(cls, config):
         address = config.address
+        combined_address = config.combined_address
         config.app_log.info("Combining oldest transactions process started.")
         total_value = 0
         oldest_transactions = []
@@ -344,7 +345,7 @@ class TU(object):  # Transaction Utilities
 
         config.app_log.info("Found {} oldest transactions for combination.".format(len(oldest_transactions)))
 
-        # Additional check: if the number of transactions is less than 5, do not generate a transaction
+        # Additional check: if the number of transactions is less than 30, do not generate a transaction
         if len(oldest_transactions) < 30:
             config.app_log.info("Insufficient number of transactions to combine.")
             return
@@ -359,7 +360,7 @@ class TU(object):  # Transaction Utilities
         try:
             result = await cls.send(
                 config=config,
-                to=address,
+                to=combined_address,
                 value=total_value,
                 from_address=address,
                 inputs=oldest_transactions,
@@ -371,3 +372,4 @@ class TU(object):  # Transaction Utilities
                 config.app_log.info("Successfully combined oldest transactions.")
         except Exception as e:
             config.app_log.error("Error combining oldest transactions: {}".format(str(e)))
+
