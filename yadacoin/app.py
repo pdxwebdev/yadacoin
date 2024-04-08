@@ -74,6 +74,7 @@ from yadacoin.core.processingqueue import (
 from yadacoin.core.smtp import Email
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.modes import MODES
+from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
@@ -727,6 +728,21 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
         self.config.background_mempool_sender.busy = False
 
+    async def background_transactions_combining (self):
+        """Responsible for combining small UTXOs into larger ones in the background"""
+
+        if not hasattr(self.config, "background_transactions_combining"):
+            self.config.background_transactions_combining = WorkerVars(busy=False)
+        if self.config.background_transactions_combining.busy:
+            self.config.app_log.debug("background_transactions_combining - busy")
+            return
+        self.config.background_transactions_combining.busy = True
+        try:
+            await self.config.TU.combine_oldest_transactions(self.config)
+        except Exception:
+            self.config.app_log.error(format_exc())
+        self.config.background_transactions_combining.busy = False
+
     async def background_nonce_processor(self):
         """Responsible for processing all share submissions from miners"""
 
@@ -866,6 +882,12 @@ class NodeApplication(Application):
             PeriodicCallback(
                 self.background_message_sender, self.config.message_sender_wait * 1000
             ).start()
+
+            if self.config.peer_type in [PEER_TYPES.SERVICE_PROVIDER.value, PEER_TYPES.SEED_GATEWAY.value, PEER_TYPES.SEED.value]:
+                PeriodicCallback(
+                    self.background_transactions_combining, 
+                    self.config.transactions_combining_wait * 1000
+                ).start()
 
             if MODES.POOL.value in self.config.modes:
                 PeriodicCallback(
