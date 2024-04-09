@@ -387,11 +387,11 @@ class MiningPool(object):
         return await Job.from_dict(res)
 
     def generate_unique_extra_nonce(self):
-        extra_nonce = random.randint(0, 99)
+        extra_nonce = secrets.token_hex(1)
         while extra_nonce in self.used_extra_nonces:
-            extra_nonce = random.randint(0, 99)
+            extra_nonce = secrets.token_hex(1)
         self.used_extra_nonces.add(extra_nonce)
-        return str(extra_nonce).zfill(2)
+        return extra_nonce
 
     async def set_target_as_previous_non_special_min(self):
         """TODO: this is not correct, should use a cached version of the current target somewhere, and recalc on
