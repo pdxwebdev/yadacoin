@@ -26,6 +26,9 @@ from tornado.iostream import StreamClosedError
 
 
 class MiningPool(object):
+    def __init__(self):
+        self.used_extra_nonces = set()
+        self.last_header = None
 
     @classmethod
     async def init_async(cls):
@@ -339,10 +342,16 @@ class MiningPool(object):
         difficulty = int(self.max_target / self.block_factory.target)
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
-        #extra_nonce = str(random.randrange(100000, 999999))
-        extra_nonce = secrets.token_hex(2)
         header = self.block_factory.header
-        self.config.app_log.debug(f"Job header: {header}")
+
+        # Check if header has changed
+        if header != self.last_header:
+            self.last_header = header
+            self.used_extra_nonces.clear()  # Reset used extra nonces
+
+        self.config.app_log.info(f"Job header: {header}")
+
+        extra_nonce = self.generate_unique_extra_nonce()
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
         miner_diff = max(int(custom_diff), 70000) if custom_diff is not None else miner_diff
 
@@ -365,8 +374,7 @@ class MiningPool(object):
             "target": target,  # can only be 16 characters long
             "blob": blob,
             "seed_hash": seed_hash,
-            "height": self.config.LatestBlock.block.index
-            + 1,  # This is the height of the one we are mining
+            "height": self.config.LatestBlock.block.index + 1,  # This is the height of the one we are mining
             "extra_nonce": extra_nonce,
             "algo": "rx/yada",
             "miner_diff": miner_diff,
@@ -374,8 +382,16 @@ class MiningPool(object):
         }
 
         self.config.app_log.debug(f"Generated job: {res}")
+        self.config.app_log.info(f"Used extra nonces: {self.used_extra_nonces}")
 
         return await Job.from_dict(res)
+
+    def generate_unique_extra_nonce(self):
+        extra_nonce = random.randint(0, 99)
+        while extra_nonce in self.used_extra_nonces:
+            extra_nonce = random.randint(0, 99)
+        self.used_extra_nonces.add(extra_nonce)
+        return str(extra_nonce).zfill(2)
 
     async def set_target_as_previous_non_special_min(self):
         """TODO: this is not correct, should use a cached version of the current target somewhere, and recalc on
