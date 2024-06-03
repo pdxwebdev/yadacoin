@@ -28,7 +28,7 @@ jobs:
           grep -vE "pyrx" requirements.txt > filtered_requirements.txt
           python -m pip install --upgrade pip
           pip install -r filtered_requirements.txt
-          pip install pyinstaller pytest
+          pip install pyinstaller pytest==7.4.4
 
       - name: Build with PyInstaller
         run: |
