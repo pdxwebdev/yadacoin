@@ -112,6 +112,15 @@ class Mongo(object):
             ],
             name="__txn_rel_contract_identity_public_key",
         )
+        __txn_rel_contract_expiry = IndexModel(
+            [
+                (
+                    "transactions.relationship.smart_contract.expiry",
+                    ASCENDING,
+                )
+            ],
+            name="__txn_rel_contract_expiry",
+        )
 
         try:
             self.db.blocks.create_indexes(
@@ -139,6 +148,7 @@ class Mongo(object):
                     __txn_time,
                     __txn_contract_rid,
                     __txn_rel_contract_identity_public_key,
+                    __txn_rel_contract_expiry,
                 ]
             )
         except:
@@ -296,8 +306,9 @@ class Mongo(object):
             pass
 
         __timestamp = IndexModel([("timestamp", DESCENDING)], name="__timestamp")
+        __archived = IndexModel([("archived", ASCENDING)], name="__archived")
         try:
-            self.db.node_status.create_indexes([__timestamp])
+            self.db.node_status.create_indexes([__timestamp, __archived])
         except:
             raise
 

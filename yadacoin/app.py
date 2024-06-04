@@ -1,6 +1,7 @@
 ﻿"""
 Async Yadacoin node poc
 """
+
 import binascii
 import importlib
 import json
@@ -28,6 +29,7 @@ from os import path
 from time import time
 from traceback import format_exc
 
+import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -38,7 +40,6 @@ from tornado.ioloop import PeriodicCallback
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
-import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -335,7 +336,9 @@ class NodeApplication(Application):
                 self.config.app_log.info(json.dumps(status, indent=4))
             else:
                 self.config.app_log.warning(json.dumps(status, indent=4))
-
+            await self.config.mongo.async_db.node_status.delete_many(
+                {"timestamp": {"$lt": status["timestamp"] - (60 * 60 * 24)}}
+            )
             await self.config.mongo.async_db.node_status.insert_one(status)
         except Exception:
             self.config.app_log.error(format_exc())
@@ -667,9 +670,13 @@ class NodeApplication(Application):
                     self.cache_last_times[cache_collection] = latest["cache_time"]
                 else:
                     self.cache_last_times[cache_collection] = 0
-                async for txn in self.config.mongo.async_db[cache_collection].find(
-                    {"cache_time": {"$gt": self.cache_last_times[cache_collection]}}
-                ).sort([("height", -1)]):
+                async for txn in (
+                    self.config.mongo.async_db[cache_collection]
+                    .find(
+                        {"cache_time": {"$gt": self.cache_last_times[cache_collection]}}
+                    )
+                    .sort([("height", -1)])
+                ):
                     if not await self.config.mongo.async_db.blocks.find_one(
                         {"index": txn.get("height"), "hash": txn.get("block_hash")}
                     ) and not await self.config.mongo.async_db.miner_transactions.find_one(

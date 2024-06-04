@@ -283,17 +283,23 @@ class GetMonitoringHandler(BaseHandler):
                 },
             ]
         )
-        node_data = [x async for x in node_status]
-        node_data = node_data[0]
-
-        # Peer Data
-        inbound_peers = await self.config.peer.get_all_inbound_streams()
-        outbound_peers = await self.config.peer.get_all_outbound_streams()
-
-        peer_data = {
-            "inbound_peers": [x.peer.to_dict() for x in inbound_peers],
-            "outbound_peers": [x.peer.to_dict() for x in outbound_peers],
+        op_data = {
+            "address": self.config.address,
         }
+        node_data = [x async for x in node_status]
+        if node_data:
+            op_data["node"] = node_data[0]
+
+        if hasattr(self.config, "peer"):
+            # Peer Data
+            inbound_peers = await self.config.peer.get_all_inbound_streams()
+            outbound_peers = await self.config.peer.get_all_outbound_streams()
+
+            peer_data = {
+                "inbound_peers": [x.peer.to_dict() for x in inbound_peers],
+                "outbound_peers": [x.peer.to_dict() for x in outbound_peers],
+            }
+            op_data["peers"] = peer_data
 
         # Pool Data Calcs
         await self.config.LatestBlock.block_checker()
@@ -336,12 +342,7 @@ class GetMonitoringHandler(BaseHandler):
         }
 
         # Create output data
-        op_data = {
-            "address": self.config.address,
-            "node": node_data,
-            "peers": peer_data,
-            "pool": pool_data,
-        }
+        op_data["pool"] = pool_data
         self.render_as_json(op_data, indent=4)
 
 
