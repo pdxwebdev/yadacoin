@@ -64,6 +64,10 @@ class Mongo(object):
             ],
             name="__txn_public_key_inputs_public_key_address",
         )
+        __public_key_index = IndexModel(
+            [("public_key", ASCENDING), ("index", DESCENDING)],
+            name="__public_key_index",
+        )
         __public_key_time = IndexModel(
             [
                 ("public_key", ASCENDING),
@@ -135,6 +139,7 @@ class Mongo(object):
                     __txn_inputs_public_key,
                     __txn_inputs_address,
                     __txn_public_key_inputs_public_key_address,
+                    __public_key_index,
                     __public_key_time,
                     __public_key,
                     __prev_hash,
