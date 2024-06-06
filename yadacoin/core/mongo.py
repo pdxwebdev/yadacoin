@@ -40,6 +40,7 @@ class Mongo(object):
 
         __id = IndexModel([("id", ASCENDING)], name="__id", unique=True)
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
+        __time = IndexModel([("time", ASCENDING)], name="__time")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __to = IndexModel([("transactions.outputs.to", ASCENDING)], name="__to")
         __txn_id = IndexModel([("transactions.id", ASCENDING)], name="__txn_id")
@@ -125,11 +126,30 @@ class Mongo(object):
             ],
             name="__txn_rel_contract_expiry",
         )
+        __updated_at = IndexModel(
+            [
+                (
+                    "updated_at",
+                    ASCENDING,
+                )
+            ],
+            name="__updated_at",
+        )
+        __txn_outputs_to_index = IndexModel(
+            [("transactions.outputs.to", ASCENDING), ("index", ASCENDING)],
+            name="__txn_outputs_to_index",
+        )
+        __txn_inputs_0 = IndexModel(
+            [("transactions.inputs.0", ASCENDING)],
+            partialFilterExpression={"transactions.inputs.0": {"$exists": False}},
+            name="__txn_inputs_0",
+        )
 
         try:
             self.db.blocks.create_indexes(
                 [
                     __hash,
+                    __time,
                     __index,
                     __id,
                     __to,
@@ -154,6 +174,9 @@ class Mongo(object):
                     __txn_contract_rid,
                     __txn_rel_contract_identity_public_key,
                     __txn_rel_contract_expiry,
+                    __updated_at,
+                    __txn_outputs_to_index,
+                    __txn_inputs_0,
                 ]
             )
         except:
