@@ -287,6 +287,10 @@ https://yadacoin.io/download
   - type: integer
   - default: 3000
   - description: Specify the max number of milliseconds of execution time for all http requests.
+- log_health_status
+  - type: bool
+  - default: undefined
+  - description: Specify if you want all Mongo DB queries to be logged and profiled.
 
 ## Development Environment
 

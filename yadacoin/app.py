@@ -2,7 +2,6 @@
 Async Yadacoin node poc
 """
 
-import binascii
 import importlib
 import json
 import logging
@@ -29,7 +28,6 @@ from os import path
 from time import time
 from traceback import format_exc
 
-import pyrx
 import tornado.ioloop
 import tornado.locks
 import tornado.log
@@ -285,6 +283,10 @@ class NodeApplication(Application):
                 "count": len(self.config.mongo.async_db.slow_queries),
                 "detail": self.config.mongo.async_db.slow_queries,
             }
+            status["unindexed_queries"] = {
+                "count": len(self.config.mongo.async_db.unindexed_queries),
+                "detail": self.config.mongo.async_db.unindexed_queries,
+            }
             status["transaction_tracker"] = {
                 "nodeServer": self.config.nodeServer.newtxn_tracker.to_dict(),
                 "nodeClient": self.config.nodeClient.newtxn_tracker.to_dict(),
@@ -332,10 +334,14 @@ class NodeApplication(Application):
                     status["memory"] = {"diff": diff_dict_list}
                 self.config.background_status.last_summary = summarized
 
-            if status["health"]["status"]:
-                self.config.app_log.info(json.dumps(status, indent=4))
-            else:
-                self.config.app_log.warning(json.dumps(status, indent=4))
+            if (
+                hasattr(self.config, "log_health_status")
+                and self.config.log_health_status
+            ):
+                if status["health"]["status"]:
+                    self.config.app_log.info(json.dumps(status, indent=4))
+                else:
+                    self.config.app_log.warning(json.dumps(status, indent=4))
             await self.config.mongo.async_db.node_status.delete_many(
                 {"timestamp": {"$lt": status["timestamp"] - (60 * 60 * 24)}}
             )
@@ -1060,14 +1066,14 @@ class NodeApplication(Application):
         self.init_consensus()
         self.config.cipher = Crypt(self.config.wif)
         if MODES.NODE.value in self.config.modes:
-            self.config.pyrx = pyrx.PyRX()
-            self.config.pyrx.get_rx_hash(
-                "header",
-                binascii.unhexlify(
-                    "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"
-                ),
-                4,
-            )
+            # self.config.pyrx = pyrx.PyRX()
+            # self.config.pyrx.get_rx_hash(
+            #     "header",
+            #     binascii.unhexlify(
+            #         "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"
+            #     ),
+            #     4,
+            # )
             self.config.nodeServer = NodeSocketServer
             self.config.nodeShared = NodeRPC()
             self.config.nodeClient = NodeSocketClient()

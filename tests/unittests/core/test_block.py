@@ -2,13 +2,25 @@ import unittest
 from unittest import mock
 from unittest.mock import AsyncMock
 
+from mongomock import MongoClient
+
 import yadacoin.core.config
 from yadacoin.core.block import Block
+from yadacoin.core.config import Config
 
 from ..test_setup import AsyncTestCase
 
 
 class TestBlock(AsyncTestCase):
+    @mock.patch(
+        "yadacoin.core.blockchain.Blockchain.mongo", new_callable=lambda: MongoClient
+    )
+    async def asyncSetUp(self, mongo):
+        mongo.async_db = mock.MagicMock()
+        mongo.async_db.blocks = mock.MagicMock()
+        yadacoin.core.config.CONFIG = Config.generate()
+        Config().mongo = mongo
+
     async def test_init_async(self):
         block = await Block.init_async()
         self.assertIsInstance(block, Block)

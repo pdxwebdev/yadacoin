@@ -276,6 +276,7 @@ class GetMonitoringHandler(BaseHandler):
                         "_id": 0,
                         "message_sender": 0,
                         "slow_queries": 0,
+                        "unindexed_queries": 0,
                         "transaction_tracker": 0,
                         "disconnect_tracker": 0,
                         "processing_queues": 0,
