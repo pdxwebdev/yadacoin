@@ -349,8 +349,14 @@ class Mongo(object):
 
         __timestamp = IndexModel([("timestamp", DESCENDING)], name="__timestamp")
         __archived = IndexModel([("archived", ASCENDING)], name="__archived")
+        __timestamp_archived = IndexModel(
+            [("timestamp", DESCENDING), ("archived", ASCENDING)],
+            name="__timestamp_archived",
+        )
         try:
-            self.db.node_status.create_indexes([__timestamp, __archived])
+            self.db.node_status.create_indexes(
+                [__timestamp, __archived, __timestamp_archived]
+            )
         except:
             raise
 
