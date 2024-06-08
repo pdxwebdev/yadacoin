@@ -118,6 +118,7 @@ class GetStatusHandler(BaseHandler):
             {"archived": {"$exists": bool(archived)}},
             {"_id": 0},
             sort=[("timestamp", -1)],
+            hint="__timestamp_archived",
         )
         self.render_as_json(status, indent=4)
 
@@ -282,7 +283,8 @@ class GetMonitoringHandler(BaseHandler):
                         "processing_queues": 0,
                     }
                 },
-            ]
+            ],
+            hint="__timestamp",
         )
         op_data = {
             "address": self.config.address,
@@ -311,7 +313,7 @@ class GetMonitoringHandler(BaseHandler):
         )
         mining_time_interval = 600
         shares_count = await self.config.mongo.async_db.shares.count_documents(
-            {"time": {"$gte": time.time() - mining_time_interval}}
+            {"time": {"$gte": time.time() - mining_time_interval}}, hint="__time"
         )
         if shares_count > 0:
             pool_hash_rate = (

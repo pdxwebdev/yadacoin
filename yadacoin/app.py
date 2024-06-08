@@ -258,7 +258,11 @@ class NodeApplication(Application):
             await self.config.mongo.async_db.node_status.update_many(
                 {}, {"$set": {"archived": True}}
             )
-            if Docker.is_inside_docker():
+            if (
+                Docker.is_inside_docker()
+                and hasattr(self.config, "docker_debug")
+                and self.config.docker_debug
+            ):
                 self.config.background_status.docker = Docker()
         if self.config.background_status.busy:
             self.config.app_log.debug("background_status - busy")
@@ -295,7 +299,11 @@ class NodeApplication(Application):
                 "nodeServer": self.config.nodeServer.disconnect_tracker.to_dict(),
                 "nodeClient": self.config.nodeClient.disconnect_tracker.to_dict(),
             }
-            if Docker.is_inside_docker():
+            if (
+                Docker.is_inside_docker()
+                and hasattr(self.config, "docker_debug")
+                and self.config.docker_debug
+            ):
                 self.config.background_status.docker.set_container_stats()
                 status["docker"] = self.config.background_status.docker.to_dict()
 

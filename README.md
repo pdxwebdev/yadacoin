@@ -291,6 +291,10 @@ https://yadacoin.io/download
   - type: bool
   - default: undefined
   - description: Specify if you want all Mongo DB queries to be logged and profiled.
+- docker_debug
+  - type: bool
+  - default: undefined
+  - description: Specify if you want to log resources used by docker.
 
 ## Development Environment
 
