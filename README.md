@@ -295,6 +295,14 @@ https://yadacoin.io/download
   - type: bool
   - default: undefined
   - description: Specify if you want to log resources used by docker.
+- asyncio_debug
+  - type: bool
+  - default: undefined
+  - description: Specify if you want to log slow running asyncio tasks.
+- asyncio_debug_duration
+  - type: bool
+  - default: undefined
+  - description: Specify duration of what is considered a "slow" task in asyncio.
 
 ## Development Environment
 

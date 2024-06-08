@@ -124,10 +124,13 @@ class WorkerVars:
             setattr(self, key, value)
 
 
+from tornado.ioloop import IOLoop
+from tornado.platform.asyncio import AsyncIOMainLoop
+
+
 class NodeApplication(Application):
     def __init__(self, test=False):
         options.parse_command_line(final=False)
-
         self.init_config(options)
         self.configure_logging()
         self.init_config_properties(test=test)
@@ -781,6 +784,15 @@ class NodeApplication(Application):
         self.config.app_log.setLevel(logging.INFO)
         if self.config.debug:
             self.config.app_log.setLevel(logging.DEBUG)
+        if hasattr(self.config, "asyncio_debug") and self.config.asyncio_debug:
+            logging.basicConfig(level=logging.DEBUG)
+            AsyncIOMainLoop().install()
+            ioloop = IOLoop.current()
+            if hasattr(self.config, "asyncio_debug_duration"):
+                asyncio_debug_duration = self.config.asyncio_debug_duration
+            else:
+                asyncio_debug_duration = 0.05
+            ioloop.slow_callback_duration = asyncio_debug_duration
 
         self.access_log = logging.getLogger("tornado.access")
         tornado.log.enable_pretty_logging()
