@@ -483,11 +483,22 @@ class DeuggingListener(CommandListener):
                 config.app_log.debug(message)
 
     def log_explain_output(self, event):
+        config = Config()
         # Perform the explain command asynchronously
         collection_name = self.get_collection_name(event)
         explain_command = event.command.copy()
         explain_command["explain"] = event.command_name
-        client = MongoClient(*event.connection_id)
+
+        if hasattr(config, "mongodb_username") and hasattr(config, "mongodb_password"):
+            client = MongoClient(
+                *event.connection_id,
+                username=config.mongodb_username,
+                password=config.mongodb_password,
+            )
+        else:
+            client = MongoClient(
+                *event.connection_id,
+            )
         db = client.get_database(event.database_name)
         if event.command_name in [
             "find",
