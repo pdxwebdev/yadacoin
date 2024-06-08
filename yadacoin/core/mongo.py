@@ -144,6 +144,13 @@ class Mongo(object):
             [("transactions.inputs.0", ASCENDING)],
             name="__txn_inputs_0",
         )
+        __txn_rel_smart_contract_expiry_txn_time = IndexModel(
+            [
+                ("transactions.relationship.smart_contract.expiry", ASCENDING),
+                ("transactions.time", ASCENDING),
+            ],
+            name="__txn_rel_smart_contract_expiry_txn_time",
+        )
 
         try:
             self.db.blocks.create_indexes(
@@ -177,6 +184,7 @@ class Mongo(object):
                     __updated_at,
                     __txn_outputs_to_index,
                     __txn_inputs_0,
+                    __txn_rel_smart_contract_expiry_txn_time,
                 ]
             )
         except:
@@ -267,6 +275,9 @@ class Mongo(object):
         __fee_time = IndexModel(
             [("fee", DESCENDING), ("time", ASCENDING)], name="__fee_time"
         )
+        __rel_smart_contract = IndexModel(
+            [("relationship.smart_contract", ASCENDING)], name="__rel_smart_contract"
+        )
         try:
             self.db.miner_transactions.create_indexes(
                 [
@@ -280,6 +291,7 @@ class Mongo(object):
                     __time,
                     __inputs_id,
                     __fee_time,
+                    __rel_smart_contract,
                 ]
             )
         except:
