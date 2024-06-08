@@ -440,6 +440,9 @@ class DeuggingListener(CommandListener):
         if event.command_name not in self.commands:
             return
         config = Config()
+        if not config.mongo:
+            return
+
         config.mongo_debug = True
         if not hasattr(config, "mongo_debug"):
             return
@@ -489,17 +492,7 @@ class DeuggingListener(CommandListener):
         explain_command = event.command.copy()
         explain_command["explain"] = event.command_name
 
-        if hasattr(config, "mongodb_username") and hasattr(config, "mongodb_password"):
-            client = MongoClient(
-                *event.connection_id,
-                username=config.mongodb_username,
-                password=config.mongodb_password,
-            )
-        else:
-            client = MongoClient(
-                *event.connection_id,
-            )
-        db = client.get_database(event.database_name)
+        db = config.mongo.client.get_database(event.database_name)
         if event.command_name in [
             "find",
             "find_one",
