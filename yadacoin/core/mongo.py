@@ -461,7 +461,6 @@ class DeuggingListener(CommandListener):
         if not config.mongo:
             return
 
-        config.mongo_debug = True
         if not hasattr(config, "mongo_debug"):
             return
         if not config.mongo_debug:
