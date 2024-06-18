@@ -12,8 +12,8 @@ import uuid
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-
 from eccsnacks.curve25519 import scalarmult_base
+
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
@@ -397,7 +397,7 @@ class GraphTransactionHandler(BaseGraphHandler):
             return 'error: "to" missing', 400
         rid = TU.generate_rid(config, username_signature)
         dup = mongo.db.blocks.find({"transactions.rid": rid})
-        if dup.count():
+        if dup.count_documents():
             found_a = False
             found_b = False
             for txn in dup:

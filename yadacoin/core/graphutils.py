@@ -5,8 +5,8 @@ from logging import getLogger
 from time import time
 
 import bson
-
 from eccsnacks.curve25519 import scalarmult
+
 from yadacoin.core.config import Config
 from yadacoin.core.crypt import Crypt
 from yadacoin.core.transaction import Transaction
@@ -123,7 +123,7 @@ class GraphUtils(object):
 
         latest_block = self.config.LatestBlock.block
 
-        if posts_cache.count():
+        if posts_cache.count_documents():
             posts_cache = posts_cache[0]
             block_height = posts_cache["height"]
         else:
@@ -273,7 +273,7 @@ class GraphUtils(object):
 
         latest_block = self.config.LatestBlock.block
 
-        if reacts_cache.count():
+        if reacts_cache.count_documents():
             reacts_cache = reacts_cache[0]
             block_height = reacts_cache["height"]
         else:
@@ -415,7 +415,7 @@ class GraphUtils(object):
 
         latest_block = self.config.LatestBlock.block
 
-        if comments_cache.count():
+        if comments_cache.count_documents():
             comments_cache = comments_cache[0]
             block_height = comments_cache["height"]
         else:
@@ -793,7 +793,7 @@ class GraphUtils(object):
                 query["transactions.requested_rid"] = selector
             blocks = self.mongo.db.blocks.find(query)
         else:
-            if transactions_by_rid_cache.count():
+            if transactions_by_rid_cache.count_documents():
                 transactions_by_rid_cache = transactions_by_rid_cache[0]
                 block_height = transactions_by_rid_cache["height"]
             else:
@@ -933,7 +933,7 @@ class GraphUtils(object):
             {"requested_rid": {"$in": rids}}
         ).sort([("height", -1)])
         latest_block = self.config.LatestBlock.block
-        if friend_requests_cache.count():
+        if friend_requests_cache.count_documents():
             friend_requests_cache = friend_requests_cache[0]
             block_height = friend_requests_cache["height"]
         else:
@@ -1021,7 +1021,7 @@ class GraphUtils(object):
             {"requester_rid": {"$in": rids}}
         ).sort([("height", -1)])
 
-        if sent_friend_requests_cache.count():
+        if sent_friend_requests_cache.count_documents():
             sent_friend_requests_cache = sent_friend_requests_cache[0]
             block_height = sent_friend_requests_cache["height"]
         else:

@@ -45,8 +45,13 @@ class Mongo(object):
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __to = IndexModel([("transactions.outputs.to", ASCENDING)], name="__to")
         __txn_id = IndexModel([("transactions.id", ASCENDING)], name="__txn_id")
+        __txn_hash = IndexModel([("transactions.hash", ASCENDING)], name="__hash")
         __txn_inputs_id = IndexModel(
             [("transactions.inputs.id", ASCENDING)], name="__txn_inputs_id"
+        )
+        __txn_id_inputs_id = IndexModel(
+            [("transactions.id", ASCENDING), ("transactions.inputs.id", ASCENDING)],
+            name="__txn_id_inputs_id",
         )
         __txn_public_key = IndexModel(
             [("transactions.public_key", ASCENDING)], name="__txn_public_key"
@@ -161,7 +166,9 @@ class Mongo(object):
                     __id,
                     __to,
                     __txn_id,
+                    __txn_hash,
                     __txn_inputs_id,
+                    __txn_id_inputs_id,
                     __txn_public_key,
                     __txn_inputs_public_key,
                     __txn_inputs_address,
@@ -299,7 +306,15 @@ class Mongo(object):
 
         __id = IndexModel([("txn.id", ASCENDING)], name="__id")
         __hash = IndexModel([("txn.hash", ASCENDING)], name="__hash")
+        __index = IndexModel(
+            [("index", DESCENDING)],
+            name="__index",
+        )
         __outputs_to = IndexModel([("txn.outputs.to", ASCENDING)], name="__outputs_to")
+        __outputs_to_index = IndexModel(
+            [("txn.outputs.to", ASCENDING), ("index", DESCENDING)],
+            name="__outputs_to_index",
+        )
         __public_key = IndexModel([("txn.public_key", ASCENDING)], name="__public_key")
         __rid = IndexModel([("txn.rid", ASCENDING)], name="__rid")
         __requested_rid = IndexModel(
@@ -318,7 +333,9 @@ class Mongo(object):
                 [
                     __id,
                     __hash,
+                    __index,
                     __outputs_to,
+                    __outputs_to_index,
                     __public_key,
                     __rid,
                     __requested_rid,
@@ -568,9 +585,12 @@ class DeuggingListener(CommandListener):
             winning_plan = query_planner.get("winningPlan", {})
             used_indexes = winning_plan.get("indexName", False)
             if not used_indexes:
-                input_stage = winning_plan.get("inputStage", {})
-                input_stage = input_stage.get("inputStage", {})
-                used_indexes = input_stage.get("indexName", False)
+                try:
+                    used_indexes = self.get_used_index_from_input_stage(winning_plan)
+                except:
+                    message = f"Failed getting index information: {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', {})}"
+                    config.app_log.warning(message)
+
             if not used_indexes:
                 message = f"Unindexed query detected: {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', {})}"
                 config.app_log.warning(message)
@@ -580,6 +600,14 @@ class DeuggingListener(CommandListener):
             winning_plan = query_planner.get("winningPlan", {})
             input_stage = winning_plan.get("inputStage", {})
             used_indexes = input_stage.get("indexName", False)
+
+            if not used_indexes:
+                try:
+                    used_indexes = self.get_used_index_from_input_stage(winning_plan)
+                except:
+                    message = f"Failed getting index information: {event.command_name} : {query_planner['namespace']} : {event.command.get('filter', {})}"
+                    config.app_log.warning(message)
+
             if not used_indexes:
                 message = f"Unindexed query detected: {event.command_name} : {query_planner['namespace']} : {event.command.get('filter', {})}"
                 config.app_log.warning(message)
@@ -602,6 +630,30 @@ class DeuggingListener(CommandListener):
                 message = f"Unindexed query detected: {event.command_name} : {query_planner['namespace']} : {event.command.get('updates', {})}"
                 config.app_log.warning(message)
                 config.mongo.async_db.unindexed_queries.append(message)
+        if used_indexes:
+            message = f"Indexes used: {used_indexes} : {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', {})}"
+            config.app_log.info(message)
+        return used_indexes
+
+    def get_used_index_from_input_stage(self, input_stage, used_indexes=[]):
+        index_name = input_stage.get("indexName", False)
+        if index_name:
+            used_indexes.append(index_name)
+            return True
+
+        interim_input_stage = input_stage.get("inputStage", {})
+        if interim_input_stage:
+            input_stage = input_stage.get("inputStage", {})
+            result = self.get_used_index_from_input_stage(input_stage, used_indexes)
+            if not result:
+                return False
+        interim_input_stages = input_stage.get("inputStages", {})
+        if interim_input_stages:
+            for input_stg in interim_input_stages:
+                result = self.get_used_index_from_input_stage(input_stg, used_indexes)
+                if not result:
+                    return False
+            return used_indexes
         return used_indexes
 
 
