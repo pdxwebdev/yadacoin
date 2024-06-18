@@ -60,6 +60,9 @@ class TestMongo(AsyncTestCase):
             def warning(self, message):
                 pass
 
+            def info(self, message):
+                pass
+
         c = Config()
         c.mongo_debug = True
         c.app_log = AppLog()
