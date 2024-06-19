@@ -687,15 +687,31 @@ class NodeApplication(Application):
                     self.cache_last_times[cache_collection] = latest["cache_time"]
                 else:
                     self.cache_last_times[cache_collection] = 0
-                async for txn in (
-                    self.config.mongo.async_db[cache_collection]
-                    .find(
-                        {"cache_time": {"$gt": self.cache_last_times[cache_collection]}}
-                    )
-                    .sort([("height", -1)])
+
+                pipeline = [
+                    {
+                        "$match": {
+                            "cache_time": {
+                                "$gt": self.cache_last_times[cache_collection]
+                            }
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": {"block_hash": "$block_hash", "height": "$height"},
+                            "cache_time": {"$first": "$cache_time"},
+                        }
+                    },
+                    {"$sort": {"height": -1}},
+                ]
+                async for txn in self.config.mongo.async_db[cache_collection].aggregate(
+                    pipeline
                 ):
                     if not await self.config.mongo.async_db.blocks.find_one(
-                        {"index": txn.get("height"), "hash": txn.get("block_hash")}
+                        {
+                            "index": txn["_id"].get("height"),
+                            "hash": txn["_id"].get("block_hash"),
+                        }
                     ) and not await self.config.mongo.async_db.miner_transactions.find_one(
                         {
                             "id": txn.get("id"),

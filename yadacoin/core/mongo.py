@@ -631,7 +631,7 @@ class DeuggingListener(CommandListener):
                 config.app_log.warning(message)
                 config.mongo.async_db.unindexed_queries.append(message)
         if used_indexes:
-            message = f"Indexes used: {used_indexes} : {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', event.command).get('filter', {})}"
+            message = f"Indexes used: {used_indexes} : {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', event.command.get('filter', {}))}"
             config.app_log.info(message)
         return used_indexes
 
