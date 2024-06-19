@@ -186,6 +186,8 @@ class PoolPayerHealth(HealthItem):
 
 
 class CacheValidatorHealth(HealthItem):
+    timeout = 3600
+
     async def check_health(self):
         if time.time() - self.last_activity > self.timeout:
             self.report_bad_health("Background cache validator health check failed")
