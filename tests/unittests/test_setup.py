@@ -32,7 +32,7 @@ class BaseTestCase(testing.AsyncHTTPTestCase):
         return tornado.ioloop.IOLoop.current()
 
     def get_app(self):
-        return NodeApplication()
+        return NodeApplication(test=True)
 
     async def create_fork_block(self):
         return await Block.generate(

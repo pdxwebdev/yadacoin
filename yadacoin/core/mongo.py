@@ -635,7 +635,9 @@ class DeuggingListener(CommandListener):
             config.app_log.info(message)
         return used_indexes
 
-    def get_used_index_from_input_stage(self, input_stage, used_indexes=[]):
+    def get_used_index_from_input_stage(self, input_stage, used_indexes=None):
+        if used_indexes is None:
+            used_indexes = []
         index_name = input_stage.get("indexName", False)
         if index_name:
             used_indexes.append(index_name)
