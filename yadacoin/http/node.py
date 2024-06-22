@@ -120,6 +120,18 @@ class GetStatusHandler(BaseHandler):
             sort=[("timestamp", -1)],
             hint="__timestamp_archived",
         )
+
+        status["unindexed_queries"] = {
+            "count": await self.config.mongo.async_db.unindexed_queries.count_documents(
+                {}
+            ),
+            "detail": [
+                x
+                async for x in self.config.mongo.async_db.unindexed_queries.find(
+                    {}, {"_id": 0}
+                )
+            ],
+        }
         self.render_as_json(status, indent=4)
 
 

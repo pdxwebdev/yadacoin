@@ -403,7 +403,6 @@ class Mongo(object):
         # self.async_db = self.async_client[self.config.database]
         self.async_site_db = self.async_client[self.config.site_database]
         self.async_db.slow_queries = []
-        self.async_db.unindexed_queries = []
         # convert block time from string to number
         blocks_to_convert = self.db.blocks.find({"time": {"$type": 2}})
         for block in blocks_to_convert:
@@ -592,9 +591,11 @@ class DeuggingListener(CommandListener):
                     config.app_log.warning(message)
 
             if not used_indexes:
-                message = f"Unindexed query detected: {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', {})}"
-                config.app_log.warning(message)
-                config.mongo.async_db.unindexed_queries.append(message)
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("pipeline", {}),
+                )
         elif event.command.get("filter", {}):
             query_planner = explain_result.get("queryPlanner", {})
             winning_plan = query_planner.get("winningPlan", {})
@@ -609,27 +610,33 @@ class DeuggingListener(CommandListener):
                     config.app_log.warning(message)
 
             if not used_indexes:
-                message = f"Unindexed query detected: {event.command_name} : {query_planner['namespace']} : {event.command.get('filter', {})}"
-                config.app_log.warning(message)
-                config.mongo.async_db.unindexed_queries.append(message)
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("filter", {}),
+                )
         elif event.command.get("deletes", {}):
             query_planner = explain_result.get("queryPlanner", {})
             winning_plan = query_planner.get("winningPlan", {})
             input_stage = winning_plan.get("inputStage", {})
             used_indexes = input_stage.get("indexName", False)
             if not used_indexes:
-                message = f"Unindexed query detected: {event.command_name} : {query_planner['namespace']} : {event.command.get('deletes', {})}"
-                config.app_log.warning(message)
-                config.mongo.async_db.unindexed_queries.append(message)
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("deletes", {}),
+                )
         elif event.command.get("updates", {}):
             query_planner = explain_result.get("queryPlanner", {})
             winning_plan = query_planner.get("winningPlan", {})
             input_stage = winning_plan.get("inputStage", {})
             used_indexes = input_stage.get("indexName", False)
             if not used_indexes:
-                message = f"Unindexed query detected: {event.command_name} : {query_planner['namespace']} : {event.command.get('updates', {})}"
-                config.app_log.warning(message)
-                config.mongo.async_db.unindexed_queries.append(message)
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("updates", {}),
+                )
         if used_indexes:
             message = f"Indexes used: {used_indexes} : {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', event.command.get('filter', {}))}"
             config.app_log.info(message)
@@ -657,6 +664,24 @@ class DeuggingListener(CommandListener):
                     return False
             return used_indexes
         return used_indexes
+
+    def handle_unindexed_log(self, command_name, collection, query):
+        if collection.endswith("unindexed_queries") or collection.endswith("_cache"):
+            return
+        config = Config()
+        message = f"Unindexed query detected: {command_name} : {collection} : {query}"
+        config.app_log.warning(message)
+        config.mongo.db.unindexed_queries.update_many(
+            {"command_name": command_name, "collection": collection, "query": query},
+            {
+                "$set": {
+                    "command_name": command_name,
+                    "collection": collection,
+                    "query": query,
+                }
+            },
+            upsert=True,
+        )
 
 
 # Register the profiling listener

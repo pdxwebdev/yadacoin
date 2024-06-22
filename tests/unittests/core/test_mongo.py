@@ -67,59 +67,68 @@ class TestMongo(AsyncTestCase):
         c.mongo_debug = True
         c.app_log = AppLog()
         m = c.mongo
+        await m.async_db.unindexed_queries.delete_many({})
 
         i = 0
         # test find
         await m.async_db.test_collection.find({f"not_indexed{i}": 1}).limit(1).to_list(
             1
         )
-        assert m.async_db.unindexed_queries[i].index("find")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "find", f"query.not_indexed{i}": 1}
+        )
         i += 1
 
         # test find_one
         await m.async_db.test_collection.find_one({f"not_indexed{i}": 1})
-        assert m.async_db.unindexed_queries[i].index("find")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "find", f"query.not_indexed{i}": 1}
+        )
         i += 1
 
         # test count_documents
         await m.async_db.test_collection.count_documents({f"not_indexed{i}": 1})
-        assert m.async_db.unindexed_queries[i].index("aggregate")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "aggregate", f"query.0.$match.not_indexed{i}": 1}
+        )
         i += 1
 
         # test delete_many
         await m.async_db.test_collection.delete_many({f"not_indexed{i}": 1})
-        assert m.async_db.unindexed_queries[i].index("delete")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "delete", f"query.0.q.not_indexed{i}": 1}
+        )
         i += 1
 
         # test replace_one
         await m.async_db.test_collection.replace_one({f"not_indexed{i}": 1}, {})
-        assert m.async_db.unindexed_queries[i].index("update")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "update", f"query.0.q.not_indexed{i}": 1}
+        )
         i += 1
 
         # test update_one
         await m.async_db.test_collection.update_one(
             {f"not_indexed{i}": 1}, {"$set": {}}
         )
-        assert m.async_db.unindexed_queries[i].index("update")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "update", f"query.0.q.not_indexed{i}": 1}
+        )
         i += 1
 
         # test update_many
         await m.async_db.test_collection.update_many(
             {f"not_indexed{i}": 1}, {"$set": {}}
         )
-        assert m.async_db.unindexed_queries[i].index("update")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "update", f"query.0.q.not_indexed{i}": 1}
+        )
         i += 1
 
         # test aggregate
         await m.async_db.test_collection.aggregate(
             [{"$match": {f"not_indexed{i}": 1}}]
         ).to_list(1)
-        assert m.async_db.unindexed_queries[i].index("aggregate")
-        assert m.async_db.unindexed_queries[i].index(f"not_indexed{i}")
+        assert await m.async_db.unindexed_queries.find_one(
+            {"command_name": "aggregate", f"query.0.$match.not_indexed{i}": 1}
+        )

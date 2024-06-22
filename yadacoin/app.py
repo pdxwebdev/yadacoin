@@ -290,10 +290,6 @@ class NodeApplication(Application):
                 "count": len(self.config.mongo.async_db.slow_queries),
                 "detail": self.config.mongo.async_db.slow_queries,
             }
-            status["unindexed_queries"] = {
-                "count": len(self.config.mongo.async_db.unindexed_queries),
-                "detail": self.config.mongo.async_db.unindexed_queries,
-            }
             status["transaction_tracker"] = {
                 "nodeServer": self.config.nodeServer.newtxn_tracker.to_dict(),
                 "nodeClient": self.config.nodeClient.newtxn_tracker.to_dict(),
