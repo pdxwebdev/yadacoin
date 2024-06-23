@@ -671,17 +671,41 @@ class DeuggingListener(CommandListener):
         config = Config()
         message = f"Unindexed query detected: {command_name} : {collection} : {query}"
         config.app_log.warning(message)
+        flattened_data = self.flatten_data(query)
         config.mongo.db.unindexed_queries.update_many(
-            {"command_name": command_name, "collection": collection, "query": query},
+            {
+                "command_name": command_name,
+                "collection": collection,
+                **{f"query.{k}": {"$exists": True} for k, v in flattened_data.items()},
+            },
             {
                 "$set": {
                     "command_name": command_name,
                     "collection": collection,
-                    "query": query,
-                }
+                    **{f"query.{k}": v for k, v in flattened_data.items()},
+                },
+                "$inc": {"count": 1},
             },
             upsert=True,
         )
+
+    def flatten_data(self, data, parent_key="", sep="."):
+        items = []
+        if isinstance(data, dict):
+            for k, v in data.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict) or isinstance(v, list):
+                    items.extend(self.flatten_data(v, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, None))
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+                if isinstance(item, dict) or isinstance(item, list):
+                    items.extend(self.flatten_data(item, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, None))
+        return dict(items)
 
 
 # Register the profiling listener
