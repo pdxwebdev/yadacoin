@@ -75,35 +75,35 @@ class TestMongo(AsyncTestCase):
             1
         )
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "find", f"query.not_indexed{i}": 1}
+            {"command_name": "find", f"query.not_indexed{i}": None}
         )
         i += 1
 
         # test find_one
         await m.async_db.test_collection.find_one({f"not_indexed{i}": 1})
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "find", f"query.not_indexed{i}": 1}
+            {"command_name": "find", f"query.not_indexed{i}": None}
         )
         i += 1
 
         # test count_documents
         await m.async_db.test_collection.count_documents({f"not_indexed{i}": 1})
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "aggregate", f"query.0.$match.not_indexed{i}": 1}
+            {"command_name": "aggregate", f"query.0.$match.not_indexed{i}": None}
         )
         i += 1
 
         # test delete_many
         await m.async_db.test_collection.delete_many({f"not_indexed{i}": 1})
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "delete", f"query.0.q.not_indexed{i}": 1}
+            {"command_name": "delete", f"query.0.q.not_indexed{i}": None}
         )
         i += 1
 
         # test replace_one
         await m.async_db.test_collection.replace_one({f"not_indexed{i}": 1}, {})
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "update", f"query.0.q.not_indexed{i}": 1}
+            {"command_name": "update", f"query.0.q.not_indexed{i}": None}
         )
         i += 1
 
@@ -112,7 +112,7 @@ class TestMongo(AsyncTestCase):
             {f"not_indexed{i}": 1}, {"$set": {}}
         )
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "update", f"query.0.q.not_indexed{i}": 1}
+            {"command_name": "update", f"query.0.q.not_indexed{i}": None}
         )
         i += 1
 
@@ -121,7 +121,7 @@ class TestMongo(AsyncTestCase):
             {f"not_indexed{i}": 1}, {"$set": {}}
         )
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "update", f"query.0.q.not_indexed{i}": 1}
+            {"command_name": "update", f"query.0.q.not_indexed{i}": None}
         )
         i += 1
 
@@ -130,5 +130,5 @@ class TestMongo(AsyncTestCase):
             [{"$match": {f"not_indexed{i}": 1}}]
         ).to_list(1)
         assert await m.async_db.unindexed_queries.find_one(
-            {"command_name": "aggregate", f"query.0.$match.not_indexed{i}": 1}
+            {"command_name": "aggregate", f"query.0.$match.not_indexed{i}": None}
         )
