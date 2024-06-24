@@ -1,16 +1,32 @@
-<h2>Current block height: {{current_height}}</h2>
-<h2>Coins in circulation: {{circulating}}</h2>
-<h3>Maximum supply: 21,000,000</h3>
-<h3>Network hash rate: {{hashrate}}h/s</h3>
-<h3>Difficulty: {{difficulty}}</h3>
-<h3>Hashing algorithm: RandomX Variant (rx/yada)</h3>
+<div class="grid-container">
+    <div class="grid-item">
+        <h2>Current block height: {{current_height}}</h2>
+    </div>
+    <div class="grid-item">
+        <h2>Coins in circulation: {{circulating}}</h2>
+    </div>
+    <div class="grid-item">
+        <h3>Maximum supply: 21,000,000</h3>
+    </div>
+    <div class="grid-item">
+        <h3>Network hash rate: {{hashrate}}h/s</h3>
+    </div>
+    <div class="grid-item">
+        <h3>Difficulty: {{difficulty}}</h3>
+    </div>
+    <div class="grid-item">
+        <h3>Hashing algo: RandomX (rx/yada)</h3>
+    </div>
+</div>
 <form (ngSubmit)="onSubmit()" #searchForm="ngForm">
+    <label for="expertMode">Expert Mode:&nbsp;</label>
+    <input type="checkbox" name="expertMode" [(ngModel)]="expertMode"  />
     <input class="form-control" [(ngModel)]="model.term" name="term" placeholder="Wallet address, Txn Id, Block height...">
-    <button style="margin-top: 15px" class="btn btn-success">Search</button>
+    <button style="margin-top: 15px; margin-bottom: 15px" class="btn btn-success">Search</button>
 </form>
 <div *ngIf="searching"><strong>Searching...</strong></div>
 <div *ngIf="(!searching && submitted) && result.length === 0"><strong>No results</strong></div>
-<h2 *ngIf="resultType === 'txn_outputs_to'">Balance: {{balance}}</h2>
+<h2 *ngIf="resultType === 'txn_outputs_to'" style="margin-top: 25px">Balance: {{balance}}</h2>
 <ul *ngIf="resultType.substr(0, 6) === 'failed'">
     <li *ngFor="let transaction of result">
         <h3>Failed transactions</h3>
@@ -69,7 +85,7 @@
         </div>
     </li>
 </ul>
-<ul *ngIf="resultType.substr(0, 5) === 'block' || resultType.substr(0, 3) === 'txn'">
+<ul *ngIf="(resultType.substr(0, 5) === 'block' || resultType.substr(0, 3) === 'txn') && expertMode">
     <li *ngFor="let block of result">
         <a href="/explorer?term={{block.index}}"><h3>Block {{block.index}}</h3></a>
         <p><strong>version: </strong>{{block.version}}</p>
@@ -83,7 +99,7 @@
         <p><strong>public_key: </strong><a href="/explorer?term={{block.public_key}}">{{block.public_key}}</a></p>
         <p><strong>signature: </strong><a href="/explorer?term={{block.id}}">{{block.id}}</a></p>
         <p><strong>hash: </strong><a href="/explorer?term={{block.hash}}">{{block.hash}}</a></p>
-        <h3>Transactions</h3>
+        <h4>Transactions</h4>
         <ul>
             <li *ngFor="let transaction of block.transactions">
                 <p><strong>public_key: </strong><a href="/explorer?term={{transaction.public_key}}">{{transaction.public_key}}</a></p>
@@ -113,3 +129,32 @@
         </ul>
     </li>
 </ul>
+<div *ngIf="(resultType.substr(0, 5) === 'block' || resultType.substr(0, 3) === 'txn') && !expertMode">
+    <div *ngFor="let block of result" class="block-info">
+        <a href="/explorer?term={{block.index}}"><h3>Block {{block.index}}</h3></a>
+        <div class="transactions">
+            <h3>Transactions</h3>
+            <div *ngFor="let transaction of block.transactions" class="transaction">
+                <div class="transaction-container">
+                    <div class="transaction-inputs">
+                        <h4>From</h4>
+                        <ul>
+                            <li>
+                                <p><strong>Address: </strong><a href="/explorer?term={{encodeAddress(transaction.public_key)}}">{{encodeAddress(transaction.public_key)}}</a></p>
+                            </li>
+                        </ul>
+                    </div>
+                    <div class="transaction-outputs">
+                        <h4>To</h4>
+                        <ul>
+                            <li *ngFor="let output of transaction.outputs">
+                                <p><strong>Address: </strong><a href="/explorer?term={{output.to}}">{{output.to}}</a></p>
+                                <p><strong>Amount: </strong>{{output.value}}</p>
+                            </li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

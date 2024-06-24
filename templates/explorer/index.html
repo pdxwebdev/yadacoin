@@ -1,22 +1,80 @@
-<html><head><link href="yadacoinstatic/css/bootstrap.min.css" rel="stylesheet"></head></html>
-<body data-spy="scroll" data-target=".onpage-navigation" data-offset="60">
-  <main>
-    <div class="main">
-      <section class="module" id="explorer">
-        <div class="container">
-          <base href="/">
-          <script
-          src="https://code.jquery.com/jquery-3.3.1.min.js"
-          integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
-          crossorigin="anonymous"></script>
-          <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.bundle.min.js" integrity="sha384-pjaaA8dDz/5BgdFUPX6M/9SUZv4d12SUPF0axWc+VRZkx5xU3daN+lYb49+Ax+Tl" crossorigin="anonymous"></script>
-          <meta name="viewport" content="width=device-width, initial-scale=1">
-          <link rel="icon" type="image/x-icon" href="favicon.ico">
-          <app-root></app-root>
-        </div>
-      </section>
-    </div>
-  </main>
-  <script type="text/javascript" src="yadacoinstatic/explorer/runtime.js"></script><script type="text/javascript" src="yadacoinstatic/explorer/polyfills.js"></script><script type="text/javascript" src="yadacoinstatic/explorer/styles.js"></script><script type="text/javascript" src="yadacoinstatic/explorer/vendor.js"></script><script type="text/javascript" src="yadacoinstatic/explorer/main.js"></script></body>
-</body>
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>YadaCoin - Blockchain Explorer</title>
+  <base href="/yadacoinstatic/explorer/">  <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css" rel="stylesheet" integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO" crossorigin="anonymous">
+  <script
+  src="https://code.jquery.com/jquery-3.3.1.min.js"
+  integrity="sha256-FgpCb/KJQlLNfOu91ta32o/NMZxltwRo8QtmkMRdAu8="
+  crossorigin="anonymous"></script>
+  <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/js/bootstrap.bundle.min.js" integrity="sha384-pjaaA8dDz/5BgdFUPX6M/9SUZv4d12SUPF0axWc+VRZkx5xU3daN+lYb49+Ax+Tl" crossorigin="anonymous"></script>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" type="image/x-icon" href="favicon.ico">
+  <style>
+    body {
+        background-color: #343a40;
+        color: #ffffff;
+    }
+
+    .navbar, .card {
+        background-color: #343a40;
+        border-color: #454d55;
+    }
+
+    .navbar a, .card-title, .card-text, .nav-link, .dropdown-item {
+        color: #ffffff;
+    }
+
+    .navbar a:hover, .nav-link:hover, .dropdown-item:hover {
+        color: #adb5bd;
+    }
+
+    .btn-primary {
+        background-color: #007bff;
+        border-color: #007bff;
+    }
+
+    .btn-primary:hover {
+        background-color: #0056b3;
+        border-color: #004085;
+    }
+
+    .form-control {
+        background-color: #495057;
+        color: #ffffff;
+        border: 1px solid #ced4da;
+    }
+
+    .form-control:focus {
+        background-color: #495057;
+        color: #ffffff;
+        border-color: #80bdff;
+        outline: 0;
+    }
+
+    .table {
+        background-color: #343a40;
+        color: #ffffff;
+    }
+
+    .table thead th {
+        background-color: #454d55;
+        color: #ffffff;
+    }
+
+    .table tbody tr:hover {
+        background-color: #495057;
+    }
+
+    .table-bordered, .table-bordered th, .table-bordered td {
+        border-color: #454d55;
+    }
+
+  </style>
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/bitcoinjs-lib/0.2.0-1/bitcoinjs-min.js" integrity="sha512-5lmrSTfjJTFToLKhugyxZAOqXdoG8mSNLXjPrchSGrcCAS9j76/UW/ffe+PZErWJaw6szUQgNSIRTP/EjvrISg==" crossorigin="anonymous" referrerpolicy="no-referrer"></script>
+</head>
+<body class="container">
+  <app-root></app-root>
+<script type="text/javascript" src="runtime.js"></script><script type="text/javascript" src="polyfills.js"></script><script type="text/javascript" src="styles.js"></script><script type="text/javascript" src="vendor.js"></script><script type="text/javascript" src="main.js"></script></body>
 </html>
