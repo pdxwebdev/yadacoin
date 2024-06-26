@@ -45,7 +45,7 @@ class Mongo(object):
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __to = IndexModel([("transactions.outputs.to", ASCENDING)], name="__to")
         __txn_id = IndexModel([("transactions.id", ASCENDING)], name="__txn_id")
-        __txn_hash = IndexModel([("transactions.hash", ASCENDING)], name="__hash")
+        __txn_hash = IndexModel([("transactions.hash", ASCENDING)], name="__txn_hash")
         __txn_inputs_id = IndexModel(
             [("transactions.inputs.id", ASCENDING)], name="__txn_inputs_id"
         )

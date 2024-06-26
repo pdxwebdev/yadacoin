@@ -4,6 +4,13 @@ import { Search } from "../search";
 
 declare var Bitcoin;
 
+function makeUrl(url) {
+  if (window.location.hostname === "localhost") {
+    return "http://localhost:8005" + url;
+  }
+  return url;
+}
+
 @Component({
   selector: "app-search-form",
   templateUrl: "./search-form.component.html",
@@ -23,7 +30,7 @@ export class SearchFormComponent implements OnInit {
   expertMode = false;
 
   constructor(public http: Http) {
-    this.http.get("/api-stats").subscribe(
+    this.http.get(makeUrl("/api-stats")).subscribe(
       (res: any) => {
         this.difficulty = this.numberWithCommas(
           res.json()["stats"]["difficulty"]
@@ -40,7 +47,9 @@ export class SearchFormComponent implements OnInit {
         if (!window.location.search) {
           this.http
             .get(
-              "/explorer-search?term=" + this.current_height.replace(",", "")
+              makeUrl(
+                "/explorer-search?term=" + this.current_height.replace(",", "")
+              )
             )
             .subscribe(
               (res: any) => {
@@ -62,17 +71,19 @@ export class SearchFormComponent implements OnInit {
     if (window.location.search) {
       this.searching = true;
       this.submitted = true;
-      this.http.get("/explorer-search" + window.location.search).subscribe(
-        (res: any) => {
-          this.result = res.json().result || [];
-          this.resultType = res.json().resultType;
-          this.balance = res.json().balance;
-          this.searching = false;
-        },
-        (err: any) => {
-          alert("something went terribly wrong!");
-        }
-      );
+      this.http
+        .get(makeUrl("/explorer-search" + window.location.search))
+        .subscribe(
+          (res: any) => {
+            this.result = res.json().result || [];
+            this.resultType = res.json().resultType;
+            this.balance = res.json().balance;
+            this.searching = false;
+          },
+          (err: any) => {
+            alert("something went terribly wrong!");
+          }
+        );
     }
   }
 
@@ -82,7 +93,9 @@ export class SearchFormComponent implements OnInit {
     this.searching = true;
     this.submitted = true;
     this.http
-      .get("/explorer-search?term=" + encodeURIComponent(this.model.term))
+      .get(
+        makeUrl("/explorer-search?term=" + encodeURIComponent(this.model.term))
+      )
       .subscribe(
         (res: any) => {
           this.result = res.json().result || [];
