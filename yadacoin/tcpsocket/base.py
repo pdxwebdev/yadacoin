@@ -127,6 +127,12 @@ class BaseRPC:
             del self.config.nodeClient.outbound_pending[stream.peer.__class__.__name__][
                 id_attr
             ]
+        try:
+            for y in self.config.nodeServer.retry_messages.copy():
+                if y[0] == id_attr:
+                    del self.config.nodeServer.retry_messages[y]
+        except:
+            pass
 
 
 class RPCSocketServer(TCPServer, BaseRPC):
@@ -240,6 +246,12 @@ class RPCSocketServer(TCPServer, BaseRPC):
             del self.config.nodeServer.inbound_pending[stream.peer.__class__.__name__][
                 id_attr
             ]
+        try:
+            for y in self.config.nodeServer.retry_messages.copy():
+                if y[0] == id_attr:
+                    del self.config.nodeServer.retry_messages[y]
+        except:
+            pass
 
 
 class DummyStream:
@@ -427,3 +439,9 @@ class RPCSocketClient(TCPClient):
             del self.outbound_streams[stream.peer.__class__.__name__][stream.peer.rid]
         if stream.peer.rid in self.outbound_pending[stream.peer.__class__.__name__]:
             del self.outbound_pending[stream.peer.__class__.__name__][stream.peer.rid]
+        try:
+            for y in self.config.nodeServer.retry_messages.copy():
+                if y[0] == stream.peer.rid:
+                    del self.config.nodeServer.retry_messages[y]
+        except:
+            pass
