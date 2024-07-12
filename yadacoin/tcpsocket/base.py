@@ -133,6 +133,12 @@ class BaseRPC:
                     del self.config.nodeServer.retry_messages[y]
         except:
             pass
+        try:
+            for y in self.config.nodeClient.retry_messages.copy():
+                if y[0] == id_attr:
+                    del self.config.nodeClient.retry_messages[y]
+        except:
+            pass
 
 
 class RPCSocketServer(TCPServer, BaseRPC):
@@ -440,8 +446,8 @@ class RPCSocketClient(TCPClient):
         if stream.peer.rid in self.outbound_pending[stream.peer.__class__.__name__]:
             del self.outbound_pending[stream.peer.__class__.__name__][stream.peer.rid]
         try:
-            for y in self.config.nodeServer.retry_messages.copy():
+            for y in self.config.nodeClient.retry_messages.copy():
                 if y[0] == stream.peer.rid:
-                    del self.config.nodeServer.retry_messages[y]
+                    del self.config.nodeClient.retry_messages[y]
         except:
             pass
