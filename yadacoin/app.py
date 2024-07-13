@@ -234,6 +234,19 @@ class NodeApplication(Application):
             self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
                 stream.peer.identity.username_signature
             ] = int(time())
+        try:
+            for y in self.config.nodeServer.retry_messages.copy():
+                if y[0] == id_attr:
+                    del self.config.nodeServer.retry_messages[y]
+        except:
+            pass
+
+        try:
+            for y in self.config.nodeClient.retry_messages.copy():
+                if y[0] == id_attr:
+                    del self.config.nodeClient.retry_messages[y]
+        except:
+            pass
 
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
@@ -476,9 +489,6 @@ class NodeApplication(Application):
                 ).copy():
                     if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
                         if message["retry_attempts"] > 3:
-                            for y in self.config.nodeServer.retry_messages.copy():
-                                if y[0] == x[0]:
-                                    del self.config.nodeServer.retry_messages[y]
                             await self.remove_peer(
                                 self.config.nodeServer.inbound_streams[peer_cls][x[0]],
                                 reason=f"background_message_sender nodeServer {x}",
@@ -518,9 +528,6 @@ class NodeApplication(Application):
                 ).copy():
                     if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
                         if message["retry_attempts"] > 3:
-                            for y in self.config.nodeClient.retry_messages.copy():
-                                if y[0] == x[0]:
-                                    del self.config.nodeClient.retry_messages[y]
                             await self.remove_peer(
                                 self.config.nodeClient.outbound_streams[peer_cls][x[0]],
                                 reason=f"background_message_sender nodeClient {x}",
