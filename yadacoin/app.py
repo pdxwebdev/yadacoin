@@ -234,16 +234,20 @@ class NodeApplication(Application):
             self.config.nodeClient.outbound_ignore[stream.peer.__class__.__name__][
                 stream.peer.identity.username_signature
             ] = int(time())
+
+        self.delete_retry_messages(id_attr)
+
+    def delete_retry_messages(self, rid):
         try:
             for y in self.config.nodeServer.retry_messages.copy():
-                if y[0] == id_attr:
+                if y[0] == rid:
                     del self.config.nodeServer.retry_messages[y]
         except:
             pass
 
         try:
             for y in self.config.nodeClient.retry_messages.copy():
-                if y[0] == id_attr:
+                if y[0] == rid:
                     del self.config.nodeClient.retry_messages[y]
         except:
             pass
@@ -487,7 +491,9 @@ class NodeApplication(Application):
                 for peer_cls in list(
                     self.config.nodeServer.inbound_streams.keys()
                 ).copy():
+                    found = False
                     if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
+                        found = True
                         if message["retry_attempts"] > 3:
                             await self.remove_peer(
                                 self.config.nodeServer.inbound_streams[peer_cls][x[0]],
@@ -513,6 +519,10 @@ class NodeApplication(Application):
                                 x[1],
                                 message,
                             )
+                    if not found:
+                        self.delete_retry_messages(
+                            x[0],
+                        )
 
             for x in self.config.nodeClient.retry_messages.copy():
                 message = self.config.nodeClient.retry_messages.get(x)
@@ -526,7 +536,9 @@ class NodeApplication(Application):
                 for peer_cls in list(
                     self.config.nodeClient.outbound_streams.keys()
                 ).copy():
+                    found = False
                     if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                        found = True
                         if message["retry_attempts"] > 3:
                             await self.remove_peer(
                                 self.config.nodeClient.outbound_streams[peer_cls][x[0]],
@@ -551,6 +563,10 @@ class NodeApplication(Application):
                                 x[1],
                                 message,
                             )
+                    if not found:
+                        self.delete_retry_messages(
+                            x[0],
+                        )
 
             self.config.health.message_sender.last_activity = int(time())
 
