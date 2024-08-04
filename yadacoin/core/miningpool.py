@@ -1,4 +1,3 @@
-import binascii
 import json
 import random
 import uuid
@@ -335,23 +334,27 @@ class MiningPool(object):
     async def generate_job(self, agent, peer_id):
         difficulty = int(self.max_target / self.block_factory.target)
         custom_diff = None
-        miner_diff = max(int(custom_diff), 50000) if custom_diff is not None else self.config.pool_diff
+        miner_diff = (
+            max(int(custom_diff), 50000)
+            if custom_diff is not None
+            else self.config.pool_diff
+        )
         seed_hash = "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"  # sha256(yadacoin65000)
         job_id = str(uuid.uuid4())
         extra_nonce = str(random.randrange(100001, 999999))
         header = self.block_factory.header
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
 
-        if "XMRigCC/3" in agent or "XMRig/3" in agent:
+        if "XMRigCC/3" in agent or "XMRig/3" in agent or "XMRig/6" in agent:
             target = hex(0x10000000000000001 // miner_diff)
         elif miner_diff <= 69905:
-            target = hex(
-                0x10000000000000001 // miner_diff - 0x0000F00000000000
-            )[2:].zfill(48)
+            target = hex(0x10000000000000001 // miner_diff - 0x0000F00000000000)[
+                2:
+            ].zfill(48)
         else:
-            target = "-" + hex(
-                0x10000000000000001 // miner_diff - 0x0000F00000000000
-            )[3:].zfill(48)
+            target = "-" + hex(0x10000000000000001 // miner_diff - 0x0000F00000000000)[
+                3:
+            ].zfill(48)
 
         res = {
             "job_id": job_id,
