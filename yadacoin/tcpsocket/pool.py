@@ -1,7 +1,7 @@
 import json
 import time
-import uuid
 import traceback
+import uuid
 
 from tornado.iostream import StreamClosedError
 
@@ -51,7 +51,15 @@ class StratumServer(RPCSocketServer):
         job = await cls.config.mp.block_template(stream.peer.agent, stream.peer.peer_id)
         stream.jobs[job.id] = job
         cls.current_header = cls.config.mp.block_factory.header
-        params = {"blob": job.blob, "job_id": job.job_id, "target": job.target, "seed_hash": job.seed_hash, "height": job.index, "extra_nonce": job.extra_nonce}
+        params = {
+            "blob": job.blob,
+            "job_id": job.job_id,
+            "target": job.target,
+            "seed_hash": job.seed_hash,
+            "height": job.index,
+            "extra_nonce": job.extra_nonce,
+            "algo": job.algo,
+        }
         rpc_data = {"jsonrpc": "2.0", "method": "job", "params": params}
         try:
             cls.config.app_log.info(f"Sent job to Miner: {stream.peer.to_json()}")
@@ -178,7 +186,9 @@ class StratumServer(RPCSocketServer):
             return
         peer_id = str(uuid.uuid4())
         await StratumServer.block_checker()
-        job = await StratumServer.config.mp.block_template(body["params"].get("agent"), peer_id)
+        job = await StratumServer.config.mp.block_template(
+            body["params"].get("agent"), peer_id
+        )
         if not hasattr(stream, "jobs"):
             stream.jobs = {}
         stream.jobs[job.id] = job
@@ -192,7 +202,9 @@ class StratumServer(RPCSocketServer):
 
         try:
             stream.peer = Miner(
-                address=body["params"].get("login"), agent=body["params"].get("agent"), peer_id=peer_id
+                address=body["params"].get("login"),
+                agent=body["params"].get("agent"),
+                peer_id=peer_id,
             )
             self.config.app_log.info(f"Connected to Miner: {stream.peer.to_json()}")
             StratumServer.inbound_streams[Miner.__name__].setdefault(
