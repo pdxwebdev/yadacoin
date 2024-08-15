@@ -30,7 +30,7 @@ webpackEmptyAsyncContext.id = "./src/$$_lazy_route_resource lazy recursive";
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-module.exports = ""
+module.exports = ".header-container {\n    display: flex;\n    align-items: center;\n    justify-content: center; /* Center the content horizontally */\n    text-align: center;\n    padding: 10px; /* Optional padding */\n    background-color: #343a40; /* Optional background color for the header */\n  }\n  \n  .header-container .logo {\n    margin-right: 10px; /* Space between the logo and the header */\n    height: 50px\n  }\n  \n  .header-container h1 {\n    color: #ffffff; /* Ensure the header text is white */\n    margin: 0; /* Remove default margin */\n  }"
 
 /***/ }),
 
@@ -41,7 +41,7 @@ module.exports = ""
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-module.exports = "<!--The content below is only a placeholder and can be replaced.-->\n<div style=\"text-align:center\">\n  <h1>\n    Yada Coin Explorer\n  </h1>\n</div>\n<app-search-form></app-search-form>\n\n"
+module.exports = "<!--The content below is only a placeholder and can be replaced.-->\n<div class=\"header-container\">\n  <img src=\"https://yadacoin.io/yadacoinstatic/yadalogo200.png\" class=\"logo\"/>\n  <h1>YadaCoin Explorer</h1>\n</div>\n<app-search-form></app-search-form>\n\n"
 
 /***/ }),
 
@@ -65,13 +65,13 @@ var __decorate = (undefined && undefined.__decorate) || function (decorators, ta
 
 var AppComponent = /** @class */ (function () {
     function AppComponent() {
-        this.title = 'explorer';
+        this.title = "explorer";
     }
     AppComponent = __decorate([
         Object(_angular_core__WEBPACK_IMPORTED_MODULE_0__["Component"])({
-            selector: 'app-root',
+            selector: "app-root",
             template: __webpack_require__(/*! ./app.component.html */ "./src/app/app.component.html"),
-            styles: [__webpack_require__(/*! ./app.component.css */ "./src/app/app.component.css")]
+            styles: [__webpack_require__(/*! ./app.component.css */ "./src/app/app.component.css")],
         })
     ], AppComponent);
     return AppComponent;
@@ -141,7 +141,7 @@ var AppModule = /** @class */ (function () {
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-module.exports = ""
+module.exports = "body {\n    background-color: #343a40;\n    color: #ffffff;\n}\n\n.grid-container {\n    display: flex;\n    flex-wrap: wrap;\n    justify-content: space-between;\n}\n\n.grid-item {\n    flex: 0 0 48%; /* Each item takes up about half the width of the container */\n    margin-bottom: 20px; /* Space between rows */\n    padding: 10px; /* Optional padding for better spacing inside items */\n    box-sizing: border-box;\n    background-color: #495057; /* Dark background for items */\n    border: 1px solid #6c757d; /* Border with a lighter shade */\n    border-radius: 5px; /* Optional rounded corners */\n    color: #ffffff; /* Light text color */\n}\n\n.grid-item h2, .grid-item h3 {\n    color: #ffffff; /* Ensure headers are also light color */\n}\n\n@media (max-width: 768px) {\n    .grid-item {\n        flex: 0 0 100%; /* On smaller screens, items take full width */\n    }\n}\n\n.block-info {\n    border: 1px solid #6c757d;\n    border-radius: 5px;\n    padding: 15px;\n    margin-bottom: 20px;\n    background-color: #495057;\n}\n\n.block-info h3, .block-info h4 {\n    color: #ffffff;\n}\n\n.transactions {\n    margin-top: 10px;\n}\n\n.transaction {\n    padding: 10px;\n    border: 1px solid #6c757d;\n    border-radius: 5px;\n    margin-bottom: 10px;\n    background-color: #343a40;\n}\n\n.transaction h4 {\n    color: #adb5bd;\n}\n\n.transaction p {\n    margin: 0;\n    color: #ffffff;\n}\n\n.transaction a {\n    color: #17a2b8;\n}\n\n.transaction-container {\n    display: flex;\n    justify-content: space-between;\n    align-items: flex-start;\n}\n\n.transaction-inputs, .transaction-outputs {\n    width: 48%;\n    padding: 10px;\n    background-color: #495057;\n    border: 1px solid #6c757d;\n    border-radius: 5px;\n    overflow: auto;\n}\n\n.transaction-inputs ul, .transaction-outputs ul {\n    list-style: none;\n    padding: 0;\n    margin: 0;\n}\n\n.transaction-inputs li, .transaction-outputs li {\n    margin-bottom: 10px;\n}"
 
 /***/ }),
 
@@ -152,7 +152,7 @@ module.exports = ""
 /*! no static exports found */
 /***/ (function(module, exports) {
 
-module.exports = "<h2>Current block height: {{current_height}}</h2>\n<h2>Coins in circulation: {{circulating}}</h2>\n<h3>Maximum supply: 21,000,000</h3>\n<h3>Network hash rate: {{hashrate}}h/s</h3>\n<h3>Difficulty: {{difficulty}}</h3>\n<h3>Hashing algorithm: RandomX Variant (rx/yada)</h3>\n<form (ngSubmit)=\"onSubmit()\" #searchForm=\"ngForm\">\n    <input class=\"form-control\" [(ngModel)]=\"model.term\" name=\"term\" placeholder=\"Wallet address, Txn Id, Block height...\">\n    <button style=\"margin-top: 15px\" class=\"btn btn-success\">Search</button>\n</form>\n<div *ngIf=\"searching\"><strong>Searching...</strong></div>\n<div *ngIf=\"(!searching && submitted) && result.length === 0\"><strong>No results</strong></div>\n<h2 *ngIf=\"resultType === 'txn_outputs_to'\">Balance: {{balance}}</h2>\n<ul *ngIf=\"resultType.substr(0, 6) === 'failed'\">\n    <li *ngFor=\"let transaction of result\">\n        <h3>Failed transactions</h3>\n        <p><strong>exception class: </strong>{{transaction.reason}}</p>\n        <p><strong>traceback: </strong><textarea class=\"form-control\" rows=\"10\">{{transaction.error}}</textarea></p>\n        <p><strong>public_key: </strong><a href=\"/explorer?term={{transaction.public_key}}\">{{transaction.public_key}}</a></p>\n        <p><strong>signature: </strong><a href=\"/explorer?term={{transaction.id}}\">{{transaction.id}}</a></p>\n        <p><strong>hash: </strong>{{transaction.hash}}</p>\n        <p><strong>fee: </strong>{{transaction.fee}}</p>\n        <p><strong>diffie-hellman public key: </strong>{{transaction.dh_public_key}}</p>\n        <p><strong>relationship identifier: </strong><a href=\"/explorer?term={{transaction.rid}}\">{{transaction.rid}}</a></p>\n        <p><strong>relationship data: </strong><textarea class=\"form-control\">{{transaction.relationship}}</textarea></p>\n        <div *ngIf=\"transaction.inputs.length === 0\"><strong>No inputs</strong></div>\n        <div *ngIf=\"transaction.inputs.length > 0\">\n            <h3>Inputs</h3>\n            <ul>\n                <li *ngFor=\"let input of transaction.inputs\"><strong>Signature: </strong><a href=\"/explorer?term={{input.id}}\">{{input.id}}</a></li>\n            </ul>\n        </div>\n        <div *ngIf=\"transaction.outputs.length === 0\"><strong>No outputs</strong></div>\n        <div *ngIf=\"transaction.outputs.length > 0\">\n            <h3>Outputs</h3>\n            <ul *ngFor=\"let output of transaction.outputs\">\n                <li><strong>Address: </strong><a href=\"/explorer?term={{output.to}}\">{{output.to}}</a></li>\n                <li><strong>Amount: </strong>{{output.value}}</li>\n                <hr>\n            </ul>\n        </div>\n    </li>\n</ul>\n<ul *ngIf=\"resultType.substr(0, 7) === 'mempool'\">\n    <li *ngFor=\"let transaction of result\">\n        <h3>Mempool</h3>\n        <p><strong>public_key: </strong><a href=\"/explorer?term={{transaction.public_key}}\">{{transaction.public_key}}</a></p>\n        <p><strong>signature: </strong><a href=\"/explorer?term={{transaction.id}}\">{{transaction.id}}</a></p>\n        <p><strong>hash: </strong>{{transaction.hash}}</p>\n        <p><strong>fee: </strong>{{transaction.fee}}</p>\n        <p><strong>diffie-hellman public key: </strong>{{transaction.dh_public_key}}</p>\n        <p><strong>relationship identifier: </strong><a href=\"/explorer?term={{transaction.rid}}\">{{transaction.rid}}</a></p>\n        <p><strong>relationship data: </strong><textarea class=\"form-control\">{{transaction.relationship}}</textarea></p>\n        <div *ngIf=\"transaction.inputs.length === 0\"><strong>No inputs</strong></div>\n        <div *ngIf=\"transaction.inputs.length > 0\">\n            <h3>Inputs</h3>\n            <ul>\n                <li *ngFor=\"let input of transaction.inputs\"><strong>Signature: </strong><a href=\"/explorer?term={{input.id}}\">{{input.id}}</a></li>\n            </ul>\n        </div>\n        <div *ngIf=\"transaction.outputs.length === 0\"><strong>No outputs</strong></div>\n        <div *ngIf=\"transaction.outputs.length > 0\">\n            <h3>Outputs</h3>\n            <ul *ngFor=\"let output of transaction.outputs\">\n                <li><strong>Address: </strong><a href=\"/explorer?term={{output.to}}\">{{output.to}}</a></li>\n                <li><strong>Amount: </strong>{{output.value}}</li>\n                <hr>\n            </ul>\n        </div>\n    </li>\n</ul>\n<ul *ngIf=\"resultType.substr(0, 5) === 'block' || resultType.substr(0, 3) === 'txn'\">\n    <li *ngFor=\"let block of result\">\n        <a href=\"/explorer?term={{block.index}}\"><h3>Block {{block.index}}</h3></a>\n        <p><strong>version: </strong>{{block.version}}</p>\n        <p><strong>target: </strong>{{block.target}}</p>\n        <p><strong>nonce: </strong>{{block.nonce}}</p>\n        <p><strong>merkleRoot: </strong>{{block.merkleRoot}}</p>\n        <p><strong>index: </strong>{{block.index}}</p>\n        <p><strong>special min: </strong>{{block.special_min}}</p>\n        <p><strong>time: </strong>{{block.time}}</p>\n        <p><strong>previous hash: </strong><a href=\"/explorer?term={{block.prevHash}}\">{{block.prevHash}}</a></p>\n        <p><strong>public_key: </strong><a href=\"/explorer?term={{block.public_key}}\">{{block.public_key}}</a></p>\n        <p><strong>signature: </strong><a href=\"/explorer?term={{block.id}}\">{{block.id}}</a></p>\n        <p><strong>hash: </strong><a href=\"/explorer?term={{block.hash}}\">{{block.hash}}</a></p>\n        <h3>Transactions</h3>\n        <ul>\n            <li *ngFor=\"let transaction of block.transactions\">\n                <p><strong>public_key: </strong><a href=\"/explorer?term={{transaction.public_key}}\">{{transaction.public_key}}</a></p>\n                <p><strong>signature: </strong>{{transaction.id}}</p>\n                <p><strong>hash: </strong>{{transaction.hash}}</p>\n                <p><strong>fee: </strong>{{transaction.fee}}</p>\n                <p><strong>diffie-hellman public key: </strong>{{transaction.dh_public_key}}</p>\n                <p><strong>relationship identifier: </strong><a href=\"/explorer?term={{transaction.rid}}\">{{transaction.rid}}</a></p>\n                <p><strong>relationship data: </strong><textarea class=\"form-control\">{{transaction.relationship}}</textarea></p>\n                <div *ngIf=\"transaction.inputs.length === 0\"><strong>No inputs</strong></div>\n                <div *ngIf=\"transaction.inputs.length > 0\">\n                    <h3>Inputs</h3>\n                    <ul>\n                        <li *ngFor=\"let input of transaction.inputs\"><strong>Signature: </strong><a href=\"/explorer?term={{input.id}}\">{{input.id}}</a></li>\n                    </ul>\n                </div>\n                <div *ngIf=\"transaction.outputs.length === 0\"><strong>No outputs</strong></div>\n                <div *ngIf=\"transaction.outputs.length > 0\">\n                    <h3>Outputs</h3>\n                    <ul *ngFor=\"let output of transaction.outputs\">\n                        <li><strong>Address: </strong><a href=\"/explorer?term={{output.to}}\">{{output.to}}</a></li>\n                        <li><strong>Amount: </strong>{{output.value}}</li>\n                        <hr>\n                    </ul>\n                </div>\n            </li>\n        </ul>\n    </li>\n</ul>"
+module.exports = "<div class=\"grid-container\">\n  <div class=\"grid-item\">\n    <h2>Current block height: {{ current_height }}</h2>\n  </div>\n  <div class=\"grid-item\">\n    <h2>Coins in circulation: {{ circulating }}</h2>\n  </div>\n  <div class=\"grid-item\">\n    <h3>Maximum supply: 21,000,000</h3>\n  </div>\n  <div class=\"grid-item\">\n    <h3>Network hash rate: {{ hashrate }}h/s</h3>\n  </div>\n  <div class=\"grid-item\">\n    <h3>Difficulty: {{ difficulty }}</h3>\n  </div>\n  <div class=\"grid-item\">\n    <h3>Hashing algo: RandomX (rx/yada)</h3>\n  </div>\n</div>\n<form (ngSubmit)=\"onSubmit()\" #searchForm=\"ngForm\">\n  <label for=\"expertMode\">Expert Mode:&nbsp;</label>\n  <input type=\"checkbox\" name=\"expertMode\" [(ngModel)]=\"expertMode\" />\n  <input\n    class=\"form-control\"\n    [(ngModel)]=\"model.term\"\n    name=\"term\"\n    placeholder=\"Wallet address, Txn Id, Block height...\"\n  />\n  <button style=\"margin-top: 15px; margin-bottom: 15px\" class=\"btn btn-success\">\n    Search\n  </button>\n</form>\n<div *ngIf=\"searching\"><strong>Searching...</strong></div>\n<div *ngIf=\"!searching && submitted && result.length === 0\">\n  <strong>No results</strong>\n</div>\n<h2 *ngIf=\"resultType === 'txn_outputs_to'\" style=\"margin-top: 25px\">\n  Balance: {{ balance }}\n</h2>\n<ul *ngIf=\"resultType.substr(0, 6) === 'failed'\">\n  <li *ngFor=\"let transaction of result\">\n    <h3>Failed transactions</h3>\n    <p><strong>exception class: </strong>{{ transaction.reason }}</p>\n    <p>\n      <strong>traceback: </strong\n      ><textarea class=\"form-control\" rows=\"10\">{{\n        transaction.error\n      }}</textarea>\n    </p>\n    <p>\n      <strong>public_key: </strong\n      ><a href=\"/explorer?term={{ transaction.public_key }}\">{{\n        transaction.public_key\n      }}</a>\n    </p>\n    <p>\n      <strong>signature: </strong\n      ><a href=\"/explorer?term={{ transaction.id }}\">{{ transaction.id }}</a>\n    </p>\n    <p><strong>hash: </strong>{{ transaction.hash }}</p>\n    <p><strong>fee: </strong>{{ transaction.fee }}</p>\n    <p>\n      <strong>diffie-hellman public key: </strong\n      >{{ transaction.dh_public_key }}\n    </p>\n    <p>\n      <strong>relationship identifier: </strong\n      ><a href=\"/explorer?term={{ transaction.rid }}\">{{ transaction.rid }}</a>\n    </p>\n    <p>\n      <strong>relationship data: </strong\n      ><textarea class=\"form-control\">{{ transaction.relationship }}</textarea>\n    </p>\n    <div *ngIf=\"transaction.inputs.length === 0\">\n      <strong>No inputs</strong>\n    </div>\n    <div *ngIf=\"transaction.inputs.length > 0\">\n      <h3>Inputs</h3>\n      <ul>\n        <li *ngFor=\"let input of transaction.inputs\">\n          <strong>Signature: </strong\n          ><a href=\"/explorer?term={{ input.id }}\">{{ input.id }}</a>\n        </li>\n      </ul>\n    </div>\n    <div *ngIf=\"transaction.outputs.length === 0\">\n      <strong>No outputs</strong>\n    </div>\n    <div *ngIf=\"transaction.outputs.length > 0\">\n      <h3>Outputs</h3>\n      <ul *ngFor=\"let output of transaction.outputs\">\n        <li>\n          <strong>Address: </strong\n          ><a href=\"/explorer?term={{ output.to }}\">{{ output.to }}</a>\n        </li>\n        <li><strong>Amount: </strong>{{ output.value }}</li>\n        <hr />\n      </ul>\n    </div>\n  </li>\n</ul>\n<ul *ngIf=\"resultType.substr(0, 7) === 'mempool' && expertMode\">\n  <h3>Mempool</h3>\n  <li *ngFor=\"let transaction of result\">\n    <p>\n      <strong>public_key: </strong\n      ><a href=\"/explorer?term={{ transaction.public_key }}\">{{\n        transaction.public_key\n      }}</a>\n    </p>\n    <p>\n      <strong>signature: </strong\n      ><a href=\"/explorer?term={{ transaction.id }}\">{{ transaction.id }}</a>\n    </p>\n    <p><strong>hash: </strong>{{ transaction.hash }}</p>\n    <p><strong>fee: </strong>{{ transaction.fee }}</p>\n    <p>\n      <strong>diffie-hellman public key: </strong\n      >{{ transaction.dh_public_key }}\n    </p>\n    <p>\n      <strong>relationship identifier: </strong\n      ><a href=\"/explorer?term={{ transaction.rid }}\">{{ transaction.rid }}</a>\n    </p>\n    <p>\n      <strong>relationship data: </strong\n      ><textarea class=\"form-control\">{{ transaction.relationship }}</textarea>\n    </p>\n    <div *ngIf=\"transaction.inputs.length === 0\">\n      <strong>No inputs</strong>\n    </div>\n    <div *ngIf=\"transaction.inputs.length > 0\">\n      <h3>Inputs</h3>\n      <ul>\n        <li *ngFor=\"let input of transaction.inputs\">\n          <strong>Signature: </strong\n          ><a href=\"/explorer?term={{ input.id }}\">{{ input.id }}</a>\n        </li>\n      </ul>\n    </div>\n    <div *ngIf=\"transaction.outputs.length === 0\">\n      <strong>No outputs</strong>\n    </div>\n    <div *ngIf=\"transaction.outputs.length > 0\">\n      <h3>Outputs</h3>\n      <ul *ngFor=\"let output of transaction.outputs\">\n        <li>\n          <strong>Address: </strong\n          ><a href=\"/explorer?term={{ output.to }}\">{{ output.to }}</a>\n        </li>\n        <li><strong>Amount: </strong>{{ output.value }}</li>\n        <hr />\n      </ul>\n    </div>\n  </li>\n</ul>\n\n<ul *ngIf=\"resultType.substr(0, 7) === 'mempool' && !expertMode\">\n  <h3>Mempool</h3>\n  <li *ngFor=\"let transaction of result\">\n    <div class=\"transaction-container\">\n      <div class=\"transaction-inputs\">\n        <h4>From</h4>\n        <ul>\n          <li>\n            <p>\n              <strong>Address: </strong\n              ><a\n                href=\"/explorer?term={{\n                  encodeAddress(transaction.public_key)\n                }}\"\n                >{{ encodeAddress(transaction.public_key) }}</a\n              >\n            </p>\n          </li>\n        </ul>\n      </div>\n      <div class=\"transaction-outputs\">\n        <h4>To</h4>\n        <ul>\n          <li *ngFor=\"let output of transaction.outputs\">\n            <p>\n              <strong>Address: </strong\n              ><a href=\"/explorer?term={{ output.to }}\">{{ output.to }}</a>\n            </p>\n            <p><strong>Amount: </strong>{{ output.value }}</p>\n          </li>\n        </ul>\n      </div>\n    </div>\n  </li>\n</ul>\n<ul\n  *ngIf=\"\n    (resultType.substr(0, 5) === 'block' ||\n      resultType.substr(0, 3) === 'txn') &&\n    expertMode\n  \"\n>\n  <li *ngFor=\"let block of result\">\n    <a href=\"/explorer?term={{ block.index }}\"\n      ><h3>Block {{ block.index }}</h3></a\n    >\n    <p><strong>version: </strong>{{ block.version }}</p>\n    <p><strong>target: </strong>{{ block.target }}</p>\n    <p><strong>nonce: </strong>{{ block.nonce }}</p>\n    <p><strong>merkleRoot: </strong>{{ block.merkleRoot }}</p>\n    <p><strong>index: </strong>{{ block.index }}</p>\n    <p><strong>special min: </strong>{{ block.special_min }}</p>\n    <p><strong>time: </strong>{{ block.time }}</p>\n    <p>\n      <strong>previous hash: </strong\n      ><a href=\"/explorer?term={{ block.prevHash }}\">{{ block.prevHash }}</a>\n    </p>\n    <p>\n      <strong>public_key: </strong\n      ><a href=\"/explorer?term={{ block.public_key }}\">{{\n        block.public_key\n      }}</a>\n    </p>\n    <p>\n      <strong>signature: </strong\n      ><a href=\"/explorer?term={{ block.id }}\">{{ block.id }}</a>\n    </p>\n    <p>\n      <strong>hash: </strong\n      ><a href=\"/explorer?term={{ block.hash }}\">{{ block.hash }}</a>\n    </p>\n    <h4>Transactions</h4>\n    <ul>\n      <li *ngFor=\"let transaction of block.transactions\">\n        <p>\n          <strong>public_key: </strong\n          ><a href=\"/explorer?term={{ transaction.public_key }}\">{{\n            transaction.public_key\n          }}</a>\n        </p>\n        <p><strong>signature: </strong>{{ transaction.id }}</p>\n        <p><strong>hash: </strong>{{ transaction.hash }}</p>\n        <p><strong>fee: </strong>{{ transaction.fee }}</p>\n        <p>\n          <strong>diffie-hellman public key: </strong\n          >{{ transaction.dh_public_key }}\n        </p>\n        <p>\n          <strong>relationship identifier: </strong\n          ><a href=\"/explorer?term={{ transaction.rid }}\">{{\n            transaction.rid\n          }}</a>\n        </p>\n        <p>\n          <strong>relationship data: </strong\n          ><textarea class=\"form-control\">{{\n            transaction.relationship\n          }}</textarea>\n        </p>\n        <div *ngIf=\"transaction.inputs.length === 0\">\n          <strong>No inputs</strong>\n        </div>\n        <div *ngIf=\"transaction.inputs.length > 0\">\n          <h3>Inputs</h3>\n          <ul>\n            <li *ngFor=\"let input of transaction.inputs\">\n              <strong>Signature: </strong\n              ><a href=\"/explorer?term={{ input.id }}\">{{ input.id }}</a>\n            </li>\n          </ul>\n        </div>\n        <div *ngIf=\"transaction.outputs.length === 0\">\n          <strong>No outputs</strong>\n        </div>\n        <div *ngIf=\"transaction.outputs.length > 0\">\n          <h3>Outputs</h3>\n          <ul *ngFor=\"let output of transaction.outputs\">\n            <li>\n              <strong>Address: </strong\n              ><a href=\"/explorer?term={{ output.to }}\">{{ output.to }}</a>\n            </li>\n            <li><strong>Amount: </strong>{{ output.value }}</li>\n            <hr />\n          </ul>\n        </div>\n      </li>\n    </ul>\n  </li>\n</ul>\n<div\n  *ngIf=\"\n    (resultType.substr(0, 5) === 'block' ||\n      resultType.substr(0, 3) === 'txn') &&\n    !expertMode\n  \"\n>\n  <div *ngFor=\"let block of result\" class=\"block-info\">\n    <a href=\"/explorer?term={{ block.index }}\"\n      ><h3>Block {{ block.index }}</h3></a\n    >\n    <div class=\"transactions\">\n      <h3>Transactions</h3>\n      <div *ngFor=\"let transaction of block.transactions\" class=\"transaction\">\n        <div class=\"transaction-container\">\n          <div class=\"transaction-inputs\">\n            <h4>From</h4>\n            <ul>\n              <li>\n                <p>\n                  <strong>Address: </strong\n                  ><a\n                    href=\"/explorer?term={{\n                      encodeAddress(transaction.public_key)\n                    }}\"\n                    >{{ encodeAddress(transaction.public_key) }}</a\n                  >\n                </p>\n              </li>\n            </ul>\n          </div>\n          <div class=\"transaction-outputs\">\n            <h4>To</h4>\n            <ul>\n              <li *ngFor=\"let output of transaction.outputs\">\n                <p>\n                  <strong>Address: </strong\n                  ><a href=\"/explorer?term={{ output.to }}\">{{ output.to }}</a>\n                </p>\n                <p><strong>Amount: </strong>{{ output.value }}</p>\n              </li>\n            </ul>\n          </div>\n        </div>\n      </div>\n    </div>\n  </div>\n</div>\n"
 
 /***/ }),
 
@@ -181,68 +181,76 @@ var __metadata = (undefined && undefined.__metadata) || function (k, v) {
 
 
 
+function makeUrl(url) {
+    if (window.location.hostname === "localhost") {
+        return "http://localhost:8005" + url;
+    }
+    return url;
+}
 var SearchFormComponent = /** @class */ (function () {
     function SearchFormComponent(http) {
         var _this = this;
         this.http = http;
-        this.model = new _search__WEBPACK_IMPORTED_MODULE_2__["Search"]('');
+        this.model = new _search__WEBPACK_IMPORTED_MODULE_2__["Search"]("");
         this.result = [];
-        this.resultType = '';
+        this.resultType = "";
         this.balance = 0;
         this.searching = false;
         this.submitted = false;
-        this.current_height = '';
-        this.circulating = '';
-        this.hashrate = '';
-        this.difficulty = '';
-        this.http.get('/api-stats')
-            .subscribe(function (res) {
-            _this.difficulty = _this.numberWithCommas(res.json()['stats']['difficulty']);
-            _this.hashrate = _this.numberWithCommas(res.json()['stats']['network_hash_rate']);
-            _this.current_height = _this.numberWithCommas(res.json()['stats']['height']);
-            _this.circulating = _this.numberWithCommas(res.json()['stats']['circulating']);
+        this.current_height = "";
+        this.circulating = "";
+        this.hashrate = "";
+        this.difficulty = "";
+        this.expertMode = false;
+        this.http.get(makeUrl("/api-stats")).subscribe(function (res) {
+            _this.difficulty = _this.numberWithCommas(res.json()["stats"]["difficulty"]);
+            _this.hashrate = _this.numberWithCommas(res.json()["stats"]["network_hash_rate"]);
+            _this.current_height = _this.numberWithCommas(res.json()["stats"]["height"]);
+            _this.circulating = _this.numberWithCommas(res.json()["stats"]["circulating"]);
             if (!window.location.search) {
-                _this.http.get('/explorer-search?term=' + _this.current_height.replace(',', ''))
+                _this.http
+                    .get(makeUrl("/explorer-search?term=" + _this.current_height.replace(",", "")))
                     .subscribe(function (res) {
                     _this.result = res.json().result || [];
                     _this.resultType = res.json().resultType;
                     _this.balance = res.json().balance;
                     _this.searching = false;
                 }, function (err) {
-                    alert('something went terribly wrong!');
+                    alert("something went terribly wrong!");
                 });
             }
         }, function (err) {
-            alert('something went terribly wrong!');
+            alert("something went terribly wrong!");
         });
         if (window.location.search) {
             this.searching = true;
             this.submitted = true;
-            this.http.get('/explorer-search' + window.location.search)
+            this.http
+                .get(makeUrl("/explorer-search" + window.location.search))
                 .subscribe(function (res) {
                 _this.result = res.json().result || [];
                 _this.resultType = res.json().resultType;
                 _this.balance = res.json().balance;
                 _this.searching = false;
             }, function (err) {
-                alert('something went terribly wrong!');
+                alert("something went terribly wrong!");
             });
         }
     }
-    SearchFormComponent.prototype.ngOnInit = function () {
-    };
+    SearchFormComponent.prototype.ngOnInit = function () { };
     SearchFormComponent.prototype.onSubmit = function () {
         var _this = this;
         this.searching = true;
         this.submitted = true;
-        this.http.get('/explorer-search?term=' + encodeURIComponent(this.model.term))
+        this.http
+            .get(makeUrl("/explorer-search?term=" + encodeURIComponent(this.model.term)))
             .subscribe(function (res) {
             _this.result = res.json().result || [];
             _this.resultType = res.json().resultType;
             _this.balance = res.json().balance;
             _this.searching = false;
         }, function (err) {
-            alert('something went terribly wrong!');
+            alert("something went terribly wrong!");
         });
     };
     SearchFormComponent.prototype.numberWithCommas = function (x) {
@@ -250,15 +258,22 @@ var SearchFormComponent = /** @class */ (function () {
     };
     Object.defineProperty(SearchFormComponent.prototype, "diagnostic", {
         // TODO: Remove this when we're done
-        get: function () { return JSON.stringify(this.model); },
+        get: function () {
+            return JSON.stringify(this.model);
+        },
         enumerable: true,
         configurable: true
     });
+    SearchFormComponent.prototype.encodeAddress = function (publicKeyHex) {
+        var bitcoin = Bitcoin;
+        var pubkey = Bitcoin.ECPubKey(Bitcoin.convert.hexToBytes(publicKeyHex), true);
+        return pubkey.getAddress().toString();
+    };
     SearchFormComponent = __decorate([
         Object(_angular_core__WEBPACK_IMPORTED_MODULE_0__["Component"])({
-            selector: 'app-search-form',
+            selector: "app-search-form",
             template: __webpack_require__(/*! ./search-form.component.html */ "./src/app/search-form/search-form.component.html"),
-            styles: [__webpack_require__(/*! ./search-form.component.css */ "./src/app/search-form/search-form.component.css")]
+            styles: [__webpack_require__(/*! ./search-form.component.css */ "./src/app/search-form/search-form.component.css")],
         }),
         __metadata("design:paramtypes", [_angular_http__WEBPACK_IMPORTED_MODULE_1__["Http"]])
     ], SearchFormComponent);

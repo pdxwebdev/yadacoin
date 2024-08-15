@@ -1,9 +1,9 @@
+import asyncio
 import base64
 import hashlib
 import random
 import sys
 import time
-import asyncio
 
 from coincurve._libsecp256k1 import ffi
 from coincurve.keys import PrivateKey
@@ -142,6 +142,10 @@ class TU(object):  # Transaction Utilities
         if not hasattr(config, "last_mempool_clean"):
             config.last_mempool_clean = 0
 
+        await config.mongo.async_db.failed_transactions.delete_many(
+            {"txn.time": {"$lte": time.time() - 60 * 60 * 24 * 30}}
+        )
+
         to_delete = []
         txns_to_clean = config.mongo.async_db.miner_transactions.find(
             {"time": {"$gte": config.last_mempool_clean}}
@@ -196,7 +200,11 @@ class TU(object):  # Transaction Utilities
         async for txn in config.mongo.async_db.miner_transactions.find(query):
             x = Transaction.from_dict(txn)
             async for peer_stream in config.peer.get_sync_peers():
-                if (peer_stream.peer.rid, "newtxn", x.transaction_signature) in confirmed_peers:
+                if (
+                    peer_stream.peer.rid,
+                    "newtxn",
+                    x.transaction_signature,
+                ) in confirmed_peers:
                     config.app_log.debug(
                         f"Skipping peer {peer_stream.peer.rid} in rebroadcast_mempool as it has already confirmed the transaction."
                     )

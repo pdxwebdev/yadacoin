@@ -287,6 +287,22 @@ https://yadacoin.io/download
   - type: integer
   - default: 3000
   - description: Specify the max number of milliseconds of execution time for all http requests.
+- log_health_status
+  - type: bool
+  - default: undefined
+  - description: Specify if you want all Mongo DB queries to be logged and profiled.
+- docker_debug
+  - type: bool
+  - default: undefined
+  - description: Specify if you want to log resources used by docker.
+- asyncio_debug
+  - type: bool
+  - default: undefined
+  - description: Specify if you want to log slow running asyncio tasks.
+- asyncio_debug_duration
+  - type: bool
+  - default: undefined
+  - description: Specify duration of what is considered a "slow" task in asyncio.
 
 ## Development Environment
 

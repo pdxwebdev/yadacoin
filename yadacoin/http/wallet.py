@@ -37,40 +37,61 @@ class GenerateChildWalletHandler(BaseHandler):
         key_or_wif = self.get_secure_cookie("key_or_wif")
         if not key_or_wif and self.jwt.get("key_or_wif") != "true":
             return self.render_as_json({"error": "not authorized"})
-        args = json.loads(self.request.body)
-        if not args.get("uid"):
+        try:
+            args = json.loads(self.request.body)
+        except:
+            self.set_status(400)
             return self.render_as_json(
-                {"error": True, "message": "no user account provided"}
+                {"status": False, "message": "invalid json body"}
             )
-        keyhash = hashlib.sha256(
-            TU.generate_deterministic_signature(self.config, "child_wallet").encode()
-        ).hexdigest()
+        if "index" not in args:
+            return self.render_as_json(
+                {"status": False, "message": "index not provided"}
+            )
+        try:
+            uindex = int(args.get("index"))
+        except:
+            return self.render_as_json(
+                {"status": False, "message": "index is not integer"}
+            )
+        if uindex > 4294967295:
+            return self.render_as_json(
+                {"status": False, "message": "index cannot be greater than 4294967295"}
+            )
+        if await self.config.mongo.async_db.child_keys.find_one(
+            {
+                "index": uindex,
+            }
+        ):
+            return self.render_as_json(
+                {
+                    "status": False,
+                    "message": "Child wallet already exists for this index",
+                }
+            )
         exkey = BIP32Key.fromExtendedKey(self.config.xprv)
-        last_child_key = await self.config.mongo.async_db.child_keys.count_documents(
-            {"signature": keyhash}
-        )
-        inc = last_child_key + 1
-        key = exkey.ChildKey(inc)
-        child_key = BIP32Key.fromExtendedKey(key.ExtendedKey())
-        child_key = child_key.ChildKey(inc)
+        child_key = exkey.ChildKey(uindex)
         public_key = child_key.PublicKey().hex()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
         private_key = child_key.PrivateKey().hex()
         wif = self.to_wif(private_key)
-
-        await self.config.mongo.async_db.child_keys.insert_one(
+        await self.config.mongo.async_db.child_keys.update_one(
             {
-                "account": args.get("uid"),
-                "inc": inc,
-                "extended": child_key.ExtendedKey(),
-                "public_key": public_key,
-                "address": address,
-                "private_key": private_key,
-                "wif": wif,
-                "signature": keyhash,
-            }
+                "index": uindex,
+            },
+            {
+                "$set": {
+                    "index": uindex,
+                    "extended": child_key.ExtendedKey(),
+                    "public_key": public_key,
+                    "address": address,
+                    "private_key": private_key,
+                    "wif": wif,
+                }
+            },
+            upsert=True,
         )
-        return self.render_as_json({"address": address})
+        return self.render_as_json({"address": address, "status": True})
 
     def to_wif(self, private_key):
         # to wif
@@ -424,9 +445,11 @@ class TransactionConfirmationsHandler(BaseHandler):
         )
         return self.render_as_json(
             {
-                "confirmations": self.config.LatestBlock.block.index - result["index"]
-                if result
-                else 0
+                "confirmations": (
+                    self.config.LatestBlock.block.index - result["index"]
+                    if result
+                    else 0
+                )
             }
         )
 
@@ -442,10 +465,11 @@ class TransactionConfirmationsHandler(BaseHandler):
             results.append(
                 {
                     "txn_id": txn_id,
-                    "confirmations": self.config.LatestBlock.block.index
-                    - result["index"]
-                    if result
-                    else 0,
+                    "confirmations": (
+                        self.config.LatestBlock.block.index - result["index"]
+                        if result
+                        else 0
+                    ),
                 }
             )
         return self.render_as_json({"confirmations": results})

@@ -1,0 +1,82 @@
+body {
+    background-color: #343a40;
+    color: #ffffff;
+}
+
+.grid-container {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+}
+
+.grid-item {
+    flex: 0 0 48%; /* Each item takes up about half the width of the container */
+    margin-bottom: 20px; /* Space between rows */
+    padding: 10px; /* Optional padding for better spacing inside items */
+    box-sizing: border-box;
+    background-color: #495057; /* Dark background for items */
+    border: 1px solid #6c757d; /* Border with a lighter shade */
+    border-radius: 5px; /* Optional rounded corners */
+    color: #ffffff; /* Light text color */
+}
+
+.grid-item h2, .grid-item h3 {
+    color: #ffffff; /* Ensure headers are also light color */
+}
+
+@media (max-width: 768px) {
+    .grid-item {
+        flex: 0 0 100%; /* On smaller screens, items take full width */
+    }
+}
+.block-info {
+    border: 1px solid #6c757d;
+    border-radius: 5px;
+    padding: 15px;
+    margin-bottom: 20px;
+    background-color: #495057;
+}
+.block-info h3, .block-info h4 {
+    color: #ffffff;
+}
+.transactions {
+    margin-top: 10px;
+}
+.transaction {
+    padding: 10px;
+    border: 1px solid #6c757d;
+    border-radius: 5px;
+    margin-bottom: 10px;
+    background-color: #343a40;
+}
+.transaction h4 {
+    color: #adb5bd;
+}
+.transaction p {
+    margin: 0;
+    color: #ffffff;
+}
+.transaction a {
+    color: #17a2b8;
+}
+.transaction-container {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+}
+.transaction-inputs, .transaction-outputs {
+    width: 48%;
+    padding: 10px;
+    background-color: #495057;
+    border: 1px solid #6c757d;
+    border-radius: 5px;
+    overflow: auto;
+}
+.transaction-inputs ul, .transaction-outputs ul {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.transaction-inputs li, .transaction-outputs li {
+    margin-bottom: 10px;
+}

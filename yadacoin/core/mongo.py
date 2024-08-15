@@ -2,6 +2,7 @@ from time import time
 
 from motor.motor_tornado import MotorClient
 from pymongo import ASCENDING, DESCENDING, IndexModel, MongoClient
+from pymongo.monitoring import CommandListener
 
 from yadacoin.core.config import Config
 
@@ -34,17 +35,23 @@ class Mongo(object):
         self.site_db = self.client[self.config.site_database]
         try:
             # test connection
-            self.db.yadacoin.find_one()
+            self.db.blocks.find_one()
         except Exception as e:
             raise e
 
         __id = IndexModel([("id", ASCENDING)], name="__id", unique=True)
         __hash = IndexModel([("hash", ASCENDING)], name="__hash")
+        __time = IndexModel([("time", ASCENDING)], name="__time")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __to = IndexModel([("transactions.outputs.to", ASCENDING)], name="__to")
         __txn_id = IndexModel([("transactions.id", ASCENDING)], name="__txn_id")
+        __txn_hash = IndexModel([("transactions.hash", ASCENDING)], name="__txn_hash")
         __txn_inputs_id = IndexModel(
             [("transactions.inputs.id", ASCENDING)], name="__txn_inputs_id"
+        )
+        __txn_id_inputs_id = IndexModel(
+            [("transactions.id", ASCENDING), ("transactions.inputs.id", ASCENDING)],
+            name="__txn_id_inputs_id",
         )
         __txn_public_key = IndexModel(
             [("transactions.public_key", ASCENDING)], name="__txn_public_key"
@@ -63,6 +70,10 @@ class Mongo(object):
                 ("transactions.inputs.address", ASCENDING),
             ],
             name="__txn_public_key_inputs_public_key_address",
+        )
+        __public_key_index = IndexModel(
+            [("public_key", ASCENDING), ("index", DESCENDING)],
+            name="__public_key_index",
         )
         __public_key_time = IndexModel(
             [
@@ -112,20 +123,57 @@ class Mongo(object):
             ],
             name="__txn_rel_contract_identity_public_key",
         )
+        __txn_rel_contract_expiry = IndexModel(
+            [
+                (
+                    "transactions.relationship.smart_contract.expiry",
+                    ASCENDING,
+                )
+            ],
+            name="__txn_rel_contract_expiry",
+        )
+        __updated_at = IndexModel(
+            [
+                (
+                    "updated_at",
+                    ASCENDING,
+                )
+            ],
+            name="__updated_at",
+        )
+        __txn_outputs_to_index = IndexModel(
+            [("transactions.outputs.to", ASCENDING), ("index", ASCENDING)],
+            name="__txn_outputs_to_index",
+        )
+        __txn_inputs_0 = IndexModel(
+            [("transactions.inputs.0", ASCENDING)],
+            name="__txn_inputs_0",
+        )
+        __txn_rel_smart_contract_expiry_txn_time = IndexModel(
+            [
+                ("transactions.relationship.smart_contract.expiry", ASCENDING),
+                ("transactions.time", ASCENDING),
+            ],
+            name="__txn_rel_smart_contract_expiry_txn_time",
+        )
 
         try:
             self.db.blocks.create_indexes(
                 [
                     __hash,
+                    __time,
                     __index,
                     __id,
                     __to,
                     __txn_id,
+                    __txn_hash,
                     __txn_inputs_id,
+                    __txn_id_inputs_id,
                     __txn_public_key,
                     __txn_inputs_public_key,
                     __txn_inputs_address,
                     __txn_public_key_inputs_public_key_address,
+                    __public_key_index,
                     __public_key_time,
                     __public_key,
                     __prev_hash,
@@ -139,6 +187,11 @@ class Mongo(object):
                     __txn_time,
                     __txn_contract_rid,
                     __txn_rel_contract_identity_public_key,
+                    __txn_rel_contract_expiry,
+                    __updated_at,
+                    __txn_outputs_to_index,
+                    __txn_inputs_0,
+                    __txn_rel_smart_contract_expiry_txn_time,
                 ]
             )
         except:
@@ -146,8 +199,9 @@ class Mongo(object):
 
         __id = IndexModel([("id", ASCENDING)], name="__id")
         __height = IndexModel([("height", ASCENDING)], name="__height")
+        __cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
         try:
-            self.db.unspent_cache.create_indexes([__id, __height])
+            self.db.unspent_cache.create_indexes([__id, __height, __cache_time])
         except:
             pass
 
@@ -206,8 +260,9 @@ class Mongo(object):
             pass
 
         __txn_id = IndexModel([("txn.id", ASCENDING)], name="__txn_id")
+        __cache_time = IndexModel([("cache_time", ASCENDING)], name="__cache_time")
         try:
-            self.db.transactions_by_rid_cache.create_indexes([__txn_id])
+            self.db.transactions_by_rid_cache.create_indexes([__txn_id, __cache_time])
         except:
             pass
 
@@ -227,6 +282,9 @@ class Mongo(object):
         __fee_time = IndexModel(
             [("fee", DESCENDING), ("time", ASCENDING)], name="__fee_time"
         )
+        __rel_smart_contract = IndexModel(
+            [("relationship.smart_contract", ASCENDING)], name="__rel_smart_contract"
+        )
         try:
             self.db.miner_transactions.create_indexes(
                 [
@@ -240,6 +298,7 @@ class Mongo(object):
                     __time,
                     __inputs_id,
                     __fee_time,
+                    __rel_smart_contract,
                 ]
             )
         except:
@@ -247,7 +306,15 @@ class Mongo(object):
 
         __id = IndexModel([("txn.id", ASCENDING)], name="__id")
         __hash = IndexModel([("txn.hash", ASCENDING)], name="__hash")
+        __index = IndexModel(
+            [("index", DESCENDING)],
+            name="__index",
+        )
         __outputs_to = IndexModel([("txn.outputs.to", ASCENDING)], name="__outputs_to")
+        __outputs_to_index = IndexModel(
+            [("txn.outputs.to", ASCENDING), ("index", DESCENDING)],
+            name="__outputs_to_index",
+        )
         __public_key = IndexModel([("txn.public_key", ASCENDING)], name="__public_key")
         __rid = IndexModel([("txn.rid", ASCENDING)], name="__rid")
         __requested_rid = IndexModel(
@@ -266,7 +333,9 @@ class Mongo(object):
                 [
                     __id,
                     __hash,
+                    __index,
                     __outputs_to,
+                    __outputs_to_index,
                     __public_key,
                     __rid,
                     __requested_rid,
@@ -296,8 +365,22 @@ class Mongo(object):
             pass
 
         __timestamp = IndexModel([("timestamp", DESCENDING)], name="__timestamp")
+        __archived = IndexModel([("archived", ASCENDING)], name="__archived")
+        __timestamp_archived = IndexModel(
+            [("timestamp", DESCENDING), ("archived", ASCENDING)],
+            name="__timestamp_archived",
+        )
         try:
-            self.db.node_status.create_indexes([__timestamp])
+            self.db.node_status.create_indexes(
+                [__timestamp, __archived, __timestamp_archived]
+            )
+        except:
+            raise
+
+        __time = IndexModel([("time", ASCENDING)], name="__time")
+        __stat = IndexModel([("stat", ASCENDING)], name="__stat")
+        try:
+            self.db.pool_stats.create_indexes([__time, __stat])
         except:
             raise
 
@@ -310,13 +393,16 @@ class Mongo(object):
                 self.config.mongodb_host,
                 username=self.config.mongodb_username,
                 password=self.config.mongodb_password,
+                event_listeners=[listener],
             )
         else:
-            self.async_client = MotorClient(self.config.mongodb_host)
-        self.async_db = AsyncDB(self.async_client)
+            self.async_client = MotorClient(
+                self.config.mongodb_host, event_listeners=[listener]
+            )
+        self.async_db = self.async_client[self.config.database]
         # self.async_db = self.async_client[self.config.database]
         self.async_site_db = self.async_client[self.config.site_database]
-
+        self.async_db.slow_queries = []
         # convert block time from string to number
         blocks_to_convert = self.db.blocks.find({"time": {"$type": 2}})
         for block in blocks_to_convert:
@@ -370,144 +456,257 @@ class Mongo(object):
                         self.db.blocks.delete_one({"index": block["index"]})
 
 
-class AsyncDB:
-    def __init__(self, async_client):
-        self.async_client = async_client
-        self._config = Config()
-        self.slow_queries = []
+class DeuggingListener(CommandListener):
+    commands = [
+        "find",
+        "delete",
+        "insert_one",
+        "update",
+        "aggregate",
+    ]
 
-    def __getattr__(self, __name: str):
-        return Collection(self.async_client, __name)
+    def get_collection_name(self, event):
+        if event.command_name in self.commands:
+            return event.command.get(event.command_name)
+        return None
 
-    async def list_collection_names(self, *args, **kwargs):
-        start_time = time()
-        self._db = self.async_client[self._config.database]
-        result = await self._db.list_collection_names()
-        if time() - start_time > 3:
-            self._config.app_log.warning(f"SLOW QUERY: find_one {args}, {kwargs}")
-        return result
+    def started(self, event):
+        if event.command_name not in self.commands:
+            return
+        config = Config()
+        if not config.mongo:
+            return
 
-    def __getitem__(self, name):
-        return getattr(self, name)
+        if not hasattr(config, "mongo_debug"):
+            return
+        if not config.mongo_debug:
+            return
+        event.command["start_time"] = time()
+        event.command["max_time_ms"] = config.mongo_query_timeout
+        if event.command.get(event.command_name) == "child_keys":
+            return
+        self.log_explain_output(event)
 
+    def succeeded(self, event):
+        config = Config()
+        if not hasattr(config, "mongo_debug"):
+            return
+        if not config.mongo_debug:
+            return
+        if not hasattr(event, "command"):
+            return
+        self.duration = time() - event.command["start_time"]
+        self.do_logging(event.command_name, event.command)
 
-class Collection:
-    def __init__(self, async_client, collection):
-        self._config = Config()
-        self._db = async_client[self._config.database]
-        self.collection = collection
-
-    def set_start_time(self):
-        self.start_time = time()
-
-    def set_duration(self):
-        self.duration = float("%.3f" % (time() - self.start_time))
+    def failed(self, event):
+        config = Config()
+        if not hasattr(config, "mongo_debug"):
+            return
+        if not config.mongo_debug:
+            return
+        self.duration = time() - event.command["start_time"]
+        self.do_logging(event.command_name, event.command)
 
     def do_logging(self, query_type, args, kwargs):
+        config = Config()
         self.set_duration()
         message = f"QUERY: {query_type} {self.collection} {args}, {kwargs}, duration: {self.duration}"
-        if self.duration > 3 and getattr(self._config, "slow_query_logging", None):
-            self._config.app_log.warning(f"SLOW {message}")
-            self._config.mongo.async_db.slow_queries.append(message)
+        if self.duration > 3 and getattr(config, "slow_query_logging", None):
+            config.app_log.warning(f"SLOW {message}")
+            config.mongo.async_db.slow_queries.append(message)
         else:
-            if hasattr(self._config, "mongo_debug") and self._config.mongo_debug:
-                self._config.app_log.debug(message)
+            if hasattr(config, "mongo_debug") and config.mongo_debug:
+                config.app_log.debug(message)
 
-    async def find_one(self, *args, **kwargs):
-        self.set_start_time()
-        kwargs["max_time_ms"] = self._config.mongo_query_timeout
-        result = await self._db.get_collection(self.collection).find_one(
-            *args, **kwargs
+    def log_explain_output(self, event):
+        config = Config()
+        # Perform the explain command asynchronously
+        collection_name = self.get_collection_name(event)
+        explain_command = event.command.copy()
+        explain_command["explain"] = event.command_name
+
+        db = config.mongo.client.get_database(event.database_name)
+        if event.command_name in [
+            "find",
+            "find_one",
+            "insert_one",
+        ] and event.command.get("filter", {}):
+            explain_result = getattr(db[collection_name], event.command_name)(
+                event.command.get("filter", {})
+            ).explain()
+
+            self.get_used_indexes(explain_result, event)
+        elif event.command_name in [
+            "delete",
+        ] and event.command.get("deletes", {}):
+            for delete_op in event.command.get("deletes", []):
+                filter_criteria = delete_op.get("q", {})
+                if not filter_criteria:
+                    return
+                explain_result = db[collection_name].find(filter_criteria).explain()
+                self.get_used_indexes(explain_result, event)
+        elif event.command_name in [
+            "update",
+        ] and event.command.get("updates", {}):
+            for delete_op in event.command.get("updates", []):
+                filter_criteria = delete_op.get("q", {})
+                if not filter_criteria:
+                    return
+                explain_result = db[collection_name].find(filter_criteria).explain()
+                self.get_used_indexes(explain_result, event)
+        elif event.command_name == "aggregate" and explain_command.get("pipeline", []):
+            if event.command.get("explain"):
+                return
+            pipeline = explain_command.get("pipeline", [])
+            explain_result = db.command(
+                {
+                    "aggregate": collection_name,
+                    "pipeline": pipeline,
+                    "explain": True,
+                }
+            )
+            self.get_used_indexes(explain_result, event)
+        else:
+            return False
+
+    def get_used_indexes(self, explain_result, event):
+        if not explain_result:
+            return
+        config = Config()
+        used_indexes = False
+        if event.command.get("pipeline", {}):
+            if explain_result.get("stages"):
+                query_planner = explain_result["stages"][0]["$cursor"].get(
+                    "queryPlanner", {}
+                )
+            else:
+                query_planner = explain_result.get("queryPlanner", {})
+            winning_plan = query_planner.get("winningPlan", {})
+            used_indexes = winning_plan.get("indexName", False)
+            if not used_indexes:
+                try:
+                    used_indexes = self.get_used_index_from_input_stage(winning_plan)
+                except:
+                    message = f"Failed getting index information: {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', {})}"
+                    config.app_log.warning(message)
+
+            if not used_indexes:
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("pipeline", {}),
+                )
+        elif event.command.get("filter", {}):
+            query_planner = explain_result.get("queryPlanner", {})
+            winning_plan = query_planner.get("winningPlan", {})
+            input_stage = winning_plan.get("inputStage", {})
+            used_indexes = input_stage.get("indexName", False)
+
+            if not used_indexes:
+                try:
+                    used_indexes = self.get_used_index_from_input_stage(winning_plan)
+                except:
+                    message = f"Failed getting index information: {event.command_name} : {query_planner['namespace']} : {event.command.get('filter', {})}"
+                    config.app_log.warning(message)
+
+            if not used_indexes:
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("filter", {}),
+                )
+        elif event.command.get("deletes", {}):
+            query_planner = explain_result.get("queryPlanner", {})
+            winning_plan = query_planner.get("winningPlan", {})
+            input_stage = winning_plan.get("inputStage", {})
+            used_indexes = input_stage.get("indexName", False)
+            if not used_indexes:
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("deletes", {}),
+                )
+        elif event.command.get("updates", {}):
+            query_planner = explain_result.get("queryPlanner", {})
+            winning_plan = query_planner.get("winningPlan", {})
+            input_stage = winning_plan.get("inputStage", {})
+            used_indexes = input_stage.get("indexName", False)
+            if not used_indexes:
+                self.handle_unindexed_log(
+                    event.command_name,
+                    query_planner["namespace"],
+                    event.command.get("updates", {}),
+                )
+        if used_indexes:
+            message = f"Indexes used: {used_indexes} : {event.command_name} : {query_planner['namespace']} : {event.command.get('pipeline', event.command.get('filter', {}))}"
+            config.app_log.info(message)
+        return used_indexes
+
+    def get_used_index_from_input_stage(self, input_stage, used_indexes=None):
+        if used_indexes is None:
+            used_indexes = []
+        index_name = input_stage.get("indexName", False)
+        if index_name:
+            used_indexes.append(index_name)
+            return True
+
+        interim_input_stage = input_stage.get("inputStage", {})
+        if interim_input_stage:
+            input_stage = input_stage.get("inputStage", {})
+            result = self.get_used_index_from_input_stage(input_stage, used_indexes)
+            if not result:
+                return False
+        interim_input_stages = input_stage.get("inputStages", {})
+        if interim_input_stages:
+            for input_stg in interim_input_stages:
+                result = self.get_used_index_from_input_stage(input_stg, used_indexes)
+                if not result:
+                    return False
+            return used_indexes
+        return used_indexes
+
+    def handle_unindexed_log(self, command_name, collection, query):
+        if collection.endswith("unindexed_queries") or collection.endswith("_cache"):
+            return
+        config = Config()
+        message = f"Unindexed query detected: {command_name} : {collection} : {query}"
+        config.app_log.warning(message)
+        flattened_data = self.flatten_data(query)
+        config.mongo.db.unindexed_queries.update_many(
+            {
+                "command_name": command_name,
+                "collection": collection,
+                **{f"query.{k}": {"$exists": True} for k, v in flattened_data.items()},
+            },
+            {
+                "$set": {
+                    "command_name": command_name,
+                    "collection": collection,
+                    **{f"query.{k}": v for k, v in flattened_data.items()},
+                },
+                "$inc": {"count": 1},
+            },
+            upsert=True,
         )
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("find_one", args, kwargs)
-        return result
 
-    def find(self, *args, **kwargs):
-        self.set_start_time()
-        kwargs["max_time_ms"] = self._config.mongo_query_timeout
-        result = self._db.get_collection(self.collection).find(*args, **kwargs)
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("find", args, kwargs)
-        return result
+    def flatten_data(self, data, parent_key="", sep="."):
+        items = []
+        if isinstance(data, dict):
+            for k, v in data.items():
+                new_key = f"{parent_key}{sep}{k}" if parent_key else k
+                if isinstance(v, dict) or isinstance(v, list):
+                    items.extend(self.flatten_data(v, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, None))
+        elif isinstance(data, list):
+            for i, item in enumerate(data):
+                new_key = f"{parent_key}{sep}{i}" if parent_key else str(i)
+                if isinstance(item, dict) or isinstance(item, list):
+                    items.extend(self.flatten_data(item, new_key, sep=sep).items())
+                else:
+                    items.append((new_key, None))
+        return dict(items)
 
-    async def count_documents(self, *args, **kwargs):
-        self.set_start_time()
-        pipeline = [
-            {"$match": args[0]},
-            {"$group": {"_id": None, "count": {"$sum": 1}}},
-        ]
-        cursor = self._db.get_collection(self.collection).aggregate(
-            pipeline, maxTimeMS=self._config.mongo_query_timeout
-        )
-        result = 0
-        async for doc in cursor:
-            result = doc.get("count", 0)
-            break
-        if self.collection == "child_keys":
-            return result
 
-        self.do_logging("count_documents", args, kwargs)
-        return result
-
-    async def delete_many(self, *args, **kwargs):
-        self.set_start_time()
-        result = await self._db.get_collection(self.collection).delete_many(
-            *args, **kwargs
-        )
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("delete_many", args, kwargs)
-        return result
-
-    async def insert_one(self, *args, **kwargs):
-        self.set_start_time()
-        result = await self._db.get_collection(self.collection).insert_one(
-            *args, **kwargs
-        )
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("insert_one", args, kwargs)
-        return result
-
-    async def replace_one(self, *args, **kwargs):
-        self.set_start_time()
-        result = await self._db.get_collection(self.collection).replace_one(
-            *args, **kwargs
-        )
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("replace_one", args, kwargs)
-        return result
-
-    async def update_one(self, *args, **kwargs):
-        self.set_start_time()
-        result = await self._db.get_collection(self.collection).update_one(
-            *args, **kwargs
-        )
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("update_one", args, kwargs)
-        return result
-
-    async def update_many(self, *args, **kwargs):
-        self.set_start_time()
-        result = await self._db.get_collection(self.collection).update_many(
-            *args, **kwargs
-        )
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("update_many", args, kwargs)
-        return result
-
-    def aggregate(self, *args, **kwargs):
-        self.set_start_time()
-        result = self._db.get_collection(self.collection).aggregate(
-            *args, **kwargs, maxTimeMS=self._config.mongo_query_timeout
-        )
-        if self.collection == "child_keys":
-            return result
-        self.do_logging("aggregate", args, kwargs)
-        return result
+# Register the profiling listener
+listener = DeuggingListener()

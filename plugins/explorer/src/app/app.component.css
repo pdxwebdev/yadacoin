@@ -1,0 +1,18 @@
+.header-container {
+    display: flex;
+    align-items: center;
+    justify-content: center; /* Center the content horizontally */
+    text-align: center;
+    padding: 10px; /* Optional padding */
+    background-color: #343a40; /* Optional background color for the header */
+  }
+  
+  .header-container .logo {
+    margin-right: 10px; /* Space between the logo and the header */
+    height: 50px
+  }
+  
+  .header-container h1 {
+    color: #ffffff; /* Ensure the header text is white */
+    margin: 0; /* Remove default margin */
+  }

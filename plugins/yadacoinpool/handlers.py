@@ -82,7 +82,7 @@ class PoolInfoHandler(BaseWebHandler):
                 {"_id": 0},
             )
             .sort([("index", -1)])
-            .to_list(100)
+            .to_list(10)
         )
         expected_blocks = 144
         mining_time_interval = 600

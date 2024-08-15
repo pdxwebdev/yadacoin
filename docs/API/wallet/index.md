@@ -1,19 +1,18 @@
 # /generate-child-wallet
 
-Create an Account for the authenticated User if an Account for that User does
-not already exist. Each User can only have one Account.
+Create a child wallet for a given index.
 
 **URL** : `/generate-child-wallet`
 
 **Method** : `POST`
 
-**Header** : `Authorization: bearer JWT_TOKEN`
+**Header** : `Authorization: bearer JWT_TOKEN` // JWT_TOKEN from /unlock endpoint
 
 **Request data** :
 
-```json
+```typescript
 {
-  "uid": "`user id`"
+  "index": integer
 }
 ```
 
@@ -21,11 +20,25 @@ not already exist. Each User can only have one Account.
 
 **Code** : `200 OK`
 
-**Content example**
+**Response example**
 
 ```json
 {
-  "address": "`address string of newly created wallet`"
+  "address": "`address of newly created wallet`",
+  "status": true
+}
+```
+
+## Error Response
+
+**Code** : `400 Invalid Request`
+
+**Response example**
+
+```json
+{
+  "status": false,
+  "message": "error message"
 }
 ```
 

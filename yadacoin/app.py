@@ -1,7 +1,7 @@
 ﻿"""
 Async Yadacoin node poc
 """
-import binascii
+
 import importlib
 import json
 import logging
@@ -38,7 +38,6 @@ from tornado.ioloop import PeriodicCallback
 from tornado.options import define, options
 from tornado.web import Application, StaticFileHandler
 
-import pyrx
 import yadacoin.core.blockchainutils
 import yadacoin.core.config
 import yadacoin.core.transactionutils
@@ -126,10 +125,13 @@ class WorkerVars:
             setattr(self, key, value)
 
 
+from tornado.ioloop import IOLoop
+from tornado.platform.asyncio import AsyncIOMainLoop
+
+
 class NodeApplication(Application):
     def __init__(self, test=False):
         options.parse_command_line(final=False)
-
         self.init_config(options)
         self.configure_logging()
         self.init_config_properties(test=test)
@@ -234,6 +236,23 @@ class NodeApplication(Application):
                 stream.peer.identity.username_signature
             ] = int(time())
 
+        self.delete_retry_messages(id_attr)
+
+    def delete_retry_messages(self, rid):
+        try:
+            for y in self.config.nodeServer.retry_messages.copy():
+                if y[0] == rid:
+                    del self.config.nodeServer.retry_messages[y]
+        except:
+            pass
+
+        try:
+            for y in self.config.nodeClient.retry_messages.copy():
+                if y[0] == rid:
+                    del self.config.nodeClient.retry_messages[y]
+        except:
+            pass
+
     async def background_peers(self):
         """Peers management coroutine. responsible for peers testing and outgoing connections"""
 
@@ -260,7 +279,11 @@ class NodeApplication(Application):
             await self.config.mongo.async_db.node_status.update_many(
                 {}, {"$set": {"archived": True}}
             )
-            if Docker.is_inside_docker():
+            if (
+                Docker.is_inside_docker()
+                and hasattr(self.config, "docker_debug")
+                and self.config.docker_debug
+            ):
                 self.config.background_status.docker = Docker()
         if self.config.background_status.busy:
             self.config.app_log.debug("background_status - busy")
@@ -293,7 +316,11 @@ class NodeApplication(Application):
                 "nodeServer": self.config.nodeServer.disconnect_tracker.to_dict(),
                 "nodeClient": self.config.nodeClient.disconnect_tracker.to_dict(),
             }
-            if Docker.is_inside_docker():
+            if (
+                Docker.is_inside_docker()
+                and hasattr(self.config, "docker_debug")
+                and self.config.docker_debug
+            ):
                 self.config.background_status.docker.set_container_stats()
                 status["docker"] = self.config.background_status.docker.to_dict()
 
@@ -332,11 +359,17 @@ class NodeApplication(Application):
                     status["memory"] = {"diff": diff_dict_list}
                 self.config.background_status.last_summary = summarized
 
-            if status["health"]["status"]:
-                self.config.app_log.info(json.dumps(status, indent=4))
-            else:
-                self.config.app_log.warning(json.dumps(status, indent=4))
-
+            if (
+                hasattr(self.config, "log_health_status")
+                and self.config.log_health_status
+            ):
+                if status["health"]["status"]:
+                    self.config.app_log.info(json.dumps(status, indent=4))
+                else:
+                    self.config.app_log.warning(json.dumps(status, indent=4))
+            await self.config.mongo.async_db.node_status.delete_many(
+                {"timestamp": {"$lt": status["timestamp"] - (60 * 60 * 24)}}
+            )
             await self.config.mongo.async_db.node_status.insert_one(status)
         except Exception:
             self.config.app_log.error(format_exc())
@@ -459,11 +492,10 @@ class NodeApplication(Application):
                 for peer_cls in list(
                     self.config.nodeServer.inbound_streams.keys()
                 ).copy():
+                    found = False
                     if x[0] in self.config.nodeServer.inbound_streams[peer_cls]:
+                        found = True
                         if message["retry_attempts"] > 3:
-                            for y in self.config.nodeServer.retry_messages.copy():
-                                if y[0] == x[0]:
-                                    del self.config.nodeServer.retry_messages[y]
                             await self.remove_peer(
                                 self.config.nodeServer.inbound_streams[peer_cls][x[0]],
                                 reason=f"background_message_sender nodeServer {x}",
@@ -488,6 +520,10 @@ class NodeApplication(Application):
                                 x[1],
                                 message,
                             )
+                    if not found:
+                        self.delete_retry_messages(
+                            x[0],
+                        )
 
             for x in self.config.nodeClient.retry_messages.copy():
                 message = self.config.nodeClient.retry_messages.get(x)
@@ -501,11 +537,10 @@ class NodeApplication(Application):
                 for peer_cls in list(
                     self.config.nodeClient.outbound_streams.keys()
                 ).copy():
+                    found = False
                     if x[0] in self.config.nodeClient.outbound_streams[peer_cls]:
+                        found = True
                         if message["retry_attempts"] > 3:
-                            for y in self.config.nodeClient.retry_messages.copy():
-                                if y[0] == x[0]:
-                                    del self.config.nodeClient.retry_messages[y]
                             await self.remove_peer(
                                 self.config.nodeClient.outbound_streams[peer_cls][x[0]],
                                 reason=f"background_message_sender nodeClient {x}",
@@ -529,6 +564,10 @@ class NodeApplication(Application):
                                 x[1],
                                 message,
                             )
+                    if not found:
+                        self.delete_retry_messages(
+                            x[0],
+                        )
 
             self.config.health.message_sender.last_activity = int(time())
 
@@ -668,11 +707,31 @@ class NodeApplication(Application):
                     self.cache_last_times[cache_collection] = latest["cache_time"]
                 else:
                     self.cache_last_times[cache_collection] = 0
-                async for txn in self.config.mongo.async_db[cache_collection].find(
-                    {"cache_time": {"$gt": self.cache_last_times[cache_collection]}}
-                ).sort([("height", -1)]):
+
+                pipeline = [
+                    {
+                        "$match": {
+                            "cache_time": {
+                                "$gt": self.cache_last_times[cache_collection]
+                            }
+                        }
+                    },
+                    {
+                        "$group": {
+                            "_id": {"block_hash": "$block_hash", "height": "$height"},
+                            "cache_time": {"$first": "$cache_time"},
+                        }
+                    },
+                    {"$sort": {"height": -1}},
+                ]
+                async for txn in self.config.mongo.async_db[cache_collection].aggregate(
+                    pipeline
+                ):
                     if not await self.config.mongo.async_db.blocks.find_one(
-                        {"index": txn.get("height"), "hash": txn.get("block_hash")}
+                        {
+                            "index": txn["_id"].get("height"),
+                            "hash": txn["_id"].get("block_hash"),
+                        }
                     ) and not await self.config.mongo.async_db.miner_transactions.find_one(
                         {
                             "id": txn.get("id"),
@@ -776,6 +835,15 @@ class NodeApplication(Application):
         self.config.app_log.setLevel(logging.INFO)
         if self.config.debug:
             self.config.app_log.setLevel(logging.DEBUG)
+        if hasattr(self.config, "asyncio_debug") and self.config.asyncio_debug:
+            logging.basicConfig(level=logging.DEBUG)
+            AsyncIOMainLoop().install()
+            ioloop = IOLoop.current()
+            if hasattr(self.config, "asyncio_debug_duration"):
+                asyncio_debug_duration = self.config.asyncio_debug_duration
+            else:
+                asyncio_debug_duration = 0.05
+            ioloop.slow_callback_duration = asyncio_debug_duration
 
         self.access_log = logging.getLogger("tornado.access")
         tornado.log.enable_pretty_logging()
@@ -1075,14 +1143,14 @@ class NodeApplication(Application):
         self.init_consensus()
         self.config.cipher = Crypt(self.config.wif)
         if MODES.NODE.value in self.config.modes:
-            self.config.pyrx = pyrx.PyRX()
-            self.config.pyrx.get_rx_hash(
-                "header",
-                binascii.unhexlify(
-                    "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"
-                ),
-                4,
-            )
+            # self.config.pyrx = pyrx.PyRX()
+            # self.config.pyrx.get_rx_hash(
+            #     "header",
+            #     binascii.unhexlify(
+            #         "4181a493b397a733b083639334bc32b407915b9a82b7917ac361816f0a1f5d4d"
+            #     ),
+            #     4,
+            # )
             self.config.nodeServer = NodeSocketServer
             self.config.nodeShared = NodeRPC()
             self.config.nodeClient = NodeSocketClient()

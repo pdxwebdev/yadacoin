@@ -1,115 +1,335 @@
-<h2>Current block height: {{current_height}}</h2>
-<h2>Coins in circulation: {{circulating}}</h2>
-<h3>Maximum supply: 21,000,000</h3>
-<h3>Network hash rate: {{hashrate}}h/s</h3>
-<h3>Difficulty: {{difficulty}}</h3>
-<h3>Hashing algorithm: RandomX Variant (rx/yada)</h3>
+<div class="grid-container">
+  <div class="grid-item">
+    <h2>Current block height: {{ current_height }}</h2>
+  </div>
+  <div class="grid-item">
+    <h2>Coins in circulation: {{ circulating }}</h2>
+  </div>
+  <div class="grid-item">
+    <h3>Maximum supply: 21,000,000</h3>
+  </div>
+  <div class="grid-item">
+    <h3>Network hash rate: {{ hashrate }}h/s</h3>
+  </div>
+  <div class="grid-item">
+    <h3>Difficulty: {{ difficulty }}</h3>
+  </div>
+  <div class="grid-item">
+    <h3>Hashing algo: RandomX (rx/yada)</h3>
+  </div>
+</div>
 <form (ngSubmit)="onSubmit()" #searchForm="ngForm">
-    <input class="form-control" [(ngModel)]="model.term" name="term" placeholder="Wallet address, Txn Id, Block height...">
-    <button style="margin-top: 15px" class="btn btn-success">Search</button>
+  <label for="expertMode">Expert Mode:&nbsp;</label>
+  <input type="checkbox" name="expertMode" [(ngModel)]="expertMode" />
+  <input
+    class="form-control"
+    [(ngModel)]="model.term"
+    name="term"
+    placeholder="Wallet address, Txn Id, Block height..."
+  />
+  <button style="margin-top: 15px; margin-bottom: 15px" class="btn btn-success">
+    Search
+  </button>
 </form>
 <div *ngIf="searching"><strong>Searching...</strong></div>
-<div *ngIf="(!searching && submitted) && result.length === 0"><strong>No results</strong></div>
-<h2 *ngIf="resultType === 'txn_outputs_to'">Balance: {{balance}}</h2>
+<div *ngIf="!searching && submitted && result.length === 0">
+  <strong>No results</strong>
+</div>
+<h2 *ngIf="resultType === 'txn_outputs_to'" style="margin-top: 25px">
+  Balance: {{ balance }}
+</h2>
 <ul *ngIf="resultType.substr(0, 6) === 'failed'">
-    <li *ngFor="let transaction of result">
-        <h3>Failed transactions</h3>
-        <p><strong>exception class: </strong>{{transaction.reason}}</p>
-        <p><strong>traceback: </strong><textarea class="form-control" rows="10">{{transaction.error}}</textarea></p>
-        <p><strong>public_key: </strong><a href="/explorer?term={{transaction.public_key}}">{{transaction.public_key}}</a></p>
-        <p><strong>signature: </strong><a href="/explorer?term={{transaction.id}}">{{transaction.id}}</a></p>
-        <p><strong>hash: </strong>{{transaction.hash}}</p>
-        <p><strong>fee: </strong>{{transaction.fee}}</p>
-        <p><strong>diffie-hellman public key: </strong>{{transaction.dh_public_key}}</p>
-        <p><strong>relationship identifier: </strong><a href="/explorer?term={{transaction.rid}}">{{transaction.rid}}</a></p>
-        <p><strong>relationship data: </strong><textarea class="form-control">{{transaction.relationship}}</textarea></p>
-        <div *ngIf="transaction.inputs.length === 0"><strong>No inputs</strong></div>
-        <div *ngIf="transaction.inputs.length > 0">
-            <h3>Inputs</h3>
-            <ul>
-                <li *ngFor="let input of transaction.inputs"><strong>Signature: </strong><a href="/explorer?term={{input.id}}">{{input.id}}</a></li>
-            </ul>
-        </div>
-        <div *ngIf="transaction.outputs.length === 0"><strong>No outputs</strong></div>
-        <div *ngIf="transaction.outputs.length > 0">
-            <h3>Outputs</h3>
-            <ul *ngFor="let output of transaction.outputs">
-                <li><strong>Address: </strong><a href="/explorer?term={{output.to}}">{{output.to}}</a></li>
-                <li><strong>Amount: </strong>{{output.value}}</li>
-                <hr>
-            </ul>
-        </div>
-    </li>
+  <li *ngFor="let transaction of result">
+    <h3>Failed transactions</h3>
+    <p><strong>exception class: </strong>{{ transaction.reason }}</p>
+    <p>
+      <strong>traceback: </strong
+      ><textarea class="form-control" rows="10">{{
+        transaction.error
+      }}</textarea>
+    </p>
+    <p>
+      <strong>public_key: </strong
+      ><a href="/explorer?term={{ transaction.public_key }}">{{
+        transaction.public_key
+      }}</a>
+    </p>
+    <p>
+      <strong>signature: </strong
+      ><a href="/explorer?term={{ transaction.id }}">{{ transaction.id }}</a>
+    </p>
+    <p><strong>hash: </strong>{{ transaction.hash }}</p>
+    <p><strong>fee: </strong>{{ transaction.fee }}</p>
+    <p>
+      <strong>diffie-hellman public key: </strong
+      >{{ transaction.dh_public_key }}
+    </p>
+    <p>
+      <strong>relationship identifier: </strong
+      ><a href="/explorer?term={{ transaction.rid }}">{{ transaction.rid }}</a>
+    </p>
+    <p>
+      <strong>relationship data: </strong
+      ><textarea class="form-control">{{ transaction.relationship }}</textarea>
+    </p>
+    <div *ngIf="transaction.inputs.length === 0">
+      <strong>No inputs</strong>
+    </div>
+    <div *ngIf="transaction.inputs.length > 0">
+      <h3>Inputs</h3>
+      <ul>
+        <li *ngFor="let input of transaction.inputs">
+          <strong>Signature: </strong
+          ><a href="/explorer?term={{ input.id }}">{{ input.id }}</a>
+        </li>
+      </ul>
+    </div>
+    <div *ngIf="transaction.outputs.length === 0">
+      <strong>No outputs</strong>
+    </div>
+    <div *ngIf="transaction.outputs.length > 0">
+      <h3>Outputs</h3>
+      <ul *ngFor="let output of transaction.outputs">
+        <li>
+          <strong>Address: </strong
+          ><a href="/explorer?term={{ output.to }}">{{ output.to }}</a>
+        </li>
+        <li><strong>Amount: </strong>{{ output.value }}</li>
+        <hr />
+      </ul>
+    </div>
+  </li>
 </ul>
-<ul *ngIf="resultType.substr(0, 7) === 'mempool'">
-    <li *ngFor="let transaction of result">
-        <h3>Mempool</h3>
-        <p><strong>public_key: </strong><a href="/explorer?term={{transaction.public_key}}">{{transaction.public_key}}</a></p>
-        <p><strong>signature: </strong><a href="/explorer?term={{transaction.id}}">{{transaction.id}}</a></p>
-        <p><strong>hash: </strong>{{transaction.hash}}</p>
-        <p><strong>fee: </strong>{{transaction.fee}}</p>
-        <p><strong>diffie-hellman public key: </strong>{{transaction.dh_public_key}}</p>
-        <p><strong>relationship identifier: </strong><a href="/explorer?term={{transaction.rid}}">{{transaction.rid}}</a></p>
-        <p><strong>relationship data: </strong><textarea class="form-control">{{transaction.relationship}}</textarea></p>
-        <div *ngIf="transaction.inputs.length === 0"><strong>No inputs</strong></div>
-        <div *ngIf="transaction.inputs.length > 0">
-            <h3>Inputs</h3>
-            <ul>
-                <li *ngFor="let input of transaction.inputs"><strong>Signature: </strong><a href="/explorer?term={{input.id}}">{{input.id}}</a></li>
-            </ul>
-        </div>
-        <div *ngIf="transaction.outputs.length === 0"><strong>No outputs</strong></div>
-        <div *ngIf="transaction.outputs.length > 0">
-            <h3>Outputs</h3>
-            <ul *ngFor="let output of transaction.outputs">
-                <li><strong>Address: </strong><a href="/explorer?term={{output.to}}">{{output.to}}</a></li>
-                <li><strong>Amount: </strong>{{output.value}}</li>
-                <hr>
-            </ul>
-        </div>
-    </li>
+<ul *ngIf="resultType.substr(0, 7) === 'mempool' && expertMode">
+  <h3>Mempool</h3>
+  <li *ngFor="let transaction of result">
+    <p>
+      <strong>public_key: </strong
+      ><a href="/explorer?term={{ transaction.public_key }}">{{
+        transaction.public_key
+      }}</a>
+    </p>
+    <p>
+      <strong>signature: </strong
+      ><a href="/explorer?term={{ transaction.id }}">{{ transaction.id }}</a>
+    </p>
+    <p><strong>hash: </strong>{{ transaction.hash }}</p>
+    <p><strong>fee: </strong>{{ transaction.fee }}</p>
+    <p>
+      <strong>diffie-hellman public key: </strong
+      >{{ transaction.dh_public_key }}
+    </p>
+    <p>
+      <strong>relationship identifier: </strong
+      ><a href="/explorer?term={{ transaction.rid }}">{{ transaction.rid }}</a>
+    </p>
+    <p>
+      <strong>relationship data: </strong
+      ><textarea class="form-control">{{ transaction.relationship }}</textarea>
+    </p>
+    <div *ngIf="transaction.inputs.length === 0">
+      <strong>No inputs</strong>
+    </div>
+    <div *ngIf="transaction.inputs.length > 0">
+      <h3>Inputs</h3>
+      <ul>
+        <li *ngFor="let input of transaction.inputs">
+          <strong>Signature: </strong
+          ><a href="/explorer?term={{ input.id }}">{{ input.id }}</a>
+        </li>
+      </ul>
+    </div>
+    <div *ngIf="transaction.outputs.length === 0">
+      <strong>No outputs</strong>
+    </div>
+    <div *ngIf="transaction.outputs.length > 0">
+      <h3>Outputs</h3>
+      <ul *ngFor="let output of transaction.outputs">
+        <li>
+          <strong>Address: </strong
+          ><a href="/explorer?term={{ output.to }}">{{ output.to }}</a>
+        </li>
+        <li><strong>Amount: </strong>{{ output.value }}</li>
+        <hr />
+      </ul>
+    </div>
+  </li>
 </ul>
-<ul *ngIf="resultType.substr(0, 5) === 'block' || resultType.substr(0, 3) === 'txn'">
-    <li *ngFor="let block of result">
-        <a href="/explorer?term={{block.index}}"><h3>Block {{block.index}}</h3></a>
-        <p><strong>version: </strong>{{block.version}}</p>
-        <p><strong>target: </strong>{{block.target}}</p>
-        <p><strong>nonce: </strong>{{block.nonce}}</p>
-        <p><strong>merkleRoot: </strong>{{block.merkleRoot}}</p>
-        <p><strong>index: </strong>{{block.index}}</p>
-        <p><strong>special min: </strong>{{block.special_min}}</p>
-        <p><strong>time: </strong>{{block.time}}</p>
-        <p><strong>previous hash: </strong><a href="/explorer?term={{block.prevHash}}">{{block.prevHash}}</a></p>
-        <p><strong>public_key: </strong><a href="/explorer?term={{block.public_key}}">{{block.public_key}}</a></p>
-        <p><strong>signature: </strong><a href="/explorer?term={{block.id}}">{{block.id}}</a></p>
-        <p><strong>hash: </strong><a href="/explorer?term={{block.hash}}">{{block.hash}}</a></p>
-        <h3>Transactions</h3>
+
+<ul *ngIf="resultType.substr(0, 7) === 'mempool' && !expertMode">
+  <h3>Mempool</h3>
+  <li *ngFor="let transaction of result">
+    <div class="transaction-container">
+      <div class="transaction-inputs">
+        <h4>From</h4>
         <ul>
-            <li *ngFor="let transaction of block.transactions">
-                <p><strong>public_key: </strong><a href="/explorer?term={{transaction.public_key}}">{{transaction.public_key}}</a></p>
-                <p><strong>signature: </strong>{{transaction.id}}</p>
-                <p><strong>hash: </strong>{{transaction.hash}}</p>
-                <p><strong>fee: </strong>{{transaction.fee}}</p>
-                <p><strong>diffie-hellman public key: </strong>{{transaction.dh_public_key}}</p>
-                <p><strong>relationship identifier: </strong><a href="/explorer?term={{transaction.rid}}">{{transaction.rid}}</a></p>
-                <p><strong>relationship data: </strong><textarea class="form-control">{{transaction.relationship}}</textarea></p>
-                <div *ngIf="transaction.inputs.length === 0"><strong>No inputs</strong></div>
-                <div *ngIf="transaction.inputs.length > 0">
-                    <h3>Inputs</h3>
-                    <ul>
-                        <li *ngFor="let input of transaction.inputs"><strong>Signature: </strong><a href="/explorer?term={{input.id}}">{{input.id}}</a></li>
-                    </ul>
-                </div>
-                <div *ngIf="transaction.outputs.length === 0"><strong>No outputs</strong></div>
-                <div *ngIf="transaction.outputs.length > 0">
-                    <h3>Outputs</h3>
-                    <ul *ngFor="let output of transaction.outputs">
-                        <li><strong>Address: </strong><a href="/explorer?term={{output.to}}">{{output.to}}</a></li>
-                        <li><strong>Amount: </strong>{{output.value}}</li>
-                        <hr>
-                    </ul>
-                </div>
-            </li>
+          <li>
+            <p>
+              <strong>Address: </strong
+              ><a
+                href="/explorer?term={{
+                  encodeAddress(transaction.public_key)
+                }}"
+                >{{ encodeAddress(transaction.public_key) }}</a
+              >
+            </p>
+          </li>
         </ul>
-    </li>
+      </div>
+      <div class="transaction-outputs">
+        <h4>To</h4>
+        <ul>
+          <li *ngFor="let output of transaction.outputs">
+            <p>
+              <strong>Address: </strong
+              ><a href="/explorer?term={{ output.to }}">{{ output.to }}</a>
+            </p>
+            <p><strong>Amount: </strong>{{ output.value }}</p>
+          </li>
+        </ul>
+      </div>
+    </div>
+  </li>
 </ul>
+<ul
+  *ngIf="
+    (resultType.substr(0, 5) === 'block' ||
+      resultType.substr(0, 3) === 'txn') &&
+    expertMode
+  "
+>
+  <li *ngFor="let block of result">
+    <a href="/explorer?term={{ block.index }}"
+      ><h3>Block {{ block.index }}</h3></a
+    >
+    <p><strong>version: </strong>{{ block.version }}</p>
+    <p><strong>target: </strong>{{ block.target }}</p>
+    <p><strong>nonce: </strong>{{ block.nonce }}</p>
+    <p><strong>merkleRoot: </strong>{{ block.merkleRoot }}</p>
+    <p><strong>index: </strong>{{ block.index }}</p>
+    <p><strong>special min: </strong>{{ block.special_min }}</p>
+    <p><strong>time: </strong>{{ block.time }}</p>
+    <p>
+      <strong>previous hash: </strong
+      ><a href="/explorer?term={{ block.prevHash }}">{{ block.prevHash }}</a>
+    </p>
+    <p>
+      <strong>public_key: </strong
+      ><a href="/explorer?term={{ block.public_key }}">{{
+        block.public_key
+      }}</a>
+    </p>
+    <p>
+      <strong>signature: </strong
+      ><a href="/explorer?term={{ block.id }}">{{ block.id }}</a>
+    </p>
+    <p>
+      <strong>hash: </strong
+      ><a href="/explorer?term={{ block.hash }}">{{ block.hash }}</a>
+    </p>
+    <h4>Transactions</h4>
+    <ul>
+      <li *ngFor="let transaction of block.transactions">
+        <p>
+          <strong>public_key: </strong
+          ><a href="/explorer?term={{ transaction.public_key }}">{{
+            transaction.public_key
+          }}</a>
+        </p>
+        <p><strong>signature: </strong>{{ transaction.id }}</p>
+        <p><strong>hash: </strong>{{ transaction.hash }}</p>
+        <p><strong>fee: </strong>{{ transaction.fee }}</p>
+        <p>
+          <strong>diffie-hellman public key: </strong
+          >{{ transaction.dh_public_key }}
+        </p>
+        <p>
+          <strong>relationship identifier: </strong
+          ><a href="/explorer?term={{ transaction.rid }}">{{
+            transaction.rid
+          }}</a>
+        </p>
+        <p>
+          <strong>relationship data: </strong
+          ><textarea class="form-control">{{
+            transaction.relationship
+          }}</textarea>
+        </p>
+        <div *ngIf="transaction.inputs.length === 0">
+          <strong>No inputs</strong>
+        </div>
+        <div *ngIf="transaction.inputs.length > 0">
+          <h3>Inputs</h3>
+          <ul>
+            <li *ngFor="let input of transaction.inputs">
+              <strong>Signature: </strong
+              ><a href="/explorer?term={{ input.id }}">{{ input.id }}</a>
+            </li>
+          </ul>
+        </div>
+        <div *ngIf="transaction.outputs.length === 0">
+          <strong>No outputs</strong>
+        </div>
+        <div *ngIf="transaction.outputs.length > 0">
+          <h3>Outputs</h3>
+          <ul *ngFor="let output of transaction.outputs">
+            <li>
+              <strong>Address: </strong
+              ><a href="/explorer?term={{ output.to }}">{{ output.to }}</a>
+            </li>
+            <li><strong>Amount: </strong>{{ output.value }}</li>
+            <hr />
+          </ul>
+        </div>
+      </li>
+    </ul>
+  </li>
+</ul>
+<div
+  *ngIf="
+    (resultType.substr(0, 5) === 'block' ||
+      resultType.substr(0, 3) === 'txn') &&
+    !expertMode
+  "
+>
+  <div *ngFor="let block of result" class="block-info">
+    <a href="/explorer?term={{ block.index }}"
+      ><h3>Block {{ block.index }}</h3></a
+    >
+    <div class="transactions">
+      <h3>Transactions</h3>
+      <div *ngFor="let transaction of block.transactions" class="transaction">
+        <div class="transaction-container">
+          <div class="transaction-inputs">
+            <h4>From</h4>
+            <ul>
+              <li>
+                <p>
+                  <strong>Address: </strong
+                  ><a
+                    href="/explorer?term={{
+                      encodeAddress(transaction.public_key)
+                    }}"
+                    >{{ encodeAddress(transaction.public_key) }}</a
+                  >
+                </p>
+              </li>
+            </ul>
+          </div>
+          <div class="transaction-outputs">
+            <h4>To</h4>
+            <ul>
+              <li *ngFor="let output of transaction.outputs">
+                <p>
+                  <strong>Address: </strong
+                  ><a href="/explorer?term={{ output.to }}">{{ output.to }}</a>
+                </p>
+                <p><strong>Amount: </strong>{{ output.value }}</p>
+              </li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
