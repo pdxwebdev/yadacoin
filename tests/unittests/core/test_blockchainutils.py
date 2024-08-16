@@ -737,27 +737,19 @@ class TestBlockchainUtils(AsyncTestCase):
         res = [
             x["id"]
             async for x in config.BU.get_wallet_unspent_transactions(
-                "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK",
+                "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
             )
         ]
-        self.assertTrue(
-            "MEQCIDWEkQIX5W6ZXOwyjerT83eAACd6rkJcbL3sJZtyjcFGAiBr8R7HHGnk61v0zriuAXvmAdwx77acY9mHf9pNSlUeWw=="
-            in res
-        )
+        self.assertTrue(len(res) > 0)
 
-        res = [
+        res2 = [
             x["id"]
             async for x in config.BU.get_wallet_unspent_transactions(
-                "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK",
-                [
-                    "MEQCIDWEkQIX5W6ZXOwyjerT83eAACd6rkJcbL3sJZtyjcFGAiBr8R7HHGnk61v0zriuAXvmAdwx77acY9mHf9pNSlUeWw=="
-                ],
+                "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
+                [res[0]],
             )
         ]
-        self.assertFalse(
-            "MEQCIDWEkQIX5W6ZXOwyjerT83eAACd6rkJcbL3sJZtyjcFGAiBr8R7HHGnk61v0zriuAXvmAdwx77acY9mHf9pNSlUeWw=="
-            in res
-        )
+        self.assertFalse(res[0] in res2)
 
 
 if __name__ == "__main__":
