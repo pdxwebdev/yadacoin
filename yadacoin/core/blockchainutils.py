@@ -148,15 +148,21 @@ class BlockChainUtils(object):
                 {"$unwind": "$transactions"},
                 {"$project": {"_id": 0, "txn": "$transactions", "height": "$index"}},
                 {"$match": {"txn.public_key": reverse_public_key}},
-                {
-                    "$project": {
-                        "_id": 0,
-                        "public_key": "$txn.public_key",
-                        "txn": "$txn",
-                        "height": "$height",
-                    }
-                },
             ]
+        )
+
+        if ids:
+            spent_txns_query.append({"$match": {"txn.id": {"$in": ids}}})
+
+        spent_txns_query.append(
+            {
+                "$project": {
+                    "_id": 0,
+                    "public_key": "$txn.public_key",
+                    "txn": "$txn",
+                    "height": "$height",
+                }
+            }
         )
 
         spent = self.mongo.async_db.blocks.aggregate(
@@ -169,9 +175,7 @@ class BlockChainUtils(object):
             spent_ids.update([i["id"] for i in x["txn"]["inputs"]])
 
         if ids:
-            for x in list(spent_ids ^ set(ids)):
-                yield {"id": x}
-            return
+            spent_ids.update(ids)
 
         unspent_txns_query = [
             {"$match": {"transactions.outputs.to": address}},
