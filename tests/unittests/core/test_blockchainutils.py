@@ -1,13 +1,14 @@
 import time
 import unittest
 from unittest import mock
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 from mongomock import MongoClient
 
 import yadacoin.core.config
 from yadacoin.app import NodeApplication
 from yadacoin.core.block import Block
+from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
 
 from ..test_setup import AsyncTestCase
@@ -689,6 +690,24 @@ block = {
 }
 
 
+async def mock_get_public_key_address_pairs(self, address):
+    async def get_txn():
+        yield txn
+
+    return get_txn()
+
+
+async def mock_get_spent_txns(self, address):
+    async def get_txn():
+        yield {
+            "public_key": txn["public_key"],
+            "txn": txn,
+            "height": 0,
+        }
+
+    return get_txn()
+
+
 class TestBlockchainUtils(AsyncTestCase):
     @mock.patch(
         "yadacoin.core.blockchain.Blockchain.mongo", new_callable=lambda: MongoClient
@@ -729,11 +748,20 @@ class TestBlockchainUtils(AsyncTestCase):
         duration = time.time() - start
         config.app_log.info(f"Duration: {duration}")
 
-    @patch("yadacoin.core.config.CONFIG.mongo.async_db.blocks")
-    async def test_get_wallet_unspent_transactions_mempool(self, block_blocks):
+    @patch(
+        "yadacoin.core.blockchainutils.BlockChainUtils.get_public_key_address_pairs",
+        new=mock_get_public_key_address_pairs,
+    )
+    @patch(
+        "yadacoin.core.blockchainutils.BlockChainUtils.get_spent_txns",
+        new=mock_get_spent_txns,
+    )
+    async def test_get_wallet_unspent_transactions_mempool(self):
         NodeApplication(test=True)
         config = Config()
-        block_blocks.find = AsyncMock(return_value=[block])
+
+        genesis_block = await Blockchain.get_genesis_block()
+        await genesis_block.save()
         res = [
             x["id"]
             async for x in config.BU.get_wallet_unspent_transactions(

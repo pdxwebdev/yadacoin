@@ -102,12 +102,8 @@ class BlockChainUtils(object):
                     balance += float(output["value"])
         return balance
 
-    async def get_wallet_unspent_transactions(self, address, ids=None, no_zeros=False):
-        #### fine above ####
-
-        ### find public key fast first ###
-
-        public_key_address_pairs = self.mongo.async_db.blocks.aggregate(
+    async def get_public_key_address_pairs(self, address):
+        return self.mongo.async_db.blocks.aggregate(
             [
                 {"$match": {"transactions.outputs.to": address}},
                 {"$unwind": "$transactions"},
@@ -124,6 +120,23 @@ class BlockChainUtils(object):
             allowDiskUse=True,
             hint="__to",
         )
+
+    async def get_spent_txns(self, spent_txns_query):
+        return self.mongo.async_db.blocks.aggregate(
+            spent_txns_query, allowDiskUse=True, hint="__txn_public_key"
+        )
+
+    async def get_unspent_txns(self, unspent_txns_query):
+        return self.config.mongo.async_db.blocks.aggregate(
+            unspent_txns_query, allowDiskUse=True, hint="__to"
+        )
+
+    async def get_wallet_unspent_transactions(self, address, ids=None, no_zeros=False):
+        #### fine above ####
+
+        ### find public key fast first ###
+
+        public_key_address_pairs = await self.get_public_key_address_pairs(address)
 
         reverse_public_key = ""
         async for public_key_address_pair in public_key_address_pairs:
@@ -165,9 +178,7 @@ class BlockChainUtils(object):
             }
         )
 
-        spent = self.mongo.async_db.blocks.aggregate(
-            spent_txns_query, allowDiskUse=True, hint="__txn_public_key"
-        )
+        spent = await self.get_spent_txns(spent_txns_query)
 
         # here we're assuming block/transaction validation ensures the inputs used are valid for this address
         spent_ids = set()
@@ -196,9 +207,9 @@ class BlockChainUtils(object):
             ]
         )
 
-        async for unspent_txn in self.config.mongo.async_db.blocks.aggregate(
-            unspent_txns_query, allowDiskUse=True, hint="__to"
-        ):
+        unspent_txns = await self.get_unspent_txns(unspent_txns_query)
+
+        async for unspent_txn in unspent_txns:
             unspent_txn["transactions"]["height"] = unspent_txn["index"]
             unspent_txn["transactions"]["outputs"] = [
                 unspent_txn["transactions"]["outputs"]
