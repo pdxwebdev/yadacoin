@@ -325,3 +325,59 @@ class TU(object):  # Transaction Utilities
     @classmethod
     def get_transaction_objs_list(cls, transaction_objs):
         return [y for x in list(transaction_objs.values()) for y in x]
+
+    @classmethod
+    async def combine_oldest_transactions(cls, config):
+        address = config.address
+        combined_address = config.combined_address
+        config.app_log.info("Combining oldest transactions process started.")
+        total_value = 0
+        oldest_transactions = []
+        pending_used_inputs = {}
+
+        # Check for transactions already in mempool
+        mempool_txns = await config.mongo.async_db.miner_transactions.find(
+            {"outputs.to": address}
+        ).to_list(None)
+
+        for txn in mempool_txns:
+            for input_tx in txn["inputs"]:
+                pending_used_inputs[input_tx["id"]] = txn["_id"]
+
+        # Retrieve oldest transactions
+        async for txn in config.BU.get_wallet_unspent_transactions(address, no_zeros=True):
+            if txn["id"] not in pending_used_inputs:
+                oldest_transactions.append(txn)
+                if len(oldest_transactions) >= 100:
+                    break
+
+        config.app_log.info("Found {} oldest transactions for combination.".format(len(oldest_transactions)))
+
+        # Additional check: if the number of transactions is less than 100, do not generate a transaction
+        if len(oldest_transactions) < 100:
+            config.app_log.info("Insufficient number of transactions to combine.")
+            return
+
+        for txn in oldest_transactions:
+            for output in txn["outputs"]:
+                if output["to"] == address:
+                    total_value += float(output["value"])
+
+        config.app_log.info("Total value of oldest transactions: {}.".format(total_value))
+
+        try:
+            result = await cls.send(
+                config=config,
+                to=combined_address,
+                value=total_value,
+                from_address=address,
+                inputs=oldest_transactions,
+                exact_match=False,
+            )
+            if "status" in result and result["status"] == "error":
+                config.app_log.error("Error combining oldest transactions: {}".format(result["message"]))
+            else:
+                config.app_log.info("Successfully combined oldest transactions.")
+        except Exception as e:
+            config.app_log.error("Error combining oldest transactions: {}".format(str(e)))
+

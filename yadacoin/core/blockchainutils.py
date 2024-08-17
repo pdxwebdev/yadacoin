@@ -203,7 +203,7 @@ class BlockChainUtils(object):
         unspent_txns_query.extend(
             [
                 {"$match": {"transactions.id": {"$nin": list(spent_ids)}}},
-                {"$sort": {"transactions.outputs.value": 1}},
+                {"$sort": {"transactions.time": 1}},  # Change sorting on time
             ]
         )
 
