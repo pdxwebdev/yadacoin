@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import binascii
 import hashlib
@@ -7,13 +8,14 @@ from datetime import timedelta
 from decimal import Decimal, getcontext
 from logging import getLogger
 
+import pyrx
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from tornado.iostream import StreamClosedError
+from tornado.tcpclient import TCPClient
 from tornado.util import TimeoutError
 
-import pyrx
 import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
@@ -35,6 +37,40 @@ def quantize_eight(value):
     value = Decimal(value)
     value = value.quantize(Decimal("0.00000000"))
     return value
+
+
+async def test_node(node, semaphore):
+    config = Config()
+    async with semaphore:
+        try:
+            stream = await TCPClient().connect(
+                node.host, node.port, timeout=timedelta(seconds=1)
+            )
+            return node
+        except StreamClosedError:
+            config.app_log.warning(
+                f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
+            )
+        except TimeoutError:
+            config.app_log.warning(
+                f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
+            )
+        except Exception as e:
+            config.app_log.warning(
+                f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}, error: {e}"
+            )
+        finally:
+            if "stream" in locals() and not stream.closed():
+                stream.close()
+
+
+async def test_all_nodes(nodes):
+    # Limit the number of concurrent tasks
+    semaphore = asyncio.Semaphore(50)  # Adjust the limit as needed
+    tasks = [test_node(node, semaphore) for node in nodes]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    successful_nodes = [node for node in results if node is not None]
+    return successful_nodes
 
 
 class CoinbaseRule1(Exception):
@@ -231,27 +267,7 @@ class Block(object):
             ]
             masternode_reward_total = block_reward * 0.1
 
-            successful_nodes = []
-            for node in nodes:
-                from tornado.tcpclient import TCPClient
-
-                try:
-                    stream = await TCPClient().connect(
-                        node.host, node.port, timeout=timedelta(seconds=1)
-                    )
-                except StreamClosedError:
-                    config.app_log.warning(
-                        f"Stream closed exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                except TimeoutError:
-                    config.app_log.warning(
-                        f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                except Exception:
-                    config.app_log.warning(
-                        f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
-                    )
-                successful_nodes.append(node)
+            successful_nodes = await test_all_nodes(nodes)
 
             masternode_reward_divided = masternode_reward_total / len(successful_nodes)
             for successful_node in successful_nodes:
