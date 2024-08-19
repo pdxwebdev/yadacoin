@@ -345,7 +345,12 @@ class MiningPool(object):
         header = self.block_factory.header
         blob = header.encode().hex().replace("7b6e6f6e63657d", "00000000" + extra_nonce)
 
-        if "XMRigCC/3" in agent or "XMRig/3" in agent or "XMRig/6" in agent:
+        if (
+            "XMRigCC/3" in agent
+            or "XMRig/3" in agent
+            or "XMRig/6" in agent
+            or "xmrig-proxy/6" in agent
+        ):
             target = hex(0x10000000000000001 // miner_diff)
         elif miner_diff <= 69905:
             target = hex(0x10000000000000001 // miner_diff - 0x0000F00000000000)[
