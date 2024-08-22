@@ -137,7 +137,6 @@ class NodeApplication(Application):
         self.init_config_properties(test=test)
         if test:
             return
-        self.init_peer()
         if MODES.NODE.value in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
@@ -153,6 +152,7 @@ class NodeApplication(Application):
             self.config.node_server_instance.bind(self.config.peer_port)
             self.config.node_server_instance.start(1)
 
+        self.init_peer()
         if MODES.POOL.value in self.config.modes:
             self.init_pool()
 
