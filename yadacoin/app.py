@@ -953,6 +953,7 @@ class NodeApplication(Application):
                 PEER_TYPES.SERVICE_PROVIDER.value,
                 PEER_TYPES.SEED_GATEWAY.value,
                 PEER_TYPES.SEED.value,
+                PEER_TYPES.USER.value,
             ]:
                 PeriodicCallback(
                     self.background_transactions_combining,
