@@ -14,7 +14,6 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 from eccsnacks.curve25519 import scalarmult_base
 
-from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -145,8 +144,6 @@ class GraphRIDWalletHandler(BaseGraphHandler):
                     if x["to"] == address:
                         pending_balance += float(x["value"])
 
-        if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
-            pass
         balance = await self.config.BU.get_wallet_balance(address)
 
         unspent_txns = [

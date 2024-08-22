@@ -100,9 +100,20 @@ class BlockChainUtils(object):
 
     async def get_total_output_balance(self, address):
         pipeline = [
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gte": 1},
+                },
+            },
             {"$unwind": "$transactions"},
             {"$unwind": "$transactions.outputs"},
-            {"$match": {"transactions.outputs.to": address}},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gte": 1},
+                },
+            },
             {
                 "$group": {
                     "_id": None,
@@ -116,9 +127,20 @@ class BlockChainUtils(object):
     async def get_spent_balance(self, address):
         reverse_public_key = await self.get_reverse_public_key(address)
         pipeline = [
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gte": 1},
+                },
+            },
             {"$unwind": "$transactions"},
             {"$unwind": "$transactions.outputs"},
-            {"$match": {"transactions.outputs.to": address}},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gte": 1},
+                },
+            },
             {"$match": {"transactions.public_key": reverse_public_key}},
             {
                 "$group": {
@@ -192,16 +214,21 @@ class BlockChainUtils(object):
     ):
         public_key = await self.get_reverse_public_key(address)
         unspent_txns_query = [
-            {"$match": {"transactions.outputs.to": address}},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gte": 1},
+                },
+            },
             {"$unwind": "$transactions"},
             {"$unwind": "$transactions.outputs"},
-            {"$match": {"transactions.outputs.to": address}},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gte": 1},
+                },
+            },
         ]
-
-        if no_zeros:
-            unspent_txns_query.append(
-                {"$match": {"transactions.outputs.value": {"$gt": 0}}}
-            )
 
         unspent_txns_query.append(
             {"$sort": {"transactions.outputs.value": -1}}
