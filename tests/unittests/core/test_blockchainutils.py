@@ -690,20 +690,21 @@ block = {
 }
 
 
-async def mock_get_public_key_address_pairs(self, address):
+async def mock_get_unspent_txns(self, query):
     async def get_txn():
-        yield txn
+        yield {
+            "transactions": {
+                "id": "MEUCIQDAAsbaZhXNIln4KV1GNkfgBX/TcOdya5YSVSZzhJr2lAIgRNH8IA6PqyMV2+qmkW/qtYSJT0L6oeOH/ix7dRkuWag=",
+                "outputs": {"to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", "value": 1},
+            }
+        }
 
     return get_txn()
 
 
-async def mock_get_spent_txns(self, address):
+async def mock_get_mempool_transactions(self, input_ids, public_key):
     async def get_txn():
-        yield {
-            "public_key": txn["public_key"],
-            "txn": txn,
-            "height": 0,
-        }
+        yield True
 
     return get_txn()
 
@@ -733,28 +734,13 @@ class TestBlockchainUtils(AsyncTestCase):
         duration = time.time() - start
         config.app_log.info(f"Duration: {duration}")
 
-    async def test_get_wallet_unspent_transactions(self):
-        NodeApplication(test=True)
-        config = Config()
-        await self.setBlock()
-        start = time.time()
-        config.mongo_query_timeout = 1000000  # in miliseconds
-        [
-            x
-            async for x in config.BU.get_wallet_unspent_transactions(
-                "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK"
-            )
-        ]
-        duration = time.time() - start
-        config.app_log.info(f"Duration: {duration}")
-
     @patch(
-        "yadacoin.core.blockchainutils.BlockChainUtils.get_public_key_address_pairs",
-        new=mock_get_public_key_address_pairs,
+        "yadacoin.core.blockchainutils.BlockChainUtils.get_unspent_txns",
+        new=mock_get_unspent_txns,
     )
     @patch(
-        "yadacoin.core.blockchainutils.BlockChainUtils.get_spent_txns",
-        new=mock_get_spent_txns,
+        "yadacoin.core.blockchainutils.BlockChainUtils.get_mempool_transactions",
+        new=mock_get_mempool_transactions,
     )
     async def test_get_wallet_unspent_transactions_mempool(self):
         NodeApplication(test=True)
@@ -769,15 +755,23 @@ class TestBlockchainUtils(AsyncTestCase):
             )
         ]
         self.assertTrue(len(res) > 0)
+        self.assertTrue(
+            "MEUCIQDAAsbaZhXNIln4KV1GNkfgBX/TcOdya5YSVSZzhJr2lAIgRNH8IA6PqyMV2+qmkW/qtYSJT0L6oeOH/ix7dRkuWag="
+            in res
+        )
 
         res2 = [
             x["id"]
             async for x in config.BU.get_wallet_unspent_transactions(
                 "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
-                [res[0]],
+                inc_mempool=True,
             )
         ]
-        self.assertFalse(res[0] in res2)
+        print(res2)
+        self.assertFalse(
+            "MEUCIQDAAsbaZhXNIln4KV1GNkfgBX/TcOdya5YSVSZzhJr2lAIgRNH8IA6PqyMV2+qmkW/qtYSJT0L6oeOH/ix7dRkuWag="
+            in res2
+        )
 
 
 if __name__ == "__main__":

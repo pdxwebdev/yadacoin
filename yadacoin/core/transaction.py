@@ -244,14 +244,6 @@ class Transaction(object):
         cls_inst.private = private
         return cls_inst
 
-    async def get_mempool_transaction_ids(self):
-        miner_transactions = self.mongo.async_db.miner_transactions.find(
-            {"public_key": self.public_key}
-        )
-        async for mtxn in miner_transactions:
-            for mtxninput in mtxn["inputs"]:
-                yield mtxninput["id"]
-
     async def do_money(self):
         if self.coinbase:
             self.inputs = []
@@ -263,7 +255,6 @@ class Transaction(object):
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         )
 
-        mtxn_ids = self.get_mempool_transaction_ids()
         input_sum = 0
         inputs = []
         if self.inputs:
@@ -274,7 +265,6 @@ class Transaction(object):
             input_sum = await self.generate_inputs(
                 input_sum,
                 my_address,
-                [x async for x in mtxn_ids],
                 inputs,
                 outputs_and_fee_total,
             )
@@ -321,10 +311,10 @@ class Transaction(object):
         raise NotEnoughMoneyException("not enough money")
 
     async def generate_inputs(
-        self, input_sum, my_address, mtxn_ids, inputs, outputs_and_fee_total
+        self, input_sum, my_address, inputs, outputs_and_fee_total
     ):
         async for input_txn in self.config.BU.get_wallet_unspent_transactions(
-            my_address, no_zeros=True, ids=mtxn_ids
+            my_address, no_zeros=True, inc_mempool=True
         ):
             txn = await self.config.BU.get_transaction_by_id(
                 input_txn["id"], instance=True

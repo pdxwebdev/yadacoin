@@ -92,102 +92,105 @@ class BlockChainUtils(object):
     async def get_block_by_index(self, index):
         return await self.mongo.async_db.blocks.find_one({"index": index}, {"_id": 0})
 
-    async def get_wallet_balance(self, address):
-        balance = 0
-        used_ids = []
-        async for txn in self.get_wallet_unspent_transactions(address):
-            for output in txn["outputs"]:
-                if address == output["to"]:
-                    used_ids.append(txn["id"])
-                    balance += float(output["value"])
-        return balance
-
-    async def get_public_key_address_pairs(self, address):
-        return self.mongo.async_db.blocks.aggregate(
-            [
-                {"$match": {"transactions.outputs.to": address}},
-                {"$unwind": "$transactions"},
-                {"$match": {"transactions.outputs.to": address}},
-                {
-                    "$project": {
-                        "transaction": "$transactions",
-                        "public_key": "$transactions.public_key",
-                    }
-                },
-                {"$unwind": "$transaction.outputs"},
-                {"$match": {"transaction.outputs.to": address}},
-            ],
-            allowDiskUse=True,
-            hint="__to",
-        )
-
-    async def get_spent_txns(self, spent_txns_query):
-        return self.mongo.async_db.blocks.aggregate(
-            spent_txns_query, allowDiskUse=True, hint="__txn_public_key"
-        )
-
     async def get_unspent_txns(self, unspent_txns_query):
+        # Return the cursor directly without awaiting it
         return self.config.mongo.async_db.blocks.aggregate(
             unspent_txns_query, allowDiskUse=True, hint="__to"
         )
 
-    async def get_wallet_unspent_transactions(self, address, ids=None, no_zeros=False):
-        #### fine above ####
+    async def get_total_output_balance(self, address):
+        pipeline = [
+            {"$unwind": "$transactions"},
+            {"$unwind": "$transactions.outputs"},
+            {"$match": {"transactions.outputs.to": address}},
+            {
+                "$group": {
+                    "_id": None,
+                    "total_balance": {"$sum": "$transactions.outputs.value"},
+                }
+            },
+        ]
+        result = await self.mongo.async_db.blocks.aggregate(pipeline).to_list(length=1)
+        return result[0]["total_balance"] if result else 0.0
 
-        ### find public key fast first ###
+    async def get_spent_balance(self, address):
+        reverse_public_key = await self.get_reverse_public_key(address)
+        pipeline = [
+            {"$unwind": "$transactions"},
+            {"$unwind": "$transactions.outputs"},
+            {"$match": {"transactions.outputs.to": address}},
+            {"$match": {"transactions.public_key": reverse_public_key}},
+            {
+                "$group": {
+                    "_id": None,
+                    "spent_balance": {"$sum": "$transactions.outputs.value"},
+                }
+            },
+        ]
+        result = await self.mongo.async_db.blocks.aggregate(pipeline).to_list(length=1)
+        return result[0]["spent_balance"] if result else 0.0
 
-        public_key_address_pairs = await self.get_public_key_address_pairs(address)
+    async def get_final_balance(self, address):
+        total_output = await self.get_total_output_balance(address)
+        total_spent = await self.get_spent_balance(address)
+        return total_output - total_spent
 
-        reverse_public_key = ""
-        async for public_key_address_pair in public_key_address_pairs:
-            xaddress = str(
-                P2PKHBitcoinAddress.from_pubkey(
-                    bytes.fromhex(public_key_address_pair["public_key"])
-                )
-            )
+    async def get_wallet_balance(self, address, amount_needed=None):
+        total_balance = await self.get_final_balance(address)
+        return total_balance
 
-            if xaddress == address:
-                reverse_public_key = public_key_address_pair["public_key"]
-                break
-
-        spent_txns_query = []
-
-        if ids:
-            spent_txns_query.append({"$match": {"transactions.id": {"$in": ids}}})
-        ### end find public key fast first ###
-        spent_txns_query.extend(
-            [
-                {"$match": {"transactions.public_key": reverse_public_key}},
-                {"$unwind": "$transactions"},
-                {"$project": {"_id": 0, "txn": "$transactions", "height": "$index"}},
-                {"$match": {"txn.public_key": reverse_public_key}},
-            ]
-        )
-
-        if ids:
-            spent_txns_query.append({"$match": {"txn.id": {"$in": ids}}})
-
-        spent_txns_query.append(
+    async def get_public_key_address_pairs(self, address):
+        pipeline = [
+            {"$match": {"transactions.outputs.to": address}},
+            {"$unwind": "$transactions"},
+            {"$unwind": "$transactions.outputs"},
+            {"$match": {"transactions.outputs.to": address}},
+            {
+                "$group": {
+                    "_id": None,  # Group all documents together
+                    "unique_public_keys": {
+                        "$addToSet": "$transactions.public_key"
+                    },  # Collect unique public keys
+                }
+            },
             {
                 "$project": {
-                    "_id": 0,
-                    "public_key": "$txn.public_key",
-                    "txn": "$txn",
-                    "height": "$height",
+                    "_id": 0,  # Exclude the _id field
+                    "unique_public_keys": 1,  # Only return the list of unique public keys
                 }
-            }
+            },
+        ]
+        # Return the cursor directly without awaiting it
+        public_key_address_pair_list = self.mongo.async_db.blocks.aggregate(
+            pipeline, allowDiskUse=True, hint="__to"
         )
+        return await public_key_address_pair_list.to_list(length=None)
 
-        spent = await self.get_spent_txns(spent_txns_query)
+    async def get_reverse_public_key(self, address):
+        reversed_public_key = await self.mongo.async_db.reversed_public_keys.find_one(
+            {"address": address}
+        )
+        if reversed_public_key:
+            return reversed_public_key["public_key"]
+        public_key_address_pairs = await self.get_public_key_address_pairs(address)
 
-        # here we're assuming block/transaction validation ensures the inputs used are valid for this address
-        spent_ids = set()
-        async for x in spent:
-            spent_ids.update([i["id"] for i in x["txn"]["inputs"]])
+        if not public_key_address_pairs:
+            return
 
-        if ids:
-            spent_ids.update(ids)
+        for public_key in public_key_address_pairs[0]["unique_public_keys"]:
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+            if xaddress == address:
+                await self.mongo.async_db.reversed_public_keys.update_one(
+                    {"address": address, "public_key": public_key},
+                    {"$set": {"address": address, "public_key": public_key}},
+                    upsert=True,
+                )
+                return public_key
 
+    async def get_wallet_unspent_transactions(
+        self, address, no_zeros=False, inc_mempool=False
+    ):
+        public_key = await self.get_reverse_public_key(address)
         unspent_txns_query = [
             {"$match": {"transactions.outputs.to": address}},
             {"$unwind": "$transactions"},
@@ -200,21 +203,21 @@ class BlockChainUtils(object):
                 {"$match": {"transactions.outputs.value": {"$gt": 0}}}
             )
 
-        unspent_txns_query.extend(
-            [
-                {"$match": {"transactions.id": {"$nin": list(spent_ids)}}},
-                {"$sort": {"transactions.time": 1}},  # Change sorting on time
-            ]
-        )
+        unspent_txns_query.append(
+            {"$sort": {"transactions.outputs.value": -1}}
+        )  # Change sorting on time
 
-        unspent_txns = await self.get_unspent_txns(unspent_txns_query)
-
-        async for unspent_txn in unspent_txns:
-            unspent_txn["transactions"]["height"] = unspent_txn["index"]
-            unspent_txn["transactions"]["outputs"] = [
-                unspent_txn["transactions"]["outputs"]
-            ]
-            yield unspent_txn["transactions"]
+        # Return the cursor directly without awaiting it
+        utxos = await self.get_unspent_txns(unspent_txns_query)
+        unspent = []
+        async for utxo in utxos:
+            if not await self.config.BU.is_input_spent(
+                utxo["transactions"]["id"], public_key, inc_mempool=inc_mempool
+            ):
+                utxo["transactions"]["outputs"] = [utxo["transactions"]["outputs"]]
+                yield utxo["transactions"]
+                if len(unspent) >= 100:
+                    break
 
     async def get_transactions(
         self, wif, query, queryType, raw=False, both=True, skip=None
@@ -439,12 +442,14 @@ class BlockChainUtils(object):
             return True
 
         if inc_mempool:
-            res2 = await self.mongo.async_db.miner_transactions.find_one(
-                {"inputs.id": {"$in": input_ids}, "public_key": public_key}
-            )
-            if res2:
+            if await self.get_mempool_transactions(public_key, input_ids):
                 return True
         return False
+
+    async def get_mempool_transactions(self, public_key, input_ids):
+        return await self.mongo.async_db.miner_transactions.find_one(
+            {"inputs.id": {"$in": input_ids}, "public_key": public_key}
+        )
 
     def get_version_for_height_DEPRECATED(self, height: int):
         # TODO: move to CHAIN

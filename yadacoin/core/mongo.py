@@ -44,6 +44,9 @@ class Mongo(object):
         __time = IndexModel([("time", ASCENDING)], name="__time")
         __index = IndexModel([("index", ASCENDING)], name="__index")
         __to = IndexModel([("transactions.outputs.to", ASCENDING)], name="__to")
+        __value = IndexModel(
+            [("transactions.outputs.value", ASCENDING)], name="__value"
+        )
         __txn_id = IndexModel([("transactions.id", ASCENDING)], name="__txn_id")
         __txn_hash = IndexModel([("transactions.hash", ASCENDING)], name="__txn_hash")
         __txn_inputs_id = IndexModel(
@@ -52,6 +55,10 @@ class Mongo(object):
         __txn_id_inputs_id = IndexModel(
             [("transactions.id", ASCENDING), ("transactions.inputs.id", ASCENDING)],
             name="__txn_id_inputs_id",
+        )
+        __txn_id_public_key = IndexModel(
+            [("transactions.id", ASCENDING), ("transactions.public_key", ASCENDING)],
+            name="__txn_id_public_key",
         )
         __txn_public_key = IndexModel(
             [("transactions.public_key", ASCENDING)], name="__txn_public_key"
@@ -165,10 +172,12 @@ class Mongo(object):
                     __index,
                     __id,
                     __to,
+                    __value,
                     __txn_id,
                     __txn_hash,
                     __txn_inputs_id,
                     __txn_id_inputs_id,
+                    __txn_id_public_key,
                     __txn_public_key,
                     __txn_inputs_public_key,
                     __txn_inputs_address,

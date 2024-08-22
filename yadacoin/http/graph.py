@@ -147,34 +147,13 @@ class GraphRIDWalletHandler(BaseGraphHandler):
 
         if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
             pass
-        regular_txns = []
-        chain_balance = 0
-        async for txn in self.config.BU.get_wallet_unspent_transactions(
-            address, no_zeros=True
-        ):
-            if txn["id"] in pending_used_inputs:
-                continue
-            if amount_needed and chain_balance < amount_needed:
-                for output in txn["outputs"]:
-                    if output["to"] == address and float(output["value"]) > 0.0:
-                        regular_txns.append(txn)
-                        if len(regular_txns) > CHAIN.MAX_INPUTS:
-                            wallet = {
-                                "status": False,
-                                "message": f"Maximum inputs of {CHAIN.MAX_INPUTS} exceeded.",
-                            }
-                            return self.render_as_json(wallet, indent=4)
-
-            for output in txn["outputs"]:
-                if output["to"] == address:
-                    chain_balance += float(output["value"])
-            self.app_log.warning(chain_balance)
+        balance = await self.config.BU.get_wallet_balance(address)
 
         wallet = {
             "pending_balance": "{0:.8f}".format(pending_balance),
-            "chain_balance": "{0:.8f}".format(chain_balance),
-            "balance": "{0:.8f}".format(chain_balance),
-            "unspent_transactions": regular_txns if amount_needed else [],
+            "chain_balance": "{0:.8f}".format(balance),
+            "balance": "{0:.8f}".format(balance),
+            "unspent_transactions": unspent_txns,
         }
         self.render_as_json(wallet, indent=4)
 

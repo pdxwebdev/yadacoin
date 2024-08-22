@@ -268,21 +268,25 @@ class Block(object):
             masternode_reward_total = block_reward * 0.1
 
             successful_nodes = await test_all_nodes(nodes)
-
-            masternode_reward_divided = masternode_reward_total / len(successful_nodes)
-            for successful_node in successful_nodes:
-                outputs.append(
-                    Output.from_dict(
-                        {
-                            "value": float(masternode_reward_divided),
-                            "to": str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(successful_node.identity.public_key)
-                                )
-                            ),
-                        }
-                    )
+            if successful_nodes:
+                masternode_reward_divided = masternode_reward_total / len(
+                    successful_nodes
                 )
+                for successful_node in successful_nodes:
+                    outputs.append(
+                        Output.from_dict(
+                            {
+                                "value": float(masternode_reward_divided),
+                                "to": str(
+                                    P2PKHBitcoinAddress.from_pubkey(
+                                        bytes.fromhex(
+                                            successful_node.identity.public_key
+                                        )
+                                    )
+                                ),
+                            }
+                        )
+                    )
         else:
             outputs = [
                 Output.from_dict(

@@ -137,19 +137,18 @@ class NodeApplication(Application):
         self.init_config_properties(test=test)
         if test:
             return
+        self.init_peer()
         if MODES.NODE.value in self.config.modes:
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
             self.init_groups()
             try:
-                self.init_peer()
                 self.config.app_log.info(
                     "Node: {}:{}".format(self.config.peer_host, self.config.peer_port)
                 )
             except Exception as e:
                 self.config.app_log.info("{}, starting without node enabled.".format(e))
-
             self.config.node_server_instance = self.config.nodeServer()
             self.config.node_server_instance.bind(self.config.peer_port)
             self.config.node_server_instance.start(1)
@@ -786,7 +785,7 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
         self.config.background_mempool_sender.busy = False
 
-    async def background_transactions_combining (self):
+    async def background_transactions_combining(self):
         """Responsible for combining small UTXOs into larger ones in the background"""
 
         if not hasattr(self.config, "background_transactions_combining"):
@@ -950,10 +949,14 @@ class NodeApplication(Application):
                 self.background_message_sender, self.config.message_sender_wait * 1000
             ).start()
 
-            if self.config.peer_type in [PEER_TYPES.SERVICE_PROVIDER.value, PEER_TYPES.SEED_GATEWAY.value, PEER_TYPES.SEED.value]:
+            if self.config.peer_type in [
+                PEER_TYPES.SERVICE_PROVIDER.value,
+                PEER_TYPES.SEED_GATEWAY.value,
+                PEER_TYPES.SEED.value,
+            ]:
                 PeriodicCallback(
-                    self.background_transactions_combining, 
-                    self.config.transactions_combining_wait * 1000
+                    self.background_transactions_combining,
+                    self.config.transactions_combining_wait * 1000,
                 ).start()
 
             if MODES.POOL.value in self.config.modes:

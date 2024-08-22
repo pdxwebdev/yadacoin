@@ -167,7 +167,6 @@ class TestTransaction(AsyncTestCase):
             input_sum = await txn.generate_inputs(
                 input_sum=1,
                 my_address="1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
-                mtxn_ids=[],
                 inputs=[],
                 outputs_and_fee_total=1,
             )
@@ -176,7 +175,6 @@ class TestTransaction(AsyncTestCase):
                 input_sum = await txn.generate_inputs(
                     input_sum=1,
                     my_address="1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
-                    mtxn_ids=[],
                     inputs=[],
                     outputs_and_fee_total=5,
                 )
