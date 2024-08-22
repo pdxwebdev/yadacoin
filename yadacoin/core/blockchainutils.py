@@ -209,14 +209,15 @@ class BlockChainUtils(object):
 
         # Return the cursor directly without awaiting it
         utxos = await self.get_unspent_txns(unspent_txns_query)
-        unspent = []
+        i = 0
         async for utxo in utxos:
             if not await self.config.BU.is_input_spent(
                 utxo["transactions"]["id"], public_key, inc_mempool=inc_mempool
             ):
                 utxo["transactions"]["outputs"] = [utxo["transactions"]["outputs"]]
                 yield utxo["transactions"]
-                if len(unspent) >= 100:
+                i += 1
+                if i >= 100:
                     break
 
     async def get_transactions(

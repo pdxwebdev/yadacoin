@@ -149,6 +149,13 @@ class GraphRIDWalletHandler(BaseGraphHandler):
             pass
         balance = await self.config.BU.get_wallet_balance(address)
 
+        unspent_txns = [
+            x
+            async for x in self.config.BU.get_wallet_unspent_transactions(
+                address, no_zeros=True, inc_mempool=True
+            )
+        ]
+
         wallet = {
             "pending_balance": "{0:.8f}".format(pending_balance),
             "chain_balance": "{0:.8f}".format(balance),
