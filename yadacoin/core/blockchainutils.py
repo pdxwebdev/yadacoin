@@ -98,25 +98,52 @@ class BlockChainUtils(object):
             unspent_txns_query, allowDiskUse=True, hint="__to"
         )
 
-    async def get_total_output_balance(self, address):
+    async def get_coinbase_total_output_balance(self, address):
         reverse_public_key = await self.get_reverse_public_key(address)
-        pipeline = [
+        coinbase_pipeline = [
             {
                 "$match": {
-                    "transactions.public_key": {"$ne": reverse_public_key},
                     "transactions.outputs.to": address,
+                    "transactions.inputs.0": {"$exists": False},
+                    "transactions.public_key": reverse_public_key,
                 },
             },
             {"$unwind": "$transactions"},
-            {
-                "$match": {
-                    "transactions.public_key": {"$ne": reverse_public_key},
-                }
-            },
             {"$unwind": "$transactions.outputs"},
             {
                 "$match": {
                     "transactions.outputs.to": address,
+                    "transactions.inputs.0": {"$exists": False},
+                    "transactions.public_key": reverse_public_key,
+                },
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_balance": {"$sum": "$transactions.outputs.value"},
+                }
+            },
+        ]
+
+        result = await self.mongo.async_db.blocks.aggregate(coinbase_pipeline).to_list(
+            length=1
+        )
+        return result[0]["total_balance"] if result else 0.0
+
+    async def get_total_received_balance(self, address):
+        reverse_public_key = await self.get_reverse_public_key(address)
+        pipeline = [
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                },
+            },
+            {"$unwind": "$transactions"},
+            {"$unwind": "$transactions.outputs"},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.public_key": {"$ne": reverse_public_key},
                 },
             },
             {
@@ -152,9 +179,10 @@ class BlockChainUtils(object):
         return result[0]["spent_balance"] if result else 0.0
 
     async def get_final_balance(self, address):
-        total_output = await self.get_total_output_balance(address)
+        total_coinbase = await self.get_coinbase_total_output_balance(address)
+        total_received = await self.get_total_received_balance(address)
         total_spent = await self.get_spent_balance(address)
-        return total_output - total_spent
+        return (total_coinbase + total_received) - total_spent
 
     async def get_wallet_balance(self, address, amount_needed=None):
         total_balance = await self.get_final_balance(address)

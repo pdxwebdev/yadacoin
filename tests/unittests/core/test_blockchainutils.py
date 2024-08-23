@@ -768,17 +768,16 @@ class TestBlockchainUtils(AsyncTestCase):
                 "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 5, inc_mempool=True
             )
         ]
-        print(res2)
         self.assertFalse(
             "MEUCIQDAAsbaZhXNIln4KV1GNkfgBX/TcOdya5YSVSZzhJr2lAIgRNH8IA6PqyMV2+qmkW/qtYSJT0L6oeOH/ix7dRkuWag="
             in res2
         )
 
     async def test_get_wallet_balance(self):
-        NodeApplication(test=True)
         config = Config()
         config.database = hashlib.sha256(str(time.time()).encode()).hexdigest()[:10]
         config.mongo = Mongo()
+        config.BU = yadacoin.core.blockchainutils.BlockChainUtils()
         genesis_block = await Blockchain.get_genesis_block()
         await config.mongo.async_db.blocks.insert_one(genesis_block.to_dict())
 
@@ -794,6 +793,24 @@ class TestBlockchainUtils(AsyncTestCase):
                 "hash": "00000027175a9dde28a7b26517b026a7866ddb1cfcceaa3627558b5931a1e6c3",
                 "nonce": 14636080,
                 "transactions": [
+                    {
+                        "dh_public_key": "",
+                        "outputs": [
+                            {"to": "16bcSsSiZLdb5VDZnoCYj3DRLh5Ea9Usp1", "value": 1.0},
+                            {"to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", "value": 48.99},
+                        ],
+                        "hash": "6329037c7b8de1e19555cb3059c2a2bdccb6e417bc7ec63cdc4bc55b40320af4",
+                        "relationship": "",
+                        "id": "MEQCIEeaAcF7erg/5Uvso5K5J1TrCS+ThWF52waBwh8+/ZhKAiAHnECJe8ASmIF6/SG/TRKCCq558GLb2Jc6TN/QEElMOw==",
+                        "fee": 0.01,
+                        "inputs": [
+                            {
+                                "id": "MEUCIQCJrtJ/IXFgdU1vKNHeKMq7SYSkLt4Jv/v1p1AFN9jMEAIgI0u/51Syn8Ee4/41UEDgUYOCDiDq+mlMtjAObedD9WM="
+                            }
+                        ],
+                        "public_key": "02a9225bc5deb4d66262c34cfe3e40c7ba3ff12768540e9b69729978b850a3cabb",
+                        "rid": "",
+                    },
                     {
                         "dh_public_key": "",
                         "outputs": [
@@ -832,10 +849,11 @@ class TestBlockchainUtils(AsyncTestCase):
                 "updated_at": 1.5724002324503367e9,
             }
         )
-        await config.mongo.async_db.blocks.replace_one(
-            {"id": spend_block.signature}, spend_block.to_dict()
+        await config.mongo.async_db.blocks.insert_one(spend_block.to_dict())
+        total_received_balance = await config.BU.get_coinbase_total_output_balance(
+            "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4"
         )
-        total_received_balance = await config.BU.get_total_output_balance(
+        total_received_balance = await config.BU.get_total_received_balance(
             "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4"
         )
         self.assertTrue(total_received_balance > 0)
