@@ -345,13 +345,17 @@ class TU(object):  # Transaction Utilities
                 pending_used_inputs[input_tx["id"]] = txn["_id"]
 
         # Retrieve oldest transactions
-        async for txn in config.BU.get_wallet_unspent_transactions(address, no_zeros=True):
+        async for txn in config.BU.get_wallet_unspent_transactions_for_dusting(address):
             if txn["id"] not in pending_used_inputs:
                 oldest_transactions.append(txn)
                 if len(oldest_transactions) >= 100:
                     break
 
-        config.app_log.info("Found {} oldest transactions for combination.".format(len(oldest_transactions)))
+        config.app_log.info(
+            "Found {} oldest transactions for combination.".format(
+                len(oldest_transactions)
+            )
+        )
 
         # Additional check: if the number of transactions is less than 100, do not generate a transaction
         if len(oldest_transactions) < 100:
@@ -363,7 +367,9 @@ class TU(object):  # Transaction Utilities
                 if output["to"] == address:
                     total_value += float(output["value"])
 
-        config.app_log.info("Total value of oldest transactions: {}.".format(total_value))
+        config.app_log.info(
+            "Total value of oldest transactions: {}.".format(total_value)
+        )
 
         try:
             result = await cls.send(
@@ -375,9 +381,12 @@ class TU(object):  # Transaction Utilities
                 exact_match=False,
             )
             if "status" in result and result["status"] == "error":
-                config.app_log.error("Error combining oldest transactions: {}".format(result["message"]))
+                config.app_log.error(
+                    "Error combining oldest transactions: {}".format(result["message"])
+                )
             else:
                 config.app_log.info("Successfully combined oldest transactions.")
         except Exception as e:
-            config.app_log.error("Error combining oldest transactions: {}".format(str(e)))
-
+            config.app_log.error(
+                "Error combining oldest transactions: {}".format(str(e))
+            )

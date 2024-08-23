@@ -313,8 +313,10 @@ class Transaction(object):
     async def generate_inputs(
         self, input_sum, my_address, inputs, outputs_and_fee_total
     ):
-        async for input_txn in self.config.BU.get_wallet_unspent_transactions(
-            my_address, no_zeros=True, inc_mempool=True
+        async for (
+            input_txn
+        ) in self.config.BU.get_wallet_unspent_transactions_for_spending(
+            my_address, inc_mempool=True
         ):
             txn = await self.config.BU.get_transaction_by_id(
                 input_txn["id"], instance=True

@@ -148,8 +148,8 @@ class GraphRIDWalletHandler(BaseGraphHandler):
 
         unspent_txns = [
             x
-            async for x in self.config.BU.get_wallet_unspent_transactions(
-                address, no_zeros=True, inc_mempool=True
+            async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
+                address, inc_mempool=True, amount_needed=amount_needed
             )
         ]
 
@@ -615,160 +615,6 @@ class NSLookupHandler(BaseGraphHandler):
         return self.render_as_json({"status": "error"}, 400)
 
 
-class SignRawTransactionHandler(BaseHandler):
-    async def post(self):
-        key_or_wif = self.get_secure_cookie("key_or_wif")
-        if not key_or_wif and self.jwt.get("key_or_wif") != "true":
-            return self.render_as_json({"error": "not authorized"})
-        config = self.config
-        mongo = self.config.mongo
-        body = json.loads(self.request.body.decode("utf-8"))
-        try:
-            fg = FastGraph.from_dict(0, body.get("txn"), raw=True)
-            fg.verify()
-        except:
-            raise
-            return "invalid transaction", 400
-        res = mongo.db.signed_transactions.find_one({"hash": body.get("hash")})
-        if res:
-            return "no", 400
-        try:
-            rid = TU.generate_rid(config, body.get("username_signature"))
-            my_entry_for_relationship = GU().get_transaction_by_rid(
-                rid, config.wif, rid=True, my=True, public_key=config.public_key
-            )
-            their_entry_for_relationship = GU().get_transaction_by_rid(
-                rid, rid=True, raw=True, theirs=True, public_key=config.public_key
-            )
-            verified = verify_signature(
-                base64.b64decode(body.get("username_signature")),
-                my_entry_for_relationship["relationship"]["their_username"].encode(),
-                bytes.fromhex(their_entry_for_relationship["public_key"]),
-            )
-            if not verified:
-                return "no", 400
-            verified = verify_signature(
-                base64.b64decode(body.get("id")),
-                body.get("hash").encode("utf-8"),
-                bytes.fromhex(their_entry_for_relationship["public_key"]),
-            )
-            address = str(
-                P2PKHBitcoinAddress.from_pubkey(
-                    bytes.fromhex(their_entry_for_relationship["public_key"])
-                )
-            )
-            found = False
-            async for x in self.config.BU.get_wallet_unspent_transactions(
-                address, [body.get("input")]
-            ):
-                if body.get("input") == x["id"]:
-                    found = True
-
-            if not found:
-                for x in self.config.BU.get_wallet_unspent_fastgraph_transactions(
-                    address
-                ):
-                    if body.get("input") == x["id"]:
-                        found = True
-
-            if found:
-                signature = mongo.db.signed_transactions.find_one(
-                    {
-                        "input": body.get("input"),
-                        "txn.public_key": body["txn"]["public_key"],
-                    }
-                )
-                if signature:
-                    already_spent = mongo.db.fastgraph_transactions.find_one(
-                        {
-                            "txn.inputs.id": body["input"],
-                            "txn.public_key": body["txn"]["public_key"],
-                        }
-                    )
-                    if already_spent:
-                        self.set_status(400)
-                        self.write("already spent!")
-                        self.finish()
-                        return True
-                    else:
-                        signature["txn"]["signatures"] = [signature["signature"]]
-                        fastgraph = FastGraph.from_dict(0, signature["txn"])
-                        try:
-                            fastgraph.verify()
-                        except Exception:
-                            raise
-                            return "did not verify", 400
-                        result = mongo.db.fastgraph_transactions.find_one(
-                            {"txn.hash": fastgraph.hash}
-                        )
-                        if result:
-                            return "duplicate transaction found", 400
-                        spent_check = mongo.db.fastgraph_transactions.find_one(
-                            {"txn.inputs.id": {"$in": [x.id for x in fastgraph.inputs]}}
-                        )
-                        if spent_check:
-                            return "already spent input", 400
-                        fastgraph.save()
-            else:
-                return "no transactions with this input found", 400
-            if verified:
-                transaction_signature = TU.generate_signature_with_private_key(
-                    config.private_key, body.get("hash")
-                )
-                signature = {
-                    "signature": transaction_signature,
-                    "hash": body.get("hash"),
-                    "username_signature": body.get("username_signature"),
-                    "input": body.get("input"),
-                    "id": body.get("id"),
-                    "txn": body.get("txn"),
-                }
-                mongo.db.signed_transactions.insert(signature)
-                if "_id" in signature:
-                    del signature["_id"]
-                self.render_as_json(signature, indent=4)
-            else:
-                return "no", 400
-        except Exception as e:
-            raise
-            self.render_as_json({"status": "error", "msg": e})
-
-
-class FastGraphHandler(BaseGraphHandler):
-    async def post(self):
-        # after the necessary signatures are gathered, the transaction is sent here.
-        mongo = self.config.mongo
-        await self.get_base_graph()
-        fastgraph = json.loads(self.request.body.decode("utf-8"))
-        fastgraph = FastGraph.from_dict(0, fastgraph)
-        try:
-            fastgraph.verify()
-        except Exception:
-            raise
-            return "did not verify", 400
-        result = mongo.db.fastgraph_transactions.find_one({"txn.hash": fastgraph.hash})
-        if result:
-            return "duplicate transaction found", 400
-        spent_check = mongo.db.fastgraph_transactions.find_one(
-            {
-                "public_key": fastgraph.public_key,
-                "txn.inputs.id": {"$in": [x.id for x in fastgraph.inputs]},
-            }
-        )
-        if spent_check:
-            return "already spent input", 400
-        fastgraph.save()
-        # TODO: use new peer framework to broadcast fastgraph transactions
-        # fastgraph.broadcast()
-        self.render_as_json(fastgraph.to_dict())
-        try:
-            await self.config.push_service.do_push(
-                fastgraph.to_dict(), self.username_signature, self.app_log
-            )
-        except Exception as e:
-            self.app_log.debug(e)
-
-
 class NSHandler(BaseGraphHandler):
     async def get(self):
         graph = await self.get_base_graph()
@@ -1148,14 +994,6 @@ GRAPH_HANDLERS = [
     (r"/get-graph-comments", GraphCommentsHandler),  # get comments for posts
     (r"/get-graph-collection", GraphCollectionHandler),  # get calendar of events
     (r"/ns-lookup", NSLookupHandler),  # search by username for ns name server.
-    (
-        r"/sign-raw-transaction",
-        SignRawTransactionHandler,
-    ),  # server signs the client transaction
-    (
-        r"/post-fastgraph-transaction",
-        FastGraphHandler,
-    ),  # fastgraph transaction is submitted by client
     (r"/sia-upload", SiaUploadHandler),  # upload a file to your local sia renter
     (r"/sia-files", SiaFileHandler),  # list files from the local sia renter
     (

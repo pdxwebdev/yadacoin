@@ -103,7 +103,6 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
                 },
             },
             {"$unwind": "$transactions"},
@@ -111,7 +110,6 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
                 },
             },
             {
@@ -130,7 +128,6 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
                 },
             },
             {"$unwind": "$transactions"},
@@ -138,7 +135,6 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
                 },
             },
             {"$match": {"transactions.public_key": reverse_public_key}},
@@ -209,11 +205,30 @@ class BlockChainUtils(object):
                 )
                 return public_key
 
-    async def get_wallet_unspent_transactions(
-        self, address, no_zeros=False, inc_mempool=False
+    def get_wallet_unspent_transactions_for_dusting(self, address):
+        query = [
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                },
+            },
+            {"$unwind": "$transactions"},
+            {"$unwind": "$transactions.outputs"},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                },
+            },
+            {"$sort": {"transactions.outputs.time": 1}},
+        ]
+        return self.get_wallet_unspent_transactions(
+            unspent_txns_query=query, address=address
+        )
+
+    def get_wallet_unspent_transactions_for_spending(
+        self, address, amount_needed=None, inc_mempool=False
     ):
-        public_key = await self.get_reverse_public_key(address)
-        unspent_txns_query = [
+        query = [
             {
                 "$match": {
                     "transactions.outputs.to": address,
@@ -228,23 +243,35 @@ class BlockChainUtils(object):
                     "transactions.outputs.value": {"$gte": 1},
                 },
             },
+            {"$sort": {"transactions.outputs.value": -1}},
         ]
+        return self.get_wallet_unspent_transactions(
+            unspent_txns_query=query,
+            address=address,
+            inc_mempool=inc_mempool,
+            amount_needed=amount_needed,
+        )
 
-        unspent_txns_query.append(
-            {"$sort": {"transactions.outputs.value": -1}}
-        )  # Change sorting on time
+    async def get_wallet_unspent_transactions(
+        self,
+        unspent_txns_query,
+        address,
+        inc_mempool=False,
+        amount_needed=None,
+    ):
+        public_key = await self.get_reverse_public_key(address)
 
         # Return the cursor directly without awaiting it
         utxos = await self.get_unspent_txns(unspent_txns_query)
-        i = 0
+        total = 0
         async for utxo in utxos:
             if not await self.config.BU.is_input_spent(
                 utxo["transactions"]["id"], public_key, inc_mempool=inc_mempool
             ):
+                total += utxo["transactions"]["outputs"]["value"]
                 utxo["transactions"]["outputs"] = [utxo["transactions"]["outputs"]]
                 yield utxo["transactions"]
-                i += 1
-                if i >= 100:
+                if amount_needed is not None and total >= amount_needed:
                     break
 
     async def get_transactions(

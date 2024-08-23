@@ -150,8 +150,8 @@ class CreateTransactionView(BaseHandler):
             inputs.extend(
                 [
                     x
-                    async for x in self.config.BU.get_wallet_unspent_transactions(
-                        from_address
+                    async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
+                        from_address, inc_mempool=True
                     )
                 ]
             )
@@ -190,8 +190,8 @@ class CreateRawTransactionView(BaseHandler):
             inputs.extend(
                 [
                     x
-                    async for x in await self.config.BU.get_wallet_unspent_transactions(
-                        from_address
+                    async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
+                        from_address, inc_mempool=True
                     )
                 ]
             )

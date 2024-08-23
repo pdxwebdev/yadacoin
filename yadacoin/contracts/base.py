@@ -122,8 +122,8 @@ class Contract:
                 bytes.fromhex(contract_txn.relationship.identity.public_key)
             )
         )
-        async for txn in self.config.BU.get_wallet_unspent_transactions(
-            address, no_zeros=True
+        async for txn in self.config.BU.get_wallet_unspent_transactions_for_spending(
+            address
         ):
             yield Transaction.from_dict(txn)
 

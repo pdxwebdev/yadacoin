@@ -149,8 +149,10 @@ class StratumServer(RPCSocketServer):
         result = []
         for y in body.get("params").get("payment_ids"):
             config = Config.generate(prv=y)
-            async for x in StratumServer.config.BU.get_wallet_unspent_transactions(
-                config.address
+            async for (
+                x
+            ) in StratumServer.config.BU.get_wallet_unspent_transactions_for_spending(
+                config.address, inc_mempool=True
             ):
                 txn = {"amount": 0}
                 txn["block_height"] = x["height"]

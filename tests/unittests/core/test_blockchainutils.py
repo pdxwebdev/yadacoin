@@ -750,8 +750,8 @@ class TestBlockchainUtils(AsyncTestCase):
         await genesis_block.save()
         res = [
             x["id"]
-            async for x in config.BU.get_wallet_unspent_transactions(
-                "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
+            async for x in config.BU.get_wallet_unspent_transactions_for_spending(
+                "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 5, inc_mempool=False
             )
         ]
         self.assertTrue(len(res) > 0)
@@ -762,9 +762,8 @@ class TestBlockchainUtils(AsyncTestCase):
 
         res2 = [
             x["id"]
-            async for x in config.BU.get_wallet_unspent_transactions(
-                "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4",
-                inc_mempool=True,
+            async for x in config.BU.get_wallet_unspent_transactions_for_spending(
+                "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", 5, inc_mempool=True
             )
         ]
         print(res2)
