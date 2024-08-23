@@ -99,13 +99,20 @@ class BlockChainUtils(object):
         )
 
     async def get_total_output_balance(self, address):
+        reverse_public_key = await self.get_reverse_public_key(address)
         pipeline = [
             {
                 "$match": {
+                    "transactions.public_key": {"$ne": reverse_public_key},
                     "transactions.outputs.to": address,
                 },
             },
             {"$unwind": "$transactions"},
+            {
+                "$match": {
+                    "transactions.public_key": {"$ne": reverse_public_key},
+                }
+            },
             {"$unwind": "$transactions.outputs"},
             {
                 "$match": {
@@ -127,17 +134,13 @@ class BlockChainUtils(object):
         pipeline = [
             {
                 "$match": {
-                    "transactions.outputs.to": address,
+                    "transactions.public_key": reverse_public_key,
                 },
             },
             {"$unwind": "$transactions"},
-            {"$unwind": "$transactions.outputs"},
-            {
-                "$match": {
-                    "transactions.outputs.to": address,
-                },
-            },
             {"$match": {"transactions.public_key": reverse_public_key}},
+            {"$unwind": "$transactions.outputs"},
+            {"$match": {"transactions.outputs.to": {"$ne": address}}},
             {
                 "$group": {
                     "_id": None,

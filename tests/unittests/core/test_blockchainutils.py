@@ -772,6 +772,19 @@ class TestBlockchainUtils(AsyncTestCase):
             in res2
         )
 
+    async def test_get_wallet_balance(self):
+        NodeApplication(test=True)
+        config = Config()
+        total_received_balance = await config.BU.get_total_output_balance(
+            "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4"
+        )
+        self.assertTrue(total_received_balance > 0)
+
+        total_spent_balance = await config.BU.get_spent_balance(
+            "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4"
+        )
+        self.assertTrue(total_spent_balance > 0)
+
 
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
