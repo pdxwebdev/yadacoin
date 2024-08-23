@@ -775,6 +775,61 @@ class TestBlockchainUtils(AsyncTestCase):
     async def test_get_wallet_balance(self):
         NodeApplication(test=True)
         config = Config()
+        await config.mongo.async_db.blocks.delete_one({"index": 11356})
+        genesis_block = await Blockchain.get_genesis_block()
+        await genesis_block.save()
+
+        spend_block = await Block.from_dict(
+            {
+                "merkleRoot": "c816fe62ee6c883226cb8dad100d9338963544c5d9fe8384c5b0be9aaf0cd961",
+                "time": 1537979085,
+                "special_min": False,
+                "index": 11356,
+                "version": 1,
+                "target": "0000003fffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+                "public_key": "02a9225bc5deb4d66262c34cfe3e40c7ba3ff12768540e9b69729978b850a3cabb",
+                "hash": "00000027175a9dde28a7b26517b026a7866ddb1cfcceaa3627558b5931a1e6c3",
+                "nonce": 14636080,
+                "transactions": [
+                    {
+                        "dh_public_key": "",
+                        "outputs": [
+                            {"to": "12Aa9hfgnapHgd6KhRu2HPvMLfWXDprwAQ", "value": 1.0},
+                            {"to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", "value": 48.99},
+                        ],
+                        "hash": "6329037c7b8de1e19555cb3059c2a2bdccb6e417bc7ec63cdc4bc55b40320af4",
+                        "relationship": "",
+                        "id": "MEQCIEeaAcF7erg/5Uvso5K5J1TrCS+ThWF52waBwh8+/ZhKAiAHnECJe8ASmIF6/SG/TRKCCq558GLb2Jc6TN/QEElMOw==",
+                        "fee": 0.01,
+                        "inputs": [
+                            {
+                                "id": "MEUCIQCJrtJ/IXFgdU1vKNHeKMq7SYSkLt4Jv/v1p1AFN9jMEAIgI0u/51Syn8Ee4/41UEDgUYOCDiDq+mlMtjAObedD9WM="
+                            }
+                        ],
+                        "public_key": "03f44c7c4dca3a9204f1ba284d875331894ea8ab5753093be847d798274c6ce570",
+                        "rid": "",
+                    },
+                    {
+                        "dh_public_key": "",
+                        "outputs": [
+                            {"to": "16bcSsSiZLdb5VDZnoCYj3DRLh5Ea9Usp1", "value": 50.01}
+                        ],
+                        "hash": "9009bdec2f428652ea84bef8dff253ab01c6139b6d1ed6460ea3b17818e4e71a",
+                        "relationship": "",
+                        "id": "MEQCIFznbYk6d3En+f9SRZfEBWU7Hj3zRpRY+3d8ZqNQ+/b1AiBJNQeC/oBv533Lta3QYElsz2Ai3IBEETZRwVaZdw3xPw==",
+                        "fee": 0.0,
+                        "inputs": [],
+                        "public_key": "02a9225bc5deb4d66262c34cfe3e40c7ba3ff12768540e9b69729978b850a3cabb",
+                        "rid": "",
+                    },
+                ],
+                "id": "MEQCIFChEOyOTkWmSGp9fkXo6VJ6DJ+//gmEk68ZW8503gKhAiB6RQYV4XLPFzLjP8ESQ3k/CRDRRb8w9P80QW/G8BmcAw==",
+                "header": "",
+                "prevHash": "00000000c7dc961a0b86785fdd68298fc2bfcfffe86a8a343e6e6feb33916c5c",
+                "updated_at": 1.5724002324503367e9,
+            }
+        )
+        await spend_block.save()
         total_received_balance = await config.BU.get_total_output_balance(
             "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4"
         )
