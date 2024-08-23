@@ -1,3 +1,4 @@
+import hashlib
 import time
 import unittest
 from unittest import mock
@@ -10,6 +11,7 @@ from yadacoin.app import NodeApplication
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
+from yadacoin.core.mongo import Mongo
 
 from ..test_setup import AsyncTestCase
 
@@ -775,10 +777,10 @@ class TestBlockchainUtils(AsyncTestCase):
     async def test_get_wallet_balance(self):
         NodeApplication(test=True)
         config = Config()
+        config.database = hashlib.sha256(str(time.time()).encode()).hexdigest()[:10]
+        config.mongo = Mongo()
         genesis_block = await Blockchain.get_genesis_block()
-        await config.mongo.async_db.blocks.replace_one(
-            {"id": genesis_block.signature}, genesis_block.to_dict()
-        )
+        await config.mongo.async_db.blocks.insert_one(genesis_block.to_dict())
 
         spend_block = await Block.from_dict(
             {
