@@ -775,9 +775,10 @@ class TestBlockchainUtils(AsyncTestCase):
     async def test_get_wallet_balance(self):
         NodeApplication(test=True)
         config = Config()
-        await config.mongo.async_db.blocks.delete_one({"index": 11356})
         genesis_block = await Blockchain.get_genesis_block()
-        await genesis_block.save()
+        await config.mongo.async_db.blocks.replace_one(
+            {"id": genesis_block.signature}, genesis_block.to_dict()
+        )
 
         spend_block = await Block.from_dict(
             {
@@ -829,7 +830,9 @@ class TestBlockchainUtils(AsyncTestCase):
                 "updated_at": 1.5724002324503367e9,
             }
         )
-        await spend_block.save()
+        await config.mongo.async_db.blocks.replace_one(
+            {"id": spend_block.signature}, spend_block.to_dict()
+        )
         total_received_balance = await config.BU.get_total_output_balance(
             "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4"
         )
