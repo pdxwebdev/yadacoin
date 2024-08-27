@@ -308,6 +308,21 @@ class Seeds(Nodes):
                     }
                 ),
             },
+            {
+                "ranges": [(505600, None)],
+                "node": Seed.from_dict(
+                    {
+                        "host": "seed.rogue-miner.com",
+                        "port": 8000,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEUCIQD0MsT34TkNpYL5kOhLA/4E4YY+SzFhHtIPWPzHCShVGwIgYlzAQeujWvesmU6ZWrTMRwtLFFtjePZjLJDJjTMEQlc=",
+                            "public_key": "03c815e3160b72c0fdd98f5b9fcca5a5ead09163272bc01e4be6397d1d3dbda9b3",
+                        },
+                        "seed_gateway": "MEUCIQC/PWvXpjny1yDGDPRtBzl6g7Lb9lcUuI0v0Kf6wxYi4AIgeRb5PtNhO2Eks6iiPEBuebKuXSeTM9euU9sWqOZYUec=",
+                    }
+                ),
+            },
         ]
 
         Seeds.set_fork_points()
@@ -549,6 +564,21 @@ class SeedGateways(Nodes):
                             "public_key": "0393110452c520d98ebf69bfadf8db36719c3de1b42ef31f31e81523fb87d7b8db",
                         },
                         "seed": "MEQCICV3BfyeG/d3wthW5L9nWYZYejExBHAhJVlzW5iiTjs8AiAQNq0HnPNAm91ymsKu740lgfWwYcUs8gJHuiS9tz5fAA==",
+                    }
+                ),
+            },
+            {
+                "ranges": [(505600, None)],
+                "node": SeedGateway.from_dict(
+                    {
+                        "host": "seedgateway.rogue-miner.com",
+                        "port": 8002,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEUCIQC/PWvXpjny1yDGDPRtBzl6g7Lb9lcUuI0v0Kf6wxYi4AIgeRb5PtNhO2Eks6iiPEBuebKuXSeTM9euU9sWqOZYUec=",
+                            "public_key": "020ce4988acc611e651d539cc2064ec12e04f22b0f95f54cbdfb223174c0d6ee7f",
+                        },
+                        "seed": "MEUCIQD0MsT34TkNpYL5kOhLA/4E4YY+SzFhHtIPWPzHCShVGwIgYlzAQeujWvesmU6ZWrTMRwtLFFtjePZjLJDJjTMEQlc=",
                     }
                 ),
             },
@@ -808,6 +838,22 @@ class ServiceProviders(Nodes):
                         },
                         "seed_gateway": "MEQCICHeWBWcuQu7LsziPqX7xQI8svUskEidCJVbUYRxp+D2AiA3P9o19J6Ke6KIY+RGNFE3WPziHYBHwgB6xvyWLZ5BQg==",
                         "seed": "MEQCICV3BfyeG/d3wthW5L9nWYZYejExBHAhJVlzW5iiTjs8AiAQNq0HnPNAm91ymsKu740lgfWwYcUs8gJHuiS9tz5fAA==",
+                    }
+                ),
+            },
+            {
+                "ranges": [(505600, None)],
+                "node": ServiceProvider.from_dict(
+                    {
+                        "host": "serviceprovider.rogue-miner.com",
+                        "port": 8003,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEUCIQDgXK4dHUpOAiqfaItWyweWijHRGez+k071wEvqSKm9rgIgZA7MJEjvHSN1FDrnMVsSKx2j74q4gaUiYcs+WYW261M=",
+                            "public_key": "024321b0dc01c7d200e2d2f5b4f0a15883fb3dc91f7ff1df36daa7a195defcd171",
+                        },
+                        "seed_gateway": "MEUCIQC/PWvXpjny1yDGDPRtBzl6g7Lb9lcUuI0v0Kf6wxYi4AIgeRb5PtNhO2Eks6iiPEBuebKuXSeTM9euU9sWqOZYUec=",
+                        "seed": "MEUCIQD0MsT34TkNpYL5kOhLA/4E4YY+SzFhHtIPWPzHCShVGwIgYlzAQeujWvesmU6ZWrTMRwtLFFtjePZjLJDJjTMEQlc==",
                     }
                 ),
             },
