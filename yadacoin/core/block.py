@@ -81,6 +81,7 @@ class UnknownOutputAddressException(Exception):
 
 
 class Block(object):
+    last_generated_block = None
     # Memory optimization
     __slots__ = (
         "app_log",
@@ -307,6 +308,7 @@ class Block(object):
             public_key=public_key,
             target=target,
         )
+        cls.last_generated_block = block
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
         block.header = block.generate_header()

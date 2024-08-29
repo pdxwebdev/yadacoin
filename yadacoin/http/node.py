@@ -4,6 +4,7 @@ Handlers required by the core chain operations
 
 import json
 import time
+import tornado.web
 
 from tornado import escape
 
@@ -11,6 +12,10 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
 from yadacoin.http.base import BaseHandler
+from yadacoin.core.blockchain import Blockchain
+from yadacoin.core.processingqueue import BlockProcessingQueueItem
+from yadacoin.core.block import Block
+from yadacoin.core.latestblock import LatestBlock
 
 
 class GetLatestBlockHandler(BaseHandler):
@@ -21,6 +26,14 @@ class GetLatestBlockHandler(BaseHandler):
         block = await self.config.LatestBlock.block.copy()
         self.render_as_json(block.to_dict())
 
+class GetCurrentBlockHandler(BaseHandler):
+    async def get(self):
+        from yadacoin.core.block import Block
+        try:
+            latest_block = Block.last_generated_block
+            self.render_as_json(latest_block.to_dict())
+        except Exception as e:
+            self.render_as_json({"status": "error", "message": str(e)})
 
 class GetBlocksHandler(BaseHandler):
     async def get(self):
@@ -202,6 +215,13 @@ class GetPendingTransactionIdsHandler(BaseHandler):
         )
         return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
 
+class GetMempoolTransactionsHandler(BaseHandler):
+    async def get(self):
+        try:
+            transactions = await self.config.mongo.async_db.miner_transactions.find({}).to_list(length=None)
+            self.render_as_json({"transactions": transactions})
+        except Exception as e:
+            self.render_as_json({"error": str(e)}, status=500)
 
 class RebroadcastTransactions(BaseHandler):
     async def get(self):
@@ -302,17 +322,20 @@ class GetMonitoringHandler(BaseHandler):
             if hasattr(self.config, "pool_public_key")
             else self.config.public_key
         )
-
-        latest_pool_info = await self.config.mongo.async_db.pool_info.find_one(
-            filter={},
-            sort=[("time", -1)]
+        mining_time_interval = 600
+        shares_count = await self.config.mongo.async_db.shares.count_documents(
+            {"time": {"$gte": time.time() - mining_time_interval}}
         )
-        
-        pool_hash_rate = latest_pool_info.get("pool_hash_rate", 0)
+        if shares_count > 0:
+            pool_hash_rate = (
+                shares_count * self.config.pool_diff
+            ) / mining_time_interval
+        else:
+            pool_hash_rate = 0
 
         pool_blocks_found_list = (
-            await self.config.mongo.async_db.pool_blocks.find(
-                {"public_key": pool_public_key}, {"_id": 0, "found_time": 1, "index": 1}
+            await self.config.mongo.async_db.blocks.find(
+                {"public_key": pool_public_key}, {"_id": 0, "time": 1, "index": 1}
             )
             .sort([("index", -1)])
             .to_list(5)
@@ -321,7 +344,7 @@ class GetMonitoringHandler(BaseHandler):
         lbt = 0
         lbh = 0
         if pool_blocks_found_list:
-            lbt = pool_blocks_found_list[0]["found_time"]
+            lbt = pool_blocks_found_list[0]["time"]
             lbh = pool_blocks_found_list[0]["index"]
 
         pool_data = {
@@ -341,9 +364,48 @@ class GetMonitoringHandler(BaseHandler):
         }
         self.render_as_json(op_data, indent=4)
 
+class GetBlockTemplateHandler(BaseHandler):
+    async def get(self):
+        try:
+            block_template = await LatestBlock.get_block_template()
+            if block_template:
+                self.write(block_template)
+            else:
+                self.config.app_log.error("Failed to retrieve block template: block_template is None.")
+                self.set_status(500)
+                self.write({"error": "Failed to retrieve block template."})
+        except Exception as e:
+            self.config.app_log.error(f"Exception occurred in GetBlockTemplateHandler: {str(e)}")
+            self.set_status(500)
+            self.write({"error": str(e)})
+
+class SubmitBlockHandler(BaseHandler):
+    async def post(self):
+        try:
+            block_data = escape.json_decode(self.request.body)
+            block = await Block.from_dict(block_data)
+            self.config.app_log.info(f"Received block data: {block_data}")
+            
+            await self.config.consensus.insert_consensus_block(block, self.config.peer)
+
+            self.config.processing_queues.block_queue.add(
+                BlockProcessingQueueItem(Blockchain(block.to_dict()))
+            )
+
+            await self.config.nodeShared.send_block_to_peers(block)
+            await self.config.websocketServer.send_block(block)
+
+            self.write({"status": "success", "message": "Block accepted"})
+            self.config.app_log.info(f"Block accepted: {block.hash}")
+
+        except Exception as e:
+            self.write({"status": "error", "message": str(e)})
+            self.config.app_log.info(f"Failed to submit block: {e}")
+
 
 NODE_HANDLERS = [
     (r"/get-latest-block", GetLatestBlockHandler),
+    (r"/get-current-block", GetCurrentBlockHandler),
     (r"/get-blocks", GetBlocksHandler),
     (r"/get-block", GetBlockHandler),
     (r"/get-height|/getheight", GetBlockHeightHandler),
@@ -352,6 +414,7 @@ NODE_HANDLERS = [
     (r"/get-status", GetStatusHandler),
     (r"/get-pending-transaction", GetPendingTransactionHandler),
     (r"/get-pending-transaction-ids", GetPendingTransactionIdsHandler),
+    (r"/get-mempool-transactions", GetMempoolTransactionsHandler),
     (r"/rebroadcast-transactions", RebroadcastTransactions),
     (r"/rebroadcast-failed-transaction", RebroadcastFailedTransactions),
     (r"/get-current-smart-contract-transactions", GetCurrentSmartContractTransactions),
@@ -360,4 +423,6 @@ NODE_HANDLERS = [
     (r"/get-expired-smart-contract-transaction", GetExpiredSmartContractTransaction),
     (r"/get-trigger-transactions", GetSmartContractTriggerTransaction),
     (r"/get-monitoring", GetMonitoringHandler),
+    (r"/get-block-template", GetBlockTemplateHandler),
+    (r"/submitblock", SubmitBlockHandler),
 ]
