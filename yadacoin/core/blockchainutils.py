@@ -252,6 +252,7 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gt": 0},
                 },
             },
             {"$sort": {"transactions.outputs.time": 1}},
