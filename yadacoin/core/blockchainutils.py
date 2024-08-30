@@ -104,7 +104,6 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.inputs.0": {"$exists": False},
                     "transactions.public_key": reverse_public_key,
                 },
             },
@@ -165,7 +164,12 @@ class BlockChainUtils(object):
                 },
             },
             {"$unwind": "$transactions"},
-            {"$match": {"transactions.public_key": reverse_public_key}},
+            {
+                "$match": {
+                    "transactions.public_key": reverse_public_key,
+                    "transactions.inputs.0": {"$exists": True},
+                }
+            },
             {"$unwind": "$transactions.outputs"},
             {"$match": {"transactions.outputs.to": {"$ne": address}}},
             {
