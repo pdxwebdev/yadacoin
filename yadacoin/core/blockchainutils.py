@@ -268,7 +268,7 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
+                    "transactions.outputs.value": {"$gt": 0},
                 },
             },
             {"$unwind": "$transactions"},
@@ -276,11 +276,12 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
+                    "transactions.outputs.value": {"$gt": 0},
                 },
             },
-            {"$sort": {"transactions.outputs.value": -1}},
+            {"$sort": {"transactions.time": 1}},
         ]
+        
         return self.get_wallet_unspent_transactions(
             unspent_txns_query=query,
             address=address,
