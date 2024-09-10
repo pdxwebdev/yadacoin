@@ -112,8 +112,16 @@ class TU(object):  # Transaction Utilities
         check_max_inputs = False
         if config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
             check_max_inputs = True
+
+        check_masternode_fee = False
+        if config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
         try:
-            await transaction.verify(check_max_inputs=check_max_inputs)
+            await transaction.verify(
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
+            )
         except TooManyInputsException as e:
             return {"status": "error", "message": e}
         except:

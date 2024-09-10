@@ -307,6 +307,10 @@ https://yadacoin.io/download
   - type: string
   - default: your node's wallet address
   - description: Specify a wallet address to combine transactions. This can be useful when running multiple nodes and consolidating their transactions into a central wallet.
+- activate_peerjs
+  - type: bool
+  - default: undefined
+  - description: If your node is not a service provide node, which have this enabled by default, you can use this setting to activate peerjs p2p connection broker endpoints and user interface.
 
 ## Development Environment
 

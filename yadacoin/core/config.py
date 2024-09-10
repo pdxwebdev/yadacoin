@@ -127,7 +127,9 @@ class Config:
         self.max_peers = config.get("max_peers", 20)
         self.pool_diff = config.get("pool_diff", 100000)
 
-        self.transactions_combining_wait = config.get("transactions_combining_wait", 3600)
+        self.transactions_combining_wait = config.get(
+            "transactions_combining_wait", 3600
+        )
         self.combined_address = config.get("combined_address", self.address)
 
         self.restrict_graph_api = config.get("restrict_graph_api", False)
@@ -156,6 +158,8 @@ class Config:
 
         self.mongo_query_timeout = config.get("mongo_query_timeout", 30000)
         self.http_request_timeout = config.get("http_request_timeout", 3000)
+
+        self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -343,6 +347,7 @@ class Config:
                 "proxy_port": 8080,
                 "dns_resolvers": [],
                 "dns_bypass_ips": [],
+                "masternode_fee_minimum": 1,
             }
         )
 
@@ -401,7 +406,9 @@ class Config:
         cls.max_peers = config.get("max_peers", 20)
         cls.pool_diff = config.get("pool_diff", 100000)
 
-        cls.transactions_combining_wait = config.get("transactions_combining_wait", 3600)
+        cls.transactions_combining_wait = config.get(
+            "transactions_combining_wait", 3600
+        )
         cls.combined_address = config.get("combined_address", cls.address)
 
         cls.restrict_graph_api = config.get("restrict_graph_api", False)
@@ -433,6 +440,8 @@ class Config:
 
         cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
         cls.http_request_timeout = config.get("http_request_timeout", 3000)
+
+        cls.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
 
     @staticmethod
     def address_is_valid(address):

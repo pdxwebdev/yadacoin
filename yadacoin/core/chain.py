@@ -1,6 +1,7 @@
 """
 This is a class to store the global chain params
 """
+
 from yadacoin.core.config import Config
 
 
@@ -75,6 +76,7 @@ class CHAIN(object):
 
     MAX_INPUTS = 100
     CHECK_MAX_INPUTS_FORK = 463590
+    CHECK_MASTERNODE_FEE_FORK = 507500
 
     @classmethod
     def target_block_time(cls, network: str):

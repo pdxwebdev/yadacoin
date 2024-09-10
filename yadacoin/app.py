@@ -85,6 +85,7 @@ from yadacoin.managers.docker import Docker
 from yadacoin.tcpsocket.node import NodeRPC, NodeSocketClient, NodeSocketServer
 from yadacoin.tcpsocket.pool import StratumServer
 from yadacoin.websocket.base import WEBSOCKET_HANDLERS, RCPWebSocketServer
+from yadacoin.websocket.peerjs import PEERJS_HANDLERS
 
 define("debug", default=False, help="debug mode", type=bool)
 define("verbose", default=False, help="verbose mode", type=bool)
@@ -1042,6 +1043,11 @@ class NodeApplication(Application):
         self.default_handlers.extend(PRODUCT_HANDLERS)
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
+        if self.config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value or (
+            hasattr(self.config, "activate_peerjs")
+            and self.config.activate_peerjs == True
+        ):
+            self.default_handlers.extend(PEERJS_HANDLERS)
 
     def init_plugins(self):
         for finder, name, ispkg in pkgutil.iter_modules(

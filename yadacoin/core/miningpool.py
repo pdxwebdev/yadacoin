@@ -418,11 +418,18 @@ class MiningPool(object):
         if self.config.LatestBlock.block.index + 1 > CHAIN.CHECK_MAX_INPUTS_FORK:
             check_max_inputs = True
 
+        check_masternode_fee = False
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
         async for txn in self.mongo.async_db.miner_transactions.find(
             {"relationship.smart_contract": {"$exists": True}}
         ).sort([("fee", -1), ("time", 1)]):
             transaction_obj = await self.verify_pending_transaction(
-                txn, used_sigs, check_max_inputs
+                txn,
+                used_sigs,
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -446,7 +453,10 @@ class MiningPool(object):
             {"relationship.smart_contract": {"$exists": False}}
         ).sort([("fee", -1), ("time", 1)]):
             transaction_obj = await self.verify_pending_transaction(
-                txn, used_sigs, check_max_inputs
+                txn,
+                used_sigs,
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -513,7 +523,9 @@ class MiningPool(object):
             + generated_txns
         )
 
-    async def verify_pending_transaction(self, txn, used_sigs, check_max_inputs=False):
+    async def verify_pending_transaction(
+        self, txn, used_sigs, check_max_inputs=False, check_masternode_fee=False
+    ):
         try:
             if isinstance(txn, Transaction):
                 transaction_obj = txn
@@ -532,7 +544,10 @@ class MiningPool(object):
                 self.config.app_log.warning("transaction version too old, skipping")
                 return
 
-            await transaction_obj.verify(check_max_inputs=check_max_inputs)
+            await transaction_obj.verify(
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
+            )
 
             if transaction_obj.transaction_signature in used_sigs:
                 self.config.app_log.warning("duplicate transaction found and removed")
