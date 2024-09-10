@@ -279,6 +279,22 @@ class BlockChainUtils(object):
                     "transactions.outputs.value": {"$gte": 1},
                 },
             },
+            {
+                "$group": {
+                    "_id": {
+                        "transactionId": "$transactions.id",
+                        "to": "$transactions.outputs.to",
+                    },
+                    "totalValue": {"$sum": "$transactions.outputs.value"},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$_id.transactionId",
+                    "id": {"$first": "$_id.transactionId"},
+                    "outputs": {"$push": {"to": "$_id.to", "value": "$totalValue"}},
+                }
+            },
             {"$sort": {"transactions.outputs.value": -1}},
         ]
         return self.get_wallet_unspent_transactions(
@@ -302,11 +318,12 @@ class BlockChainUtils(object):
         total = 0
         async for utxo in utxos:
             if not await self.config.BU.is_input_spent(
-                utxo["transactions"]["id"], public_key, inc_mempool=inc_mempool
+                utxo["_id"], public_key, inc_mempool=inc_mempool
             ):
-                total += utxo["transactions"]["outputs"]["value"]
-                utxo["transactions"]["outputs"] = [utxo["transactions"]["outputs"]]
-                yield utxo["transactions"]
+                total += sum(
+                    [x["value"] for x in utxo["outputs"] if x["to"] == address]
+                )
+                yield utxo
                 if amount_needed is not None and total >= amount_needed:
                     break
 

@@ -3454,7 +3454,7 @@ var TransactionService = /** @class */ (function () {
     TransactionService.prototype.generateTransaction = function (info) {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            var version = 3;
+            var version = 5;
             _this.key = _this.bulletinSecretService.key;
             _this.username = _this.bulletinSecretService.username;
             _this.recipient_identity = info.recipient_identity;
@@ -3467,14 +3467,21 @@ var TransactionService = /** @class */ (function () {
             _this.to = _this.info.to;
             _this.value = parseFloat(_this.info.value);
             _this.transaction = {
-                version: 3,
+                version: version,
                 rid: _this.info.rid,
-                fee: 0.00,
+                fee: _this.info.fee ? parseFloat(_this.info.fee) : 0.0,
+                masternode_fee: _this.info.masternode_fee
+                    ? parseFloat(_this.info.masternode_fee)
+                    : 0.0,
                 outputs: [],
-                requester_rid: typeof _this.info.requester_rid == 'undefined' ? '' : _this.info.requester_rid,
-                requested_rid: typeof _this.info.requested_rid == 'undefined' ? '' : _this.info.requested_rid,
-                time: parseInt(((+new Date()) / 1000).toString()).toString(),
-                public_key: _this.key.getPublicKeyBuffer().toString('hex')
+                requester_rid: typeof _this.info.requester_rid == "undefined"
+                    ? ""
+                    : _this.info.requester_rid,
+                requested_rid: typeof _this.info.requested_rid == "undefined"
+                    ? ""
+                    : _this.info.requested_rid,
+                time: parseInt((+new Date() / 1000).toString()).toString(),
+                public_key: _this.key.getPublicKeyBuffer().toString("hex"),
             };
             if (_this.info.outputs) {
                 _this.transaction.outputs = _this.info.outputs;
@@ -3485,7 +3492,7 @@ var TransactionService = /** @class */ (function () {
             if (_this.to) {
                 _this.transaction.outputs.push({
                     to: _this.to,
-                    value: _this.value || 0
+                    value: _this.value || 0,
                 });
             }
             var transaction_total = 0;
@@ -3494,12 +3501,17 @@ var TransactionService = /** @class */ (function () {
                     transaction_total += parseFloat(_this.transaction.outputs[i_1].value);
                 }
                 transaction_total += parseFloat(_this.transaction.fee);
+                transaction_total += parseFloat(_this.transaction.masternode_fee);
             }
             else {
-                transaction_total = parseFloat(_this.transaction.fee);
+                transaction_total += parseFloat(_this.transaction.fee);
+                transaction_total += parseFloat(_this.transaction.masternode_fee);
             }
-            var inputs_hashes_concat = '';
-            if ((_this.info.relationship && _this.info.relationship.dh_private_key && _this.walletService.wallet.balance < transaction_total) /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
+            var inputs_hashes_concat = "";
+            if (_this.info.relationship &&
+                _this.info.relationship.dh_private_key &&
+                _this.walletService.wallet.balance <
+                    transaction_total /* || this.walletService.wallet.unspent_transactions.length == 0*/) {
                 reject("not enough money");
                 return;
             }
@@ -3513,7 +3525,8 @@ var TransactionService = /** @class */ (function () {
                     }
                     else {
                         _this.info.relationship = _this.info.relationship || {};
-                        unspent_transactions = _this.walletService.wallet.unspent_transactions;
+                        unspent_transactions =
+                            _this.walletService.wallet.unspent_transactions;
                         unspent_transactions.sort(function (a, b) {
                             if (a.height < b.height)
                                 return -1;
@@ -3523,29 +3536,27 @@ var TransactionService = /** @class */ (function () {
                         });
                     }
                     var already_added = [];
-                    dance: for (var i = 0; i < unspent_transactions.length; i++) {
+                    for (var i = 0; i < unspent_transactions.length; i++) {
                         var unspent_transaction = unspent_transactions[i];
                         for (var j = 0; j < unspent_transaction.outputs.length; j++) {
                             var unspent_output = unspent_transaction.outputs[j];
                             if (unspent_output.to === _this.key.getAddress()) {
-                                if (already_added.indexOf(unspent_transaction.id) === -1) {
+                                if (j === 0 &&
+                                    already_added.indexOf(unspent_transaction.id) === -1) {
                                     already_added.push(unspent_transaction.id);
                                     inputs.push({ id: unspent_transaction.id });
-                                    input_sum += parseFloat(unspent_output.value);
-                                    console.log(parseFloat(unspent_output.value));
                                 }
-                                if (input_sum >= transaction_total) {
-                                    _this.transaction.outputs.push({
-                                        to: _this.key.getAddress(),
-                                        value: (input_sum - transaction_total)
-                                    });
-                                    break dance;
-                                }
+                                input_sum += parseFloat(unspent_output.value);
+                                console.log(parseFloat(unspent_output.value));
+                                _this.transaction.outputs.push({
+                                    to: _this.key.getAddress(),
+                                    value: input_sum - transaction_total,
+                                });
                             }
                         }
                     }
                     if (input_sum < transaction_total) {
-                        return reject('Insufficient funds');
+                        return reject("You do not have enough individual inputs with values greater than 1 YDA. This means you need to sweep your wallet. This can be done automatically by downloading a full node.");
                     }
                     _this.transaction.inputs = inputs;
                     var inputs_hashes = [];
@@ -3559,7 +3570,7 @@ var TransactionService = /** @class */ (function () {
                             return 1;
                         return 0;
                     });
-                    inputs_hashes_concat = inputs_hashes_arr.join('');
+                    inputs_hashes_concat = inputs_hashes_arr.join("");
                 }
             }
             var myAddress = _this.key.getAddress();
@@ -3572,12 +3583,13 @@ var TransactionService = /** @class */ (function () {
             if (!found) {
                 _this.transaction.outputs.push({
                     to: _this.key.getAddress(),
-                    value: 0
+                    value: 0,
                 });
             }
             var outputs_hashes = [];
             for (i = 0; i < _this.transaction.outputs.length; i++) {
-                outputs_hashes.push(_this.transaction.outputs[i].to + _this.transaction.outputs[i].value.toFixed(8));
+                outputs_hashes.push(_this.transaction.outputs[i].to +
+                    _this.transaction.outputs[i].value.toFixed(8));
             }
             var outputs_hashes_arr = outputs_hashes.sort(function (a, b) {
                 if (a.toLowerCase() < b.toLowerCase())
@@ -3586,24 +3598,27 @@ var TransactionService = /** @class */ (function () {
                     return 1;
                 return 0;
             });
-            var outputs_hashes_concat = outputs_hashes_arr.join('');
-            if (typeof _this.info.relationship === 'string') {
+            var outputs_hashes_concat = outputs_hashes_arr.join("");
+            if (typeof _this.info.relationship === "string") {
                 _this.transaction.relationship = _this.info.relationship;
             }
             if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
                 // creating new relationship
                 _this.transaction.relationship = _this.publicEncrypt(JSON.stringify(_this.info.relationship), _this.recipient_identity.public_key);
-                var hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                var hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.dh_public_key +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship[_this.settingsService.collections.SMART_CONTRACT]) {
                 //creating smart contract instance
@@ -3616,16 +3631,19 @@ var TransactionService = /** @class */ (function () {
                     smart_contract.target = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(smart_contract.target));
                 }
                 _this.transaction.relationship[_this.settingsService.collections.SMART_CONTRACT].creator = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.transaction.relationship[_this.settingsService.collections.SMART_CONTRACT].creator));
-                var hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                var hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.smartContractService.toString(_this.info.relationship[_this.settingsService.collections.SMART_CONTRACT]) +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship[_this.settingsService.collections.CALENDAR] ||
                 _this.info.relationship[_this.settingsService.collections.CHAT] ||
@@ -3635,77 +3653,93 @@ var TransactionService = /** @class */ (function () {
                 _this.info.relationship[_this.settingsService.collections.MAIL]) {
                 // chat
                 _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE_REQUEST]) {
                 // sign in
                 _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship.wif) {
                 // recovery
                 _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship[_this.settingsService.collections.GROUP]) {
                 // join or create group
                 if (_this.info.relationship[_this.settingsService.collections.GROUP].parent) {
-                    _this.transaction.relationship = _this.shared_encrypt(_this.info.relationship[_this.settingsService.collections.GROUP].parent.username_signature, JSON.stringify(_this.info.relationship));
+                    _this.transaction.relationship = _this.shared_encrypt(_this.info.relationship[_this.settingsService.collections.GROUP]
+                        .parent.username_signature, JSON.stringify(_this.info.relationship));
                 }
                 else {
                     _this.transaction.relationship = _this.encrypt();
                 }
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship[_this.settingsService.collections.MARKET]) {
                 // join or create market
                 _this.transaction.relationship = _this.encrypt();
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship[_this.settingsService.collections.AFFILIATE] ||
                 _this.info.relationship[_this.settingsService.collections.BID] ||
@@ -3716,44 +3750,53 @@ var TransactionService = /** @class */ (function () {
                 _this.info.relationship[_this.settingsService.collections.WEB_SIGNIN_REQUEST] ||
                 _this.info.relationship[_this.settingsService.collections.WEB_SIGNIN_RESPONSE]) {
                 _this.transaction.relationship = _this.shared_encrypt(_this.info.shared_secret, JSON.stringify(_this.info.relationship));
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else if (_this.info.relationship[_this.settingsService.collections.WEB_PAGE] ||
                 _this.info.relationship[_this.settingsService.collections.ASSET]) {
                 // mypage
                 _this.transaction.relationship = _this.encrypt();
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
                     _this.transaction.rid +
                     _this.transaction.relationship +
                     _this.transaction.fee.toFixed(8) +
+                    _this.transaction.masternode_fee.toFixed(8) +
                     _this.transaction.requester_rid +
                     _this.transaction.requested_rid +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             else {
                 //straight transaction
-                hash = foobar.bitcoin.crypto.sha256(_this.transaction.public_key +
+                hash = foobar.bitcoin.crypto
+                    .sha256(_this.transaction.public_key +
                     _this.transaction.time +
-                    (_this.transaction.rid || '') +
-                    (_this.transaction.relationship || '') +
+                    (_this.transaction.rid || "") +
+                    (_this.transaction.relationship || "") +
                     _this.transaction.fee.toFixed(8) +
-                    (_this.transaction.requester_rid || '') +
-                    (_this.transaction.requested_rid || '') +
+                    _this.transaction.masternode_fee.toFixed(8) +
+                    (_this.transaction.requester_rid || "") +
+                    (_this.transaction.requested_rid || "") +
                     inputs_hashes_concat +
                     outputs_hashes_concat +
-                    version).toString('hex');
+                    version)
+                    .toString("hex");
             }
             _this.transaction.hash = hash;
             var attempt = _this.txnattempts.pop();
@@ -3770,12 +3813,14 @@ var TransactionService = /** @class */ (function () {
     TransactionService.prototype.getFastGraphSignature = function () {
         var _this = this;
         return new Promise(function (resolve, reject) {
-            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sign-raw-transaction', {
+            _this.ahttp
+                .post(_this.settingsService.remoteSettings["baseUrl"] +
+                "/sign-raw-transaction", {
                 hash: _this.transaction.hash,
                 username_signature: _this.bulletinSecretService.generate_username_signature(),
                 input: _this.transaction.inputs[0].id,
                 id: _this.transaction.id,
-                txn: _this.transaction
+                txn: _this.transaction,
             })
                 .subscribe(function (res) {
                 try {
@@ -3796,12 +3841,19 @@ var TransactionService = /** @class */ (function () {
         if (txn === void 0) { txn = null; }
         if (transactionUrlOverride === void 0) { transactionUrlOverride = undefined; }
         return new Promise(function (resolve, reject) {
-            var url = '';
-            url = (transactionUrlOverride || _this.settingsService.remoteSettings['transactionUrl']) + '?username_signature=' + _this.bulletinSecretService.username_signature + '&to=' + _this.key.getAddress() + '&username=' + _this.username;
-            _this.ahttp.post(url, txn || _this.transaction)
-                .subscribe(function (data) {
+            var url = "";
+            url =
+                (transactionUrlOverride ||
+                    _this.settingsService.remoteSettings["transactionUrl"]) +
+                    "?username_signature=" +
+                    _this.bulletinSecretService.username_signature +
+                    "&to=" +
+                    _this.key.getAddress() +
+                    "&username=" +
+                    _this.username;
+            _this.ahttp.post(url, txn || _this.transaction).subscribe(function (data) {
                 try {
-                    resolve(JSON.parse(data['_body']));
+                    resolve(JSON.parse(data["_body"]));
                 }
                 catch (err) {
                     reject(err);
@@ -3848,13 +3900,13 @@ var TransactionService = /** @class */ (function () {
     };
     TransactionService.prototype.byteArrayToHexString = function (byteArray) {
         var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+            return ("0" + (byte & 0xff).toString(16)).slice(-2);
         };
-        return Array.from(byteArray, callback).join('');
+        return Array.from(byteArray, callback).join("");
     };
     TransactionService.prototype.encrypt = function () {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
-        var cipher = forge.cipher.createCipher('AES-CBC', key);
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), "salt", 400, 32);
+        var cipher = forge.cipher.createCipher("AES-CBC", key);
         var iv = forge.random.getBytesSync(16);
         cipher.start({ iv: iv });
         cipher.update(forge.util.createBuffer(iv + JSON.stringify(this.info.relationship)));
@@ -3863,11 +3915,11 @@ var TransactionService = /** @class */ (function () {
     };
     TransactionService.prototype.publicEncrypt = function (message, public_key) {
         var data = Buffer.from(message);
-        return Object(__WEBPACK_IMPORTED_MODULE_5_eciesjs__["encrypt"])(public_key, data).toString('hex');
+        return Object(__WEBPACK_IMPORTED_MODULE_5_eciesjs__["encrypt"])(public_key, data).toString("hex");
     };
     TransactionService.prototype.shared_encrypt = function (shared_secret, message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
-        var cipher = forge.cipher.createCipher('AES-CBC', key);
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), "salt", 400, 32);
+        var cipher = forge.cipher.createCipher("AES-CBC", key);
         var iv = forge.random.getBytesSync(16);
         cipher.start({ iv: iv });
         cipher.update(forge.util.createBuffer(iv + Base64.encode(message)));
@@ -3875,8 +3927,8 @@ var TransactionService = /** @class */ (function () {
         return cipher.output.toHex();
     };
     TransactionService.prototype.decrypt = function (message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), 'salt', 400, 32);
-        var decipher = forge.cipher.createDecipher('AES-CBC', key);
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(this.key.toWIF()).digest().toHex(), "salt", 400, 32);
+        var decipher = forge.cipher.createDecipher("AES-CBC", key);
         var enc = this.hexToBytes(message);
         decipher.start({ iv: enc.slice(0, 16) });
         decipher.update(forge.util.createBuffer(enc.slice(16)));
@@ -3888,8 +3940,8 @@ var TransactionService = /** @class */ (function () {
         return decrypted;
     };
     TransactionService.prototype.shared_decrypt = function (shared_secret, message) {
-        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), 'salt', 400, 32);
-        var decipher = forge.cipher.createDecipher('AES-CBC', key);
+        var key = forge.pkcs5.pbkdf2(forge.sha256.create().update(shared_secret).digest().toHex(), "salt", 400, 32);
+        var decipher = forge.cipher.createDecipher("AES-CBC", key);
         var enc = this.hexToBytes(message);
         decipher.start({ iv: enc.slice(0, 16) });
         decipher.update(forge.util.createBuffer(enc.slice(16)));
@@ -5168,9 +5220,6 @@ var SendReceive = /** @class */ (function () {
         this.address = null;
         this.balance = null;
         this.isDevice = null;
-        this.loadingModal = this.loadingCtrl.create({
-            content: "Please wait...",
-        });
         if (this.navParams.get("identity")) {
             this.identity = this.navParams.get("identity");
             this.address = this.bulletinSecretService.publicKeyToAddress(this.identity.public_key);
@@ -5200,6 +5249,8 @@ var SendReceive = /** @class */ (function () {
         this.past_sent_pending_page_cache = {};
         this.past_received_page_cache = {};
         this.past_received_pending_page_cache = {};
+        this.fee = 0;
+        this.masternode_fee = 0;
     }
     SendReceive.prototype.scan = function () {
         var _this = this;
@@ -5241,20 +5292,22 @@ var SendReceive = /** @class */ (function () {
     };
     SendReceive.prototype.submit = function () {
         var _this = this;
+        var fee = parseFloat(this.fee) || 0;
+        var masternode_fee = parseFloat(this.masternode_fee) || 0;
         var alert = this.alertCtrl.create();
-        if (!this.recipients[0].to) {
+        if (!this.recipients[0].to && masternode_fee === 0) {
             alert.setTitle("Enter an address");
             alert.addButton("Ok");
             alert.present();
             return;
         }
-        if (!this.recipients[0].value) {
+        if (!this.recipients[0].value && masternode_fee === 0) {
             alert.setTitle("Enter an amount");
             alert.addButton("Ok");
             alert.present();
             return;
         }
-        var total = 0;
+        var total = fee + masternode_fee;
         this.recipients.map(function (output, i) {
             _this.recipients[i].value = parseFloat(output.value);
             total += parseFloat(output.value);
@@ -5265,6 +5318,9 @@ var SendReceive = /** @class */ (function () {
         alert.addButton({
             text: "Confirm",
             handler: function (data) {
+                _this.loadingModal = _this.loadingCtrl.create({
+                    content: "Please wait...",
+                });
                 _this.loadingModal.present();
                 _this.walletService
                     .get(total)
@@ -5292,10 +5348,17 @@ var SendReceive = /** @class */ (function () {
                         alert.addButton("Ok");
                         alert.present();
                         _this.loadingModal.dismiss().catch(function () { });
-                        throw "insufficient funds";
+                        throw "Too many inputs, try a smaller amount";
+                    }
+                    var clonedRecipients = JSON.parse(JSON.stringify(_this.recipients));
+                    if (clonedRecipients.length === 1 &&
+                        clonedRecipients[0].to === "") {
+                        clonedRecipients = [];
                     }
                     return _this.transactionService.generateTransaction({
-                        outputs: JSON.parse(JSON.stringify(_this.recipients)),
+                        outputs: clonedRecipients,
+                        fee: _this.fee,
+                        masternode_fee: _this.masternode_fee,
                     });
                 })
                     .then(function (txn) {
@@ -5315,8 +5378,16 @@ var SendReceive = /** @class */ (function () {
                     _this.loadingModal.dismiss().catch(function () { });
                 })
                     .catch(function (err) {
+                    var alert = _this.alertCtrl.create();
+                    alert.setTitle("Error");
+                    alert.setSubTitle(err);
+                    alert.addButton("Ok");
+                    alert.present();
                     console.log(err);
-                    _this.loadingModal.dismiss().catch(function () { });
+                    try {
+                        _this.loadingModal.dismiss().catch(function () { });
+                    }
+                    catch (err) { }
                 });
             },
         });
@@ -5618,7 +5689,7 @@ var SendReceive = /** @class */ (function () {
     };
     SendReceive = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: "page-sendreceive",template:/*ion-inline-start:"/media/john/4tb/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item>\n    {{walletService.wallet.balance}} YADA\n  </ion-item>\n  <h4>Pending Balance</h4><ion-note>(including funds to be returned to you from your transactions)</ion-note>\n  <ion-item>\n    {{walletService.wallet.pending_balance}} YADA\n  </ion-item>\n  <h4>Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>Scan Address</button>\n  <ion-item *ngIf="identity" title="Verified" class="sender">Recipient: {{identity.username}} <ion-icon *ngIf="graphService.isAdded(identity)" name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-list>\n    <ion-row *ngFor="let recipient of recipients; let i = index">\n      <ion-col>\n        <ion-item>\n          <ion-label color="primary" stacked>Address</ion-label>\n          <ion-input type="text" placeholder="Recipient address..." [(ngModel)]="recipients[i].to">\n          </ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary" fixed>Amount</ion-label>\n          <ion-input type="number" placeholder="Amount..." [(ngModel)]="recipients[i].value"></ion-input>\n        </ion-item>\n      </ion-col>\n      <ion-col>\n        <button ion-button secondary (click)="removeRecipient(i)" *ngIf="i > 0"><ion-icon name="trash"></ion-icon></button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <button ion-button secondary (click)="addRecipient()"><ion-icon name="add"></ion-icon>&nbsp;Add recipient</button>\n  <button ion-button secondary (click)="submit()">Send&nbsp;<ion-icon name="send"></ion-icon></button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <button *ngIf="isDevice" ion-button outline item-end (click)="shareAddress()">share address&nbsp;<ion-icon name="share"></ion-icon></button>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPendingPage()" [disabled]="receivedPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPendingPage()" [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p><span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPendingPage()" [disabled]="sentPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPendingPage()" [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p><span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPage()" [disabled]="receivedPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPage()" [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p><span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/media/john/4tb/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/,
+            selector: "page-sendreceive",template:/*ion-inline-start:"/media/john/4tb/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <h4>Balance</h4>\n  <ion-item>\n    {{walletService.wallet.balance}} YADA\n  </ion-item>\n  <h4>Pending Balance</h4><ion-note>(including funds to be returned to you from your transactions)</ion-note>\n  <ion-item>\n    {{walletService.wallet.pending_balance}} YADA\n  </ion-item>\n  <h4>Send YadaCoins</h4>\n  <button *ngIf="isDevice" ion-button color="secondary" (click)="scan()" full>Scan Address</button>\n  <ion-item *ngIf="identity" title="Verified" class="sender">Recipient: {{identity.username}} <ion-icon *ngIf="graphService.isAdded(identity)" name="checkmark-circle" class="success"></ion-icon></ion-item>\n  <ion-list>\n    <ion-row *ngFor="let recipient of recipients; let i = index">\n      <ion-col col-12 col-lg-6>\n        <ion-item>\n          <ion-label color="primary" stacked>Address</ion-label>\n          <ion-input type="text" placeholder="Recipient address..." [(ngModel)]="recipients[i].to" class="addressinput">\n          </ion-input>\n        </ion-item>\n        <ion-item>\n          <ion-label color="primary" fixed>Amount</ion-label>\n          <ion-input type="number" placeholder="Amount..." [(ngModel)]="recipients[i].value"></ion-input>\n        </ion-item>\n      </ion-col>\n      <ion-col>\n        <button ion-button secondary (click)="removeRecipient(i)" *ngIf="i > 0"><ion-icon name="trash"></ion-icon></button>\n      </ion-col>\n    </ion-row>\n  </ion-list>\n  <button ion-button secondary (click)="addRecipient()"><ion-icon name="add"></ion-icon>&nbsp;Add recipient</button>\n  <h4>Fee</h4>\n  <p>Enter a fee amount to give your transaction higher priority or to support the miners.</p>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Amount..." [(ngModel)]="fee"></ion-input>\n  </ion-item>\n  <h4>Masternode Fee</h4>\n  <p>Enter a masternode fee if you intend to use p2p communication services. If you enter a value you do not need to send coins to anyone. However, you can pay masternode fees and send coins to recipients.</p>\n  <ion-item>\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Amount..." [(ngModel)]="masternode_fee"></ion-input>\n  </ion-item>\n  <button ion-button secondary (click)="submit()" style="margin-top: 15px;">Send&nbsp;<ion-icon name="send"></ion-icon></button>\n  <h4>Receive YadaCoins</h4>\n  <ion-item>\n    <ion-label color="primary" stacked>Your Address:</ion-label>\n    <ion-input type="text" [(ngModel)]="createdCode"></ion-input>\n  </ion-item>\n  <ion-item mt-5>\n    <button *ngIf="isDevice" ion-button outline item-end (click)="shareAddress()">share address&nbsp;<ion-icon name="share"></ion-icon></button>\n  </ion-item>\n  <ion-card>\n    <ion-card-content>\n      <ngx-qrcode [qrc-value]="createdCode"></ngx-qrcode>\n    </ion-card-content>\n  </ion-card>\n  <h4>Pending Transactions</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPendingPage()" [disabled]="receivedPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPendingPage()" [disabled]="past_received_pending_transactions.length === 0 || past_received_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_pending_transactions.length === 0">No more results</p><span *ngIf="receivedPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPendingPage()" [disabled]="sentPendingPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPendingPage()" [disabled]="past_sent_pending_transactions.length === 0 || past_sent_pending_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_pending_transactions.length === 0">No more results</p><span *ngIf="sentPendingLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_pending_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <h4>Transaction history</h4>\n  <strong>Received</strong><br>\n  <button ion-button small (click)="prevReceivedPage()" [disabled]="receivedPage <= 1">< Prev</button> <button ion-button small (click)="nextReceivedPage()" [disabled]="past_received_transactions.length === 0 || past_received_transactions.length < 10">Next ></button>\n  <p *ngIf="past_received_transactions.length === 0">No more results</p><span *ngIf="receivedLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_received_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n  <strong>Sent</strong><br>\n  <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n  <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n  <ion-list>\n    <ion-item *ngFor="let txn of past_sent_transactions">\n      <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n      <ion-label><a href="/explorer?term={{txn.id}}" target="_blank">{{txn.id}}</a></ion-label>\n      <ion-label>{{txn.value}}</ion-label>\n    </ion-item>\n  </ion-list>\n</ion-content>'/*ion-inline-end:"/media/john/4tb/home/mvogel/yadacoinmobile/src/pages/sendreceive/sendreceive.html"*/,
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -7462,7 +7533,7 @@ var Settings = /** @class */ (function () {
         if (typeof this.peerService.mode == "undefined")
             this.peerService.mode = true;
         this.prefix = "usernames-";
-        this.ci = new CenterIdentity(undefined, undefined, undefined, undefined, true);
+        this.ci = new CenterIdentity(undefined, undefined, undefined, undefined, true, 5);
         this.refresh(null)
             .then(function () {
             return _this.peerService.go();

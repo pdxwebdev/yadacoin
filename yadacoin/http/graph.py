@@ -12,8 +12,8 @@ import uuid
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from eccsnacks.curve25519 import scalarmult_base
 
+from eccsnacks.curve25519 import scalarmult_base
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -211,19 +211,26 @@ class GraphTransactionHandler(BaseGraphHandler):
                     {"exception": "InvalidTransactionException", "txn": txn}
                 )
                 print("InvalidTransactionException")
-                return "InvalidTransactionException", 400
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": False, "message": "InvalidTransactionException"}
+                )
             except InvalidTransactionSignatureException:
                 print("InvalidTransactionSignatureException")
                 await self.config.mongo.async_db.failed_transactions.insert_one(
                     {"exception": "InvalidTransactionSignatureException", "txn": txn}
                 )
-                return "InvalidTransactionSignatureException", 400
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": False, "message": "InvalidTransactionSignatureException"}
+                )
             except MissingInputTransactionException:
                 pass
             except:
                 raise
                 print("uknown error")
-                return "uknown error", 400
+                self.set_status(400)
+                return self.render_as_json({"status": False, "message": "uknown error"})
             transactions.append(transaction)
 
         for x in transactions:
