@@ -463,7 +463,6 @@ class Transaction(object):
                 bytes.fromhex(self.public_key),
             )
             if not result:
-                print("t verify1")
                 raise Exception()
         except:
             try:
@@ -477,7 +476,6 @@ class Transaction(object):
                     sigdecode=sigdecode_der,
                 )
                 if not result:
-                    print("t verify2")
                     raise Exception()
             except:
                 try:
@@ -487,10 +485,8 @@ class Transaction(object):
                         self.transaction_signature,
                     )
                     if not result:
-                        print("t verify3")
                         raise
                 except:
-                    print("t verify3")
                     raise InvalidTransactionSignatureException(
                         "transaction signature did not verify"
                     )
@@ -501,7 +497,6 @@ class Transaction(object):
         check_max_inputs=False,
         check_masternode_fee=False,
     ):
-        print("here7")
         from yadacoin.contracts.base import Contract
 
         if check_max_inputs and len(self.inputs) > CHAIN.MAX_INPUTS:
@@ -517,7 +512,6 @@ class Transaction(object):
 
         self.verify_signature(address)
 
-        print("here8")
         relationship = self.relationship
         if isinstance(self.relationship, Contract):
             relationship = self.relationship.to_string()
@@ -526,15 +520,12 @@ class Transaction(object):
             raise MaxRelationshipSizeExceeded(
                 f"Relationship field cannot be greater than {TransactionConsts.RELATIONSHIP_MAX_SIZE.value} bytes"
             )
-        print("here9")
         # verify spend
         total_input = 0
         exclude_recovered_ids = []
         async for txn in self.get_inputs(self.inputs):
-            print("here10")
             txn_input = None
             input_txn = await self.config.BU.get_transaction_by_id(txn.id)
-            print("here11")
 
             if input_txn:
                 txn_input = Transaction.from_dict(input_txn)
@@ -552,7 +543,6 @@ class Transaction(object):
                     )
 
             if check_input_spent:
-                print("here12")
                 is_input_spent = await self.config.BU.is_input_spent(
                     txn_input.transaction_signature, self.public_key
                 )
@@ -561,8 +551,6 @@ class Transaction(object):
 
             found = False
             for output in txn_input.outputs:
-                print(output.to)
-                print(address)
                 if isinstance(txn, ExternalInput):
                     ext_address = P2PKHBitcoinAddress.from_pubkey(
                         bytes.fromhex(txn_input.public_key)
@@ -580,7 +568,6 @@ class Transaction(object):
                                 bytes.fromhex(txn_input.public_key),
                             )
                             if not result:
-                                print("t verify4")
                                 raise Exception()
                         except:
                             try:
@@ -590,7 +577,6 @@ class Transaction(object):
                                     txn.signature,
                                 )
                                 if not result:
-                                    print("t verify5")
                                     raise
                             except:
                                 raise InvalidTransactionSignatureException(
@@ -620,8 +606,6 @@ class Transaction(object):
         for txn in self.outputs:
             total_output += float(txn.value)
         if check_masternode_fee:
-            print("here13")
-            print(self.masternode_fee)
             total = float(total_output) + float(self.fee) + float(self.masternode_fee)
             if not equal(total_input, total):
                 raise TotalValueMismatchException(

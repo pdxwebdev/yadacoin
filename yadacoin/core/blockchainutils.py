@@ -255,7 +255,25 @@ class BlockChainUtils(object):
                     "transactions.outputs.value": {"$gt": 0},
                 },
             },
-            {"$sort": {"transactions.outputs.time": 1}},
+            {
+                "$group": {
+                    "_id": {
+                        "transactionId": "$transactions.id",
+                        "to": "$transactions.outputs.to",
+                    },
+                    "totalValue": {"$sum": "$transactions.outputs.value"},
+                    "time": {"$first": "$transactions.time"},
+                }
+            },
+            {
+                "$group": {
+                    "_id": "$_id.transactionId",
+                    "id": {"$first": "$_id.transactionId"},
+                    "outputs": {"$push": {"to": "$_id.to", "value": "$totalValue"}},
+                    "time": {"$first": "$time"},
+                }
+            },
+            {"$sort": {"outputs.time": 1}},
         ]
         return self.get_wallet_unspent_transactions(
             unspent_txns_query=query, address=address
@@ -295,7 +313,7 @@ class BlockChainUtils(object):
                     "outputs": {"$push": {"to": "$_id.to", "value": "$totalValue"}},
                 }
             },
-            {"$sort": {"transactions.outputs.value": -1}},
+            {"$sort": {"outputs.value": -1}},
         ]
         return self.get_wallet_unspent_transactions(
             unspent_txns_query=query,
@@ -318,7 +336,7 @@ class BlockChainUtils(object):
         total = 0
         async for utxo in utxos:
             if not await self.config.BU.is_input_spent(
-                utxo["_id"], public_key, inc_mempool=inc_mempool
+                utxo["id"], public_key, inc_mempool=inc_mempool
             ):
                 total += sum(
                     [x["value"] for x in utxo["outputs"] if x["to"] == address]

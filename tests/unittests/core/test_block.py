@@ -5,8 +5,9 @@ from unittest.mock import AsyncMock, Mock
 from mongomock import MongoClient
 
 import yadacoin.core.config
-from yadacoin.core.block import Block
+from yadacoin.core.block import Block, quantize_eight
 from yadacoin.core.config import Config
+from yadacoin.core.nodes import Nodes
 from yadacoin.core.transaction import TotalValueMismatchException
 
 from ..test_setup import AsyncTestCase
@@ -74,111 +75,7 @@ masternode_fee_block = {
                 },
                 {
                     "to": "13AYDe1jxvYdAFcrUUKGGNC2ZbECXuN5KK",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1L7dEh8ckRF4ftP3TUztfJsi8hXL8KUahY",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1DX4nGHqNgqQRfFHVw6CrtGeENZivh5CvK",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1KVhjZsrE6kvnJw3tpiDQpcu5RSM2U1f2S",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1BiwYhF6ddcvAyVo9kgyFsti1jvq9M27zm",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1KF21jbNPbbisv5XijhTUYP2SDMih9QiKm",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1AK5m1DYHuAvQSfBcTif2vfjCTXErog2kK",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "12UBaetVrRR2gh5rbLkG1iQRFrbRPUbkJV",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "16hxpUQ4Ya5qmxJBr2xEdKZqL9gqHVqmQi",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "19BnNLUWSZzYCXB9WXqFKYkG1YrBuYp7hM",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1K7Sv3KkbgqkYhb1hzYZ9GESbWZHgvRs1p",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "16ive8Pd88DasnAFPUrWA1gvyuh4J5vKWA",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "12wgpMq6gYBTDfx5cCMcebf1xCi3vVAU2N",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1MmAZdBPzRS8yVgQmPb3u4vwmTvbCT8X4z",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1FyiRFz4SRMXTuZje9LLjm14Bocv19sUnQ",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1BMzVAyQQB4y5MUyGtp9jrPQGPsetqVRpy",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1Khk7Vz98JYuV6SLRXc2NiY55nmxNtKLM",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1NKkdKjVPdk3gjR3wNRz3ksNC8u8BnSvjr",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "12du5mn8YBwEhcYQhcHCzt6M22fSx6Gxwj",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1EWkrpUezWMpByE6nys6VXubjFLorgbZuP",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "12WSMPLyS1DeZLDX1RcoNEM3oZiHTfu4CM",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1ME2ZuSC9VuezB6Fop2NKDCzCHEAaWthpB",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "19oTngABqRGwyJ6SsRvea2UR2Yw4HzKnEH",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1GCqZGBdkMYT1PNQKVPgk8CQZGi9v5mNdG",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1N8ZDGRn67j36zG36aWAYdudELiVUKGgdn",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1JsYAyfmKGx77VAgeWD8xHVUKf4VFi3KNE",
-                    "value": 0.046296296296296294,
-                },
-                {
-                    "to": "1L4VbJq54epmmM6baeoP6eBUckwwHS6kHc",
-                    "value": 0.046296296296296294,
+                    "value": 1.35,
                 },
             ],
             "version": 5,
@@ -261,6 +158,7 @@ class TestBlock(AsyncTestCase):
     async def test_generate(self, mock_blocks):
         from yadacoin.core.blockchainutils import BlockChainUtils
         from yadacoin.core.chain import CHAIN
+        from yadacoin.core.latestblock import LatestBlock
 
         mock_blocks.find_one = AsyncMock(return_value={"transactions": []})
         block = await Block.generate(
@@ -268,7 +166,6 @@ class TestBlock(AsyncTestCase):
             private_key=yadacoin.core.config.CONFIG.private_key,
         )
         self.assertIsInstance(block, Block)
-        CHAIN.PAY_MASTER_NODES_FORK = CHAIN.CHECK_MASTERNODE_FEE_FORK + 1
 
         Config().BU = BlockChainUtils()
 
@@ -291,6 +188,11 @@ class TestBlock(AsyncTestCase):
         def handle_exception(e, txn):
             raise e
 
+        nodes = Nodes.get_all_nodes_for_block_height(CHAIN.CHECK_MASTERNODE_FEE_FORK)
+
+        async def test_all_nodes(a):
+            return nodes
+
         with mock.patch(
             "yadacoin.core.transaction.Transaction.contract_generated",
             new=contract_generated,
@@ -306,7 +208,12 @@ class TestBlock(AsyncTestCase):
         ), mock.patch(
             "yadacoin.core.transaction.Transaction.handle_exception",
             new=handle_exception,
+        ), mock.patch(
+            "yadacoin.core.block.test_all_nodes", new=test_all_nodes
         ):
+            block.index = CHAIN.CHECK_MASTERNODE_FEE_FORK
+            Config().LatestBlock = LatestBlock()
+            Config().LatestBlock.block = block
             masternode_fee_input["outputs"][1]["value"] = 38.72383333333418
             block = await Block.generate(
                 public_key=yadacoin.core.config.CONFIG.public_key,
@@ -316,6 +223,20 @@ class TestBlock(AsyncTestCase):
                 transactions=[masternode_fee_block["transactions"][0]],
             )
             self.assertIsInstance(block, Block)
+            self.assertEqual(
+                len(block.transactions[1].outputs), len(nodes) + 1
+            )  # + 1 for the miner output
+            self.assertEqual(
+                float(
+                    quantize_eight(
+                        sum([x.value for x in block.transactions[1].outputs])
+                    )
+                ),
+                12.6001,
+            )
+            self.assertEqual(
+                float(quantize_eight(block.transactions[1].outputs[1].value)), 0.03
+            )
 
             masternode_fee_block["transactions"][0]["masternode_fee"] = 5
             with self.assertRaises(TotalValueMismatchException):
@@ -431,6 +352,8 @@ class TestBlock(AsyncTestCase):
         ):
             block = await Block.from_dict(masternode_fee_block)
             CHAIN.CHECK_MASTERNODE_FEE_FORK = 0
+            block.transactions[0].masternode_fee = 0.1  # reset
+            block.transactions[1].outputs[1].value = 1.35  # reset
             self.assertIsNone(
                 await block.verify()
             )  # test masternode fee fork activated, correct masternode fee
@@ -440,6 +363,7 @@ class TestBlock(AsyncTestCase):
                 await block.verify()  # test masternode fee fork activated, incorrect masternode fee
 
             block.transactions[0].masternode_fee = 0.1  # reset
+            block.transactions[1].outputs[1].value = 1.25  # reset
             CHAIN.CHECK_MASTERNODE_FEE_FORK = block.index + 1
             self.assertIsNone(
                 await block.verify()
@@ -450,6 +374,9 @@ class TestBlock(AsyncTestCase):
                 await block.verify()
             )  # test masternode fee fork deactivated, incorrect masternode fee
 
+            block.transactions[0].masternode_fee = 0.1  # reset
+            block.transactions[1].outputs[1].value = 1.25  # reset
+            masternode_fee_input["outputs"][1]["value"] = 38.62383333333418  # reset
             await block.transactions[0].verify(
                 check_masternode_fee=False
             )  # test masternode fee fork deactivated, incorrect masternode fee
@@ -463,7 +390,8 @@ class TestBlock(AsyncTestCase):
             await block.transactions[0].verify(
                 check_masternode_fee=False
             )  # test masternode fee fork deactivated, correct masternode fee
-        masternode_fee_input["outputs"][1]["value"] = 38.72383333333418
+        block.transactions[0].masternode_fee = 0.1  # reset
+        masternode_fee_input["outputs"][1]["value"] = 38.72383333333418  # reset
         get_transaction_by_id = AsyncMock(return_value=masternode_fee_input)
         with mock.patch(
             "yadacoin.core.transaction.Transaction.contract_generated",

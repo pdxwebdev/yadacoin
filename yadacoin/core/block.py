@@ -253,7 +253,6 @@ class Block(object):
             [float(transaction_obj.fee) for transaction_obj in transaction_objs]
         )
         block_reward = CHAIN.get_block_reward(index)
-
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
             nodes = Nodes.get_all_nodes_for_block_height(config.LatestBlock.block.index)
             outputs = [
@@ -527,7 +526,6 @@ class Block(object):
             )
 
     async def verify(self):
-        print("here1")
         getcontext().prec = 8
         if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
             raise Exception(
@@ -536,16 +534,13 @@ class Block(object):
                 CHAIN.get_version_for_height(self.index),
             )
 
-        print("here2")
         txns = self.get_transaction_hashes()
         verify_merkle_root = self.get_merkle_root(txns)
         if verify_merkle_root != self.merkle_root:
             raise Exception("Invalid block merkle root")
 
-        print("here3")
         header = self.generate_header()
         hashtest = self.generate_hash_from_header(self.index, header, str(self.nonce))
-        # print("header", header, "nonce", self.nonce, "hashtest", hashtest)
         if self.hash != hashtest:
             getLogger("tornado.application").warning(
                 "Verify error hashtest {} header {} nonce {}".format(
@@ -554,10 +549,8 @@ class Block(object):
             )
             raise Exception("Invalid block hash")
 
-        print("here4")
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         try:
-            # print("address", address, "sig", self.signature, "pubkey", self.public_key)
             result = verify_signature(
                 base64.b64decode(self.signature),
                 self.hash.encode("utf-8"),
@@ -577,7 +570,6 @@ class Block(object):
             except:
                 raise Exception("block signature2 is invalid")
 
-        print("here5")
         if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
             masernodes_by_address = (
                 Nodes.get_all_nodes_indexed_by_address_for_block_height(self.index)
@@ -647,7 +639,6 @@ class Block(object):
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                     masternode_fee_sum += float(txn.masternode_fee)
 
-        print("here6")
         reward = CHAIN.get_block_reward(self.index)
 
         # if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
@@ -659,18 +650,13 @@ class Block(object):
 
         if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             masternode_sum = sum(x for x in masternode_sums.values())
-            print(
-                f"here6.1 - {quantize_eight(fee_sum + masternode_fee_sum)} - {quantize_eight((coinbase_sum + masternode_sum) - reward)}"
-            )
             if quantize_eight(fee_sum + masternode_fee_sum) != quantize_eight(
                 (coinbase_sum + masternode_sum) - reward
             ):
-                print(f"here6.2 - {self.index}")
-                print(fee_sum, masternode_fee_sum, masternode_sum, coinbase_sum, reward)
                 raise TotalValueMismatchException(
                     "Masternode output totals do not equal block reward + masternode transaction fees",
-                    masternode_fee_sum,
-                    (masternode_sum - reward),
+                    float(quantize_eight(fee_sum + masternode_fee_sum)),
+                    float(quantize_eight((coinbase_sum + masternode_sum) - reward)),
                 )
 
         elif self.index >= CHAIN.PAY_MASTER_NODES_FORK:
@@ -678,7 +664,6 @@ class Block(object):
             if quantize_eight(fee_sum) != quantize_eight(
                 (coinbase_sum + masternode_sum) - reward
             ):
-                print(fee_sum, coinbase_sum, reward)
                 raise TotalValueMismatchException(
                     "Coinbase output total does not equal block reward + transaction fees",
                     fee_sum,
@@ -687,7 +672,6 @@ class Block(object):
 
         else:
             if quantize_eight(fee_sum) != quantize_eight(coinbase_sum - reward):
-                print(fee_sum, coinbase_sum, reward)
                 raise TotalValueMismatchException(
                     "Coinbase output total does not equal block reward + transaction fees",
                     fee_sum,

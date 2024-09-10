@@ -695,10 +695,8 @@ block = {
 async def mock_get_unspent_txns(self, query):
     async def get_txn():
         yield {
-            "transactions": {
-                "id": "MEUCIQDAAsbaZhXNIln4KV1GNkfgBX/TcOdya5YSVSZzhJr2lAIgRNH8IA6PqyMV2+qmkW/qtYSJT0L6oeOH/ix7dRkuWag=",
-                "outputs": {"to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", "value": 1},
-            }
+            "id": "MEUCIQDAAsbaZhXNIln4KV1GNkfgBX/TcOdya5YSVSZzhJr2lAIgRNH8IA6PqyMV2+qmkW/qtYSJT0L6oeOH/ix7dRkuWag=",
+            "outputs": [{"to": "1iNw3QHVs45woB9TmXL1XWHyKniTJhzC4", "value": 1}],
         }
 
     return get_txn()
