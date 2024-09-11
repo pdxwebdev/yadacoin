@@ -311,6 +311,10 @@ https://yadacoin.io/download
   - type: bool
   - default: undefined
   - description: If your node is not a service provide node, which have this enabled by default, you can use this setting to activate peerjs p2p connection broker endpoints and user interface.
+- masternode_fee_minimum
+  - type: integer
+  - default: 1
+  - description: If your node is a service provider or you have activate_peerjs set to true, then you may set your minimum required amount of YDA to broker p2p connections.
 
 ## Development Environment
 
