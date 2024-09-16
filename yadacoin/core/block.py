@@ -198,10 +198,12 @@ class Block(object):
 
         transaction_objs = []
         fee_sum = 0.0
+        masternode_fee_sum = 0.0
         used_sigs = []
         used_inputs = {}
         regular_txns = []
         generated_txns = []
+
         for x in transactions:
             x = Transaction.ensure_instance(x)
             if await x.is_contract_generated():
@@ -220,6 +222,11 @@ class Block(object):
         fee_sum = sum(
             [float(transaction_obj.fee) for transaction_obj in transaction_objs]
         )
+
+        masternode_fee_sum = sum(
+            float(transaction_obj.masternode_fee) for transaction_obj in transaction_objs
+        )
+
         block_reward = CHAIN.get_block_reward(index)
 
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
@@ -234,13 +241,14 @@ class Block(object):
                     }
                 )
             ]
-            masternode_reward_total = block_reward * 0.1
+            masternode_reward_total = (block_reward * 0.1) + float(masternode_fee_sum)
 
             successful_nodes = cache.get("successful_nodes")
 
             if successful_nodes is None:
                 config.app_log.info("Cache is empty, perform the testing of nodes and save the result in the cache.")
                 successful_nodes = []
+                
                 for node in nodes:
                     from tornado.tcpclient import TCPClient
 
@@ -258,10 +266,15 @@ class Block(object):
                         config.app_log.warning(
                             f"Timeout exception in block generate: testing masternode {node.host}:{node.port}"
                         )
-                    except Exception:
+                    except Exception as e:
                         config.app_log.warning(
-                            f"Unhandled exception in block generate: testing masternode {node.host}:{node.port}"
+                            f"Unhandled exception in block generate: testing masternode {node.host}:{node.port} - {str(e)}"
                         )
+
+                if not successful_nodes:
+                    config.app_log.info("No successful nodes found, using full list of nodes.")
+                    successful_nodes = nodes
+
                 config.app_log.info("Save the result in cache.")
                 cache["successful_nodes"] = successful_nodes
 
