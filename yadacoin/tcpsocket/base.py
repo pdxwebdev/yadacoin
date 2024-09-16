@@ -376,6 +376,21 @@ class RPCSocketClient(TCPClient):
             self.outbound_ignore[peer.__class__.__name__][
                 peer.identity.username_signature
             ] = time.time()
+        except socket.gaierror:
+            if not stream:
+                stream = DummyStream(peer)
+
+            await self.remove_peer(
+                stream, reason="RPCSocketClient: unhandled exception 1"
+            )
+            self.config.app_log.warning(
+                "Timeout connecting to {}: {}".format(
+                    peer.__class__.__name__, peer.to_json()
+                )
+            )
+            self.outbound_ignore[peer.__class__.__name__][
+                peer.identity.username_signature
+            ] = time.time()
         except:
             if hasattr(stream, "peer"):
                 self.config.app_log.warning(
