@@ -205,7 +205,11 @@ class GraphTransactionHandler(BaseGraphHandler):
         for txn in items:
             transaction = Transaction.from_dict(txn)
             try:
-                await transaction.verify()
+                await transaction.verify(
+                    check_input_spent=True,
+                    check_masternode_fee=True,
+                    check_max_inputs=True,
+                )
             except InvalidTransactionException:
                 await self.config.mongo.async_db.failed_transactions.insert_one(
                     {"exception": "InvalidTransactionException", "txn": txn}
