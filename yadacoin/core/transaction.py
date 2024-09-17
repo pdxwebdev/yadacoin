@@ -88,6 +88,7 @@ class Transaction(object):
         version=None,
         miner_signature="",
         contract_generated=None,
+        is_contract_generated=None,
         relationship_hash="",
         never_expire=False,
         private=False,
