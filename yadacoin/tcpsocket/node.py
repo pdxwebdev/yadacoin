@@ -215,8 +215,17 @@ class NodeRPC(BaseRPC):
         check_max_inputs = False
         if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
             check_max_inputs = True
+
+        check_masternode_fee = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
         try:
-            await txn.verify(check_input_spent=True, check_max_inputs=check_max_inputs)
+            await txn.verify(
+                check_input_spent=True,
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
+            )
         except Exception as e:
             await Transaction.handle_exception(e, txn)
             return
@@ -352,10 +361,18 @@ class NodeRPC(BaseRPC):
         check_max_inputs = False
         if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
             check_max_inputs = True
+
+        check_masternode_fee = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
             try:
-                await txn.verify(check_max_inputs=check_max_inputs)
+                await txn.verify(
+                    check_max_inputs=check_max_inputs,
+                    check_masternode_fee=check_masternode_fee,
+                )
             except Exception as e:
                 await Transaction.handle_exception(e, txn)
                 continue
