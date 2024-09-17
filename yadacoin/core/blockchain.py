@@ -175,6 +175,10 @@ class Blockchain(object):
         if block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
             check_max_inputs = True
 
+        check_masternode_fee = False
+        if block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
         used_inputs = {}
         i = 0
         async for transaction in Blockchain.get_txns(block.transactions):
@@ -183,7 +187,10 @@ class Blockchain(object):
             config.app_log.info("verifying txn: {} block: {}".format(i, block.index))
             i += 1
             try:
-                await transaction.verify(check_max_inputs=check_max_inputs)
+                await transaction.verify(
+                    check_max_inputs=check_max_inputs,
+                    check_masternode_fee=check_masternode_fee,
+                )
             except InvalidTransactionException as e:
                 config.app_log.warning(e)
                 return False
@@ -328,8 +335,15 @@ class Blockchain(object):
             if block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
                 check_max_inputs = True
 
+            check_masternode_fee = False
+            if block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+                check_masternode_fee = True
+
             for txn in block.transactions:
-                await txn.verify(check_max_inputs=check_max_inputs)
+                await txn.verify(
+                    check_max_inputs=check_max_inputs,
+                    check_masternode_fee=check_masternode_fee,
+                )
             if last_block:
                 if int(block.index) - int(last_block.index) > 1:
                     return last_block.index + 1
