@@ -157,6 +157,7 @@ class Config:
 
         self.mongo_query_timeout = config.get("mongo_query_timeout", 30000)
         self.http_request_timeout = config.get("http_request_timeout", 60)
+        self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -437,6 +438,7 @@ class Config:
 
         cls.mongo_query_timeout = config.get("mongo_query_timeout", 3000)
         cls.http_request_timeout = config.get("http_request_timeout", 60)
+        cls.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
 
     @staticmethod
     def address_is_valid(address):
