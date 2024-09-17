@@ -206,7 +206,7 @@ class Block(object):
 
         for x in transactions:
             x = Transaction.ensure_instance(x)
-            if await x.is_contract_generated():
+            if await x.contract_generated:
                 generated_txns.append(x)
             else:
                 regular_txns.append(x)
@@ -609,7 +609,7 @@ class Block(object):
                 else:
                     for output in txn.outputs:
                         coinbase_sum += float(output.value)
-            elif txn.contract_generated:
+            elif await txn.contract_generated:
                 if self.index >= CHAIN.TXN_V3_FORK_CHECK_MINER_SIGNATURE:
                     result = verify_signature(
                         base64.b64decode(txn.miner_signature),
