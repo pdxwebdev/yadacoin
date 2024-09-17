@@ -102,8 +102,15 @@ class TU(object):  # Transaction Utilities
             return {"status": "error", "message": "not enough money"}
         except:
             raise
+
+        check_masternode_fee = False
+        if config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
         try:
-            await transaction.verify()
+            await transaction.verify(
+                check_masternode_fee=check_masternode_fee,
+            )
         except:
             return {"error": "invalid transaction"}
 
