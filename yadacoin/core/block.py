@@ -160,7 +160,6 @@ class Block(object):
         for txn in transactions or []:
             transaction = Transaction.ensure_instance(txn)
             transaction.coinbase = Block.is_coinbase(self, transaction)
-            transaction.contract_generated = await transaction.is_contract_generated()
             self.transactions.append(transaction)
 
         return self
