@@ -3668,9 +3668,15 @@ var TransactionService = /** @class */ (function () {
             if (_this.info.masternode_fee > 0 &&
                 _this.info.masternode_fee_delegate.length > 0) {
                 _this.info.relationship = _this.info.masternode_fee_delegate;
+                _this.info.relationship_hash = foobar.bitcoin.crypto
+                    .sha256(_this.info.relationship)
+                    .toString("hex");
             }
             if (typeof _this.info.relationship === "string") {
                 _this.transaction.relationship = _this.info.relationship;
+            }
+            if (typeof _this.info.relationship_hash === "string") {
+                _this.transaction.relationship_hash = _this.info.relationship_hash;
             }
             if (_this.info.dh_public_key && _this.info.relationship.dh_private_key) {
                 // creating new relationship
