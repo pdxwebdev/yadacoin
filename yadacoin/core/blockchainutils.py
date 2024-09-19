@@ -369,12 +369,44 @@ class BlockChainUtils(object):
         async for txn in txns:
             yield txn
 
+    async def get_wallet_masternode_fees_delegated_transactions(
+        self, address, from_block
+    ):
+        query = [
+            {
+                "$match": {
+                    "index": {"$gte": from_block},
+                    "transactions.relationship": address,
+                },
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$match": {
+                    "transactions.relationship": address,
+                    "transactions.masternode_fee": {"$gt": 0},
+                },
+            },
+        ]
+        # Return the cursor directly without awaiting it
+
+        txns = self.config.mongo.async_db.blocks.aggregate(query)
+        async for txn in txns:
+            yield txn
+
     async def get_masternode_fees_paid_sum(self, public_key, from_block):
         sum = 0
         async for txn in self.get_wallet_masternode_fees_paid_transactions(
             public_key, from_block
         ):
             sum += txn["transactions"]["masternode_fee"]
+
+        if sum == 0:
+            async for txn in self.get_wallet_masternode_fees_delegated_transactions(
+                str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))),
+                from_block,
+            ):
+                sum += txn["transactions"]["masternode_fee"]
+
         return sum
 
     async def get_transactions(
