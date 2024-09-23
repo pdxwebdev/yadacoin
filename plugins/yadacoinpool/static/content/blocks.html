@@ -61,179 +61,154 @@
       }
   });
 
-  $.get('/pool-blocks').then((data) => {
-      const max_target_hex = '0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
-      const max_target = parseInt(max_target_hex, 16);
+  if (typeof blockPageIndex === 'undefined') {
+      var blockPageIndex = 1;
+  }
 
-      const thirtyDaysAgo = new Date();
-      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  if (typeof blockPageSize === 'undefined') {
+      var blockPageSize = 10;
+  }
 
-      function groupBlocksByDate(blocks, acceptedOnly = false) {
-          const groupedBlocks = {};
+  function updatePoolBlocksData(blockPageIndex) {
+    const max_target_hex = '0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF';
+    const max_target = parseInt(max_target_hex, 16);
 
-          for (let i = 0; i < blocks.length; i++) {
-              const block = blocks[i];
-              if (!acceptedOnly || (acceptedOnly && block.status === 'Accepted')) {
-                  const foundDate = new Date(block.found_time * 1000);
-                  const dateKey = foundDate.toISOString().split('T')[0];
-
-                  if (!groupedBlocks[dateKey]) {
-                      groupedBlocks[dateKey] = [];
-                  }
-
-                  groupedBlocks[dateKey].push(block);
-              }
-          }
-
-          return groupedBlocks;
-      }
-
-      var poolAddress = data.pool.pool_address;
-      $('#maturity').html(data.pool.block_confirmation);
-      $('#avg-effort').html(data.pool.average_effort.toFixed(2) + ' %');
+    $.get(`/pool-blocks?page=${blockPageIndex}&page_size=${blockPageSize}`).then((data) => {
+      $('#maturity').html(data.pool_info.block_confirmation);
 
       if (data.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Difficulty</th><th>Height</th><th>Reward</th><th>Finder</th><th>Effort</th><th>Block Hash</th><th>Status</th></tr>');
 
-      const filteredBlocks = data.blocks.filter(block => {
-          const foundDate = new Date(block.found_time * 1000);
-          const foundInLast30Days = foundDate >= thirtyDaysAgo;
-          return foundInLast30Days;
-      });
+      for (var i = 0; i < data.blocks.length; i++) {
+        var newDate = new Date();
+        newDate.setTime(data.blocks[i].found_time * 1000);
+        var foundDateString = newDate.toLocaleString();
 
-      for (var i = 0; i < filteredBlocks.length; i++) {
-          var newDate = new Date();
-          newDate.setTime(filteredBlocks[i].time * 1000);
-          dateString = newDate.toLocaleString();
-          var foundDate = new Date();
-          foundDate.setTime(filteredBlocks[i].found_time * 1000);
-          foundDateString = foundDate.toLocaleString();
-          var reward = getRewardFromTransactions(filteredBlocks[i].transactions, poolAddress);
-          var status = filteredBlocks[i].status;
+        var reward = data.blocks[i].reward + " YDA" || 'N/A';
+        var difficulty = "N/A";
+        if (data.blocks[i].target) {
+          var target = parseInt(data.blocks[i].target, 16);
+          difficulty = (max_target / target).toFixed(3);
+        }
 
-          var difficulty = "N/A";
-          if (filteredBlocks[i].target) {
-              var target = parseInt(filteredBlocks[i].target, 16);
-              difficulty = (max_target / target).toFixed(3);
-          }
+        var effort = data.blocks[i].effort !== undefined ? parseFloat(data.blocks[i].effort).toFixed(2) + "%" : "N/A";
+        var effortColor = getEffortColor(data.blocks[i].effort);
 
-          var effort = filteredBlocks[i].effort !== undefined ? parseFloat(filteredBlocks[i].effort).toFixed(2) + "%" : "N/A";
-
-          const statusIcon = getStatusIcon(status);
-
-          var effortColor = '';
-          if (filteredBlocks[i].effort > 155) {
-              effortColor = 'red';
-          } else if (filteredBlocks[i].effort > 105) {
-              effortColor = 'orange';
-          } else {
-              effortColor = 'green';
-          }
-
-          $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + filteredBlocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="/explorer?term=' + filteredBlocks[i].hash + '">' + filteredBlocks[i].hash + '</a></td><td>' + getMinerAddress(filteredBlocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="text-align: center;">' + getStatusIcon(status) + '</td></tr>');
+        $('#blocks-table').append('<tr><td>' + foundDateString + '</td><td>' + difficulty + '</td><td>' + data.blocks[i].index + '</td><td>' + reward + '</td><td><a target="_blank" href="/explorer?term=' + data.blocks[i].hash + '">' + data.blocks[i].hash + '</a></td><td>' + getMinerAddress(data.blocks[i].miner_address) + '</td><td style="color:' + effortColor + '">' + effort + '</td><td style="text-align: center;">' + getStatusIcon(data.blocks[i].status) + '</td></tr>');
       }
-
-    function getStatusIcon(status) {
-        let statusIconPath = '';
-        if (status === 'Pending') {
-            statusIconPath = 'yadacoinpoolstatic/img/pending.png';
-        } else if (status === 'Accepted') {
-            statusIconPath = 'yadacoinpoolstatic/img/accept.png';
-        } else if (status === 'Orphan') {
-            statusIconPath = 'yadacoinpoolstatic/img/not_accept.png';
-        }
-
-        return '<img src="' + statusIconPath + '" alt="' + status + '" style="width: 20px; height: 20px;" />';
-    }
-
-    function getMinerAddress(minerAddress) {
-        if (minerAddress && minerAddress.length >= 16) {
-            return minerAddress.substring(0, 5) + 'XxxxxxX' + minerAddress.slice(-10);
-        }
-        return 'Unknown';
-    }
-
-    function getRewardFromTransactions(transactions, poolAddress) {
-      var highestReward = 0.0;
-
-      for (var i = 0; i < transactions.length; i++) {
-        for (var j = 0; j < transactions[i].outputs.length; j++) {
-          if (transactions[i].outputs[j].to === poolAddress) {
-            var currentReward = transactions[i].outputs[j].value;
-            if (currentReward > highestReward) {
-              highestReward = currentReward;
-            }
-          }
-        }
-      }
-      return highestReward + ' YDA';
-    }
-
-    var pagelength = 10;
-    var pageIndex = 1;
-    var selector = "tr:gt(" + pagelength + ")";
-    $(selector).hide();
-
-    $("#loadMore").click(function () {
-      var itemsCount = ((pageIndex * pagelength) + pagelength);
-      var selector = "tr:lt(" + itemsCount + ")";
-      $(selector).show();
-      pageIndex++;
     });
+  }
 
-    const last30Days = [];
-    for (let i = 0; i < 31; i++) {
-      const day = new Date(thirtyDaysAgo);
-      day.setDate(thirtyDaysAgo.getDate() + i);
-      const formattedDate = day.toISOString().split('T')[0];
-      last30Days.push(formattedDate);
+  function getEffortColor(effort) {
+    if (effort > 155) {
+      return 'red';
+    } else if (effort > 105) {
+      return 'orange';
+    } else {
+      return 'green';
+    }
+  }
+
+  function getStatusIcon(status) {
+    let statusIconPath = '';
+    if (status === 'Pending') {
+      statusIconPath = 'yadacoinpoolstatic/img/pending.png';
+    } else if (status === 'Accepted') {
+      statusIconPath = 'yadacoinpoolstatic/img/accept.png';
+    } else if (status === 'Orphan') {
+      statusIconPath = 'yadacoinpoolstatic/img/not_accept.png';
     }
 
-    const groupedBlocks = groupBlocksByDate(filteredBlocks, true);
-    const dates = last30Days;
-    const blockCounts = dates.map(date => {
-      const count = groupedBlocks[date] ? groupedBlocks[date].length : 0;
-      return count;
-    });
+    return '<img src="' + statusIconPath + '" alt="' + status + '" style="width: 20px; height: 20px;" />';
+  }
 
-    createBarChart(dates, blockCounts);
+  function getMinerAddress(minerAddress) {
+    if (minerAddress && minerAddress.length >= 16) {
+      return minerAddress.substring(0, 5) + '.....' + minerAddress.slice(-10);
+    }
+    return 'Unknown';
+  }
+
+  $('#loadMore').click(function () {
+    blockPageIndex++;
+    updatePoolBlocksData(blockPageIndex);
   });
 
-    function createBarChart(dates, blockCounts) {
+  updatePoolBlocksData(blockPageIndex);
+
+  $.get('/pool-blocks-chart').then((chartData) => {
+      const last30Days = [];
+      const today = new Date();
+
+      for (let i = 29; i >= 0; i--) {
+          const day = new Date(today);
+          day.setDate(today.getDate() - i);
+          const formattedDate = day.toISOString().split('T')[0];
+          last30Days.push(formattedDate);
+      }
+
+      const dateToBlockCount = {};
+      const dateToAverageEffort = {};
+
+      chartData.blocks_by_date.forEach(entry => {
+          dateToBlockCount[entry._id] = entry.count;
+          dateToAverageEffort[entry._id] = entry.average_effort;
+      });
+
+      const dates = last30Days;
+      const blockCounts = dates.map(date => dateToBlockCount[date] || 0);
+      const averageEfforts = dates.map(date => dateToAverageEffort[date] || 0);
+
+      $('#pool-luck').html(chartData.total_effort.toFixed(2) + ' %');
+      $('#avg-effort').html(chartData.average_effort.toFixed(2) + ' %');
+      
+      createCombinedChart(dates, blockCounts, averageEfforts);
+  });
+
+  function createCombinedChart(dates, blockCounts, averageEfforts) {
       const ctx = document.getElementById('myBarChart').getContext('2d');
 
-      const chartContainer = document.getElementById('chart-container');
-      chartContainer.style.width = '100%';
-      chartContainer.style.height = '220px';
-
-      const lightGrey = 'rgba(192, 192, 192, 0.8)';
-      const darkGrey = 'rgba(64, 64, 64, 1)';
-
-      const myBarChart = new Chart(ctx, {
-        type: 'bar',
-        data: {
-          labels: dates,
-          datasets: [{
-            label: 'Blocks found by pool',
-            data: blockCounts,
-            backgroundColor: '#A9A9A9',
-            borderColor: darkGrey,
-            borderWidth: 1
-          }]
-        },
-        options: {
-          scales: {
-            y: {
-              beginAtZero: true
-            }
+      new Chart(ctx, {
+          type: 'bar',
+          data: {
+              labels: dates,
+              datasets: [
+                  {
+                      label: 'Average Effort',
+                      data: averageEfforts,
+                      type: 'line',
+                      borderColor: '#007bff',
+                      backgroundColor: 'rgba(0, 123, 255, 0.2)',
+                      fill: false,
+                      yAxisID: 'y1'
+                  },
+                  {
+                      label: 'Blocks found by pool',
+                      data: blockCounts,
+                      backgroundColor: '#A9A9A9',
+                      borderColor: '#404040',
+                      borderWidth: 1,
+                      yAxisID: 'y'
+                  }
+              ]
           },
-          plugins: {
-              legend: {
-                  display: false,
+          options: {
+              scales: {
+                  y: {
+                      beginAtZero: true,
+                      position: 'left'
+                  },
+                  y1: {
+                      beginAtZero: true,
+                      position: 'right',
+                      grid: {
+                          drawOnChartArea: false
+                      }
+                  }
               },
-          },
-          maintainAspectRatio: false,
-        }
+              maintainAspectRatio: false
+          }
       });
-    }
+  }
+
 </script>
 

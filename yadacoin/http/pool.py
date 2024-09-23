@@ -175,50 +175,100 @@ class PoolPayoutsHandler(BaseHandler):
 
 class PoolBlocksHandler(BaseHandler):
     async def get(self):
-        thirty_days_ago_timestamp = time.time() - (30 * 24 * 60 * 60)
+        page = int(self.get_argument("page", 1))
+        page_size = int(self.get_argument("page_size", 10))
 
         pool_blocks = (
             await self.config.mongo.async_db.pool_blocks
-            .find(
-                {"found_time": {"$gte": thirty_days_ago_timestamp}},
-                {"_id": 0, "index": 1, "time": 1, "found_time": 1, "target": 1, "transactions": 1, "status": 1, "hash": 1, "effort": 1, "miner_address": 1}
-            )
+            .find({}, {
+                "_id": 0,
+                "index": 1,
+                "found_time": 1,
+                "target": 1,
+                "transactions": 1,
+                "status": 1,
+                "hash": 1,
+                "miner_address": 1,
+                "effort": 1
+            })
             .sort("index", -1)
+            .skip((page - 1) * page_size)
+            .limit(page_size)
             .to_list(None)
         )
 
-        total_effort = 0
-        valid_effort_count = 0
-
-        formatted_blocks = []
         for block in pool_blocks:
-            if "effort" in block:
-                total_effort += block["effort"]
-                valid_effort_count += 1
-            miner_address = block.get("miner_address", "unknown")
+            block["reward"] = self.get_coinbase_reward(block["transactions"], self.config.address)
+            del block["transactions"]
 
-            formatted_blocks.append({
-                "index": block["index"],
-                "time": block["time"],
-                "found_time": block["found_time"],
-                "target": block["target"],
-                "transactions": block["transactions"],
-                "status": block["status"],
-                "hash": block["hash"],
-                "effort": block["effort"] if "effort" in block else "N/A",
-                "miner_address": miner_address
-            })
-
-        average_effort = total_effort / valid_effort_count if valid_effort_count > 0 else "N/A"
-        block_confirmation = self.config.block_confirmation
+        total_blocks = await self.config.mongo.async_db.pool_blocks.count_documents({})
 
         pool_info = {
             "pool_address": self.config.address,
-            "average_effort": average_effort,
-            "block_confirmation": block_confirmation,
+            "block_confirmation": self.config.block_confirmation,
         }
 
-        self.render_as_json({"pool": pool_info, "blocks": formatted_blocks})
+        self.render_as_json({
+            "pool_info": pool_info,
+            "blocks": pool_blocks,
+            "pagination": {
+                "total_blocks": total_blocks,
+                "page": page,
+                "page_size": page_size
+            }
+        })
+
+    def get_coinbase_reward(self, transactions, pool_address):
+        highest_reward = 0.0
+        for txn in transactions:
+            if not txn["inputs"]:
+                for output in txn["outputs"]:
+                    if output["to"] == pool_address:
+                        reward = output["value"]
+                        if reward > highest_reward:
+                            highest_reward = reward
+        return highest_reward
+
+class PoolBlocksChartHandler(BaseHandler):
+    async def get(self):
+        thirty_days_ago_timestamp = time.time() - (30 * 24 * 60 * 60)
+
+        pipeline = [
+            {
+                "$match": {
+                    "found_time": {"$gte": thirty_days_ago_timestamp}
+                }
+            },
+            {
+                "$group": {
+                    "_id": {
+                        "$dateToString": {
+                            "format": "%Y-%m-%d",
+                            "date": {"$toDate": {"$multiply": ["$found_time", 1000]}}
+                        }
+                    },
+                    "count": {"$sum": 1},
+                    "total_effort": {"$sum": "$effort"},
+                    "average_effort": {"$avg": "$effort"}
+                }
+            },
+            {
+                "$sort": {"_id": 1}
+            }
+        ]
+
+        blocks_by_date = await self.config.mongo.async_db.pool_blocks.aggregate(pipeline).to_list(None)
+
+        total_effort = sum(block.get("total_effort", 0) for block in blocks_by_date)
+
+        total_block_count = sum(block.get("count", 0) for block in blocks_by_date)
+        overall_average_effort = total_effort / total_block_count if total_block_count > 0 else 0
+
+        self.render_as_json({
+            "blocks_by_date": blocks_by_date,
+            "total_effort": total_effort,
+            "average_effort": overall_average_effort
+        })
 
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):
@@ -347,6 +397,7 @@ POOL_HANDLERS = [
     (r"/miner-stats-for-address", MinerStatsHandler),
     (r"/payouts-for-address", PoolPayoutsHandler),
     (r"/pool-blocks", PoolBlocksHandler),
+    (r"/pool-blocks-chart", PoolBlocksChartHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
     (r"/scan-missed-txn", PoolScanMissingTxnHandler),
     (r"/combine-oldest-transactions", CombineOldestTransactionsHandler),
