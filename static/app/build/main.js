@@ -5366,7 +5366,9 @@ var SendReceive = /** @class */ (function () {
                         outputs: clonedRecipients,
                         fee: _this.fee,
                         masternode_fee: _this.masternode_fee,
-                        masternode_fee_delegate: _this.selected_masernode_fee_delegate.address,
+                        masternode_fee_delegate: _this.selected_masernode_fee_delegate
+                            ? _this.selected_masernode_fee_delegate.address
+                            : "",
                     });
                 })
                     .then(function (txn) {
