@@ -129,6 +129,7 @@ class Config:
 
         self.transactions_combining_wait = config.get("transactions_combining_wait", 3600)
         self.combined_address = config.get("combined_address", self.address)
+        self.min_utxo_value = config.get("min_utxo_value", 0)
 
         self.restrict_graph_api = config.get("restrict_graph_api", False)
 
@@ -403,6 +404,7 @@ class Config:
 
         cls.transactions_combining_wait = config.get("transactions_combining_wait", 3600)
         cls.combined_address = config.get("combined_address", cls.address)
+        cls.min_utxo_value = config.get("min_utxo_value", 0)
 
         cls.restrict_graph_api = config.get("restrict_graph_api", False)
 
