@@ -264,11 +264,18 @@ class BlockChainUtils(object):
     def get_wallet_unspent_transactions_for_spending(
         self, address, amount_needed=None, inc_mempool=False
     ):
+        min_value = self.config.min_utxo_value
+
+        if min_value > 0:
+            value_filter = {"$gte": min_value}
+        else:
+            value_filter = {"$gt": 0}
+    
         query = [
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gt": 0},
+                    "transactions.outputs.value": value_filter,
                 },
             },
             {"$unwind": "$transactions"},
@@ -276,7 +283,7 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gt": 0},
+                    "transactions.outputs.value": value_filter,
                 },
             },
             {"$sort": {"transactions.time": 1}},
