@@ -831,6 +831,42 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
 
 
 
@@ -856,9 +892,11 @@ var MarketItemPage = /** @class */ (function () {
         this.smartContractService = smartContractService;
         this.websocketService = websocketService;
         this.ahttp = ahttp;
-        this.item = navParams.get('item');
-        this.smartContract = this.item.relationship[this.settingsService.collections.SMART_CONTRACT];
-        this.market = navParams.get('market').relationship[this.settingsService.collections.MARKET];
+        this.item = navParams.get("item");
+        this.smartContract =
+            this.item.relationship[this.settingsService.collections.SMART_CONTRACT];
+        this.market =
+            navParams.get("market").relationship[this.settingsService.collections.MARKET];
         this.bids = [];
         this.affiliates = [];
         this.sentPage = 1;
@@ -867,15 +905,15 @@ var MarketItemPage = /** @class */ (function () {
         this.refresh();
         this.price = this.smartContract.price;
         this.minPrice = this.smartContract.price;
-        this.graphService.getBlockHeight()
-            .then(function (data) {
+        this.graphService.getBlockHeight().then(function (data) {
             _this.settingsService.latest_block = data;
         });
         this.prevHeight = this.settingsService.latest_block.height;
         setInterval(function () {
             if (_this.prevHeight < _this.settingsService.latest_block.height) {
                 _this.prevHeight = _this.settingsService.latest_block.height;
-                _this.graphService.getSmartContracts(_this.market)
+                _this.graphService
+                    .getSmartContracts(_this.market)
                     .then(function (smartContracts) {
                     var item = smartContracts.filter(function (item) {
                         return item.id === _this.item.id;
@@ -887,66 +925,93 @@ var MarketItemPage = /** @class */ (function () {
         }, 1000);
     }
     MarketItemPage.prototype.refresh = function (e) {
-        var _this = this;
         if (e === void 0) { e = null; }
-        var identity = JSON.parse(JSON.stringify(this.smartContract.identity));
-        if (this.smartContract.contract_type === this.smartContractService.contractTypes.CHANGE_OWNERSHIP) {
-            identity.collection = this.settingsService.collections.BID;
-        }
-        else {
-            identity.collection = this.settingsService.collections.AFFILIATE;
-        }
-        var rids = this.graphService.generateRids(identity);
-        var scAddress = this.bulletinSecretService.publicKeyToAddress(this.smartContract.identity.public_key);
-        this.walletService.get(this.price, scAddress)
-            .then(function (wallet) {
-            _this.balance = _this.item.pending ? wallet.pending_balance : wallet.balance;
-            return _this.graphService.getBids(rids.requested_rid, _this.market);
-        })
-            .then(function (bids) {
-            _this.bids = bids.sort(function (a, b) {
-                var aamount = _this.getAmount(a);
-                var bamount = _this.getAmount(b);
-                if (aamount < bamount)
-                    return 1;
-                if (aamount > bamount)
-                    return -1;
-                if (aamount === bamount)
-                    return 0;
+        return __awaiter(this, void 0, void 0, function () {
+            var identity, rids, scAddress;
+            var _this = this;
+            return __generator(this, function (_a) {
+                switch (_a.label) {
+                    case 0:
+                        identity = JSON.parse(JSON.stringify(this.smartContract.identity));
+                        if (this.smartContract.contract_type ===
+                            this.smartContractService.contractTypes.CHANGE_OWNERSHIP) {
+                            identity.collection = this.settingsService.collections.BID;
+                        }
+                        else {
+                            identity.collection = this.settingsService.collections.AFFILIATE;
+                        }
+                        rids = this.graphService.generateRids(identity);
+                        return [4 /*yield*/, this.bulletinSecretService.publicKeyToAddress(this.smartContract.identity.public_key)];
+                    case 1:
+                        scAddress = _a.sent();
+                        this.walletService
+                            .get(this.price, scAddress)
+                            .then(function (wallet) {
+                            _this.balance = _this.item.pending
+                                ? wallet.pending_balance
+                                : wallet.balance;
+                            return _this.graphService.getBids(rids.requested_rid, _this.market);
+                        })
+                            .then(function (bids) {
+                            _this.bids = bids.sort(function (a, b) {
+                                var aamount = _this.getAmount(a);
+                                var bamount = _this.getAmount(b);
+                                if (aamount < bamount)
+                                    return 1;
+                                if (aamount > bamount)
+                                    return -1;
+                                if (aamount === bamount)
+                                    return 0;
+                            });
+                            if (_this.bids.slice(0).length > 0) {
+                                _this.price = _this.getAmount(_this.bids[0]);
+                                _this.minPrice = _this.price;
+                            }
+                        });
+                        this.graphService
+                            .getAffiliates(rids.requested_rid, this.market)
+                            .then(function (affiliates) {
+                            _this.affiliates = affiliates.filter(function (item) {
+                                if (item.public_key ===
+                                    _this.bulletinSecretService.identity.public_key ||
+                                    _this.item.public_key ===
+                                        _this.bulletinSecretService.identity.public_key)
+                                    return true;
+                            });
+                        });
+                        this.smartContractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(this.smartContract.identity.public_key, "hex")).getAddress();
+                        this.getSentHistory();
+                        setTimeout(function () {
+                            e && e.complete();
+                        }, 1000);
+                        return [2 /*return*/];
+                }
             });
-            if (_this.bids.slice(0).length > 0) {
-                _this.price = _this.getAmount(_this.bids[0]);
-                _this.minPrice = _this.price;
-            }
         });
-        this.graphService.getAffiliates(rids.requested_rid, this.market)
-            .then(function (affiliates) {
-            _this.affiliates = affiliates.filter(function (item) {
-                if (item.public_key === _this.bulletinSecretService.identity.public_key ||
-                    _this.item.public_key === _this.bulletinSecretService.identity.public_key)
-                    return true;
-            });
-        });
-        this.smartContractAddress = foobar.bitcoin.ECPair.fromPublicKeyBuffer(foobar.Buffer.Buffer.from(this.smartContract.identity.public_key, 'hex')).getAddress();
-        this.getSentHistory();
-        setTimeout(function () {
-            e && e.complete();
-        }, 1000);
     };
     MarketItemPage.prototype.getSentHistory = function (public_key) {
         var _this = this;
         if (public_key === void 0) { public_key = null; }
         return new Promise(function (resolve, reject) {
             var options = new __WEBPACK_IMPORTED_MODULE_10__angular_http__["d" /* RequestOptions */]({ withCredentials: true });
-            _this.ahttp.get(_this.settingsService.remoteSettings['baseUrl'] + '/get-past-sent-txns?page=' + _this.sentPage + '&public_key=' + _this.smartContract.identity.public_key + '&origin=' + encodeURIComponent(window.location.origin), options)
+            _this.ahttp
+                .get(_this.settingsService.remoteSettings["baseUrl"] +
+                "/get-past-sent-txns?page=" +
+                _this.sentPage +
+                "&public_key=" +
+                _this.smartContract.identity.public_key +
+                "&origin=" +
+                encodeURIComponent(window.location.origin), options)
                 .subscribe(function (res) {
-                _this.past_sent_transactions = res.json()['past_transactions'].sort(_this.sortFunc);
+                _this.past_sent_transactions = res
+                    .json()["past_transactions"].sort(_this.sortFunc);
                 _this.past_sent_transactions = _this.breakApartByOutput();
                 _this.getSentOutputValue(_this.past_sent_transactions);
-                _this.past_sent_page_cache[_this.sentPage] = _this.past_sent_transactions;
+                _this.past_sent_page_cache[_this.sentPage] =
+                    _this.past_sent_transactions;
                 resolve(res);
             }, function (err) {
-                return reject('cannot unlock wallet');
+                return reject("cannot unlock wallet");
             });
         });
     };
@@ -966,7 +1031,8 @@ var MarketItemPage = /** @class */ (function () {
     };
     MarketItemPage.prototype.prevSentPage = function () {
         this.sentPage--;
-        var result = this.past_sent_transactions = this.past_sent_page_cache[this.sentPage] || [];
+        var result = (this.past_sent_transactions =
+            this.past_sent_page_cache[this.sentPage] || []);
         if (result.length > 0) {
             this.past_sent_transactions = result;
             return;
@@ -985,22 +1051,22 @@ var MarketItemPage = /** @class */ (function () {
     MarketItemPage.prototype.getSentOutputValue = function (array) {
         for (var i = 0; i < array.length; i++) {
             var txn = array[i];
-            if (!array[i]['value']) {
-                array[i]['value'] = 0;
+            if (!array[i]["value"]) {
+                array[i]["value"] = 0;
             }
-            for (var j = 0; j < txn['outputs'].length; j++) {
-                var output = txn['outputs'][j];
+            for (var j = 0; j < txn["outputs"].length; j++) {
+                var output = txn["outputs"][j];
                 if (this.smartContractAddress !== output.to) {
-                    array[i]['value'] += parseFloat(output.value);
+                    array[i]["value"] += parseFloat(output.value);
                     if (output.to)
-                        array[i]['to'] = output.to;
+                        array[i]["to"] = output.to;
                 }
                 else {
                     if (output.to)
-                        array[i]['from'] = output.to;
+                        array[i]["from"] = output.to;
                 }
             }
-            array[i]['value'] = array[i]['value'].toFixed(8);
+            array[i]["value"] = array[i]["value"].toFixed(8);
         }
     };
     MarketItemPage.prototype.sortFunc = function (a, b) {
@@ -1012,13 +1078,34 @@ var MarketItemPage = /** @class */ (function () {
     };
     MarketItemPage.prototype.convertDateTime = function (timestamp) {
         var a = new Date(timestamp * 1000);
-        var months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        var months = [
+            "Jan",
+            "Feb",
+            "Mar",
+            "Apr",
+            "May",
+            "Jun",
+            "Jul",
+            "Aug",
+            "Sep",
+            "Oct",
+            "Nov",
+            "Dec",
+        ];
         var year = a.getFullYear();
         var month = months[a.getMonth()];
         var date = a.getDate();
-        var hour = '0' + a.getHours();
-        var min = '0' + a.getMinutes();
-        var time = date + '-' + month + '-' + year + ' ' + hour.substr(-2) + ':' + min.substr(-2);
+        var hour = "0" + a.getHours();
+        var min = "0" + a.getMinutes();
+        var time = date +
+            "-" +
+            month +
+            "-" +
+            year +
+            " " +
+            hour.substr(-2) +
+            ":" +
+            min.substr(-2);
         return time;
     };
     MarketItemPage.prototype.getAmount = function (bid) {
@@ -1031,37 +1118,42 @@ var MarketItemPage = /** @class */ (function () {
     };
     MarketItemPage.prototype.openProfile = function (identity) {
         this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_6__profile_profile__["a" /* ProfilePage */], {
-            identity: identity
+            identity: identity,
         });
     };
     MarketItemPage.prototype.buy = function (e) {
         var _this = this;
         // generate purchase txn
         var alert = this.alertCtrl.create();
-        var buttonText = '';
-        if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.FIRST_COME) {
-            alert.setTitle('Buy Asset');
-            alert.setSubTitle('Are you sure you want to buy this asset?');
-            buttonText = 'Buy';
+        var buttonText = "";
+        if (this.smartContract.proof_type ===
+            this.smartContractService.assetProofTypes.FIRST_COME) {
+            alert.setTitle("Buy Asset");
+            alert.setSubTitle("Are you sure you want to buy this asset?");
+            buttonText = "Buy";
         }
-        else if (this.smartContract.proof_type === this.smartContractService.assetProofTypes.AUCTION) {
-            alert.setTitle('Bid on Asset');
-            alert.setSubTitle('Are you sure you want to place a bid for this asset?');
-            buttonText = 'Bid';
+        else if (this.smartContract.proof_type ===
+            this.smartContractService.assetProofTypes.AUCTION) {
+            alert.setTitle("Bid on Asset");
+            alert.setSubTitle("Are you sure you want to place a bid for this asset?");
+            buttonText = "Bid";
         }
         alert.addButton({
-            text: 'Cancel'
+            text: "Cancel",
         });
         alert.addButton({
             text: buttonText,
             handler: function (data) {
-                var scAddress = _this.bulletinSecretService.publicKeyToAddress(_this.smartContract.identity.public_key);
-                _this.walletService.get(_this.price)
+                _this.walletService
+                    .get(_this.price)
                     .then(function () {
+                    return _this.bulletinSecretService.publicKeyToAddress(_this.smartContract.identity.public_key);
+                })
+                    .then(function (scAddress) {
                     var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.BID);
                     return _this.websocketService.newtxn(_this.graphService.toIdentity(_this.bulletinSecretService.identity), rids, _this.settingsService.collections.BID, _this.market.username_signature, {
                         to: scAddress,
-                        value: _this.price
+                        value: _this.price,
                     });
                 })
                     .then(function () {
@@ -1069,14 +1161,14 @@ var MarketItemPage = /** @class */ (function () {
                 })
                     .catch(function (err) {
                     var alert = _this.alertCtrl.create();
-                    alert.setTitle('Transaction failed');
+                    alert.setTitle("Transaction failed");
                     alert.setSubTitle(err);
                     alert.addButton({
-                        text: 'Ok'
+                        text: "Ok",
                     });
                     alert.present();
                 });
-            }
+            },
         });
         alert.present();
     };
@@ -1084,12 +1176,12 @@ var MarketItemPage = /** @class */ (function () {
         var _this = this;
         // generate purchase txn
         var alert = this.alertCtrl.create();
-        var buttonText = '';
-        alert.setTitle('Join promotion');
-        alert.setSubTitle('Are you sure you want to join this promotion?');
-        buttonText = 'Join';
+        var buttonText = "";
+        alert.setTitle("Join promotion");
+        alert.setSubTitle("Are you sure you want to join this promotion?");
+        buttonText = "Join";
         alert.addButton({
-            text: 'Cancel'
+            text: "Cancel",
         });
         alert.addButton({
             text: buttonText,
@@ -1097,36 +1189,37 @@ var MarketItemPage = /** @class */ (function () {
                 var rids = _this.graphService.generateRids(_this.smartContract.identity, _this.smartContract.identity, _this.settingsService.collections.AFFILIATE);
                 var rid = _this.graphService.generateRid(_this.smartContract.identity.username_signature, _this.bulletinSecretService.username_signature);
                 rids.rid = rid;
-                _this.websocketService.newtxn({
+                _this.websocketService
+                    .newtxn({
                     referrer: _this.graphService.toIdentity(_this.bulletinSecretService.identity),
                     target: _this.smartContract.target,
-                    contract: _this.graphService.toIdentity(_this.smartContract.identity)
+                    contract: _this.graphService.toIdentity(_this.smartContract.identity),
                 }, rids, _this.settingsService.collections.AFFILIATE, _this.market.username_signature)
                     .then(function () {
                     return _this.refresh();
                 })
                     .catch(function (err) {
                     var alert = _this.alertCtrl.create();
-                    alert.setTitle('Transaction failed');
+                    alert.setTitle("Transaction failed");
                     alert.setSubTitle(err);
                     alert.addButton({
-                        text: 'Ok'
+                        text: "Ok",
                     });
                     alert.present();
                 });
-            }
+            },
         });
         alert.present();
     };
     MarketItemPage.prototype.toHex = function (byteArray) {
         var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+            return ("0" + (byte & 0xff).toString(16)).slice(-2);
         };
-        return Array.from(byteArray, callback).join('');
+        return Array.from(byteArray, callback).join("");
     };
     MarketItemPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'market-item',template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Type: </strong>{{smartContract.proof_type}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n          <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n          <strong>Expired: </strong>{{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Type: </strong>{{smartContract.proof_type}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n        Expired: {{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n  <ion-row>\n    <ion-col>\n      <h4>Transaction history</h4>\n      <strong>Sent</strong><br>\n      <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n      <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n      <ion-list>\n        <ion-item *ngFor="let txn of past_sent_transactions">\n          <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n          <ion-label>{{txn.to}}</ion-label>\n          <ion-label>{{txn.value}}</ion-label>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/markets/marketitem.html"*/
+            selector: "market-item",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/markets/marketitem.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n  </ion-navbar>\n</ion-header>\n\n<ion-content padding>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.CHANGE_OWNERSHIP">\n    <ion-col col-md-3>\n      <h1 *ngIf="smartContract.proof_type === \'first_come\'">Asset for sale</h1>\n      <h1 *ngIf="smartContract.proof_type === \'auction\'">Asset auction</h1>\n      <h3>Info</h3>\n      <ion-card ion-item style="">\n        <ion-card-title style="text-overflow:ellipsis;" text-wrap>\n          <img [src]="smartContract.asset.data">\n        </ion-card-title>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.asset.identity.username}}\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Type: </strong>{{smartContract.proof_type}}\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'auction\'">\n          <strong>Reserve: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Price: </strong>{{smartContract.price.toFixed(8)}} YDA\n        </ion-card-content>\n        <ion-card-content *ngIf="smartContract.proof_type === \'first_come\'">\n          <strong>Seller: </strong><span *ngIf="smartContract.creator" (click)="openProfile(smartContract.creator)">{{smartContract.creator.username}} <ion-icon *ngIf="graphService.isAdded(smartContract.creator)" name="checkmark-circle" class="success"></ion-icon></span>\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n          <strong>Expires: </strong>In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n        </ion-card-content>\n        <ion-card-content *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n          <strong>Expired: </strong>{{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n        </ion-card-content>\n      </ion-card>\n      <ion-item *ngIf="smartContract.proof_type === \'auction\'">\n        <ion-label color="primary">Bid amount</ion-label>\n        <ion-input type="number" [min]="minPrice" [(ngModel)]="price" placeholder="How much YDA are you bidding?" [disabled]="item.pending"></ion-input>\n      </ion-item>\n      <button ion-button secondary *ngIf="!item.pending && smartContract.proof_type === \'auction\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Place bid</button>\n      <button ion-button secondary *ngIf="item.pending" (click)="buy($event)" [disabled]="item.pending">Pending blockchain insertion</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length === 0 && smartContract.proof_type === \'first_come\'" (click)="buy($event)" [disabled]="price < minPrice || (smartContract.expiry - settingsService.latest_block.height) < 0">Buy this asset</button>\n      <button ion-button secondary *ngIf="!item.pending && bids.length > 0 && smartContract.proof_type === \'first_come\'" disabled=disabled>This item is sold</button>\n    </ion-col>\n    <ion-col col-md-3 *ngIf="smartContract.proof_type === \'auction\'">\n      <h3>Bids</h3>\n      <ion-list>\n        <ion-item *ngIf="bids.length === 0">No bids yet</ion-item>\n        <ion-item *ngFor="let bid of bids" (click)="openProfile(bid.relationship[settingsService.collections.BID])">\n          {{bid.relationship[settingsService.collections.BID].username}}\n          <ion-icon\n            *ngIf="graphService.isAdded(bid.relationship[settingsService.collections.BID])"\n            name="checkmark-circle"\n            class="success"\n          >\n          </ion-icon> {{getAmount(bid)}} YDA</ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n  <ion-row *ngIf="smartContract.contract_type === smartContractService.contractTypes.NEW_RELATIONSHIP">\n    <ion-col col-md-3>\n      <h1>Referrals</h1>\n      <h3>Info</h3>\n      <ion-card ion-item>\n        <ion-card-content>\n          <strong>Name: </strong>{{smartContract.target.username}}\n        </ion-card-content>\n        <ion-card-content>\n          <strong>Type: </strong>{{smartContract.proof_type}}\n        </ion-card-content>\n      </ion-card>\n      <ng-container *ngIf="smartContract.referrer.active">\n        <h3>Referrer payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referrer.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referrer.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referrer.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referrer.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <ng-container *ngIf="smartContract.referee.active">\n        <h3>Referee payout</h3>\n        <ion-item>\n          Operator: {{smartContract.referee.operator}}\n        </ion-item>\n        <ion-item>\n          Payout type: {{smartContract.referee.payout_type}}\n        </ion-item>\n        <ion-item>\n          Payout interval: Every {{smartContract.referee.interval}} blocks\n        </ion-item>\n        <ion-item>\n          Amount: {{smartContract.referee.amount.toFixed(8)}} YDA\n        </ion-item>\n      </ng-container>\n      <h3>Funding</h3>\n      <ion-item>\n        Balance: {{balance}} YDA\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) >= 0">\n        Expires: In {{smartContract.expiry - settingsService.latest_block.height}} blocks\n      </ion-item>\n      <ion-item *ngIf="(smartContract.expiry - settingsService.latest_block.height) < 0">\n        Expired: {{settingsService.latest_block.height - smartContract.expiry}} blocks ago\n      </ion-item>\n    </ion-col>\n    <ion-col col-md-3>\n      <h1>&nbsp;</h1>\n      <h3>Affiliate code</h3>\n      <ion-list>\n        <ion-item *ngIf="item.public_key === bulletinSecretService.identity.public_key && affiliates.length === 0">No affiliates have joined your program yet</ion-item>\n        <ion-item *ngIf="item.public_key !== bulletinSecretService.identity.public_key && affiliates.length === 0">You have not joined the promotion yet</ion-item>\n        <ion-item\n          *ngFor="let affiliate of affiliates"\n        >\n          <ion-label color="primary"></ion-label>\n          <ion-input type="text" [value]="affiliate.pending ? \'Promo code pending blockchain insertion\' : affiliate.rid"></ion-input>\n        </ion-item>\n      </ion-list>\n      <button ion-button secondary  (click)="joinPromotion($event)" [disabled]="item.pending || (affiliates.length && affiliates.length > 0)">{{item.pending ? \'Pending block insertion\' : \'Become an Affiliate\'}}</button>\n    </ion-col>\n  </ion-row>\n  <ion-row>\n    <ion-col>\n      <h4>Transaction history</h4>\n      <strong>Sent</strong><br>\n      <button ion-button small (click)="prevSentPage()" [disabled]="sentPage <= 1">< Prev</button> <button ion-button small (click)="nextSentPage()" [disabled]="past_sent_transactions.length === 0 || past_sent_transactions.length < 10">Next ></button>\n      <p *ngIf="past_sent_transactions.length === 0">No more results</p><span *ngIf="sentLoading"> (loading...)</span>\n      <ion-list>\n        <ion-item *ngFor="let txn of past_sent_transactions">\n          <ion-label>{{convertDateTime(txn.time)}}</ion-label>\n          <ion-label>{{txn.to}}</ion-label>\n          <ion-label>{{txn.value}}</ion-label>\n        </ion-item>\n      </ion-list>\n    </ion-col>\n  </ion-row>\n</ion-content>'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/markets/marketitem.html"*/,
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -1304,6 +1397,42 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 };
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
+};
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
 };
 
 
@@ -2836,70 +2965,82 @@ var GraphService = /** @class */ (function () {
         });
     };
     GraphService.prototype.createGroup = function (groupname, parentGroup, extraData, collectionName) {
-        var _this = this;
         if (parentGroup === void 0) { parentGroup = null; }
         if (extraData === void 0) { extraData = {}; }
         if (collectionName === void 0) { collectionName = "group"; }
-        var parentIdentity = this.getIdentityFromTxn(parentGroup);
-        if (!groupname)
-            return new Promise(function (resolve, reject) {
-                reject("username missing");
-            });
-        if (parentIdentity &&
-            parentIdentity.public_key !==
-                this.bulletinSecretService.identity.public_key)
-            return new Promise(function (resolve, reject) {
-                reject("you cannot create a subgroup unless you are the owner of the group.");
-            });
-        if (parentIdentity && parentIdentity.username === groupname)
-            return new Promise(function (resolve, reject) {
-                reject("you cannot create a subgroup with the same name as the parent group.");
-            });
-        var username_signature = foobar.base64.fromByteArray(this.bulletinSecretService.key
-            .sign(foobar.bitcoin.crypto.sha256(groupname))
-            .toDER());
-        var relationship = {
-            username: groupname,
-            username_signature: username_signature,
-            public_key: this.bulletinSecretService.identity.public_key,
-            collection: this.settingsService.collections.GROUP,
-        };
-        var info = __assign({}, extraData);
-        info[collectionName] = relationship;
-        if (parentIdentity) {
-            relationship.parent = {
-                username: parentIdentity.username,
-                username_signature: parentIdentity.username_signature,
-                public_key: parentIdentity.public_key,
-                collection: this.settingsService.collections.GROUP,
-            };
-        }
-        return this.transactionService
-            .generateTransaction({
-            relationship: info,
-            to: this.bulletinSecretService.publicKeyToAddress(this.bulletinSecretService.identity.public_key),
-            requester_rid: this.generateRid(parentIdentity
-                ? parentIdentity.username_signature
-                : this.bulletinSecretService.identity.username_signature, parentIdentity
-                ? parentIdentity.username_signature
-                : this.bulletinSecretService.identity.username_signature, parentIdentity ? parentIdentity.username_signature : collectionName),
-            requested_rid: this.generateRid(username_signature, username_signature, parentIdentity ? parentIdentity.username_signature : collectionName),
-            rid: this.generateRid(this.bulletinSecretService.identity.username_signature, username_signature),
-            group: true,
-        })
-            .then(function (txn) {
-            return _this.transactionService.sendTransaction();
-        })
-            .then(function () {
-            return _this.getGroups(null, relationship.collection, true);
-        })
-            .then(function () {
-            return new Promise(function (resolve, reject) {
-                return resolve({
-                    username: groupname,
-                    username_signature: username_signature,
-                    public_key: _this.bulletinSecretService.identity.public_key,
-                });
+        return __awaiter(this, void 0, void 0, function () {
+            var parentIdentity, username_signature, relationship, info, _a, _b;
+            var _c;
+            var _this = this;
+            return __generator(this, function (_d) {
+                switch (_d.label) {
+                    case 0:
+                        parentIdentity = this.getIdentityFromTxn(parentGroup);
+                        if (!groupname)
+                            return [2 /*return*/, new Promise(function (resolve, reject) {
+                                    reject("username missing");
+                                })];
+                        if (parentIdentity &&
+                            parentIdentity.public_key !==
+                                this.bulletinSecretService.identity.public_key)
+                            return [2 /*return*/, new Promise(function (resolve, reject) {
+                                    reject("you cannot create a subgroup unless you are the owner of the group.");
+                                })];
+                        if (parentIdentity && parentIdentity.username === groupname)
+                            return [2 /*return*/, new Promise(function (resolve, reject) {
+                                    reject("you cannot create a subgroup with the same name as the parent group.");
+                                })];
+                        username_signature = foobar.base64.fromByteArray(this.bulletinSecretService.key
+                            .sign(foobar.bitcoin.crypto.sha256(groupname))
+                            .toDER());
+                        relationship = {
+                            username: groupname,
+                            username_signature: username_signature,
+                            public_key: this.bulletinSecretService.identity.public_key,
+                            collection: this.settingsService.collections.GROUP,
+                        };
+                        info = __assign({}, extraData);
+                        info[collectionName] = relationship;
+                        if (parentIdentity) {
+                            relationship.parent = {
+                                username: parentIdentity.username,
+                                username_signature: parentIdentity.username_signature,
+                                public_key: parentIdentity.public_key,
+                                collection: this.settingsService.collections.GROUP,
+                            };
+                        }
+                        _b = (_a = this.transactionService)
+                            .generateTransaction;
+                        _c = {
+                            relationship: info
+                        };
+                        return [4 /*yield*/, this.bulletinSecretService.publicKeyToAddress(this.bulletinSecretService.identity.public_key)];
+                    case 1: return [2 /*return*/, _b.apply(_a, [(_c.to = _d.sent(),
+                                _c.requester_rid = this.generateRid(parentIdentity
+                                    ? parentIdentity.username_signature
+                                    : this.bulletinSecretService.identity.username_signature, parentIdentity
+                                    ? parentIdentity.username_signature
+                                    : this.bulletinSecretService.identity.username_signature, parentIdentity ? parentIdentity.username_signature : collectionName),
+                                _c.requested_rid = this.generateRid(username_signature, username_signature, parentIdentity ? parentIdentity.username_signature : collectionName),
+                                _c.rid = this.generateRid(this.bulletinSecretService.identity.username_signature, username_signature),
+                                _c.group = true,
+                                _c)])
+                            .then(function (txn) {
+                            return _this.transactionService.sendTransaction();
+                        })
+                            .then(function () {
+                            return _this.getGroups(null, relationship.collection, true);
+                        })
+                            .then(function () {
+                            return new Promise(function (resolve, reject) {
+                                return resolve({
+                                    username: groupname,
+                                    username_signature: username_signature,
+                                    public_key: _this.bulletinSecretService.identity.public_key,
+                                });
+                            });
+                        })];
+                }
             });
         });
     };
@@ -3005,51 +3146,63 @@ var GraphService = /** @class */ (function () {
         });
     };
     GraphService.prototype.addFriend = function (identity, rid, requester_rid, requested_rid) {
-        var _this = this;
         if (rid === void 0) { rid = ""; }
         if (requester_rid === void 0) { requester_rid = ""; }
         if (requested_rid === void 0) { requested_rid = ""; }
-        rid =
-            rid ||
-                this.generateRid(this.bulletinSecretService.identity.username_signature, identity.username_signature);
-        requester_rid =
-            requester_rid ||
-                this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CONTACT);
-        requested_rid =
-            requested_rid ||
-                this.generateRid(identity.username_signature, identity.username_signature, this.settingsService.collections.CONTACT);
-        if (requester_rid && requested_rid) {
-            // get rid from bulletin secrets
-        }
-        else {
-            requester_rid = "";
-            requested_rid = "";
-        }
-        var raw_dh_private_key = foobar.bitcoin.crypto.sha256(this.bulletinSecretService.key.toWIF() + identity.username_signature);
-        var raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
-        var dh_private_key = this.toHex(raw_dh_private_key);
-        var dh_public_key = this.toHex(raw_dh_public_key);
-        var myIdentity = this.bulletinSecretService.cloneIdentity();
-        myIdentity.collection = this.settingsService.collections.CONTACT;
-        var info = {
-            dh_private_key: dh_private_key,
-        };
-        info[this.settingsService.collections.CONTACT] = myIdentity;
-        return this.transactionService
-            .generateTransaction({
-            relationship: info,
-            dh_public_key: dh_public_key,
-            requested_rid: requested_rid,
-            requester_rid: requester_rid,
-            rid: rid,
-            to: this.bulletinSecretService.publicKeyToAddress(identity.public_key),
-            recipient_identity: identity,
-        })
-            .then(function (hash) {
-            return _this.transactionService.sendTransaction();
-        })
-            .then(function () {
-            return _this.getFriends();
+        return __awaiter(this, void 0, void 0, function () {
+            var raw_dh_private_key, raw_dh_public_key, dh_private_key, dh_public_key, myIdentity, info, _a, _b;
+            var _c;
+            var _this = this;
+            return __generator(this, function (_d) {
+                switch (_d.label) {
+                    case 0:
+                        rid =
+                            rid ||
+                                this.generateRid(this.bulletinSecretService.identity.username_signature, identity.username_signature);
+                        requester_rid =
+                            requester_rid ||
+                                this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, this.settingsService.collections.CONTACT);
+                        requested_rid =
+                            requested_rid ||
+                                this.generateRid(identity.username_signature, identity.username_signature, this.settingsService.collections.CONTACT);
+                        if (requester_rid && requested_rid) {
+                            // get rid from bulletin secrets
+                        }
+                        else {
+                            requester_rid = "";
+                            requested_rid = "";
+                        }
+                        raw_dh_private_key = foobar.bitcoin.crypto.sha256(this.bulletinSecretService.key.toWIF() + identity.username_signature);
+                        raw_dh_public_key = X25519.getPublic(raw_dh_private_key);
+                        dh_private_key = this.toHex(raw_dh_private_key);
+                        dh_public_key = this.toHex(raw_dh_public_key);
+                        myIdentity = this.bulletinSecretService.cloneIdentity();
+                        myIdentity.collection = this.settingsService.collections.CONTACT;
+                        info = {
+                            dh_private_key: dh_private_key,
+                        };
+                        info[this.settingsService.collections.CONTACT] = myIdentity;
+                        _b = (_a = this.transactionService)
+                            .generateTransaction;
+                        _c = {
+                            relationship: info,
+                            dh_public_key: dh_public_key,
+                            requested_rid: requested_rid,
+                            requester_rid: requester_rid,
+                            rid: rid
+                        };
+                        return [4 /*yield*/, this.bulletinSecretService.publicKeyToAddress(identity.public_key)];
+                    case 1: return [2 /*return*/, _b.apply(_a, [(_c.to = _d.sent(),
+                                _c.recipient_identity = identity,
+                                _c)])
+                            .then(function (hash) {
+                            return _this.transactionService.sendTransaction();
+                        })
+                            .then(function () {
+                            return _this.getFriends();
+                        })];
+                }
+            });
         });
     };
     GraphService.prototype.addGroupFromSkylink = function (skylink) {
@@ -3059,54 +3212,66 @@ var GraphService = /** @class */ (function () {
         });
     };
     GraphService.prototype.addGroup = function (identity, rid, requester_rid, requested_rid, refresh) {
-        var _this = this;
         if (rid === void 0) { rid = ""; }
         if (requester_rid === void 0) { requester_rid = ""; }
         if (requested_rid === void 0) { requested_rid = ""; }
         if (refresh === void 0) { refresh = true; }
-        identity.collection = identity.parent
-            ? identity.parent.username_signature
-            : identity.collection || this.settingsService.collections.GROUP;
-        rid =
-            rid ||
-                this.generateRid(this.bulletinSecretService.identity.username_signature, identity.username_signature);
-        requester_rid =
-            requester_rid ||
-                this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, identity.collection);
-        requested_rid =
-            requested_rid ||
-                this.generateRid(identity.parent ? identity.collection : identity.username_signature, identity.parent ? identity.collection : identity.username_signature, identity.collection);
-        if (requester_rid && requested_rid) {
-            // get rid from bulletin secrets
-        }
-        else {
-            requester_rid = "";
-            requested_rid = "";
-        }
-        if (this.groups_indexed[requested_rid]) {
-            return new Promise(function (resolve, reject) {
-                return resolve(identity);
-            });
-        }
-        var info = {};
-        info[identity.collection] = identity;
-        return this.transactionService
-            .generateTransaction({
-            rid: rid,
-            relationship: info,
-            requested_rid: requested_rid,
-            requester_rid: requester_rid,
-            to: this.bulletinSecretService.publicKeyToAddress(identity.public_key),
-        })
-            .then(function (txn) {
-            return _this.transactionService.sendTransaction(txn);
-        })
-            .then(function () {
-            return refresh ? _this.getGroups(null, identity.collection, true) : null;
-        })
-            .then(function () {
-            return new Promise(function (resolve, reject) {
-                return resolve(identity);
+        return __awaiter(this, void 0, void 0, function () {
+            var info, _a, _b;
+            var _c;
+            var _this = this;
+            return __generator(this, function (_d) {
+                switch (_d.label) {
+                    case 0:
+                        identity.collection = identity.parent
+                            ? identity.parent.username_signature
+                            : identity.collection || this.settingsService.collections.GROUP;
+                        rid =
+                            rid ||
+                                this.generateRid(this.bulletinSecretService.identity.username_signature, identity.username_signature);
+                        requester_rid =
+                            requester_rid ||
+                                this.generateRid(this.bulletinSecretService.identity.username_signature, this.bulletinSecretService.identity.username_signature, identity.collection);
+                        requested_rid =
+                            requested_rid ||
+                                this.generateRid(identity.parent ? identity.collection : identity.username_signature, identity.parent ? identity.collection : identity.username_signature, identity.collection);
+                        if (requester_rid && requested_rid) {
+                            // get rid from bulletin secrets
+                        }
+                        else {
+                            requester_rid = "";
+                            requested_rid = "";
+                        }
+                        if (this.groups_indexed[requested_rid]) {
+                            return [2 /*return*/, new Promise(function (resolve, reject) {
+                                    return resolve(identity);
+                                })];
+                        }
+                        info = {};
+                        info[identity.collection] = identity;
+                        _b = (_a = this.transactionService)
+                            .generateTransaction;
+                        _c = {
+                            rid: rid,
+                            relationship: info,
+                            requested_rid: requested_rid,
+                            requester_rid: requester_rid
+                        };
+                        return [4 /*yield*/, this.bulletinSecretService.publicKeyToAddress(identity.public_key)];
+                    case 1: return [2 /*return*/, _b.apply(_a, [(_c.to = _d.sent(),
+                                _c)])
+                            .then(function (txn) {
+                            return _this.transactionService.sendTransaction(txn);
+                        })
+                            .then(function () {
+                            return refresh ? _this.getGroups(null, identity.collection, true) : null;
+                        })
+                            .then(function () {
+                            return new Promise(function (resolve, reject) {
+                                return resolve(identity);
+                            });
+                        })];
+                }
             });
         });
     };
@@ -3614,13 +3779,13 @@ var TransactionService = /** @class */ (function () {
                                 }
                                 input_sum += parseFloat(unspent_output.value);
                                 console.log(parseFloat(unspent_output.value));
-                                _this.transaction.outputs.push({
-                                    to: _this.key.getAddress(),
-                                    value: input_sum - transaction_total,
-                                });
                             }
                         }
                     }
+                    _this.transaction.outputs.push({
+                        to: _this.key.getAddress(),
+                        value: input_sum - transaction_total,
+                    });
                     if (input_sum < transaction_total) {
                         return reject("You do not have enough individual inputs with values greater than 1 YDA. This means you need to sweep your wallet. This can be done automatically by downloading a full node and replacing the .");
                     }
@@ -4832,6 +4997,42 @@ var __decorate = (this && this.__decorate) || function (decorators, target, key,
 var __metadata = (this && this.__metadata) || function (k, v) {
     if (typeof Reflect === "object" && typeof Reflect.metadata === "function") return Reflect.metadata(k, v);
 };
+var __awaiter = (this && this.__awaiter) || function (thisArg, _arguments, P, generator) {
+    function adopt(value) { return value instanceof P ? value : new P(function (resolve) { resolve(value); }); }
+    return new (P || (P = Promise))(function (resolve, reject) {
+        function fulfilled(value) { try { step(generator.next(value)); } catch (e) { reject(e); } }
+        function rejected(value) { try { step(generator["throw"](value)); } catch (e) { reject(e); } }
+        function step(result) { result.done ? resolve(result.value) : adopt(result.value).then(fulfilled, rejected); }
+        step((generator = generator.apply(thisArg, _arguments || [])).next());
+    });
+};
+var __generator = (this && this.__generator) || function (thisArg, body) {
+    var _ = { label: 0, sent: function() { if (t[0] & 1) throw t[1]; return t[1]; }, trys: [], ops: [] }, f, y, t, g;
+    return g = { next: verb(0), "throw": verb(1), "return": verb(2) }, typeof Symbol === "function" && (g[Symbol.iterator] = function() { return this; }), g;
+    function verb(n) { return function (v) { return step([n, v]); }; }
+    function step(op) {
+        if (f) throw new TypeError("Generator is already executing.");
+        while (_) try {
+            if (f = 1, y && (t = op[0] & 2 ? y["return"] : op[0] ? y["throw"] || ((t = y["return"]) && t.call(y), 0) : y.next) && !(t = t.call(y, op[1])).done) return t;
+            if (y = 0, t) op = [op[0] & 2, t.value];
+            switch (op[0]) {
+                case 0: case 1: t = op; break;
+                case 4: _.label++; return { value: op[1], done: false };
+                case 5: _.label++; y = op[1]; op = [0]; continue;
+                case 7: op = _.ops.pop(); _.trys.pop(); continue;
+                default:
+                    if (!(t = _.trys, t = t.length > 0 && t[t.length - 1]) && (op[0] === 6 || op[0] === 2)) { _ = 0; continue; }
+                    if (op[0] === 3 && (!t || (op[1] > t[0] && op[1] < t[3]))) { _.label = op[1]; break; }
+                    if (op[0] === 6 && _.label < t[1]) { _.label = t[1]; t = op; break; }
+                    if (t && _.label < t[2]) { _.label = t[2]; _.ops.push(op); break; }
+                    if (t[2]) _.ops.pop();
+                    _.trys.pop(); continue;
+            }
+            op = body.call(thisArg, _);
+        } catch (e) { op = [6, e]; y = 0; } finally { f = t = 0; }
+        if (op[0] & 5) throw op[1]; return { value: op[0] ? op[1] : void 0, done: true };
+    }
+};
 
 
 
@@ -4862,7 +5063,7 @@ var ChatPage = /** @class */ (function () {
         this.toastCtrl = toastCtrl;
         this.events = events;
         this.websocketService = websocketService;
-        this.identity = this.navParams.get('identity');
+        this.identity = this.navParams.get("identity");
         this.label = this.identity.username;
         var identity = JSON.parse(JSON.stringify(this.graphService.toIdentity(this.identity))); //deep copy
         if (this.graphService.isGroup(identity)) {
@@ -4875,12 +5076,13 @@ var ChatPage = /** @class */ (function () {
         this.rid = rids.rid;
         this.requested_rid = rids.requested_rid;
         this.requester_rid = rids.requester_rid;
-        this.storage.get('blockchainAddress').then(function (blockchainAddress) {
+        this.storage.get("blockchainAddress").then(function (blockchainAddress) {
             _this.blockchainAddress = blockchainAddress;
         });
         this.refresh(null, true);
-        this.events.subscribe('newchat', function () {
-            _this.navCtrl.getActive().component.name === 'ChatPage' && _this.refresh(null);
+        this.events.subscribe("newchat", function () {
+            _this.navCtrl.getActive().component.name === "ChatPage" &&
+                _this.refresh(null);
         });
     }
     ChatPage.prototype.setRecipient = function (identity) {
@@ -4894,15 +5096,18 @@ var ChatPage = /** @class */ (function () {
         var rid = group ? this.requested_rid : this.rid;
         if (this.graphService.graph.messages[rid]) {
             this.chats = this.graphService.graph.messages[rid];
-            this.graphService.sortInt(this.chats, 'time', true);
+            this.graphService.sortInt(this.chats, "time", true);
             for (var i = 0; i < this.chats.length; i++) {
                 if (!group) {
-                    this.chats[i].relationship.identity = (this.chats[i].public_key === this.bulletinSecretService.identity.public_key ?
-                        this.bulletinSecretService.identity :
-                        this.graphService.getIdentityFromTxn(this.graphService.friends_indexed[rid], this.settingsService.collections.CONTACT));
+                    this.chats[i].relationship.identity =
+                        this.chats[i].public_key ===
+                            this.bulletinSecretService.identity.public_key
+                            ? this.bulletinSecretService.identity
+                            : this.graphService.getIdentityFromTxn(this.graphService.friends_indexed[rid], this.settingsService.collections.CONTACT);
                 }
                 var datetime = new Date(parseInt(this.chats[i].time) * 1000);
-                this.chats[i].time = datetime.toLocaleDateString() + ' ' + datetime.toLocaleTimeString();
+                this.chats[i].time =
+                    datetime.toLocaleDateString() + " " + datetime.toLocaleTimeString();
             }
         }
         else {
@@ -4922,7 +5127,12 @@ var ChatPage = /** @class */ (function () {
         else {
             collection = this.settingsService.collections.CHAT;
         }
-        return this.graphService.getMessages([this.graphService.groups_indexed[this.requested_rid] ? this.requested_rid : this.rid], collection, true)
+        return this.graphService
+            .getMessages([
+            this.graphService.groups_indexed[this.requested_rid]
+                ? this.requested_rid
+                : this.rid,
+        ], collection, true)
             .then(function () {
             _this.loading = false;
             if (refresher)
@@ -4944,7 +5154,10 @@ var ChatPage = /** @class */ (function () {
         reader.readAsDataURL($event.target.files[0]);
         reader.onload = function () {
             _this.filedata = reader.result.toString().substr(22);
-            _this.ahttp.post(_this.settingsService.remoteSettings['baseUrl'] + '/sia-upload?filename=' + encodeURIComponent(_this.filepath), { file: _this.filedata })
+            _this.ahttp
+                .post(_this.settingsService.remoteSettings["baseUrl"] +
+                "/sia-upload?filename=" +
+                encodeURIComponent(_this.filepath), { file: _this.filedata })
                 .subscribe(function (res) {
                 var data = res.json();
                 if (!data.skylink)
@@ -4961,7 +5174,7 @@ var ChatPage = /** @class */ (function () {
         var rid = this.graphService.generateRid(identity.username_signature, this.bulletinSecretService.identity.username_signature);
         var cached_identity = this.graphService.friends_indexed[rid];
         this.navCtrl.push(__WEBPACK_IMPORTED_MODULE_9__profile_profile__["a" /* ProfilePage */], {
-            identity: this.graphService.getIdentityFromTxn(cached_identity) || identity
+            identity: this.graphService.getIdentityFromTxn(cached_identity) || identity,
         });
     };
     ChatPage.prototype.send = function () {
@@ -4972,81 +5185,98 @@ var ChatPage = /** @class */ (function () {
     };
     ChatPage.prototype.sendMessagePromise = function () {
         var _this = this;
-        return this.walletService.get(this.amount || 0)
-            .then(function () {
-            if (_this.graphService.isGroup(_this.identity)) {
-                var group = _this.graphService.getIdentityFromTxn(_this.graphService.groups_indexed[_this.requested_rid], _this.settingsService.collections.GROUP);
-                var info = {
-                    relationship: {
-                        identity: _this.bulletinSecretService.identity,
-                        skylink: _this.skylink,
-                        filename: _this.filepath
-                    },
-                    rid: _this.rid,
-                    requester_rid: _this.requester_rid,
-                    requested_rid: _this.requested_rid,
-                    group: true,
-                    shared_secret: group.username_signature,
-                    outputs: []
-                };
-                if (_this.recipient && _this.amount) {
-                    info.to = _this.bulletinSecretService.publicKeyToAddress(_this.recipient.public_key);
-                    info.value = _this.amount;
-                    info.relationship.recipient = _this.recipient;
+        return this.walletService
+            .get(this.amount || 0)
+            .then(function () { return __awaiter(_this, void 0, void 0, function () {
+            var group, info, _a, dh_public_key, dh_private_key, privk, pubk, shared_secret, info, _b;
+            var _this = this;
+            return __generator(this, function (_c) {
+                switch (_c.label) {
+                    case 0:
+                        if (!this.graphService.isGroup(this.identity)) return [3 /*break*/, 3];
+                        group = this.graphService.getIdentityFromTxn(this.graphService.groups_indexed[this.requested_rid], this.settingsService.collections.GROUP);
+                        info = {
+                            relationship: {
+                                identity: this.bulletinSecretService.identity,
+                                skylink: this.skylink,
+                                filename: this.filepath,
+                            },
+                            rid: this.rid,
+                            requester_rid: this.requester_rid,
+                            requested_rid: this.requested_rid,
+                            group: true,
+                            shared_secret: group.username_signature,
+                            outputs: [],
+                        };
+                        if (!(this.recipient && this.amount)) return [3 /*break*/, 2];
+                        _a = info;
+                        return [4 /*yield*/, this.bulletinSecretService.publicKeyToAddress(this.recipient.public_key)];
+                    case 1:
+                        _a.to = _c.sent();
+                        info.value = this.amount;
+                        info.relationship.recipient = this.recipient;
+                        _c.label = 2;
+                    case 2:
+                        info.relationship[this.settingsService.collections.GROUP_CHAT] =
+                            this.recipient && this.amount
+                                ? "Sent " + this.amount + " YDA to " + this.recipient.username
+                                : this.chatText;
+                        return [2 /*return*/, this.transactionService.generateTransaction(info)];
+                    case 3:
+                        dh_public_key = this.graphService.keys[this.rid].dh_public_keys[0];
+                        dh_private_key = this.graphService.keys[this.rid].dh_private_keys[0];
+                        if (!(dh_public_key && dh_private_key)) return [3 /*break*/, 6];
+                        privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
+                            return parseInt(h, 16);
+                        }));
+                        pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
+                            return parseInt(h, 16);
+                        }));
+                        shared_secret = this.toHex(X25519.getSharedKey(privk, pubk));
+                        info = {
+                            dh_public_key: dh_public_key,
+                            dh_private_key: dh_private_key,
+                            relationship: {
+                                skylink: this.skylink,
+                                filename: this.filepath,
+                            },
+                            shared_secret: shared_secret,
+                            rid: this.rid,
+                            requester_rid: this.requester_rid,
+                            requested_rid: this.requested_rid,
+                            outputs: [],
+                        };
+                        if (!(this.recipient && this.amount)) return [3 /*break*/, 5];
+                        _b = info;
+                        return [4 /*yield*/, this.bulletinSecretService.publicKeyToAddress(this.recipient.public_key)];
+                    case 4:
+                        _b.to = _c.sent();
+                        info.value = this.amount;
+                        info.relationship.recipient = this.recipient;
+                        _c.label = 5;
+                    case 5:
+                        info.relationship[this.settingsService.collections.CHAT] =
+                            this.recipient && this.amount
+                                ? "Sent " + this.amount + " YDA to " + this.recipient.username
+                                : this.chatText;
+                        return [2 /*return*/, this.transactionService.generateTransaction(info)];
+                    case 6: return [2 /*return*/, new Promise(function (resolve, reject) {
+                            var alert = _this.alertCtrl.create();
+                            alert.setTitle("Friendship not yet processed");
+                            alert.setSubTitle("Please wait a few minutes and try again");
+                            alert.addButton("Ok");
+                            alert.present();
+                            return reject("failed to create friend request");
+                        })];
                 }
-                info.relationship[_this.settingsService.collections.GROUP_CHAT] = _this.recipient && _this.amount ? 'Sent ' + _this.amount + ' YDA to ' + _this.recipient.username : _this.chatText;
-                ;
-                return _this.transactionService.generateTransaction(info);
-            }
-            else {
-                var dh_public_key = _this.graphService.keys[_this.rid].dh_public_keys[0];
-                var dh_private_key = _this.graphService.keys[_this.rid].dh_private_keys[0];
-                if (dh_public_key && dh_private_key) {
-                    var privk = new Uint8Array(dh_private_key.match(/[\da-f]{2}/gi).map(function (h) {
-                        return parseInt(h, 16);
-                    }));
-                    var pubk = new Uint8Array(dh_public_key.match(/[\da-f]{2}/gi).map(function (h) {
-                        return parseInt(h, 16);
-                    }));
-                    var shared_secret = _this.toHex(X25519.getSharedKey(privk, pubk));
-                    // camera permission was granted
-                    var info = {
-                        dh_public_key: dh_public_key,
-                        dh_private_key: dh_private_key,
-                        relationship: {
-                            skylink: _this.skylink,
-                            filename: _this.filepath
-                        },
-                        shared_secret: shared_secret,
-                        rid: _this.rid,
-                        requester_rid: _this.requester_rid,
-                        requested_rid: _this.requested_rid,
-                        outputs: []
-                    };
-                    if (_this.recipient && _this.amount) {
-                        info.to = _this.bulletinSecretService.publicKeyToAddress(_this.recipient.public_key);
-                        info.value = _this.amount;
-                        info.relationship.recipient = _this.recipient;
-                    }
-                    info.relationship[_this.settingsService.collections.CHAT] = _this.recipient && _this.amount ? 'Sent ' + _this.amount + ' YDA to ' + _this.recipient.username : _this.chatText;
-                    return _this.transactionService.generateTransaction(info);
-                }
-                else {
-                    return new Promise(function (resolve, reject) {
-                        var alert = _this.alertCtrl.create();
-                        alert.setTitle('Friendship not yet processed');
-                        alert.setSubTitle('Please wait a few minutes and try again');
-                        alert.addButton('Ok');
-                        alert.present();
-                        return reject('failed to create friend request');
-                    });
-                }
-            }
-        }).then(function (txn) {
+            });
+        }); })
+            .then(function (txn) {
             return _this.transactionService.sendTransaction();
-        }).then(function () {
+        })
+            .then(function () {
             _this.busy = false;
-            _this.chatText = '';
+            _this.chatText = "";
             _this.skylink = null;
             _this.filedata = null;
             _this.filepath = null;
@@ -5058,9 +5288,9 @@ var ChatPage = /** @class */ (function () {
             _this.busy = false;
             console.log(err);
             var alert = _this.alertCtrl.create();
-            alert.setTitle('Message error');
+            alert.setTitle("Message error");
             alert.setSubTitle(err);
-            alert.addButton('Ok');
+            alert.addButton("Ok");
             alert.present();
         });
     };
@@ -5074,17 +5304,17 @@ var ChatPage = /** @class */ (function () {
     };
     ChatPage.prototype.toHex = function (byteArray) {
         var callback = function (byte) {
-            return ('0' + (byte & 0xFF).toString(16)).slice(-2);
+            return ("0" + (byte & 0xff).toString(16)).slice(-2);
         };
-        return Array.from(byteArray, callback).join('');
+        return Array.from(byteArray, callback).join("");
     };
     ChatPage = __decorate([
         Object(__WEBPACK_IMPORTED_MODULE_0__angular_core__["n" /* Component */])({
-            selector: 'page-chat',template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-list>\n    <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.CHAT]">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.GROUP_CHAT]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n        <button *ngIf="!graphService.isMe(item.relationship.identity) && !settingsService.remoteSettings.restricted" ion-button small secondary title="Send Yada Coins!" (click)="setRecipient(item.relationship.identity)" class="coin-button">\n          <ion-icon name="cash"></ion-icon>\n        </button>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n    </ion-item>\n  </ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon *ngIf="graphService.isAdded(recipient)" name="checkmark-circle" class="success"></ion-icon> <ion-icon name="close-circle" class="grey" (click)="removeRecipient()"></ion-icon></ion-item>\n  <ion-item *ngIf="recipient">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Enter an amount" [(ngModel)]="amount"></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!recipient">\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()" #input></ion-input>\n  </ion-item>\n  <button *ngIf="!recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <button *ngIf="recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send Coins<ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/chat/chat.html"*/,
+            selector: "page-chat",template:/*ion-inline-start:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/chat/chat.html"*/'<ion-header>\n  <ion-navbar>\n    <button ion-button menuToggle color="{{color}}">\n      <ion-icon name="menu"></ion-icon>\n    </button>\n    <ion-title>{{label}}</ion-title>\n  </ion-navbar>\n</ion-header>\n<ion-content #content>\n  <ion-refresher (ionRefresh)="refresh($event)">\n    <ion-refresher-content></ion-refresher-content>\n  </ion-refresher>\n  <ion-spinner *ngIf="loading"></ion-spinner>\n  <ion-list>\n    <ion-item *ngFor="let item of chats" text-wrap>\n        <strong>\n          <span ion-text style="font-size: 20px;" (click)="viewProfile(item)">{{item.relationship.identity ? item.relationship.identity.username : \'Anonymous\'}}</span>\n        </strong>\n        <span style="font-size: 10px; color: rgb(88, 88, 88);" ion-text>{{item.time}}</span>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.CHAT]">{{item.relationship[settingsService.collections.CHAT]}}</h3>\n        <h3 *ngIf="!item.relationship.isInvite && item.relationship[settingsService.collections.GROUP_CHAT]">{{item.relationship[settingsService.collections.GROUP_CHAT]}}</h3>\n        <button *ngIf="!graphService.isMe(item.relationship.identity) && !settingsService.remoteSettings.restricted" ion-button small secondary title="Send Yada Coins!" (click)="setRecipient(item.relationship.identity)" class="coin-button">\n          <ion-icon name="cash"></ion-icon>\n        </button>\n        <h3 *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true">Invite to join {{item.relationship[settingsService.collections.CHAT].username}}</h3>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group === true" ion-button (click)="joinGroup(item)">Join group</button>\n        <button *ngIf="item.relationship.isInvite && item.relationship[settingsService.collections.CHAT].group !== true" ion-button (click)="requestFriend(item)">Join group</button>\n        <a href="https://centeridentity.com/sia-download?skylink={{item.relationship.skylink}}" target="_blank" *ngIf="item.relationship.skylink">Download {{item.relationship.filename}}</a>\n        <hr />\n    </ion-item>\n  </ion-list>\n</ion-content>\n<ion-footer>\n  <ion-item *ngIf="recipient" title="Verified" class="sender">{{recipient.username}} <ion-icon *ngIf="graphService.isAdded(recipient)" name="checkmark-circle" class="success"></ion-icon> <ion-icon name="close-circle" class="grey" (click)="removeRecipient()"></ion-icon></ion-item>\n  <ion-item *ngIf="recipient">\n    <ion-label color="primary" fixed>Amount</ion-label>\n    <ion-input type="number" placeholder="Enter an amount" [(ngModel)]="amount"></ion-input>\n  </ion-item>\n  <ion-item *ngIf="!recipient">\n    <ion-label floating>Chat text</ion-label>\n    <ion-input [(ngModel)]="chatText" (keyup.enter)="send()" #input></ion-input>\n  </ion-item>\n  <button *ngIf="!recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send <ion-spinner *ngIf="busy"></ion-spinner></button>\n  <button *ngIf="recipient" ion-button (click)="send()" [disabled]="busy && !chatText">Send Coins<ion-spinner *ngIf="busy"></ion-spinner></button>\n  <ion-input type="file" (change)="changeListener($event)" *ngIf="settingsService.remoteSettings.restricted"></ion-input>\n</ion-footer>'/*ion-inline-end:"/Users/matt.vogel/dev/yadacoinmobile/src/pages/chat/chat.html"*/,
             queries: {
-                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('content'),
-                input: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]('input')
-            }
+                content: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]("content"),
+                input: new __WEBPACK_IMPORTED_MODULE_0__angular_core__["_14" /* ViewChild */]("input"),
+            },
         }),
         __metadata("design:paramtypes", [__WEBPACK_IMPORTED_MODULE_1_ionic_angular__["i" /* NavController */],
             __WEBPACK_IMPORTED_MODULE_1_ionic_angular__["j" /* NavParams */],
@@ -5200,7 +5430,11 @@ var SendReceive = /** @class */ (function () {
         this.isDevice = null;
         if (this.navParams.get("identity")) {
             this.identity = this.navParams.get("identity");
-            this.address = this.bulletinSecretService.publicKeyToAddress(this.identity.public_key);
+            this.bulletinSecretService
+                .publicKeyToAddress(this.identity.public_key)
+                .then(function (address) {
+                _this.address = address;
+            });
         }
         this.recipients = [
             {
