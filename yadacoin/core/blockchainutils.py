@@ -176,11 +176,23 @@ class BlockChainUtils(object):
                 "$group": {
                     "_id": None,
                     "spent_balance": {"$sum": "$transactions.outputs.value"},
+                    "total_fee": {"$sum": "$transactions.fee"}
                 }
             },
+            {
+                "$project": {
+                    "total_spent_balance": {
+                        "$add": ["$spent_balance", "$total_fee"]
+                    }
+                }
+            }
         ]
         result = await self.mongo.async_db.blocks.aggregate(pipeline).to_list(length=1)
-        return result[0]["spent_balance"] if result else 0.0
+        
+        if result:
+            return result[0]["total_spent_balance"]
+        
+        return 0.0
 
     async def get_final_balance(self, address):
         total_coinbase = await self.get_coinbase_total_output_balance(address)
