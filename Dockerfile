@@ -16,5 +16,8 @@ RUN pip install --no-cache-dir -r requirements.txt --src /usr/local/src
 # Copy the application code into the container
 COPY . .
 
+# Find and install requirements.txt files in the plugins subfolder
+RUN find plugins -name "requirements.txt" -exec pip install --no-cache-dir -r {} \;
+
 # Command to run the application
 CMD ["python", "yadacoin/app.py", "--config=config/config.json", "--mongohost=mongodb"]
