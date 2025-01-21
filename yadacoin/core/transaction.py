@@ -549,7 +549,13 @@ class Transaction(object):
 
             if check_input_spent:
                 is_input_spent = await self.config.BU.is_input_spent(
-                    txn_input.transaction_signature, self.public_key
+                    txn_input.transaction_signature,
+                    self.public_key,
+                    from_index=(
+                        self.extra_blocks[0].index
+                        if self.extra_blocks
+                        else self.config.LatestBlock.block.index
+                    ),
                 )
                 if is_input_spent:
                     raise Exception("Input already spent")

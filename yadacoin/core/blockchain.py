@@ -219,7 +219,9 @@ class Blockchain(object):
                     is_input_spent = await config.BU.is_input_spent(
                         x.id,
                         transaction.public_key,
-                        from_index=block.index,
+                        from_index=(
+                            extra_blocks[0].index if extra_blocks else block.index
+                        ),
                         extra_blocks=extra_blocks,
                     )
                     if is_input_spent:
