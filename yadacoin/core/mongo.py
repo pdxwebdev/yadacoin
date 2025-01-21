@@ -975,10 +975,6 @@ class Mongo(object):
                     "id": "MEUCIQC5J3qKoR6QF5e7h9DmWMB/OU+x+ApASqkykx77FRfdowIgeF+fxe9tudwzZKiJBMTN29XdE64Tf95Y4U0pQoNF04o=",
                 }
             )
-        doc_count = self.db.blocks.count_documents({}) - 1
-        latest_block = self.db.blocks.find_one({}, sort=[("index", -1)])
-        if doc_count != latest_block["index"]:
-            raise Exception("Missing block!")
 
 
 class DeuggingListener(CommandListener):
