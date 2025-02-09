@@ -12,6 +12,7 @@ from yadacoin.http.base import BaseHandler
 
 # Store connections
 connections = {}
+groups = {}
 
 
 class MainHandler(BaseHandler):
@@ -73,6 +74,18 @@ class PeerWebSocketHandler(tornado.websocket.WebSocketHandler):
             data = json.loads(message)
             print("Received message:", data)
             message_type = data.get("type")
+
+            if message_type == "JOIN_GROUP":
+                group = data.get("group")
+                if group:
+                    if group not in groups:
+                        groups[group] = []
+                    else:
+                        for conn in groups[group]:
+                            self.write(
+                                conn.peer_id
+                            )  # after the peer id is received by the browser, it sends an offer
+                    groups[group].append(self)
 
             if message_type in ["OFFER", "CANDIDATE", "ANSWER"]:
                 # Forward offer to the target peer

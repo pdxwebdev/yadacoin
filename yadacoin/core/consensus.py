@@ -554,6 +554,4 @@ class Consensus(object):
 
             return True
         except Exception:
-            from traceback import format_exc
-
             self.app_log.warning("{}".format(format_exc()))

@@ -2,7 +2,6 @@
 Handlers required by the pool operations
 """
 
-
 from yadacoin.http.base import BaseHandler
 
 
@@ -89,9 +88,15 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
         self.render_as_json({"status": True})
 
 
+class PoolForceRefresh(BaseHandler):
+    async def get(self):
+        await self.config.mp.refresh()
+
+
 POOL_HANDLERS = [
     (r"/shares-for-address", PoolSharesHandler),
     (r"/payouts-for-address", PoolPayoutsHandler),
     (r"/hashrate-for-address", PoolHashRateHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
+    (r"/force-refresh", PoolForceRefresh),
 ]

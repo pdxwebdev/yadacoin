@@ -8,7 +8,6 @@ from datetime import timedelta
 from decimal import Decimal, getcontext
 from logging import getLogger
 
-import pyrx
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
@@ -16,9 +15,19 @@ from tornado.iostream import StreamClosedError
 from tornado.tcpclient import TCPClient
 from tornado.util import TimeoutError
 
+import pyrx
 import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
+from yadacoin.core.keyeventlog import (
+    FatalKeyEventException,
+    KELException,
+    KELHashCollection,
+    KeyEvent,
+    KeyEventChainStatus,
+    KeyEventException,
+    KeyEventLog,
+)
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.transaction import (
@@ -266,8 +275,10 @@ class Block(object):
                 )
             ]
             masternode_reward_total = block_reward * 0.1
-
-            successful_nodes = await test_all_nodes(nodes)
+            if config.network == "regnet":
+                successful_nodes = []
+            else:
+                successful_nodes = await test_all_nodes(nodes)
             if successful_nodes:
                 if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                     masternode_fee_sum = sum(
@@ -327,6 +338,69 @@ class Block(object):
             public_key=public_key,
             target=target,
         )
+
+        if block.index >= CHAIN.CHECK_KEL_FORK:
+            # check if this transaction public key is listed in any KEL
+            # if it is, try to create a key even log
+            hash_collection = await KELHashCollection.init_async(block)
+            for txn in block.transactions[:]:
+                if txn not in block.transactions:
+                    continue  # it's already been deleted dude its failed counterpart
+                has_kel = await txn.has_key_event_log()
+                if not has_kel:
+                    if txn.prev_public_key_hash:
+                        other_txn_to_delete = hash_collection.prerotated_key_hashes.get(
+                            txn.twice_prerotated_key_hash
+                        )
+                        if not other_txn_to_delete:
+                            other_txn_to_delete = (
+                                hash_collection.twice_prerotated_key_hashes.get(
+                                    txn.prerotated_key_hash
+                                )
+                            )
+                        config.app_log.info(
+                            f"Fatal - Txn removed from block: {txn.transaction_signature}"
+                        )
+                        await config.mongo.async_db.miner_transactions.delete_one(
+                            {"id": txn.transaction_signature}
+                        )
+                        block.transactions.remove(txn)
+                        if other_txn_to_delete:
+                            await config.mongo.async_db.miner_transactions.delete_one(
+                                {"id": other_txn_to_delete.transaction_signature}
+                            )
+                            block.transactions.remove(other_txn_to_delete)
+
+                            config.app_log.info(
+                                f"Fatal - Linked txn removed from block: {other_txn_to_delete.transaction_signature}"
+                            )
+                    continue
+                key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
+                try:
+                    key_event_log = await KeyEventLog.init_async(
+                        key_event, hash_collection
+                    )
+                    if key_event_log.unconfirmed_key_event:
+                        for output in key_event_log.unconfirmed_key_event.txn.outputs:
+                            if output.to in hash_collection.public_key_hashes:
+                                raise KELException(
+                                    "Unconfirmed key event sends to a key event in the mempool."
+                                )
+                except (KELException, KeyEventException) as e:
+                    config.app_log.info(f"Txn removed from block: {e}")
+                    block.transactions.remove(txn)
+                except FatalKeyEventException as e:
+                    config.app_log.info(f"Fatal - Txn removed from block: {e}")
+                    await config.mongo.async_db.miner_transactions.delete_one(
+                        {"id": txn.transaction_signature}
+                    )
+                    block.transactions.remove(txn)
+                    if e.other_txn_to_delete:
+                        await config.mongo.async_db.miner_transactions.delete_one(
+                            {"id": e.other_txn_to_delete.transaction_signature}
+                        )
+                        block.transactions.remove(e.other_txn_to_delete)
+
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
         block.header = block.generate_header()
@@ -357,9 +431,14 @@ class Block(object):
                 if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                     check_masternode_fee = True
 
+                check_kel = False
+                if index >= CHAIN.CHECK_KEL_FORK:
+                    check_kel = True
+
                 await transaction_obj.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
+                    check_kel=check_kel,
                 )
                 for output in transaction_obj.outputs:
                     if not config.address_is_valid(output.to):
@@ -593,6 +672,22 @@ class Block(object):
                 # raise Exception("Block embeds txn too far in the future")
                 pass
 
+            if self.index >= CHAIN.CHECK_KEL_FORK:
+                # check if this transaction public key is listed in any KEL
+                # if it is, check if it's a valid key event
+                if await txn.has_key_event_log():
+                    kel_hash_collection = await KELHashCollection.init_async(
+                        self, verify_only=True
+                    )
+                    txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
+                    txn_key_event.verify()
+                    await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
+                else:
+                    if txn.prev_public_key_hash:
+                        raise KELException(
+                            "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
+                        )
+
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
                     block_creator_address = str(
@@ -651,7 +746,7 @@ class Block(object):
         if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             masternode_sum = sum(x for x in masternode_sums.values())
             if quantize_eight(fee_sum + masternode_fee_sum) != quantize_eight(
-                (coinbase_sum + masternode_sum) - reward
+                (coinbase_sum + (masternode_sum or reward - coinbase_sum)) - reward
             ):
                 raise TotalValueMismatchException(
                     "Masternode output totals do not equal block reward + masternode transaction fees",

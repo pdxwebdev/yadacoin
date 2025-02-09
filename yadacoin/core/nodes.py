@@ -323,6 +323,21 @@ class Seeds(Nodes):
                     }
                 ),
             },
+            {
+                "ranges": [(522000, None)],
+                "node": Seed.from_dict(
+                    {
+                        "host": "seed.yadaid.au",
+                        "port": 8001,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEQCIDutdOZzlHtNCuALhNI6U9f91lDixf4l4owUqb0WPILCAiBbaHqiuTf4buogQ+67k7FztznKISufCgBZx6muhLTK0g==",
+                            "public_key": "021dd60d6cf94a8964274d0a4ed95398e588f9b05a8df2c69f7538159910638a57",
+                        },
+                        "seed_gateway": "MEUCIQDDPFg2GcvhNy3aB+6/rprlhaiexnemo2bg7ovDjQUtrQIgSkhwJGQVe2+f83W7PzOIZWo9k5CbtI6BIcs5zqnQ7eo=",
+                    }
+                ),
+            },
         ]
 
         Seeds.set_fork_points()
@@ -579,6 +594,21 @@ class SeedGateways(Nodes):
                             "public_key": "020ce4988acc611e651d539cc2064ec12e04f22b0f95f54cbdfb223174c0d6ee7f",
                         },
                         "seed": "MEUCIQD0MsT34TkNpYL5kOhLA/4E4YY+SzFhHtIPWPzHCShVGwIgYlzAQeujWvesmU6ZWrTMRwtLFFtjePZjLJDJjTMEQlc=",
+                    }
+                ),
+            },
+            {
+                "ranges": [(522000, None)],
+                "node": SeedGateway.from_dict(
+                    {
+                        "host": "seedgateway.yadaid.au",
+                        "port": 8001,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEUCIQDDPFg2GcvhNy3aB+6/rprlhaiexnemo2bg7ovDjQUtrQIgSkhwJGQVe2+f83W7PzOIZWo9k5CbtI6BIcs5zqnQ7eo=",
+                            "public_key": "0327fde5ba4541a19376cd8af41cb22f4aeac39df1e1dfab7b054ceefb2f77c7d6",
+                        },
+                        "seed": "MEQCIDutdOZzlHtNCuALhNI6U9f91lDixf4l4owUqb0WPILCAiBbaHqiuTf4buogQ+67k7FztznKISufCgBZx6muhLTK0g==",
                     }
                 ),
             },
@@ -854,6 +884,22 @@ class ServiceProviders(Nodes):
                         },
                         "seed_gateway": "MEUCIQC/PWvXpjny1yDGDPRtBzl6g7Lb9lcUuI0v0Kf6wxYi4AIgeRb5PtNhO2Eks6iiPEBuebKuXSeTM9euU9sWqOZYUec=",
                         "seed": "MEUCIQD0MsT34TkNpYL5kOhLA/4E4YY+SzFhHtIPWPzHCShVGwIgYlzAQeujWvesmU6ZWrTMRwtLFFtjePZjLJDJjTMEQlc==",
+                    }
+                ),
+            },
+            {
+                "ranges": [(522000, None)],
+                "node": ServiceProvider.from_dict(
+                    {
+                        "host": "serviceprovider.yadaid.au",
+                        "port": 8001,
+                        "identity": {
+                            "username": "",
+                            "username_signature": "MEQCICmKX5wUJGm/rGe1tnoL1I3eA2V5jFaJk0WUQe7cHIABAiBi+BnM3emLl4nQp+alleXYWm3KLmqaXRP9zp+yfm9E1w==",
+                            "public_key": "03b7e27e592af0b385c71b791910d172bddf9659e71aae0a39572f223bb7c26856",
+                        },
+                        "seed_gateway": "MEUCIQDDPFg2GcvhNy3aB+6/rprlhaiexnemo2bg7ovDjQUtrQIgSkhwJGQVe2+f83W7PzOIZWo9k5CbtI6BIcs5zqnQ7eo=",
+                        "seed": "MEQCIDutdOZzlHtNCuALhNI6U9f91lDixf4l4owUqb0WPILCAiBbaHqiuTf4buogQ+67k7FztznKISufCgBZx6muhLTK0g==",
                     }
                 ),
             },

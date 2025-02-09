@@ -160,6 +160,7 @@ class Config:
         self.http_request_timeout = config.get("http_request_timeout", 3000)
 
         self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
+        self.balance_min_utxo = config.get("balance_min_utxo", 1)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -348,6 +349,7 @@ class Config:
                 "dns_resolvers": [],
                 "dns_bypass_ips": [],
                 "masternode_fee_minimum": 1,
+                "balance_min_utxo": 1,
             }
         )
 
@@ -442,6 +444,7 @@ class Config:
         cls.http_request_timeout = config.get("http_request_timeout", 3000)
 
         cls.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
+        cls.balance_min_utxo = config.get("balance_min_utxo", 1)
 
     @staticmethod
     def address_is_valid(address):

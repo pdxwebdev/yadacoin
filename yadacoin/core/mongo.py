@@ -163,6 +163,30 @@ class Mongo(object):
             ],
             name="__txn_rel_smart_contract_expiry_txn_time",
         )
+        __txn_prerotated_key_hash = IndexModel(
+            [
+                ("transactions.prerotated_key_hash", ASCENDING),
+            ],
+            name="__txn_prerotated_key_hash",
+        )
+        __txn_twice_prerotated_key_hash = IndexModel(
+            [
+                ("transactions.twice_prerotated_key_hash", ASCENDING),
+            ],
+            name="__txn_twice_prerotated_key_hash",
+        )
+        __txn_public_key_hash = IndexModel(
+            [
+                ("transactions.public_key_hash", ASCENDING),
+            ],
+            name="__txn_public_key_hash",
+        )
+        __txn_prev_public_key_hash = IndexModel(
+            [
+                ("transactions.prev_public_key_hash", ASCENDING),
+            ],
+            name="__txn_prev_public_key_hash",
+        )
 
         try:
             self.db.blocks.create_indexes(
@@ -201,6 +225,10 @@ class Mongo(object):
                     __txn_outputs_to_index,
                     __txn_inputs_0,
                     __txn_rel_smart_contract_expiry_txn_time,
+                    __txn_prerotated_key_hash,
+                    __txn_twice_prerotated_key_hash,
+                    __txn_public_key_hash,
+                    __txn_prev_public_key_hash,
                 ]
             )
         except:

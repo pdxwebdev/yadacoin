@@ -219,11 +219,16 @@ class NodeRPC(BaseRPC):
         if self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             check_masternode_fee = True
 
+        check_kel = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         try:
             await txn.verify(
                 check_input_spent=True,
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
             )
         except Exception as e:
             await Transaction.handle_exception(e, txn)
@@ -375,12 +380,17 @@ class NodeRPC(BaseRPC):
         if self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             check_masternode_fee = True
 
+        check_kel = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
             try:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
+                    check_kel=check_kel,
                 )
             except Exception as e:
                 await Transaction.handle_exception(e, txn)

@@ -666,7 +666,7 @@ class ServiceProvider(Peer):
 
     @classmethod
     def compatible_types(cls):
-        return [ServiceProvider, User]
+        return [ServiceProvider, User, Pool]
 
     async def get_route_peers(self, peer, payload):
         if isinstance(peer, User):

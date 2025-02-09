@@ -117,10 +117,15 @@ class TU(object):  # Transaction Utilities
         if config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             check_masternode_fee = True
 
+        check_kel = False
+        if config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         try:
             await transaction.verify(
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
             )
         except TooManyInputsException as e:
             return {"status": "error", "message": e}

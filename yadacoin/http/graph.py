@@ -12,8 +12,8 @@ import uuid
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from eccsnacks.curve25519 import scalarmult_base
 
+from eccsnacks.curve25519 import scalarmult_base
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -193,6 +193,8 @@ class GraphTransactionHandler(BaseGraphHandler):
         self.render_as_json(list(transactions))
 
     async def post(self):
+        from yadacoin.core.keyeventlog import KELException
+
         await self.get_base_graph()  # TODO: did this to set username_signature, refactor this
         items = json.loads(self.request.body.decode("utf-8"))
         if not isinstance(items, list):
@@ -209,7 +211,18 @@ class GraphTransactionHandler(BaseGraphHandler):
                     check_input_spent=True,
                     check_masternode_fee=True,
                     check_max_inputs=True,
+                    check_kel=True,
                 )
+                has_kel = await transaction.has_key_event_log()
+                if has_kel:
+                    for output in transaction.outputs:
+                        all_unspent = [
+                            x
+                            async for x in self.config.BU.get_wallet_unspent_transactions_for_dusting(
+                                output.to, limit=100
+                            )
+                        ]
+
             except InvalidTransactionException:
                 await self.config.mongo.async_db.failed_transactions.insert_one(
                     {"exception": "InvalidTransactionException", "txn": txn}
@@ -228,6 +241,14 @@ class GraphTransactionHandler(BaseGraphHandler):
                 return self.render_as_json(
                     {"status": False, "message": "InvalidTransactionSignatureException"}
                 )
+            except KELException as e:
+                print("KELException")
+                await self.config.mongo.async_db.failed_transactions.insert_one(
+                    {"exception": "KELException", "txn": txn, "message": str(e)}
+                )
+                self.set_status(400)
+                return self.render_as_json({"status": False, "message": "KELException"})
+
             except MissingInputTransactionException:
                 pass
             except:
@@ -366,14 +387,15 @@ class GraphTransactionHandler(BaseGraphHandler):
 
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
-            async for peer_stream in self.config.peer.get_sync_peers():
-                await self.config.nodeShared.write_params(
-                    peer_stream, "newtxn", {"transaction": x.to_dict()}
-                )
-                if peer_stream.peer.protocol_version > 1:
-                    self.config.nodeClient.retry_messages[
-                        (peer_stream.peer.rid, "newtxn", x.transaction_signature)
-                    ] = {"transaction": x.to_dict()}
+            if "node" in self.config.modes:
+                async for peer_stream in self.config.peer.get_sync_peers():
+                    await self.config.nodeShared.write_params(
+                        peer_stream, "newtxn", {"transaction": x.to_dict()}
+                    )
+                    if peer_stream.peer.protocol_version > 1:
+                        self.config.nodeClient.retry_messages[
+                            (peer_stream.peer.rid, "newtxn", x.transaction_signature)
+                        ] = {"transaction": x.to_dict()}
 
         return self.render_as_json(items)
 
@@ -965,6 +987,36 @@ class MyRoutesHandler(BaseGraphHandler):
         return self.render_as_json({"routes": routes})
 
 
+class PrerotatedKeyForUserNameSignature(BaseGraphHandler):
+    async def get(self):
+        # once a user searches their contacts for a given RID,
+        # they grab the username signature and call this endpoint to get:
+        #   validity periods for a public key
+        #   latest public key hash
+        public_key = self.get_query_argument("public_key")
+        while await True:
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+            key_rotation = self.config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {
+                            "transactions.relationship.key_rotation.prerotated_key_hash": xaddress
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            "transactions.relationship.key_rotation.prerotated_key_hash": xaddress
+                        }
+                    },
+                ]
+            )
+            if not key_rotation:
+                break
+            public_key = key_rotation["public_key"]
+        return self.render_as_jason({"current_key": key_rotation})
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r"/yada-config", GraphConfigHandler),  # first the config is requested
@@ -1017,4 +1069,5 @@ GRAPH_HANDLERS = [
     (r"/challenge", ChallengeHandler),
     (r"/auth", AuthHandler),
     (r"/my-routes", MyRoutesHandler),
+    (r"/prerotated-key-hash-for-username-signature", PrerotatedKeyForUserNameSignature),
 ]
