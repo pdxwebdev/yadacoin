@@ -53,6 +53,10 @@ from yadacoin.core.transaction import (
 from yadacoin.core.transactionutils import TU
 
 
+class XeggexAccountFrozenException(Exception):
+    pass
+
+
 def quantize_eight(value):
     getcontext().prec = len(str(value)) + 8
     if value == -0.0:
@@ -760,6 +764,19 @@ class Block(object):
                 fee_sum += float(txn.fee)
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                     masternode_fee_sum += float(txn.masternode_fee)
+
+            if self.index >= CHAIN.XEGGEX_HACK_FORK:
+                if (
+                    txn.public_key
+                    == "02fd3ad0e7a613672d9927336d511916e15c507a1fab225ed048579e9880f15fed"
+                ):
+                    raise XeggexAccountFrozenException("Xeggex wallet has been frozen.")
+
+                for output in txn.outputs:
+                    if output.to == "1Kh8tcPNxJsDH4KJx4TzLbqWwihDfhFpzj":
+                        raise XeggexAccountFrozenException(
+                            "Xeggex wallet has been frozen."
+                        )
 
         reward = CHAIN.get_block_reward(self.index)
 

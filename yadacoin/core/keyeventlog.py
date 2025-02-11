@@ -277,40 +277,6 @@ class KeyEvent:
                 "key_event": key_event,
             }
 
-    async def is_orphan(self):
-        config = Config()
-        res = config.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.public_key_hash,
-                    },
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.public_key_hash,
-                    },
-                },
-                {"$limit": 1},
-            ]
-        )
-        result = await res.to_list(length=None)
-        if result:
-            txn = Transaction.from_dict(result[0]["transactions"])
-            key_event = KeyEvent(
-                txn,
-                flag=(
-                    KeyEventFlag.CONFIRMING
-                    if txn.prev_public_key_hash
-                    else KeyEventFlag.INCEPTION
-                ),
-                status=KeyEventChainStatus.ONCHAIN,
-            )
-            return {
-                "key_event": key_event,
-            }
-
     async def get_onchain_child(self):
         config = Config()
         res = config.mongo.async_db.blocks.aggregate(
@@ -331,8 +297,15 @@ class KeyEvent:
         )
         result = await res.to_list(length=None)
         if result:
+            txn = Transaction.from_dict(result[0]["transactions"])
             return KeyEvent(
-                Transaction.from_dict(result[0]["transactions"]), KeyEventFlag.ONCHAIN
+                txn,
+                flag=(
+                    KeyEventFlag.CONFIRMING
+                    if self.txn.prev_public_key_hash
+                    else KeyEventFlag.INCEPTION
+                ),
+                status=KeyEventChainStatus.ONCHAIN,
             )
 
 
@@ -606,7 +579,7 @@ class KeyEventLog:
             self.confirming_key_event.verify_confirming()
             self.verify_links()
 
-        # 5. Onchain, unconfirmed, and confirming
+        # 5. Onchain confirming, unconfirmed, and confirming
         elif (
             self.base_key_event
             and self.base_key_event.flag == KeyEventFlag.CONFIRMING
