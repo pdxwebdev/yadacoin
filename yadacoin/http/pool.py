@@ -101,9 +101,9 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
         self.render_as_json({"status": True})
 
 
-class PoolForceRefresh(BaseHandler):
-    async def get(self):
-        await self.config.mp.refresh()
+# class PoolForceRefresh(BaseHandler):
+#     async def get(self):
+#         await self.config.mp.refresh()
 
 
 POOL_HANDLERS = [
@@ -111,5 +111,5 @@ POOL_HANDLERS = [
     (r"/payouts-for-address", PoolPayoutsHandler),
     (r"/hashrate-for-address", PoolHashRateHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
-    (r"/force-refresh", PoolForceRefresh),
+    # (r"/force-refresh", PoolForceRefresh),
 ]
