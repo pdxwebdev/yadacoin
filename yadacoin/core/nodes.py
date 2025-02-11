@@ -337,7 +337,7 @@ class Seeds(Nodes):
                 ),
             },
             {
-                "ranges": [(522000, None)],
+                "ranges": [(530500, None)],
                 "node": Seed.from_dict(
                     {
                         "host": "seed.yadaid.au",
@@ -611,7 +611,7 @@ class SeedGateways(Nodes):
                 ),
             },
             {
-                "ranges": [(522000, None)],
+                "ranges": [(530500, None)],
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.yadaid.au",
@@ -901,7 +901,7 @@ class ServiceProviders(Nodes):
                 ),
             },
             {
-                "ranges": [(522000, None)],
+                "ranges": [(530500, None)],
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.yadaid.au",
