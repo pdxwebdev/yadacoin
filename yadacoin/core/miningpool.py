@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import json
 import random
 import uuid
@@ -63,7 +76,7 @@ class MiningPool(object):
                 "method": body.get("method"),
                 "jsonrpc": body.get("jsonrpc"),
             }
-            data["result"] = await self.process_nonce(miner, nonce, job)
+            data["result"] = await self.process_nonce(miner, nonce, job, body)
             if not data["result"]:
                 data["error"] = {"message": "Invalid hash for current block"}
             try:
@@ -84,7 +97,7 @@ class MiningPool(object):
 
             item = self.config.processing_queues.nonce_queue.pop()
 
-    async def process_nonce(self, miner, nonce, job):
+    async def process_nonce(self, miner, nonce, job, body):
         nonce = nonce + job.extra_nonce
         header = self.block_factory.header
         self.config.app_log.debug(f"Extra Nonce for job {job.index}: {job.extra_nonce}")
@@ -332,7 +345,7 @@ class MiningPool(object):
         return job
 
     async def generate_job(self, agent, peer_id):
-        difficulty = int(self.max_target / self.block_factory.target)
+        difficulty = int(self.max_target / (self.block_factory.target or 1))
         custom_diff = None
         miner_diff = (
             max(int(custom_diff), 50000)
@@ -425,6 +438,10 @@ class MiningPool(object):
         if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             check_masternode_fee = True
 
+        check_kel = False
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         async for txn in self.mongo.async_db.miner_transactions.find(
             {"relationship.smart_contract": {"$exists": True}}
         ).sort([("fee", -1), ("time", 1)]):
@@ -433,6 +450,7 @@ class MiningPool(object):
                 used_sigs,
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -460,6 +478,7 @@ class MiningPool(object):
                 used_sigs,
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -527,7 +546,12 @@ class MiningPool(object):
         )
 
     async def verify_pending_transaction(
-        self, txn, used_sigs, check_max_inputs=False, check_masternode_fee=False
+        self,
+        txn,
+        used_sigs,
+        check_max_inputs=False,
+        check_masternode_fee=False,
+        check_kel=False,
     ):
         try:
             if isinstance(txn, Transaction):
@@ -550,6 +574,7 @@ class MiningPool(object):
             await transaction_obj.verify(
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
             )
 
             if transaction_obj.transaction_signature in used_sigs:
@@ -615,8 +640,9 @@ class MiningPool(object):
             BlockProcessingQueueItem(Blockchain(block.to_dict()))
         )
 
-        await self.config.nodeShared.send_block_to_peers(block)
+        if self.config.network != "regnet":
+            await self.config.nodeShared.send_block_to_peers(block)
 
-        await self.config.websocketServer.send_block(block)
+            await self.config.websocketServer.send_block(block)
 
         await self.refresh()

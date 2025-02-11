@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 from time import time
 
 from motor.motor_tornado import MotorClient
@@ -163,6 +176,30 @@ class Mongo(object):
             ],
             name="__txn_rel_smart_contract_expiry_txn_time",
         )
+        __txn_prerotated_key_hash = IndexModel(
+            [
+                ("transactions.prerotated_key_hash", ASCENDING),
+            ],
+            name="__txn_prerotated_key_hash",
+        )
+        __txn_twice_prerotated_key_hash = IndexModel(
+            [
+                ("transactions.twice_prerotated_key_hash", ASCENDING),
+            ],
+            name="__txn_twice_prerotated_key_hash",
+        )
+        __txn_public_key_hash = IndexModel(
+            [
+                ("transactions.public_key_hash", ASCENDING),
+            ],
+            name="__txn_public_key_hash",
+        )
+        __txn_prev_public_key_hash = IndexModel(
+            [
+                ("transactions.prev_public_key_hash", ASCENDING),
+            ],
+            name="__txn_prev_public_key_hash",
+        )
 
         try:
             self.db.blocks.create_indexes(
@@ -201,6 +238,10 @@ class Mongo(object):
                     __txn_outputs_to_index,
                     __txn_inputs_0,
                     __txn_rel_smart_contract_expiry_txn_time,
+                    __txn_prerotated_key_hash,
+                    __txn_twice_prerotated_key_hash,
+                    __txn_public_key_hash,
+                    __txn_prev_public_key_hash,
                 ]
             )
         except:

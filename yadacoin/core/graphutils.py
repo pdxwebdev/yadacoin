@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import json
 from binascii import unhexlify
@@ -5,8 +18,8 @@ from logging import getLogger
 from time import time
 
 import bson
-from eccsnacks.curve25519 import scalarmult
 
+from eccsnacks.curve25519 import scalarmult
 from yadacoin.core.config import Config
 from yadacoin.core.crypt import Crypt
 from yadacoin.core.transaction import Transaction

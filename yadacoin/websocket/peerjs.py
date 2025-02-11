@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import json
 from pathlib import Path
@@ -12,6 +25,7 @@ from yadacoin.http.base import BaseHandler
 
 # Store connections
 connections = {}
+groups = {}
 
 
 class MainHandler(BaseHandler):
@@ -73,6 +87,18 @@ class PeerWebSocketHandler(tornado.websocket.WebSocketHandler):
             data = json.loads(message)
             print("Received message:", data)
             message_type = data.get("type")
+
+            if message_type == "JOIN_GROUP":
+                group = data.get("group")
+                if group:
+                    if group not in groups:
+                        groups[group] = []
+                    else:
+                        for conn in groups[group]:
+                            self.write(
+                                conn.peer_id
+                            )  # after the peer id is received by the browser, it sends an offer
+                    groups[group].append(self)
 
             if message_type in ["OFFER", "CANDIDATE", "ANSWER"]:
                 # Forward offer to the target peer

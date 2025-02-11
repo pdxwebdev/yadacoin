@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import hashlib
 import json
@@ -94,6 +107,9 @@ class Transaction(object):
         masternode_fee=0.0,
         exact_match=False,
         prerotated_key_hash="",
+        twice_prerotated_key_hash="",
+        public_key_hash="",
+        prev_public_key_hash="",
     ):
         self.app_log = getLogger("tornado.application")
         self.config = Config()
@@ -152,6 +168,9 @@ class Transaction(object):
         self.private = private
         self.exact_match = exact_match
         self.prerotated_key_hash = prerotated_key_hash
+        self.twice_prerotated_key_hash = twice_prerotated_key_hash
+        self.public_key_hash = public_key_hash
+        self.prev_public_key_hash = prev_public_key_hash
 
     @classmethod
     async def generate(
@@ -184,6 +203,9 @@ class Transaction(object):
         private=False,
         masternode_fee=0.0,
         prerotated_key_hash="",
+        twice_prerotated_key_hash="",
+        public_key_hash="",
+        prev_public_key_hash="",
     ):
         cls_inst = cls()
         cls_inst.config = Config()
@@ -212,6 +234,7 @@ class Transaction(object):
         )
         cls_inst.no_relationship = no_relationship
         cls_inst.exact_match = exact_match
+        cls_inst.version = 7
         cls_inst.version = version
         cls_inst.miner_signature = miner_signature
 
@@ -246,15 +269,20 @@ class Transaction(object):
         cls_inst.never_expire = never_expire
         cls_inst.private = private
         cls_inst.prerotated_key_hash = prerotated_key_hash
+        cls_inst.twice_prerotated_key_hash = twice_prerotated_key_hash
+        cls_inst.public_key_hash = public_key_hash
+        cls_inst.prev_public_key_hash = prev_public_key_hash
         return cls_inst
 
     async def do_money(self):
         if self.coinbase:
             self.inputs = []
             return
+
         outputs_and_fee_total = sum([x.value for x in self.outputs]) + self.fee
         if outputs_and_fee_total == 0:
             return
+
         my_address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
         )
@@ -395,6 +423,9 @@ class Transaction(object):
             never_expire=txn.get("never_expire", False),
             masternode_fee=float(txn.get("masternode_fee", 0)),
             prerotated_key_hash=txn.get("prerotated_key_hash", ""),
+            twice_prerotated_key_hash=txn.get("twice_prerotated_key_hash", ""),
+            public_key_hash=txn.get("public_key_hash", ""),
+            prev_public_key_hash=txn.get("prev_public_key_hash", ""),
         )
 
     def in_the_future(self):
@@ -501,8 +532,10 @@ class Transaction(object):
         check_input_spent=False,
         check_max_inputs=False,
         check_masternode_fee=False,
+        check_kel=False,
     ):
         from yadacoin.contracts.base import Contract
+        from yadacoin.core.keyeventlog import KELException
 
         if check_max_inputs and len(self.inputs) > CHAIN.MAX_INPUTS:
             raise TooManyInputsException(
@@ -511,6 +544,19 @@ class Transaction(object):
 
         verify_hash = await self.generate_hash()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+
+        if check_kel:
+            from yadacoin.core.keyeventlog import KeyEvent
+
+            has_kel = await self.has_key_event_log()
+
+            if has_kel:
+                txn_key_event = KeyEvent(self)
+                await txn_key_event.verify()
+            elif self.prev_public_key_hash:
+                raise KELException(
+                    "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
+                )
 
         if verify_hash != self.hash:
             raise InvalidTransactionException("transaction is invalid")
@@ -651,7 +697,38 @@ class Transaction(object):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship
-        if self.version == 6:
+        if self.version == 7:
+            if relationship:
+                relationship_hash = hashlib.sha256(relationship.encode()).digest().hex()
+                if relationship_hash != self.relationship_hash:
+                    raise InvalidRelationshipHashException()
+            else:
+                relationship_hash = self.relationship_hash
+            hashout = (
+                hashlib.sha256(
+                    (
+                        self.public_key
+                        + str(self.time)
+                        + self.dh_public_key
+                        + self.rid
+                        + relationship_hash
+                        + "{0:.8f}".format(self.fee)
+                        + "{0:.8f}".format(self.masternode_fee)
+                        + self.requester_rid
+                        + self.requested_rid
+                        + inputs_concat
+                        + outputs_concat
+                        + str(self.version)
+                        + self.prerotated_key_hash
+                        + self.twice_prerotated_key_hash
+                        + self.public_key_hash
+                        + self.prev_public_key_hash
+                    ).encode("utf-8")
+                )
+                .digest()
+                .hex()
+            )
+        elif self.version == 6:
             if relationship:
                 relationship_hash = hashlib.sha256(relationship.encode()).digest().hex()
                 if relationship_hash != self.relationship_hash:
@@ -938,6 +1015,90 @@ class Transaction(object):
                     if not found:
                         return block["index"]
 
+    def are_kel_fields_populated(self):
+        if self.twice_prerotated_key_hash:
+            return True
+
+        if self.prerotated_key_hash:
+            return True
+
+        if self.public_key_hash:
+            return True
+
+        if self.prev_public_key_hash:
+            return True
+        return False
+
+    async def is_already_onchain(self):
+        from yadacoin.core.keyeventlog import BlocksQueryFields
+
+        config = Config()
+        query = []
+        if self.twice_prerotated_key_hash:
+            query.append(
+                {
+                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.twice_prerotated_key_hash
+                }
+            )
+
+        if self.prerotated_key_hash:
+            query.append(
+                {BlocksQueryFields.PREROTATED_KEY_HASH.value: self.prerotated_key_hash}
+            )
+
+        if self.public_key_hash:
+            query.append(
+                {
+                    BlocksQueryFields.PUBLIC_KEY_HASH.value: self.public_key_hash,
+                }
+            )
+
+        if self.prev_public_key_hash:
+            query.append(
+                {
+                    BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: self.prev_public_key_hash,
+                }
+            )
+        if not query:
+            return False
+        result = await config.mongo.async_db.blocks.find_one(
+            {
+                "$or": query,
+            }
+        )
+        if result:
+            return True
+        return False
+
+    async def has_key_event_log(self):
+        from yadacoin.core.keyeventlog import BlocksQueryFields
+
+        # this function is the primary method for catching transactions which attempt
+        # sign a transaction with a stolen key. We must check if the transaction's
+        # public key is logged in the
+        config = Config()
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
+        query = {
+            "$or": [
+                {BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address},
+                {
+                    BlocksQueryFields.PREROTATED_KEY_HASH.value: address,
+                },
+            ],
+        }
+        result = await config.mongo.async_db.blocks.find_one(query)
+        if result:
+            return True
+        elif self.extra_blocks:
+            for block in self.extra_blocks:
+                for xtxn in block.transactions:
+                    if (
+                        xtxn.twice_prerotated_key_hash == address
+                        or xtxn.prerotated_key_hash == address
+                    ):
+                        return True
+        return False
+
     def to_dict(self):
         relationship = self.relationship
         if hasattr(relationship, "to_dict"):
@@ -959,6 +1120,9 @@ class Transaction(object):
             "private": self.private,
             "never_expire": self.never_expire,
             "prerotated_key_hash": self.prerotated_key_hash,
+            "twice_prerotated_key_hash": self.twice_prerotated_key_hash,
+            "public_key_hash": self.public_key_hash,
+            "prev_public_key_hash": self.prev_public_key_hash,
         }
         if self.dh_public_key:
             ret["dh_public_key"] = self.dh_public_key

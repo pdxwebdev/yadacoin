@@ -1,7 +1,19 @@
 """
-Handlers required by the pool operations
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
 """
 
+"""
+Handlers required by the pool operations
+"""
 
 from yadacoin.http.base import BaseHandler
 
@@ -89,9 +101,15 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
         self.render_as_json({"status": True})
 
 
+# class PoolForceRefresh(BaseHandler):
+#     async def get(self):
+#         await self.config.mp.refresh()
+
+
 POOL_HANDLERS = [
     (r"/shares-for-address", PoolSharesHandler),
     (r"/payouts-for-address", PoolPayoutsHandler),
     (r"/hashrate-for-address", PoolHashRateHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
+    # (r"/force-refresh", PoolForceRefresh),
 ]

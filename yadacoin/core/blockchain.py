@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 from time import time
 
 from asyncstdlib import anext, islice
@@ -179,6 +192,10 @@ class Blockchain(object):
         if block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             check_masternode_fee = True
 
+        check_kel = False
+        if block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         used_inputs = {}
         i = 0
         async for transaction in Blockchain.get_txns(block.transactions):
@@ -190,6 +207,7 @@ class Blockchain(object):
                 await transaction.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
+                    check_kel=check_kel,
                 )
             except InvalidTransactionException as e:
                 config.app_log.warning(e)
@@ -341,10 +359,15 @@ class Blockchain(object):
             if block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                 check_masternode_fee = True
 
+            check_kel = False
+            if block.index >= CHAIN.CHECK_KEL_FORK:
+                check_kel = True
+
             for txn in block.transactions:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
+                    check_kel=check_kel,
                 )
             if last_block:
                 if int(block.index) - int(last_block.index) > 1:

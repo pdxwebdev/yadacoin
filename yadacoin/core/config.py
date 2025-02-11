@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import binascii
 import hashlib
@@ -160,6 +173,7 @@ class Config:
         self.http_request_timeout = config.get("http_request_timeout", 3000)
 
         self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
+        self.balance_min_utxo = config.get("balance_min_utxo", 1)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -348,6 +362,7 @@ class Config:
                 "dns_resolvers": [],
                 "dns_bypass_ips": [],
                 "masternode_fee_minimum": 1,
+                "balance_min_utxo": 1,
             }
         )
 
@@ -442,6 +457,7 @@ class Config:
         cls.http_request_timeout = config.get("http_request_timeout", 3000)
 
         cls.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
+        cls.balance_min_utxo = config.get("balance_min_utxo", 1)
 
     @staticmethod
     def address_is_valid(address):

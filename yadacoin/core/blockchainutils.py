@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import json
 from logging import getLogger
@@ -21,6 +34,10 @@ def BU():
 def set_BU(BU):
     global GLOBAL_BU
     GLOBAL_BU = BU
+
+
+class TooManyUTXOsException(Exception):
+    pass
 
 
 class BlockChainUtils(object):
@@ -240,7 +257,7 @@ class BlockChainUtils(object):
                 )
                 return public_key
 
-    def get_wallet_unspent_transactions_for_dusting(self, address):
+    def get_wallet_unspent_transactions_for_dusting(self, address, limit=None):
         query = [
             {
                 "$match": {
@@ -276,7 +293,7 @@ class BlockChainUtils(object):
             {"$sort": {"outputs.time": 1}},
         ]
         return self.get_wallet_unspent_transactions(
-            unspent_txns_query=query, address=address
+            unspent_txns_query=query, address=address, limit=limit
         )
 
     def get_wallet_unspent_transactions_for_spending(
@@ -286,7 +303,9 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
+                    "transactions.outputs.value": {
+                        "$gte": self.config.balance_min_utxo
+                    },
                 },
             },
             {"$unwind": "$transactions"},
@@ -294,7 +313,9 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
+                    "transactions.outputs.value": {
+                        "$gte": self.config.balance_min_utxo
+                    },
                 },
             },
             {
@@ -328,16 +349,23 @@ class BlockChainUtils(object):
         address,
         inc_mempool=False,
         amount_needed=None,
+        limit=None,
     ):
         public_key = await self.get_reverse_public_key(address)
 
         # Return the cursor directly without awaiting it
         utxos = await self.get_unspent_txns(unspent_txns_query)
         total = 0
+        count = 0
         async for utxo in utxos:
             if not await self.config.BU.is_input_spent(
                 utxo["id"], public_key, inc_mempool=inc_mempool
             ):
+                count += 1
+                if limit and count > limit:
+                    raise TooManyUTXOsException(
+                        f"The UTXO limit of {limit} has been exceeded"
+                    )
                 total += sum(
                     [x["value"] for x in utxo["outputs"] if x["to"] == address]
                 )

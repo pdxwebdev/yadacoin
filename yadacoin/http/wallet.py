@@ -1,4 +1,17 @@
 """
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
+"""
 Handlers required by the wallet operations
 """
 
@@ -567,6 +580,8 @@ class TransactionByIdHandler(BaseHandler):
         best_mt_txn = await self.config.mongo.async_db.miner_transactions.find_one(
             {"id": txn_id}, {"_id": 0}, sort=[("time", -1)]
         )
+        if best_mt_txn:
+            best_mt_txn["mempool"] = True
         result = await self.config.mongo.async_db.blocks.find_one(
             {"transactions.id": txn_id}, {"_id": 0}, sort=[("transactions.time", -1)]
         )
