@@ -561,10 +561,6 @@ class Transaction(object):
         if verify_hash != self.hash:
             raise InvalidTransactionException("transaction is invalid")
 
-        for output in self.outputs:
-            if not Config().address_is_valid(output.to):
-                raise Exception("output recipient is not a valid address")
-
         self.verify_signature(address)
 
         relationship = self.relationship
