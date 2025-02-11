@@ -362,7 +362,7 @@ class Block(object):
             hash_collection = await KELHashCollection.init_async(block)
             for txn in block.transactions[:]:
                 if txn not in block.transactions:
-                    continue  # it's already been deleted dude its failed counterpart
+                    continue  # it's already been deleted due to its failed counterpart
 
                 # test if already on chain
                 if await txn.is_already_onchain():
