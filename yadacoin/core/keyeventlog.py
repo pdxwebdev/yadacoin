@@ -179,7 +179,7 @@ class KeyEvent:
                 "Unconfirmed key event sends to an expired key event. Removing."
             )
 
-        if await self.is_already_onchain():
+        if await self.txn.is_already_onchain():
             raise KELException("Key event is already onchain")
 
     async def sends_to_past_kel_entry(self):
@@ -213,30 +213,6 @@ class KeyEvent:
                     status=KeyEventChainStatus.ONCHAIN,
                 )
                 return key_event
-        return False
-
-    async def is_already_onchain(self):
-        config = Config()
-        result = await config.mongo.async_db.blocks.find_one(
-            {
-                "$or": [
-                    {
-                        BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.txn.twice_prerotated_key_hash
-                    },
-                    {
-                        BlocksQueryFields.PREROTATED_KEY_HASH.value: self.txn.prerotated_key_hash
-                    },
-                    {
-                        BlocksQueryFields.PUBLIC_KEY_HASH.value: self.txn.public_key_hash,
-                    },
-                    {
-                        BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash,
-                    },
-                ],
-            }
-        )
-        if result:
-            return True
         return False
 
     async def get_onchain_parent(self):

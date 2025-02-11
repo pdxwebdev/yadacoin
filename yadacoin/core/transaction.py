@@ -1009,6 +1009,63 @@ class Transaction(object):
                     if not found:
                         return block["index"]
 
+    def are_kel_fields_populated(self):
+        pass
+
+        if self.twice_prerotated_key_hash:
+            return True
+
+        if self.prerotated_key_hash:
+            return True
+
+        if self.public_key_hash:
+            return True
+
+        if self.prev_public_key_hash:
+            return True
+        return False
+
+    async def is_already_onchain(self):
+        from yadacoin.core.keyeventlog import BlocksQueryFields
+
+        config = Config()
+        query = []
+        if self.twice_prerotated_key_hash:
+            query.append(
+                {
+                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.twice_prerotated_key_hash
+                }
+            )
+
+        if self.prerotated_key_hash:
+            query.append(
+                {BlocksQueryFields.PREROTATED_KEY_HASH.value: self.prerotated_key_hash}
+            )
+
+        if self.public_key_hash:
+            query.append(
+                {
+                    BlocksQueryFields.PUBLIC_KEY_HASH.value: self.public_key_hash,
+                }
+            )
+
+        if self.prev_public_key_hash:
+            query.append(
+                {
+                    BlocksQueryFields.PREV_PUBLIC_KEY_HASH.value: self.prev_public_key_hash,
+                }
+            )
+        if not query:
+            return False
+        result = await config.mongo.async_db.blocks.find_one(
+            {
+                "$or": query,
+            }
+        )
+        if result:
+            return True
+        return False
+
     async def has_key_event_log(self):
         from yadacoin.core.keyeventlog import BlocksQueryFields
 

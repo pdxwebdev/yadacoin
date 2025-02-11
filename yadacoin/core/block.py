@@ -346,35 +346,22 @@ class Block(object):
             for txn in block.transactions[:]:
                 if txn not in block.transactions:
                     continue  # it's already been deleted dude its failed counterpart
-                has_kel = await txn.has_key_event_log()
-                if not has_kel:
-                    if txn.prev_public_key_hash:
-                        other_txn_to_delete = hash_collection.prerotated_key_hashes.get(
-                            txn.twice_prerotated_key_hash
-                        )
-                        if not other_txn_to_delete:
-                            other_txn_to_delete = (
-                                hash_collection.twice_prerotated_key_hashes.get(
-                                    txn.prerotated_key_hash
-                                )
-                            )
-                        config.app_log.info(
-                            f"Fatal - Txn removed from block: {txn.transaction_signature}"
-                        )
-                        await config.mongo.async_db.miner_transactions.delete_one(
-                            {"id": txn.transaction_signature}
-                        )
-                        block.transactions.remove(txn)
-                        if other_txn_to_delete:
-                            await config.mongo.async_db.miner_transactions.delete_one(
-                                {"id": other_txn_to_delete.transaction_signature}
-                            )
-                            block.transactions.remove(other_txn_to_delete)
 
-                            config.app_log.info(
-                                f"Fatal - Linked txn removed from block: {other_txn_to_delete.transaction_signature}"
-                            )
+                # test if already on chain
+                if await txn.is_already_onchain():
+                    await block.remove_transaction(txn, hash_collection)
                     continue
+
+                # test if it has no kel but specifies prev key hash
+                if await txn.has_key_event_log() and not txn.are_kel_fields_populated():
+                    await block.remove_transaction(txn, hash_collection)
+                    continue
+                elif (
+                    not await txn.has_key_event_log()
+                    and not txn.are_kel_fields_populated()
+                ):
+                    continue
+
                 key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
                 try:
                     key_event_log = await KeyEventLog.init_async(
@@ -411,6 +398,33 @@ class Block(object):
             )
             block.signature = TU.generate_signature(block.hash, private_key)
         return block
+
+    async def remove_transaction(
+        self, txn: Transaction, hash_collection: KELHashCollection
+    ):
+        other_txn_to_delete = hash_collection.prerotated_key_hashes.get(
+            txn.twice_prerotated_key_hash
+        )
+        if not other_txn_to_delete:
+            other_txn_to_delete = hash_collection.twice_prerotated_key_hashes.get(
+                txn.prerotated_key_hash
+            )
+        self.config.app_log.info(
+            f"Fatal - Txn removed from block: {txn.transaction_signature}"
+        )
+        await self.config.mongo.async_db.miner_transactions.delete_one(
+            {"id": txn.transaction_signature}
+        )
+        self.transactions.remove(txn)
+        if other_txn_to_delete:
+            await self.config.mongo.async_db.miner_transactions.delete_one(
+                {"id": other_txn_to_delete.transaction_signature}
+            )
+            self.transactions.remove(other_txn_to_delete)
+
+            self.config.app_log.info(
+                f"Fatal - Linked txn removed from block: {other_txn_to_delete.transaction_signature}"
+            )
 
     @staticmethod
     async def validate_transactions(
@@ -680,7 +694,7 @@ class Block(object):
                         self, verify_only=True
                     )
                     txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
-                    txn_key_event.verify()
+                    await txn_key_event.verify()
                     await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
                 else:
                     if txn.prev_public_key_hash:
