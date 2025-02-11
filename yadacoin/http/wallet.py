@@ -26,7 +26,6 @@ import jwt
 from bip32utils import BIP32Key
 from bitcoin.wallet import P2PKHBitcoinAddress
 
-from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
 from yadacoin.core.transaction import Transaction
@@ -624,50 +623,6 @@ class ConvertPublicKeyToAddressHandler(BaseHandler):
         )
 
 
-class RichListHandler(BaseHandler):
-    async def get(self):
-        # Initialize an empty dictionary to store the balance for each address
-        address_balances = {}
-        bug_coins = {}
-
-        # Load the blockchain (you may need to adjust this to match how you access your blockchain data)
-        blocks = await self.config.BU.get_blocks_async()
-        blockchain = Blockchain(blocks=blocks)
-        # Iterate through all blocks in the blockchain
-        async for block in blockchain.blocks:
-            for tx in block.transactions:
-                for output in tx.outputs:
-                    address = output.to
-
-                    # Add to the address balance or create a new entry if it doesn't exist
-                    if address not in address_balances and address not in bug_coins:
-                        balance = await self.config.BU.get_wallet_balance(
-                            address=address
-                        )
-                        if balance < 0:
-                            bug_coins[address] = balance
-                        else:
-                            address_balances[address] = balance
-
-        # Calculate the total balance of all addresses combined
-        total_balance = sum(address_balances.values())
-        totel_bug_coins = sum(bug_coins.values())
-
-        # Prepare the response in the format of a rich list
-        rich_list = sorted(address_balances.items(), key=lambda x: x[1], reverse=True)
-
-        # Respond with a JSON object containing the rich list and the total balance
-        self.write(
-            json.dumps(
-                {
-                    "rich_list": rich_list,
-                    "total_balance": total_balance,
-                    "totel_bug_coins": totel_bug_coins,
-                }
-            )
-        )
-
-
 WALLET_HANDLERS = [
     (r"/wallet", WalletHandler),
     (r"/generate-wallet", GenerateWalletHandler),
@@ -688,5 +643,4 @@ WALLET_HANDLERS = [
     (r"/validate-address", ValidateAddressHandler),
     (r"/get-transaction-by-id", TransactionByIdHandler),
     (r"/convert-public-key-to-address", ConvertPublicKeyToAddressHandler),
-    (r"/rich-list", RichListHandler),
 ]
