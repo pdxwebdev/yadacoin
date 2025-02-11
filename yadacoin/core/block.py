@@ -713,11 +713,10 @@ class Block(object):
                     txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
                     await txn_key_event.verify()
                     await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
-                else:
-                    if txn.prev_public_key_hash:
-                        raise KELException(
-                            "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
-                        )
+                elif txn.prev_public_key_hash:
+                    raise KELException(
+                        "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
+                    )
 
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:

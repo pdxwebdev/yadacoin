@@ -127,6 +127,7 @@ define(
     multiple=True,
     help="Operation modes. node, web, pool",
 )
+define("ignore", default=False, help="Added for testing", type=str)
 
 
 class WorkerVars:

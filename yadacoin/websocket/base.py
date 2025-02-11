@@ -24,6 +24,7 @@ from ecdsa.util import sigdecode_der
 from tornado import ioloop
 from tornado.websocket import WebSocketClosedError, WebSocketHandler
 
+from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
@@ -205,9 +206,25 @@ class RCPWebSocketServer(WebSocketHandler):
         if not params.get("transaction"):
             return
 
+        check_max_inputs = False
+        if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
+            check_max_inputs = True
+
+        check_masternode_fee = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
+        check_kel = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         txn = Transaction.from_dict(params.get("transaction"))
         try:
-            await txn.verify()
+            await txn.verify(
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
+            )
         except:
             return
 

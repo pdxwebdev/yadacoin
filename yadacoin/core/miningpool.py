@@ -105,8 +105,7 @@ class MiningPool(object):
 
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
         self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
-        hash1_test = body["params"]["result"]
-        hash1 = body["params"]["result"]
+
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
         else:
@@ -640,7 +639,7 @@ class MiningPool(object):
         self.config.processing_queues.block_queue.add(
             BlockProcessingQueueItem(Blockchain(block.to_dict()))
         )
-        await self.config.consensus.process_block_queue()
+
         if self.config.network != "regnet":
             await self.config.nodeShared.send_block_to_peers(block)
 

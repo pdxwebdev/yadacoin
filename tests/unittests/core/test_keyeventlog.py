@@ -18,6 +18,7 @@ from yadacoin.core.block import Block
 from yadacoin.core.config import Config
 from yadacoin.core.keyeventlog import (
     FatalKeyEventException,
+    KELException,
     KeyEventException,
     PublicKeyMismatchException,
 )
@@ -467,62 +468,90 @@ class TestKeyEventLog(AsyncTestCase):
         await xblock.verify()
 
     async def test_inception_onchain_and_confirming(self):
+        xblock = await Block.from_dict(blocks[-2])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         self.config.mongo.async_db.blocks.insert_one(blocks[-1])
 
-        xblock = await Block.from_dict(blocks[-2])
         await xblock.verify()
 
     async def test_confirming_onchain_and_confirming(self):
+        xblock = await Block.from_dict(blocks[-3])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         for block in blocks[-2:]:
             self.config.mongo.async_db.blocks.insert_one(block)
 
-        xblock = await Block.from_dict(blocks[-3])
         await xblock.verify()
 
     async def test_inception_onchain_unconfirmed_and_confirming(self):
+        xblock = await Block.from_dict(blocks[-4])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         for block in blocks[-3:]:
             self.config.mongo.async_db.blocks.insert_one(block)
 
-        xblock = await Block.from_dict(blocks[-4])
         await xblock.verify()
 
     async def test_confirming_onchain_unconfirmed_and_confirming(self):
+        xblock = await Block.from_dict(blocks[-5])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         for block in blocks[-4:]:
             self.config.mongo.async_db.blocks.insert_one(block)
 
-        xblock = await Block.from_dict(blocks[-5])
         await xblock.verify()
 
     async def test_misalignment_of_twice_prerotated_key_hash(self):
+        xblock = await Block.from_dict(blocks[-5])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         for block in blocks[-4:]:
             self.config.mongo.async_db.blocks.insert_one(block)
-        xblock = await Block.from_dict(blocks[-5])
+
         xblock.transactions[1].twice_prerotated_key_hash = "test fail"
         with self.assertRaises(FatalKeyEventException):
             await xblock.verify()
 
     async def test_misalignment_of_prerotated_key_hash(self):
+        xblock = await Block.from_dict(blocks[-5])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         for block in blocks[-4:]:
             self.config.mongo.async_db.blocks.insert_one(block)
-        xblock = await Block.from_dict(blocks[-5])
+
         xblock.transactions[1].prerotated_key_hash = "test fail"
 
         with self.assertRaises(KeyEventException):
             await xblock.verify()
 
     async def test_misalignment_of_public_key_hash(self):
+        xblock = await Block.from_dict(blocks[-5])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         for block in blocks[-4:]:
             self.config.mongo.async_db.blocks.insert_one(block)
-        xblock = await Block.from_dict(blocks[-5])
+
         xblock.transactions[1].public_key_hash = "test fail"
 
         with self.assertRaises(PublicKeyMismatchException):
             await xblock.verify()
 
     async def test_misalignment_of_prev_public_key_hash(self):
+        xblock = await Block.from_dict(blocks[-5])
+        with self.assertRaises(KELException):
+            await xblock.verify()
+
         for block in blocks[-4:]:
             self.config.mongo.async_db.blocks.insert_one(block)
-        xblock = await Block.from_dict(blocks[-5])
+
         xblock.transactions[1].prev_public_key_hash = "test fail"
 
         with self.assertRaises(FatalKeyEventException):

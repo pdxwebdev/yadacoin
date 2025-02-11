@@ -234,10 +234,7 @@ class Transaction(object):
         )
         cls_inst.no_relationship = no_relationship
         cls_inst.exact_match = exact_match
-        if CHAIN.CHECK_KEL_FORK:
-            cls_inst.version = 7
-        else:
-            cls_inst.version = 6
+        cls_inst.version = 7
         cls_inst.version = version
         cls_inst.miner_signature = miner_signature
 
@@ -1023,8 +1020,6 @@ class Transaction(object):
                         return block["index"]
 
     def are_kel_fields_populated(self):
-        pass
-
         if self.twice_prerotated_key_hash:
             return True
 
