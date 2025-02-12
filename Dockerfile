@@ -3,7 +3,7 @@ FROM python:3.9-slim
 
 # Install necessary system packages
 RUN apt-get update && \
-    apt-get install -y git libssl-dev cmake libjpeg-dev build-essential setuptools && \
+    apt-get install -y git libssl-dev cmake libjpeg-dev build-essential python3-setuptools && \
     apt-get clean
 
 # Set the working directory in the container
