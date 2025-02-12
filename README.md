@@ -4,9 +4,9 @@
 
 ## Setup
 
-### Ubuntu 22 install command:
+### Ubuntu 22/24 install command:
 
-`sudo wget -O - https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash`
+`curl -fsSL https://raw.githubusercontent.com/pdxwebdev/yadacoin/master/yadanodesetup.sh | sudo bash`
 
 ### Windows installer:
 
