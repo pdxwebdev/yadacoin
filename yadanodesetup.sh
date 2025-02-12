@@ -11,7 +11,7 @@ sudo bash -c "echo vm.nr_hugepages=0 >> /etc/sysctl.conf"
 
 # Install required packages
 apt update
-apt install -y docker-compose setuptools
+apt install -y docker-compose python3-setuptools
 
 # Create the directory for your application
 DEFAULT_APP_DIR="/etc/yadacoin"
