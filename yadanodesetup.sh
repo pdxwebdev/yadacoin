@@ -53,4 +53,4 @@ systemctl daemon-reload
 systemctl enable yadanodemanager
 systemctl start yadanodemanager
 
-echo "Setup complete. YadaCoin Node Manager is now running."
+echo "Initial setup complete. Now the boostrap data will install in the background. This will take a few minutes. Check status with: service yadanodemanager status. Once that completes, your node will start automatically. You can access in on the web at port 8001"
