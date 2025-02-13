@@ -315,6 +315,10 @@ https://yadacoin.io/download
   - type: integer
   - default: 1
   - description: If your node is a service provider or you have activate_peerjs set to true, then you may set your minimum required amount of YDA to broker p2p connections.
+- balance_min_utxo
+  - type: integer
+  - default: 1
+  - description: This value determines the minimum amount of yada for a UTXO for it to be included in the list of available UTXOs
 
 ## Development Environment
 
