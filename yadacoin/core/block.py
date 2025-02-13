@@ -16,6 +16,7 @@ import base64
 import binascii
 import hashlib
 import json
+import socket
 import time
 from datetime import timedelta
 from decimal import Decimal, getcontext
@@ -70,8 +71,19 @@ async def test_node(node, semaphore):
     config = Config()
     async with semaphore:
         try:
+            # DNS resolution block
+            # Check if the DNS for the node's host resolves to an IP address.
+            # If the DNS lookup fails, log the error and skip testing this node.
+            try:
+                socket.gethostbyname(node.host)
+            except socket.gaierror as dns_error:
+                config.app_log.warning(
+                    f"DNS resolution failed for {node.host}:{node.port}, error: {dns_error}"
+                )
+                return None
+
             stream = await TCPClient().connect(
-                node.host, node.port, timeout=timedelta(seconds=1)
+                node.host, node.port, timeout=timedelta(seconds=2)
             )
             return node
         except StreamClosedError:
