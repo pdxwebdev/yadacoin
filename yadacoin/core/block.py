@@ -22,6 +22,7 @@ from datetime import timedelta
 from decimal import Decimal, getcontext
 from logging import getLogger
 
+import pyrx
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
@@ -29,7 +30,6 @@ from tornado.iostream import StreamClosedError
 from tornado.tcpclient import TCPClient
 from tornado.util import TimeoutError
 
-import pyrx
 import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
@@ -367,6 +367,25 @@ class Block(object):
             public_key=public_key,
             target=target,
         )
+
+        if index >= CHAIN.XEGGEX_HACK_FORK:
+            for txn in block.transactions[:]:
+                remove = False
+                if (
+                    txn.public_key
+                    == "02fd3ad0e7a613672d9927336d511916e15c507a1fab225ed048579e9880f15fed"
+                ):
+                    remove = True
+                if not remove:
+                    for output in txn.outputs:
+                        if output.to == "1Kh8tcPNxJsDH4KJx4TzLbqWwihDfhFpzj":
+                            remove = True
+                            break
+                if remove:
+                    config.app_log.info(
+                        f"Txn removed from block: Xeggex wallet has been frozen."
+                    )
+                    block.transactions.remove(txn)
 
         if block.index >= CHAIN.CHECK_KEL_FORK:
             # check if this transaction public key is listed in any KEL

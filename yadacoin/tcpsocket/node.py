@@ -171,6 +171,24 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info("newtxn, no payload")
             return
 
+        if self.config.LatestBlock.block.index >= CHAIN.XEGGEX_HACK_FORK:
+            remove = False
+            if (
+                txn.public_key
+                == "02fd3ad0e7a613672d9927336d511916e15c507a1fab225ed048579e9880f15fed"
+            ):
+                remove = True
+            if not remove:
+                for output in txn.outputs:
+                    if output.to == "1Kh8tcPNxJsDH4KJx4TzLbqWwihDfhFpzj":
+                        remove = True
+                        break
+            if remove:
+                self.config.app_log.info(
+                    f"New txn rejected: Xeggex wallet has been frozen."
+                )
+                return
+
         self.newtxn_tracker.by_host[stream.peer.host] = (
             self.newtxn_tracker.by_host.get(stream.peer.host, 0) + 1
         )
