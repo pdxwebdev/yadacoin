@@ -34,6 +34,7 @@ import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.keyeventlog import (
+    DoesNotSpendEntirelyToPrerotatedKeyHashException,
     FatalKeyEventException,
     KELException,
     KELHashCollection,
@@ -395,6 +396,12 @@ class Block(object):
                 if txn not in block.transactions:
                     continue  # it's already been deleted due to its failed counterpart
 
+                if txn.are_kel_fields_populated():
+                    if txn.public_key_hash in [output.to for output in txn.outputs]:
+                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                            "Key event transactions must spent entire remaining balance to prerotated_key_hash."
+                        )
+
                 # test if already on chain
                 if await txn.is_already_onchain():
                     await block.remove_transaction(txn, hash_collection)
@@ -737,6 +744,13 @@ class Block(object):
             if self.index >= CHAIN.CHECK_KEL_FORK:
                 # check if this transaction public key is listed in any KEL
                 # if it is, check if it's a valid key event
+
+                if txn.are_kel_fields_populated():
+                    if txn.public_key_hash in [output.to for output in txn.outputs]:
+                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                            "Key event transactions must spent entire remaining balance to prerotated_key_hash."
+                        )
+
                 if await txn.has_key_event_log():
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True

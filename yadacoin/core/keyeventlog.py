@@ -87,6 +87,10 @@ class FatalKeyEventException(Exception):
         self.other_txn_to_delete = other_txn_to_delete
 
 
+class DoesNotSpendEntirelyToPrerotatedKeyHashException(FatalKeyEventException):
+    pass
+
+
 class KeyEvent:
     def __init__(
         self,

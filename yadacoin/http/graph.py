@@ -25,8 +25,8 @@ import uuid
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-
 from eccsnacks.curve25519 import scalarmult_base
+
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -206,7 +206,10 @@ class GraphTransactionHandler(BaseGraphHandler):
         self.render_as_json(list(transactions))
 
     async def post(self):
-        from yadacoin.core.keyeventlog import KELException
+        from yadacoin.core.keyeventlog import (
+            DoesNotSpendEntirelyToPrerotatedKeyHashException,
+            KELException,
+        )
 
         await self.get_base_graph()  # TODO: did this to set username_signature, refactor this
         items = json.loads(self.request.body.decode("utf-8"))
@@ -226,6 +229,15 @@ class GraphTransactionHandler(BaseGraphHandler):
                     check_max_inputs=True,
                     check_kel=True,
                 )
+
+                if transaction.are_kel_fields_populated():
+                    if transaction.public_key_hash in [
+                        output.to for output in transaction.outputs
+                    ]:
+                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                            "Key event transactions must spent entire remaining balance to prerotated_key_hash."
+                        )
+
                 has_kel = await transaction.has_key_event_log()
                 if has_kel:
                     for output in transaction.outputs:

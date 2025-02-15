@@ -17,6 +17,7 @@ import yadacoin.core.config
 from yadacoin.core.block import Block
 from yadacoin.core.config import Config
 from yadacoin.core.keyeventlog import (
+    DoesNotSpendEntirelyToPrerotatedKeyHashException,
     FatalKeyEventException,
     KELException,
     KeyEventException,
@@ -572,6 +573,16 @@ class TestKeyEventLog(AsyncTestCase):
         xblock.transactions[1].prev_public_key_hash = ""
 
         with self.assertRaises(PublicKeyMismatchException):
+            await xblock.verify()
+
+    async def test_transaction_spends_to_expired_key_event(self):
+        # test if user will lose access to their funds by way of rotation
+        self.config.mongo.async_db.blocks.delete_one({"index": 537373})
+        self.config.mongo.async_db.blocks.insert_one(blocks[-5])
+        xblock = await Block.from_dict(blocks[-1])
+        xblock.transactions[0].outputs[0].to = "1DrrpfeK6eSJzDgXyQx3jwP6xwcXeNAnYi"
+
+        with self.assertRaises(DoesNotSpendEntirelyToPrerotatedKeyHashException):
             await xblock.verify()
 
 
