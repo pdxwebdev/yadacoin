@@ -171,7 +171,10 @@ class NodeRPC(BaseRPC):
             self.config.app_log.info("newtxn, no payload")
             return
 
-        if self.config.LatestBlock.block.index >= CHAIN.XEGGEX_HACK_FORK:
+        if (
+            self.config.LatestBlock.block.index >= CHAIN.XEGGEX_HACK_FORK
+            and self.config.LatestBlock.block.index < CHAIN.CHECK_KEL_FORK
+        ):
             remove = False
             if (
                 txn.public_key

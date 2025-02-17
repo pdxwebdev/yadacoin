@@ -369,7 +369,7 @@ class Block(object):
             target=target,
         )
 
-        if index >= CHAIN.XEGGEX_HACK_FORK:
+        if index >= CHAIN.XEGGEX_HACK_FORK and index < CHAIN.CHECK_KEL_FORK:
             for txn in block.transactions[:]:
                 remove = False
                 if (
@@ -809,7 +809,10 @@ class Block(object):
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                     masternode_fee_sum += float(txn.masternode_fee)
 
-            if self.index >= CHAIN.XEGGEX_HACK_FORK:
+            if (
+                self.index >= CHAIN.XEGGEX_HACK_FORK
+                and self.index < CHAIN.CHECK_KEL_FORK
+            ):
                 if (
                     txn.public_key
                     == "02fd3ad0e7a613672d9927336d511916e15c507a1fab225ed048579e9880f15fed"
