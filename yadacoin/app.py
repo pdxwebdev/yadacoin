@@ -386,72 +386,89 @@ class NodeApplication(Application):
         self.config.background_status.busy = False
 
     async def background_block_checker(self):
-        """Responsible for miner updates"""
         """
-        New blocks will directly trigger the correct event.
-        This co-routine checks if new transactions have been received, or if special_min is triggered,
-        So we can update the miners.
+        Responsible for propagating new blocks in the network.
+
+        This coroutine ensures that newly discovered blocks are efficiently distributed to peers.
+        It continuously monitors the latest block and triggers propagation only when a change is detected.
+        
+        If a new block is found (i.e., its height or hash has changed), it is immediately broadcasted to peers.
+        Additionally, if no new block has been found for a defined period,
+        it will resend the latest known block to maintain synchronization across nodes (default: 300s).
+
+        This mechanism prevents redundant broadcasts while ensuring all peers
+        stay up-to-date with the latest blockchain state.
         """
         self.config.app_log.debug("background_block_checker")
         if not hasattr(self.config, "background_block_checker"):
-            self.config.background_block_checker = WorkerVars(busy=False, last_send=0)
+            self.config.background_block_checker = WorkerVars(
+                busy=False, last_send=0, last_block_height=0, last_block_hash=None
+            )
         if self.config.background_block_checker.busy:
             self.config.app_log.debug("background_block_checker - busy")
             return
         self.config.background_block_checker.busy = True
+
         try:
-            self.config.background_block_checker.last_block_height = 0
-            if LatestBlock.block:
-                self.config.background_block_checker.last_block_height = (
-                    LatestBlock.block.index
-                )
-            await LatestBlock.block_checker()
-            if (
+            current_block = LatestBlock.block
+            last_block_height = (
                 self.config.background_block_checker.last_block_height
-                != LatestBlock.block.index
-            ):
-                self.config.app_log.info(
-                    "Latest block height: %s | time: %s"
-                    % (
-                        self.config.LatestBlock.block.index,
-                        datetime.fromtimestamp(
-                            int(self.config.LatestBlock.block.time)
-                        ).strftime("%Y-%m-%d %H:%M:%S"),
-                    )
-                )
-                await self.config.nodeShared.send_block_to_peers(
-                    self.config.LatestBlock.block
-                )
-            elif int(time()) - self.config.background_block_checker.last_send > 60:
-                self.config.background_block_checker.last_send = int(time())
-                await self.config.nodeShared.send_block_to_peers(
-                    self.config.LatestBlock.block
+            )
+            last_block_hash = self.config.background_block_checker.last_block_hash
+
+            if current_block:
+                self.config.app_log.debug(
+                    f"Current block: Height={current_block.index}, Hash={current_block.hash}"
                 )
 
-            self.config.health.block_checker.last_activity = int(time())
+                # Check if the block height or hash has changed
+                if (
+                    current_block.index != last_block_height
+                    or current_block.hash != last_block_hash
+                ):
+                    self.config.background_block_checker.last_block_height = (
+                        current_block.index
+                    )
+                    self.config.background_block_checker.last_block_hash = (
+                        current_block.hash
+                    )
+
+                    self.config.app_log.info(
+                        f"New block detected: Height={current_block.index}, "
+                        f"Hash={current_block.hash}, Time={datetime.fromtimestamp(current_block.time).strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+
+                    # Propagate the new block to peers
+                    await self.config.nodeShared.send_block_to_peers(current_block)
+                    self.config.background_block_checker.last_send = int(time())
+                    self.config.app_log.info(
+                        f"Block {current_block.index} successfully propagated to peers."
+                    )
+                elif (
+                    int(time()) - self.config.background_block_checker.last_send
+                    > 300
+                ):
+                    # Regular propagation if no new block but timeout exceeded
+                    self.config.app_log.info(
+                        "Regular propagation triggered after timeout."
+                    )
+                    self.config.background_block_checker.last_send = int(time())
+                    await self.config.nodeShared.send_block_to_peers(current_block)
+                else:
+                    self.config.app_log.debug(
+                        f"No propagation needed. Last send: {self.config.background_block_checker.last_send}, "
+                        f"Time since last send: {int(time()) - self.config.background_block_checker.last_send}s"
+                    )
+            else:
+                self.config.app_log.debug(
+                    "No current block available to propagate."
+                )
+
         except Exception:
             self.config.app_log.error(format_exc())
-        self.config.background_block_checker.busy = False
-
-    async def background_newtxn_stress_test(self):
-        for peer_cls in list(self.config.nodeClient.outbound_streams.keys()).copy():
-            for rid in self.config.nodeClient.outbound_streams[peer_cls]:
-                for x in range(50):
-                    txn = await Transaction.generate(
-                        private_key=self.config.private_key,
-                        public_key=self.config.public_key,
-                    )
-                    # self.config.nodeClient.retry_messages[
-                    #     (rid, "newtxn", txn.transaction_signature)
-                    # ] = {
-                    #     "transaction": txn.to_dict(),
-                    #     "test": True,
-                    # }
-                    self.config.processing_queues.transaction_queue.add(
-                        TransactionProcessingQueueItem(
-                            txn, self.config.nodeClient.outbound_streams[peer_cls][rid]
-                        )
-                    )
+        finally:
+            self.config.health.block_checker.last_activity = int(time())
+            self.config.background_block_checker.busy = False
 
     async def background_newblock_stress_test(self):
         # only tests outbound currently
