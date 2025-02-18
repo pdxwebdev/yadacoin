@@ -341,7 +341,7 @@ class Seeds(Nodes):
                 "node": Seed.from_dict(
                     {
                         "host": "seed.yadaid.au",
-                        "port": 8001,
+                        "port": 8002,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIDutdOZzlHtNCuALhNI6U9f91lDixf4l4owUqb0WPILCAiBbaHqiuTf4buogQ+67k7FztznKISufCgBZx6muhLTK0g==",
@@ -615,7 +615,7 @@ class SeedGateways(Nodes):
                 "node": SeedGateway.from_dict(
                     {
                         "host": "seedgateway.yadaid.au",
-                        "port": 8001,
+                        "port": 8004,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDDPFg2GcvhNy3aB+6/rprlhaiexnemo2bg7ovDjQUtrQIgSkhwJGQVe2+f83W7PzOIZWo9k5CbtI6BIcs5zqnQ7eo=",
@@ -905,7 +905,7 @@ class ServiceProviders(Nodes):
                 "node": ServiceProvider.from_dict(
                     {
                         "host": "serviceprovider.yadaid.au",
-                        "port": 8001,
+                        "port": 8000,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICmKX5wUJGm/rGe1tnoL1I3eA2V5jFaJk0WUQe7cHIABAiBi+BnM3emLl4nQp+alleXYWm3KLmqaXRP9zp+yfm9E1w==",
