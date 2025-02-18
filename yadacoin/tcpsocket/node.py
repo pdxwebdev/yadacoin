@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import asyncio
 import base64
 import time
 from uuid import uuid4
@@ -942,6 +943,8 @@ class NodeSocketClient(RPCSocketClient, NodeRPC):
                 "challenge",
                 {"peer": self.config.peer.to_dict(), "token": stream.peer.token},
             )
+
+            asyncio.create_task(self.send_keepalive(stream))
 
             await self.wait_for_data(stream)
         except StreamClosedError:

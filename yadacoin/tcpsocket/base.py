@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import asyncio
 import base64
 import json
 import socket
@@ -30,6 +31,7 @@ from yadacoin.core.config import Config
 REQUEST_RESPONSE_MAP = {
     "blockresponse": "getblock",
     "blocksresponse": "getblocks",
+    "keepalive": "keepalive",
 }
 
 REQUEST_ONLY = [
@@ -243,6 +245,20 @@ class RPCSocketServer(TCPServer, BaseRPC):
                 self.config.app_log.warning(data)
                 break
 
+    async def keepalive(self, body, stream):
+        """
+        Handles incoming KeepAlive messages to confirm connection status.
+
+        When a KeepAlive message is received, this method updates the last activity timestamp
+        for both the stream and the TCP server health tracker. It then responds with an
+        acknowledgment message, ensuring that the peer also updates its connection status.
+        """
+        stream.last_activity = int(time.time())
+        self.config.health.tcp_server.last_activity = time.time()
+        self.config.app_log.info(f"✅ KeepAlive received from {stream.peer.host}. Connection is active.")
+
+        await self.write_result(stream, "keepalive", {"ok": True}, body["id"])
+
     async def remove_peer(self, stream, close=True, reason=None):
         if reason:
             await self.write_params(stream, "disconnect", {"reason": reason})
@@ -421,6 +437,13 @@ class RPCSocketClient(TCPClient):
         while True:
             try:
                 body = json.loads(await stream.read_until(b"\n"))
+
+                if body.get("method") == "keepalive":
+                    self.config.health.tcp_client.last_activity = time.time()
+                    stream.last_activity = int(time.time())
+                    self.config.app_log.info(f"✅ KeepAlive response received from {stream.peer.host}")
+                    continue
+
                 if "result" in body:
                     if body["method"] in REQUEST_RESPONSE_MAP:
                         if body["id"] in stream.message_queue.get(
@@ -457,6 +480,27 @@ class RPCSocketClient(TCPClient):
                     stream, reason="RPCSocketClient: unhandled exception 3"
                 )
                 self.config.app_log.warning("{}".format(format_exc()))
+                break
+
+
+    async def send_keepalive(self, stream):
+        """
+        Periodically sends KeepAlive messages to maintain an active connection.
+
+        This method runs in an infinite loop, sending a KeepAlive message every 90 seconds
+        to the connected peer. It helps prevent unnecessary disconnections due to inactivity
+        by ensuring regular communication. If sending fails, the loop terminates, assuming
+        the connection is lost.
+        """
+        while True:
+            await asyncio.sleep(90)
+
+            try:
+                self.config.app_log.info(f"📡 Sending KeepAlive to {stream.peer.host}")
+                await self.write_params(stream, "keepalive", {"timestamp": int(time.time())})
+
+            except Exception as e:
+                self.config.app_log.warning(f"⚠️ Failed to send KeepAlive to {stream.peer.host}: {e}")
                 break
 
     async def remove_peer(self, stream, close=True, reason=None):
