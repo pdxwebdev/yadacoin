@@ -208,6 +208,7 @@ class Blockchain(object):
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    block=block,
                 )
             except InvalidTransactionException as e:
                 config.app_log.warning(e)

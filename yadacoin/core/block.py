@@ -22,7 +22,6 @@ from datetime import timedelta
 from decimal import Decimal, getcontext
 from logging import getLogger
 
-import pyrx
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
@@ -30,6 +29,7 @@ from tornado.iostream import StreamClosedError
 from tornado.tcpclient import TCPClient
 from tornado.util import TimeoutError
 
+import pyrx
 import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
@@ -751,7 +751,7 @@ class Block(object):
                             "Key event transactions must spent entire remaining balance to prerotated_key_hash."
                         )
 
-                if await txn.has_key_event_log():
+                if await txn.has_key_event_log(block=self):
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )

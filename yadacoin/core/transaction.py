@@ -533,6 +533,7 @@ class Transaction(object):
         check_max_inputs=False,
         check_masternode_fee=False,
         check_kel=False,
+        block=None,
     ):
         from yadacoin.contracts.base import Contract
         from yadacoin.core.keyeventlog import KELException
@@ -548,7 +549,7 @@ class Transaction(object):
         if check_kel:
             from yadacoin.core.keyeventlog import KeyEvent
 
-            has_kel = await self.has_key_event_log()
+            has_kel = await self.has_key_event_log(block)
 
             if has_kel:
                 txn_key_event = KeyEvent(self)
@@ -1070,7 +1071,7 @@ class Transaction(object):
             return True
         return False
 
-    async def has_key_event_log(self):
+    async def has_key_event_log(self, block=None):
         from yadacoin.core.keyeventlog import BlocksQueryFields
 
         # this function is the primary method for catching transactions which attempt
@@ -1086,12 +1087,19 @@ class Transaction(object):
                 },
             ],
         }
+        if block:
+            query["index"] = {"$lte": block.index}
+
         result = await config.mongo.async_db.blocks.find_one(query)
         if result:
             return True
         elif self.extra_blocks:
-            for block in self.extra_blocks:
-                for xtxn in block.transactions:
+            for extra_block in self.extra_blocks:
+                if extra_block.index >= block.index:
+                    return False
+                for xtxn in extra_block.transactions:
+                    if xtxn.transaction_signature == self.transaction_signature:
+                        return False
                     if (
                         xtxn.twice_prerotated_key_hash == address
                         or xtxn.prerotated_key_hash == address

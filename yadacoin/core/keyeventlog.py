@@ -686,3 +686,66 @@ class KeyEventLog:
             raise KELException(
                 "Mismatch: base_key_event.txn.public_key_hash does not match confirming_key_event.txn.prev_public_key_hash"
             )
+
+    @staticmethod
+    async def build_from_public_key(public_key):
+        config = Config()
+        log = []
+        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+        inception = None
+        while True:
+            result = config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                    },
+                    {
+                        "$unwind": "$transactions",
+                    },
+                    {
+                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                    },
+                ]
+            )
+            res = await result.to_list(length=1)
+            if res:
+                txn = Transaction.from_dict(res[0]["transactions"])
+                if not txn.prev_public_key_hash:
+                    inception = txn
+                    break
+                address = str(
+                    P2PKHBitcoinAddress.from_pubkey(
+                        bytes.fromhex(txn.prev_public_key_hash)
+                    )
+                )
+            else:
+                break
+        if inception:
+            log.append(inception)
+            txn = inception
+            while True:
+                address = txn.prerotated_key_hash
+                result = config.mongo.async_db.blocks.aggregate(
+                    [
+                        {
+                            "$match": {
+                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
+                            },
+                        },
+                        {
+                            "$unwind": "$transactions",
+                        },
+                        {
+                            "$match": {
+                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
+                            },
+                        },
+                    ]
+                )
+                res = await result.to_list(length=1)
+                if not res:
+                    break
+
+                txn = Transaction.from_dict(res[0]["transactions"])
+                log.append(txn)
+        return log
