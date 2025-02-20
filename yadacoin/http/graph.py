@@ -25,8 +25,8 @@ import uuid
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from eccsnacks.curve25519 import scalarmult_base
 
+from eccsnacks.curve25519 import scalarmult_base
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -231,6 +231,8 @@ class GraphTransactionHandler(BaseGraphHandler):
                 )
 
                 if transaction.are_kel_fields_populated():
+                    if transaction.is_already_in_mempool():
+                        raise KELException("Duplicate Key Event found in mempool.")
                     if transaction.public_key_hash in [
                         output.to for output in transaction.outputs
                     ]:

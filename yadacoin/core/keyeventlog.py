@@ -65,6 +65,13 @@ class BlocksQueryFields(Enum):
     PREV_PUBLIC_KEY_HASH = "transactions.prev_public_key_hash"
 
 
+class MempoolQueryFields(Enum):
+    TWICE_PREROTATED_KEY_HASH = "twice_prerotated_key_hash"
+    PREROTATED_KEY_HASH = "prerotated_key_hash"
+    PUBLIC_KEY_HASH = "public_key_hash"
+    PREV_PUBLIC_KEY_HASH = "prev_public_key_hash"
+
+
 class KeyEventException(Exception):
     pass
 

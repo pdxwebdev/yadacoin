@@ -1071,6 +1071,47 @@ class Transaction(object):
             return True
         return False
 
+    async def is_already_in_mempool(self):
+        from yadacoin.core.keyeventlog import MempoolQueryFields
+
+        config = Config()
+        query = []
+        if self.twice_prerotated_key_hash:
+            query.append(
+                {
+                    MempoolQueryFields.TWICE_PREROTATED_KEY_HASH.value: self.twice_prerotated_key_hash
+                }
+            )
+
+        if self.prerotated_key_hash:
+            query.append(
+                {MempoolQueryFields.PREROTATED_KEY_HASH.value: self.prerotated_key_hash}
+            )
+
+        if self.public_key_hash:
+            query.append(
+                {
+                    MempoolQueryFields.PUBLIC_KEY_HASH.value: self.public_key_hash,
+                }
+            )
+
+        if self.prev_public_key_hash:
+            query.append(
+                {
+                    MempoolQueryFields.PREV_PUBLIC_KEY_HASH.value: self.prev_public_key_hash,
+                }
+            )
+        if not query:
+            return False
+        result = await config.mongo.async_db.blocks.find_one(
+            {
+                "$or": query,
+            }
+        )
+        if result:
+            return True
+        return False
+
     async def has_key_event_log(self, block=None):
         from yadacoin.core.keyeventlog import BlocksQueryFields
 
