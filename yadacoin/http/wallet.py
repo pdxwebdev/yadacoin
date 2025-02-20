@@ -35,8 +35,11 @@ from yadacoin.http.base import BaseHandler
 
 
 class WalletHandler(BaseHandler):
-    async def get(self):
-        return self.render_as_json("TODO: Implement")
+    async def get(self, path):
+        """
+        :return:
+        """
+        self.render("wallet.html")
 
 
 class GenerateWalletHandler(BaseHandler):
@@ -624,7 +627,7 @@ class ConvertPublicKeyToAddressHandler(BaseHandler):
 
 
 WALLET_HANDLERS = [
-    (r"/wallet", WalletHandler),
+    (r"/wallet/?([a-z]+)", WalletHandler),
     (r"/generate-wallet", GenerateWalletHandler),
     (r"/generate-child-wallet", GenerateChildWalletHandler),
     (r"/get-addresses", GetAddressesHandler),
