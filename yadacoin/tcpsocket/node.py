@@ -455,14 +455,18 @@ class NodeRPC(BaseRPC):
             ] = payload
 
     async def get_next_block(self, block, peer_stream):
-        """ We should get another block, but only from a specific peer """
+        """We should get another block, but only from a specific peer"""
         peer_id = getattr(peer_stream.peer, "rid", "Unknown")
-        self.config.app_log.info(f"🔍 Requesting next block {block.index + 1} from peer {peer_id}")
+        self.config.app_log.info(
+            f"Requesting next block {block.index + 1} from peer {peer_id}"
+        )
 
         try:
             await self.write_params(peer_stream, "getblock", {"index": block.index + 1})
         except Exception as e:
-            self.config.app_log.error(f"❌ Error requesting next block from peer {peer_id}: {e}")
+            self.config.app_log.error(
+                f"Error requesting next block from peer {peer_id}: {e}"
+            )
 
     async def getblock(self, body, stream):
         # get blocks should be done only by syncing peers
