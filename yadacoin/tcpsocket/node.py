@@ -151,25 +151,47 @@ class NodeRPC(BaseRPC):
                 await peer_stream.write_params("service_provider_request", payload2)
 
     async def newtxn(self, body, stream):
+        """
+        Handles incoming new transactions and ensures they are valid before processing.
+
+        - Verifies if the transaction already exists in the mempool to prevent duplicates.
+        - Checks for double-spending by ensuring none of the transaction inputs have been used before.
+        - Tracks incoming transactions per host and transaction ID for monitoring.
+        - Adds the transaction to the processing queue if all validations pass.
+        - If the transaction involves a known WebSocket user, forwards it to the appropriate peer.
+
+        The method ensures efficient transaction propagation across the network while reducing unnecessary database queries.
+        """
         payload = body.get("params", {})
         transaction = payload.get("transaction")
+        txn = None
+
         if transaction:
             txn = Transaction.from_dict(transaction)
-            if stream.peer.protocol_version > 2:
-                await self.write_result(
-                    stream, "newtxn_confirmed", body.get("params", {}), body["id"]
-                )
         elif payload.get("hash"):
             txn = Transaction.from_dict(payload)
-            if stream.peer.protocol_version > 2:
-                await self.write_result(
-                    stream,
-                    "newtxn_confirmed",
-                    {"transaction": body.get("params", {})},
-                    body["id"],
-                )
         else:
             self.config.app_log.info("newtxn, no payload")
+            return
+
+        txn_id = txn.transaction_signature
+
+        if stream.peer.protocol_version > 2:
+            await self.write_result(
+                stream, "newtxn_confirmed", {"transaction_id": txn.transaction_signature}, body["id"]
+            )
+
+        existing_txn = await self.config.mongo.async_db.miner_transactions.find_one({"id": txn_id})
+        if existing_txn:
+            self.config.app_log.warning(f"Transaction {txn_id} already in mempool! Ignoring.")
+            return
+
+        input_ids = [input_item.id for input_item in txn.inputs]
+        existing_input_txn = await self.config.mongo.async_db.miner_transactions.find_one(
+            {"public_key": txn.public_key, "inputs.id": {"$in": input_ids}}
+        )
+        if existing_input_txn:
+            self.config.app_log.warning(f"Duplicate transaction detected for {txn_id}! Ignoring.")
             return
 
         if (
@@ -196,8 +218,8 @@ class NodeRPC(BaseRPC):
         self.newtxn_tracker.by_host[stream.peer.host] = (
             self.newtxn_tracker.by_host.get(stream.peer.host, 0) + 1
         )
-        self.newtxn_tracker.by_txn_id[txn.transaction_signature] = (
-            self.newtxn_tracker.by_txn_id.get(txn.transaction_signature, 0) + 1
+        self.newtxn_tracker.by_txn_id[txn_id] = (
+            self.newtxn_tracker.by_txn_id.get(txn_id, 0) + 1
         )
 
         self.config.processing_queues.transaction_queue.add(
@@ -331,23 +353,30 @@ class NodeRPC(BaseRPC):
                 ] = {"transaction": txn.to_dict()}
 
     async def newtxn_confirmed(self, body, stream):
-        result = body.get("result", {})
-        transaction = Transaction.from_dict(result.get("transaction"))
+        """
+        Handles transaction confirmation received from a peer.
 
-        if (
-            stream.peer.rid,
-            "newtxn",
-            transaction.transaction_signature,
-        ) in self.retry_messages:
-            del self.retry_messages[
-                (stream.peer.rid, "newtxn", transaction.transaction_signature)
-            ]
+        - Extracts the confirmed transaction ID from the response.
+        - Ensures the transaction ID is present; otherwise, logs a warning.
+        - Removes the transaction from the retry queue if it was previously pending.
+        - Marks the peer as a confirmed reciver of the transaction to avoid redundant processing.
 
-        self.confirmed_peers.add(
-            (stream.peer.rid, "newtxn", transaction.transaction_signature)
-        )
-        self.config.app_log.debug(
-            f"Transaction {transaction.transaction_signature} confirmed by peer {stream.peer.rid}. Peer added to the list of confirmed peers."
+        This method ensures efficient tracking of confirmed transactions and prevents unnecessary retransmissions.
+        """
+        txn_id = body.get("result", {}).get("transaction_id")
+
+        if not txn_id:
+            self.config.app_log.warning("newtxn_confirmed received without a transaction ID!")
+            return
+
+        retry_key = (stream.peer.rid, "newtxn", txn_id)
+        if retry_key in self.retry_messages:
+            del self.retry_messages[retry_key]
+
+        self.confirmed_peers.add(retry_key)
+
+        self.config.app_log.info(
+            f"Transaction {txn_id} confirmed by peer {stream.peer.rid}. Peer added to confirmed list."
         )
 
     async def newblock(self, body, stream):
