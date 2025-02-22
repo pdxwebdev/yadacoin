@@ -576,18 +576,32 @@ class NodeRPC(BaseRPC):
                 ] = {}
 
     async def blocksresponse(self, body, stream):
-        # get blocks should be done only by syncing peers
+        """
+        Handles the response containing blockchain blocks from a peer node.
+
+        - Extracts block data from the received response.
+        - Sends a minimal confirmation (`blocksresponse_confirmed`) containing only `start_index`.
+        - Processes received blocks and ensures they fit within the node's blockchain.
+        - Builds forward and backward chains to maintain network synchronization.
+        - Reduces unnecessary data transfer by avoiding sending large payloads.
+
+        This method improves synchronization efficiency and prevents excessive network load.
+        """
         result = body.get("result")
         blocks = result.get("blocks")
+
         if stream.peer.protocol_version > 1:
+            start_index = body.get("result", {}).get("start_index", None)
             await self.write_result(
-                stream, "blocksresponse_confirmed", body.get("result", {}), body["id"]
+                stream, "blocksresponse_confirmed", {"start_index": start_index}, body["id"]
             )
+
         if not blocks:
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
             stream.synced = True
             return
+
         self.config.consensus.syncing = True
         blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = blocks[0]
@@ -614,8 +628,17 @@ class NodeRPC(BaseRPC):
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
+        """
+        Handles confirmation of received block responses.
+
+        - Extracts the `start_index` from the response.
+        - Removes the corresponding entry from the retry queue to prevent duplicate processing.
+
+        This method ensures proper acknowledgment of received block sync responses.
+        """
         params = body.get("result")
         start_index = params.get("start_index")
+
         if (
             stream.peer.rid,
             "blocksresponse",
