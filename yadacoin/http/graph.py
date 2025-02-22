@@ -231,24 +231,12 @@ class GraphTransactionHandler(BaseGraphHandler):
                 )
 
                 if transaction.are_kel_fields_populated():
-                    if transaction.is_already_in_mempool():
+                    if await transaction.is_already_in_mempool():
                         raise KELException("Duplicate Key Event found in mempool.")
-                    if transaction.public_key_hash in [
-                        output.to for output in transaction.outputs
-                    ]:
-                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                            "Key event transactions must spent entire remaining balance to prerotated_key_hash."
-                        )
 
                 has_kel = await transaction.has_key_event_log()
                 if has_kel:
-                    for output in transaction.outputs:
-                        all_unspent = [
-                            x
-                            async for x in self.config.BU.get_wallet_unspent_transactions_for_dusting(
-                                output.to, limit=100
-                            )
-                        ]
+                    await transaction.verify_key_event_spends_entire_balance()  # TODO: add this check to block generation and verification
 
             except InvalidTransactionException:
                 await self.config.mongo.async_db.failed_transactions.insert_one(
@@ -267,6 +255,22 @@ class GraphTransactionHandler(BaseGraphHandler):
                 self.set_status(400)
                 return self.render_as_json(
                     {"status": False, "message": "InvalidTransactionSignatureException"}
+                )
+            except DoesNotSpendEntirelyToPrerotatedKeyHashException as e:
+                print("DoesNotSpendEntirelyToPrerotatedKeyHashException")
+                await self.config.mongo.async_db.failed_transactions.insert_one(
+                    {
+                        "exception": "DoesNotSpendEntirelyToPrerotatedKeyHashException",
+                        "txn": txn,
+                        "message": str(e),
+                    }
+                )
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": "DoesNotSpendEntirelyToPrerotatedKeyHashException",
+                    }
                 )
             except KELException as e:
                 print("KELException")

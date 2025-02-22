@@ -750,9 +750,20 @@ class KeyEventLog:
                     ]
                 )
                 res = await result.to_list(length=1)
-                if not res:
-                    break
+                if res:
+                    txn = Transaction.from_dict(res[0]["transactions"])
+                    log.append(txn)
+                else:
+                    result_mempool = (
+                        await config.mongo.async_db.miner_transactions.find_one(
+                            {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+                        )
+                    )
+                    if result_mempool:
+                        txn = Transaction.from_dict(result_mempool)
+                        txn.mempool = True
+                        log.append(txn)
+                    else:
+                        break
 
-                txn = Transaction.from_dict(res[0]["transactions"])
-                log.append(txn)
         return log

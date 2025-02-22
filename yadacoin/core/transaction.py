@@ -1148,6 +1148,36 @@ class Transaction(object):
                         return True
         return False
 
+    async def verify_key_event_spends_entire_balance(self):
+        from yadacoin.core.keyeventlog import (
+            DoesNotSpendEntirelyToPrerotatedKeyHashException,
+        )
+
+        if self.public_key_hash in [output.to for output in self.outputs]:
+            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                "Key event transactions must spend entire remaining balance to prerotated_key_hash."
+            )
+
+        all_inputs = [
+            x
+            async for x in self.config.mongo.async_db.blocks.aggregate(
+                [
+                    {"$match": {"transactions.outputs.to": self.public_key_hash}},
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            "transactions.outputs.to": self.public_key_hash,
+                            "transactions.outputs.value": {"$gt": 0},
+                        }
+                    },
+                ]
+            )
+        ]
+        if len(all_inputs) != len(self.inputs):
+            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                "Key event transactions must spend all utxos."
+            )
+
     def to_dict(self):
         relationship = self.relationship
         if hasattr(relationship, "to_dict"):

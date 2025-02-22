@@ -627,7 +627,7 @@ class ConvertPublicKeyToAddressHandler(BaseHandler):
 
 
 WALLET_HANDLERS = [
-    (r"/wallet/?([a-z]+)", WalletHandler),
+    (r"/wallet?([\/a-z]+)", WalletHandler),
     (r"/generate-wallet", GenerateWalletHandler),
     (r"/generate-child-wallet", GenerateChildWalletHandler),
     (r"/get-addresses", GetAddressesHandler),
