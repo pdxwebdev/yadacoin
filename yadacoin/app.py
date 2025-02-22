@@ -190,7 +190,7 @@ class NodeApplication(Application):
                     path.join(path.dirname(__file__), "..", "static"), "wallet"
                 )
             else:
-                static_app_static_wallet_pathpath = path.join(
+                static_wallet_path = path.join(
                     path.join(path.dirname(__file__), "static"), "wallet"
                 )  # probably running from binary
 
