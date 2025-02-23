@@ -111,7 +111,7 @@ class Config:
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
         self.outgoing_blacklist.append("{}:{}".format(self.peer_host, self.peer_port))
-        self.protocol_version = 3
+        self.protocol_version = 4
         self.node_version = version
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
