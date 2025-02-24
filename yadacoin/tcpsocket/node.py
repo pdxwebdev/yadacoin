@@ -151,25 +151,56 @@ class NodeRPC(BaseRPC):
                 await peer_stream.write_params("service_provider_request", payload2)
 
     async def newtxn(self, body, stream):
+        """
+        Handles incoming new transactions and ensures they are valid before processing.
+
+        - Verifies if the transaction already exists in the mempool to prevent duplicates.
+        - Checks for double-spending by ensuring none of the transaction inputs have been used before.
+        - Tracks incoming transactions per host and transaction ID for monitoring.
+        - Adds the transaction to the processing queue if all validations pass.
+        - If the transaction involves a known WebSocket user, forwards it to the appropriate peer.
+
+        ### Protocol version handling:
+        - `protocol_version > 2`: The node confirms transactions by returning the full transaction payload.
+        - `protocol_version > 3`: The node optimizes transaction confirmation by returning only `transaction_id`.
+
+        The method ensures efficient transaction propagation across the network while reducing unnecessary database queries.
+        """
         payload = body.get("params", {})
         transaction = payload.get("transaction")
+        txn = None
+
         if transaction:
             txn = Transaction.from_dict(transaction)
-            if stream.peer.protocol_version > 2:
-                await self.write_result(
-                    stream, "newtxn_confirmed", body.get("params", {}), body["id"]
-                )
         elif payload.get("hash"):
             txn = Transaction.from_dict(payload)
-            if stream.peer.protocol_version > 2:
-                await self.write_result(
-                    stream,
-                    "newtxn_confirmed",
-                    {"transaction": body.get("params", {})},
-                    body["id"],
-                )
-        else:
-            self.config.app_log.info("newtxn, no payload")
+
+        if txn is None:
+            self.config.app_log.info("[NEW_TXN] No valid transaction received, ignoring request.")
+            return
+
+        txn_id = txn.transaction_signature
+
+        if stream.peer.protocol_version > 3:
+            await self.write_result(
+                stream, "newtxn_confirmed", {"transaction_id": txn_id}, body["id"]
+            )
+        elif stream.peer.protocol_version > 2:
+            await self.write_result(
+                stream, "newtxn_confirmed", {"transaction": txn.to_dict()}, body["id"]
+            )
+
+        existing_txn = await self.config.mongo.async_db.miner_transactions.find_one({"id": txn_id})
+        if existing_txn:
+            self.config.app_log.warning(f"Transaction {txn_id} already in mempool! Ignoring.")
+            return
+
+        input_ids = [input_item.id for input_item in txn.inputs]
+        existing_input_txn = await self.config.mongo.async_db.miner_transactions.find_one(
+            {"public_key": txn.public_key, "inputs.id": {"$in": input_ids}}
+        )
+        if existing_input_txn:
+            self.config.app_log.warning(f"Duplicate transaction detected for {txn_id}! Ignoring.")
             return
 
         if (
@@ -196,8 +227,8 @@ class NodeRPC(BaseRPC):
         self.newtxn_tracker.by_host[stream.peer.host] = (
             self.newtxn_tracker.by_host.get(stream.peer.host, 0) + 1
         )
-        self.newtxn_tracker.by_txn_id[txn.transaction_signature] = (
-            self.newtxn_tracker.by_txn_id.get(txn.transaction_signature, 0) + 1
+        self.newtxn_tracker.by_txn_id[txn_id] = (
+            self.newtxn_tracker.by_txn_id.get(txn_id, 0) + 1
         )
 
         self.config.processing_queues.transaction_queue.add(
@@ -331,45 +362,112 @@ class NodeRPC(BaseRPC):
                 ] = {"transaction": txn.to_dict()}
 
     async def newtxn_confirmed(self, body, stream):
+        """
+        Handles transaction confirmation received from a peer.
+
+        - Extracts the confirmed transaction ID from the response.
+        - Supports both protocol versions:
+          - If `protocol_version > 3`, confirmation contains only `transaction_id`.
+          - If `protocol_version > 2`, confirmation contains full transaction data.
+        - Removes the transaction from the retry queue if it was previously pending.
+        - Marks the peer as a confirmed receiver of the transaction to avoid redundant processing.
+
+        This method ensures efficient tracking of confirmed transactions and prevents unnecessary retransmissions.
+        """
+
         result = body.get("result", {})
-        transaction = Transaction.from_dict(result.get("transaction"))
 
-        if (
-            stream.peer.rid,
-            "newtxn",
-            transaction.transaction_signature,
-        ) in self.retry_messages:
-            del self.retry_messages[
-                (stream.peer.rid, "newtxn", transaction.transaction_signature)
-            ]
+        txn_id = result.get("transaction_id")
 
-        self.confirmed_peers.add(
-            (stream.peer.rid, "newtxn", transaction.transaction_signature)
-        )
-        self.config.app_log.debug(
-            f"Transaction {transaction.transaction_signature} confirmed by peer {stream.peer.rid}. Peer added to the list of confirmed peers."
-        )
+        if txn_id is None and result.get("transaction"):
+            txn = Transaction.from_dict(result.get("transaction"))
+            txn_id = txn.transaction_signature
+
+        if not txn_id:
+            self.config.app_log.warning("[NEW_TXN_CONFIRM] Received confirmation without a transaction ID!")
+            return
+
+        retry_key = (stream.peer.rid, "newtxn", txn_id)
+        if retry_key in self.retry_messages:
+            del self.retry_messages[retry_key]
+
+        self.confirmed_peers.add(retry_key)
 
     async def newblock(self, body, stream):
+        """
+        Handles the reception of a new block from a peer node.
+
+        - Extracts block data from the received payload.
+        - Sends a confirmation response (`newblock_confirmed`) back to the sender.
+        - Checks if the block already exists in the database to prevent redundant processing.
+        - Adds the block to the processing queue if it's new.
+        - Supports both protocol versions:
+          - If `protocol_version > 3`, confirmation contains only `block_hash` and `block_index`.
+          - If `protocol_version > 1`, confirmation contains the full payload.
+
+        This method ensures efficient block propagation by preventing duplicate processing
+        and reducing unnecessary load on the node.
+        """
         payload = body.get("params", {}).get("payload", {})
+
         if not payload.get("block"):
-            self.config.app_log.info("newblock, no payload")
+            self.config.app_log.info("[NEW_BLOCK] Received newblock, but no payload")
+            return
+
+        block_index = payload["block"].get("index")
+        block_hash = payload["block"].get("hash")
+
+        if stream.peer.protocol_version > 3:
+            confirm_message = {"block_hash": block_hash, "block_index": block_index}
+        elif stream.peer.protocol_version > 1:
+            confirm_message = body.get("params", {})
+
+        await self.config.nodeShared.write_result(
+            stream, "newblock_confirmed", confirm_message, body["id"]
+        )
+
+        existing_block = await self.config.mongo.async_db.blocks.find_one(
+            {"index": block_index, "hash": block_hash}
+        )
+
+        if existing_block:
+            self.config.app_log.warning(f"[NEW_BLOCK] Block {block_index} already exists in DB, skipping processing.")
             return
 
         self.config.processing_queues.block_queue.add(
             BlockProcessingQueueItem(Blockchain(payload.get("block")), stream, body)
         )
-        if stream.peer.protocol_version > 1:
-            await self.config.nodeShared.write_result(
-                stream, "newblock_confirmed", body.get("params", {}), body["id"]
-            )
 
     async def newblock_confirmed(self, body, stream):
-        payload = body.get("result", {}).get("payload")
-        block = await Block.from_dict(payload.get("block"))
+        """
+        Handles block confirmation messages received from peer nodes.
 
-        if (stream.peer.rid, "newblock", block.hash) in self.retry_messages:
-            del self.retry_messages[(stream.peer.rid, "newblock", block.hash)]
+        - Extracts block hash and index from the response.
+        - Supports both protocol versions:
+          - If `protocol_version > 3`, confirmation contains only `block_hash` and `block_index`.
+          - If `protocol_version > 1 , confirmation contains a full block payload.
+        - Removes the corresponding entry from the retry queue if it was pending.
+
+        This method improves synchronization and prevents redundant retry attempts.
+        """
+
+        payload = body.get("result", {})
+
+        block_hash = payload.get("block_hash")
+        block_index = payload.get("block_index")
+
+        if block_hash is None and payload.get("payload"):
+            block = await Block.from_dict(payload.get("payload").get("block"))
+            block_hash = block.hash
+            block_index = block.index
+
+        if not block_hash:
+            self.config.app_log.warning("[NEW_BLOCK_CONFIRM] Received confirmation without a block hash!")
+            return
+
+        retry_key = (stream.peer.rid, "newblock", block_hash)
+        if retry_key in self.retry_messages:
+            del self.retry_messages[retry_key]
 
     async def ensure_previous_block(self, block, stream):
         have_prev = await self.ensure_previous_on_blockchain(block)
@@ -501,18 +599,32 @@ class NodeRPC(BaseRPC):
                 ] = {}
 
     async def blocksresponse(self, body, stream):
-        # get blocks should be done only by syncing peers
+        """
+        Handles the response containing blockchain blocks from a peer node.
+
+        - Extracts block data from the received response.
+        - Sends a minimal confirmation (`blocksresponse_confirmed`) containing only `start_index`.
+        - Processes received blocks and ensures they fit within the node's blockchain.
+        - Builds forward and backward chains to maintain network synchronization.
+        - Reduces unnecessary data transfer by avoiding sending large payloads.
+
+        This method improves synchronization efficiency and prevents excessive network load.
+        """
         result = body.get("result")
         blocks = result.get("blocks")
+
         if stream.peer.protocol_version > 1:
+            start_index = body.get("result", {}).get("start_index", None)
             await self.write_result(
-                stream, "blocksresponse_confirmed", body.get("result", {}), body["id"]
+                stream, "blocksresponse_confirmed", {"start_index": start_index}, body["id"]
             )
+
         if not blocks:
             self.config.app_log.info(f"blocksresponse, no blocks, {stream.peer.host}")
             self.config.consensus.syncing = False
             stream.synced = True
             return
+
         self.config.consensus.syncing = True
         blocks = [await Block.from_dict(x) for x in blocks]
         first_inbound_block = blocks[0]
@@ -539,8 +651,17 @@ class NodeRPC(BaseRPC):
         self.config.consensus.syncing = False
 
     async def blocksresponse_confirmed(self, body, stream):
+        """
+        Handles confirmation of received block responses.
+
+        - Extracts the `start_index` from the response.
+        - Removes the corresponding entry from the retry queue to prevent duplicate processing.
+
+        This method ensures proper acknowledgment of received block sync responses.
+        """
         params = body.get("result")
         start_index = params.get("start_index")
+
         if (
             stream.peer.rid,
             "blocksresponse",

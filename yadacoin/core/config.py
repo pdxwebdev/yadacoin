@@ -111,7 +111,7 @@ class Config:
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
         self.outgoing_blacklist.append("{}:{}".format(self.peer_host, self.peer_port))
-        self.protocol_version = 3
+        self.protocol_version = 4
         self.node_version = version
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
@@ -159,7 +159,7 @@ class Config:
 
         self.peers_wait = config.get("peers_wait", 30)
         self.status_wait = config.get("status_wait", 10)
-        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 3)
+        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 1)
         self.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
         self.block_checker_wait = config.get("block_checker_wait", 1)
         self.message_sender_wait = config.get("message_sender_wait", 40)
@@ -443,7 +443,7 @@ class Config:
 
         cls.peers_wait = config.get("peers_wait", 30)
         cls.status_wait = config.get("status_wait", 10)
-        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 3)
+        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 1)
         cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
         cls.block_checker_wait = config.get("block_checker_wait", 1)
         cls.message_sender_wait = config.get("message_sender_wait", 40)
