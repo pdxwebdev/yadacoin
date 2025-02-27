@@ -28,6 +28,7 @@ from ecdsa.util import sigdecode_der
 from mnemonic import Mnemonic
 
 from yadacoin import version
+from yadacoin import min_version
 from yadacoin.core.crypt import RIPEMD160
 from yadacoin.enums.modes import MODES
 
@@ -113,6 +114,7 @@ class Config:
         self.outgoing_blacklist.append("{}:{}".format(self.peer_host, self.peer_port))
         self.protocol_version = 4
         self.node_version = version
+        self.min_supported_version = min_version
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
         self.consensus = None
