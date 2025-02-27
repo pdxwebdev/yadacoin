@@ -717,24 +717,33 @@ class NodeRPC(BaseRPC):
         if not params.get("peer"):
             stream.close()
             return {}
+
         generic_peer = Peer.from_dict(params.get("peer"))
-        if self.config.LatestBlock.block.index >= CHAIN.REQUIRE_NODE_VERSION_566:
-            if generic_peer.node_version[0] < 6:
-                await self.write_result(stream, "version_too_old", {}, body["id"])
-                stream.close()
-                return {}
-            elif generic_peer.node_version[0] == 6 and generic_peer.node_version[1] < 3:
-                await self.write_result(stream, "version_too_old", {}, body["id"])
-                stream.close()
-                return {}
-            elif (
-                generic_peer.node_version[0] == 6
-                and generic_peer.node_version[1] == 3
-                and generic_peer.node_version[2] < 3
-            ):
-                await self.write_result(stream, "version_too_old", {}, body["id"])
-                stream.close()
-                return {}
+
+        min_major, min_minor, min_patch = self.config.min_supported_version
+        peer_major, peer_minor, peer_patch = generic_peer.node_version
+
+        self.config.app_log.info(
+            f"Incoming connection from {generic_peer.host}:{generic_peer.port} | "
+            f"Peer Version: {peer_major}.{peer_minor}.{peer_patch} | "
+            f"Node Version: {'.'.join(map(str, self.config.node_version))} | "
+            f"Min Supported Version: {'.'.join(map(str, self.config.min_supported_version))}"
+        )
+
+        if (
+            peer_major < min_major
+            or (peer_major == min_major and peer_minor < min_minor)
+            or (peer_major == min_major and peer_minor == min_minor and peer_patch < min_patch)
+        ):
+            self.config.app_log.warning(
+                f"Peer {generic_peer.host}:{generic_peer.port} rejected "
+                f"(version {peer_major}.{peer_minor}.{peer_patch} < {'.'.join(map(str, self.config.min_supported_version))})"
+            )
+
+            await self.write_params(stream, "disconnect", {"reason": "Version too old, please upgrade to latest release."})
+            stream.close()
+            return
+
         peerCls = None
         if isinstance(self.config.peer, Seed):
             if generic_peer.identity.username_signature in self.config.seeds:
