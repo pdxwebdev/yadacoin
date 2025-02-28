@@ -59,49 +59,57 @@ class BaseRPC:
 
     async def write_as_json(self, stream, method, data, rpc_type, req_id=None):
         if isinstance(stream, DummyStream):
-            self.config.app_log.warning(
-                "Stream is an instance of DummyStream, cannot send data."
-            )
+            self.config.app_log.warning("Stream is an instance of DummyStream, cannot send data.")
             return
+
+        if not hasattr(stream, "peer"):
+            self.config.app_log.warning("Stream has no peer, closing connection.")
+            stream.close()
+            return
+
+        peer_host = getattr(stream.peer, "host", "Unknown")
+
         rpc_data = {
             "id": req_id if req_id else str(uuid4()),
             "method": method,
             "jsonrpc": 2.0,
             rpc_type: data,
         }
+
         if rpc_type == "params":
             if method not in stream.message_queue:
                 stream.message_queue[method] = {}
-            if len(stream.message_queue[method].keys()) > 25:
-                queue_key = list(stream.message_queue[method].keys())[0]
-                del stream.message_queue[method][queue_key]
             stream.message_queue[method][rpc_data["id"]] = rpc_data
+
         try:
-            await stream.write("{}\n".format(json.dumps(rpc_data)).encode())
-        except StreamClosedError:
-            if hasattr(stream, "peer"):
-                self.config.app_log.warning(
-                    "Disconnected from {}: {}".format(
-                        stream.peer.__class__.__name__, stream.peer.to_json()
-                    )
-                )
+            await asyncio.wait_for(
+                stream.write("{}\n".format(json.dumps(rpc_data)).encode()), timeout=5
+            )
+
+        except asyncio.TimeoutError:
+            self.config.app_log.warning(
+                f"⏳ Timeout! Stream {peer_host} is unresponsive. Removing peer..."
+            )
             await self.remove_peer(stream)
             return
-        except:
-            if hasattr(stream, "peer"):
-                await self.remove_peer(stream, reason="BaseRPC: unhandled exception 1")
-            else:
-                stream.close()
-            self.config.app_log.warning(format_exc())
+
+        except StreamClosedError:
+            self.config.app_log.warning(f"StreamClosedError: Peer {peer_host} is already disconnected.")
+            await self.remove_peer(stream)
             return
+
+        except Exception as e:
+            self.config.app_log.warning(f"Exception in write_as_json(): {e}")
+            await self.remove_peer(stream)
+            return
+
         if (
             hasattr(self.config, "tcp_traffic_debug")
-            and self.config.tcp_traffic_debug == True
+            and self.config.tcp_traffic_debug
         ):
-            if hasattr(stream, "peer"):
-                self.config.app_log.debug(
-                    f"SENT {stream.peer.host} {method} {data} {rpc_type} {req_id}"
-                )
+            self.config.app_log.debug(
+                f"SENT {peer_host} {method} {data} {rpc_type} {req_id}"
+            )
 
     async def remove_peer(self, stream, close=True, reason=None):
         if reason:
