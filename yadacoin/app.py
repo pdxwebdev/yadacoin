@@ -784,7 +784,7 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
 
     async def background_mempool_cleaner(self):
-        """Responsible for removing failed transactions from the mempool"""
+        """Responsible for removing failed transactions from the mempool and old transaction confirmations"""
 
         self.config.app_log.debug("background_mempool_cleaner")
         if not hasattr(self.config, "background_mempool_cleaner"):
@@ -795,6 +795,7 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
+            await self.config.TU.clean_txn_tracking(self.config)
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
@@ -813,7 +814,7 @@ class NodeApplication(Application):
         self.config.background_mempool_sender.busy = True
         try:
             await self.config.TU.rebroadcast_mempool(
-                self.config, NodeRPC.confirmed_peers, include_zero=True
+                self.config, include_zero=True
             )
         except Exception:
             self.config.app_log.error(format_exc())

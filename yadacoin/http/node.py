@@ -18,6 +18,7 @@ Handlers required by the core chain operations
 import json
 import time
 
+from datetime import datetime, timezone
 from tornado import escape
 
 from yadacoin.core.chain import CHAIN
@@ -229,6 +230,44 @@ class GetPendingTransactionIdsHandler(BaseHandler):
         return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
 
 
+class GetTransactionTrackingHandler(BaseHandler):
+    async def get(self):
+        """
+        Retrieves transaction tracking data.
+
+        - If `rid` is provided, returns tracking data only for that peer.
+        - If `limit` is provided, returns only the latest N transactions per peer.
+        - Otherwise, returns all transaction tracking data.
+        """
+        rid = self.get_query_argument("rid", None)
+        limit = int(self.get_query_argument("limit", 500))
+
+        query = {"rid": rid} if rid else {}
+
+        transactions = await self.config.mongo.async_db.txn_tracking.find(query).to_list(length=None)
+
+        response = []
+
+        for entry in transactions:
+            formatted_transactions = []
+            
+            if "transactions" in entry:
+                sorted_txn = sorted(entry["transactions"].items(), key=lambda x: x[1], reverse=True)
+                for txn_id, timestamp in sorted_txn[:limit]:
+                    formatted_transactions.append({
+                        "txn_id": txn_id,
+                        "timestamp": datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
+                    })
+
+            response.append({
+                "host": entry.get("host", "Unknown"),
+                "rid": entry["rid"],
+                "transactions": formatted_transactions
+            })
+
+        return self.render_as_json({"transaction_tracking": response})
+
+
 class RebroadcastTransactions(BaseHandler):
     async def get(self):
         await self.config.TU.rebroadcast_mempool(self.config)
@@ -384,6 +423,7 @@ NODE_HANDLERS = [
     (r"/get-status", GetStatusHandler),
     (r"/get-pending-transaction", GetPendingTransactionHandler),
     (r"/get-pending-transaction-ids", GetPendingTransactionIdsHandler),
+    (r"/get-transaction-tracking", GetTransactionTrackingHandler),
     (r"/rebroadcast-transactions", RebroadcastTransactions),
     (r"/rebroadcast-failed-transaction", RebroadcastFailedTransactions),
     (r"/get-current-smart-contract-transactions", GetCurrentSmartContractTransactions),

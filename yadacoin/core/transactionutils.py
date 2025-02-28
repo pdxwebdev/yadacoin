@@ -216,40 +216,74 @@ class TU(object):  # Transaction Utilities
         config.last_mempool_clean = time.time()
 
     @classmethod
-    async def rebroadcast_mempool(
-        cls, config, confirmed_peers=None, include_zero=False
-    ):
+    async def clean_txn_tracking(cls, config):
+        """
+        Removes old transaction confirmations from `txn_tracking` that are older than 24 hours.
+
+        - Ensures that peers are not storing unnecessary old transaction confirmations.
+        - Runs after `clean_mempool` to synchronize data cleanup.
+        - If all transactions under a peer (`rid`) are too old, the entry is deleted entirely.
+        """
+
+        cutoff_time = int(time.time()) - 60 * 60 * 24
+
+        async for doc in config.mongo.async_db.txn_tracking.find():
+            updated_transactions = {
+                txn_id: timestamp for txn_id, timestamp in doc["transactions"].items() if timestamp > cutoff_time
+            }
+
+            if updated_transactions:
+                await config.mongo.async_db.txn_tracking.update_one(
+                    {"rid": doc["rid"]},
+                    {"$set": {"transactions": updated_transactions}}
+                )
+            else:
+                await config.mongo.async_db.txn_tracking.delete_one({"rid": doc["rid"]})
+
+        config.app_log.info(f"[CLEANER] Removed old transaction confirmations.")
+
+    @classmethod
+    async def rebroadcast_mempool(cls, config, include_zero=False):
+        """
+        Rebroadcasts transactions from the mempool to peers who have not yet confirmed them.
+
+        - Runs every 3 minutes to ensure new peers receive transactions.
+        - Uses `txn_tracking` in MongoDB to avoid sending transactions to peers who already confirmed them.
+        - Can include zero-value transactions if `include_zero=True`.
+
+        This ensures efficient transaction propagation while minimizing redundant data transfer.
+        """
+
         from yadacoin.core.transaction import Transaction
 
         query = {"outputs.value": {"$gt": 0}}
         if include_zero:
             query = {}
 
-        if confirmed_peers is None:
-            confirmed_peers = []
-
         async for txn in config.mongo.async_db.miner_transactions.find(query):
             x = Transaction.from_dict(txn)
+
+            confirmed_peers = await config.mongo.async_db.txn_tracking.find(
+                {f"transactions.{x.transaction_signature}": {"$exists": True}}
+            ).to_list(length=None)
+
+            confirmed_rids = {peer["rid"] for peer in confirmed_peers}
+
             async for peer_stream in config.peer.get_sync_peers():
-                if (
-                    peer_stream.peer.rid,
-                    "newtxn",
-                    x.transaction_signature,
-                ) in confirmed_peers:
-                    config.app_log.debug(
-                        f"Skipping peer {peer_stream.peer.rid} in rebroadcast_mempool as it has already confirmed the transaction."
-                    )
+                if peer_stream.peer.rid in confirmed_rids:
+                    config.app_log.info(f"Skipping {peer_stream.peer.rid} - already confirmed.")
                     continue
 
                 await config.nodeShared.write_params(
                     peer_stream, "newtxn", {"transaction": x.to_dict()}
                 )
+
                 if peer_stream.peer.protocol_version > 1:
                     config.nodeClient.retry_messages[
                         (peer_stream.peer.rid, "newtxn", x.transaction_signature)
                     ] = {"transaction": x.to_dict()}
+                
                 await asyncio.sleep(1)
-        return
 
     @classmethod
     async def rebroadcast_failed(cls, config, id):
