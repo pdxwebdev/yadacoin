@@ -88,7 +88,7 @@ class BaseRPC:
 
         except asyncio.TimeoutError:
             self.config.app_log.warning(
-                f"⏳ Timeout! Stream {peer_host} is unresponsive. Removing peer..."
+                f"Timeout! Stream {peer_host} is unresponsive. Removing peer..."
             )
             await self.remove_peer(stream)
             return

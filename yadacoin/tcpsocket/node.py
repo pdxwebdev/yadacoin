@@ -53,10 +53,9 @@ class NodeServerDisconnectTracker:
 
 class NodeServerNewTxnTracker:
     by_host = {}
-    by_txn_id = {}
 
     def to_dict(self):
-        return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+        return {"by_host": self.by_host}
 
 
 class NodeClientDisconnectTracker:
@@ -69,10 +68,9 @@ class NodeClientDisconnectTracker:
 
 class NodeClientNewTxnTracker:
     by_host = {}
-    by_txn_id = {}
 
     def to_dict(self):
-        return {"by_host": self.by_host, "by_txn_id": self.by_txn_id}
+        return {"by_host": self.by_host}
 
 
 class NodeRPC(BaseRPC):
@@ -237,9 +235,6 @@ class NodeRPC(BaseRPC):
 
         self.newtxn_tracker.by_host[stream.peer.host] = (
             self.newtxn_tracker.by_host.get(stream.peer.host, 0) + 1
-        )
-        self.newtxn_tracker.by_txn_id[txn_id] = (
-            self.newtxn_tracker.by_txn_id.get(txn_id, 0) + 1
         )
 
         self.config.processing_queues.transaction_queue.add(
