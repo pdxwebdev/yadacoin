@@ -112,7 +112,7 @@ blocks = [
                 "hash": "ca2da4d4b925faaef7f9184d63e9bc23815071877d1fe659c6751e485a292e65",
                 "inputs": [],
                 "outputs": [
-                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 11.25}
+                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 12.5}
                 ],
                 "version": 6,
                 "private": False,
@@ -216,7 +216,7 @@ blocks = [
                 "hash": "86ff398b77a75cd918ed4d80e62360b0967de13c130bb3ae7518c675a3d63c1f",
                 "inputs": [],
                 "outputs": [
-                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 11.25}
+                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 12.5}
                 ],
                 "version": 6,
                 "private": False,
@@ -299,7 +299,7 @@ blocks = [
                 "hash": "2c35364435eb073ae97de8b49c09bdb0b0c89b68709686dff5a16f25a195f8bb",
                 "inputs": [],
                 "outputs": [
-                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 11.25}
+                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 12.5}
                 ],
                 "version": 6,
                 "private": False,
@@ -361,7 +361,7 @@ blocks = [
                 "hash": "04371d2b1d5e8e9485a78818582c125c51285137da6901f0d178f9b6c6270642",
                 "inputs": [],
                 "outputs": [
-                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 11.25}
+                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 12.5}
                 ],
                 "version": 6,
                 "private": False,
@@ -423,7 +423,7 @@ blocks = [
                 "hash": "e468bd2b9714dd7c2b46d823a4247e2c40dcf8e23679a8f549f452d40c9a5454",
                 "inputs": [],
                 "outputs": [
-                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 11.25}
+                    {"to": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC", "value": 12.5}
                 ],
                 "version": 6,
                 "private": False,
