@@ -27,6 +27,7 @@ from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 
 from eccsnacks.curve25519 import scalarmult_base
+from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -79,11 +80,12 @@ class BaseGraphHandler(BaseHandler):
         update_last_collection_time = None
         if self.request.body:
             body = json.loads(self.request.body.decode("utf-8"))
-            ids = body.get("ids")
-            rids = body.get("rids")
-            if not isinstance(rids, list):
-                rids = [rids]
-            update_last_collection_time = body.get("update_last_collection_time")
+            if isinstance(body, dict):
+                ids = body.get("ids")
+                rids = body.get("rids")
+                if not isinstance(rids, list):
+                    rids = [rids]
+                update_last_collection_time = body.get("update_last_collection_time")
         try:
             key_or_wif = self.get_secure_cookie("key_or_wif").decode()
         except:
@@ -217,11 +219,26 @@ class GraphTransactionHandler(BaseGraphHandler):
             items = [
                 items,
             ]
-        else:
-            items = [item for item in items]
+        mempool_txns = [
+            x async for x in self.config.mongo.async_db.miner_transactions.find({})
+        ]
+        items = [Transaction.from_dict(txn) for txn in items + mempool_txns]
+        if (
+            self.config.LatestBlock.block.index + 1
+            >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
+        ):
+            items_indexed = {x.transaction_signature: x for x in items}
+            for txn in items:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+
         transactions = []
-        for txn in items:
-            transaction = Transaction.from_dict(txn)
+        for transaction in items[:]:
+            if transaction not in items:
+                continue
+            exception_raised = False
             try:
                 await transaction.verify(
                     check_input_spent=True,
@@ -239,8 +256,12 @@ class GraphTransactionHandler(BaseGraphHandler):
                     await transaction.verify_key_event_spends_entire_balance()  # TODO: add this check to block generation and verification
 
             except InvalidTransactionException:
+                exception_raised = True
                 await self.config.mongo.async_db.failed_transactions.insert_one(
-                    {"exception": "InvalidTransactionException", "txn": txn}
+                    {
+                        "exception": "InvalidTransactionException",
+                        "txn": transaction.to_dict(),
+                    }
                 )
                 print("InvalidTransactionException")
                 self.set_status(400)
@@ -248,20 +269,25 @@ class GraphTransactionHandler(BaseGraphHandler):
                     {"status": False, "message": "InvalidTransactionException"}
                 )
             except InvalidTransactionSignatureException:
+                exception_raised = True
                 print("InvalidTransactionSignatureException")
                 await self.config.mongo.async_db.failed_transactions.insert_one(
-                    {"exception": "InvalidTransactionSignatureException", "txn": txn}
+                    {
+                        "exception": "InvalidTransactionSignatureException",
+                        "txn": transaction.to_dict(),
+                    }
                 )
                 self.set_status(400)
                 return self.render_as_json(
                     {"status": False, "message": "InvalidTransactionSignatureException"}
                 )
             except DoesNotSpendEntirelyToPrerotatedKeyHashException as e:
+                exception_raised = True
                 print("DoesNotSpendEntirelyToPrerotatedKeyHashException")
                 await self.config.mongo.async_db.failed_transactions.insert_one(
                     {
                         "exception": "DoesNotSpendEntirelyToPrerotatedKeyHashException",
-                        "txn": txn,
+                        "txn": transaction.to_dict(),
                         "message": str(e),
                     }
                 )
@@ -273,9 +299,14 @@ class GraphTransactionHandler(BaseGraphHandler):
                     }
                 )
             except KELException as e:
+                exception_raised = True
                 print("KELException")
                 await self.config.mongo.async_db.failed_transactions.insert_one(
-                    {"exception": "KELException", "txn": txn, "message": str(e)}
+                    {
+                        "exception": "KELException",
+                        "txn": transaction.to_dict(),
+                        "message": str(e),
+                    }
                 )
                 self.set_status(400)
                 return self.render_as_json({"status": False, "message": "KELException"})
@@ -283,10 +314,17 @@ class GraphTransactionHandler(BaseGraphHandler):
             except MissingInputTransactionException:
                 pass
             except:
+                exception_raised = True
                 raise
                 print("uknown error")
                 self.set_status(400)
                 return self.render_as_json({"status": False, "message": "uknown error"})
+            finally:
+                if exception_raised:
+                    if transaction.spent_in_txn in transactions:
+                        transactions.remove(transaction.spent_in_txn)
+                    if transaction.spent_in_txn in items:
+                        items.remove(transaction.spent_in_txn)
             transactions.append(transaction)
 
         for x in transactions:
@@ -428,7 +466,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                             (peer_stream.peer.rid, "newtxn", x.transaction_signature)
                         ] = {"transaction": x.to_dict()}
 
-        return self.render_as_json(items)
+        return self.render_as_json([item.to_dict() for item in items])
 
     async def create_relationship(self, username_signature, username, to):
         config = self.config

@@ -470,12 +470,30 @@ class MiningPool(object):
                 transaction_obj.relationship.identity.wif
             ] = transaction_obj
 
-        async for txn in self.mongo.async_db.miner_transactions.find(
-            {"relationship.smart_contract": {"$exists": False}}
-        ).sort([("fee", -1), ("time", 1)]):
+        transactions = [
+            txn
+            async for txn in self.mongo.async_db.miner_transactions.find(
+                {"relationship.smart_contract": {"$exists": False}}
+            ).sort([("fee", -1), ("time", 1)])
+        ]
+        transactions = [Transaction.from_dict(txn) for txn in transactions]
+        if (
+            self.config.LatestBlock.block.index + 1
+            >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
+        ):
+            items_indexed = {x.transaction_signature: x for x in transactions}
+            for txn in transactions:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+        for txn in transactions[:]:
+            if txn not in transactions:
+                continue
             transaction_obj = await self.verify_pending_transaction(
                 txn,
                 used_sigs,
+                transactions=transactions,
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
@@ -549,10 +567,13 @@ class MiningPool(object):
         self,
         txn,
         used_sigs,
+        transactions=None,
         check_max_inputs=False,
         check_masternode_fee=False,
         check_kel=False,
     ):
+        if transactions is None:
+            transactions = []
         try:
             if isinstance(txn, Transaction):
                 transaction_obj = txn
@@ -626,7 +647,7 @@ class MiningPool(object):
                 return transaction_obj
 
         except Exception as e:
-            await Transaction.handle_exception(e, transaction_obj)
+            await Transaction.handle_exception(e, transaction_obj, transactions)
 
     async def accept_block(self, block):
         self.app_log.info("Candidate submitted for index: {}".format(block.index))

@@ -110,6 +110,7 @@ class Transaction(object):
         twice_prerotated_key_hash="",
         public_key_hash="",
         prev_public_key_hash="",
+        spent_in_txn="",
     ):
         self.app_log = getLogger("tornado.application")
         self.config = Config()
@@ -129,7 +130,7 @@ class Transaction(object):
         self.requested_rid = requested_rid if requested_rid else ""
         self.hash = txn_hash
         self.outputs = []
-        self.extra_blocks = extra_blocks
+        self.extra_blocks = extra_blocks or []
         self.seed_gateway_rid = seed_gateway_rid
         self.seed_rid = seed_rid
 
@@ -171,6 +172,7 @@ class Transaction(object):
         self.twice_prerotated_key_hash = twice_prerotated_key_hash
         self.public_key_hash = public_key_hash
         self.prev_public_key_hash = prev_public_key_hash
+        self.spent_in_txn = spent_in_txn
 
     @classmethod
     async def generate(
@@ -426,6 +428,7 @@ class Transaction(object):
             twice_prerotated_key_hash=txn.get("twice_prerotated_key_hash", ""),
             public_key_hash=txn.get("public_key_hash", ""),
             prev_public_key_hash=txn.get("prev_public_key_hash", ""),
+            spent_in_txn=txn.get("spent_in_txn", ""),
         )
 
     def in_the_future(self):
@@ -475,7 +478,9 @@ class Transaction(object):
             return Transaction.from_dict(txn)
 
     @staticmethod
-    async def handle_exception(e, txn):
+    async def handle_exception(e, txn, transactions=None):
+        if transactions is None:
+            transactions = []
         if isinstance(e, TooManyInputsException):
             txn.inputs = []
         config = Config()
@@ -490,6 +495,13 @@ class Transaction(object):
             {"id": txn.transaction_signature}
         )
         config.app_log.warning("Exception {}".format(e))
+
+        if txn.spent_in_txn:
+            if txn.spent_in_txn in transactions:
+                transactions.remove(txn.spent_in_txn)
+            await config.mongo.async_db.miner_transactions.delete_many(
+                {"id": txn.spent_in_txn.transaction_signature}
+            )
 
     def verify_signature(self, address):
         try:
@@ -560,7 +572,9 @@ class Transaction(object):
                 )
 
         if verify_hash != self.hash:
-            raise InvalidTransactionException("transaction is invalid")
+            raise InvalidTransactionException(
+                f"transaction is invalid - {verify_hash} - {self.hash}"
+            )
 
         self.verify_signature(address)
 
@@ -577,10 +591,14 @@ class Transaction(object):
         exclude_recovered_ids = []
         async for txn in self.get_inputs(self.inputs):
             txn_input = None
-            input_txn = await self.config.BU.get_transaction_by_id(txn.id)
+            if txn.input_txn:
+                input_txn = txn.input_txn
+                txn_input = txn.input_txn
+            else:
+                input_txn = await self.config.BU.get_transaction_by_id(txn.id)
 
-            if input_txn:
-                txn_input = Transaction.from_dict(input_txn)
+                if input_txn:
+                    txn_input = Transaction.from_dict(input_txn)
 
             if not input_txn:
                 if self.extra_blocks:
@@ -1174,9 +1192,11 @@ class Transaction(object):
             )
         ]
         if len(all_inputs) != len(self.inputs):
-            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                "Key event transactions must spend all utxos."
-            )
+            for test_input in self.inputs:
+                if not test_input.input_txn:
+                    raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                        "Key event transactions must spend all utxos."
+                    )
 
     def to_dict(self):
         relationship = self.relationship
@@ -1218,13 +1238,15 @@ class Transaction(object):
 
 
 class Input(object):
-    def __init__(self, signature):
+    def __init__(self, signature, input_txn):
         self.id = signature
+        self.input_txn = input_txn
 
     @classmethod
     def from_dict(cls, txn):
         return cls(
             signature=txn.get("id", ""),
+            input_txn=txn.get("input_txn", ""),
         )
 
     def to_dict(self):

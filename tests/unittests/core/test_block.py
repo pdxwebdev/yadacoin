@@ -19,6 +19,7 @@ from mongomock import MongoClient
 
 import yadacoin.core.config
 from yadacoin.core.block import Block, quantize_eight
+from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.transaction import TotalValueMismatchException
@@ -422,6 +423,146 @@ class TestBlock(AsyncTestCase):
             await block.transactions[0].verify(
                 check_masternode_fee=True
             )  # test masternode fee fork activated, correct masternode fee
+
+    @mock.patch("yadacoin.core.config.CONFIG.mongo.async_db.blocks")
+    async def test_transaction_with_input_from_same_block(self, mock_blocks):
+        from yadacoin.core.blockchainutils import BlockChainUtils
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.latestblock import LatestBlock
+
+        mock_blocks.find_one = AsyncMock(return_value={"transactions": []})
+        prev_block = await Block.generate(
+            public_key=yadacoin.core.config.CONFIG.public_key,
+            private_key=yadacoin.core.config.CONFIG.private_key,
+        )
+        self.assertIsInstance(prev_block, Block)
+
+        Config().BU = BlockChainUtils()
+        Config().network = "regnet"
+
+        @property
+        async def contract_generated(a):
+            return False
+
+        @contract_generated.setter
+        def contract_generated(self, value):
+            pass
+
+        generate_hash = AsyncMock(
+            return_value="96055eed53cc90423f3b816ae14a62b68200225587106b68812127d3083d331e"
+        )
+
+        verify_signature = Mock(return_value=True)
+        verify_block = AsyncMock(return_value=True)
+
+        async def get_transaction_by_id_same_block(self, idx, instance=None):
+            if (
+                idx
+                == "MEUCIQCGdGnXWfPZ8asqEF5GRBH7EsRNjGSYjv0G51KCRaCzYwIgcU/RNMu3rEh8q6DfRPzJy9g46KOilIn2Y1f52+03BFA="
+            ):
+                return True
+            else:
+                return False
+
+        def handle_exception(e, txn):
+            raise e
+
+        has_key_event_log = AsyncMock(return_value=False)
+
+        verify = AsyncMock(return_value=True)
+
+        nodes = Nodes.get_all_nodes_for_block_height(CHAIN.CHECK_MASTERNODE_FEE_FORK)
+
+        async def test_all_nodes(a):
+            return nodes
+
+        get_target_10min = AsyncMock(
+            return_value=int(masternode_fee_block["target"], 16)
+        )
+
+        is_input_spent = AsyncMock(return_value=False)
+
+        class AppLog:
+            def warning(self, message):
+                print(message)
+
+            def info(self, message):
+                print(message)
+
+            def debug(self, message):
+                print(message)
+
+        Config().app_log = AppLog()
+
+        with mock.patch(
+            "yadacoin.core.transaction.Transaction.contract_generated",
+            new=contract_generated,
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.generate_hash",
+            new=generate_hash,
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.verify_signature",
+            new=verify_signature,
+        ), mock.patch(
+            "yadacoin.core.blockchainutils.BlockChainUtils.get_transaction_by_id",
+            new=get_transaction_by_id_same_block,
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.handle_exception",
+            new=handle_exception,
+        ), mock.patch(
+            "yadacoin.core.block.test_all_nodes", new=test_all_nodes
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.has_key_event_log",
+            new=has_key_event_log,
+        ), mock.patch(
+            "yadacoin.core.transaction.Transaction.verify",
+            new=verify,
+        ), mock.patch(
+            "yadacoin.core.block.Block.verify_signature",
+            new=verify_signature,
+        ), mock.patch(
+            "yadacoin.core.block.Block.verify",
+            new=verify_block,
+        ), mock.patch(
+            "yadacoin.core.chain.CHAIN.get_target_10min", new=get_target_10min
+        ), mock.patch(
+            "yadacoin.core.blockchainutils.BlockChainUtils.is_input_spent",
+            new=is_input_spent,
+        ):
+            Config().LatestBlock = LatestBlock()
+            Config().LatestBlock.block = prev_block
+
+            async def dotest(index, expected_result, prev_block):
+                block = await Block.generate(
+                    public_key=yadacoin.core.config.CONFIG.public_key,
+                    private_key=yadacoin.core.config.CONFIG.private_key,
+                    index=index,  # activate ALLOW_SAME_BLOCK_SPENDING_FORK
+                    prev_hash="d4999a3f044b3cc79347b73d3d098efbffe52d3656f52c69359fd60b65a626f5",
+                    transactions=[
+                        masternode_fee_block["transactions"][0],
+                        masternode_fee_input,
+                    ],
+                    nonce="0F",
+                )
+                block.target = 0
+                block.header = block.generate_header()
+                block.hash = block.generate_hash_from_header(index, block.header, "0F")
+                self.assertIsInstance(block, Block)
+                self.assertEqual(len(block.transactions), 3)
+                prev_block.index = index - 1
+                prev_block.hash = (
+                    "d4999a3f044b3cc79347b73d3d098efbffe52d3656f52c69359fd60b65a626f5"
+                )
+                result = await Blockchain.test_block(
+                    block, simulate_last_block=prev_block
+                )
+                if expected_result:
+                    self.assertTrue(result)
+                else:
+                    self.assertFalse(result)
+
+            await dotest(100000, False, prev_block)
+            await dotest(CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK, True, prev_block)
 
 
 if __name__ == "__main__":

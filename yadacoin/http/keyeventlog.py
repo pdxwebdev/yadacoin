@@ -7,8 +7,8 @@ class HasKELHandler(BaseHandler):
     async def get(self):
         public_key = self.get_query_argument("public_key")
         txn = Transaction(public_key=public_key)
-        await txn.has_key_event_log()
-        return self.render_as_json({"status": True})
+        result = await txn.has_key_event_log()
+        return self.render_as_json({"status": result})
 
 
 class KELHandler(BaseHandler):

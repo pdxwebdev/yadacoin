@@ -486,7 +486,16 @@ class Block(object):
         txns, transaction_objs, used_sigs, used_inputs, index, xtime
     ):
         config = Config()
-        for transaction_obj in txns:
+
+        if index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
+            items_indexed = {x.transaction_signature: x for x in txns}
+            for txn in txns:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+
+        for transaction_obj in txns[:]:
             try:
                 if transaction_obj.transaction_signature in used_sigs:
                     raise InvalidTransactionException(
@@ -517,6 +526,11 @@ class Block(object):
                 used_sigs.append(transaction_obj.transaction_signature)
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
+                if (
+                    transaction_obj.spent_in_txn
+                    and transaction_obj.spent_in_txn in txns
+                ):
+                    txns.remove(transaction_obj.spent_in_txn)
                 continue
             try:
                 if int(index) > CHAIN.CHECK_TIME_FROM and (
@@ -698,26 +712,7 @@ class Block(object):
             raise Exception("Invalid block hash")
 
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        try:
-            result = verify_signature(
-                base64.b64decode(self.signature),
-                self.hash.encode("utf-8"),
-                bytes.fromhex(self.public_key),
-            )
-            if not result:
-                raise Exception("block signature1 is invalid")
-        except:
-            try:
-                result = VerifyMessage(
-                    address,
-                    BitcoinMessage(self.hash.encode("utf-8"), magic=""),
-                    self.signature,
-                )
-                if not result:
-                    raise
-            except:
-                raise Exception("block signature2 is invalid")
-
+        self.verify_signature(address)
         if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
             masernodes_by_address = (
                 Nodes.get_all_nodes_indexed_by_address_for_block_height(self.index)
@@ -837,7 +832,7 @@ class Block(object):
         if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             masternode_sum = sum(x for x in masternode_sums.values())
             if quantize_eight(fee_sum + masternode_fee_sum) != quantize_eight(
-                (coinbase_sum + (masternode_sum or reward - coinbase_sum)) - reward
+                (coinbase_sum + masternode_sum) - reward
             ):
                 raise TotalValueMismatchException(
                     "Masternode output totals do not equal block reward + masternode transaction fees",
@@ -863,6 +858,27 @@ class Block(object):
                     fee_sum,
                     (coinbase_sum - reward),
                 )
+
+    def verify_signature(self, address):
+        try:
+            result = verify_signature(
+                base64.b64decode(self.signature),
+                self.hash.encode("utf-8"),
+                bytes.fromhex(self.public_key),
+            )
+            if not result:
+                raise Exception("block signature1 is invalid")
+        except:
+            try:
+                result = VerifyMessage(
+                    address,
+                    BitcoinMessage(self.hash.encode("utf-8"), magic=""),
+                    self.signature,
+                )
+                if not result:
+                    raise
+            except:
+                raise Exception("block signature2 is invalid")
 
     def get_transaction_hashes(self):
         """Returns a sorted list of tx hash, so the merkle root is constant across nodes"""

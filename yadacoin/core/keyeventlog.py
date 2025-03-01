@@ -704,13 +704,17 @@ class KeyEventLog:
             result = config.mongo.async_db.blocks.aggregate(
                 [
                     {
-                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                        "$match": {
+                            BlocksQueryFields.PREROTATED_KEY_HASH.value: address
+                        },
                     },
                     {
                         "$unwind": "$transactions",
                     },
                     {
-                        "$match": {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                        "$match": {
+                            BlocksQueryFields.PREROTATED_KEY_HASH.value: address
+                        },
                     },
                 ]
             )
@@ -721,9 +725,7 @@ class KeyEventLog:
                     inception = txn
                     break
                 address = str(
-                    P2PKHBitcoinAddress.from_pubkey(
-                        bytes.fromhex(txn.prev_public_key_hash)
-                    )
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key_hash))
                 )
             else:
                 break
