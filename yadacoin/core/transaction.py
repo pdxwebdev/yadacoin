@@ -1238,7 +1238,7 @@ class Transaction(object):
 
 
 class Input(object):
-    def __init__(self, signature, input_txn):
+    def __init__(self, signature, input_txn=None):
         self.id = signature
         self.input_txn = input_txn
 
