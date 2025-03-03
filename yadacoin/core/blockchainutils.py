@@ -193,22 +193,20 @@ class BlockChainUtils(object):
                 "$group": {
                     "_id": None,
                     "spent_balance": {"$sum": "$transactions.outputs.value"},
-                    "total_fee": {"$sum": "$transactions.fee"}
+                    "total_fee": {"$sum": "$transactions.fee"},
                 }
             },
             {
                 "$project": {
-                    "total_spent_balance": {
-                        "$add": ["$spent_balance", "$total_fee"]
-                    }
+                    "total_spent_balance": {"$add": ["$spent_balance", "$total_fee"]}
                 }
-            }
+            },
         ]
         result = await self.mongo.async_db.blocks.aggregate(pipeline).to_list(length=1)
-        
+
         if result:
             return result[0]["total_spent_balance"]
-        
+
         return 0.0
 
     async def get_final_balance(self, address):
@@ -384,6 +382,36 @@ class BlockChainUtils(object):
                 yield utxo
                 if amount_needed is not None and total >= amount_needed:
                     break
+
+        if not inc_mempool:
+            return
+        mempool_txns = self.config.mongo.async_db.miner_transactions.find(
+            {"outputs.to": address}
+        )
+        pending_used_inputs = {}
+        unspent_mempool_txns = {}
+        async for mempool_txn in mempool_txns:
+            if mempool_txn["id"] in pending_used_inputs:
+                continue
+
+            xaddress = str(
+                P2PKHBitcoinAddress.from_pubkey(
+                    bytes.fromhex(mempool_txn["public_key"])
+                )
+            )
+            if address == xaddress and mempool_txn.get("inputs"):
+                for x in mempool_txn.get("inputs"):
+                    pending_used_inputs[x["id"]] = mempool_txn
+                    if x["id"] in unspent_mempool_txns:
+                        del unspent_mempool_txns[x["id"]]
+
+            unspent_mempool_txns[mempool_txn["id"]] = {
+                "_id": mempool_txn["id"],
+                "id": mempool_txn["id"],
+                "outputs": [x for x in mempool_txn["outputs"] if x["to"] == address],
+            }
+        for x in list(unspent_mempool_txns.values()):
+            yield x
 
     async def get_wallet_masternode_fees_paid_transactions(
         self, public_key, from_block

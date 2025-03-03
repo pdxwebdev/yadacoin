@@ -145,7 +145,11 @@ class GraphRIDWalletHandler(BaseGraphHandler):
 
         pending_used_inputs = {}
         pending_balance = 0
+        unspent_mempool_txns = {}
         async for mempool_txn in mempool_txns:
+            if mempool_txn["id"] in pending_used_inputs:
+                continue
+
             xaddress = str(
                 P2PKHBitcoinAddress.from_pubkey(
                     bytes.fromhex(mempool_txn["public_key"])
@@ -154,10 +158,23 @@ class GraphRIDWalletHandler(BaseGraphHandler):
             if address == xaddress and mempool_txn.get("inputs"):
                 for x in mempool_txn.get("inputs"):
                     pending_used_inputs[x["id"]] = mempool_txn
+                    if x["id"] in unspent_mempool_txns:
+                        for y in mempool_txn.get("outputs"):
+                            if y["to"] == address:
+                                pending_balance -= float(y["value"])
+                        del unspent_mempool_txns[x["id"]]
+
             if mempool_txn.get("outputs"):
                 for x in mempool_txn.get("outputs"):
                     if x["to"] == address:
                         pending_balance += float(x["value"])
+            unspent_mempool_txns[mempool_txn["id"]] = {
+                "_id": mempool_txn["id"],
+                "id": mempool_txn["id"],
+                "outputs": [x for x in mempool_txn["outputs"] if x["to"] == address],
+            }
+
+        unspent_mempool_txns = list(unspent_mempool_txns.values())
 
         balance = await self.config.BU.get_wallet_balance(address)
 
