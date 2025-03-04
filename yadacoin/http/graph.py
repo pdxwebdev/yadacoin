@@ -136,12 +136,16 @@ class GraphRIDWalletHandler(BaseGraphHandler):
     async def get(self):
         address = self.get_query_argument("address")
         amount_needed = self.get_query_argument("amount_needed", None)
+        method = self.get_query_argument("method", "new")
+
         if amount_needed:
             amount_needed = float(amount_needed)
 
         mempool_txns = self.config.mongo.async_db.miner_transactions.find(
             {"outputs.to": address}
         )
+
+        start_time = time.perf_counter()
 
         pending_used_inputs = {}
         pending_balance = 0
@@ -176,19 +180,39 @@ class GraphRIDWalletHandler(BaseGraphHandler):
 
         unspent_mempool_txns = list(unspent_mempool_txns.values())
 
-        balance = await self.config.BU.get_wallet_balance(address)
+        if method == "new":
+            self.config.app_log.info("Using NEW method for balance and UTXOs.")
 
-        unspent_txns = [
-            x
-            async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
-                address, inc_mempool=True, amount_needed=amount_needed
+            result = await self.config.BU.get_unspent_outputs(
+                address, amount_needed=amount_needed, min_value=0, max_utxos=100
             )
-        ]
+            unspent_txns = result["unspent_utxos"]
+            balance = result["balance"]
+            max_transferable_value = result["max_transferable_value"]
+
+        else:
+            self.config.app_log.info("Using OLD method for balance and UTXOs.")
+
+            balance = await self.config.BU.get_wallet_balance(address)
+
+            unspent_txns = [
+                x
+                async for x in self.config.BU.get_wallet_unspent_transactions_for_spending(
+                    address, inc_mempool=True, amount_needed=amount_needed
+                )
+            ]
+
+            max_transferable_value = 0
+
+        end_time = time.perf_counter()
+        elapsed_time = end_time - start_time
 
         wallet = {
             "pending_balance": "{0:.8f}".format(pending_balance),
             "chain_balance": "{0:.8f}".format(balance),
             "balance": "{0:.8f}".format(balance),
+            "max_transferable_value": "{0:.8f}".format(max_transferable_value),
+            "processing_time_seconds": "{0:.2f}".format(elapsed_time),
             "unspent_transactions": unspent_txns,
         }
         self.render_as_json(wallet, indent=4)
