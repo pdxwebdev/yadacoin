@@ -135,7 +135,7 @@ class GraphInfoHandler(BaseGraphHandler):
 class GraphRIDWalletHandler(BaseGraphHandler):
     async def get(self):
         address = self.get_query_argument("address")
-        amount_needed = self.get_query_argument("amount_needed", None)
+        amount_needed = self.get_query_argument("amount_needed", 0)
         method = self.get_query_argument("method", "new")
 
         if amount_needed:
