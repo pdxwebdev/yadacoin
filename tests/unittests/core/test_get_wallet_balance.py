@@ -188,7 +188,9 @@ class TestWalletBalance(AsyncTestCase):
         coinbase_balance = await config.BU.get_coinbase_total_output_balance(address)
         mn_coinbase_balance = await config.BU.get_masternode_coinbase_balance(address)
         total_received_balance = await config.BU.get_total_received_balance(address)
-        total_spent_balance = await config.BU.get_spent_balance(address)
+        total_spent_balance = await config.BU.get_spent_balance(
+            address, from_index=500000
+        )
         final_balance = (
             coinbase_balance
             + total_received_balance

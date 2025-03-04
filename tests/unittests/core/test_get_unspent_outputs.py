@@ -207,7 +207,7 @@ class TestUTXO(AsyncTestCase):
 
         # Fetch the unspent outputs for the specified address
         utxo_result = await self.config.BU.get_unspent_outputs(
-            address, amount_needed=amount_needed, min_value=min_value
+            address, amount_needed=amount_needed, min_value=min_value, from_index=500000
         )
 
         # Define the expected UTXO outputs for the given address
