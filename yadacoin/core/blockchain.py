@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 from time import time
 
 from asyncstdlib import anext, islice
@@ -130,7 +143,9 @@ class Blockchain(object):
             yield x
 
     @staticmethod
-    async def test_block(block, extra_blocks=[], simulate_last_block=None):
+    async def test_block(block, extra_blocks=None, simulate_last_block=None):
+        if extra_blocks is None:
+            extra_blocks = []
         config = Config()
         try:
             await block.verify()
@@ -179,9 +194,21 @@ class Blockchain(object):
         if block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             check_masternode_fee = True
 
+        check_kel = False
+        if block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
+        if block.index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
+            items_indexed = {x.transaction_signature: x for x in block.transactions}
+            for txn in block.transactions:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+
         used_inputs = {}
         i = 0
-        async for transaction in Blockchain.get_txns(block.transactions):
+        async for transaction in Blockchain.get_txns(block.transactions[:]):
             if extra_blocks:
                 transaction.extra_blocks = extra_blocks
             config.app_log.info("verifying txn: {} block: {}".format(i, block.index))
@@ -190,6 +217,8 @@ class Blockchain(object):
                 await transaction.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
+                    check_kel=check_kel,
+                    block=block,
                 )
             except InvalidTransactionException as e:
                 config.app_log.warning(e)
@@ -206,23 +235,40 @@ class Blockchain(object):
             except Exception as e:
                 config.app_log.warning(e)
                 return False
+            finally:
+                if (
+                    transaction.spent_in_txn
+                    and transaction.spent_in_txn in block.transactions
+                ):
+                    block.transactions.remove(transaction.spent_in_txn)
 
             if transaction.inputs:
                 failed = False
                 used_ids_in_this_txn = []
                 async for x in Blockchain.get_inputs(transaction.inputs):
-                    txn = await config.BU.get_transaction_by_id(x.id, instance=True)
+                    if x.input_txn:
+                        txn = x.input_txn
+                    else:
+                        txn = await config.BU.get_transaction_by_id(x.id, instance=True)
                     if not txn:
                         txn = await transaction.find_in_extra_blocks(x)
                         if not txn:
                             failed = True
+                            config.app_log.warning(
+                                f"input not found: {block.index} {transaction.public_key} {x.id}"
+                            )
                     is_input_spent = await config.BU.is_input_spent(
                         x.id,
                         transaction.public_key,
-                        from_index=block.index,
+                        from_index=(
+                            extra_blocks[0].index if extra_blocks else block.index
+                        ),
                         extra_blocks=extra_blocks,
                     )
                     if is_input_spent:
+                        config.app_log.warning(
+                            f"double spend detected {block.index} {transaction.public_key} {x.id}"
+                        )
                         failed = True
                     if x.id in used_ids_in_this_txn:
                         failed = True
@@ -231,9 +277,6 @@ class Blockchain(object):
                     used_inputs[(x.id, transaction.public_key)] = transaction
                     used_ids_in_this_txn.append(x.id)
                 if failed and block.index >= CHAIN.CHECK_DOUBLE_SPEND_FROM:
-                    config.app_log.warning(
-                        f"double spend detected {block.index} {transaction.public_key} {x.id}"
-                    )
                     return False
                 elif failed and block.index < CHAIN.CHECK_DOUBLE_SPEND_FROM:
                     continue
@@ -339,10 +382,15 @@ class Blockchain(object):
             if block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                 check_masternode_fee = True
 
+            check_kel = False
+            if block.index >= CHAIN.CHECK_KEL_FORK:
+                check_kel = True
+
             for txn in block.transactions:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
+                    check_kel=check_kel,
                 )
             if last_block:
                 if int(block.index) - int(last_block.index) > 1:

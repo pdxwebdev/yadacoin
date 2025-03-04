@@ -1,5 +1,14 @@
 ﻿"""
-Async Yadacoin node poc
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
 """
 
 import importlib
@@ -65,17 +74,14 @@ from yadacoin.core.peer import (
     ServiceProvider,
     User,
 )
-from yadacoin.core.processingqueue import (
-    BlockProcessingQueueItem,
-    ProcessingQueues,
-    TransactionProcessingQueueItem,
-)
+from yadacoin.core.processingqueue import BlockProcessingQueueItem, ProcessingQueues
 from yadacoin.core.smtp import Email
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
+from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.product import PRODUCT_HANDLERS
@@ -118,6 +124,7 @@ define(
     multiple=True,
     help="Operation modes. node, web, pool",
 )
+define("ignore", default=False, help="Added for testing", type=str)
 
 
 class WorkerVars:
@@ -176,8 +183,24 @@ class NodeApplication(Application):
                     path.join(path.dirname(__file__), "static"), "app"
                 )  # probably running from binary
 
+            if os.path.exists(
+                path.join(path.join(path.dirname(__file__), "..", "static"), "wallet")
+            ):
+                static_wallet_path = path.join(
+                    path.join(path.dirname(__file__), "..", "static"), "wallet"
+                )
+            else:
+                static_wallet_path = path.join(
+                    path.join(path.dirname(__file__), "static"), "wallet"
+                )  # probably running from binary
+
             self.default_handlers = [
                 (r"/app/(.*)", StaticFileHandler, {"path": static_app_path}),
+                (
+                    r"/wallet/([\w\-0-9\/]+\.[\w]+)",
+                    StaticFileHandler,
+                    {"path": static_wallet_path},
+                ),
                 (r"/yadacoinstatic/(.*)", StaticFileHandler, {"path": static_path}),
             ]
             self.default_handlers.extend(handlers.HANDLERS)
@@ -376,72 +399,82 @@ class NodeApplication(Application):
         self.config.background_status.busy = False
 
     async def background_block_checker(self):
-        """Responsible for miner updates"""
         """
-        New blocks will directly trigger the correct event.
-        This co-routine checks if new transactions have been received, or if special_min is triggered,
-        So we can update the miners.
+        Responsible for propagating new blocks in the network.
+
+        This coroutine ensures that newly discovered blocks are efficiently distributed to peers.
+        It continuously monitors the latest block and triggers propagation only when a change is detected.
+
+        If a new block is found (i.e., its height or hash has changed), it is immediately broadcasted to peers.
+        Additionally, if no new block has been found for a defined period,
+        it will resend the latest known block to maintain synchronization across nodes (default: 300s).
+
+        This mechanism prevents redundant broadcasts while ensuring all peers
+        stay up-to-date with the latest blockchain state.
         """
         self.config.app_log.debug("background_block_checker")
         if not hasattr(self.config, "background_block_checker"):
-            self.config.background_block_checker = WorkerVars(busy=False, last_send=0)
+            self.config.background_block_checker = WorkerVars(
+                busy=False, last_send=0, last_block_height=0, last_block_hash=None
+            )
         if self.config.background_block_checker.busy:
             self.config.app_log.debug("background_block_checker - busy")
             return
         self.config.background_block_checker.busy = True
+
         try:
-            self.config.background_block_checker.last_block_height = 0
-            if LatestBlock.block:
-                self.config.background_block_checker.last_block_height = (
-                    LatestBlock.block.index
-                )
-            await LatestBlock.block_checker()
-            if (
-                self.config.background_block_checker.last_block_height
-                != LatestBlock.block.index
-            ):
-                self.config.app_log.info(
-                    "Latest block height: %s | time: %s"
-                    % (
-                        self.config.LatestBlock.block.index,
-                        datetime.fromtimestamp(
-                            int(self.config.LatestBlock.block.time)
-                        ).strftime("%Y-%m-%d %H:%M:%S"),
-                    )
-                )
-                await self.config.nodeShared.send_block_to_peers(
-                    self.config.LatestBlock.block
-                )
-            elif int(time()) - self.config.background_block_checker.last_send > 60:
-                self.config.background_block_checker.last_send = int(time())
-                await self.config.nodeShared.send_block_to_peers(
-                    self.config.LatestBlock.block
+            current_block = LatestBlock.block
+            last_block_height = self.config.background_block_checker.last_block_height
+            last_block_hash = self.config.background_block_checker.last_block_hash
+
+            if current_block:
+                self.config.app_log.debug(
+                    f"Current block: Height={current_block.index}, Hash={current_block.hash}"
                 )
 
-            self.config.health.block_checker.last_activity = int(time())
+                # Check if the block height or hash has changed
+                if (
+                    current_block.index != last_block_height
+                    or current_block.hash != last_block_hash
+                ):
+                    self.config.background_block_checker.last_block_height = (
+                        current_block.index
+                    )
+                    self.config.background_block_checker.last_block_hash = (
+                        current_block.hash
+                    )
+
+                    self.config.app_log.info(
+                        f"New block detected: Height={current_block.index}, "
+                        f"Hash={current_block.hash}, Time={datetime.fromtimestamp(current_block.time).strftime('%Y-%m-%d %H:%M:%S')}"
+                    )
+
+                    # Propagate the new block to peers
+                    await self.config.nodeShared.send_block_to_peers(current_block)
+                    self.config.background_block_checker.last_send = int(time())
+                    self.config.app_log.info(
+                        f"Block {current_block.index} successfully propagated to peers."
+                    )
+                elif int(time()) - self.config.background_block_checker.last_send > 300:
+                    # Regular propagation if no new block but timeout exceeded
+                    self.config.app_log.info(
+                        "Regular propagation triggered after timeout."
+                    )
+                    self.config.background_block_checker.last_send = int(time())
+                    await self.config.nodeShared.send_block_to_peers(current_block)
+                else:
+                    self.config.app_log.debug(
+                        f"No propagation needed. Last send: {self.config.background_block_checker.last_send}, "
+                        f"Time since last send: {int(time()) - self.config.background_block_checker.last_send}s"
+                    )
+            else:
+                self.config.app_log.debug("No current block available to propagate.")
+
         except Exception:
             self.config.app_log.error(format_exc())
-        self.config.background_block_checker.busy = False
-
-    async def background_newtxn_stress_test(self):
-        for peer_cls in list(self.config.nodeClient.outbound_streams.keys()).copy():
-            for rid in self.config.nodeClient.outbound_streams[peer_cls]:
-                for x in range(50):
-                    txn = await Transaction.generate(
-                        private_key=self.config.private_key,
-                        public_key=self.config.public_key,
-                    )
-                    # self.config.nodeClient.retry_messages[
-                    #     (rid, "newtxn", txn.transaction_signature)
-                    # ] = {
-                    #     "transaction": txn.to_dict(),
-                    #     "test": True,
-                    # }
-                    self.config.processing_queues.transaction_queue.add(
-                        TransactionProcessingQueueItem(
-                            txn, self.config.nodeClient.outbound_streams[peer_cls][rid]
-                        )
-                    )
+        finally:
+            self.config.health.block_checker.last_activity = int(time())
+            self.config.background_block_checker.busy = False
 
     async def background_newblock_stress_test(self):
         # only tests outbound currently
@@ -751,7 +784,7 @@ class NodeApplication(Application):
             self.config.app_log.error(format_exc())
 
     async def background_mempool_cleaner(self):
-        """Responsible for removing failed transactions from the mempool"""
+        """Responsible for removing failed transactions from the mempool and old transaction confirmations"""
 
         self.config.app_log.debug("background_mempool_cleaner")
         if not hasattr(self.config, "background_mempool_cleaner"):
@@ -762,6 +795,7 @@ class NodeApplication(Application):
         self.config.background_mempool_cleaner.busy = True
         try:
             await self.config.TU.clean_mempool(self.config)
+            await self.config.TU.clean_txn_tracking(self.config)
             self.config.health.mempool_cleaner.last_activity = int(time())
         except Exception:
             self.config.app_log.error(format_exc())
@@ -780,7 +814,7 @@ class NodeApplication(Application):
         self.config.background_mempool_sender.busy = True
         try:
             await self.config.TU.rebroadcast_mempool(
-                self.config, NodeRPC.confirmed_peers, include_zero=True
+                self.config, include_zero=True
             )
         except Exception:
             self.config.app_log.error(format_exc())
@@ -1043,6 +1077,7 @@ class NodeApplication(Application):
         self.default_handlers.extend(PRODUCT_HANDLERS)
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
+        self.default_handlers.extend(KEY_EVENT_LOG_HANDLERS)
         if self.config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value or (
             hasattr(self.config, "activate_peerjs")
             and self.config.activate_peerjs == True

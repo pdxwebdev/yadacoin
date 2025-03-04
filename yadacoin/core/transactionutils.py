@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import asyncio
 import base64
 import hashlib
@@ -117,10 +130,15 @@ class TU(object):  # Transaction Utilities
         if config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             check_masternode_fee = True
 
+        check_kel = False
+        if config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         try:
             await transaction.verify(
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
             )
         except TooManyInputsException as e:
             return {"status": "error", "message": e}
@@ -198,7 +216,44 @@ class TU(object):  # Transaction Utilities
         config.last_mempool_clean = time.time()
 
     @classmethod
-    async def rebroadcast_mempool(cls, config, confirmed_peers, include_zero=False):
+    async def clean_txn_tracking(cls, config):
+        """
+        Removes old transaction confirmations from `txn_tracking` that are older than 24 hours.
+
+        - Ensures that peers are not storing unnecessary old transaction confirmations.
+        - Runs after `clean_mempool` to synchronize data cleanup.
+        - If all transactions under a peer (`rid`) are too old, the entry is deleted entirely.
+        """
+
+        cutoff_time = int(time.time()) - 60 * 60 * 24
+
+        async for doc in config.mongo.async_db.txn_tracking.find():
+            updated_transactions = {
+                txn_id: timestamp for txn_id, timestamp in doc["transactions"].items() if timestamp > cutoff_time
+            }
+
+            if updated_transactions:
+                await config.mongo.async_db.txn_tracking.update_one(
+                    {"rid": doc["rid"]},
+                    {"$set": {"transactions": updated_transactions}}
+                )
+            else:
+                await config.mongo.async_db.txn_tracking.delete_one({"rid": doc["rid"]})
+
+        config.app_log.info(f"[CLEANER] Removed old transaction confirmations.")
+
+    @classmethod
+    async def rebroadcast_mempool(cls, config, include_zero=False):
+        """
+        Rebroadcasts transactions from the mempool to peers who have not yet confirmed them.
+
+        - Runs every 3 minutes to ensure new peers receive transactions.
+        - Uses `txn_tracking` in MongoDB to avoid sending transactions to peers who already confirmed them.
+        - Can include zero-value transactions if `include_zero=True`.
+
+        This ensures efficient transaction propagation while minimizing redundant data transfer.
+        """
+
         from yadacoin.core.transaction import Transaction
 
         query = {"outputs.value": {"$gt": 0}}
@@ -207,26 +262,28 @@ class TU(object):  # Transaction Utilities
 
         async for txn in config.mongo.async_db.miner_transactions.find(query):
             x = Transaction.from_dict(txn)
+
+            confirmed_peers = await config.mongo.async_db.txn_tracking.find(
+                {f"transactions.{x.transaction_signature}": {"$exists": True}}
+            ).to_list(length=None)
+
+            confirmed_rids = {peer["rid"] for peer in confirmed_peers}
+
             async for peer_stream in config.peer.get_sync_peers():
-                if (
-                    peer_stream.peer.rid,
-                    "newtxn",
-                    x.transaction_signature,
-                ) in confirmed_peers:
-                    config.app_log.debug(
-                        f"Skipping peer {peer_stream.peer.rid} in rebroadcast_mempool as it has already confirmed the transaction."
-                    )
+                if peer_stream.peer.rid in confirmed_rids:
+                    config.app_log.info(f"Skipping {peer_stream.peer.rid} - already confirmed.")
                     continue
 
                 await config.nodeShared.write_params(
                     peer_stream, "newtxn", {"transaction": x.to_dict()}
                 )
+
                 if peer_stream.peer.protocol_version > 1:
                     config.nodeClient.retry_messages[
                         (peer_stream.peer.rid, "newtxn", x.transaction_signature)
                     ] = {"transaction": x.to_dict()}
+                
                 await asyncio.sleep(1)
-        return
 
     @classmethod
     async def rebroadcast_failed(cls, config, id):

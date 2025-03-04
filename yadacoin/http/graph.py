@@ -1,4 +1,17 @@
 """
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
+"""
 Handlers required by the graph operations
 """
 
@@ -12,8 +25,9 @@ import uuid
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-from eccsnacks.curve25519 import scalarmult_base
 
+from eccsnacks.curve25519 import scalarmult_base
+from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
@@ -66,11 +80,12 @@ class BaseGraphHandler(BaseHandler):
         update_last_collection_time = None
         if self.request.body:
             body = json.loads(self.request.body.decode("utf-8"))
-            ids = body.get("ids")
-            rids = body.get("rids")
-            if not isinstance(rids, list):
-                rids = [rids]
-            update_last_collection_time = body.get("update_last_collection_time")
+            if isinstance(body, dict):
+                ids = body.get("ids")
+                rids = body.get("rids")
+                if not isinstance(rids, list):
+                    rids = [rids]
+                update_last_collection_time = body.get("update_last_collection_time")
         try:
             key_or_wif = self.get_secure_cookie("key_or_wif").decode()
         except:
@@ -134,7 +149,11 @@ class GraphRIDWalletHandler(BaseGraphHandler):
 
         pending_used_inputs = {}
         pending_balance = 0
+        unspent_mempool_txns = {}
         async for mempool_txn in mempool_txns:
+            if mempool_txn["id"] in pending_used_inputs:
+                continue
+
             xaddress = str(
                 P2PKHBitcoinAddress.from_pubkey(
                     bytes.fromhex(mempool_txn["public_key"])
@@ -143,10 +162,23 @@ class GraphRIDWalletHandler(BaseGraphHandler):
             if address == xaddress and mempool_txn.get("inputs"):
                 for x in mempool_txn.get("inputs"):
                     pending_used_inputs[x["id"]] = mempool_txn
+                    if x["id"] in unspent_mempool_txns:
+                        for y in mempool_txn.get("outputs"):
+                            if y["to"] == address:
+                                pending_balance -= float(y["value"])
+                        del unspent_mempool_txns[x["id"]]
+
             if mempool_txn.get("outputs"):
                 for x in mempool_txn.get("outputs"):
                     if x["to"] == address:
                         pending_balance += float(x["value"])
+            unspent_mempool_txns[mempool_txn["id"]] = {
+                "_id": mempool_txn["id"],
+                "id": mempool_txn["id"],
+                "outputs": [x for x in mempool_txn["outputs"] if x["to"] == address],
+            }
+
+        unspent_mempool_txns = list(unspent_mempool_txns.values())
 
         if method == "new":
             self.config.app_log.info("Using NEW method for balance and UTXOs.")
@@ -217,26 +249,60 @@ class GraphTransactionHandler(BaseGraphHandler):
         self.render_as_json(list(transactions))
 
     async def post(self):
+        from yadacoin.core.keyeventlog import (
+            DoesNotSpendEntirelyToPrerotatedKeyHashException,
+            KELException,
+        )
+
         await self.get_base_graph()  # TODO: did this to set username_signature, refactor this
         items = json.loads(self.request.body.decode("utf-8"))
         if not isinstance(items, list):
             items = [
                 items,
             ]
-        else:
-            items = [item for item in items]
+        mempool_txns = [
+            x async for x in self.config.mongo.async_db.miner_transactions.find({})
+        ]
+        items = [Transaction.from_dict(txn) for txn in items + mempool_txns]
+        if (
+            self.config.LatestBlock.block.index + 1
+            >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
+        ):
+            items_indexed = {x.transaction_signature: x for x in items}
+            for txn in items:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+
         transactions = []
-        for txn in items:
-            transaction = Transaction.from_dict(txn)
+        for transaction in items[:]:
+            if transaction not in items:
+                continue
+            exception_raised = False
             try:
                 await transaction.verify(
                     check_input_spent=True,
                     check_masternode_fee=True,
                     check_max_inputs=True,
+                    check_kel=True,
                 )
+
+                if transaction.are_kel_fields_populated():
+                    if await transaction.is_already_in_mempool():
+                        raise KELException("Duplicate Key Event found in mempool.")
+
+                has_kel = await transaction.has_key_event_log()
+                if has_kel:
+                    await transaction.verify_key_event_spends_entire_balance()  # TODO: add this check to block generation and verification
+
             except InvalidTransactionException:
+                exception_raised = True
                 await self.config.mongo.async_db.failed_transactions.insert_one(
-                    {"exception": "InvalidTransactionException", "txn": txn}
+                    {
+                        "exception": "InvalidTransactionException",
+                        "txn": transaction.to_dict(),
+                    }
                 )
                 print("InvalidTransactionException")
                 self.set_status(400)
@@ -244,21 +310,62 @@ class GraphTransactionHandler(BaseGraphHandler):
                     {"status": False, "message": "InvalidTransactionException"}
                 )
             except InvalidTransactionSignatureException:
+                exception_raised = True
                 print("InvalidTransactionSignatureException")
                 await self.config.mongo.async_db.failed_transactions.insert_one(
-                    {"exception": "InvalidTransactionSignatureException", "txn": txn}
+                    {
+                        "exception": "InvalidTransactionSignatureException",
+                        "txn": transaction.to_dict(),
+                    }
                 )
                 self.set_status(400)
                 return self.render_as_json(
                     {"status": False, "message": "InvalidTransactionSignatureException"}
                 )
+            except DoesNotSpendEntirelyToPrerotatedKeyHashException as e:
+                exception_raised = True
+                print("DoesNotSpendEntirelyToPrerotatedKeyHashException")
+                await self.config.mongo.async_db.failed_transactions.insert_one(
+                    {
+                        "exception": "DoesNotSpendEntirelyToPrerotatedKeyHashException",
+                        "txn": transaction.to_dict(),
+                        "message": str(e),
+                    }
+                )
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": False,
+                        "message": "DoesNotSpendEntirelyToPrerotatedKeyHashException",
+                    }
+                )
+            except KELException as e:
+                exception_raised = True
+                print("KELException")
+                await self.config.mongo.async_db.failed_transactions.insert_one(
+                    {
+                        "exception": "KELException",
+                        "txn": transaction.to_dict(),
+                        "message": str(e),
+                    }
+                )
+                self.set_status(400)
+                return self.render_as_json({"status": False, "message": "KELException"})
+
             except MissingInputTransactionException:
                 pass
             except:
+                exception_raised = True
                 raise
                 print("uknown error")
                 self.set_status(400)
                 return self.render_as_json({"status": False, "message": "uknown error"})
+            finally:
+                if exception_raised:
+                    if transaction.spent_in_txn in transactions:
+                        transactions.remove(transaction.spent_in_txn)
+                    if transaction.spent_in_txn in items:
+                        items.remove(transaction.spent_in_txn)
             transactions.append(transaction)
 
         for x in transactions:
@@ -390,16 +497,17 @@ class GraphTransactionHandler(BaseGraphHandler):
 
             await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
-            async for peer_stream in self.config.peer.get_sync_peers():
-                await self.config.nodeShared.write_params(
-                    peer_stream, "newtxn", {"transaction": x.to_dict()}
-                )
-                if peer_stream.peer.protocol_version > 1:
-                    self.config.nodeClient.retry_messages[
-                        (peer_stream.peer.rid, "newtxn", x.transaction_signature)
-                    ] = {"transaction": x.to_dict()}
+            if "node" in self.config.modes:
+                async for peer_stream in self.config.peer.get_sync_peers():
+                    await self.config.nodeShared.write_params(
+                        peer_stream, "newtxn", {"transaction": x.to_dict()}
+                    )
+                    if peer_stream.peer.protocol_version > 1:
+                        self.config.nodeClient.retry_messages[
+                            (peer_stream.peer.rid, "newtxn", x.transaction_signature)
+                        ] = {"transaction": x.to_dict()}
 
-        return self.render_as_json(items)
+        return self.render_as_json([item.to_dict() for item in items])
 
     async def create_relationship(self, username_signature, username, to):
         config = self.config
@@ -989,6 +1097,36 @@ class MyRoutesHandler(BaseGraphHandler):
         return self.render_as_json({"routes": routes})
 
 
+class PrerotatedKeyForUserNameSignature(BaseGraphHandler):
+    async def get(self):
+        # once a user searches their contacts for a given RID,
+        # they grab the username signature and call this endpoint to get:
+        #   validity periods for a public key
+        #   latest public key hash
+        public_key = self.get_query_argument("public_key")
+        while await True:
+            xaddress = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
+            key_rotation = self.config.mongo.async_db.blocks.aggregate(
+                [
+                    {
+                        "$match": {
+                            "transactions.relationship.key_rotation.prerotated_key_hash": xaddress
+                        }
+                    },
+                    {"$unwind": "$transactions"},
+                    {
+                        "$match": {
+                            "transactions.relationship.key_rotation.prerotated_key_hash": xaddress
+                        }
+                    },
+                ]
+            )
+            if not key_rotation:
+                break
+            public_key = key_rotation["public_key"]
+        return self.render_as_jason({"current_key": key_rotation})
+
+
 # these routes are placed in the order of operations for getting started.
 GRAPH_HANDLERS = [
     (r"/yada-config", GraphConfigHandler),  # first the config is requested
@@ -1041,4 +1179,5 @@ GRAPH_HANDLERS = [
     (r"/challenge", ChallengeHandler),
     (r"/auth", AuthHandler),
     (r"/my-routes", MyRoutesHandler),
+    (r"/prerotated-key-hash-for-username-signature", PrerotatedKeyForUserNameSignature),
 ]

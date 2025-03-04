@@ -96,11 +96,13 @@ class YadaNodeManager:
             ["rm", "-rf", mongodump_path],
             cwd=self.repo_path,
         )
+        print(f"Restore from bootstrap data complete.")
 
     def run(self):
         self.stop_previous_containers()  # Stop and remove previous containers
         if self.is_mongodump_directory_present():
             self.start_restore_service()  # Start the restore service if directory exists
+            print(f"Restoring from bootstrap data")
         while True:
             if not self.ensure_container_running():
                 print(

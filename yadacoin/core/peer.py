@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import hashlib
 import json
 import time
@@ -28,7 +41,7 @@ class Peer:
         http_host=None,
         http_port=None,
         secure=None,
-        protocol_version=3,
+        protocol_version=4,
         node_version=(0, 0, 0),
         peer_type=None,
     ):
@@ -62,7 +75,7 @@ class Peer:
             "http_host": config.ssl.common_name or config.peer_host,
             "http_port": config.ssl.port or config.serve_port,
             "secure": config.ssl.is_valid(),
-            "protocol_version": 3,
+            "protocol_version": 4,
             "node_version": config.node_version,
         }
         if config.peer_type == PEER_TYPES.SEED.value:
@@ -666,7 +679,7 @@ class ServiceProvider(Peer):
 
     @classmethod
     def compatible_types(cls):
-        return [ServiceProvider, User]
+        return [ServiceProvider, User, Pool]
 
     async def get_route_peers(self, peer, payload):
         if isinstance(peer, User):

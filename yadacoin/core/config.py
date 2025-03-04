@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import binascii
 import hashlib
@@ -15,6 +28,7 @@ from ecdsa.util import sigdecode_der
 from mnemonic import Mnemonic
 
 from yadacoin import version
+from yadacoin import min_version
 from yadacoin.core.crypt import RIPEMD160
 from yadacoin.enums.modes import MODES
 
@@ -98,8 +112,9 @@ class Config:
         # Do not try to test or connect to ourselves.
         self.outgoing_blacklist.append(self.serve_host)
         self.outgoing_blacklist.append("{}:{}".format(self.peer_host, self.peer_port))
-        self.protocol_version = 3
+        self.protocol_version = 4
         self.node_version = version
+        self.min_supported_version = min_version
         # Config also serves as backbone storage for all singleton helpers used by the components.
         self.mongo = None
         self.consensus = None
@@ -146,12 +161,12 @@ class Config:
 
         self.peers_wait = config.get("peers_wait", 30)
         self.status_wait = config.get("status_wait", 10)
-        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
-        self.block_queue_processor_wait = config.get("block_queue_processor_wait", 10)
+        self.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 1)
+        self.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
         self.block_checker_wait = config.get("block_checker_wait", 1)
-        self.message_sender_wait = config.get("message_sender_wait", 10)
-        self.pool_payer_wait = config.get("pool_payer_wait", 120)
-        self.cache_validator_wait = config.get("cache_validator_wait", 3600)
+        self.message_sender_wait = config.get("message_sender_wait", 40)
+        self.pool_payer_wait = config.get("pool_payer_wait", 110)
+        self.cache_validator_wait = config.get("cache_validator_wait", 3550)
         self.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         self.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         self.nonce_processor_wait = config.get("nonce_processor_wait", 1)
@@ -160,6 +175,7 @@ class Config:
         self.http_request_timeout = config.get("http_request_timeout", 3000)
 
         self.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
+        self.balance_min_utxo = config.get("balance_min_utxo", 1)
 
         for key, val in config.items():
             if not hasattr(self, key):
@@ -348,6 +364,7 @@ class Config:
                 "dns_resolvers": [],
                 "dns_bypass_ips": [],
                 "masternode_fee_minimum": 1,
+                "balance_min_utxo": 1,
             }
         )
 
@@ -428,12 +445,12 @@ class Config:
 
         cls.peers_wait = config.get("peers_wait", 30)
         cls.status_wait = config.get("status_wait", 10)
-        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 10)
+        cls.txn_queue_processor_wait = config.get("txn_queue_processor_wait", 1)
         cls.block_queue_processor_wait = config.get("block_queue_processor_wait", 1)
         cls.block_checker_wait = config.get("block_checker_wait", 1)
-        cls.message_sender_wait = config.get("message_sender_wait", 10)
-        cls.pool_payer_wait = config.get("pool_payer_wait", 120)
-        cls.cache_validator_wait = config.get("cache_validator_wait", 3600)
+        cls.message_sender_wait = config.get("message_sender_wait", 40)
+        cls.pool_payer_wait = config.get("pool_payer_wait", 110)
+        cls.cache_validator_wait = config.get("cache_validator_wait", 3550)
         cls.mempool_cleaner_wait = config.get("mempool_cleaner_wait", 1200)
         cls.mempool_sender_wait = config.get("mempool_sender_wait", 180)
         cls.nonce_processor_wait = config.get("nonce_processor_wait", 1)
@@ -442,6 +459,7 @@ class Config:
         cls.http_request_timeout = config.get("http_request_timeout", 3000)
 
         cls.masternode_fee_minimum = config.get("masternode_fee_minimum", 1)
+        cls.balance_min_utxo = config.get("balance_min_utxo", 1)
 
     @staticmethod
     def address_is_valid(address):

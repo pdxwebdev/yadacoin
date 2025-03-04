@@ -1,0 +1,362 @@
+<!DOCTYPE html><html><head>
+      <title>YEL-Whitepaper</title>
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width, initial-scale=1.0">
+      
+      <link rel="stylesheet" href="file:////Users/matt.vogel/.vscode/extensions/shd101wyy.markdown-preview-enhanced-0.8.15/crossnote/dependencies/katex/katex.min.css">
+      
+      
+      
+      
+      
+      <style>
+      code[class*=language-],pre[class*=language-]{color:#333;background:0 0;font-family:Consolas,"Liberation Mono",Menlo,Courier,monospace;text-align:left;white-space:pre;word-spacing:normal;word-break:normal;word-wrap:normal;line-height:1.4;-moz-tab-size:8;-o-tab-size:8;tab-size:8;-webkit-hyphens:none;-moz-hyphens:none;-ms-hyphens:none;hyphens:none}pre[class*=language-]{padding:.8em;overflow:auto;border-radius:3px;background:#f5f5f5}:not(pre)>code[class*=language-]{padding:.1em;border-radius:.3em;white-space:normal;background:#f5f5f5}.token.blockquote,.token.comment{color:#969896}.token.cdata{color:#183691}.token.doctype,.token.macro.property,.token.punctuation,.token.variable{color:#333}.token.builtin,.token.important,.token.keyword,.token.operator,.token.rule{color:#a71d5d}.token.attr-value,.token.regex,.token.string,.token.url{color:#183691}.token.atrule,.token.boolean,.token.code,.token.command,.token.constant,.token.entity,.token.number,.token.property,.token.symbol{color:#0086b3}.token.prolog,.token.selector,.token.tag{color:#63a35c}.token.attr-name,.token.class,.token.class-name,.token.function,.token.id,.token.namespace,.token.pseudo-class,.token.pseudo-element,.token.url-reference .token.variable{color:#795da3}.token.entity{cursor:help}.token.title,.token.title .token.punctuation{font-weight:700;color:#1d3e81}.token.list{color:#ed6a43}.token.inserted{background-color:#eaffea;color:#55a532}.token.deleted{background-color:#ffecec;color:#bd2c00}.token.bold{font-weight:700}.token.italic{font-style:italic}.language-json .token.property{color:#183691}.language-markup .token.tag .token.punctuation{color:#333}.language-css .token.function,code.language-css{color:#0086b3}.language-yaml .token.atrule{color:#63a35c}code.language-yaml{color:#183691}.language-ruby .token.function{color:#333}.language-markdown .token.url{color:#795da3}.language-makefile .token.symbol{color:#795da3}.language-makefile .token.variable{color:#183691}.language-makefile .token.builtin{color:#0086b3}.language-bash .token.keyword{color:#0086b3}pre[data-line]{position:relative;padding:1em 0 1em 3em}pre[data-line] .line-highlight-wrapper{position:absolute;top:0;left:0;background-color:transparent;display:block;width:100%}pre[data-line] .line-highlight{position:absolute;left:0;right:0;padding:inherit 0;margin-top:1em;background:hsla(24,20%,50%,.08);background:linear-gradient(to right,hsla(24,20%,50%,.1) 70%,hsla(24,20%,50%,0));pointer-events:none;line-height:inherit;white-space:pre}pre[data-line] .line-highlight:before,pre[data-line] .line-highlight[data-end]:after{content:attr(data-start);position:absolute;top:.4em;left:.6em;min-width:1em;padding:0 .5em;background-color:hsla(24,20%,50%,.4);color:#f4f1ef;font:bold 65%/1.5 sans-serif;text-align:center;vertical-align:.3em;border-radius:999px;text-shadow:none;box-shadow:0 1px #fff}pre[data-line] .line-highlight[data-end]:after{content:attr(data-end);top:auto;bottom:.4em}html body{font-family:'Helvetica Neue',Helvetica,'Segoe UI',Arial,freesans,sans-serif;font-size:16px;line-height:1.6;color:#333;background-color:#fff;overflow:initial;box-sizing:border-box;word-wrap:break-word}html body>:first-child{margin-top:0}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{line-height:1.2;margin-top:1em;margin-bottom:16px;color:#000}html body h1{font-size:2.25em;font-weight:300;padding-bottom:.3em}html body h2{font-size:1.75em;font-weight:400;padding-bottom:.3em}html body h3{font-size:1.5em;font-weight:500}html body h4{font-size:1.25em;font-weight:600}html body h5{font-size:1.1em;font-weight:600}html body h6{font-size:1em;font-weight:600}html body h1,html body h2,html body h3,html body h4,html body h5{font-weight:600}html body h5{font-size:1em}html body h6{color:#5c5c5c}html body strong{color:#000}html body del{color:#5c5c5c}html body a:not([href]){color:inherit;text-decoration:none}html body a{color:#08c;text-decoration:none}html body a:hover{color:#00a3f5;text-decoration:none}html body img{max-width:100%}html body>p{margin-top:0;margin-bottom:16px;word-wrap:break-word}html body>ol,html body>ul{margin-bottom:16px}html body ol,html body ul{padding-left:2em}html body ol.no-list,html body ul.no-list{padding:0;list-style-type:none}html body ol ol,html body ol ul,html body ul ol,html body ul ul{margin-top:0;margin-bottom:0}html body li{margin-bottom:0}html body li.task-list-item{list-style:none}html body li>p{margin-top:0;margin-bottom:0}html body .task-list-item-checkbox{margin:0 .2em .25em -1.8em;vertical-align:middle}html body .task-list-item-checkbox:hover{cursor:pointer}html body blockquote{margin:16px 0;font-size:inherit;padding:0 15px;color:#5c5c5c;background-color:#f0f0f0;border-left:4px solid #d6d6d6}html body blockquote>:first-child{margin-top:0}html body blockquote>:last-child{margin-bottom:0}html body hr{height:4px;margin:32px 0;background-color:#d6d6d6;border:0 none}html body table{margin:10px 0 15px 0;border-collapse:collapse;border-spacing:0;display:block;width:100%;overflow:auto;word-break:normal;word-break:keep-all}html body table th{font-weight:700;color:#000}html body table td,html body table th{border:1px solid #d6d6d6;padding:6px 13px}html body dl{padding:0}html body dl dt{padding:0;margin-top:16px;font-size:1em;font-style:italic;font-weight:700}html body dl dd{padding:0 16px;margin-bottom:16px}html body code{font-family:Menlo,Monaco,Consolas,'Courier New',monospace;font-size:.85em;color:#000;background-color:#f0f0f0;border-radius:3px;padding:.2em 0}html body code::after,html body code::before{letter-spacing:-.2em;content:'\00a0'}html body pre>code{padding:0;margin:0;word-break:normal;white-space:pre;background:0 0;border:0}html body .highlight{margin-bottom:16px}html body .highlight pre,html body pre{padding:1em;overflow:auto;line-height:1.45;border:#d6d6d6;border-radius:3px}html body .highlight pre{margin-bottom:0;word-break:normal}html body pre code,html body pre tt{display:inline;max-width:initial;padding:0;margin:0;overflow:initial;line-height:inherit;word-wrap:normal;background-color:transparent;border:0}html body pre code:after,html body pre code:before,html body pre tt:after,html body pre tt:before{content:normal}html body blockquote,html body dl,html body ol,html body p,html body pre,html body ul{margin-top:0;margin-bottom:16px}html body kbd{color:#000;border:1px solid #d6d6d6;border-bottom:2px solid #c7c7c7;padding:2px 4px;background-color:#f0f0f0;border-radius:3px}@media print{html body{background-color:#fff}html body h1,html body h2,html body h3,html body h4,html body h5,html body h6{color:#000;page-break-after:avoid}html body blockquote{color:#5c5c5c}html body pre{page-break-inside:avoid}html body table{display:table}html body img{display:block;max-width:100%;max-height:100%}html body code,html body pre{word-wrap:break-word;white-space:pre}}.markdown-preview{width:100%;height:100%;box-sizing:border-box}.markdown-preview ul{list-style:disc}.markdown-preview ul ul{list-style:circle}.markdown-preview ul ul ul{list-style:square}.markdown-preview ol{list-style:decimal}.markdown-preview ol ol,.markdown-preview ul ol{list-style-type:lower-roman}.markdown-preview ol ol ol,.markdown-preview ol ul ol,.markdown-preview ul ol ol,.markdown-preview ul ul ol{list-style-type:lower-alpha}.markdown-preview .newpage,.markdown-preview .pagebreak{page-break-before:always}.markdown-preview pre.line-numbers{position:relative;padding-left:3.8em;counter-reset:linenumber}.markdown-preview pre.line-numbers>code{position:relative}.markdown-preview pre.line-numbers .line-numbers-rows{position:absolute;pointer-events:none;top:1em;font-size:100%;left:0;width:3em;letter-spacing:-1px;border-right:1px solid #999;-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}.markdown-preview pre.line-numbers .line-numbers-rows>span{pointer-events:none;display:block;counter-increment:linenumber}.markdown-preview pre.line-numbers .line-numbers-rows>span:before{content:counter(linenumber);color:#999;display:block;padding-right:.8em;text-align:right}.markdown-preview .mathjax-exps .MathJax_Display{text-align:center!important}.markdown-preview:not([data-for=preview]) .code-chunk .code-chunk-btn-group{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .status{display:none}.markdown-preview:not([data-for=preview]) .code-chunk .output-div{margin-bottom:16px}.markdown-preview .md-toc{padding:0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link div,.markdown-preview .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}.markdown-preview .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}.scrollbar-style::-webkit-scrollbar{width:8px}.scrollbar-style::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}.scrollbar-style::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode]){position:relative;width:100%;height:100%;top:0;left:0;margin:0;padding:0;overflow:auto}html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{position:relative;top:0;min-height:100vh}@media screen and (min-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em calc(50% - 457px + 2em)}}@media screen and (max-width:914px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode]) .markdown-preview{font-size:14px!important;padding:1em}}@media print{html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{display:none}}html body[for=html-export]:not([data-presentation-mode]) #sidebar-toc-btn{position:fixed;bottom:8px;left:8px;font-size:28px;cursor:pointer;color:inherit;z-index:99;width:32px;text-align:center;opacity:.4}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] #sidebar-toc-btn{opacity:1}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc{position:fixed;top:0;left:0;width:300px;height:100%;padding:32px 0 48px 0;font-size:14px;box-shadow:0 0 4px rgba(150,150,150,.33);box-sizing:border-box;overflow:auto;background-color:inherit}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar{width:8px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-track{border-radius:10px;background-color:transparent}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc::-webkit-scrollbar-thumb{border-radius:5px;background-color:rgba(150,150,150,.66);border:4px solid rgba(150,150,150,.66);background-clip:content-box}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc a{text-decoration:none}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc{padding:0 16px}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link{display:inline;padding:.25rem 0}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link div,html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper .md-toc-link p{display:inline}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .md-sidebar-toc .md-toc .md-toc-link-wrapper.highlighted .md-toc-link{font-weight:800}html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{left:300px;width:calc(100% - 300px);padding:2em calc(50% - 457px - 300px / 2);margin:0;box-sizing:border-box}@media screen and (max-width:1274px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{padding:2em}}@media screen and (max-width:450px){html body[for=html-export]:not([data-presentation-mode])[html-show-sidebar-toc] .markdown-preview{width:100%}}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .markdown-preview{left:50%;transform:translateX(-50%)}html body[for=html-export]:not([data-presentation-mode]):not([html-show-sidebar-toc]) .md-sidebar-toc{display:none}
+/* Please visit the URL below for more information: */
+/*   https://shd101wyy.github.io/markdown-preview-enhanced/#/customize-css */
+
+      </style>
+      <!-- The content below will be included at the end of the <head> element. --><script type="text/javascript">
+  document.addEventListener("DOMContentLoaded", function () {
+    // your code here
+  });
+</script></head><body for="html-export">
+    
+    
+      <div class="crossnote markdown-preview  ">
+      
+<p><strong>Whitepaper</strong></p>
+<p><strong>Title:</strong> A Method for Protecting Blockchain Integrity Against Stolen Private Key Transactions</p>
+<p><strong>Abstract</strong><br>
+This paper introduces a method to safeguard blockchain systems from fraudulent transactions caused by stolen private keys. It employs multi-rotation key derivation and cryptographic validation, logging key hashes on-chain to ensure only valid transactions are accepted. Unlike static methods, this approach integrates dynamic key management directly into blockchain consensus, providing strong defenses against brute-force attacks and unauthorized access. The solution is consensus-agnostic, compatible with Proof of Work (PoW) and other mechanisms, and supports critical applications such as financial operations and decentralized identity systems, ensuring security, integrity, and trust.</p>
+<p><strong>Background</strong><br>
+Blockchain systems rely heavily on private keys to generate cryptographic signatures, which are used for transaction validation. However, private key compromise remains a significant vulnerability, enabling attackers to generate valid, impersonated signatures for unauthorized transactions. Current solutions, such as multi-signature (multi-sig) wallets and threshold cryptography, attempt to mitigate these risks by requiring multiple signatures or splitting private key control across parties. While effective in some cases, these methods introduce complexity and do not fully prevent fraudulent transactions from being included in a block. This invention addresses these gaps by introducing a secure key rotation and validation mechanism.</p>
+<p><strong>Technical Solution</strong></p>
+<p><strong>Key Derivation Algorithm and Brute Force Mitigation</strong></p>
+<p>This invention utilizes a hierarchical deterministic (HD) wallet structure, based on the BIP32 standard, to derive keys while incorporating multi-rotation capabilities to enhance security. Each rotation derives a sequence of four child keys from the parent key using the Key Derivation Parameter (KDP) as the derivation index. The KDP, such as a PIN or password, acts as an additional cryptographic input, ensuring that every derived key is uniquely tied to the KDP. This enhances security by making brute force attacks computationally infeasible without the correct KDP.</p>
+<ol>
+<li><strong>First Rotation:</strong> Specifies the next key to use.</li>
+<li><strong>Second Rotation:</strong> Produces the address of the key two rotations ahead.</li>
+<li><strong>Third Rotation:</strong> Produces the address of the key three rotations ahead.</li>
+</ol>
+<p>These rotations ensure that the addresses for rotations two and three are stored on-chain, while the corresponding keys are not retained, minimizing exposure to attacks.</p>
+<p>Even if an attacker possesses the private key and chaincode, brute-forcing the derivation process remains computationally infeasible due to the vast search space and computational intensity of deriving each key. Assuming the attacker uses highly optimized hardware capable of performing 1 billion derivations per second, it would still take approximately <span class="katex"><span class="katex-mathml"><math xmlns="http://www.w3.org/1998/Math/MathML"><semantics><mrow><mn>8.63</mn><mo>×</mo><mn>1</mn><msup><mn>0</mn><mn>42</mn></msup></mrow><annotation encoding="application/x-tex">8.63 \times 10^{42}</annotation></semantics></math></span><span class="katex-html" aria-hidden="true"><span class="base"><span class="strut" style="height:0.7278em;vertical-align:-0.0833em;"></span><span class="mord">8.63</span><span class="mspace" style="margin-right:0.2222em;"></span><span class="mbin">×</span><span class="mspace" style="margin-right:0.2222em;"></span></span><span class="base"><span class="strut" style="height:0.8141em;"></span><span class="mord">1</span><span class="mord"><span class="mord">0</span><span class="msupsub"><span class="vlist-t"><span class="vlist-r"><span class="vlist" style="height:0.8141em;"><span style="top:-3.063em;margin-right:0.05em;"><span class="pstrut" style="height:2.7em;"></span><span class="sizing reset-size6 size3 mtight"><span class="mord mtight"><span class="mord mtight">42</span></span></span></span></span></span></span></span></span></span></span></span> years to brute force all possible key combinations across the four rotations. This multi-rotation structure exponentially increases brute force difficulty, providing a robust security advantage.</p>
+<p><img src="key-rotation-process.png" alt="Key Rotation Process"></p>
+<p><strong>Log Structure</strong></p>
+<p>Each transaction includes a subset of fields that form the key log. These fields ensure the integrity of the key rotation process and are used during transaction validation. Specifically, they allow nodes to verify that each transaction aligns with the expected sequence of key rotations. The log contains the following fields:</p>
+<ol>
+<li><code>twice_prerotated_key_hash</code>: Ensures continuity by matching the <code>prerotated_key_hash</code> of the subsequent record. This provides a cryptographic linkage that nodes validate during consensus, ensuring unauthorized or inconsistent key rotations are rejected.</li>
+<li><code>prerotated_key_hash</code>: Matches the hashed public key of the next record, confirming that the correct key derivation process has been followed.</li>
+<li><code>public_key</code>: Serves as the primary identifier for deriving and verifying key hashes, linking the transaction to the cryptographic key used for signing.</li>
+</ol>
+<p>By validating these fields in sequence, the system ensures that every transaction adheres to the established key rotation protocol. This prevents unauthorized transactions by creating a verifiable chain of cryptographic dependencies. Any deviation from this sequence would result in transaction rejection during consensus.</p>
+<p><strong>Verification Rules</strong></p>
+<ul>
+<li>Record 1 must already be on-chain.</li>
+<li>If Record 1 is not present on-chain, Record 1 will initialize a new log. For log initialization, Record 2 is only required if one of the <strong>additional record trigger conditions*</strong> listed below is met.</li>
+<li>The <code>twice_prerotated_key_hash</code> of Record 1 must match the <code>prerotated_key_hash</code> of Record 2.</li>
+<li>The <code>prerotated_key_hash</code> of Record 1 must match the hashed public key of Record 2.</li>
+<li>The <code>twice_prerotated_key_hash</code> of Record 1 must match the hashed public key of Record 3.</li>
+<li>The <code>twice_prerotated_key_hash</code> of Record 2 must match the <code>prerotated_key_hash</code> of Record 3.</li>
+<li>Each transaction public key is hashed, and the consensus layer of each node will perform a blockchain search for an existing key log entry with <code>twice_prerotated_key_hash</code> or <code>prerotated_key_hash</code> that matches the hashed public key. If the public key has a key log entry, these key log validation rules are applied.</li>
+<li>Record 3 is only required if one of the <strong>additional record trigger conditions*</strong> listed below is met.</li>
+</ul>
+<p><strong>*Additional record trigger conditions</strong></p>
+<ol>
+<li>One of the output addresses in the <code>outputs</code> field of the transaction, which is a list of UTXOs, does not match the <code>prerotated_key_hash</code> of the same transaction, indicating that the transaction sends to a key outside the key chain. In this case, a second transaction (Record 3) must be present during consensus validation or in the mempool during block generation validation. This confirming transaction must have a single UTXO entry in the <code>outputs</code> field with an address matching <code>prerotated_key_hash</code>, and its <code>relationship</code> field must be blank.</li>
+<li>The <code>relationship</code> field of a transaction is not blank. In this case, a confirming transaction (Record 3) must also have a single UTXO entry in the <code>outputs</code> field with an address matching <code>prerotated_key_hash</code>, and its <code>relationship</code> field must be blank.</li>
+</ol>
+<p><img src="conditional-verification.png" alt="Conditional Verification Diagram"></p>
+<p><strong>Log Branching</strong></p>
+<p>Log branching enables the creation of a new set of rotations that interoperate with another user's key log. This process ensures cryptographic continuity while establishing a secure connection between two independent logs. The branching process involves the following steps:</p>
+<ol>
+<li>
+<p><strong>Generating New Rotations:</strong></p>
+<ul>
+<li>A new set of rotations is derived using an additional bit of data unique to the new branch along with the user's Key Derivation Parameter (KDP).</li>
+</ul>
+</li>
+<li>
+<p><strong>Encryption of Rotations:</strong></p>
+<ul>
+<li>The newly generated rotations are encrypted using the latest public key of the other user's log.</li>
+</ul>
+</li>
+<li>
+<p><strong>Inclusion in Relationship Field:</strong></p>
+<ul>
+<li>The encrypted rotations are included in the <code>relationship</code> field of the initiating user's key event.</li>
+<li>The other user is notified that encrypted data is available for them because the <code>outputs</code> address of the key log matches the hash of the other user's latest public key.</li>
+</ul>
+</li>
+<li>
+<p><strong>Confirmation Key Event:</strong></p>
+<ul>
+<li>A second key event is created to confirm the branching. This confirmation event includes:
+<ul>
+<li>A blank <code>relationship</code> field.</li>
+<li>A single UTXO entry in the <code>outputs</code> field that matches the <code>prerotated_key_hash</code>.</li>
+</ul>
+</li>
+</ul>
+</li>
+<li>
+<p><strong>Accepting the Log Branch (User 2):</strong></p>
+<ul>
+<li>The second user generates a new set of key rotations using their KDP and a date specific to the requesting user.</li>
+<li>This information is encrypted and placed on User 2's key log in a key event.</li>
+<li>User 1 is notified that the branch has been accepted because the key log entry uses the hash of the other user's latest public key.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Validation of Log Branching:</strong></p>
+<ul>
+<li>The branching process is validated through the consensus mechanism, ensuring that both the initiating key event and the confirming key event comply with the log's cryptographic rules.</li>
+</ul>
+<p><strong>Security Benefits of Log Branching:</strong></p>
+<ul>
+<li>Establishes secure cryptographic relationships between independent logs.</li>
+<li>Protects sensitive rotation data using encryption.</li>
+<li>Maintains the integrity of both logs while enabling interoperation.</li>
+</ul>
+<p><img src="log-branching-process.png" alt="Log Branching Process"></p>
+<p><strong>Consensus Integration</strong></p>
+<ul>
+<li>Nodes independently validate blocks for inclusion in their local copies of the blockchain. Transactions are inserted into blocks during block generation by the miner or pool, with the consensus layer ensuring the block adheres to validation rules.</li>
+<li>The consensus layer evaluates the block as a whole, ensuring all transactions within adhere to the validation rules.</li>
+<li>Any block containing invalid transactions is rejected outright, maintaining blockchain integrity.</li>
+</ul>
+<p><img src="consensus-integration.png" alt="Consensus Integration"></p>
+<h3 id="transaction-validation-scenarios"><strong>Transaction Validation Scenarios</strong> </h3>
+<h4 id="two-record-scenario-no-third-record-required"><strong>Two-Record Scenario (No Third Record Required)</strong> </h4>
+<table>
+<thead>
+<tr>
+<th><strong>Field</strong></th>
+<th><strong>Record 1 (on-chain)</strong></th>
+<th><strong>Record 2</strong></th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>twice_prerotated_key_hash</code></td>
+<td><code>hashed_pubkey_3</code></td>
+<td><code>hashed_pubkey_4</code></td>
+</tr>
+<tr>
+<td><code>prerotated_key_hash</code></td>
+<td><code>hashed_pubkey_2</code></td>
+<td><code>hashed_pubkey_3</code></td>
+</tr>
+<tr>
+<td><code>public_key</code> (hash)</td>
+<td><code>hashed_pubkey_1</code></td>
+<td><code>hashed_pubkey_2</code></td>
+</tr>
+</tbody>
+</table>
+<h5 id="key-relationships"><strong>Key Relationships</strong> </h5>
+<ol>
+<li><strong>Record 1 (on-chain):</strong>
+<ul>
+<li><code>outputs.address</code> matches <code>prerotated_key_hash</code> (<code>hash_2</code>).</li>
+<li><code>twice_prerotated_key_hash</code> (<code>hash_3</code>) matches <code>prerotated_key_hash</code> in Record 2.</li>
+</ul>
+</li>
+<li><strong>Record 2:</strong>
+<ul>
+<li><code>outputs.address</code> matches <code>prerotated_key_hash</code> (<code>hash_3</code>).</li>
+<li>No third record required as all validation rules are satisfied.</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h4 id="three-record-scenario-third-record-required"><strong>Three-Record Scenario (Third Record Required)</strong> </h4>
+<table>
+   <thead>
+      <tr>
+         <th><strong>Field</strong></th>
+         <th><strong>Record 1 (on-chain)</strong></th>
+         <td style="background-color: yellow"> <strong>Record 2</strong></td>
+         <th><strong>Record 3</strong></th>
+      </tr>
+   </thead>
+   <tbody>
+      <tr>
+         <td><code>twice_prerotated_key_hash</code></td>
+         <td><code>hashed_pubkey_3</code></td>
+         <td style="background-color: yellow"> <code>hashed_pubkey_4</code></td>
+         <td><code>hashed_pubkey_5</code></td>
+      </tr>
+      <tr>
+         <td><code>prerotated_key_hash</code></td>
+         <td><code>hashed_pubkey_2</code></td>
+         <td style="background-color: yellow"> <code>hashed_pubkey_3</code></td>
+         <td><code>hashed_pubkey_4</code></td>
+      </tr>
+      <tr>
+         <td><code>public_key</code></td>
+         <td><code>pubkey_1</code></td>
+         <td style="background-color: yellow"> <code>pubkey_2</code></td>
+         <td><code>pubkey_3</code></td>
+      </tr>
+      <tr>
+         <td><code>outputs</code> (address)</td>
+         <td><code>hashed_pubkey_2</code></td>
+         <td style="background-color: orange"> <code>hashed_pubkey_not_in_log</code></td>
+         <td><code>hashed_pubkey_4</code></td>
+      </tr>
+      <tr>
+         <td><code>relationship</code></td>
+         <td>(Blank)</td>
+         <td style="background-color: orange"> <code>metadata_encrypted</code></td>
+         <td>(Blank)</td>
+      </tr>
+   </tbody>
+</table>
+<h5 id="key-relationships-1"><strong>Key Relationships</strong> </h5>
+<ol>
+<li><strong>Record 1 (on-chain):</strong>
+<ul>
+<li><code>outputs.address</code> matches <code>prerotated_key_hash</code> (<code>hashed_pubkey_2</code>).</li>
+<li><code>twice_prerotated_key_hash</code> (<code>hashed_pubkey_3</code>) matches <code>prerotated_key_hash</code> in Record 2.</li>
+</ul>
+</li>
+<li><strong>Record 2:</strong> <span style="background-color: yellow">(highlighted above)</span>
+<ul>
+<li><code>outputs.address</code> does not match <code>prerotated_key_hash</code> (<code>hashed_pubkey_not_in_log</code>), triggering the need for a confirming transaction.</li>
+<li><code>relationship</code> is not blank (<code>metadata_encrypted</code>), triggering the need for a confirming transaction.</li>
+</ul>
+</li>
+<li><strong>Record 3:</strong>
+<ul>
+<li><code>outputs.address</code> matches the <code>prerotated_key_hash</code> in Record 2 (<code>hashed_pubkey_4</code>).</li>
+<li>Ensures cryptographic continuity.</li>
+</ul>
+</li>
+</ol>
+<hr>
+<h3 id="summary-of-scenarios"><strong>Summary of Scenarios</strong> </h3>
+<ul>
+<li><strong>Two-Record Scenario:</strong> The sequence completes without additional conditions.</li>
+<li><strong>Three-Record Scenario:</strong> A third record is required to satisfy validation rules when the <code>relationship</code> field in Record 2 is non-blank or an output address does not equal its own prerotated_key_hash field.</li>
+</ul>
+<p><strong>Security Features</strong></p>
+<ol>
+<li>
+<p><strong>Key Rotation Integrity</strong></p>
+<ul>
+<li>Ensured by consensus. Nodes validate transactions against the on-chain key log to verify proper key rotation. This prevents fraudulent or tampered key rotations from being accepted.</li>
+</ul>
+</li>
+<li>
+<p><strong>Replay Attack Prevention</strong></p>
+<ul>
+<li>Transactions cannot be reused or manipulated, as they are hashed (SHA-256), and the hash is signed using a key consistent with the key log entries.</li>
+</ul>
+</li>
+<li>
+<p><strong>Brute Force Mitigation</strong></p>
+<ul>
+<li>The Key Derivation Parameter (KDP), such as a PIN or password, is required for key rotation. This exponentially increases the difficulty of brute force attacks, as the attacker must correctly derive all four child keys in sequence to compromise a single rotation.</li>
+<li>Key rotations leverage a hierarchical deterministic (HD) wallet structure, deriving four child keys per rotation. The large search space provided by this multi-rotation structure makes brute force attacks computationally infeasible.</li>
+</ul>
+</li>
+<li>
+<p><strong>Compromised Node Mitigation</strong></p>
+<ul>
+<li>Nodes broadcasting invalid key logs are identified and rejected during consensus, ensuring the integrity of the blockchain.</li>
+</ul>
+</li>
+<li>
+<p><strong>Safeguards</strong></p>
+<ul>
+<li>Transaction data is hashed using SHA-256, and these hashes are signed and secured within the blockchain using merkle roots and block headers, preventing retroactive tampering.</li>
+<li>Key log data is redundantly stored across all nodes, ensuring availability and integrity.</li>
+<li>No fallback mechanisms exist; transactions failing cryptographic checks are outright rejected.</li>
+<li>Validation is performed both during transaction inclusion in blocks and at the consensus layer, ensuring robust protection against invalid transactions.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Potential Applications</strong></p>
+<ul>
+<li>Financial and identity systems requiring high transaction integrity. This invention ensures that only valid transactions are authorized, reducing the risk of fraud in financial operations and enhancing the reliability of identity verification processes in decentralized systems.</li>
+<li>Decentralized applications (dApps) and identity verification systems with sensitive data. The enhanced security provided by this method ensures reliable identity validation processes and protects sensitive user data, consolidating these capabilities into a streamlined and robust framework.</li>
+</ul>
+<p><strong>Edge Cases and Challenges</strong></p>
+<ol>
+<li><strong>Network Forks</strong>
+<ul>
+<li>Forks could create temporary inconsistencies, akin to other blockchain systems.</li>
+</ul>
+</li>
+<li><strong>Latency</strong>
+<ul>
+<li>Ensuring timely validation under high transaction volumes may require optimized node performance.</li>
+</ul>
+</li>
+</ol>
+<p><strong>Conclusion</strong><br>
+This invention provides a robust mechanism for enhancing blockchain security against private key compromise. Compared to traditional methods that rely on static measures or external monitoring, this solution uniquely integrates dynamic key rotation and pre-rotated key validation, directly leveraging blockchain consensus to ensure enhanced protection and scalability. By combining these features, it prevents fraudulent transactions while enabling high scalability in environments with significant transaction volumes. This design ensures compatibility with existing infrastructure, making it particularly appealing for enterprise-level applications. These advantages position it as a significant improvement over current systems like KERI and traditional HD wallets, offering enhanced</p>
+<p><strong>Glossary</strong></p>
+<ul>
+<li>
+<p><strong>SHA-256:</strong> A cryptographic hash function in the SHA-2 family that produces a 256-bit (32-byte) fixed-length output, regardless of the input size. It is widely used in blockchain systems to secure transaction data, create Merkle trees, and ensure data integrity by making it computationally infeasible to reverse or find collisions.</p>
+</li>
+<li>
+<p><strong>Address:</strong> A hashed representation of a public key, often derived using a hash function like SHA-256 followed by RIPEMD-160 in Bitcoin. It is used to identify the sender or recipient in a blockchain transaction and adds a layer of privacy by obfuscating the original public key.</p>
+</li>
+<li>
+<p><strong>BIP32 HD Wallet:</strong> A hierarchical deterministic wallet defined by Bitcoin Improvement Proposal 32. It allows for the generation of a tree of private and public keys from a single seed. The HD wallet structure supports multiple independent accounts and key management while requiring only the seed for backup and recovery.</p>
+</li>
+<li>
+<p><strong>Key Derivation Parameter (KDP):</strong> A cryptographic input, such as a PIN or password, that adds a secondary layer of security to the key derivation process. It ensures that the keys derived are unique to the user and prevents brute force attacks by requiring both the private key and the correct KDP for successful key generation.</p>
+</li>
+<li>
+<p><strong>UTXO (Unspent Transaction Output):</strong> A unit of cryptocurrency that remains unspent after a transaction. UTXOs are the building blocks of blockchain transactions, representing inputs available for spending in future transactions. Each UTXO is uniquely identified and tracked on the blockchain.</p>
+</li>
+<li>
+<p><strong>Public Key:</strong> A cryptographic key derived from a private key using an asymmetric cryptographic algorithm like Elliptic Curve Digital Signature Algorithm (ECDSA). It is used to verify digital signatures and is shared openly, allowing others to validate signed transactions.</p>
+</li>
+<li>
+<p><strong>Private Key:</strong> A cryptographic key used to sign transactions, proving ownership of blockchain assets. It must be kept secret, as anyone with access to the private key can generate valid signatures and potentially misuse the associated assets.</p>
+</li>
+<li>
+<p><strong>Merkle Root:</strong> The single hash at the top of a Merkle Tree that represents all transaction hashes in a block. By hashing pairs of transaction hashes recursively, the Merkle root provides a compact and tamper-proof summary of all transactions in a block.</p>
+</li>
+<li>
+<p><strong>Consensus Layer:</strong> A part of the blockchain system that ensures agreement among nodes on the validity of transactions and blocks. It prevents double-spending and maintains a consistent ledger across the network.</p>
+</li>
+<li>
+<p><strong>Key Log:</strong> A record stored on-chain that tracks the progression of key rotations, including pre-rotated and twice-pre-rotated key hashes. The key log is used to validate transactions and ensure the integrity of the key rotation sequence.</p>
+</li>
+<li>
+<p><strong>Key Rotation:</strong> The process of generating new cryptographic keys from existing ones in a predefined sequence. This mechanism ensures that the keys in use remain secure over time, even if older keys are compromised.</p>
+</li>
+<li>
+<p><strong>Pre-Rotated Key Hash:</strong> A hashed representation of a cryptographic key that is next in line to be used in a transaction. It is stored on-chain to validate future key derivations and ensure the integrity of the key rotation sequence.</p>
+</li>
+<li>
+<p><strong>Twice Pre-Rotated Key Hash:</strong> A hashed representation of a cryptographic key two rotations ahead in the key sequence. It ensures continuity and allows for verification of key rotations before they occur.</p>
+</li>
+<li>
+<p><strong>Proof of Work (PoW):</strong> A consensus mechanism used by many blockchain systems where participants solve complex mathematical problems to validate transactions and create new blocks. PoW is designed to be resource-intensive, deterring malicious actors from tampering with the blockchain.</p>
+</li>
+</ul>
+<p>YadaCoin Open Source License (YOSL) v1.1</p>
+<p>Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.</p>
+<p>This software is licensed under YOSL v1.1 – for personal and research use only.<br>
+NO commercial use, NO blockchain forks, and NO branding use without permission.</p>
+<p>For commercial license inquiries, contact: <a href="mailto:info@yadacoin.io">info@yadacoin.io</a></p>
+<p>Full license terms: see LICENSE.txt in the YadaCoin repository.</p>
+
+      </div>
+      
+      
+    
+    
+    
+    
+    
+    
+  
+    </body></html>

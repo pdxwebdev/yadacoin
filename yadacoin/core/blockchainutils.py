@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import json
 import math
@@ -23,6 +36,10 @@ def BU():
 def set_BU(BU):
     global GLOBAL_BU
     GLOBAL_BU = BU
+
+
+class TooManyUTXOsException(Exception):
+    pass
 
 
 class BlockChainUtils(object):
@@ -232,6 +249,7 @@ class BlockChainUtils(object):
         ]
 
         result = await self.mongo.async_db.blocks.aggregate(pipeline).to_list(length=1)
+
         if not result or not result[0]:
             return 0.0
 
@@ -329,7 +347,7 @@ class BlockChainUtils(object):
                 )
                 return public_key
 
-    def get_wallet_unspent_transactions_for_dusting(self, address):
+    def get_wallet_unspent_transactions_for_dusting(self, address, limit=None):
         query = [
             {
                 "$match": {
@@ -365,7 +383,7 @@ class BlockChainUtils(object):
             {"$sort": {"outputs.time": 1}},
         ]
         return self.get_wallet_unspent_transactions(
-            unspent_txns_query=query, address=address
+            unspent_txns_query=query, address=address, limit=limit
         )
 
     def get_wallet_unspent_transactions_for_spending(
@@ -375,7 +393,9 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
+                    "transactions.outputs.value": {
+                        "$gte": self.config.balance_min_utxo
+                    },
                 },
             },
             {"$unwind": "$transactions"},
@@ -383,7 +403,9 @@ class BlockChainUtils(object):
             {
                 "$match": {
                     "transactions.outputs.to": address,
-                    "transactions.outputs.value": {"$gte": 1},
+                    "transactions.outputs.value": {
+                        "$gte": self.config.balance_min_utxo
+                    },
                 },
             },
             {
@@ -417,22 +439,59 @@ class BlockChainUtils(object):
         address,
         inc_mempool=False,
         amount_needed=None,
+        limit=None,
     ):
         public_key = await self.get_reverse_public_key(address)
 
         # Return the cursor directly without awaiting it
         utxos = await self.get_unspent_txns(unspent_txns_query)
         total = 0
+        count = 0
         async for utxo in utxos:
             if not await self.config.BU.is_input_spent(
                 utxo["id"], public_key, inc_mempool=inc_mempool
             ):
+                count += 1
+                if limit and count > limit:
+                    raise TooManyUTXOsException(
+                        f"The UTXO limit of {limit} has been exceeded"
+                    )
                 total += sum(
                     [x["value"] for x in utxo["outputs"] if x["to"] == address]
                 )
                 yield utxo
                 if amount_needed is not None and total >= amount_needed:
                     break
+
+        if not inc_mempool:
+            return
+        mempool_txns = self.config.mongo.async_db.miner_transactions.find(
+            {"outputs.to": address}
+        )
+        pending_used_inputs = {}
+        unspent_mempool_txns = {}
+        async for mempool_txn in mempool_txns:
+            if mempool_txn["id"] in pending_used_inputs:
+                continue
+
+            xaddress = str(
+                P2PKHBitcoinAddress.from_pubkey(
+                    bytes.fromhex(mempool_txn["public_key"])
+                )
+            )
+            if address == xaddress and mempool_txn.get("inputs"):
+                for x in mempool_txn.get("inputs"):
+                    pending_used_inputs[x["id"]] = mempool_txn
+                    if x["id"] in unspent_mempool_txns:
+                        del unspent_mempool_txns[x["id"]]
+
+            unspent_mempool_txns[mempool_txn["id"]] = {
+                "_id": mempool_txn["id"],
+                "id": mempool_txn["id"],
+                "outputs": [x for x in mempool_txn["outputs"] if x["to"] == address],
+            }
+        for x in list(unspent_mempool_txns.values()):
+            yield x
 
     async def get_wallet_masternode_fees_paid_transactions(
         self, public_key, from_block

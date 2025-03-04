@@ -11,7 +11,7 @@ sudo bash -c "echo vm.nr_hugepages=0 >> /etc/sysctl.conf"
 
 # Install required packages
 apt update
-apt install -y docker-compose
+apt install -y docker-compose python3-setuptools
 
 # Create the directory for your application
 DEFAULT_APP_DIR="/etc/yadacoin"
@@ -53,4 +53,4 @@ systemctl daemon-reload
 systemctl enable yadanodemanager
 systemctl start yadanodemanager
 
-echo "Setup complete. YadaCoin Node Manager is now running."
+echo "Initial setup complete. Now the boostrap data will install in the background. This will take a few minutes. Check status with: service yadanodemanager status. Once that completes, your node will start automatically. You can access in on the web at port 8001"

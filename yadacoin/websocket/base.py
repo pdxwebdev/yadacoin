@@ -1,3 +1,16 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
 import base64
 import hashlib
 import json
@@ -11,6 +24,7 @@ from ecdsa.util import sigdecode_der
 from tornado import ioloop
 from tornado.websocket import WebSocketClosedError, WebSocketHandler
 
+from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
 from yadacoin.core.identity import Identity
@@ -192,9 +206,25 @@ class RCPWebSocketServer(WebSocketHandler):
         if not params.get("transaction"):
             return
 
+        check_max_inputs = False
+        if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
+            check_max_inputs = True
+
+        check_masternode_fee = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+            check_masternode_fee = True
+
+        check_kel = False
+        if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
+            check_kel = True
+
         txn = Transaction.from_dict(params.get("transaction"))
         try:
-            await txn.verify()
+            await txn.verify(
+                check_max_inputs=check_max_inputs,
+                check_masternode_fee=check_masternode_fee,
+                check_kel=check_kel,
+            )
         except:
             return
 
