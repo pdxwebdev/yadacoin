@@ -263,21 +263,22 @@ class GraphTransactionHandler(BaseGraphHandler):
         mempool_items = [
             x async for x in self.config.mongo.async_db.miner_transactions.find({})
         ]
-        mempool_and_txns = [Transaction.from_dict(txn) for txn in items + mempool_items]
+        mempool_txns = [Transaction.from_dict(txn) for txn in mempool_items]
+        item_txns = [Transaction.from_dict(txn) for txn in items]
         if (
             self.config.LatestBlock.block.index + 1
             >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
         ):
-            items_indexed = {x.transaction_signature: x for x in items}
-            for txn in mempool_and_txns:
+            items_indexed = {x.transaction_signature: x for x in item_txns}
+            for txn in mempool_txns + item_txns:
                 for input_item in txn.inputs:
                     if input_item.id in items_indexed:
                         input_item.input_txn = items_indexed[input_item.id]
                         items_indexed[input_item.id].spent_in_txn = txn
 
         transactions = []
-        for transaction in items[:]:
-            if transaction not in items:
+        for transaction in item_txns[:]:
+            if transaction not in item_txns:
                 continue
             exception_raised = False
             try:
@@ -364,8 +365,8 @@ class GraphTransactionHandler(BaseGraphHandler):
                 if exception_raised:
                     if transaction.spent_in_txn in transactions:
                         transactions.remove(transaction.spent_in_txn)
-                    if transaction.spent_in_txn in items:
-                        items.remove(transaction.spent_in_txn)
+                    if transaction.spent_in_txn in item_txns:
+                        item_txns.remove(transaction.spent_in_txn)
             transactions.append(transaction)
 
         for x in transactions:
@@ -507,7 +508,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                             (peer_stream.peer.rid, "newtxn", x.transaction_signature)
                         ] = {"transaction": x.to_dict()}
 
-        return self.render_as_json([item.to_dict() for item in items])
+        return self.render_as_json([item.to_dict() for item in item_txns])
 
     async def create_relationship(self, username_signature, username, to):
         config = self.config
