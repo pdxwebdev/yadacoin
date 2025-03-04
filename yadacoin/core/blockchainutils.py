@@ -207,7 +207,7 @@ class BlockChainUtils(object):
 
         return result[0]["total_balance"] if result else 0.0
 
-    async def get_spent_balance(self, address):
+    async def get_spent_balance(self, address, from_index=None):
         reverse_public_key = await self.get_reverse_public_key(address)
 
         pipeline = [
@@ -248,6 +248,8 @@ class BlockChainUtils(object):
             },
         ]
 
+        if from_index:
+            pipeline.insert(0, {"$match": {"index": {"$lt": from_index}}})
         result = await self.mongo.async_db.blocks.aggregate(pipeline).to_list(length=1)
 
         if not result or not result[0]:
@@ -790,7 +792,7 @@ class BlockChainUtils(object):
         )
 
     async def get_unspent_outputs(
-        self, address, amount_needed=0, min_value=0, max_utxos=100
+        self, address, amount_needed=0, min_value=0, max_utxos=100, from_index=None
     ):
         """
         Retrieves unspent transaction outputs (UTXOs) for the given address and public key.
@@ -851,6 +853,8 @@ class BlockChainUtils(object):
                 }
             },
         ]
+        if from_index:
+            query.insert(0, {"$match": {"index": {"$lt": from_index}}})
         outputs = await self.mongo.async_db.blocks.aggregate(
             query, allowDiskUse=True
         ).to_list(length=None)
