@@ -260,16 +260,16 @@ class GraphTransactionHandler(BaseGraphHandler):
             items = [
                 items,
             ]
-        mempool_txns = [
+        mempool_items = [
             x async for x in self.config.mongo.async_db.miner_transactions.find({})
         ]
-        items = [Transaction.from_dict(txn) for txn in items + mempool_txns]
+        mempool_and_txns = [Transaction.from_dict(txn) for txn in items + mempool_items]
         if (
             self.config.LatestBlock.block.index + 1
             >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
         ):
             items_indexed = {x.transaction_signature: x for x in items}
-            for txn in items:
+            for txn in mempool_and_txns:
                 for input_item in txn.inputs:
                     if input_item.id in items_indexed:
                         input_item.input_txn = items_indexed[input_item.id]
