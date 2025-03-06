@@ -831,9 +831,16 @@ class Block(object):
 
         if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
             masternode_sum = sum(x for x in masternode_sums.values())
+
             if quantize_eight(fee_sum + masternode_fee_sum) != quantize_eight(
                 (coinbase_sum + masternode_sum) - reward
             ):
+                if (coinbase_sum - fee_sum) == (
+                    reward * 0.9
+                ) and (  # there was an bug where the block reward was still 90% for the miner even if no masternodes were present
+                    masternode_sum - masternode_fee_sum
+                ) == 0:
+                    return
                 raise TotalValueMismatchException(
                     "Masternode output totals do not equal block reward + masternode transaction fees",
                     float(quantize_eight(fee_sum + masternode_fee_sum)),
