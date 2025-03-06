@@ -868,7 +868,7 @@ class User(Peer):
     @classmethod
     def type_limit(cls, peer):
         if peer == ServiceProvider:
-            return 1
+            return 3
         elif peer == User:
             return Config().max_peers or 100000
         else:
