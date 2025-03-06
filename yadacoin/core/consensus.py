@@ -301,12 +301,18 @@ class Consensus(object):
                     "ignore": {"$ne": True},
                 }
             ).to_list(length=100)
+            stream_found = False
             for record in sorted(records, key=lambda x: int(x["block"]["target"], 16)):
                 stream = await self.config.peer.get_peer_by_id(record["peer"]["rid"])
                 if stream and hasattr(stream, "peer") and stream.peer.authenticated:
+                    stream_found = True
                     self.config.processing_queues.block_queue.add(
                         BlockProcessingQueueItem(Blockchain(record["block"]), stream)
                     )
+            if not stream_found:
+                if (time() - self.last_network_search) > 30 or not synced:
+                    self.last_network_search = time()
+                    return await self.search_network_for_new()
 
             return True
         else:
