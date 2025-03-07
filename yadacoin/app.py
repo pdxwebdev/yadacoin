@@ -79,6 +79,7 @@ from yadacoin.core.smtp import Email
 from yadacoin.core.transaction import Transaction
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
+from yadacoin.http.dashboard import DASHBOARD_HANDLERS
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
@@ -858,9 +859,11 @@ class NodeApplication(Application):
 
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
+        log_dir = path.abspath("static/dashboard/log")
+        os.makedirs(log_dir, exist_ok=True)
         self.config.app_log = logging.getLogger("tornado.application")
         tornado.log.enable_pretty_logging(logger=self.config.app_log)
-        logfile = path.abspath("yada_app.log")
+        logfile = os.path.join(log_dir, "yada_app.log")
         # Rotate log after reaching 512K, keep 5 old copies.
         rotateHandler = RotatingFileHandler(logfile, "a", 512 * 1024, 5)
         formatter = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
@@ -881,7 +884,7 @@ class NodeApplication(Application):
 
         self.access_log = logging.getLogger("tornado.access")
         tornado.log.enable_pretty_logging()
-        logfile2 = path.abspath("yada_access.log")
+        logfile2 = os.path.join(log_dir, "yada_access.log")
         rotateHandler2 = RotatingFileHandler(logfile2, "a", 512 * 1024, 5)
         formatter2 = logging.Formatter("%(asctime)s %(levelname)s %(message)s")
         rotateHandler2.setFormatter(formatter2)
@@ -1078,6 +1081,7 @@ class NodeApplication(Application):
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(KEY_EVENT_LOG_HANDLERS)
+        self.default_handlers.extend(DASHBOARD_HANDLERS)
         if self.config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value or (
             hasattr(self.config, "activate_peerjs")
             and self.config.activate_peerjs == True

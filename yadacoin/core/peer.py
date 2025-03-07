@@ -44,6 +44,8 @@ class Peer:
         protocol_version=4,
         node_version=(0, 0, 0),
         peer_type=None,
+        connection_time=None,
+        height=None,
     ):
         self.host = host
         self.port = port
@@ -59,6 +61,8 @@ class Peer:
         self.authenticated = False
         self.node_version = tuple([int(x) for x in node_version])
         self.peer_type = peer_type
+        self.connection_time = connection_time
+        self.height = height if height is not None else "Syncing"
 
     @staticmethod
     def my_peer():
@@ -133,6 +137,8 @@ class Peer:
             protocol_version=peer.get("protocol_version", 1),
             node_version=peer.get("node_version", (0, 0, 0)),
             peer_type=peer.get("peer_type"),
+            connection_time = peer.get("connection_time", time.time()),
+            height=peer.get("height", "Syncing"),
         )
         return inst
 
@@ -301,7 +307,16 @@ class Peer:
             "protocol_version": self.protocol_version,
             "node_version": self.node_version,
             "peer_type": self.peer_type,
+            "connection_duration": self.format_duration(int(time.time() - self.connection_time)) if self.connection_time else "Unknown",
+            "height": self.height,
         }
+
+    def format_duration(self, seconds):
+        days = seconds // 86400
+        hours = (seconds % 86400) // 3600
+        minutes = (seconds % 3600) // 60
+        seconds = seconds % 60
+        return f"{days}d {hours:02d}:{minutes:02d}:{seconds:02d}"
 
     def to_string(self):
         return "{}:{}".format(self.host, self.port)

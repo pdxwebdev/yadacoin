@@ -36,7 +36,8 @@ class BaseHandler(RequestHandler):
         if origin[-1] == "/":
             origin = origin[:-1]
         self.app_log = logging.getLogger("tornado.application")
-        self.app_log.info(self._request_summary())
+        if self.request.uri not in ["/get-block-template", "/api-stats", "/get-peers", "/get-status"]:
+            self.app_log.info(self._request_summary())
         self.config = Config()
         self.yadacoin_vars = self.settings["yadacoin_vars"]
         self.settings["page_title"] = self.settings["app_title"]

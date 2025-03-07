@@ -1,0 +1,64 @@
+<div class="container mt-4">
+    <h2>Logs</h2>
+
+    <!-- App/Access Logs -->
+    <ul class="nav nav-tabs" id="logTabs">
+        <li class="nav-item">
+            <a class="nav-link active" id="app-log-tab" href="#" onclick="switchLogTab('app')">Application Logs</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="access-log-tab" href="#" onclick="switchLogTab('access')">Access Logs</a>
+        </li>
+    </ul>
+
+    <!-- Logs files -->
+    <ul class="nav nav-pills log-file-tabs mt-3" id="logFileTabs">
+        <li class="nav-item">
+            <a class="nav-link active" id="log-file-0" href="#" onclick="changeLogFile(0)">log 0</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="log-file-1" href="#" onclick="changeLogFile(1)">log 1</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="log-file-2" href="#" onclick="changeLogFile(2)">log 2</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="log-file-3" href="#" onclick="changeLogFile(3)">log 3</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="log-file-4" href="#" onclick="changeLogFile(4)">log 4</a>
+        </li>
+        <li class="nav-item">
+            <a class="nav-link" id="log-file-5" href="#" onclick="changeLogFile(5)">log 5</a>
+        </li>
+    </ul>
+
+    <!-- Logs -->
+    <div class="log-wrapper">
+        <div class="log-content">
+            <div class="log-controls">
+                <div class="log-filters">
+                    <label for="log-filter">Filter:</label>
+                    <select id="log-filter" onchange="fetchLogs()">
+                        <option value="ALL">All</option>
+                        <option value="INFO">INFO</option>
+                        <option value="WARNING">WARNING</option>
+                        <option value="ERROR">ERROR</option>
+                        <option value="DEBUG">DEBUG</option>
+                    </select>
+                </div>
+
+                <div class="log-options">
+                    <label>Auto-Scroll:
+                        <input type="checkbox" id="auto-scroll" checked>
+                    </label>
+
+                    <label>Auto-Refresh:
+                        <input type="checkbox" id="auto-refresh" onchange="toggleAutoRefresh()">
+                    </label>
+                </div>
+            </div>
+            <pre id="log-container" class="log-container">Loading logs...</pre>
+        </div>
+    </div>
+</div>

@@ -288,76 +288,77 @@ class Block(object):
             generated_txns, transaction_objs, used_sigs, used_inputs, index, xtime
         )
 
-        fee_sum = sum(
-            [float(transaction_obj.fee) for transaction_obj in transaction_objs]
-        )
-        block_reward = CHAIN.get_block_reward(index)
-        if index >= CHAIN.PAY_MASTER_NODES_FORK:
-            nodes = Nodes.get_all_nodes_for_block_height(config.LatestBlock.block.index)
-            outputs = [
-                Output.from_dict(
-                    {
-                        "value": (block_reward * 0.9) + float(fee_sum),
-                        "to": str(
-                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-                        ),
-                    }
-                )
-            ]
-            masternode_reward_total = block_reward * 0.1
-            if config.network == "regnet":
-                successful_nodes = []
-            else:
-                successful_nodes = await test_all_nodes(nodes)
-            if successful_nodes:
-                if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                    masternode_fee_sum = sum(
-                        [
-                            float(transaction_obj.masternode_fee)
-                            for transaction_obj in transaction_objs
-                        ]
+        if public_key and private_key:
+            fee_sum = sum(
+                [float(transaction_obj.fee) for transaction_obj in transaction_objs]
+            )
+            block_reward = CHAIN.get_block_reward(index)
+            if index >= CHAIN.PAY_MASTER_NODES_FORK:
+                nodes = Nodes.get_all_nodes_for_block_height(config.LatestBlock.block.index)
+                outputs = [
+                    Output.from_dict(
+                        {
+                            "value": (block_reward * 0.9) + float(fee_sum),
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+                            ),
+                        }
                     )
-                    masternode_reward_divided = (
-                        masternode_reward_total + masternode_fee_sum
-                    ) / len(successful_nodes)
+                ]
+                masternode_reward_total = block_reward * 0.1
+                if config.network == "regnet":
+                    successful_nodes = []
                 else:
-                    masternode_reward_divided = masternode_reward_total / len(
-                        successful_nodes
-                    )
-                for successful_node in successful_nodes:
-                    outputs.append(
-                        Output.from_dict(
-                            {
-                                "value": float(masternode_reward_divided),
-                                "to": str(
-                                    P2PKHBitcoinAddress.from_pubkey(
-                                        bytes.fromhex(
-                                            successful_node.identity.public_key
-                                        )
-                                    )
-                                ),
-                            }
+                    successful_nodes = await test_all_nodes(nodes)
+                if successful_nodes:
+                    if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+                        masternode_fee_sum = sum(
+                            [
+                                float(transaction_obj.masternode_fee)
+                                for transaction_obj in transaction_objs
+                            ]
                         )
+                        masternode_reward_divided = (
+                            masternode_reward_total + masternode_fee_sum
+                        ) / len(successful_nodes)
+                    else:
+                        masternode_reward_divided = masternode_reward_total / len(
+                            successful_nodes
+                        )
+                    for successful_node in successful_nodes:
+                        outputs.append(
+                            Output.from_dict(
+                                {
+                                    "value": float(masternode_reward_divided),
+                                    "to": str(
+                                        P2PKHBitcoinAddress.from_pubkey(
+                                            bytes.fromhex(
+                                                successful_node.identity.public_key
+                                            )
+                                        )
+                                    ),
+                                }
+                            )
+                        )
+            else:
+                outputs = [
+                    Output.from_dict(
+                        {
+                            "value": block_reward + float(fee_sum),
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
+                            ),
+                        }
                     )
-        else:
-            outputs = [
-                Output.from_dict(
-                    {
-                        "value": block_reward + float(fee_sum),
-                        "to": str(
-                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-                        ),
-                    }
-                )
-            ]
+                ]
 
-        coinbase_txn = await Transaction.generate(
-            public_key=public_key,
-            private_key=private_key,
-            outputs=outputs,
-            coinbase=True,
-        )
-        transaction_objs.append(coinbase_txn)
+            coinbase_txn = await Transaction.generate(
+                public_key=public_key,
+                private_key=private_key,
+                outputs=outputs,
+                coinbase=True,
+            )
+            transaction_objs.append(coinbase_txn)
 
         block = await cls.init_async(
             version=version,
@@ -443,15 +444,17 @@ class Block(object):
                         )
                         block.transactions.remove(e.other_txn_to_delete)
 
-        txn_hashes = block.get_transaction_hashes()
-        block.set_merkle_root(txn_hashes)
-        block.header = block.generate_header()
-        if nonce:
-            block.nonce = str(nonce)
-            block.hash = block.generate_hash_from_header(
-                block.index, block.header, str(block.nonce)
-            )
-            block.signature = TU.generate_signature(block.hash, private_key)
+        if public_key and private_key:
+            txn_hashes = block.get_transaction_hashes()
+            block.set_merkle_root(txn_hashes)
+            block.header = block.generate_header()
+            if nonce:
+                block.nonce = str(nonce)
+                block.hash = block.generate_hash_from_header(
+                    block.index, block.header, str(block.nonce)
+                )
+                block.signature = TU.generate_signature(block.hash, private_key)
+
         return block
 
     async def remove_transaction(
