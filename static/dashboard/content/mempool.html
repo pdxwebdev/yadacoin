@@ -1,0 +1,28 @@
+<div class="container mt-4">
+    <h2>Pending Transactions</h2>
+    <table class="table table-striped">
+        <thead>
+            <tr>
+                <th>Transaction ID</th>
+                <th>Details</th>
+            </tr>
+        </thead>
+        <tbody id="mempool-table">
+            <!-- Dynamic load data o_O -->
+        </tbody>
+    </table>
+</div>
+
+<div class="modal fade" id="transactionModal" tabindex="-1" aria-labelledby="transactionModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+            <div class="modal-header">
+                <h5 class="modal-title" id="transactionModalLabel">Transaction Details</h5>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body" id="transaction-details">
+                <!-- Transaction detail load dynamically o_O -->
+            </div>
+        </div>
+    </div>
+</div>
