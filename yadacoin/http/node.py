@@ -219,10 +219,15 @@ class GetPendingTransactionHandler(BaseHandler):
     async def get(self):
         txn_id = self.get_query_argument("id", None).replace(" ", "+")
         if not txn_id:
-            return self.render_as_json({})
-        return self.render_as_json(
-            self.config.mongo.async_db.miner_transactions.find_one({"id": txn_id})
-        )
+            return self.render_as_json({"error": "Transaction ID missing"}, status=400)
+
+        txn = await self.config.mongo.async_db.miner_transactions.find_one({"id": txn_id})
+
+        if txn:
+            return self.render_as_json(txn)
+        else:
+            return self.render_as_json({"error": "Transaction not found"}, status=404)
+
 
 
 class GetPendingTransactionIdsHandler(BaseHandler):

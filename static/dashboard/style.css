@@ -176,3 +176,59 @@ body {
     background-color: #f39c12;
     color: black;
 }
+
+.txn-id, .txn-hash {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    max-width: 100%;
+    display: block;
+}
+
+.outputs-container {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-start;
+}
+
+.output-box {
+    padding: 5px 10px;
+    background-color: #5a9bd5;
+    color: white;
+    border-radius: 5px;
+    font-size: 14px;
+    white-space: nowrap;
+}
+
+.output-box strong {
+    font-size: 13px;
+}
+
+.badge-output {
+    background-color: #007bff;
+    padding: 4px 8px;
+    border-radius: 4px;
+    font-weight: bold;
+}
+
+#inputs-list {
+    word-wrap: break-word;
+    overflow-wrap: break-word;
+    white-space: normal;
+}
+
+.txn-outputs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    justify-content: flex-start;
+}
+
+.txn-output {
+    padding: 5px 10px;
+    background-color: #28a745;
+    color: white;
+    border-radius: 5px;
+    font-size: 14px;
+    white-space: nowrap;
+}

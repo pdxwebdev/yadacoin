@@ -23,6 +23,13 @@ async function loadSection(section) {
                 }
             });
         } 
+        else if (section === "mempool") {
+            await loadScript("/yadacoinstatic/dashboard/js/mempool.js", () => {
+                if (typeof loadMempoolData === "function") {
+                    loadMempoolData();
+                }
+            });
+        }
         else if (section === "logs") {
             await loadScript("/yadacoinstatic/dashboard/js/logs.js", () => {
                 if (typeof loadLogsData === "function") {
