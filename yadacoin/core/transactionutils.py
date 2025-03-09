@@ -271,7 +271,7 @@ class TU(object):  # Transaction Utilities
 
             async for peer_stream in config.peer.get_sync_peers():
                 if peer_stream.peer.rid in confirmed_rids:
-                    config.app_log.info(f"Skipping {peer_stream.peer.rid} - already confirmed.")
+                    config.app_log.debug(f"[MEMPOOL] Skipping {peer_stream.peer.rid} - already confirmed.")
                     continue
 
                 await config.nodeShared.write_params(
