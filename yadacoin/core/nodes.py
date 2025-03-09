@@ -102,6 +102,8 @@ class Seeds(Nodes):
                     {
                         "host": "yadacoin.io",
                         "port": 8000,
+                        "http_protocol": "https",
+                        "http_port": 443,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCP+rF5R4sZ7pHJCBAWHxARLg9GN4dRw+/pobJ0MPmX3gIgX0RD4OxhSS9KPJTUonYI1Tr+ZI2N9uuoToZo1RGOs2M=",
@@ -117,6 +119,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.hashyada.com",
                         "port": 8002,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIHrMlgx3RzvLg+8eU1LXfY5QLk2le1mOUM2JLnRSSqTRAiByXKWP7cKasX2kB9VqIm43wT004evxNRQX+YYl5I30jg==",
@@ -132,6 +136,8 @@ class Seeds(Nodes):
                     {
                         "host": "seedau.hashyada.com",
                         "port": 8002,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDndXZRuUTF/l8ANXHvOaWW4+u/8yJPHhGoo80L4AdwrgIgGJtUm+1h/PGrBaqtKwZuNVYcDh6t/yEM/aT3ryYVCMU=",
@@ -147,6 +153,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.crbrain.online",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIE1NbKkxlr6lOAETGPL5BXmI5+pcADnieJ7Je8rHcdv9AiBcS4garwsDGhILMU4Chwd8pJAg0JFcmVTGHZ2wIA/y4Q==",
@@ -162,6 +170,8 @@ class Seeds(Nodes):
                     {
                         "host": "yada-alpha.mynodes.live",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICCXzIpmoNdU2sZsI35lqIl1bt5W1MW49NhjO95S2wlSAiAY04erBPVYvLWJ1SJCm5FtgJ3hyikVH3sw/fGlNUYuGQ==",
@@ -177,6 +187,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.yada.toksyk.pl",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 8001,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCOONwPlGftYSOGfzCnRGT0y5DH401G6I8nDNwbsYemfQIgBP7XketGtzfsocIR82xjyMYt06j3VY59yO6w6SXwMjk=",
@@ -192,6 +204,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.darksidetx.net",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDArjnhho8q8tCxHLmgvuDDS4qdSgQx1y7aNEGYHi/4ywIgWG/aboG4krfQQ4MS5MaPkedsc1syIbz+jfAGsg/siG4=",
@@ -207,6 +221,8 @@ class Seeds(Nodes):
                     {
                         "host": "seedno.hashyada.com",
                         "port": 8002,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCS++mJ1UNC1qywcYFr46l6rOadA0TYGchrA4RSWbsFqQIgM+VqpSkFdvsML5XHHtYFG5oXbQbjdQgXWQIHPuhfFHg=",
@@ -222,6 +238,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.friendspool.club",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 8001,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDPBUWV9XpFBLkrwbWalS/NrVST87JTYwWBjiPlSZD/BwIgYdGYC/Kuy4C3CYNzUpQFg/oRC+oPvsMERyYURGN0G8I=",
@@ -252,6 +270,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.funckyman.xyz",
                         "port": 8003,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIDRvZf+3x9puA9kX7lj9va5CkJSxoAJXmXAMsT1ZsMFmAiANPPdJ4icpmQTzJ3QYHdM2OupQaWl03zyiESEgH/nzfQ==",
@@ -267,6 +287,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.funckyman.xyz",
                         "port": 8003,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDJVkQIx3zuLyqy5ntlisTQn4tNwLd651TieH2f5OGjjAIgAX9rG3+wW1W5YI+3qMlZiay2HrfQVMMZKQa07mJmZ3k=",
@@ -282,6 +304,8 @@ class Seeds(Nodes):
                     {
                         "host": "yadaseed1.hashrank.top",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQD91w1mGUZD/+E4KH08LiTXkJ69cgkPnBPBWXL0DZP5nQIgLD55ep9dKQUvXjznaNJ0/t5ARSy2sChqSveKRqOmnlI=",
@@ -297,6 +321,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.supahash.com",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 8001,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIE6I6sfqh69hy6VoPKY4kCNfYflcnW3vkOgCH9S3GFR6AiAGf+pDYzpuSywaAaoW6c6q0Rq07Kx+oFQndhPf4MRzDQ==",
@@ -312,6 +338,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.nephotim.co",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICV3BfyeG/d3wthW5L9nWYZYejExBHAhJVlzW5iiTjs8AiAQNq0HnPNAm91ymsKu740lgfWwYcUs8gJHuiS9tz5fAA==",
@@ -327,6 +355,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.rogue-miner.com",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": "8080",
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQD0MsT34TkNpYL5kOhLA/4E4YY+SzFhHtIPWPzHCShVGwIgYlzAQeujWvesmU6ZWrTMRwtLFFtjePZjLJDJjTMEQlc=",
@@ -342,6 +372,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.yadaid.au",
                         "port": 8002,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIDutdOZzlHtNCuALhNI6U9f91lDixf4l4owUqb0WPILCAiBbaHqiuTf4buogQ+67k7FztznKISufCgBZx6muhLTK0g==",
@@ -352,6 +384,9 @@ class Seeds(Nodes):
                 ),
             },
         ]
+
+        for node_data in self._NODES:
+            node_data["node"].peer_type = "seed"
 
         Seeds.set_fork_points()
         Seeds.set_nodes()
@@ -376,6 +411,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "remotelyrich.com",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIHONdT7i8K+ZTzv3PHyPAhYkaksoh6FxEJUmPLmXZqFPAiBHOnt1CjgMtNzCGdBk/0S/oikPzJVys32bgThxXtAbgQ==",
@@ -391,6 +428,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.hashyada.com",
                         "port": 8004,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIF3Wlbk99pgxKVrb6Iqdd6L5AJMJgVhc9rrB64P+oHhKAiAfTDCx1GaSWYUyX69k+7GuctPeEclpdXCbR0vly/q77A==",
@@ -406,6 +445,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgatewayau.hashyada.com",
                         "port": 8004,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIAfwzpFwXbBqKpAWAK10D89EiVw4TzJZL6lnAyMzangsAiBclX/x4vn+KT0y92bDrB6vaX6zQ9otAndoOyI8wonTFw==",
@@ -421,6 +462,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.crbrain.online",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCa8eobxfvfSM4E6ipM1qRFYXJVKdj1g3NiS+ZotzdNswIgNbJwvU/g+myeyr9FWSH+jDlPTavGO/tDLyRnjLGB+vQ=",
@@ -436,6 +479,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "yada-bravo.mynodes.live",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIFvpbWRQU9Ty4JXxoGH4YXgR8RiLoLBm11RNKBVeaz4GAiAyGMbhXc+J+z5VIh2GGJi9uDsqdPpEweerViSrxpxzPQ==",
@@ -451,6 +496,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.yada.toksyk.pl",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 8001,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIAvo5gGrW6Uod4L6Qo5bekaKpursERu0UII1VTCR1i8zAiAW4UeZD/GKevh3/lSezWaFHZ4+oBq5wTCggEpvCljhUA==",
@@ -466,6 +513,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.darksidetx.net",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDFjb4L3Pv0GaBqdzB0WazxMjUQ8cNG7FBY/v/n9yUgIwIgA+FFy88yMIWqM6fyIeariS4EpyZj33JChr8UJe+Ummc=",
@@ -481,6 +530,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgatewayno.hashyada.com",
                         "port": 8004,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQC4unLqHmurNumWFIqyTwNJFTOttVhfIyMWxfpqDlxh2AIgHpK8UOO8geA916203XcjIb8cpbeKKjT1nKHH6f1a+ds=",
@@ -496,6 +547,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.friendspool.club",
                         "port": 8010,
+                        "http_protocol": "http",
+                        "http_port": 8002,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCWPClBEn7FVXuICcLTLxgxAINccOVsjrpHftPcATFLnQIgCUYxh+SFiJhXnd0vGpjxxJq9rQGm2P7dGmqyG3VehTw=",
@@ -511,6 +564,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgat.berkinyada.xyz",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCeSYhmcosLZxrYrya2r7eyY78gQrTn6B83wjlA0ZIpjAIgec2OmwpFf5B3sLBRlAJdkzrGyioV9CSwu55xcuWtdnQ=",
@@ -526,6 +581,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.funckyman.xyz",
                         "port": 8005,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIGT3g6nJQjXIeYQ7PG7Nt79LPWcgGWHhjYJ3icjVzpGrAiBU8c4tgRsye0frdkckNpKyk3dw6yNuYAHRQtso8dtzEg==",
@@ -541,6 +598,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.funckyman.xyz",
                         "port": 8005,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIEMcoEkJ1k7VzipqLLFlT7RiPsM4UAgPD7IFbf+pFkz1AiAPcV1ZftxnH9MotGe0VcS9TDc0vIjhmrAtHbho7FnZ1Q==",
@@ -556,6 +615,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "yadaseed2.hashrank.top",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICH8oRaWHoZTXvkx3f2g5WCEonod0nhdzyRWJBOw8ldOAiB+6YjjDVfHmceHyg3F6ZQqpH1J4gqEpwu/ass2ul5/8g==",
@@ -571,6 +632,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.supahash.com",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 8001,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCNas40A04R/y2YrC6e22dU/qYDrgCmrmuGQlbstgTmdwIgbh7dVw6KmU+ee6RRgOc2Vx81G8cLsCUOZdKHa6OBa3s=",
@@ -586,6 +649,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "gateway.nephotim.co",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICHeWBWcuQu7LsziPqX7xQI8svUskEidCJVbUYRxp+D2AiA3P9o19J6Ke6KIY+RGNFE3WPziHYBHwgB6xvyWLZ5BQg==",
@@ -601,6 +666,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.rogue-miner.com",
                         "port": 8002,
+                        "http_protocol": "http",
+                        "http_port": "8081",
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQC/PWvXpjny1yDGDPRtBzl6g7Lb9lcUuI0v0Kf6wxYi4AIgeRb5PtNhO2Eks6iiPEBuebKuXSeTM9euU9sWqOZYUec=",
@@ -616,6 +683,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.yadaid.au",
                         "port": 8004,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDDPFg2GcvhNy3aB+6/rprlhaiexnemo2bg7ovDjQUtrQIgSkhwJGQVe2+f83W7PzOIZWo9k5CbtI6BIcs5zqnQ7eo=",
@@ -626,6 +695,9 @@ class SeedGateways(Nodes):
                 ),
             },
         ]
+
+        for node_data in self._NODES:
+            node_data["node"].peer_type = "seed_gateway"
 
         SeedGateways.set_fork_points()
         SeedGateways.set_nodes()
@@ -650,6 +722,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "centeridentity.com",
                         "port": 8000,
+                        "http_protocol": "https",
+                        "http_port": 443,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIC7ADPLI3VPDNpQPaXAeB8gUk2LrvZDJIdEg9C12dj5PAiB61Te/sen1D++EJAcgnGLH4iq7HTZHv/FNByuvu4PrrA==",
@@ -666,6 +740,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.hashyada.com",
                         "port": 8006,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIDs4GfdyUMFMptmtXsn2vbgQ+rIBfT50nkm++v9swNsjAiA15mHrFehtusgqszbMI5S3nIXQYBUM8Q3smZ615PjL1w==",
@@ -682,6 +758,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceproviderau.hashyada.com",
                         "port": 8006,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDvnHZnh1T5dilboTJdYhNT1Rf18SZxDLpNf6TT90RZZwIgXuIvlOVyxepRkskItsTUSaSlZdl9EkzlTP4UEFZ9zmQ=",
@@ -698,6 +776,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.crbrain.online",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQChurCpzDcki2m8qWjYrU/BZXFLXpwtUXDUltXY/B261AIgfzBQKuMm5nKrKAnA9SUCtS0vdBsVbIF592cK28Dpvfg=",
@@ -714,6 +794,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "yada-charlie.mynodes.live",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIG5VITo79hYorFepmBB6zRqSl/PSbRPpz5gTaSteJQlaAiAmuQnTZFCuccjTtufWJ8CI+w/ddka/AoNQgat3H+18Jw==",
@@ -730,6 +812,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.yada.toksyk.pl",
                         "port": 8080,
+                        "http_protocol": "http",
+                        "http_port": 8001,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIEH/G/iTuiJSdcC0Q3tZ+HepDYetUf5kN2s195pT8SjnAiArhoo4Dm6PbNYIPNDlbuOLzcBiO/A7ONYmviBYDCTW9Q==",
@@ -746,6 +830,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.darksidetx.net",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 80,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICD0iFCEux94iEwHKMBQxxV665VW/ozsr9rSfktt+BRSAiB0FvEvODTVufiBKiARKOq2zSyFKIckjvGtRi52ow45Ig==",
@@ -762,6 +848,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceproviderno.hashyada.com",
                         "port": 8006,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIF1qj/XOXWT8a77NLiqcz/x5mHLa19YSwk/BSY6qb3EkAiBQjo6fHUkuSWQqwp5sZUdaou9a8hMGhqpmcuP9oKbAkw==",
@@ -778,6 +866,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.friendspool.club",
                         "port": 8011,
+                        "http_protocol": "http",
+                        "http_port": 8003,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDO6Nj9pcRZCo6TtOf9ayy17h0PfyKmgxVHSH81EtdITgIgM9TrMrfomG9AnIj697tbmDW4LZOz8+ao48iApGHfdXk=",
@@ -794,6 +884,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "servic.berkinyada.xyz",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDbkNuFjpMi8YcMKFHOjpWtlpM5Ul+lnskdIiwSFRcNmAIgMbTCmXBYL/vNxxlnzoWvscAuv0jQ0J9U8biL812+O+U=",
@@ -810,6 +902,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.funckyman.xyz",
                         "port": 8007,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCJpJ8EYXEB9dgeVOTjiycxsVf8y/3yulsO1BtlryGlxAIgJzou0GBjJJZDgcym8dvr6eOPIZ8HZFXQdRzInE1eAV4=",
@@ -826,6 +920,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.funckyman.xyz",
                         "port": 8007,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDSI+CA17XkAYWlCQsKRkXwWlBoz5hddxCT+/ECTTJW5AIgUvim2ZqBqtAfRRYdM2FmWIXOI/KyqH7Bgxwh09x8ads=",
@@ -842,6 +938,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "yadaseed3.hashrank.top",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDIxOMoBkry0+BkJrUm2YBS9jrXkOtnOQwaGFLBkm3fvgIgUrHT6IV7isnIBFeJCzoi6jr4NbvMJU5w4APnNAIHNaI=",
@@ -858,6 +956,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.supahash.com",
                         "port": 8000,
+                        "http_protocol": "http",
+                        "http_port": 8001,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQCi7PkxJrgR7T2PDK5BCxT8DJ/oLhoa/zpuPbqb0EqapwIgM4NXxuAZn4nh+cncIgb/VkJLeQAQnqj+sNj39oRWvn8=",
@@ -874,6 +974,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.nephotim.co",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIDLZN6Q5WLperdJbHu1mNyZsXmk7fqA6l7tXlthkArglAiAfapsk3v4s8cTLZf22R62ht2SocD2+jSX2HNc4C05SMA==",
@@ -890,6 +992,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.rogue-miner.com",
                         "port": 8003,
+                        "http_protocol": "http",
+                        "http_port": "8082",
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDgXK4dHUpOAiqfaItWyweWijHRGez+k071wEvqSKm9rgIgZA7MJEjvHSN1FDrnMVsSKx2j74q4gaUiYcs+WYW261M=",
@@ -906,6 +1010,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.yadaid.au",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICmKX5wUJGm/rGe1tnoL1I3eA2V5jFaJk0WUQe7cHIABAiBi+BnM3emLl4nQp+alleXYWm3KLmqaXRP9zp+yfm9E1w==",
@@ -917,5 +1023,9 @@ class ServiceProviders(Nodes):
                 ),
             },
         ]
+
+        for node_data in self._NODES:
+            node_data["node"].peer_type = "service_provider"
+
         ServiceProviders.set_fork_points()
         ServiceProviders.set_nodes()

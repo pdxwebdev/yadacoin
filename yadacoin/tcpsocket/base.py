@@ -263,7 +263,7 @@ class RPCSocketServer(TCPServer, BaseRPC):
         """
         stream.last_activity = int(time.time())
         self.config.health.tcp_server.last_activity = time.time()
-        self.config.app_log.info(
+        self.config.app_log.debug(
             f"KeepAlive received from {stream.peer.host}. Connection is active."
         )
 
@@ -451,7 +451,7 @@ class RPCSocketClient(TCPClient):
                 if body.get("method") == "keepalive":
                     self.config.health.tcp_client.last_activity = time.time()
                     stream.last_activity = int(time.time())
-                    self.config.app_log.info(
+                    self.config.app_log.debug(
                         f"KeepAlive response received from {stream.peer.host}"
                     )
                     continue
@@ -513,7 +513,7 @@ class RPCSocketClient(TCPClient):
                 break
 
             try:
-                self.config.app_log.info(f"Sending KeepAlive to {stream.peer.host}")
+                self.config.app_log.debug(f"Sending KeepAlive to {stream.peer.host}")
                 await self.write_params(
                     stream, "keepalive", {"timestamp": int(time.time())}
                 )

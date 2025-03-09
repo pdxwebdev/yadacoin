@@ -40,6 +40,7 @@ class Peer:
         seed_gateway=None,
         http_host=None,
         http_port=None,
+        http_protocol=None,
         secure=None,
         protocol_version=4,
         node_version=(0, 0, 0),
@@ -52,6 +53,7 @@ class Peer:
         self.seed_gateway = seed_gateway
         self.http_host = http_host
         self.http_port = http_port
+        self.http_protocol = http_protocol
         self.secure = secure
         self.config = Config()
         self.app_log = getLogger("tornado.application")
@@ -129,6 +131,7 @@ class Peer:
             seed_gateway=peer.get(PEER_TYPES.SEED_GATEWAY.value),
             http_host=peer.get("http_host"),
             http_port=peer.get("http_port"),
+            http_protocol=peer.get("http_protocol"),
             secure=peer.get("secure"),
             protocol_version=peer.get("protocol_version", 1),
             node_version=peer.get("node_version", (0, 0, 0)),
@@ -297,6 +300,7 @@ class Peer:
             PEER_TYPES.SEED_GATEWAY.value: self.seed_gateway,
             "http_host": self.http_host,
             "http_port": self.http_port,
+            "http_protocol": self.http_protocol,
             "secure": self.secure,
             "protocol_version": self.protocol_version,
             "node_version": self.node_version,

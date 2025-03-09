@@ -413,6 +413,17 @@ class GetMonitoringHandler(BaseHandler):
         self.render_as_json(op_data, indent=4)
 
 
+class GetTestedNodesHandler(BaseHandler):
+    async def get(self):
+        """Zwraca listę ostatnio przetestowanych węzłów."""
+        result = await self.config.mongo.async_db.tested_nodes.find_one({"_id": "latest_test"}, {"_id": 0})
+
+        if not result:
+            return self.render_as_json({"error": "No test results available."}, status=404)
+
+        return self.render_as_json(result)
+
+
 NODE_HANDLERS = [
     (r"/get-latest-block", GetLatestBlockHandler),
     (r"/get-blocks", GetBlocksHandler),
@@ -432,4 +443,5 @@ NODE_HANDLERS = [
     (r"/get-expired-smart-contract-transaction", GetExpiredSmartContractTransaction),
     (r"/get-trigger-transactions", GetSmartContractTriggerTransaction),
     (r"/get-monitoring", GetMonitoringHandler),
+    (r"/get-tested-nodes", GetTestedNodesHandler),
 ]

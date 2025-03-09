@@ -62,6 +62,7 @@ from yadacoin.core.health import Health
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.miningpoolpayout import PoolPayer
+from yadacoin.core.nodestester import NodesTester
 from yadacoin.core.mongo import Mongo
 from yadacoin.core.peer import (
     Group,
@@ -856,6 +857,35 @@ class NodeApplication(Application):
             self.config.processing_queues.nonce_queue.time_sum_end()
         self.config.background_nonce_processor.busy = False
 
+    async def background_node_testing(self):
+        """Responsible for testing masternodes in the background."""
+
+        block_index = self.config.LatestBlock.block.index
+
+        if block_index < CHAIN.PAY_MASTER_NODES_FORK:
+            self.config.app_log.info(
+                f"Block height {block_index} is less than PAY_MASTER_NODES_FORK ({CHAIN.PAY_MASTER_NODES_FORK}). Skipping masternode testing."
+            )
+            return
+
+        if not hasattr(self.config, "background_node_testing"):
+            self.config.background_node_testing = WorkerVars(busy=False)
+
+        if self.config.background_node_testing.busy:
+            self.config.app_log.debug("background_node_testing - busy")
+            return
+
+        self.config.background_node_testing.busy = True
+        try:
+            successful_nodes = await NodesTester.test_all_nodes(block_index)
+            self.config.app_log.info(
+                f"Background node testing completed. Successful nodes: {len(successful_nodes)}"
+            )
+        except Exception as e:
+            self.config.app_log.error(f"Error in background_node_testing: {e}")
+        finally:
+            self.config.background_node_testing.busy = False
+
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
         self.config.app_log = logging.getLogger("tornado.application")
@@ -999,6 +1029,11 @@ class NodeApplication(Application):
                 PeriodicCallback(
                     self.background_nonce_processor,
                     self.config.nonce_processor_wait * 1000,
+                ).start()
+
+                PeriodicCallback(
+                    self.background_node_testing,
+                    60 * 60 * 1000,
                 ).start()
 
         if self.config.pool_payout:
