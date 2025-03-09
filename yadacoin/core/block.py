@@ -266,6 +266,9 @@ class Block(object):
             ]
             masternode_reward_total = block_reward * 0.1
 
+            if config.network == "regnet":
+                NodesTester.successful_nodes = []
+
             if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                 masternode_fee_sum = sum(
                     [
