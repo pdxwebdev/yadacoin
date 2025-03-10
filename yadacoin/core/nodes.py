@@ -255,6 +255,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.berkinyada.xyz",
                         "port": 8000,
+                        "http_protocol": None,
+                        "http_port": None,
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDNbo0Mnw7IGt8Agm6tff+3GN+pFdi/5yn0kLqfV1FSSwIgcsURlw/G2oAgQd01lKQUzrDiotIVKUMyLfjicq8syyo=",
@@ -372,8 +374,8 @@ class Seeds(Nodes):
                     {
                         "host": "seed.yadaid.au",
                         "port": 8002,
-                        "http_protocol": None,
-                        "http_port": None,
+                        "http_protocol": "http",
+                        "http_port": "8003",
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCIDutdOZzlHtNCuALhNI6U9f91lDixf4l4owUqb0WPILCAiBbaHqiuTf4buogQ+67k7FztznKISufCgBZx6muhLTK0g==",
@@ -683,8 +685,8 @@ class SeedGateways(Nodes):
                     {
                         "host": "seedgateway.yadaid.au",
                         "port": 8004,
-                        "http_protocol": None,
-                        "http_port": None,
+                        "http_protocol": "http",
+                        "http_port": "8005",
                         "identity": {
                             "username": "",
                             "username_signature": "MEUCIQDDPFg2GcvhNy3aB+6/rprlhaiexnemo2bg7ovDjQUtrQIgSkhwJGQVe2+f83W7PzOIZWo9k5CbtI6BIcs5zqnQ7eo=",
@@ -1010,8 +1012,8 @@ class ServiceProviders(Nodes):
                     {
                         "host": "serviceprovider.yadaid.au",
                         "port": 8000,
-                        "http_protocol": None,
-                        "http_port": None,
+                        "http_protocol": "http",
+                        "http_port": "8001",
                         "identity": {
                             "username": "",
                             "username_signature": "MEQCICmKX5wUJGm/rGe1tnoL1I3eA2V5jFaJk0WUQe7cHIABAiBi+BnM3emLl4nQp+alleXYWm3KLmqaXRP9zp+yfm9E1w==",
