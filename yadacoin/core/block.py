@@ -314,9 +314,6 @@ class Block(object):
         )
         transaction_objs.append(coinbase_txn)
 
-        config.app_log.debug("Generated Coinbase Transaction:")
-        config.app_log.debug(coinbase_txn.to_json())
-
         block = await cls.init_async(
             version=version,
             block_time=xtime,
