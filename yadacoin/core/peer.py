@@ -323,6 +323,7 @@ class Peer:
 class Seed(Peer):
     id_attribute = "rid"
     source_property = "source_seed"
+    peer_type = PEER_TYPES.SEED.value
 
     async def get_outbound_class(self):
         return Seed
@@ -518,6 +519,7 @@ class Seed(Peer):
 class SeedGateway(Peer):
     id_attribute = "rid"
     source_property = "source_seed_gateway"
+    peer_type = PEER_TYPES.SEED_GATEWAY.value
 
     async def get_outbound_class(self):
         return Seed
@@ -624,6 +626,7 @@ class SeedGateway(Peer):
 class ServiceProvider(Peer):
     id_attribute = "rid"
     source_property = "source_service_provider"
+    peer_type = PEER_TYPES.SERVICE_PROVIDER.value
 
     async def get_outbound_class(self):
         return SeedGateway
@@ -837,6 +840,7 @@ class Group(Peer):
 
 class User(Peer):
     id_attribute = "rid"
+    peer_type = PEER_TYPES.USER.value
 
     async def get_outbound_class(self):
         return ServiceProvider
@@ -906,6 +910,7 @@ class User(Peer):
 
 class Pool(Peer):
     id_attribute = "rid"
+    peer_type = PEER_TYPES.POOL.value
 
     async def get_outbound_class(self):
         return ServiceProvider

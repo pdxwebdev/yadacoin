@@ -387,9 +387,6 @@ class Seeds(Nodes):
             },
         ]
 
-        for node_data in self._NODES:
-            node_data["node"].peer_type = "seed"
-
         Seeds.set_fork_points()
         Seeds.set_nodes()
 
@@ -697,9 +694,6 @@ class SeedGateways(Nodes):
                 ),
             },
         ]
-
-        for node_data in self._NODES:
-            node_data["node"].peer_type = "seed_gateway"
 
         SeedGateways.set_fork_points()
         SeedGateways.set_nodes()
@@ -1025,9 +1019,6 @@ class ServiceProviders(Nodes):
                 ),
             },
         ]
-
-        for node_data in self._NODES:
-            node_data["node"].peer_type = "service_provider"
 
         ServiceProviders.set_fork_points()
         ServiceProviders.set_nodes()

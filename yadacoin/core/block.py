@@ -11,14 +11,11 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import asyncio
 import base64
 import binascii
 import hashlib
 import json
-import socket
 import time
-
 from decimal import Decimal, getcontext
 from logging import getLogger
 
@@ -280,7 +277,9 @@ class Block(object):
                     masternode_reward_total + masternode_fee_sum
                 ) / len(NodesTester.successful_nodes)
             else:
-                masternode_reward_divided = masternode_reward_total / len(NodesTester.successful_nodes)
+                masternode_reward_divided = masternode_reward_total / len(
+                    NodesTester.successful_nodes
+                )
 
             for successful_node in NodesTester.successful_nodes:
                 outputs.append(
@@ -315,8 +314,8 @@ class Block(object):
         )
         transaction_objs.append(coinbase_txn)
 
-        config.app_log.info("Generated Coinbase Transaction:")
-        config.app_log.info(coinbase_txn.to_json())
+        config.app_log.debug("Generated Coinbase Transaction:")
+        config.app_log.debug(coinbase_txn.to_json())
 
         block = await cls.init_async(
             version=version,

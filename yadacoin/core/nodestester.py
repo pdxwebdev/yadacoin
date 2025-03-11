@@ -1,10 +1,12 @@
 import asyncio
-import aiohttp
 import socket
 import time
 
+import aiohttp
+
 from yadacoin.core.config import Config
 from yadacoin.core.nodes import Nodes
+
 
 class NodesTester:
     """
@@ -15,6 +17,7 @@ class NodesTester:
     - `permanently_failed_nodes` – nodes without DNS or HTTP (will not be retested).
     - `all_nodes` – full list of all known nodes.
     """
+
     all_nodes = []
     successful_nodes = []
     failed_nodes = set()
@@ -43,7 +46,9 @@ class NodesTester:
         semaphore = asyncio.Semaphore(10)
 
         nodes = Nodes.get_all_nodes_for_block_height(block_index)
-        nodes_to_test = [node for node in nodes if node.host not in cls.permanently_failed_nodes]
+        nodes_to_test = [
+            node for node in nodes if node.host not in cls.permanently_failed_nodes
+        ]
 
         tasks = [cls.test_node(config, node, semaphore) for node in nodes_to_test]
         results = await asyncio.gather(*tasks, return_exceptions=True)
@@ -59,12 +64,16 @@ class NodesTester:
         )
 
         if not successful_nodes:
-            config.app_log.warning("No nodes passed the test. Falling back to all tested nodes.")
+            config.app_log.warning(
+                "No nodes passed the test. Falling back to all tested nodes."
+            )
             cls.successful_nodes = nodes_to_test
             cls.failed_nodes = set()
 
         if not nodes_to_test:
-            config.app_log.warning("No internet access detected! Using all known nodes.")
+            config.app_log.warning(
+                "No internet access detected! Using all known nodes."
+            )
             cls.successful_nodes = cls.all_nodes
             cls.permanently_failed_nodes = set()
             cls.failed_nodes = set()
@@ -77,7 +86,7 @@ class NodesTester:
                 "failed_nodes": list(cls.failed_nodes),
                 "permanently_failed_nodes": list(cls.permanently_failed_nodes),
             },
-            upsert=True
+            upsert=True,
         )
 
         return successful_nodes
@@ -100,12 +109,16 @@ class NodesTester:
                 return None
 
             if not await NodesTester.has_dns(node.host):
-                config.app_log.warning(f"No DNS found for {node.host}, skipping permanently.")
+                config.app_log.warning(
+                    f"No DNS found for {node.host}, skipping permanently."
+                )
                 NodesTester.permanently_failed_nodes.add(node.host)
                 return None
 
             if not node.http_port or not node.http_protocol:
-                config.app_log.warning(f"Missing HTTP info for {node.host}, skipping permanently.")
+                config.app_log.warning(
+                    f"Missing HTTP info for {node.host}, skipping permanently."
+                )
                 NodesTester.permanently_failed_nodes.add(node.host)
                 return None
 
@@ -115,11 +128,16 @@ class NodesTester:
                     async with session.get(url, timeout=10) as response:
                         if response.status == 200:
                             data = await response.json()
-                            if data.get("peer_type") == node.peer_type:
-                                config.app_log.info(f"{node.host} PASSED as {node.peer_type}")
+                            peer_type = node.__class__.peer_type
+                            if data.get("peer_type") == peer_type:
+                                config.app_log.info(
+                                    f"{node.host} PASSED as {peer_type}"
+                                )
                                 return node
                             else:
-                                config.app_log.warning(f"{node.host} returned wrong type {data.get('peer_type')}, expected {node.peer_type}")
+                                config.app_log.warning(
+                                    f"{node.host} returned wrong type {data.get('peer_type')}, expected {peer_type}"
+                                )
             except Exception as e:
                 config.app_log.warning(f"Failed {node.host} (temporary failure): {e}")
                 NodesTester.failed_nodes.add(node.host)
