@@ -22,6 +22,7 @@ from yadacoin.core.block import Block, quantize_eight
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
 from yadacoin.core.nodes import Nodes
+from yadacoin.core.nodestester import NodesTester
 from yadacoin.core.transaction import TotalValueMismatchException
 
 from ..test_setup import AsyncTestCase
@@ -146,6 +147,18 @@ class TestBlock(AsyncTestCase):
         yadacoin.core.config.CONFIG = Config.generate()
         Config().mongo = mongo
 
+        class AppLog:
+            def warning(self, message):
+                print(message)
+
+            def info(self, message):
+                print(message)
+
+            def debug(self, message):
+                print(message)
+
+        Config().app_log = AppLog()
+
     async def test_init_async(self):
         block = await Block.init_async()
         self.assertIsInstance(block, Block)
@@ -203,6 +216,7 @@ class TestBlock(AsyncTestCase):
             raise e
 
         nodes = Nodes.get_all_nodes_for_block_height(CHAIN.CHECK_MASTERNODE_FEE_FORK)
+        NodesTester.successful_nodes = nodes
 
         async def test_all_nodes(a):
             return nodes
@@ -223,7 +237,7 @@ class TestBlock(AsyncTestCase):
             "yadacoin.core.transaction.Transaction.handle_exception",
             new=handle_exception,
         ), mock.patch(
-            "yadacoin.core.block.test_all_nodes", new=test_all_nodes
+            "yadacoin.core.nodestester.NodesTester.test_all_nodes", new=test_all_nodes
         ):
             block.index = CHAIN.CHECK_MASTERNODE_FEE_FORK
             Config().LatestBlock = LatestBlock()
@@ -472,6 +486,7 @@ class TestBlock(AsyncTestCase):
         verify = AsyncMock(return_value=True)
 
         nodes = Nodes.get_all_nodes_for_block_height(CHAIN.CHECK_MASTERNODE_FEE_FORK)
+        NodesTester.successful_nodes = nodes
 
         async def test_all_nodes(a):
             return nodes
@@ -481,18 +496,6 @@ class TestBlock(AsyncTestCase):
         )
 
         is_input_spent = AsyncMock(return_value=False)
-
-        class AppLog:
-            def warning(self, message):
-                print(message)
-
-            def info(self, message):
-                print(message)
-
-            def debug(self, message):
-                print(message)
-
-        Config().app_log = AppLog()
 
         with mock.patch(
             "yadacoin.core.transaction.Transaction.contract_generated",
@@ -510,7 +513,7 @@ class TestBlock(AsyncTestCase):
             "yadacoin.core.transaction.Transaction.handle_exception",
             new=handle_exception,
         ), mock.patch(
-            "yadacoin.core.block.test_all_nodes", new=test_all_nodes
+            "yadacoin.core.nodestester.NodesTester.test_all_nodes", new=test_all_nodes
         ), mock.patch(
             "yadacoin.core.transaction.Transaction.has_key_event_log",
             new=has_key_event_log,
@@ -533,6 +536,10 @@ class TestBlock(AsyncTestCase):
             Config().LatestBlock.block = prev_block
 
             async def dotest(index, expected_result, prev_block):
+                nodes = Nodes.get_all_nodes_for_block_height(
+                    CHAIN.CHECK_MASTERNODE_FEE_FORK
+                )
+                NodesTester.successful_nodes = nodes
                 block = await Block.generate(
                     public_key=yadacoin.core.config.CONFIG.public_key,
                     private_key=yadacoin.core.config.CONFIG.private_key,

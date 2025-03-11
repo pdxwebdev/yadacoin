@@ -264,7 +264,7 @@ class Block(object):
             masternode_reward_total = block_reward * 0.1
 
             if config.network == "regnet":
-                NodesTester.successful_nodes = []
+                NodesTester.successful_nodes = NodesTester.all_nodes
 
             if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                 masternode_fee_sum = sum(
@@ -276,6 +276,7 @@ class Block(object):
                 masternode_reward_divided = (
                     masternode_reward_total + masternode_fee_sum
                 ) / len(NodesTester.successful_nodes)
+
             else:
                 masternode_reward_divided = masternode_reward_total / len(
                     NodesTester.successful_nodes
