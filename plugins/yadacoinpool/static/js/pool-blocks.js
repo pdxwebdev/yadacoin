@@ -45,7 +45,7 @@ function updateBlocksTable() {
             <td>${block.height}</td>
             <td>${new Date(block.time * 1000).toLocaleString()}</td>
             <td>${block.difficulty.toFixed(3)}</td>
-            <td class="text-start hash-cell"><a href="http://testnode.yadaminers.pl/explorer?term=${block.hash}" target="_blank">${block.hash}</a></td>
+            <td class="text-start hash-cell"><a href="https://yadacoin.io/explorer?term=${block.hash}" target="_blank">${block.hash}</a></td>
             <td>${block.txn_count}</td>
             <td>${block.reward.toFixed(4)} YDA</td>
         `;

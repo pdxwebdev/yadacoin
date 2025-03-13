@@ -145,7 +145,7 @@ function minerStats_updatePayoutsTable(payouts) {
 
         row.innerHTML = `
             <td>${new Date(payout.time * 1000).toLocaleString()}</td>
-            <td class="text-start"><a href="http://testnode.yadaminers.pl/explorer?term=${payout.hash}" target="_blank">
+            <td class="text-start"><a href="https://yadacoin.io/explorer?term=${payout.hash}" target="_blank">
                 ${payout.hash.substring(0, 36)}...</a></td>
             <td>${payout.amount.toFixed(6)} YDA</td>
             <td>${forBlockText}</td>
