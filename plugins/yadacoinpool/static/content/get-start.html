@@ -1,0 +1,89 @@
+<div id="GettingStartContent" class="content-section">
+    <div class="row mb-2">
+        <div class="col-12">
+            <h2>GETTING STARTED</h2>
+        </div>
+    </div>
+
+    <div class="row mb-2">
+        <div class="col-lg-6 col-12">
+            <h5>CONNECTION DETAILS</h5>
+            <div class="card-body">
+                <h6><b>POOL ADDRESS:</b> <span id="pool-url"></span></h6>
+                <h6><b>ALGORITHM:</b> <span id="pool-algorithm"></span></h6>
+            </div>
+
+            <h5 class="mt-4">MINING PORT</h5>
+            <div class="card-body">
+                <table class="table table-striped">
+                    <thead>
+                        <tr>
+                            <th>Port</th>
+                            <th>Static Difficulty</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <tr>
+                            <td id="pool-port"></td>
+                            <td id="pool-diff"></td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <h5>CONFIG GENERATOR</h5>
+            <div class="card-body">
+                <div class="mb-3">
+                    <label for="miner-software" class="form-label">Select Miner Software</label>
+                    <div class="dropdown">
+                        <button class="btn btn-secondary dropdown-toggle" type="button" id="minerSoftwareDropdown" data-bs-toggle="dropdown">
+                            Choose software
+                        </button>
+                        <ul class="dropdown-menu" id="minerSoftwareMenu"></ul>  <!-- ✅ ID poprawione -->
+                    </div>
+                </div>
+                <div class="mb-3">
+                    <label for="wallet-address" class="form-label">Wallet Address</label>
+                    <input type="text" id="wallet-address" class="form-control" placeholder="Enter your wallet address">
+                </div>
+                <div class="mb-3">
+                    <label for="worker-id" class="form-label">Worker ID <small class="text-muted">(optional)</small></label>
+                    <input type="text" id="worker-id" class="form-control" placeholder="Enter worker ID (optional)">
+                </div>
+                <button id="generate-config" class="btn btn-primary w-100">Generate Config</button>
+
+                <div id="config-result" class="mt-4 d-none" style="background-color: black; color: white; font-family: monospace; padding: 10px; border-radius: 5px;">
+                </div>
+            </div>
+        </div>
+
+        <div class="col-lg-6 col-12">
+            <h5 class="mt-4">MINING APPLICATIONS</h5>
+            <div class="card-body">
+                <div class="mb-4">
+                    <h6>XMRig</h6>
+                    <p>XMRig is a high performance, open source, cross platform RandomX, KawPow, CryptoNight and GhostRider unified CPU/GPU miner and RandomX benchmark. Official binaries are available for Windows, Linux, macOS and FreeBSD.</p>
+                    <button onclick="window.open('https://github.com/xmrig/xmrig/releases', '_blank')" class="btn btn-primary w-40">
+                        <i class="bi bi-download"></i> Download XMRig
+                    </button>
+                </div>
+                <hr>
+                <div class="mb-4">
+                    <h6>XMRigCC</h6>
+                    <p>XMRigCC is a XMRig fork which adds remote control and monitoring functions. It lets you control your miners via a Dashboard or the REST API. It supports Windows, Linux, OSx, and Android.</p>
+                    <button onclick="window.open('https://github.com/Bendr0id/xmrigCC/releases', '_blank')" class="btn btn-primary w-40">
+                        <i class="bi bi-download"></i> Download XMRigCC
+                    </button>
+                </div>
+                <hr>
+                <div class="mb-4">
+                    <h6>SRBMiner-MULTI</h6>
+                    <p>SRBMiner-MULTI is a cryptocurrency miner for AMD, NVIDIA, Intel, and CPU, supporting up to 4 different algorithms/coins at the same time. It is not open source.</p>
+                    <button onclick="window.open('https://github.com/doktor83/SRBMiner-Multi/releases', '_blank')" class="btn btn-primary w-40">
+                        <i class="bi bi-download"></i> Download SRBMiner-MULTI
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>

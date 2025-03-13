@@ -1,0 +1,59 @@
+<div class="container mt-4">
+    <h4><b>MINER STATISTICS</b></h4>
+
+    <div class="input-group mb-3">
+        <input type="text" id="miner-address" class="form-control" placeholder="Enter your address">
+        <button class="btn btn-primary" onclick="loadMinerStatsData()">Get Stats</button>
+    </div>
+
+    <div class="alert alert-info" id="miner-address-display" style="display: none;">
+        Viewing statistics for: <b><span id="miner-address-text" class="small-text"></span></b>
+    </div>
+
+    <h5><b>HASHRATE STATISTICS</b></h5>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-bordered">
+            <thead class="table-dark">
+                <tr>
+                    <th>Worker Name</th>
+                    <th>Hashrate</th>
+                    <th>Last Share</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="miner-stats-table-body">
+                <tr>
+                    <td colspan="4" class="text-center">Enter address and click "Get Stats"</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <h5><b>PAYOUT HISTORY</b></h5>
+
+    <div class="table-responsive">
+        <table class="table table-striped table-bordered">
+            <thead class="table-dark">
+                <tr>
+                    <th>Time Sent</th>
+                    <th>Transaction HASH</th>
+                    <th>Amount</th>
+                    <th>For Block</th>
+                    <th>In Block</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="miner-payouts-table-body">
+                <tr>
+                    <td colspan="6" class="text-center">Enter address above to load data</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+
+    <div id="pagination-container" class="mb-3">
+        <div class="nav nav-pills justify-content-start" id="payout-pagination">
+        </div>
+    </div>
+</div>
