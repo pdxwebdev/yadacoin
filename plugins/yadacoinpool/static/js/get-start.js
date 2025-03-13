@@ -47,7 +47,9 @@ function setupMinerSoftwareDropdown() {
     console.log("✅ Miner software dropdown is ready.");
 }
 
-let selectedSoftware = ""
+if (typeof selectedSoftware === "undefined") {
+    var selectedSoftware = "";
+}
 
 document.getElementById("generate-config").addEventListener("click", function () {
     const wallet = document.getElementById("wallet-address").value.trim();
