@@ -468,7 +468,7 @@ class BlockChainUtils(object):
         if not inc_mempool:
             return
         mempool_txns = self.config.mongo.async_db.miner_transactions.find(
-            {"outputs.to": address}
+            {"public_key": public_key}
         )
         pending_used_inputs = {}
         unspent_mempool_txns = {}
