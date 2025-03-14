@@ -1,400 +1,54 @@
-<script src="yadacoinpoolstatic/lib/jquery/dist/jquery.js"></script>
-<script src="yadacoinpoolstatic/lib/bootstrap/dist/js/bootstrap.min.js"></script>
-<link href="yadacoinpoolstatic/lib/bootstrap/dist/css/bootstrap.min.css" rel="stylesheet">
-
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>YadaCoin Pool</title>
+    <link rel="icon" type="image/png" href="/yadacoinpoolstatic/img/logo.ico">
+    <script src="/yadacoinpoolstatic/js/pool-stats.js"></script>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="/yadacoinpoolstatic/style.css">
+</head>
 <body>
-    <div class="header">
-      <div><img src="yadacoinpoolstatic/img/logo.ico"> YADA MINING POOL</div>
+
+    <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
+        <div class="container-fluid">
+            <a class="navbar-brand" href="#">⛏ YadaCoin Pool</a>
+            <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav" aria-controls="navbarNav" aria-expanded="false" aria-label="Toggle navigation">
+                <span class="navbar-toggler-icon"></span>
+            </button>
+            <div class="collapse navbar-collapse" id="navbarNav">
+                <ul class="navbar-nav ms-auto">
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="loadSection('dashboard')">Dashboard</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="loadSection('pool-blocks')">Pool Blocks</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="loadSection('pool-payouts')">Pool Payouts</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="loadSection('miners-stats')">Miner Statistics</a>
+                    </li>
+                    <li class="nav-item">
+                        <a class="nav-link" href="#" onclick="loadSection('get-start')">Getting Started</a>
+                    </li>
+                </ul>
+            </div>
+        </div>
+    </nav>
+
+    <div class="container mt-4">
+        <div id="content">Loading...</div>
     </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>POOL HASH RATE</b></h5>
-        <div id="pool-hash-rate"></div>
-        <div id="pool-perecentage"></div>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>BLOCKS FOUND</b></h5>
-        <div id="pool-blocks-found"></div>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>BLOCK FOUND EVERY</b></h5>
-        <div id="pool-avg-block-time"></div>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>LAST BLOCK FOUND BY POOL</b></h5>
-        <div id="pool-last-block"></div>
-        <h5 id="pool-last-block-time"></h5>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>NETWORK HASH RATE</b></h5>
-        <div id="avg-network-hash-rate"></div>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>DIFFICULTY</b></h5>
-        <div id="network-difficulty"></div>
-        <div id="current-network-hash-rate"></div>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>BLOCKCHAIN HEIGHT</b></h5>
-        <div id="network-height"></div>
-        <h5 id="network-last-block"></h5>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>BLOCK REWARD</b></h5>
-        <h4>
-            <div>MINERS: <b><span id="miners-reward"></span></b></div>
-            <div>MASTER NODES: <b><span id="master-nodes-reward"></span></b></div>
-        </h4>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>CONNECTED MINERS / WORKERS</b></h5>
-        <div><span id="pool-worker-count"></span> / <span id="pool-miner-count"></span></div>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>POOL FEE</b></h5>
-        <div id="pool-fee"></div>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>MINIMUM PAYOUT</b></h5>
-        <div id="pool-min-payout"></div>
-        <h6 id="pool-payout-frequency"></h6>
-      </div>
-    </div>
-    <div class="column">
-      <div class="box">
-        <h5><b>PAYOUT SCHEME</b></h5>
-        <div id="pool-payout-scheme"></div>
-      </div>
-    </div>
-    <div class="column2">
-      <div class="box2">
-        <script src="https://widgets.coingecko.com/coingecko-coin-ticker-widget.js"></script>
-        <coingecko-coin-ticker-widget currency="usd" coin-id="yadacoin" locale="en"></coingecko-coin-ticker-widget>
-      </div>
-    </div>
-    <div class="column2">
-      <div class="box3">
-        <h5><b><center>HOW TO START</center></b></h5>
-        <div>Create wallet</div>
-        <div>Download XMRigCC</div>
-        <div>XMRigCC conf.json settings:</div>
-        <h5>"algo": "rx/yada",</h5>
-        <h5>"url": "<span id="pool-url">"</span>",</h5>
-        <h5>"user": "Your wallet address.Worker ID",</h5>
-        <h5>"keepalive": true,</h5>
-      </div>
-    </div>
-    <div class="column3">
-        <center>
-          <li><button style="display: inline" class="button" role="button"><a href="https://discord.gg/MWwq27j5tX">Discord</a></button></li>
-          <li><button style="display: inline" class="button" role="button"><a href="https://miningpoolstats.stream/yadacoin">MiningPoolStats</a></button></li>
-          <li><button style="display: inline" class="button" role="button"><a href="https://yadacoin.io/app">Official Wallet</a></button></li>
-          <li><button style="display: inline" class="button" role="button"><a href="https://github.com/Bendr0id/xmrigCC/releases">XMRigCC</a></button></li>
-        </center>
-      <h2>POOL BLOCKS</h2>
-      <table id="blocks-table" class="table">
-        <tr><th>Time Found</th><th>Height</th><th>Reward</th><th>Block Hash</th></tr> <!- TODO: I tried to get a reward from "pool-blocks" but if a block has more than one transaction, strange values came out ->
-      </table>
-      <center><button class="button" role="button"><a href="#" id="loadMore">Load More Blocks</a></button></center>
-      <h2>MINER STATISTICS</h2>
-      <form method="GET" action="." id="form">
-        <input type="text" name="address" id="address" placeholder="address" style="width: 75%; height: 35px; float:left;" />
-        <button class="button">Get stats</button>
-      </form>
-      <h4>MINER HASH RATE: <b><span id="hash-rate"></span></b></h4>
-      <h4>TOTAL HASHES SUBMITTED: <b><span id="total-hash"></span></b></h4>
-      <table id="payouts-table" class="table">
-        <tr><th>Time Sent</th><th>TXN ID</th><th>Amount</th></tr>
-      </table>
-      <center><button class="button" role="button"><a href="#" id="loadMore">Load More Payments</a></button></center>
- <!- TODO: dont know how to activate this function on Payouts Table ->
-    </div>
+
+    <footer class="bg-dark text-white text-center py-3 fixed-bottom">
+        <div class="container">
+            by @Rakni for YadaCoin 2025
+        </div>
+    </footer>
+
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
 </body>
-
-<script type="text/javascript">
-        $(document).ready(function() {
-            $.get('/pool-info').then((data) => {
-                if(data.pool.hashes_per_second < 1000) {
-                    $('#pool-hash-rate').html(data.pool.hashes_per_second + ' H/sec ');
-                }
-                else if(data.pool.hashes_per_second >= 1000 && data.pool.hashes_per_second < 1000000) {
-                    $('#pool-hash-rate').html((data.pool.hashes_per_second / 1000).toFixed(2) + ' KH/sec ');
-                }
-                else if(data.pool.hashes_per_second >= 1000000) {
-                    $('#pool-hash-rate').html((data.pool.hashes_per_second / 1000000).toFixed(2) + ' MH/sec ');
-                }
-                if(data.pool.blocks.length > 0) {
-                    var newDate = new Date();
-                    newDate.setTime(data.pool.blocks[0].time*1000);
-                    dateString = newDate.toLocaleString();
-                    $('#pool-last-block').html(data.pool.blocks[0].index);
-                    $('#pool-last-block-time').html(dateString);
-                }
-                $('#pool-miner-count').html(data.pool.miner_count);
-                $('#pool-worker-count').html(data.pool.worker_count);
-                $('#pool-payout-scheme').html(data.pool.payout_scheme);
-                $('#pool-fee').html(data.pool.pool_fee * 100 + '%');
-                $('#pool-blocks-found').html(data.pool.blocks_found);
-                $('#pool-min-payout').html(data.pool.min_payout + ' YDA');
-                $('#pool-url').html(data.pool.url);
-                $('#pool-perecentage').html('(' + data.pool.pool_perecentage.toFixed(2) + ' %)');
-                $('#pool-avg-block-time').html(data.pool.avg_block_time);
-                $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCK found by pool');
-                if(data.pool.payout_frequency > 1) {
-                    $('#pool-payout-frequency').html('After every ' + data.pool.payout_frequency + ' BLOCKS found by pool');
-                }
-                $('#network-difficulty').html(data.network.difficulty.toFixed(3));
-                $('#network-height').html(data.network.height);
-                var blockReward = parseFloat(data.network.reward);
-                var MinersReward = (90 / 100) * blockReward;
-                var NodesReward = (10 / 100) * blockReward;
-                $('#miners-reward').html(MinersReward.toFixed(2) + ' YDA');
-                $('#master-nodes-reward').html(NodesReward.toFixed(2) + ' YDA');
-                var poolAddress = data.pool.pool_address;
-                var newDate = new Date();
-                newDate.setTime(data.network.last_block*1000);
-                dateString = newDate.toLocaleString();
-                $('#network-last-block').html(dateString);
-                if(data.network.avg_hashes_per_second < 1000) {
-                    $('#avg-network-hash-rate').html(data.network.avg_hashes_per_second.toFixed(0) + ' H/sec');
-                }
-                else if(data.network.avg_hashes_per_second >= 1000 && data.network.avg_hashes_per_second < 1000000) {
-                    $('#avg-network-hash-rate').html((data.network.avg_hashes_per_second / 1000).toFixed(2) + ' KH/sec');
-                }
-                else if(data.network.avg_hashes_per_second >= 1000000) {
-                    $('#avg-network-hash-rate').html((data.network.avg_hashes_per_second / 1000000).toFixed(2) + ' MH/sec');
-                }
-                if(data.network.current_hashes_per_second < 1000) {
-                    $('#current-network-hash-rate').html(data.network.current_hashes_per_second.toFixed(0) + ' H/sec');
-                }
-                else if(data.network.current_hashes_per_second >= 1000 && data.network.current_hashes_per_second < 1000000) {
-                    $('#current-network-hash-rate').html((data.network.current_hashes_per_second / 1000).toFixed(2) + ' KH/sec');
-                }
-                else if(data.network.current_hashes_per_second >= 1000000) {
-                    $('#current-network-hash-rate').html((data.network.current_hashes_per_second / 1000000).toFixed(2) + ' MH/sec');
-                }
-
-                if(data.pool.blocks.length === 0) return $('#blocks-table').html('<tr><th>Time Found</th><th>Height</th><th>Reward</th><th>Block Hash</th></tr>');
-                    for(var i=0; i < data.pool.blocks.length; i++) {
-                        var newDate = new Date();
-                        newDate.setTime(data.pool.blocks[i].time*1000);
-                        dateString = newDate.toLocaleString();
-                        var reward = getRewardFromTransactions(data.pool.blocks[i].transactions, poolAddress);
-                        $('#blocks-table').append('<tr><td>' + dateString + '</td><td>' + data.pool.blocks[i].index + '</a></td><<td>' + reward + '</td><td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.pool.blocks[i].hash + '">' + data.pool.blocks[i].hash + '</td></tr>');
-                    }
-
-                    function getRewardFromTransactions(transactions, poolAddress) {
-                      var highestReward = 0.0;
-
-                      for (var i = 0; i < transactions.length; i++) {
-                        for (var j = 0; j < transactions[i].outputs.length; j++) {
-                          if (transactions[i].outputs[j].to === poolAddress) {
-                            var currentReward = transactions[i].outputs[j].value;
-                            if (currentReward > highestReward) {
-                              highestReward = currentReward;
-                            }
-                          }
-                        }
-                      }
-                      return highestReward + ' YDA';
-                    }
-
-                    var pagelength = 5;
-                    var pageIndex = 1;
-                    var selector = "tr:gt(" + pagelength + ")";
-                    $(selector).hide();
-
-                    $("#loadMore").click(function(){
-                        var itemsCount = ((pageIndex * pagelength) + pagelength);
-                        var selector = "tr:lt(" + itemsCount + ")";
-                    $(selector).show();
-                    pageIndex++;
-                    });
-            })
-            $('#form').submit(function(e) {
-                e.preventDefault();
-                $.get('/payouts-for-address?address=' + $('#address').val()).then((data) => {
-                    if(data.results.length === 0) return $('#payouts-table').html('<tr>><th>Time Sent</th><th>TXN ID</th><th>Amount</th></tr>');
-                    $('#payouts-table').html('');
-                    $('#payouts-table').append('<tr><th>Time Sent</th><th>TXN ID</th><th>Amount</th></tr>');
-                    for(var i=0; i < data.results.length; i++) {
-                        var selectOutput = {};
-                        var newDate = new Date();
-                        newDate.setTime(data.results[i]['txn'].time*1000);
-                        dateString = newDate.toLocaleString();
-                        for(var j=0; j < data.results[i]['txn'].outputs.length; j++) {
-                            if(data.results[i]['txn'].outputs[j].to === $('#address').val()) {
-                                selectOutput = data.results[i]['txn'].outputs[j];
-                            }
-                        }
-                    $('#payouts-table').append('<tr><td>' + dateString + '<td><a target="_blank" href="https://yadacoin.io/explorer?term=' + data.results[i]['txn'].id + '">' + data.results[i]['txn'].id + '</a></td><td>' + parseFloat(selectOutput.value).toFixed(8) + ' YDA' + '</td></tr>');
-                    }
-                });
-                $.get('/shares-for-address?address=' + $('#address').val()).then((data) => {
-                    $('#total-hash').html(data.total_hash)
-                });
-                $.get('/hashrate-for-address?address=' + $('#address').val()).then((data) => {
-                    if(data.miner_hashrate < 1000) {
-                        $('#hash-rate').html(data.miner_hashrate + ' H/s');
-                    }
-                    else if(data.miner_hashrate >= 1000 && data.miner_hashrate < 1000000) {
-                        $('#hash-rate').html((data.miner_hashrate / 1000).toFixed(2) + ' KH/s');
-                    }
-                    else if(data.miner_hashrate >= 1000000) {
-                        $('#hash-rate').html((data.miner_hashrate / 1000000).toFixed(2) + ' MH/s');
-                    }
-                });
-            });
-        });
-</script>
-
-<style>
-
-body {
-  background-color: #D3D3D3;
-  margin-left: 12%;
-  margin-right: 12%;
-}
-
-.header {
-  padding: 10px;
-  text-align: left;
-  font-size: 50px;
-}
-
-.box {
-  width: 100%;
-  height: 120px;
-  padding: 3px;
-  padding-left: 15px;
-  font-size: 22px;
-  font-weight: bolder;
-  color: whitesmoke;
-  font-family: "Audiowide", sans-serif;
-  box-sizing: border-box;
-  background-image:linear-gradient(#A9A9A9, #696969);
-  opacity: 0.9;
-}
-
-.box2 {
-  width: 100%;
-  height: 210px;
-  box-sizing: border-box;
-}
-
-.box3 {
-  width: 100%;
-  height: 210px;
-  padding: 3px;
-  padding-left: 20px;
-  font-size: 14px;
-  color: whitesmoke;
-  text-decoration-color: darkred;
-  font-family: "Audiowide", sans-serif;
-  box-sizing: border-box;
-  background-image:linear-gradient(#A9A9A9, #696969);
-  opacity: 0.9;
-}
-
-.column {
-  float: left;
-  width: 25%;
-  padding: 10px;
-}
-
-.column2 {
-  float: left;
-  padding: 20px;
-  width: 50%;
-  padding: 10px;
-}
-
-.column3 {
-  float: center;
-  padding: 20px;
-  width: 100%;
-  padding: 10px;
-}
-
-@media (max-width: 1100px) {
-  .column {
-    width: 100%;
-  }
-  .column2 {
-    width: 100%;
-  }
-}
-
-.button {
-  width: 24%;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  padding: 6px 14px;
-  font-family: -apple-system, BlinkMacSystemFont, 'Roboto', sans-serif;
-  border-radius: 6px;
-  border: none;
-
-  background: #A9A9A9;
-  box-shadow: 0px 0.5px 1px rgba(0, 0, 0, 0.1), inset 0px 0.5px 0.5px rgba(255, 255, 255, 0.5), 0px 0px 0px 0.5px rgba(0, 0, 0, 0.12);
-  color: black;
-  user-select: none;
-  -webkit-user-select: none;
-  touch-action: manipulation;
-}
-
-.button:focus {
-  box-shadow: inset 0px 0.8px 0px -0.25px rgba(255, 255, 255, 0.2), 0px 0.5px 1px rgba(0, 0, 0, 0.1), 0px 0px 0px 3.5px rgba(58, 108, 217, 0.5);
-  outline: 0;
-}
-
-.footer {
-  background-color: #f1f1f1;
-  padding: 10px;
-  text-align: center;
-}
-
-table {
-  border-collapse: collapse;
-  width: 95%;
-}
-
-th, td {
-  text-align: left;
-  padding: 8px;
-  font-size: 14;
-}
-
-tr:nth-child(even){background-color: #A9A9A9}
-
-th {
-  background-color: #696969;
-  color: whitesmoke;
-}
-
-li {
-  display: inline;
-}
-</style>
 </html>
-
