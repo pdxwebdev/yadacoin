@@ -47,10 +47,11 @@ class ProcessingQueue:
 
 
 class BlockProcessingQueueItem:
-    def __init__(self, blockchain: Blockchain, stream=None, body=None):
+    def __init__(self, blockchain: Blockchain, stream=None, body=None, source="unknown"):
         self.blockchain = blockchain
         self.body = body or {}
         self.stream = stream
+        self.source = source
 
 
 class BlockProcessingQueue(ProcessingQueue):
