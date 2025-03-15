@@ -22,6 +22,7 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.job import Job
+from yadacoin.core.miner import Miner
 from yadacoin.core.peer import Peer
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
@@ -104,7 +105,7 @@ class MiningPool(object):
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
 
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
-        self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
+        #self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
 
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
@@ -288,7 +289,7 @@ class MiningPool(object):
         # TODO: to be taken care of, no refresh atm between blocks
         try:
             if self.refreshing or not await Peer.is_synced():
-                return
+                self.app_log.warning("Pool not fully synced, but refreshing anyway!")
             self.refreshing = True
             await self.config.LatestBlock.block_checker()
             if self.block_factory:
@@ -658,12 +659,10 @@ class MiningPool(object):
         await self.config.consensus.insert_consensus_block(block, self.config.peer)
 
         self.config.processing_queues.block_queue.add(
-            BlockProcessingQueueItem(Blockchain(block.to_dict()))
+            BlockProcessingQueueItem(Blockchain(block.to_dict()), source="miningpool")
         )
 
         if self.config.network != "regnet":
             await self.config.nodeShared.send_block_to_peers(block)
 
             await self.config.websocketServer.send_block(block)
-
-        await self.refresh()

@@ -125,6 +125,7 @@ class Block(object):
         "target",
         "special_target",
         "header",
+        "is_verified",
     )
 
     @classmethod
@@ -144,6 +145,7 @@ class Block(object):
         header="",
         target: int = 0,
         special_target: int = 0,
+        is_verified: bool = False
     ):
         self = cls()
         self.config = Config()
@@ -182,6 +184,7 @@ class Block(object):
             transaction = Transaction.ensure_instance(txn)
             transaction.coinbase = Block.is_coinbase(self, transaction)
             self.transactions.append(transaction)
+        self.is_verified = is_verified
 
         return self
 

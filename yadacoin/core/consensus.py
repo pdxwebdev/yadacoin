@@ -112,7 +112,19 @@ class Consensus(object):
         self.config.processing_queues.block_queue.inc_num_items_processed()
         stream = item.stream
         body = item.body
+        source = item.source
+
         if body:
+            stream_source = body.get("method", "unknown")
+        else:
+            stream_source = source
+
+        if stream is not None:
+            stream.source = stream_source
+
+        self.app_log.info(f"Processing block from source: {stream_source}")
+
+        if body and "method" in body:
             if body["method"] == "blockresponse":
                 payload = body.get("result", {})
                 block = payload.get("block")
@@ -145,7 +157,6 @@ class Consensus(object):
                     return
 
                 block = await Block.from_dict(block)
-
                 stream.peer.block = block
 
                 if block.time > time():
@@ -178,6 +189,7 @@ class Consensus(object):
                     return
 
         self.config.processing_queues.block_queue.time_sum_start()
+
         if isinstance(item.blockchain.init_blocks, list):
             first_block = await Block.from_dict(item.blockchain.first_block)
         else:
@@ -208,9 +220,10 @@ class Consensus(object):
         if count < 1:
             return
         elif count == 1:
-            await self.integrate_block_with_existing_chain(first_block, stream)
+            await self.integrate_block_with_existing_chain(first_block, stream, source=stream_source)
         else:
-            await self.integrate_blocks_with_existing_chain(item.blockchain, stream)
+            await self.integrate_blocks_with_existing_chain(item.blockchain, stream, source=stream_source)
+
 
     async def remove_pending_transactions_now_in_chain(self, block):
         # remove transactions from miner_transactions collection in the blockchain
@@ -453,7 +466,7 @@ class Consensus(object):
         backward_blocks.append(retrace_consensus_block)
         return backward_blocks, status
 
-    async def integrate_block_with_existing_chain(self, block: Block, stream):
+    async def integrate_block_with_existing_chain(self, block: Block, stream, source="unknown"):
         self.app_log.debug("integrate_block_with_existing_chain")
         backward_blocks, status = await self.build_backward_from_block_to_fork(
             block, [], stream
@@ -478,9 +491,9 @@ class Consensus(object):
             )
             return False
 
-        await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream)
+        await self.integrate_blocks_with_existing_chain(inbound_blockchain, stream, source)
 
-    async def integrate_blocks_with_existing_chain(self, blockchain, stream):
+    async def integrate_blocks_with_existing_chain(self, blockchain, stream, source="unknown"):
         self.app_log.debug("integrate_blocks_with_existing_chain")
 
         extra_blocks = [x async for x in blockchain.blocks]
@@ -489,6 +502,7 @@ class Consensus(object):
         async for block in blockchain.blocks:
             if self.config.network == "regnet":
                 break
+
             if not await Blockchain.test_block(
                 block, extra_blocks=extra_blocks, simulate_last_block=prev_block
             ):
@@ -498,6 +512,8 @@ class Consensus(object):
                     break
                 else:
                     return
+
+            block.is_verified = True  
             prev_block = block
             i += 1
 
@@ -525,25 +541,26 @@ class Consensus(object):
             return
 
         async for block in blockchain.blocks:
-            if (
-                not await Blockchain.test_block(block)
-                and self.config.network == "mainnet"
-            ):
-                return
-            await self.insert_block(block, stream)
+            if not getattr(block, "is_verified", False) and self.config.network == "mainnet":
+                if not await Blockchain.test_block(block):
+                    return
+
+            await self.insert_block(block, stream, source)
 
         if stream:
             stream.syncing = False
 
-    async def insert_block(self, block, stream):
+    async def insert_block(self, block, stream, source="unknown"):
         self.app_log.debug("insert_block")
+
+        self.app_log.info(f"Inserting block {block.index} from {source}")
+
         try:
             await self.mongo.async_db.blocks.delete_many(
                 {"index": {"$gte": block.index}}
             )
 
             db_block = block.to_dict()
-
             db_block["updated_at"] = time()
 
             await self.mongo.async_db.blocks.replace_one(
@@ -556,21 +573,21 @@ class Consensus(object):
 
             await self.config.LatestBlock.update_latest_block()
 
-            self.app_log.info("New block inserted for height: {}".format(block.index))
+            self.app_log.info(f"New block inserted for height: {block.index}")
 
-            if self.config.mp:
-                if self.syncing or (hasattr(stream, "syncing") and stream.syncing):
-                    return True
+            if self.config.mp and source in ["newblock", "miningpool"]:
+                self.app_log.info("Updating miners (newblock detected).")
                 try:
                     await self.config.mp.refresh()
                 except Exception:
-                    self.app_log.warning("{}".format(format_exc()))
+                    self.app_log.warning("Failed to refresh miners: {}".format(format_exc()))
 
                 try:
                     await StratumServer.block_checker()
                 except Exception:
-                    self.app_log.warning("{}".format(format_exc()))
+                    self.app_log.warning("Block checker failed: {}".format(format_exc()))
 
             return True
+
         except Exception:
             self.app_log.warning("{}".format(format_exc()))
