@@ -154,6 +154,22 @@ class MinerPayoutsHandler(BaseHandler):
         self.render_as_json({"payouts": payouts})
 
 
+class PoolHashrateStatsHandler(BaseHandler):
+    async def get(self):
+        stats_cursor = (
+            self.config.mongo.async_pool_db.pool_hashrate_stats.find({}, {"_id": 0})
+            .sort([("time", -1)])
+            .limit(180)
+        )
+
+        stats = await stats_cursor.to_list(length=180)
+
+        if not stats:
+            return self.render_as_json({"error": "No hashrate stats available."}, status=404)
+
+        return self.render_as_json({"stats": stats})
+
+
 class PoolScanMissedPayoutsHandler(BaseHandler):
     async def get(self):
         start_index = self.get_query_argument("start_index")
@@ -169,6 +185,7 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
 POOL_HANDLERS = [
     (r"/miner-stats", MinerStatsHandler),
     (r"/miner-payouts", MinerPayoutsHandler),
+    (r"/pool-hashrate-stats", PoolHashrateStatsHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
     # (r"/force-refresh", PoolForceRefresh),
 ]
