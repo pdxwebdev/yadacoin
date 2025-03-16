@@ -1,4 +1,5 @@
 <div class="container mt-4">
+    <h5><b>GENERAL STATISTICS</b></h5>
     <div class="row">
         <div class="col-md-3 mb-3">
             <div class="box shadow-sm p-3">
@@ -50,9 +51,10 @@
         </div>
         <div class="col-md-3 mb-3">
             <div class="box shadow-sm p-3">
-                <h5><b><i class="fas fa-coins"></i> BLOCK REWARD</b></h5>
-                <div>Miners: <b><span id="miners-reward">Loading...</span> YDA</b></div>
-                <div>Master Nodes: <b><span id="master-nodes-reward">Loading...</span> YDA</b></div>
+                <h5><b><i class="fas fa-coins"></i> LATEST BLOCK REWARD</b></h5>
+                <div style="font-size: 0.95em;">Miners: <b><span id="miners-reward">Loading...</span></b></div>
+                <div style="font-size: 0.95em;">Master Nodes: <b><span id="master-nodes-reward">Loading...</span></b></div>
+                <div style="font-size: 0.85em; color: gray;">Per Masternode: <b><span id="single-mn-reward">Loading...</span></b></div>
             </div>
         </div>
     </div>
@@ -81,6 +83,28 @@
             <div class="box shadow-sm p-3">
                 <h5><b><i class="fas fa-exchange-alt"></i> PAYOUT SCHEME</b></h5>
                 <div id="pool-payout-scheme">Loading...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-12 col-md-12 mb-4">
+            <div class="box shadow-sm p-3">
+                <h5><b><i class="fas fa-chart-line"></i> Pool Hashrate & Miners</b></h5>
+                <div class="card-body">
+                    <canvas id="hashrate-chart" height="200"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div class="row">
+        <div class="col-lg-12 col-md-12 mb-4">
+            <div class="box shadow-sm p-3">
+                <h5><b><i class="fas fa-chart-line"></i> Network Hashrate & Difficulty</b></h5>
+                <div class="card-body">
+                    <canvas id="network-hashrate-chart" height="200"></canvas>
+                </div>
             </div>
         </div>
     </div>
