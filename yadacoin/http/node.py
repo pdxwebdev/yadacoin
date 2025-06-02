@@ -231,6 +231,7 @@ class GetTransactionByPublicKeyHandler(BaseHandler):
             {"public_key": public_key}
         )
         if txn:
+            txn["mempool"] = True
             return self.render_as_json(txn)
 
         txns = await self.config.mongo.async_db.blocks.aggregate(
