@@ -218,7 +218,7 @@ class GetPendingTransactionHandler(BaseHandler):
         if not txn_id:
             return self.render_as_json({})
         return self.render_as_json(
-            self.config.mongo.async_db.miner_transactions.find_one({"id": txn_id})
+            await self.config.mongo.async_db.miner_transactions.find_one({"id": txn_id})
         )
 
 
@@ -228,7 +228,7 @@ class GetPendingTransactionByPublicKeyHandler(BaseHandler):
         if not public_key:
             return self.render_as_json({})
         return self.render_as_json(
-            self.config.mongo.async_db.miner_transactions.find_one(
+            await self.config.mongo.async_db.miner_transactions.find_one(
                 {"public_key": public_key}
             )
             or {}
