@@ -319,16 +319,19 @@ class UnlockHandler(BaseHandler):
 class SentPendingTransactionsView(BaseHandler):
     async def get(self):
         public_key = self.get_query_argument("public_key")
+        include_zero = self.get_query_argument("include_zero", False)
         page = int(self.get_query_argument("page", 1)) - 1
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
+        query = {
+            "outputs.to": address,
+            "public_key": public_key,
+        }
+        if not include_zero:
+            query["outputs.value"] = {"$gt": 0}
         pending_txns = (
             await self.config.mongo.async_db.miner_transactions.find(
-                {
-                    "outputs.to": address,
-                    "public_key": public_key,
-                    "outputs.value": {"$gt": 0},
-                },
+                query,
                 {"_id": 0},
             )
             .sort([("time", -1)])
@@ -343,32 +346,33 @@ class SentPendingTransactionsView(BaseHandler):
 class SentTransactionsView(BaseHandler):
     async def get(self):
         public_key = self.get_query_argument("public_key")
+        include_zero = self.get_query_argument("include_zero", False)
         page = int(self.get_query_argument("page", 1)) - 1
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-        txns = self.config.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        "transactions.outputs.to": address,
-                        "transactions.inputs.0": {"$exists": True},
-                        "transactions.public_key": public_key,
-                        "transactions.outputs.value": {"$gt": 0},
-                    }
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "transactions.outputs.to": address,
-                        "transactions.inputs.0": {"$exists": True},
-                        "transactions.public_key": public_key,
-                        "transactions.outputs.value": {"$gt": 0},
-                    }
-                },
-                {"$sort": {"transactions.time": -1}},
-                {"$skip": page * 10},
-                {"$limit": 10},
-            ]
-        )
+        query = [
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.inputs.0": {"$exists": True},
+                    "transactions.public_key": public_key,
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.inputs.0": {"$exists": True},
+                    "transactions.public_key": public_key,
+                }
+            },
+            {"$sort": {"transactions.time": -1}},
+            {"$skip": page * 10},
+            {"$limit": 10},
+        ]
+        if not include_zero:
+            query[0]["$match"]["transactions.outputs.value"] = {"$gt": 0}
+            query[2]["$match"]["transactions.outputs.value"] = {"$gt": 0}
+        txns = self.config.mongo.async_db.blocks.aggregate(query)
 
         return self.render_as_json(
             {
@@ -380,16 +384,18 @@ class SentTransactionsView(BaseHandler):
 class ReceivedPendingTransactionsView(BaseHandler):
     async def get(self):
         public_key = self.get_query_argument("public_key")
+        include_zero = self.get_query_argument("include_zero", False)
         page = int(self.get_query_argument("page", 1)) - 1
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-
+        query = {
+            "outputs.to": address,
+            "public_key": {"$ne": public_key},
+        }
+        if not include_zero:
+            query["outputs.value"] = {"$gt": 0}
         pending_txns = (
             await self.config.mongo.async_db.miner_transactions.find(
-                {
-                    "outputs.to": address,
-                    "public_key": {"$ne": public_key},
-                    "outputs.value": {"$gt": 0},
-                },
+                query,
                 {"_id": 0},
             )
             .sort([("time", -1)])
@@ -404,47 +410,49 @@ class ReceivedPendingTransactionsView(BaseHandler):
 class ReceivedTransactionsView(BaseHandler):
     async def get(self):
         public_key = self.get_query_argument("public_key")
+        include_zero = self.get_query_argument("include_zero", False)
         page = int(self.get_query_argument("page", 1)) - 1
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
-
-        txns = self.config.mongo.async_db.blocks.aggregate(
-            [
-                {
-                    "$match": {
-                        "transactions.outputs.to": address,
-                        "transactions.outputs.value": {"$gt": 0},
-                        "$or": [
-                            {
-                                "transactions": {
-                                    "$elemMatch": {"public_key": {"$ne": public_key}}
-                                }
-                            },
-                            {
-                                "public_key": public_key,
-                                "transactions.inputs.0": {"$exists": False},
-                            },
-                        ],
-                    }
-                },
-                {"$unwind": "$transactions"},
-                {
-                    "$match": {
-                        "transactions.outputs.to": address,
-                        "transactions.outputs.value": {"$gt": 0},
-                        "$or": [
-                            {"transactions.public_key": {"$ne": public_key}},
-                            {
-                                "public_key": public_key,
-                                "transactions.inputs.0": {"$exists": False},
-                            },
-                        ],
-                    }
-                },
-                {"$sort": {"transactions.time": -1}},
-                {"$skip": page * 10},
-                {"$limit": 10},
-            ]
-        )
+        query = [
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gt": 0},
+                    "$or": [
+                        {
+                            "transactions": {
+                                "$elemMatch": {"public_key": {"$ne": public_key}}
+                            }
+                        },
+                        {
+                            "public_key": public_key,
+                            "transactions.inputs.0": {"$exists": False},
+                        },
+                    ],
+                }
+            },
+            {"$unwind": "$transactions"},
+            {
+                "$match": {
+                    "transactions.outputs.to": address,
+                    "transactions.outputs.value": {"$gt": 0},
+                    "$or": [
+                        {"transactions.public_key": {"$ne": public_key}},
+                        {
+                            "public_key": public_key,
+                            "transactions.inputs.0": {"$exists": False},
+                        },
+                    ],
+                }
+            },
+            {"$sort": {"transactions.time": -1}},
+            {"$skip": page * 10},
+            {"$limit": 10},
+        ]
+        if not include_zero:
+            query[0]["$match"]["transactions.outputs.value"] = {"$gt": 0}
+            query[2]["$match"]["transactions.outputs.value"] = {"$gt": 0}
+        txns = self.config.mongo.async_db.blocks.aggregate(query)
 
         return self.render_as_json(
             {
