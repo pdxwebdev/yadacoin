@@ -227,12 +227,6 @@ class GetTransactionByPublicKeyHandler(BaseHandler):
         public_key = self.get_query_argument("public_key")
         if not public_key:
             return self.render_as_json({})
-        txn = await self.config.mongo.async_db.miner_transactions.find_one(
-            {"public_key": public_key}
-        )
-        if txn:
-            txn["mempool"] = True
-            return self.render_as_json(txn)
 
         txns = await self.config.mongo.async_db.blocks.aggregate(
             [
@@ -243,6 +237,13 @@ class GetTransactionByPublicKeyHandler(BaseHandler):
         ).to_list(length=1)
         if txns:
             return self.render_as_json(txns[0]["transactions"])
+
+        txn = await self.config.mongo.async_db.miner_transactions.find_one(
+            {"public_key": public_key}
+        )
+        if txn:
+            txn["mempool"] = True
+            return self.render_as_json(txn)
 
         return self.render_as_json({})
 
