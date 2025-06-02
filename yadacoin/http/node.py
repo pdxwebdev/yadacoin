@@ -222,17 +222,28 @@ class GetPendingTransactionHandler(BaseHandler):
         )
 
 
-class GetPendingTransactionByPublicKeyHandler(BaseHandler):
+class GetTransactionByPublicKeyHandler(BaseHandler):
     async def get(self):
         public_key = self.get_query_argument("public_key")
         if not public_key:
             return self.render_as_json({})
-        return self.render_as_json(
-            await self.config.mongo.async_db.miner_transactions.find_one(
-                {"public_key": public_key}
-            )
-            or {}
+        txn = await self.config.mongo.async_db.miner_transactions.find_one(
+            {"public_key": public_key}
         )
+        if txn:
+            return self.render_as_json(txn)
+
+        txns = await self.config.mongo.async_db.blocks.aggregate(
+            [
+                {"$match": {"transactions.public_key": public_key}},
+                {"$unwind": "$transactions"},
+                {"$match": {"transactions.public_key": public_key}},
+            ]
+        ).to_list(length=1)
+        if txns:
+            return self.render_as_json(txns[0]["transactions"])
+
+        return self.render_as_json({})
 
 
 class GetPendingTransactionIdsHandler(BaseHandler):
@@ -461,8 +472,8 @@ NODE_HANDLERS = [
     (r"/get-status", GetStatusHandler),
     (r"/get-pending-transaction", GetPendingTransactionHandler),
     (
-        r"/get-pending-transaction-by-public-key",
-        GetPendingTransactionByPublicKeyHandler,
+        r"/get-transaction-by-public-key",
+        GetTransactionByPublicKeyHandler,
     ),
     (r"/get-pending-transaction-ids", GetPendingTransactionIdsHandler),
     (r"/get-transaction-tracking", GetTransactionTrackingHandler),
