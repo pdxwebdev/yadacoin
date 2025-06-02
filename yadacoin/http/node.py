@@ -17,8 +17,8 @@ Handlers required by the core chain operations
 
 import json
 import time
-
 from datetime import datetime, timezone
+
 from tornado import escape
 
 from yadacoin.core.chain import CHAIN
@@ -222,6 +222,19 @@ class GetPendingTransactionHandler(BaseHandler):
         )
 
 
+class GetPendingTransactionByPublicKeyHandler(BaseHandler):
+    async def get(self):
+        public_key = self.get_query_argument("public_key")
+        if not public_key:
+            return self.render_as_json({})
+        return self.render_as_json(
+            self.config.mongo.async_db.miner_transactions.find_one(
+                {"public_key": public_key}
+            )
+            or {}
+        )
+
+
 class GetPendingTransactionIdsHandler(BaseHandler):
     async def get(self):
         txns = await self.config.mongo.async_db.miner_transactions.find({}).to_list(
@@ -244,26 +257,36 @@ class GetTransactionTrackingHandler(BaseHandler):
 
         query = {"rid": rid} if rid else {}
 
-        transactions = await self.config.mongo.async_db.txn_tracking.find(query).to_list(length=None)
+        transactions = await self.config.mongo.async_db.txn_tracking.find(
+            query
+        ).to_list(length=None)
 
         response = []
 
         for entry in transactions:
             formatted_transactions = []
-            
-            if "transactions" in entry:
-                sorted_txn = sorted(entry["transactions"].items(), key=lambda x: x[1], reverse=True)
-                for txn_id, timestamp in sorted_txn[:limit]:
-                    formatted_transactions.append({
-                        "txn_id": txn_id,
-                        "timestamp": datetime.fromtimestamp(timestamp, tz=timezone.utc).strftime('%Y-%m-%d %H:%M:%S UTC')
-                    })
 
-            response.append({
-                "host": entry.get("host", "Unknown"),
-                "rid": entry["rid"],
-                "transactions": formatted_transactions
-            })
+            if "transactions" in entry:
+                sorted_txn = sorted(
+                    entry["transactions"].items(), key=lambda x: x[1], reverse=True
+                )
+                for txn_id, timestamp in sorted_txn[:limit]:
+                    formatted_transactions.append(
+                        {
+                            "txn_id": txn_id,
+                            "timestamp": datetime.fromtimestamp(
+                                timestamp, tz=timezone.utc
+                            ).strftime("%Y-%m-%d %H:%M:%S UTC"),
+                        }
+                    )
+
+            response.append(
+                {
+                    "host": entry.get("host", "Unknown"),
+                    "rid": entry["rid"],
+                    "transactions": formatted_transactions,
+                }
+            )
 
         return self.render_as_json({"transaction_tracking": response})
 
@@ -416,10 +439,14 @@ class GetMonitoringHandler(BaseHandler):
 class GetTestedNodesHandler(BaseHandler):
     async def get(self):
         """Zwraca listę ostatnio przetestowanych węzłów."""
-        result = await self.config.mongo.async_db.tested_nodes.find_one({"_id": "latest_test"}, {"_id": 0})
+        result = await self.config.mongo.async_db.tested_nodes.find_one(
+            {"_id": "latest_test"}, {"_id": 0}
+        )
 
         if not result:
-            return self.render_as_json({"error": "No test results available."}, status=404)
+            return self.render_as_json(
+                {"error": "No test results available."}, status=404
+            )
 
         return self.render_as_json(result)
 
@@ -433,6 +460,10 @@ NODE_HANDLERS = [
     (r"/newblock", NewBlockHandler),
     (r"/get-status", GetStatusHandler),
     (r"/get-pending-transaction", GetPendingTransactionHandler),
+    (
+        r"/get-pending-transaction-by-public-key",
+        GetPendingTransactionByPublicKeyHandler,
+    ),
     (r"/get-pending-transaction-ids", GetPendingTransactionIdsHandler),
     (r"/get-transaction-tracking", GetTransactionTrackingHandler),
     (r"/rebroadcast-transactions", RebroadcastTransactions),
