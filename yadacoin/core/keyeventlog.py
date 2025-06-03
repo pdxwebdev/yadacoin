@@ -724,9 +724,7 @@ class KeyEventLog:
                 if not txn.prev_public_key_hash:
                     inception = txn
                     break
-                address = str(
-                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key_hash))
-                )
+                address = txn.public_key_hash
             else:
                 result = config.mongo.async_db.blocks.aggregate(
                     [
@@ -753,11 +751,7 @@ class KeyEventLog:
                             "This should not happend. If no previous entries were found, prev_public_key_hash should be blank."
                         )
                     inception = txn
-                    address = str(
-                        P2PKHBitcoinAddress.from_pubkey(
-                            bytes.fromhex(txn.public_key_hash)
-                        )
-                    )
+                    address = txn.public_key_hash
                 break
         if inception:
             log.append(inception)
