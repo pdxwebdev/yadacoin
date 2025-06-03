@@ -728,6 +728,36 @@ class KeyEventLog:
                     P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(txn.public_key_hash))
                 )
             else:
+                result = config.mongo.async_db.blocks.aggregate(
+                    [
+                        {
+                            "$match": {
+                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
+                            },
+                        },
+                        {
+                            "$unwind": "$transactions",
+                        },
+                        {
+                            "$match": {
+                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
+                            },
+                        },
+                    ]
+                )
+                res = await result.to_list(length=1)
+                if res:
+                    txn = Transaction.from_dict(res[0]["transactions"])
+                    if txn.prev_public_key_hash:
+                        raise Exception(
+                            "This should not happend. If no previous entries were found, prev_public_key_hash should be blank."
+                        )
+                    inception = txn
+                    address = str(
+                        P2PKHBitcoinAddress.from_pubkey(
+                            bytes.fromhex(txn.public_key_hash)
+                        )
+                    )
                 break
         if inception:
             log.append(inception)
