@@ -15,9 +15,13 @@ class KELHandler(BaseHandler):
     async def get(self):
         public_key = self.get_query_argument("public_key")
         log = await KeyEventLog.build_from_public_key(public_key)
-        return self.render_as_json(
-            {"status": True, "key_event_log": [x.to_dict() for x in log]}
-        )
+        outlog = []
+        for x in log:
+            y = x.to_dict()
+            if hasattr(y, "mempool"):
+                y["mempool"] = y.mempool
+            outlog.append(y)
+        return self.render_as_json({"status": True, "key_event_log": outlog})
 
 
 KEY_EVENT_LOG_HANDLERS = [
