@@ -752,6 +752,21 @@ class KeyEventLog:
                         )
                     inception = txn
                     address = txn.public_key_hash
+                else:
+                    # This case for pending inception transactions
+                    result_mempool = (
+                        await config.mongo.async_db.miner_transactions.find_one(
+                            {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+                        )
+                    )
+                    if result_mempool:
+                        txn = Transaction.from_dict(result_mempool)
+                        if txn.prev_public_key_hash:
+                            raise Exception(
+                                "This should not happend. If no previous entries were found, prev_public_key_hash should be blank. #mempool"
+                            )
+                        inception = txn
+                        address = txn.public_key_hash
                 break
         if inception:
             log.append(inception)
