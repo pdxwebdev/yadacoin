@@ -18,8 +18,8 @@ class KELHandler(BaseHandler):
         outlog = []
         for x in log:
             y = x.to_dict()
-            if hasattr(y, "mempool"):
-                y["mempool"] = y.mempool
+            if hasattr(x, "mempool"):
+                y["mempool"] = x.mempool
             outlog.append(y)
         return self.render_as_json({"status": True, "key_event_log": outlog})
 
