@@ -766,6 +766,7 @@ class KeyEventLog:
                                 "This should not happend. If no previous entries were found, prev_public_key_hash should be blank. #mempool"
                             )
                         inception = txn
+                        txn.mempool = True
                         address = txn.public_key_hash
                 break
         if inception:
