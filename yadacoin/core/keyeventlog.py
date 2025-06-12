@@ -705,7 +705,13 @@ class KeyEventLog:
                 [
                     {
                         "$match": {
-                            BlocksQueryFields.PREROTATED_KEY_HASH.value: address
+                            "$or": [
+                                {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                                {BlocksQueryFields.PREROTATED_KEY_HASH.value: address},
+                                {
+                                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address
+                                },
+                            ]
                         },
                     },
                     {
@@ -713,7 +719,13 @@ class KeyEventLog:
                     },
                     {
                         "$match": {
-                            BlocksQueryFields.PREROTATED_KEY_HASH.value: address
+                            "$or": [
+                                {BlocksQueryFields.PUBLIC_KEY_HASH.value: address},
+                                {BlocksQueryFields.PREROTATED_KEY_HASH.value: address},
+                                {
+                                    BlocksQueryFields.TWICE_PREROTATED_KEY_HASH.value: address
+                                },
+                            ]
                         },
                     },
                 ]
@@ -726,48 +738,27 @@ class KeyEventLog:
                     break
                 address = txn.public_key_hash
             else:
-                result = config.mongo.async_db.blocks.aggregate(
-                    [
-                        {
-                            "$match": {
-                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
+                # This case for pending inception transactions
+                result_mempool = await config.mongo.async_db.miner_transactions.find_one(
+                    {
+                        "$or": [
+                            {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
+                            {MempoolQueryFields.PREROTATED_KEY_HASH.value: address},
+                            {
+                                MempoolQueryFields.TWICE_PREROTATED_KEY_HASH.value: address
                             },
-                        },
-                        {
-                            "$unwind": "$transactions",
-                        },
-                        {
-                            "$match": {
-                                BlocksQueryFields.PUBLIC_KEY_HASH.value: address
-                            },
-                        },
-                    ]
+                        ]
+                    },
                 )
-                res = await result.to_list(length=1)
-                if res:
-                    txn = Transaction.from_dict(res[0]["transactions"])
+                if result_mempool:
+                    txn = Transaction.from_dict(result_mempool)
                     if txn.prev_public_key_hash:
                         raise Exception(
-                            "This should not happend. If no previous entries were found, prev_public_key_hash should be blank."
+                            "This should not happend. If no previous entries were found, prev_public_key_hash should be blank. #mempool"
                         )
                     inception = txn
+                    txn.mempool = True
                     address = txn.public_key_hash
-                else:
-                    # This case for pending inception transactions
-                    result_mempool = (
-                        await config.mongo.async_db.miner_transactions.find_one(
-                            {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},
-                        )
-                    )
-                    if result_mempool:
-                        txn = Transaction.from_dict(result_mempool)
-                        if txn.prev_public_key_hash:
-                            raise Exception(
-                                "This should not happend. If no previous entries were found, prev_public_key_hash should be blank. #mempool"
-                            )
-                        inception = txn
-                        txn.mempool = True
-                        address = txn.public_key_hash
                 break
         if inception:
             log.append(inception)
