@@ -174,7 +174,9 @@ class NodeRPC(BaseRPC):
             txn = Transaction.from_dict(payload)
 
         if txn is None:
-            self.config.app_log.info("[NEW_TXN] No valid transaction received, ignoring request.")
+            self.config.app_log.info(
+                "[NEW_TXN] No valid transaction received, ignoring request."
+            )
             return
 
         txn_id = txn.transaction_signature
@@ -193,23 +195,31 @@ class NodeRPC(BaseRPC):
             {
                 "$set": {
                     "host": stream.peer.host,
-                    f"transactions.{txn_id}": int(time.time())
+                    f"transactions.{txn_id}": int(time.time()),
                 }
             },
-            upsert=True
+            upsert=True,
         )
 
-        existing_txn = await self.config.mongo.async_db.miner_transactions.find_one({"id": txn_id})
+        existing_txn = await self.config.mongo.async_db.miner_transactions.find_one(
+            {"id": txn_id}
+        )
         if existing_txn:
-            self.config.app_log.warning(f"Transaction {txn_id} already in mempool! Ignoring.")
+            self.config.app_log.warning(
+                f"Transaction {txn_id} already in mempool! Ignoring."
+            )
             return
 
         input_ids = [input_item.id for input_item in txn.inputs]
-        existing_input_txn = await self.config.mongo.async_db.miner_transactions.find_one(
-            {"public_key": txn.public_key, "inputs.id": {"$in": input_ids}}
+        existing_input_txn = (
+            await self.config.mongo.async_db.miner_transactions.find_one(
+                {"public_key": txn.public_key, "inputs.id": {"$in": input_ids}}
+            )
         )
         if existing_input_txn:
-            self.config.app_log.warning(f"Duplicate transaction detected for {txn_id}! Ignoring.")
+            self.config.app_log.warning(
+                f"Duplicate transaction detected for {txn_id}! Ignoring."
+            )
             return
 
         if (
@@ -264,6 +274,18 @@ class NodeRPC(BaseRPC):
             await peer_stream.newtxn(body, source="tcpsocket")
 
     async def process_transaction_queue(self):
+        transactions = self.config.processing_queues.transaction_queue
+        if (
+            self.config.LatestBlock.block.index + 1
+            >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
+        ):
+            items_indexed = {x.transaction_signature: x for x in transactions}
+            for txn in transactions:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+
         item = self.config.processing_queues.transaction_queue.pop()
         i = 0  # max loops
         while item:
@@ -289,7 +311,7 @@ class NodeRPC(BaseRPC):
         - Sends transaction to inbound and outbound peers who have not yet confirmed it.
         """
         txn = item.transaction
-        stream = item.stream
+        item.stream
 
         check_max_inputs = False
         if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
@@ -341,23 +363,27 @@ class NodeRPC(BaseRPC):
 
         async for peer_stream in self.config.peer.get_inbound_streams():
             if peer_stream.peer.rid in confirmed_rids:
-                self.config.app_log.debug(f"Skipping {peer_stream.peer.rid} - already confirmed.")
+                self.config.app_log.debug(
+                    f"Skipping {peer_stream.peer.rid} - already confirmed."
+                )
                 continue
             if peer_stream.peer.protocol_version > 1:
-                self.retry_messages[(peer_stream.peer.rid, "newtxn", txn.transaction_signature)] = {
-                    "transaction": txn.to_dict()
-                }
+                self.retry_messages[
+                    (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
+                ] = {"transaction": txn.to_dict()}
 
         async for peer_stream in make_gen(
             await self.config.peer.get_outbound_streams()
         ):
             if peer_stream.peer.rid in confirmed_rids:
-                self.config.app_log.debug(f"Skipping {peer_stream.peer.rid} - already confirmed.")
+                self.config.app_log.debug(
+                    f"Skipping {peer_stream.peer.rid} - already confirmed."
+                )
                 continue
             if peer_stream.peer.protocol_version > 1:
-                self.config.nodeClient.retry_messages[(peer_stream.peer.rid, "newtxn", txn.transaction_signature)] = {
-                    "transaction": txn.to_dict()
-                }
+                self.config.nodeClient.retry_messages[
+                    (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
+                ] = {"transaction": txn.to_dict()}
 
     async def newtxn_confirmed(self, body, stream):
         """
@@ -382,7 +408,9 @@ class NodeRPC(BaseRPC):
             txn_id = txn.transaction_signature
 
         if not txn_id:
-            self.config.app_log.warning("[NEW_TXN_CONFIRM] Received confirmation without a transaction ID!")
+            self.config.app_log.warning(
+                "[NEW_TXN_CONFIRM] Received confirmation without a transaction ID!"
+            )
             return
 
         retry_key = (stream.peer.rid, "newtxn", txn_id)
@@ -390,14 +418,14 @@ class NodeRPC(BaseRPC):
             del self.retry_messages[retry_key]
 
         await self.config.mongo.async_db.txn_tracking.update_one(
-            {"rid": stream.peer.rid},  
+            {"rid": stream.peer.rid},
             {
                 "$set": {
                     "host": stream.peer.host,
-                    f"transactions.{txn_id}": int(time.time())
+                    f"transactions.{txn_id}": int(time.time()),
                 }
             },
-            upsert=True
+            upsert=True,
         )
 
         self.config.app_log.info(
@@ -442,7 +470,9 @@ class NodeRPC(BaseRPC):
         )
 
         if existing_block:
-            self.config.app_log.warning(f"[NEW_BLOCK] Block {block_index} already exists in DB, skipping processing.")
+            self.config.app_log.warning(
+                f"[NEW_BLOCK] Block {block_index} already exists in DB, skipping processing."
+            )
             return
 
         self.config.processing_queues.block_queue.add(
@@ -465,15 +495,17 @@ class NodeRPC(BaseRPC):
         payload = body.get("result", {})
 
         block_hash = payload.get("block_hash")
-        block_index = payload.get("block_index")
+        payload.get("block_index")
 
         if block_hash is None and payload.get("payload"):
             block = await Block.from_dict(payload.get("payload").get("block"))
             block_hash = block.hash
-            block_index = block.index
+            block.index
 
         if not block_hash:
-            self.config.app_log.warning("[NEW_BLOCK_CONFIRM] Received confirmation without a block hash!")
+            self.config.app_log.warning(
+                "[NEW_BLOCK_CONFIRM] Received confirmation without a block hash!"
+            )
             return
 
         retry_key = (stream.peer.rid, "newblock", block_hash)
@@ -627,7 +659,10 @@ class NodeRPC(BaseRPC):
         if stream.peer.protocol_version > 1:
             start_index = body.get("result", {}).get("start_index", None)
             await self.write_result(
-                stream, "blocksresponse_confirmed", {"start_index": start_index}, body["id"]
+                stream,
+                "blocksresponse_confirmed",
+                {"start_index": start_index},
+                body["id"],
             )
 
         if not blocks:
@@ -744,14 +779,22 @@ class NodeRPC(BaseRPC):
         if (
             peer_major < min_major
             or (peer_major == min_major and peer_minor < min_minor)
-            or (peer_major == min_major and peer_minor == min_minor and peer_patch < min_patch)
+            or (
+                peer_major == min_major
+                and peer_minor == min_minor
+                and peer_patch < min_patch
+            )
         ):
             self.config.app_log.warning(
                 f"Peer {generic_peer.host}:{generic_peer.port} rejected "
                 f"(version {peer_major}.{peer_minor}.{peer_patch} < {'.'.join(map(str, self.config.min_supported_version))})"
             )
 
-            await self.write_params(stream, "disconnect", {"reason": "Version too old, please upgrade to latest release."})
+            await self.write_params(
+                stream,
+                "disconnect",
+                {"reason": "Version too old, please upgrade to latest release."},
+            )
             stream.close()
             return
 
