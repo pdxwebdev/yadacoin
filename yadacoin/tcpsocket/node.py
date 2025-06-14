@@ -276,7 +276,7 @@ class NodeRPC(BaseRPC):
     async def process_transaction_queue(self):
         mempool_transactions = [
             txn
-            async for txn in self.mongo.async_db.miner_transactions.find(
+            async for txn in self.config.mongo.async_db.miner_transactions.find(
                 {"relationship.smart_contract": {"$exists": False}}
             ).sort([("fee", -1), ("time", 1)])
         ]
