@@ -19,11 +19,11 @@ import time
 from decimal import Decimal, getcontext
 from logging import getLogger
 
+import pyrx
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
 
-import pyrx
 import yadacoin.core.config
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
@@ -375,15 +375,7 @@ class Block(object):
 
                 key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
                 try:
-                    key_event_log = await KeyEventLog.init_async(
-                        key_event, hash_collection
-                    )
-                    if key_event_log.unconfirmed_key_event:
-                        for output in key_event_log.unconfirmed_key_event.txn.outputs:
-                            if output.to in hash_collection.public_key_hashes:
-                                raise KELException(
-                                    "Unconfirmed key event sends to a key event in the mempool."
-                                )
+                    await KeyEventLog.init_async(key_event, hash_collection)
                 except (KELException, KeyEventException) as e:
                     config.app_log.info(f"Txn removed from block: {e}")
                     block.transactions.remove(txn)
