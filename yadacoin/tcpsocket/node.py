@@ -274,7 +274,10 @@ class NodeRPC(BaseRPC):
             await peer_stream.newtxn(body, source="tcpsocket")
 
     async def process_transaction_queue(self):
-        transactions = self.config.processing_queues.transaction_queue.queue.values()
+        transactions = [
+            x.transaction
+            for x in self.config.processing_queues.transaction_queue.queue.values()
+        ]
         if (
             self.config.LatestBlock.block.index + 1
             >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK
