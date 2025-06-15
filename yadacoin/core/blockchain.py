@@ -235,12 +235,6 @@ class Blockchain(object):
             except Exception as e:
                 config.app_log.warning(e)
                 return False
-            finally:
-                if (
-                    transaction.spent_in_txn
-                    and transaction.spent_in_txn in block.transactions
-                ):
-                    block.transactions.remove(transaction.spent_in_txn)
 
             if transaction.inputs:
                 failed = False
