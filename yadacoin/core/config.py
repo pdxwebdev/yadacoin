@@ -27,8 +27,7 @@ from ecdsa import SECP256k1, VerifyingKey
 from ecdsa.util import sigdecode_der
 from mnemonic import Mnemonic
 
-from yadacoin import version
-from yadacoin import min_version
+from yadacoin import min_version, version
 from yadacoin.core.crypt import RIPEMD160
 from yadacoin.enums.modes import MODES
 
@@ -464,19 +463,18 @@ class Config:
     @staticmethod
     def address_is_valid(address):
         try:
-            base58_decoded = base58.b58decode(address).hex()
-            prefix_Hash = base58_decoded[: len(base58_decoded) - 8]
-            checksum = base58_decoded[len(base58_decoded) - 8 :]
-            hash = prefix_Hash
-
-            for x in range(1, 3):
-                hash = hashlib.sha256(binascii.unhexlify(hash)).hexdigest()
-
-            if checksum == hash[:8]:
-                return True
-            else:
+            decoded = base58.b58decode(address)
+            if len(decoded) < 4:
                 return False
-        except:
+            payload = decoded[:-4]
+            checksum = decoded[-4:]
+            # Double SHA-256 hash
+            hash1 = hashlib.sha256(payload).digest()
+            hash2 = hashlib.sha256(hash1).digest()
+            calculated_checksum = hash2[:4]
+            return checksum == calculated_checksum
+        except Exception as e:
+            print(f"Error: {e}")
             return False
 
     def get_username_signature(self):
