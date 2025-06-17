@@ -36,7 +36,7 @@ from yadacoin.core.processingqueue import (
     BlockProcessingQueueItem,
     TransactionProcessingQueueItem,
 )
-from yadacoin.core.transaction import Transaction
+from yadacoin.core.transaction import MissingInputTransactionException, Transaction
 from yadacoin.core.transactionutils import TU
 from yadacoin.enums.modes import MODES
 from yadacoin.enums.peertypes import PEER_TYPES
@@ -343,6 +343,11 @@ class NodeRPC(BaseRPC):
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
             )
+        except MissingInputTransactionException:
+            self.config.app_log.warning(
+                f"process_transaction_queue_item - MissingInputTransactionException, skipping for now: {txn.transaction_signature}"
+            )
+            return
         except Exception as e:
             await Transaction.handle_exception(e, txn)
             return
