@@ -322,7 +322,6 @@ class NodeRPC(BaseRPC):
         - Sends transaction to inbound and outbound peers who have not yet confirmed it.
         """
         txn = item.transaction
-        item.stream
 
         check_max_inputs = False
         if self.config.LatestBlock.block.index > CHAIN.CHECK_MAX_INPUTS_FORK:
@@ -346,6 +345,9 @@ class NodeRPC(BaseRPC):
         except MissingInputTransactionException:
             self.config.app_log.warning(
                 f"process_transaction_queue_item - MissingInputTransactionException, skipping for now: {txn.transaction_signature}"
+            )
+            self.config.processing_queues.transaction_queue.add(
+                TransactionProcessingQueueItem(item.transaction, item.stream)
             )
             return
         except Exception as e:
