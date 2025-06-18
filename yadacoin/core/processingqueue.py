@@ -80,9 +80,10 @@ class BlockProcessingQueue(ProcessingQueue):
 
 
 class TransactionProcessingQueueItem:
-    def __init__(self, transaction: Transaction, stream=None):
+    def __init__(self, transaction: Transaction, stream=None, retry_time: int = None):
         self.transaction = transaction
         self.stream = stream
+        self.retry_time = retry_time
 
 
 class TransactionProcessingQueue(ProcessingQueue):

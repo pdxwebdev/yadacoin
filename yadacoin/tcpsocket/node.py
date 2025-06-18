@@ -300,6 +300,11 @@ class NodeRPC(BaseRPC):
         item = self.config.processing_queues.transaction_queue.pop()
         i = 0  # max loops
         while item:
+            if item.retry_time and item.retry_time < int(time.time()):
+                self.config.processing_queues.transaction_queue.add(item)
+                item = self.config.processing_queues.transaction_queue.pop()
+                if not item:
+                    break
             self.config.processing_queues.transaction_queue.inc_num_items_processed()
             await self.process_transaction_queue_item(item)
 
@@ -346,8 +351,18 @@ class NodeRPC(BaseRPC):
             self.config.app_log.warning(
                 f"process_transaction_queue_item - MissingInputTransactionException, skipping for now: {txn.transaction_signature}"
             )
+
+            if hasattr(self.config, "transaction_retry_seconds"):
+                transaction_retry_seconds = self.config.transaction_retry_seconds
+            else:
+                transaction_retry_seconds = 60
+
             self.config.processing_queues.transaction_queue.add(
-                TransactionProcessingQueueItem(item.transaction, item.stream)
+                TransactionProcessingQueueItem(
+                    item.transaction,
+                    item.stream,
+                    int(time.time()) + transaction_retry_seconds,
+                ),
             )
             return
         except Exception as e:
