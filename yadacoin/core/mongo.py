@@ -46,9 +46,11 @@ class Mongo(object):
             self.client = MongoClient(self.config.mongodb_host)
         self.db = self.client[self.config.database]
         self.site_db = self.client[self.config.site_database]
+        self.pool_db = self.client[self.config.pool_database]
         try:
             # test connection
             self.db.blocks.find_one()
+            self.pool_db.pool_blocks.find_one()
         except Exception as e:
             raise e
 
@@ -434,6 +436,13 @@ class Mongo(object):
         except:
             raise
 
+        __time = IndexModel([("time", DESCENDING)], name="__time")
+        __date = IndexModel([("date", DESCENDING)], name="__date", expireAfterSeconds=90000)
+        try:
+            self.pool_db.pool_hashrate_stats.create_indexes([__time, __date])
+        except Exception as e:
+            self.config.app_log.error(f"Error creating indexes for pool_hashrate_stats: {e}")
+
         # TODO: add indexes for peers
 
         if hasattr(self.config, "mongodb_username") and hasattr(
@@ -452,6 +461,7 @@ class Mongo(object):
         self.async_db = self.async_client[self.config.database]
         # self.async_db = self.async_client[self.config.database]
         self.async_site_db = self.async_client[self.config.site_database]
+        self.async_pool_db = self.async_client[self.config.pool_database]
         self.async_db.slow_queries = []
         # convert block time from string to number
         blocks_to_convert = self.db.blocks.find({"time": {"$type": 2}})

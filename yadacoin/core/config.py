@@ -83,6 +83,7 @@ class Config:
         self.mongodb_host = config["mongodb_host"]
         self.database = config["database"]
         self.site_database = config["site_database"]
+        self.pool_database = config["pool_database"]
         if config["peer_host"] == "0.0.0.0" or config["peer_host"] == "localhost":
             raise Exception(
                 "Cannot use localhost or 0.0.0.0, must specify public ipv4 address"
@@ -340,6 +341,7 @@ class Config:
                 "fcm_key": "",
                 "database": db_name or "yadacoin",
                 "site_database": db_name + "site" if db_name else "yadacoinsite",
+                "pool_database": db_name + "pool" if db_name else "yadacoinpool",
                 "mongodb_host": mongodb_host or "localhost",
                 "mixpanel": "",
                 "username": username or "",
@@ -394,6 +396,7 @@ class Config:
         cls.mongodb_host = config["mongodb_host"]
         cls.database = config["database"]
         cls.site_database = config["site_database"]
+        cls.pool_database = config["pool_database"]
         if config["peer_host"] == "0.0.0.0" or config["peer_host"] == "localhost":
             raise Exception(
                 "cannot use localhost or 0.0.0.0, must specify public ipv4 address"
@@ -565,6 +568,7 @@ class Config:
             "network": self.network,
             "database": self.database,
             "site_database": self.site_database,
+            "pool_database":self.pool_database,
             "peer_host": self.peer_host,
             "peer_port": self.peer_port,
             "peer_type": self.peer_type,

@@ -14,6 +14,7 @@ Full license terms: see LICENSE.txt in this repository.
 import json
 import random
 import uuid
+from datetime import datetime
 from logging import getLogger
 from time import time
 
@@ -22,6 +23,7 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.job import Job
+from yadacoin.core.miner import Miner
 from yadacoin.core.peer import Peer
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
@@ -104,7 +106,7 @@ class MiningPool(object):
         self.config.app_log.debug(f"Nonce for job {job.index}: {nonce}")
 
         hash1 = self.block_factory.generate_hash_from_header(job.index, header, nonce)
-        self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
+        #self.config.app_log.info(f"Hash1 for job {job.index}: {hash1}")
 
         if self.block_factory.index >= CHAIN.BLOCK_V5_FORK:
             hash1_test = Blockchain.little_hash(hash1)
@@ -667,3 +669,82 @@ class MiningPool(object):
             await self.config.websocketServer.send_block(block)
 
         await self.refresh()
+
+    async def update_pool_stats(self):
+        expected_blocks = 144
+        mining_time_interval = 1200
+        pool_max_target = 0x0000FFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFFF
+
+        pipeline = [
+            {
+                "$match": {
+                    "time": {"$gte": time() - mining_time_interval}
+                }
+            },
+            {
+                "$group": {
+                    "_id": None,
+                    "total_weight": {"$sum": "$weight"}
+                }
+            }
+        ]
+
+        result = await self.config.mongo.async_db.shares.aggregate(pipeline).to_list(1)
+        pool_hash_rate = result[0]["total_weight"] / mining_time_interval if result else 0
+
+        daily_blocks_found = await self.config.mongo.async_db.blocks.count_documents(
+            {"time": {"$gte": time() - (600 * 144)}}
+        )
+        avg_block_time = daily_blocks_found / expected_blocks * 600
+
+        if daily_blocks_found > 0:
+            net_target = self.config.LatestBlock.block.target
+        avg_blocks_found = self.config.mongo.async_db.blocks.find(
+            {"time": {"$gte": time() - (600 * 36)}},
+            projection={"_id": 0, "target": 1}
+        )
+
+        avg_block_targets = [block["target"] async for block in avg_blocks_found]
+        if avg_block_targets:
+            avg_net_target = sum(int(target, 16) for target in avg_block_targets) / len(avg_block_targets)
+            avg_net_difficulty = (
+                pool_max_target
+                / avg_net_target
+            )
+            net_difficulty = (
+                pool_max_target
+                / net_target
+            )
+            avg_network_hash_rate = (
+                len(avg_block_targets)
+                / 36
+                * avg_net_difficulty
+                * 2**16
+                / avg_block_time
+            )
+            network_hash_rate = net_difficulty * 2**16 / 600
+        else:
+            avg_network_hash_rate = 1
+            net_difficulty = (
+                pool_max_target
+                / pool_max_target
+            )
+            network_hash_rate = 0
+
+        worker_count = len(StratumServer.inbound_streams[Miner.__name__].keys())
+        miner_count = len(await Peer.get_miner_streams())
+
+        timestamp = int(time())
+        date_value = datetime.utcfromtimestamp(timestamp)
+
+        await self.config.mongo.async_pool_db.pool_hashrate_stats.insert_one({
+            "pool_hash_rate": pool_hash_rate,
+            "network_hash_rate": network_hash_rate,
+            "net_difficulty": net_difficulty,
+            "avg_network_hash_rate": avg_network_hash_rate,
+            "workers": worker_count,
+            "miners": miner_count,
+            "time": timestamp,
+            "date": date_value,
+        })
+

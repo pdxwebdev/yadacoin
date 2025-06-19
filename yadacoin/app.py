@@ -886,6 +886,20 @@ class NodeApplication(Application):
         finally:
             self.config.background_node_testing.busy = False
 
+    async def background_pool_info_checker(self):
+        self.config.app_log.debug("background_pool_info_checker")
+        if not hasattr(self.config, "background_pool_info_checker"):
+            self.config.background_pool_info_checker = WorkerVars(busy=False)
+        if self.config.background_pool_info_checker.busy:
+            return
+        self.config.background_pool_info_checker.busy = True
+        try:
+            await self.config.mp.update_pool_stats()
+            #await self.config.mp.update_miners_stats()
+        except Exception as e:
+            self.config.app_log.error(f"Error in background_pool_info_checker: {str(e)}")
+        self.config.background_pool_info_checker.busy = False
+
     def configure_logging(self):
         # tornado.log.enable_pretty_logging()
         self.config.app_log = logging.getLogger("tornado.application")
@@ -933,10 +947,14 @@ class NodeApplication(Application):
                 f.write(self.config.to_json())
 
         with open(options.config) as f:
-            self.config = yadacoin.core.config.Config(json.loads(f.read()))
+            config_data = json.loads(f.read())
+            config_data.setdefault("pool_database", "yadacoinpool")
+
+            self.config = yadacoin.core.config.Config(config_data)
             # Sets the global var for all objects
             yadacoin.core.config.CONFIG = self.config
             self.config.debug = options.debug
+
             # force network, command line one takes precedence
             if options.network != "":
                 self.config.network = options.network
@@ -1034,6 +1052,11 @@ class NodeApplication(Application):
                 PeriodicCallback(
                     self.background_node_testing,
                     60 * 60 * 1000,
+                ).start()
+
+                PeriodicCallback(
+                    self.background_pool_info_checker,
+                    8 * 60 * 1000
                 ).start()
 
         if self.config.pool_payout:
