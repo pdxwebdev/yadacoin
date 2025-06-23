@@ -757,7 +757,8 @@ class KeyEventLog:
                         break
                     txn.mempool = True
                     address = txn.public_key_hash
-                break
+                else:
+                    break
         if inception:
             log.append(inception)
             txn = inception
