@@ -752,11 +752,9 @@ class KeyEventLog:
                 )
                 if result_mempool:
                     txn = Transaction.from_dict(result_mempool)
-                    if txn.prev_public_key_hash:
-                        raise Exception(
-                            "This should not happend. If no previous entries were found, prev_public_key_hash should be blank. #mempool"
-                        )
-                    inception = txn
+                    if not txn.prev_public_key_hash:
+                        inception = txn
+                        break
                     txn.mempool = True
                     address = txn.public_key_hash
                 break
