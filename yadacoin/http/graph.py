@@ -25,8 +25,8 @@ import uuid
 import requests
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
-
 from eccsnacks.curve25519 import scalarmult_base
+
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
@@ -214,6 +214,7 @@ class GraphRIDWalletHandler(BaseGraphHandler):
             "max_transferable_value": "{0:.8f}".format(max_transferable_value),
             "processing_time_seconds": "{0:.2f}".format(elapsed_time),
             "unspent_transactions": unspent_txns,
+            "unspent_mempool_txns": unspent_mempool_txns,
         }
         self.render_as_json(wallet, indent=4)
 
