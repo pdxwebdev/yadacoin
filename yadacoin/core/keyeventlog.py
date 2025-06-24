@@ -736,7 +736,7 @@ class KeyEventLog:
                 if not txn.prev_public_key_hash:
                     inception = txn
                     break
-                address = txn.public_key_hash
+                address = txn.prev_public_key_hash
             else:
                 # This case for pending inception transactions
                 result_mempool = await config.mongo.async_db.miner_transactions.find_one(
@@ -756,7 +756,7 @@ class KeyEventLog:
                         inception = txn
                         break
                     txn.mempool = True
-                    address = txn.public_key_hash
+                    address = txn.prev_public_key_hash
                 else:
                     break
         if inception:

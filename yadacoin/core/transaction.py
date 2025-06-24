@@ -546,6 +546,7 @@ class Transaction(object):
         check_masternode_fee=False,
         check_kel=False,
         block=None,
+        mempool=False,
     ):
         from yadacoin.contracts.base import Contract
         from yadacoin.core.keyeventlog import KELException
@@ -561,7 +562,7 @@ class Transaction(object):
         if check_kel:
             from yadacoin.core.keyeventlog import KeyEvent
 
-            has_kel = await self.has_key_event_log(block)
+            has_kel = await self.has_key_event_log(block, mempool)
 
             if has_kel:
                 txn_key_event = KeyEvent(self)
@@ -1130,8 +1131,8 @@ class Transaction(object):
             return True
         return False
 
-    async def has_key_event_log(self, block=None):
-        from yadacoin.core.keyeventlog import BlocksQueryFields
+    async def has_key_event_log(self, block=None, mempool=False):
+        from yadacoin.core.keyeventlog import BlocksQueryFields, MempoolQueryFields
 
         # this function is the primary method for catching transactions which attempt
         # sign a transaction with a stolen key. We must check if the transaction's
@@ -1164,6 +1165,18 @@ class Transaction(object):
                         or xtxn.prerotated_key_hash == address
                     ):
                         return True
+        elif mempool:
+            query = {
+                "$or": [
+                    {MempoolQueryFields.TWICE_PREROTATED_KEY_HASH.value: address},
+                    {
+                        MempoolQueryFields.PREROTATED_KEY_HASH.value: address,
+                    },
+                ],
+            }
+            result = await config.mongo.async_db.miner_transactions.find_one(query)
+            if result:
+                return True
         return False
 
     async def verify_key_event_spends_entire_balance(self):

@@ -288,6 +288,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                     check_masternode_fee=True,
                     check_max_inputs=True,
                     check_kel=True,
+                    mempool=True,
                 )
 
                 if transaction.are_kel_fields_populated():
