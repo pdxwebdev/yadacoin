@@ -465,6 +465,7 @@ class Block(object):
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    mempool=True,
                 )
                 for output in transaction_obj.outputs:
                     if not config.address_is_valid(output.to):
