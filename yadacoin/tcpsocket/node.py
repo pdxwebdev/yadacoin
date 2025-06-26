@@ -319,9 +319,18 @@ class NodeRPC(BaseRPC):
 
             item = self.config.processing_queues.transaction_queue.pop()
 
+        if hasattr(self.config, "transaction_retry_seconds"):
+            transaction_retry_seconds = self.config.transaction_retry_seconds
+        else:
+            transaction_retry_seconds = 60
         for retry_item in to_retry:
             self.config.processing_queues.transaction_queue.add(
-                retry_item, ignore_last_popped=True
+                TransactionProcessingQueueItem(
+                    retry_item.transaction,
+                    retry_item.stream,
+                    int(time.time()) + transaction_retry_seconds,
+                ),
+                ignore_last_popped=True,
             )
 
     async def process_transaction_queue_item(self, item):
@@ -361,20 +370,6 @@ class NodeRPC(BaseRPC):
         ):
             self.config.app_log.warning(
                 f"process_transaction_queue_item, skipping for now: {txn.transaction_signature}"
-            )
-
-            if hasattr(self.config, "transaction_retry_seconds"):
-                transaction_retry_seconds = self.config.transaction_retry_seconds
-            else:
-                transaction_retry_seconds = 60
-
-            self.config.processing_queues.transaction_queue.add(
-                TransactionProcessingQueueItem(
-                    item.transaction,
-                    item.stream,
-                    int(time.time()) + transaction_retry_seconds,
-                ),
-                ignore_last_popped=True,
             )
             return
         except Exception as e:
