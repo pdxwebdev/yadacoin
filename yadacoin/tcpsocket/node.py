@@ -401,16 +401,19 @@ class NodeRPC(BaseRPC):
             for stream in streams:
                 yield stream
 
+        payload = {"transaction": txn.to_dict()}
+
         async for peer_stream in self.config.peer.get_inbound_streams():
             if peer_stream.peer.rid in confirmed_rids:
                 self.config.app_log.debug(
                     f"Skipping {peer_stream.peer.rid} - already confirmed."
                 )
                 continue
+            await self.write_params(peer_stream, "newtxn", payload)
             if peer_stream.peer.protocol_version > 1:
                 self.retry_messages[
                     (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
-                ] = {"transaction": txn.to_dict()}
+                ] = payload
 
         async for peer_stream in make_gen(
             await self.config.peer.get_outbound_streams()
@@ -420,10 +423,11 @@ class NodeRPC(BaseRPC):
                     f"Skipping {peer_stream.peer.rid} - already confirmed."
                 )
                 continue
+            await self.write_params(peer_stream, "newtxn", payload)
             if peer_stream.peer.protocol_version > 1:
                 self.config.nodeClient.retry_messages[
                     (peer_stream.peer.rid, "newtxn", txn.transaction_signature)
-                ] = {"transaction": txn.to_dict()}
+                ] = payload
 
     async def newtxn_confirmed(self, body, stream):
         """
