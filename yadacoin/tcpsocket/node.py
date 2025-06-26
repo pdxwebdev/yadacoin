@@ -346,6 +346,7 @@ class NodeRPC(BaseRPC):
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                mempool=True,
             )
         except MissingInputTransactionException:
             self.config.app_log.warning(
