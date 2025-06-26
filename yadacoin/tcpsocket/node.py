@@ -302,10 +302,11 @@ class NodeRPC(BaseRPC):
         i = 0  # max loops
         while item:
             if item.retry_time and item.retry_time < int(time.time()):
-                self.config.processing_queues.transaction_queue.add(item)
-                item = self.config.processing_queues.transaction_queue.pop()
-                if not item:
+                item2 = self.config.processing_queues.transaction_queue.pop()
+                if not item2:
                     break
+                self.config.processing_queues.transaction_queue.add(item)
+                item = item2
             self.config.processing_queues.transaction_queue.inc_num_items_processed()
             await self.process_transaction_queue_item(item)
 
@@ -368,6 +369,7 @@ class NodeRPC(BaseRPC):
                     item.stream,
                     int(time.time()) + transaction_retry_seconds,
                 ),
+                ignore_last_popped=True,
             )
             return
         except Exception as e:

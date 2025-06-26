@@ -91,8 +91,11 @@ class TransactionProcessingQueue(ProcessingQueue):
         self.queue = {}
         self.last_popped = ""
 
-    def add(self, item: TransactionProcessingQueueItem):
-        if item.transaction.transaction_signature == self.last_popped:
+    def add(self, item: TransactionProcessingQueueItem, ignore_last_popped=False):
+        if (
+            not ignore_last_popped
+            and item.transaction.transaction_signature == self.last_popped
+        ):
             return
         self.queue.setdefault(item.transaction.transaction_signature, item)
         return True
