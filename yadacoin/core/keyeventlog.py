@@ -752,10 +752,10 @@ class KeyEventLog:
                 )
                 if result_mempool:
                     txn = Transaction.from_dict(result_mempool)
+                    txn.mempool = True
                     if not txn.prev_public_key_hash:
                         inception = txn
                         break
-                    txn.mempool = True
                     address = txn.prev_public_key_hash
                 else:
                     break
