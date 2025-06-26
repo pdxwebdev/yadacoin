@@ -549,7 +549,9 @@ class Transaction(object):
         mempool=False,
     ):
         from yadacoin.contracts.base import Contract
-        from yadacoin.core.keyeventlog import KELException
+        from yadacoin.core.keyeventlog import (
+            KELExceptionPreviousKeyHashReferenceMissing,
+        )
 
         if check_max_inputs and len(self.inputs) > CHAIN.MAX_INPUTS:
             raise TooManyInputsException(
@@ -568,7 +570,7 @@ class Transaction(object):
                 txn_key_event = KeyEvent(self)
                 await txn_key_event.verify()
             elif self.prev_public_key_hash:
-                raise KELException(
+                raise KELExceptionPreviousKeyHashReferenceMissing(
                     "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
                 )
 

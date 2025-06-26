@@ -31,6 +31,7 @@ from yadacoin.core.keyeventlog import (
     DoesNotSpendEntirelyToPrerotatedKeyHashException,
     FatalKeyEventException,
     KELException,
+    KELExceptionPreviousKeyHashReferenceMissing,
     KELHashCollection,
     KeyEvent,
     KeyEventChainStatus,
@@ -703,7 +704,7 @@ class Block(object):
                     await txn_key_event.verify()
                     await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
                 elif txn.prev_public_key_hash:
-                    raise KELException(
+                    raise KELExceptionPreviousKeyHashReferenceMissing(
                         "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
                     )
 

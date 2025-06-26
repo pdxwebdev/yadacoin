@@ -43,6 +43,10 @@ class KeyEventTransactionRelationshipException(KELException):
     pass
 
 
+class KELExceptionPreviousKeyHashReferenceMissing(KELException):
+    pass
+
+
 class PublicKeyMismatchException(Exception):
     pass
 
