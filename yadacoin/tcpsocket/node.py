@@ -305,7 +305,9 @@ class NodeRPC(BaseRPC):
                 item2 = self.config.processing_queues.transaction_queue.pop()
                 if not item2:
                     break
-                self.config.processing_queues.transaction_queue.add(item)
+                self.config.processing_queues.transaction_queue.add(
+                    item, ignore_last_popped=True
+                )
                 item = item2
             self.config.processing_queues.transaction_queue.inc_num_items_processed()
             await self.process_transaction_queue_item(item)
