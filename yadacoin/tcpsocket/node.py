@@ -226,7 +226,7 @@ class NodeRPC(BaseRPC):
         if (
             self.config.LatestBlock.block.index >= CHAIN.XEGGEX_HACK_FORK
             and self.config.LatestBlock.block.index < CHAIN.CHECK_KEL_FORK
-        ):
+        ) or (self.config.LatestBlock.block.index >= CHAIN.XEGGEX_HACK_FORK_2):
             remove = False
             if (
                 txn.public_key
