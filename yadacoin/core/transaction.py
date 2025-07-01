@@ -1206,7 +1206,21 @@ class Transaction(object):
                 ]
             )
         ]
-        if len(all_inputs) != len(self.inputs):
+
+        all_mempool_inputs = [
+            x
+            async for x in self.config.mongo.async_db.miner_transactions.aggregate(
+                [
+                    {
+                        "$match": {
+                            "outputs.to": self.public_key_hash,
+                            "outputs.value": {"$gt": 0},
+                        }
+                    },
+                ]
+            )
+        ]
+        if (len(all_inputs) + len(all_mempool_inputs)) != len(self.inputs):
             for test_input in self.inputs:
                 if not test_input.input_txn:
                     raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
