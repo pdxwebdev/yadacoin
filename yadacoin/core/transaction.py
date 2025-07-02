@@ -1221,11 +1221,9 @@ class Transaction(object):
             )
         ]
         if (len(all_inputs) + len(all_mempool_inputs)) != len(self.inputs):
-            for test_input in self.inputs:
-                if not test_input.input_txn:
-                    raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                        "Key event transactions must spend all utxos."
-                    )
+            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                "Key event transactions must spend all utxos."
+            )
 
     def to_dict(self):
         relationship = self.relationship
