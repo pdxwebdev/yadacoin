@@ -1225,7 +1225,7 @@ class Transaction(object):
             raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                 "Key event transactions must spend all utxos in mempool and blockchain."
             )
-        if len(self.inputs) > 0:
+        if len(self.inputs) > 0 and mempool_chain_input_sum == 0:
             for inputx in self.inputs:
                 if not inputx.input_txn:
                     raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
