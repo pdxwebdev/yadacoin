@@ -31,7 +31,6 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.graph import Graph
 from yadacoin.core.peer import Group, Peers, User
-from yadacoin.core.processingqueue import TransactionProcessingQueueItem
 from yadacoin.core.transaction import (
     InvalidTransactionException,
     InvalidTransactionSignatureException,
@@ -499,9 +498,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                 for rid, stream in websocket_group_streams[x.requested_rid].items():
                     await stream.write_params("newtxn", {"transaction": x.to_dict()})
 
-            self.config.processing_queues.transaction_queue.add(
-                TransactionProcessingQueueItem(txn, stream)
-            )
+            await self.config.mongo.async_db.miner_transactions.insert_one(x.to_dict())
 
             if "node" in self.config.modes:
                 async for peer_stream in self.config.peer.get_sync_peers():
