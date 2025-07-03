@@ -1220,10 +1220,17 @@ class Transaction(object):
                 ]
             )
         ]
-        if (len(all_inputs) + len(all_mempool_inputs)) != len(self.inputs):
+        mempool_chain_input_sum = len(all_inputs) + len(all_mempool_inputs)
+        if mempool_chain_input_sum > 0 & mempool_chain_input_sum != len(self.inputs):
             raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                "Key event transactions must spend all utxos."
+                "Key event transactions must spend all utxos in mempool and blockchain."
             )
+        if len(self.inputs) > 0:
+            for inputx in self.inputs:
+                if not inputx.input_txn:
+                    raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                        "Key event transactions must spend utxo from unconfirmed key event."
+                    )
 
     def to_dict(self):
         relationship = self.relationship
