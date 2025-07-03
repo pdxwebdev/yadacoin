@@ -1221,7 +1221,7 @@ class Transaction(object):
             )
         ]
         mempool_chain_input_sum = len(all_inputs) + len(all_mempool_inputs)
-        if mempool_chain_input_sum > 0 & mempool_chain_input_sum != len(self.inputs):
+        if mempool_chain_input_sum > 0 and mempool_chain_input_sum != len(self.inputs):
             raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                 "Key event transactions must spend all utxos in mempool and blockchain."
             )
