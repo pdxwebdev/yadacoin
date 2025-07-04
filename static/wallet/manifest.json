@@ -1,0 +1,30 @@
+{
+  "manifest_version": 2,
+  "name": "BIP32 HTTP Signer",
+  "version": "1.0",
+  "description": "Signs HTTP requests using a BIP32 HD key",
+  "permissions": [
+    "storage",
+    "webRequest",
+    "webRequestBlocking",
+    "activeTab",
+    "<all_urls>"
+  ],
+  "background": {
+    "scripts": ["background.js"],
+    "persistent": true
+  },
+  "browser_action": {
+    "default_popup": "index.html",
+    "default_icon": {
+      "16": "vite.svg",
+      "48": "vite.svg",
+      "128": "vite.svg"
+    }
+  },
+  "icons": {
+    "16": "vite.svg",
+    "48": "vite.svg",
+    "128": "vite.svg"
+  }
+}
