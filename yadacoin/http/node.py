@@ -24,6 +24,7 @@ from tornado import escape
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.transaction import Transaction
 from yadacoin.core.transactionutils import TU
+from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.http.base import BaseHandler
 
 
@@ -464,6 +465,36 @@ class GetTestedNodesHandler(BaseHandler):
         return self.render_as_json(result)
 
 
+@jwtauthwallet
+class MineBlockHandler(BaseHandler):
+    async def get(self):
+        key_or_wif = self.get_secure_cookie("key_or_wif")
+        if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+            return self.render_as_json({"error": "not authorized"})
+        if self.config.network != "regnet":
+            return self.render_as_json(
+                {"status": False, "message": "Node not in regnet mode."}
+            )
+        self.config.mp.block_factory.hash = (
+            self.config.mp.block_factory.generate_hash_from_header(
+                self.config.mp.block_factory.index,
+                self.config.mp.block_factory.header,
+                "",
+            )
+        )
+        self.config.mp.block_factory.signature = self.config.BU.generate_signature(
+            self.config.mp.block_factory.hash, self.config.private_key
+        )
+        await self.config.mp.block_factory.verify()
+        await self.config.mongo.async_db.blocks.insert_one(
+            self.config.mp.block_factory.to_dict()
+        )
+        await self.config.mp.refresh()
+        return self.render_as_json(
+            {"status": True, "block": self.config.mp.block_factory.to_dict()}
+        )
+
+
 NODE_HANDLERS = [
     (r"/get-latest-block", GetLatestBlockHandler),
     (r"/get-blocks", GetBlocksHandler),
@@ -488,4 +519,5 @@ NODE_HANDLERS = [
     (r"/get-trigger-transactions", GetSmartContractTriggerTransaction),
     (r"/get-monitoring", GetMonitoringHandler),
     (r"/get-tested-nodes", GetTestedNodesHandler),
+    (r"/mine-block", MineBlockHandler),
 ]
