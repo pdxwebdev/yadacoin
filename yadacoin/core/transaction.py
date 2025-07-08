@@ -1124,7 +1124,7 @@ class Transaction(object):
             )
         if not query:
             return False
-        result = await config.mongo.async_db.blocks.find_one(
+        result = await config.mongo.async_db.miner_transactions.find_one(
             {
                 "$or": query,
             }
