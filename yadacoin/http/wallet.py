@@ -321,10 +321,8 @@ class SentPendingTransactionsView(BaseHandler):
         public_key = self.get_query_argument("public_key")
         include_zero = self.get_query_argument("include_zero", False)
         page = int(self.get_query_argument("page", 1)) - 1
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
 
         query = {
-            "outputs.to": address,
             "public_key": public_key,
         }
         if not include_zero:
@@ -348,11 +346,9 @@ class SentTransactionsView(BaseHandler):
         public_key = self.get_query_argument("public_key")
         include_zero = self.get_query_argument("include_zero", False)
         page = int(self.get_query_argument("page", 1)) - 1
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
         query = [
             {
                 "$match": {
-                    "transactions.outputs.to": address,
                     "transactions.inputs.0": {"$exists": True},
                     "transactions.public_key": public_key,
                 }
@@ -360,7 +356,6 @@ class SentTransactionsView(BaseHandler):
             {"$unwind": "$transactions"},
             {
                 "$match": {
-                    "transactions.outputs.to": address,
                     "transactions.inputs.0": {"$exists": True},
                     "transactions.public_key": public_key,
                 }
