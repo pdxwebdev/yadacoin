@@ -352,7 +352,7 @@ class BlockChainUtils(object):
                 return public_key
 
         for txn_id in public_key_address_pairs[0]["all_ids"]:
-            txns = await self.config.mongo.async_db.blocks.aggregate(
+            txns = self.config.mongo.async_db.blocks.aggregate(
                 [
                     {
                         "$match": {"transactions.inputs.id": txn_id},
