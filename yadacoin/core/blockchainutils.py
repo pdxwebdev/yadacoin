@@ -364,7 +364,7 @@ class BlockChainUtils(object):
                         "$match": {"transactions.inputs.id": txn_id},
                     },
                 ]
-            ).to_list(None)
+            )
             async for block_txn in txns:
                 xaddress = str(
                     P2PKHBitcoinAddress.from_pubkey(
