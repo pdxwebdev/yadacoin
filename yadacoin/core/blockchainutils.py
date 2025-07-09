@@ -356,9 +356,13 @@ class BlockChainUtils(object):
                 [
                     {
                         "$match": {"transactions.inputs.id": txn_id},
+                    },
+                    {
                         "$unwind": "$transaction",
+                    },
+                    {
                         "$match": {"transactions.inputs.id": txn_id},
-                    }
+                    },
                 ]
             ).to_list(None)
             async for block_txn in txns:
