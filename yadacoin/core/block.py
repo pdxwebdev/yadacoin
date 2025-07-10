@@ -361,6 +361,10 @@ class Block(object):
                             "Key event transactions must spent entire remaining balance to prerotated_key_hash."
                         )
 
+                if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                    if await txn.has_key_event_log():
+                        await txn.verify_key_event_spends_entire_balance()
+
                 # test if already on chain
                 if await txn.is_already_onchain():
                     await block.remove_transaction(txn, hash_collection)
@@ -699,6 +703,8 @@ class Block(object):
                         )
 
                 if await txn.has_key_event_log(block=self):
+                    if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                        await txn.verify_key_event_spends_entire_balance()
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )

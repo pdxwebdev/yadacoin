@@ -358,7 +358,7 @@ class BlockChainUtils(object):
                         "$match": {"transactions.inputs.id": txn_id},
                     },
                     {
-                        "$unwind": "$transaction",
+                        "$unwind": "$transactions",
                     },
                     {
                         "$match": {"transactions.inputs.id": txn_id},
@@ -366,10 +366,9 @@ class BlockChainUtils(object):
                 ]
             )
             async for block_txn in txns:
+                public_key = block_txn["transactions"]["public_key"]
                 xaddress = str(
-                    P2PKHBitcoinAddress.from_pubkey(
-                        bytes.fromhex(block_txn["transactions"]["public_key"])
-                    )
+                    P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
                 )
                 if xaddress == address:
                     await self.mongo.async_db.reversed_public_keys.update_one(

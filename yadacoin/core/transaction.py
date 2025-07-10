@@ -1095,7 +1095,6 @@ class Transaction(object):
     async def is_already_in_mempool(self):
         from yadacoin.core.keyeventlog import MempoolQueryFields
 
-        config = Config()
         query = []
         if self.twice_prerotated_key_hash:
             query.append(
@@ -1124,7 +1123,7 @@ class Transaction(object):
             )
         if not query:
             return False
-        result = await config.mongo.async_db.miner_transactions.find_one(
+        result = await self.config.mongo.async_db.miner_transactions.find_one(
             {
                 "$or": query,
             }
@@ -1139,7 +1138,6 @@ class Transaction(object):
         # this function is the primary method for catching transactions which attempt
         # sign a transaction with a stolen key. We must check if the transaction's
         # public key is logged in the
-        config = Config()
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
         query = {
             "$or": [
@@ -1152,7 +1150,7 @@ class Transaction(object):
         if block:
             query["index"] = {"$lte": block.index}
 
-        result = await config.mongo.async_db.blocks.find_one(query)
+        result = await self.config.mongo.async_db.blocks.find_one(query)
         if result:
             return True
         elif self.extra_blocks:
@@ -1176,7 +1174,7 @@ class Transaction(object):
                     },
                 ],
             }
-            result = await config.mongo.async_db.miner_transactions.find_one(query)
+            result = await self.config.mongo.async_db.miner_transactions.find_one(query)
             if result:
                 return True
         return False

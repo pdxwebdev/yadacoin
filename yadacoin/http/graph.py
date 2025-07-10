@@ -297,7 +297,7 @@ class GraphTransactionHandler(BaseGraphHandler):
 
                 has_kel = await transaction.has_key_event_log(mempool=True)
                 if has_kel:
-                    await transaction.verify_key_event_spends_entire_balance()  # TODO: add this check to block generation and verification
+                    await transaction.verify_key_event_spends_entire_balance()
 
             except InvalidTransactionException:
                 exception_raised = True
