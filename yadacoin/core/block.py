@@ -363,7 +363,10 @@ class Block(object):
 
                 if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
                     if await txn.has_key_event_log():
-                        await txn.verify_key_event_spends_entire_balance()
+                        try:
+                            await txn.verify_key_event_spends_entire_balance()
+                        except:
+                            await block.remove_transaction(txn, hash_collection)
 
                 # test if already on chain
                 if await txn.is_already_onchain():
