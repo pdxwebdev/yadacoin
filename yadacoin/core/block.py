@@ -707,7 +707,9 @@ class Block(object):
 
                 if await txn.has_key_event_log(block=self):
                     if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                        await txn.verify_key_event_spends_entire_balance()
+                        await txn.verify_key_event_spends_entire_balance(
+                            block_verify=True
+                        )
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )
