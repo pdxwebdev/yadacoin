@@ -677,6 +677,14 @@ class Block(object):
                 Nodes.get_all_nodes_indexed_by_address_for_block_height(self.index)
             )
 
+        if self.index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
+            items_indexed = {x.transaction_signature: x for x in self.transactions}
+            for txn in self.transactions:
+                for input_item in txn.inputs:
+                    if input_item.id in items_indexed:
+                        input_item.input_txn = items_indexed[input_item.id]
+                        items_indexed[input_item.id].spent_in_txn = txn
+
         # verify reward
         coinbase_sum = 0
         fee_sum = 0.0
@@ -707,9 +715,7 @@ class Block(object):
 
                 if await txn.has_key_event_log(block=self):
                     if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                        await txn.verify_key_event_spends_entire_balance(
-                            block_verify=True
-                        )
+                        await txn.verify_key_event_spends_entire_balance()
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )

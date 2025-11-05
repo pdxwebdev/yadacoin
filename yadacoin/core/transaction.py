@@ -1179,7 +1179,7 @@ class Transaction(object):
                 return True
         return False
 
-    async def verify_key_event_spends_entire_balance(self, block_verify=False):
+    async def verify_key_event_spends_entire_balance(self):
         from yadacoin.core.keyeventlog import (
             DoesNotSpendEntirelyToPrerotatedKeyHashException,
         )
@@ -1218,11 +1218,7 @@ class Transaction(object):
                 ]
             )
         ]
-        mempool_chain_input_sum = (
-            len(all_inputs)
-            if block_verify
-            else len(all_inputs) + len(all_mempool_inputs)
-        )
+        mempool_chain_input_sum = len(all_inputs) + len(all_mempool_inputs)
         if mempool_chain_input_sum > 0 and mempool_chain_input_sum != len(self.inputs):
             raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                 "Key event transactions must spend all utxos in mempool and blockchain."
