@@ -1218,8 +1218,23 @@ class Transaction(object):
                 ]
             )
         ]
+        total_spent = 0
+        for x in all_inputs + all_mempool_inputs:
+            if x.get("transactions"):
+                tx = Transaction.from_dict(x["transactions"])
+            else:
+                tx = Transaction.from_dict(x)
+            if await self.config.BU.is_input_spent(
+                tx.transaction_signature,
+                self.public_key,
+                inc_mempool=False,
+            ):
+                total_spent += 1
         mempool_chain_input_sum = len(all_inputs) + len(all_mempool_inputs)
-        if mempool_chain_input_sum > 0 and mempool_chain_input_sum != len(self.inputs):
+        if (
+            mempool_chain_input_sum > 0
+            and mempool_chain_input_sum - total_spent != len(self.inputs)
+        ):
             raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                 "Key event transactions must spend all utxos in mempool and blockchain."
             )

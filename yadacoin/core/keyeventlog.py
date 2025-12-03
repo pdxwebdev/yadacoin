@@ -169,14 +169,17 @@ class KeyEvent:
                 "not a valid unconfirmed key event. Invalid status."
             )
 
-    def verify_confirming(self, onchain=False):
+    def verify_confirming(self, entire_log, onchain=False):
         self.verify_fields(prev_public_key_hash_required=True)
 
         if len(self.txn.outputs) != 1:
             raise KeyEventSingleOutputException(
                 f"{self.flag.value.upper()} key event should only have a single output"
             )
-        if self.txn.outputs[0].to != self.txn.prerotated_key_hash:
+        if (
+            self.txn.outputs[0].to != self.txn.prerotated_key_hash
+            and self.txn.outputs[0].to != entire_log[-1].prerotated_key_hash
+        ):
             raise KeyEventPrerotatedKeyHashException(
                 f"{self.flag.value.upper()} key event output should equal the prerotated_key_hash"
             )
@@ -208,7 +211,12 @@ class KeyEvent:
             )
 
         if await self.txn.is_already_onchain():
-            raise KELException("Key event is already onchain")
+            key_log = await KeyEventLog.build_from_public_key(self.txn.public_key)
+            if (
+                len(self.txn.outputs) != 1
+                or key_log[-1].prerotated_key_hash != self.txn.outputs[0].to
+            ):
+                raise KELException("Key event is already onchain")
 
     async def sends_to_past_kel_entry(self):
         for output in self.txn.outputs:
@@ -398,16 +406,25 @@ class KeyEventLog:
         self.config = Config()
         # step 1: if transaction is tracked on-chain in an existing key event log
         result = await key_event.get_onchain_parent()
-
+        entire_log = await KeyEventLog.build_from_public_key(key_event.txn.public_key)
         if result and result["key_event"]:
             # step 1.1: If found, check that this entry is the latest entry, if not, raise exception
-            if await result["key_event"].get_onchain_child():
-                raise FatalKeyEventException(
-                    "key_event.txn has onchain parent that already has an onchain child.",
-                    other_txn_to_delete=hash_collection.prerotated_key_hashes.get(  # get the confirming key event if present
-                        key_event.txn.twice_prerotated_key_hash
-                    ),
-                )
+            onchain_child = await result["key_event"].get_onchain_child()
+            if onchain_child:
+                if (
+                    key_event.txn.twice_prerotated_key_hash
+                    != onchain_child.txn.twice_prerotated_key_hash
+                    or key_event.txn.prerotated_key_hash
+                    != onchain_child.txn.prerotated_key_hash
+                    or key_event.txn.public_key_hash
+                    != onchain_child.txn.public_key_hash
+                ):
+                    raise FatalKeyEventException(
+                        "key_event.txn has onchain parent that already has an onchain child.",
+                        other_txn_to_delete=hash_collection.prerotated_key_hashes.get(  # get the confirming key event if present
+                            key_event.txn.twice_prerotated_key_hash
+                        ),
+                    )
 
             # check if public key hash and prev public key hash match
             if (
@@ -427,7 +444,10 @@ class KeyEventLog:
             if (
                 not key_event.txn.relationship
                 and len(key_event.txn.outputs) == 1
-                and key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
+                and (
+                    key_event.txn.outputs[0].to == key_event.txn.prerotated_key_hash
+                    or key_event.txn.outputs[0].to == entire_log[-1].prerotated_key_hash
+                )
                 and key_event.txn.prev_public_key_hash
             ):
                 key_event.flag = KeyEventFlag.CONFIRMING
@@ -560,7 +580,7 @@ class KeyEventLog:
             # we don't need to check if the onchain key event is an inception or not.
             # If prev_hash has is not set, then it must be an inception which is enforced by rule 1
             self.base_key_event.verify_inception(onchain=True)
-            self.confirming_key_event.verify_confirming()
+            self.confirming_key_event.verify_confirming(entire_log)
             self.verify_links()
 
         # 3. onchain confirming and confirming
@@ -573,8 +593,8 @@ class KeyEventLog:
             and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
-            self.base_key_event.verify_confirming(onchain=True)
-            self.confirming_key_event.verify_confirming()
+            self.base_key_event.verify_confirming(entire_log, onchain=True)
+            self.confirming_key_event.verify_confirming(entire_log)
             self.verify_links()
 
         # 4. Inception, unconfirmed, and confirming
@@ -591,7 +611,7 @@ class KeyEventLog:
         ):
             self.base_key_event.verify_inception(onchain=True)
             self.unconfirmed_key_event.verify_unconfirmed()
-            self.confirming_key_event.verify_confirming()
+            self.confirming_key_event.verify_confirming(entire_log)
             self.verify_links()
 
         # 5. Onchain confirming, unconfirmed, and confirming
@@ -606,9 +626,9 @@ class KeyEventLog:
             and self.confirming_key_event.flag == KeyEventFlag.CONFIRMING
             and self.confirming_key_event.status == KeyEventChainStatus.MEMPOOL
         ):
-            self.base_key_event.verify_confirming(onchain=True)
+            self.base_key_event.verify_confirming(entire_log, onchain=True)
             self.unconfirmed_key_event.verify_unconfirmed()
-            self.confirming_key_event.verify_confirming()
+            self.confirming_key_event.verify_confirming(entire_log)
             self.verify_links()
 
         else:

@@ -367,11 +367,17 @@ class Block(object):
                             await txn.verify_key_event_spends_entire_balance()
                         except:
                             await block.remove_transaction(txn, hash_collection)
+                            continue
 
                 # test if already on chain
                 if await txn.is_already_onchain():
-                    await block.remove_transaction(txn, hash_collection)
-                    continue
+                    key_log = await KeyEventLog.build_from_public_key(txn.public_key)
+                    if (
+                        len(txn.outputs) != 1
+                        or key_log[-1].prerotated_key_hash != txn.outputs[0].to
+                    ):
+                        await block.remove_transaction(txn, hash_collection)
+                        continue
 
                 # test if it has no kel but specifies prev key hash
                 if await txn.has_key_event_log() and not txn.are_kel_fields_populated():
