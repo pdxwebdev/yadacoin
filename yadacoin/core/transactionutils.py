@@ -229,13 +229,15 @@ class TU(object):  # Transaction Utilities
 
         async for doc in config.mongo.async_db.txn_tracking.find():
             updated_transactions = {
-                txn_id: timestamp for txn_id, timestamp in doc["transactions"].items() if timestamp > cutoff_time
+                txn_id: timestamp
+                for txn_id, timestamp in doc["transactions"].items()
+                if timestamp > cutoff_time
             }
 
             if updated_transactions:
                 await config.mongo.async_db.txn_tracking.update_one(
                     {"rid": doc["rid"]},
-                    {"$set": {"transactions": updated_transactions}}
+                    {"$set": {"transactions": updated_transactions}},
                 )
             else:
                 await config.mongo.async_db.txn_tracking.delete_one({"rid": doc["rid"]})
@@ -243,7 +245,7 @@ class TU(object):  # Transaction Utilities
         config.app_log.info(f"[CLEANER] Removed old transaction confirmations.")
 
     @classmethod
-    async def rebroadcast_mempool(cls, config, include_zero=False):
+    async def rebroadcast_mempool(cls, config, include_zero=False, send_to_all=False):
         """
         Rebroadcasts transactions from the mempool to peers who have not yet confirmed them.
 
@@ -270,8 +272,10 @@ class TU(object):  # Transaction Utilities
             confirmed_rids = {peer["rid"] for peer in confirmed_peers}
 
             async for peer_stream in config.peer.get_sync_peers():
-                if peer_stream.peer.rid in confirmed_rids:
-                    config.app_log.debug(f"[MEMPOOL] Skipping {peer_stream.peer.rid} - already confirmed.")
+                if peer_stream.peer.rid in confirmed_rids and not send_to_all:
+                    config.app_log.debug(
+                        f"[MEMPOOL] Skipping {peer_stream.peer.rid} - already confirmed."
+                    )
                     continue
 
                 await config.nodeShared.write_params(
@@ -282,7 +286,7 @@ class TU(object):  # Transaction Utilities
                     config.nodeClient.retry_messages[
                         (peer_stream.peer.rid, "newtxn", x.transaction_signature)
                     ] = {"transaction": x.to_dict()}
-                
+
                 await asyncio.sleep(1)
 
     @classmethod

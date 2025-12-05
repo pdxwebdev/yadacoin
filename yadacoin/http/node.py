@@ -307,7 +307,7 @@ class GetTransactionTrackingHandler(BaseHandler):
 
 class RebroadcastTransactions(BaseHandler):
     async def get(self):
-        await self.config.TU.rebroadcast_mempool(self.config)
+        await self.config.TU.rebroadcast_mempool(self.config, send_to_all=True)
         return self.render_as_json({"status": "success"})
 
 
