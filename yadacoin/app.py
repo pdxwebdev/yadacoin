@@ -62,8 +62,8 @@ from yadacoin.core.health import Health
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.miningpool import MiningPool
 from yadacoin.core.miningpoolpayout import PoolPayer
-from yadacoin.core.nodestester import NodesTester
 from yadacoin.core.mongo import Mongo
+from yadacoin.core.nodestester import NodesTester
 from yadacoin.core.peer import (
     Group,
     Miner,
@@ -195,12 +195,28 @@ class NodeApplication(Application):
                     path.join(path.dirname(__file__), "static"), "wallet"
                 )  # probably running from binary
 
+            if os.path.exists(
+                path.join(path.join(path.dirname(__file__), "..", "static"), "unwrap")
+            ):
+                static_unwrap_path = path.join(
+                    path.join(path.dirname(__file__), "..", "static"), "unwrap"
+                )
+            else:
+                static_unwrap_path = path.join(
+                    path.join(path.dirname(__file__), "static"), "unwrap"
+                )  # probably running from binary
+
             self.default_handlers = [
                 (r"/app/(.*)", StaticFileHandler, {"path": static_app_path}),
                 (
                     r"/wallet/([\w\-0-9\/]+\.[\w]+)",
                     StaticFileHandler,
                     {"path": static_wallet_path},
+                ),
+                (
+                    r"/unwrap/([\w\-0-9\/]+\.[\w]+)",
+                    StaticFileHandler,
+                    {"path": static_unwrap_path},
                 ),
                 (r"/yadacoinstatic/(.*)", StaticFileHandler, {"path": static_path}),
             ]
@@ -814,9 +830,7 @@ class NodeApplication(Application):
             return
         self.config.background_mempool_sender.busy = True
         try:
-            await self.config.TU.rebroadcast_mempool(
-                self.config, include_zero=True
-            )
+            await self.config.TU.rebroadcast_mempool(self.config, include_zero=True)
         except Exception:
             self.config.app_log.error(format_exc())
         self.config.background_mempool_sender.busy = False

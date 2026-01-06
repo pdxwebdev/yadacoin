@@ -42,6 +42,11 @@ class WalletHandler(BaseHandler):
         self.render("wallet.html")
 
 
+class UnwrapHandler(BaseHandler):
+    async def get(self, path):
+        self.render("unwrap.html")
+
+
 class GenerateWalletHandler(BaseHandler):
     async def get(self):
         return self.render_as_json("TODO: Implement")
@@ -674,6 +679,7 @@ class FeeEstimateHandler(BaseHandler):
 
 WALLET_HANDLERS = [
     (r"/wallet?([\/a-z]+)", WalletHandler),
+    (r"/unwrap?([\/a-z]+)", UnwrapHandler),
     (r"/generate-wallet", GenerateWalletHandler),
     (r"/generate-child-wallet", GenerateChildWalletHandler),
     (r"/get-addresses", GetAddressesHandler),
