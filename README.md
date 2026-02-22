@@ -12,6 +12,14 @@
 
 https://yadacoin.io/download
 
+## Command-Line Interface
+
+YadaCoin includes a CLI for node management and configuration. For complete documentation on available commands, usage examples, and development guide, see:
+
+- **[CLI Documentation](./cli/INDEX.md)** - Start here for overview and navigation
+- **[Quick Start Guide](./cli/QUICKSTART.md)** - One-liner examples and common workflows
+- **[Development Guide](./cli/DEVELOPMENT.md)** - For developers adding new commands
+
 ## Configuration
 
 - modes
