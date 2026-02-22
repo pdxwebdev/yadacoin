@@ -59,6 +59,13 @@ sudo -H python3 -m pip install -r requirements.txt
 # get the correct chardet and urllib3 versions for yada code
 sudo python3 -m pip install --upgrade requests
 
+# Prompt for a custom username and generate config.json with username_signature
+read -r -p "Enter a custom username for this node: " NODE_USERNAME
+while [[ -z "$NODE_USERNAME" ]]; do
+        read -r -p "Username cannot be empty. Enter a custom username for this node: " NODE_USERNAME
+done
+sudo -H python3 utils/generate_config.py auto -f config/config.json -u "$NODE_USERNAME"
+
 # hugepages reservation
 sudo bash -c "echo vm.nr_hugepages=1280 >> /etc/sysctl.conf"
 
