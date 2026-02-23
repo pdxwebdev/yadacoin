@@ -95,6 +95,7 @@ class CHAIN(object):
     ALLOW_SAME_BLOCK_SPENDING_FORK = 533000
     XEGGEX_HACK_FORK_2 = 550550
     CHECK_KEL_SPENDS_ENTIRELY_FORK = 552000
+    DYNAMIC_NODES_FORK = 586500
 
     @classmethod
     def target_block_time(cls, network: str):

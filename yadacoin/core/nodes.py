@@ -11,10 +11,14 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import base64
 from collections import defaultdict
 
 from bitcoin.wallet import P2PKHBitcoinAddress
+from coincurve import verify_signature
 
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import Config
 from yadacoin.core.peer import Seed, SeedGateway, ServiceProvider
 
 
@@ -81,6 +85,186 @@ class Nodes:
             ): node
             for node in nodes
         }
+
+    @classmethod
+    def _count_nodes_by_type(cls):
+        """Count existing hardcoded + dynamic nodes by type."""
+        seeds_count = len(Seeds()._NODES)
+        gateways_count = len(SeedGateways()._NODES)
+        providers_count = len(ServiceProviders()._NODES)
+        return seeds_count, gateways_count, providers_count
+
+    @classmethod
+    def _count_providers_per_gateway(cls):
+        """Estimate service providers per seed gateway (rough distribution)."""
+        seeds_count, gateways_count, providers_count = cls._count_nodes_by_type()
+        if gateways_count == 0:
+            return 0
+        return providers_count // gateways_count
+
+    @classmethod
+    def _assign_node_type(cls):
+        """Assign next node type based on load balancing strategy.
+
+        Strategy:
+        - Max 1 seed gateway per seed
+        - Max (Config().max_peers or 10000) service providers per seed gateway
+        - All seeds connect to each other
+        - Assignment order:
+          1. If no seeds: add Seed
+          2. If seeds exist but no gateways: add SeedGateway
+          3. If gateways < seeds: add SeedGateway
+          4. If all gateways saturated: add Seed
+          5. Otherwise: add ServiceProvider
+        """
+        seeds_count, gateways_count, providers_count = cls._count_nodes_by_type()
+        max_providers_per_gateway = Config().max_peers or 10000
+
+        # Need at least one seed
+        if seeds_count == 0:
+            return "seed"
+
+        # Need at least one gateway per seed; if not enough: add gateway
+        if gateways_count < seeds_count:
+            return "seed_gateway"
+
+        # Check if all gateways are saturated
+        providers_per_gateway = cls._count_providers_per_gateway()
+        if providers_per_gateway >= max_providers_per_gateway:
+            # All gateways full; need to scale out by adding more seeds
+            return "seed"
+
+        # Otherwise, add a service provider
+        return "service_provider"
+
+    @classmethod
+    async def load_dynamic_nodes_from_chain(cls, activation_height=None):
+        """Load dynamic node announcements from chain and append to hardcoded lists.
+
+        Expected on-chain format (inside transaction.relationship):
+        { "node": { "type": "seed|seed_gateway|service_provider", "host":..., ... } }
+        Announced nodes will be appended with range starting at `activation_height`.
+        """
+        config = Config()
+        if activation_height is None:
+            activation_height = CHAIN.DYNAMIC_NODES_FORK
+
+        # Only load dynamic nodes if chain has reached the activation fork
+        try:
+            if config.LatestBlock.block.index < activation_height:
+                return
+        except Exception:
+            return
+
+        query = {
+            "index": {"$gte": activation_height},
+            "transactions": {"$elemMatch": {"relationship.node": {"$exists": True}}},
+        }
+
+        try:
+            cursor = config.mongo.async_db.blocks.find(query).sort("index", 1)
+        except Exception:
+            return
+
+        async for block in cursor:
+            for txn in block.get("transactions", []):
+                rel = txn.get("relationship")
+                if not isinstance(rel, dict):
+                    continue
+                node_blob = rel.get("node")
+                if not node_blob or not isinstance(node_blob, dict):
+                    continue
+
+                # Node type is IGNORED from transaction; assigned dynamically by load balancing
+                # Extract node data without type field
+
+                # The node definition might be nested under a "node" key or be the object itself
+                node_def = (
+                    node_blob.get("node")
+                    if isinstance(node_blob.get("node"), dict)
+                    else node_blob
+                )
+
+                # Validate identity structure
+                identity = (
+                    node_def.get("identity") if isinstance(node_def, dict) else None
+                )
+                if not identity or not isinstance(identity, dict):
+                    continue
+                pub = identity.get("public_key")
+                username_sig = identity.get("username_signature")
+                username = identity.get("username", "")
+                if not pub or not username_sig:
+                    continue
+
+                # Verify username_signature against the username using the public key
+                try:
+                    sig_bytes = base64.b64decode(username_sig)
+                    verified = verify_signature(
+                        sig_bytes, username.encode("utf-8"), bytes.fromhex(pub)
+                    )
+                except Exception:
+                    verified = False
+                if not verified:
+                    continue
+
+                # Ensure the announcing transaction was produced by the same public key
+                txn_pub = txn.get("public_key")
+                if txn_pub and txn_pub != pub:
+                    continue
+
+                # Assign node type dynamically based on load balancing
+                assigned_type = cls._assign_node_type()
+                if assigned_type == "seed":
+                    owner_class = Seeds
+                    creator = Seed
+                elif assigned_type == "seed_gateway":
+                    owner_class = SeedGateways
+                    creator = SeedGateway
+                elif assigned_type == "service_provider":
+                    owner_class = ServiceProviders
+                    creator = ServiceProvider
+                else:
+                    continue
+
+                try:
+                    node_obj = creator.from_dict(node_def)
+                except Exception:
+                    continue
+
+                # Avoid duplicates by public key
+                try:
+                    pub = node_obj.identity.public_key
+                except Exception:
+                    pub = None
+
+                exists = False
+                for e in owner_class()._NODES:
+                    try:
+                        if e["node"].identity.public_key == pub:
+                            exists = True
+                            break
+                    except Exception:
+                        continue
+
+                if not exists:
+                    owner_class()._NODES.append(
+                        {"ranges": [(activation_height, None)], "node": node_obj}
+                    )
+
+    @classmethod
+    async def apply_dynamic_nodes(cls, activation_height=None):
+        """Helper to load dynamic nodes and recompute fork points / node maps.
+        Call this at startup (await Nodes.apply_dynamic_nodes()) to enable on-chain nodes.
+        """
+        await cls.load_dynamic_nodes_from_chain(activation_height=activation_height)
+        # Recompute fork points and node maps for each node class
+        Seeds.set_fork_points()
+        Seeds.set_nodes()
+        SeedGateways.set_fork_points()
+        SeedGateways.set_nodes()
+        ServiceProviders.set_fork_points()
+        ServiceProviders.set_nodes()
 
 
 class Seeds(Nodes):

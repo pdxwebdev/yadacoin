@@ -84,6 +84,7 @@ from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
+from yadacoin.http.node_announce import NODE_ANNOUNCE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.product import PRODUCT_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
@@ -150,6 +151,18 @@ class NodeApplication(Application):
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
+            # Load dynamic nodes from chain if fork activated
+            try:
+                import asyncio
+
+                from yadacoin.core.nodes import Nodes
+
+                # Schedule applying dynamic nodes once the IOLoop is running
+                tornado.ioloop.IOLoop.current().spawn_callback(
+                    lambda: asyncio.create_task(Nodes.apply_dynamic_nodes())
+                )
+            except Exception:
+                pass
             self.init_groups()
             try:
                 self.config.app_log.info(
@@ -1120,6 +1133,7 @@ class NodeApplication(Application):
 
     def init_webui(self):
         self.default_handlers.extend(NODE_HANDLERS)
+        self.default_handlers.extend(NODE_ANNOUNCE_HANDLERS)
         self.default_handlers.extend(GRAPH_HANDLERS)
         self.default_handlers.extend(EXPLORER_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)

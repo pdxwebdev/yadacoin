@@ -28,6 +28,7 @@ from ecdsa.util import sigdecode_der
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
+from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.transactionutils import TU
 
 
@@ -150,6 +151,9 @@ class Transaction(object):
             self.relationship = Contract.from_dict(
                 self.relationship[Collections.SMART_CONTRACT.value]
             )
+        elif isinstance(self.relationship, dict) and "node" in self.relationship:
+            # Convert node announcement dict to NodeAnnouncement instance
+            self.relationship = NodeAnnouncement.from_dict(self.relationship["node"])
 
         for x in outputs:
             if not isinstance(x, Output):
@@ -584,6 +588,8 @@ class Transaction(object):
         relationship = self.relationship
         if isinstance(self.relationship, Contract):
             relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, NodeAnnouncement):
+            relationship = self.relationship.to_string()
 
         if len(relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value:
             raise MaxRelationshipSizeExceeded(
@@ -716,6 +722,8 @@ class Transaction(object):
         inputs_concat = await self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
         if isinstance(self.relationship, Contract):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, NodeAnnouncement):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship
@@ -1249,6 +1257,9 @@ class Transaction(object):
         relationship = self.relationship
         if hasattr(relationship, "to_dict"):
             relationship = relationship.to_dict()
+            # Wrap NodeAnnouncement back in "node" key for storage
+            if isinstance(self.relationship, NodeAnnouncement):
+                relationship = {"node": relationship}
         ret = {
             "time": int(self.time),
             "rid": self.rid,

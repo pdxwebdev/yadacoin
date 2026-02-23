@@ -20,6 +20,7 @@ from decimal import Decimal, getcontext
 from logging import getLogger
 
 import pyrx
+import requests
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
@@ -626,6 +627,18 @@ class Block(object):
         )
 
     def generate_hash_from_header(self, height, header, nonce):
+        config = Config()
+        hash_server = getattr(config, "hash_server_domain", None) or getattr(
+            config, "hash_server", None
+        )
+        if hash_server:
+            return self._generate_hash_from_remote(
+                hash_server=hash_server,
+                height=height,
+                header=header,
+                nonce=nonce,
+                timeout_ms=getattr(config, "http_request_timeout", 3000),
+            )
         if not hasattr(Block, "pyrx"):
             Block.pyrx = pyrx.PyRX()
         seed_hash = binascii.unhexlify(
@@ -652,6 +665,26 @@ class Block(object):
                 .hex()
             )
 
+    @staticmethod
+    def _generate_hash_from_remote(hash_server, height, header, nonce, timeout_ms):
+        url = "{}/generate-hash".format(str(hash_server).rstrip("/"))
+        params = {
+            "height": str(height),
+            "nonce": str(nonce),
+            "header": str(header),
+        }
+        try:
+            response = requests.get(url, params=params, timeout=timeout_ms / 1000)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            raise Exception("Remote hash request failed") from exc
+
+        remote_hash = payload.get("hash") if isinstance(payload, dict) else None
+        if not remote_hash:
+            raise Exception("Remote hash response missing 'hash'")
+        return remote_hash
+
     async def verify(self):
         getcontext().prec = 8
         if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
@@ -659,6 +692,12 @@ class Block(object):
                 "Wrong version for block height",
                 self.version,
                 CHAIN.get_version_for_height(self.index),
+            )
+
+        # Validate block does not exceed 1000 transactions
+        if len(self.transactions) > 1000:
+            raise Exception(
+                f"Block contains {len(self.transactions)} transactions, maximum is 1000"
             )
 
         txns = self.get_transaction_hashes()

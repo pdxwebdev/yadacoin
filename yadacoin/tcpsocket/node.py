@@ -279,7 +279,9 @@ class NodeRPC(BaseRPC):
             Transaction.from_dict(txn)
             async for txn in self.config.mongo.async_db.miner_transactions.find(
                 {"relationship.smart_contract": {"$exists": False}}
-            ).sort([("fee", -1), ("time", 1)])
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
         ]
 
         transactions = [

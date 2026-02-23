@@ -7,11 +7,12 @@ from unittest import mock
 from mongomock import MongoClient
 
 import yadacoin.core.config
-from tests.unittests.test_setup import AsyncTestCase
 from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
 from yadacoin.core.mongo import Mongo
+
+from ..test_setup import AsyncTestCase
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"

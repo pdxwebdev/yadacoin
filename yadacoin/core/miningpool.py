@@ -450,9 +450,13 @@ class MiningPool(object):
         if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
-        async for txn in self.mongo.async_db.miner_transactions.find(
-            {"relationship.smart_contract": {"$exists": True}}
-        ).sort([("fee", -1), ("time", 1)]):
+        async for txn in (
+            self.mongo.async_db.miner_transactions.find(
+                {"relationship.smart_contract": {"$exists": True}}
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
+        ):
             transaction_obj = await self.verify_pending_transaction(
                 txn,
                 used_sigs,
@@ -482,7 +486,9 @@ class MiningPool(object):
             txn
             async for txn in self.mongo.async_db.miner_transactions.find(
                 {"relationship.smart_contract": {"$exists": False}}
-            ).sort([("fee", -1), ("time", 1)])
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
         ]
         transactions = [Transaction.from_dict(txn) for txn in transactions]
         if (
@@ -565,11 +571,14 @@ class MiningPool(object):
                     expired_blockchain_smart_contract_obj.public_key
                 )
 
-        return (
+        all_transactions = (
             list(mempool_smart_contract_objs.values())
             + TU.get_transaction_objs_list(transaction_objs)
             + generated_txns
         )
+
+        # Limit block to 1000 transactions maximum
+        return all_transactions[:1000]
 
     async def verify_pending_transaction(
         self,
