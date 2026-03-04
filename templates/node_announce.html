@@ -332,6 +332,24 @@
                 </div>
             </div>
             
+            <!-- Registration Fee Section -->
+            <div class="section">
+                <div class="section-title">Registration Fee</div>
+                <div class="info-alert" style="margin-bottom: 15px;">
+                    <strong>💰 Pay-Per-Block Registration:</strong> 1 YDA = 1 block of uptime (~10 minutes)<br>
+                    <strong>Pricing:</strong> 144 YDA/day | 4,320 YDA/month | 52,560 YDA/year
+                </div>
+                <div class="form-row full">
+                    <div class="form-group">
+                        <label for="fee">Registration Fee (YDA) *</label>
+                        <input type="number" id="fee" name="fee" value="4320" min="1" step="0.00000001" required>
+                        <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
+                            Minimum 1 YDA. Suggested: 4,320 YDA for 30 days
+                        </small>
+                    </div>
+                </div>
+            </div>
+            
             <!-- Actions -->
             <div class="button-group">
                 <button type="submit" class="btn-submit">Announce Node</button>
@@ -362,6 +380,7 @@
                 http_port: parseInt(document.getElementById('http_port').value),
                 http_protocol: document.getElementById('http_protocol').value,
                 secure: document.getElementById('secure').checked,
+                fee: parseFloat(document.getElementById('fee').value),
             };
             
             try {

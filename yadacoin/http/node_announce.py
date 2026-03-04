@@ -114,7 +114,7 @@ class NodeAnnounceHandler(BaseHandler):
             data = json.loads(self.request.body) if self.request.body else {}
 
             # Validate required fields
-            required_fields = ["host", "port", "http_host", "http_port"]
+            required_fields = ["host", "port", "http_host", "http_port", "fee"]
             for field in required_fields:
                 if field not in data:
                     self.set_status(400)
@@ -176,11 +176,34 @@ class NodeAnnounceHandler(BaseHandler):
                     }
                 )
 
+            # Validate registration fee
+            try:
+                registration_fee = float(data.get("fee", 0))
+                if registration_fee < 1:
+                    self.set_status(400)
+                    return self.render_as_json(
+                        {
+                            "status": "error",
+                            "message": "Registration fee must be at least 1 YDA (1 block)",
+                        }
+                    )
+            except (ValueError, TypeError):
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": "error", "message": "Invalid fee value"}
+                )
+
+            # Calculate registration duration for user feedback
+            blocks = int(registration_fee)
+            days = blocks / 144
+
             # Create transaction with node announcement in relationship field
             txn = Transaction(
                 txn_time=int(datetime.now(timezone.utc).timestamp()),
                 public_key=peer.identity.public_key,
                 relationship={"node": node_announcement},
+                fee=registration_fee,
+                version=7,
             )
 
             # Sign the transaction using the node's cipher
@@ -221,8 +244,11 @@ class NodeAnnounceHandler(BaseHandler):
             return self.render_as_json(
                 {
                     "status": "success",
-                    "message": "Node announcement broadcast successfully",
+                    "message": f"Node announcement broadcast successfully. Registered for {blocks} blocks (~{days:.1f} days)",
                     "transaction_signature": txn.transaction_signature,
+                    "registration_blocks": blocks,
+                    "registration_days": round(days, 1),
+                    "fee_paid": registration_fee,
                     "timestamp": int(datetime.now(timezone.utc).timestamp()),
                 }
             )
