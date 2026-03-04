@@ -144,6 +144,10 @@ class Nodes:
         Expected on-chain format (inside transaction.relationship):
         { "node": { "type": "seed|seed_gateway|service_provider", "host":..., ... } }
         Announced nodes will be appended with range starting at `activation_height`.
+
+        Registration duration is determined by transaction fee:
+        - 1 YDA = 1 block of registration
+        - Expiry height = announcement_height + fee_amount
         """
         config = Config()
         if activation_height is None:
@@ -151,7 +155,8 @@ class Nodes:
 
         # Only load dynamic nodes if chain has reached the activation fork
         try:
-            if config.LatestBlock.block.index < activation_height:
+            current_height = config.LatestBlock.block.index
+            if current_height < activation_height:
                 return
         except Exception:
             return
@@ -167,12 +172,21 @@ class Nodes:
             return
 
         async for block in cursor:
+            block_height = block.get("index")
             for txn in block.get("transactions", []):
                 rel = txn.get("relationship")
                 if not isinstance(rel, dict):
                     continue
                 node_blob = rel.get("node")
                 if not node_blob or not isinstance(node_blob, dict):
+                    continue
+
+                # Calculate expiry based on transaction fee (1 YDA = 1 block)
+                txn_fee = float(txn.get("fee", 0.0))
+                expiry_height = block_height + int(txn_fee)
+
+                # Skip expired node announcements
+                if current_height > expiry_height:
                     continue
 
                 # Node type is IGNORED from transaction; assigned dynamically by load balancing

@@ -590,6 +590,13 @@ class Transaction(object):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, NodeAnnouncement):
             relationship = self.relationship.to_string()
+            # Enforce fork for node announcement transactions
+            # Only enforce if block is provided (not in mempool)
+            if block and hasattr(block, "index"):
+                if block.index < CHAIN.DYNAMIC_NODES_FORK:
+                    raise InvalidTransactionException(
+                        f"Node announcement transactions (version 7) not allowed before fork height {CHAIN.DYNAMIC_NODES_FORK}"
+                    )
 
         if len(relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value:
             raise MaxRelationshipSizeExceeded(

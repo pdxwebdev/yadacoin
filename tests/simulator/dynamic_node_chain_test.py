@@ -10,10 +10,12 @@ This script:
 """
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
 import sys
+import time
 
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve import PrivateKey
@@ -32,6 +34,7 @@ from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.processingqueue import BlockProcessingQueueItem, ProcessingQueues
 from yadacoin.core.transaction import Transaction
+from yadacoin.core.transactionutils import TU
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
 TESTS_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
@@ -212,19 +215,31 @@ async def main():
         peer_node.blockchain = [latest_block]
 
         # Generate dynamic node announcement transaction
+        # Registration fee: 1 YDA per block
+        # For testing, use small fee to avoid wallet funding issues
+        # In production: 144 blocks per day * 30 days = 4,320 YDA for 1 month
+        registration_fee = 10.0  # 10 blocks for testing
+
         node_announcement = build_node_announcement(config)
         relationship_str = node_announcement.to_string()
 
-        txn = await Transaction.generate(
+        # Create transaction without automatic input/output generation
+        # In production, users would need sufficient funds to pay the registration fee
+        txn = Transaction(
+            txn_time=int(time.time()),
             public_key=config.public_key,
-            private_key=config.private_key,
             relationship=relationship_str,
+            relationship_hash=hashlib.sha256(relationship_str.encode()).digest().hex(),
             outputs=[],
             inputs=[],
-            fee=0,
+            fee=registration_fee,
             version=7,
         )
         txn.relationship = node_announcement
+        txn.hash = await txn.generate_hash()
+        txn.transaction_signature = TU.generate_signature_with_private_key(
+            config.private_key, txn.hash
+        )
 
         # Create new block with dynamic node announcement
         new_block = await Block.generate(
@@ -271,6 +286,18 @@ async def main():
             prev_hash=new_block.hash,
             nonce="0000000000000000",
         )
+
+        # Verify registration expiry calculation
+        # Expected expiry: announcement_height (new_block.index) + fee blocks
+        expected_expiry_height = new_block.index + int(registration_fee)
+        print(f"Node announced at block: {new_block.index}")
+        print(
+            f"Registration fee paid: {registration_fee} YDA ({int(registration_fee)} blocks)"
+        )
+        print(f"Expected expiry height: {expected_expiry_height}")
+        print(f"Current height: {reward_block.index}")
+        blocks_remaining = expected_expiry_height - reward_block.index
+        print(f"Blocks remaining until expiry: {blocks_remaining}")
 
         reward_chain = Blockchain([new_block, reward_block])
         reward_queue_item = BlockProcessingQueueItem(reward_chain)
