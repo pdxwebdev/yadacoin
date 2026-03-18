@@ -15,10 +15,13 @@ Full license terms: see LICENSE.txt in this repository.
 Handlers for announcing nodes to the blockchain
 """
 
+import hashlib
 import json
 from datetime import datetime, timezone
 
-from yadacoin.core.transaction import Transaction
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.nodeannouncement import NodeAnnouncement
+from yadacoin.core.transaction import Output, Transaction
 from yadacoin.core.transactionutils import TU
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.http.base import BaseHandler
@@ -27,9 +30,7 @@ from yadacoin.http.base import BaseHandler
 class NodeAnnounceHandler(BaseHandler):
     """Display and process node announcements to the blockchain.
 
-    This handler is restricted to local/internal access only via api_whitelist.
-    Users can view their current node configuration and announce it to the blockchain.
-    The node's identity and signing are handled entirely on the backend.
+    POST is restricted to local access only (127.0.0.1 / ::1).
     """
 
     async def get(self):
@@ -73,9 +74,8 @@ class NodeAnnounceHandler(BaseHandler):
                     if (hasattr(self.config, "ssl") and self.config.ssl.is_valid())
                     else "http"
                 ),
-                "secure": peer.secure
-                or (hasattr(self.config, "ssl") and self.config.ssl.is_valid()),
                 "peer_type": peer.peer_type or PEER_TYPES.USER.value,
+                "collateral_address": getattr(peer, "collateral_address", ""),
             }
 
             self.render(
@@ -96,6 +96,16 @@ class NodeAnnounceHandler(BaseHandler):
     async def post(self):
         """Process the node announcement and broadcast to the blockchain."""
         try:
+            # Restrict to local access only
+            if self.request.remote_ip not in ("127.0.0.1", "::1"):
+                self.set_status(403)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": "This endpoint is only accessible locally.",
+                    }
+                )
+
             # Validate that peer is configured
             if not hasattr(self.config, "peer") or not self.config.peer:
                 self.set_status(400)
@@ -114,7 +124,7 @@ class NodeAnnounceHandler(BaseHandler):
             data = json.loads(self.request.body) if self.request.body else {}
 
             # Validate required fields
-            required_fields = ["host", "port", "http_host", "http_port", "fee"]
+            required_fields = ["host", "port", "http_host", "http_port"]
             for field in required_fields:
                 if field not in data:
                     self.set_status(400)
@@ -139,7 +149,7 @@ class NodeAnnounceHandler(BaseHandler):
                 "http_protocol": str(data.get("http_protocol", "https"))
                 .strip()
                 .lower(),
-                "secure": data.get("secure", False) in (True, "true", "True", 1, "1"),
+                "collateral_address": str(data.get("collateral_address", "")).strip(),
             }
 
             # Validate network values
@@ -176,45 +186,54 @@ class NodeAnnounceHandler(BaseHandler):
                     }
                 )
 
-            # Validate registration fee
-            try:
-                registration_fee = float(data.get("fee", 0))
-                if registration_fee < 1:
-                    self.set_status(400)
-                    return self.render_as_json(
-                        {
-                            "status": "error",
-                            "message": "Registration fee must be at least 1 YDA (1 block)",
-                        }
-                    )
-            except (ValueError, TypeError):
+            if not node_announcement["collateral_address"]:
                 self.set_status(400)
                 return self.render_as_json(
-                    {"status": "error", "message": "Invalid fee value"}
+                    {
+                        "status": "error",
+                        "message": "collateral_address is required for node announcements",
+                    }
                 )
 
-            # Calculate registration duration for user feedback
-            blocks = int(registration_fee)
-            days = blocks / 144
-
             # Create transaction with node announcement in relationship field
+            node_announcement_str = NodeAnnouncement.from_dict(
+                node_announcement
+            ).to_string()
+            relationship_hash = (
+                hashlib.sha256(node_announcement_str.encode()).digest().hex()
+            )
             txn = Transaction(
                 txn_time=int(datetime.now(timezone.utc).timestamp()),
                 public_key=peer.identity.public_key,
                 relationship={"node": node_announcement},
-                fee=registration_fee,
+                relationship_hash=relationship_hash,
+                outputs=[
+                    Output(
+                        to=node_announcement["collateral_address"],
+                        value=float(CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT),
+                    )
+                ],
+                inputs=[],
+                fee=0.0,
                 version=7,
             )
 
-            # Sign the transaction using the node's cipher
+            # Gather inputs from wallet and return change to sender automatically
             try:
-                # Use the node's wif to sign
-                if hasattr(self.config, "cipher") and self.config.cipher:
-                    txn_hash = TU.get_transaction_hash(txn)
-                    signature = self.config.cipher.sign(txn_hash)
-                    txn.transaction_signature = signature
-                else:
-                    raise Exception("Node cipher not available for signing")
+                await txn.do_money()
+            except Exception as e:
+                self.app_log.error(f"Error gathering inputs: {e}")
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": "error", "message": f"Insufficient funds: {str(e)}"}
+                )
+
+            # Sign the transaction using the node's private key
+            try:
+                txn.hash = await txn.generate_hash()
+                txn.transaction_signature = TU.generate_signature_with_private_key(
+                    self.config.private_key, txn.hash
+                )
             except Exception as e:
                 self.app_log.error(f"Error signing transaction: {e}")
                 self.set_status(500)
@@ -244,11 +263,10 @@ class NodeAnnounceHandler(BaseHandler):
             return self.render_as_json(
                 {
                     "status": "success",
-                    "message": f"Node announcement broadcast successfully. Registered for {blocks} blocks (~{days:.1f} days)",
+                    "message": f"Node announcement broadcast successfully. Collateral of {CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT} YDA sent to {node_announcement['collateral_address']}",
                     "transaction_signature": txn.transaction_signature,
-                    "registration_blocks": blocks,
-                    "registration_days": round(days, 1),
-                    "fee_paid": registration_fee,
+                    "collateral_amount": CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT,
+                    "collateral_address": node_announcement["collateral_address"],
                     "timestamp": int(datetime.now(timezone.utc).timestamp()),
                 }
             )
@@ -260,5 +278,5 @@ class NodeAnnounceHandler(BaseHandler):
 
 
 NODE_ANNOUNCE_HANDLERS = [
-    (r"/node/announce", NodeAnnounceHandler),
+    (r"/node-announce", NodeAnnounceHandler),
 ]

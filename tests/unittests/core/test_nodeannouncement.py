@@ -12,7 +12,6 @@ Full license terms: see LICENSE.txt in this repository.
 """
 
 import base64
-import json
 import unittest
 
 from yadacoin.core.nodeannouncement import NodeAnnouncement
@@ -130,15 +129,15 @@ class TestNodeAnnouncement(AsyncTestCase):
         self.assertEqual(result["port"], 8000)
 
     async def test_node_announcement_to_string(self):
-        """Test converting node announcement to JSON string."""
+        """Test converting node announcement to string."""
         node = NodeAnnouncement.from_dict(self.valid_node_data)
         result = node.to_string()
 
-        # Should be valid JSON
-        parsed = json.loads(result)
-        self.assertIn("identity", parsed)
-        self.assertIn("host", parsed)
-        self.assertIn("port", parsed)
+        # Should be a concatenated string containing the key field values
+        self.assertIsInstance(result, str)
+        self.assertIn(node.identity.username_signature, result)
+        self.assertIn(node.host, result)
+        self.assertIn(str(node.port), result)
 
     async def test_node_announcement_extra_fields(self):
         """Test that extra fields are preserved."""

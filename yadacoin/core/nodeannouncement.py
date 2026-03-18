@@ -11,7 +11,6 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import json
 
 from yadacoin.core.identity import Identity
 
@@ -23,13 +22,27 @@ class NodeAnnouncement:
     announcements that are stored on-chain.
     """
 
-    def __init__(self, identity, host, port, **kwargs):
+    def __init__(
+        self,
+        identity,
+        host,
+        port,
+        http_host="",
+        http_port=None,
+        http_protocol="https",
+        collateral_address="",
+        **kwargs,
+    ):
         """Initialize a node announcement.
 
         Args:
             identity: Dict containing public_key, username, username_signature
             host: IP address or hostname of the node
             port: Port number the node listens on
+            http_host: HTTP hostname for the node
+            http_port: HTTP port for the node
+            http_protocol: 'http' or 'https'
+            collateral_address: Collateral address for the node
             **kwargs: Additional fields (for forward compatibility)
         """
         # Validate required arguments before processing
@@ -62,10 +75,15 @@ class NodeAnnouncement:
         except (ValueError, TypeError):
             raise ValueError("port must be a valid integer")
 
-        # Store any additional fields for forward compatibility
-        self.extra_fields = {
-            k: v for k, v in kwargs.items() if k not in ["identity", "host", "port"]
-        }
+        self.http_host = str(http_host) if http_host else ""
+        self.http_port = int(http_port) if http_port is not None else None
+        self.http_protocol = (
+            str(http_protocol).strip().lower() if http_protocol else "https"
+        )
+        self.collateral_address = str(collateral_address) if collateral_address else ""
+
+        # Store any unrecognised fields for forward compatibility
+        self.extra_fields = {k: v for k, v in kwargs.items()}
 
     @staticmethod
     def from_dict(data):
@@ -103,21 +121,31 @@ class NodeAnnouncement:
             "identity": self.identity.to_dict,  # to_dict is a property, not a method
             "host": self.host,
             "port": self.port,
+            "http_host": self.http_host,
+            "http_port": self.http_port,
+            "http_protocol": self.http_protocol,
+            "collateral_address": self.collateral_address,
         }
 
-        # Include any extra fields
+        # Include any unrecognised extra fields
         if self.extra_fields:
             result.update(self.extra_fields)
 
         return result
 
-    def to_string(self):
-        """Convert to JSON string for hashing.
+    def get_string(self, p):
+        return "" if p is None else str(p)
 
-        Returns:
-            JSON string representation
-        """
-        return json.dumps(self.to_dict(), sort_keys=True, separators=(",", ":"))
+    def to_string(self):
+        return (
+            self.get_string(self.identity.username_signature)
+            + self.get_string(self.host)
+            + self.get_string(self.port)
+            + self.get_string(self.http_host)
+            + self.get_string(self.http_port)
+            + self.get_string(self.http_protocol)
+            + self.get_string(self.collateral_address)
+        )
 
     def __repr__(self):
         return f"NodeAnnouncement(host={self.host}, port={self.port}, public_key={self.identity.public_key[:8]}...)"

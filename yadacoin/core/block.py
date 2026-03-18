@@ -268,35 +268,44 @@ class Block(object):
             if config.network == "regnet":
                 NodesTester.successful_nodes = NodesTester.all_nodes
 
-            if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                masternode_fee_sum = sum(
-                    [
-                        float(transaction_obj.masternode_fee)
-                        for transaction_obj in transaction_objs
-                    ]
-                )
-                masternode_reward_divided = (
-                    masternode_reward_total + masternode_fee_sum
-                ) / len(NodesTester.successful_nodes)
+            # reward_nodes includes both hardcoded static nodes and on-chain
+            # announced dynamic nodes (those with 5000 YDA collateral), since
+            # dynamic nodes are appended to _NODES during load_dynamic_nodes_from_chain
+            # and flow naturally into NodesTester.successful_nodes.
+            reward_nodes = NodesTester.successful_nodes
 
-            else:
-                masternode_reward_divided = masternode_reward_total / len(
-                    NodesTester.successful_nodes
-                )
-
-            for successful_node in NodesTester.successful_nodes:
-                outputs.append(
-                    Output.from_dict(
-                        {
-                            "value": float(masternode_reward_divided),
-                            "to": str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(successful_node.identity.public_key)
-                                )
-                            ),
-                        }
+            if reward_nodes:
+                if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+                    masternode_fee_sum = sum(
+                        [
+                            float(transaction_obj.masternode_fee)
+                            for transaction_obj in transaction_objs
+                        ]
                     )
-                )
+                    masternode_reward_divided = (
+                        masternode_reward_total + masternode_fee_sum
+                    ) / len(reward_nodes)
+
+                else:
+                    masternode_reward_divided = masternode_reward_total / len(
+                        reward_nodes
+                    )
+
+                for successful_node in reward_nodes:
+                    outputs.append(
+                        Output.from_dict(
+                            {
+                                "value": float(masternode_reward_divided),
+                                "to": str(
+                                    P2PKHBitcoinAddress.from_pubkey(
+                                        bytes.fromhex(
+                                            successful_node.identity.public_key
+                                        )
+                                    )
+                                ),
+                            }
+                        )
+                    )
         else:
             outputs = [
                 Output.from_dict(
@@ -774,18 +783,13 @@ class Block(object):
 
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
-                    block_creator_address = str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
-                    )
                     for output in txn.outputs:
-                        if output.to == block_creator_address:
-                            coinbase_sum += float(output.value)
-                        elif output.to in masernodes_by_address:
+                        if output.to in masernodes_by_address:
                             if output.to not in masternode_sums:
                                 masternode_sums[output.to] = 0
                             masternode_sums[output.to] += output.value
                         else:
-                            raise UnknownOutputAddressException()
+                            coinbase_sum += float(output.value)
                 else:
                     for output in txn.outputs:
                         coinbase_sum += float(output.value)

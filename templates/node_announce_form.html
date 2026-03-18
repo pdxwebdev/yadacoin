@@ -1,0 +1,100 @@
+<div id="message" class="message"></div>
+
+<form id="nodeForm">
+    <div class="section" style="margin-bottom: 20px;">
+        <div class="section-title" style="font-size: 14px; font-weight: 700; margin-bottom: 10px;">Node Identity</div>
+        <div class="identity-box" style="background: #f8f9fa; padding: 12px; border-radius: 6px; margin-bottom: 12px;">
+            <div style="margin-bottom: 8px;">
+                <div style="font-size: 12px; color: #6b7280; text-transform: uppercase;">Username</div>
+                <div style="font-family: monospace; word-break: break-all;">{{ identity.get('username', 'N/A') }}</div>
+            </div>
+            <div>
+                <div style="font-size: 12px; color: #6b7280; text-transform: uppercase;">Public Key</div>
+                <div style="font-family: monospace; word-break: break-all;">{{ identity.get('public_key', 'N/A')[:32] }}...</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+            <label for="host">Node Host *</label>
+            <input type="text" id="host" name="host" value="{{ node_info.get('host', '') }}" required>
+        </div>
+        <div class="form-group">
+            <label for="port">Node Port *</label>
+            <input type="number" id="port" name="port" value="{{ node_info.get('port', 8003) }}" min="1" max="65535" required>
+        </div>
+    </div>
+
+    <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+            <label for="http_host">HTTP Host *</label>
+            <input type="text" id="http_host" name="http_host" value="{{ node_info.get('http_host', '') }}" required>
+        </div>
+        <div class="form-group">
+            <label for="http_port">HTTP Port *</label>
+            <input type="number" id="http_port" name="http_port" value="{{ node_info.get('http_port', 8000) }}" min="1" max="65535" required>
+        </div>
+    </div>
+
+    <div class="form-row" style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
+        <div class="form-group">
+            <label for="http_protocol">HTTP Protocol</label>
+            <select id="http_protocol" name="http_protocol" style="width:100%;padding:10px 12px;border:1px solid #d0d5dd;border-radius:6px;">
+                <option value="https" {% if node_info.get('http_protocol') == 'https' %}selected{% end %}>HTTPS</option>
+                <option value="http" {% if node_info.get('http_protocol') == 'http' %}selected{% end %}>HTTP</option>
+            </select>
+        </div>
+        <div class="form-group"></div>
+    </div>
+
+    <div class="section" style="margin-bottom: 20px;">
+        <div class="section-title" style="font-size: 14px; font-weight: 700; margin-bottom: 10px;">Registration Fee</div>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:10px;border-radius:6px;margin-bottom:12px;font-size:13px;">
+            <span style="color:#b91c1c;font-size:13px;font-weight:600;">Collateral fee: 5000 YDA (required)</span>
+        </div>
+        <div class="form-group">
+            <label for="fee">Collateral Fee (YDA) *</label>
+            <input type="number" id="fee" name="fee" value="5000" min="5000" max="5000" step="0.00000001" required readonly disabled>
+        </div>
+    </div>
+
+    <div class="section" style="margin-bottom: 20px;">
+        <div class="section-title" style="font-size: 14px; font-weight: 700; margin-bottom: 10px;">Collateral</div>
+        <div class="info-alert" style="margin-bottom: 15px;">
+            <strong>⚠️ Collateral Address Requirement:</strong> Please create a <b>new wallet address</b> for collateral where the balance will be <b>exactly 5000 YDA</b> at <a href="https://yadacoin.io/app" target="_blank">https://yadacoin.io/app</a> or <b>/app</b> on your local node.
+        </div>
+        <div class="form-group">
+            <label for="collateral_address">Collateral Address *</label>
+            <input type="text" id="collateral_address" name="collateral_address" value="{{ node_info.get('collateral_address', '') }}" required>
+        </div>
+    </div>
+
+    <div style="display:flex;gap:10px;">
+        <button type="submit">Announce Node</button>
+        <button type="reset" style="background:#e5e7eb;color:#111827;">Reset Form</button>
+    </div>
+
+    <div class="loading" id="loading" style="display:none;margin-top:12px;color:#2f6fed;">
+        Processing announcement...
+    </div>
+</form>
+
+<script>
+    document.getElementById('nodeForm').onsubmit = async function(e) {
+        e.preventDefault();
+        document.getElementById('loading').style.display = 'block';
+
+        const formData = {
+            host: document.getElementById('host').value,
+            port: parseInt(document.getElementById('port').value),
+            http_host: document.getElementById('http_host').value,
+            http_port: parseInt(document.getElementById('http_port').value),
+            http_protocol: document.getElementById('http_protocol').value,
+            collateral_address: document.getElementById('collateral_address').value,
+            fee: parseFloat(document.getElementById('fee').value),
+        };
+
+        // ...existing code for POST request...
+    };
+</script>

@@ -129,7 +129,7 @@ class NodeRPC(BaseRPC):
             payload[
                 service_provider.peer.source_property
             ] = service_provider.peer.to_dict()
-            scheme = "wss" if service_provider.peer.secure else "ws"
+            scheme = "wss" if service_provider.peer.http_protocol == "https" else "ws"
             payload[service_provider.peer.source_property][
                 "websocket_host"
             ] = f"{scheme}://{service_provider.peer.http_host}:{service_provider.peer.http_port}"

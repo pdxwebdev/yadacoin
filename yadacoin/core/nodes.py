@@ -57,6 +57,8 @@ class Nodes:
         "ServiceProviders": {},
     }
 
+    dynamic_node_public_keys: set = set()  # public keys of on-chain announced nodes
+
     @classmethod
     def get_nodes_for_block_height(cls, height):
         fork_point = cls().get_fork_for_block_height(height)
@@ -172,21 +174,13 @@ class Nodes:
             return
 
         async for block in cursor:
-            block_height = block.get("index")
+            block.get("index")
             for txn in block.get("transactions", []):
                 rel = txn.get("relationship")
                 if not isinstance(rel, dict):
                     continue
                 node_blob = rel.get("node")
                 if not node_blob or not isinstance(node_blob, dict):
-                    continue
-
-                # Calculate expiry based on transaction fee (1 YDA = 1 block)
-                txn_fee = float(txn.get("fee", 0.0))
-                expiry_height = block_height + int(txn_fee)
-
-                # Skip expired node announcements
-                if current_height > expiry_height:
                     continue
 
                 # Node type is IGNORED from transaction; assigned dynamically by load balancing
@@ -227,6 +221,21 @@ class Nodes:
                 if txn_pub and txn_pub != pub:
                     continue
 
+                # collateral_address is required and must be a valid address
+                collateral_address = node_def.get("collateral_address")
+                if not collateral_address or not config.address_is_valid(
+                    collateral_address
+                ):
+                    continue
+
+                # Verify collateral address holds exactly 5000 YDA
+                try:
+                    balance = await config.BU.get_wallet_balance(collateral_address)
+                    if balance != 5000:
+                        continue
+                except Exception:
+                    continue
+
                 # Assign node type dynamically based on load balancing
                 assigned_type = cls._assign_node_type()
                 if assigned_type == "seed":
@@ -265,6 +274,7 @@ class Nodes:
                     owner_class()._NODES.append(
                         {"ranges": [(activation_height, None)], "node": node_obj}
                     )
+                    Nodes.dynamic_node_public_keys.add(pub)
 
     @classmethod
     async def apply_dynamic_nodes(cls, activation_height=None):
@@ -272,6 +282,13 @@ class Nodes:
         Call this at startup (await Nodes.apply_dynamic_nodes()) to enable on-chain nodes.
         """
         await cls.load_dynamic_nodes_from_chain(activation_height=activation_height)
+        # Clear the height→node-list cache so get_nodes_for_block_height
+        # reads from the freshly rebuilt NODES dict instead of stale entries.
+        Nodes._get_nodes_for_block_height_cache = {
+            "Seeds": {},
+            "SeedGateways": {},
+            "ServiceProviders": {},
+        }
         # Recompute fork points and node maps for each node class
         Seeds.set_fork_points()
         Seeds.set_nodes()

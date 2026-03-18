@@ -884,6 +884,16 @@ class NodeApplication(Application):
             self.config.processing_queues.nonce_queue.time_sum_end()
         self.config.background_nonce_processor.busy = False
 
+    async def background_apply_dynamic_nodes(self):
+        """Periodically reload dynamic node registrations from the chain."""
+        try:
+            from yadacoin.core.nodes import Nodes
+
+            await Nodes.apply_dynamic_nodes()
+            self.config.app_log.info("Dynamic nodes refreshed from chain.")
+        except Exception as e:
+            self.config.app_log.error(f"Error refreshing dynamic nodes: {e}")
+
     async def background_node_testing(self):
         """Responsible for testing masternodes in the background."""
 
@@ -904,6 +914,9 @@ class NodeApplication(Application):
 
         self.config.background_node_testing.busy = True
         try:
+            from yadacoin.core.nodes import Nodes
+
+            await Nodes.apply_dynamic_nodes()
             successful_nodes = await NodesTester.test_all_nodes(block_index)
             self.config.app_log.info(
                 f"Background node testing completed. Successful nodes: {len(successful_nodes)}"
@@ -1051,6 +1064,11 @@ class NodeApplication(Application):
                     self.background_transactions_combining,
                     self.config.transactions_combining_wait * 1000,
                 ).start()
+
+            PeriodicCallback(
+                self.background_apply_dynamic_nodes,
+                60 * 60 * 1000,
+            ).start()
 
             if MODES.POOL.value in self.config.modes:
                 PeriodicCallback(

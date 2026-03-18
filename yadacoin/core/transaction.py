@@ -597,6 +597,22 @@ class Transaction(object):
                     raise InvalidTransactionException(
                         f"Node announcement transactions (version 7) not allowed before fork height {CHAIN.DYNAMIC_NODES_FORK}"
                     )
+            # Verify collateral output: must have an output of exactly COLLATERAL_AMOUNT to collateral_address
+            collateral_address = self.relationship.collateral_address
+            if not collateral_address:
+                raise InvalidTransactionException(
+                    "Node announcement transaction missing collateral_address"
+                )
+            collateral_outputs = [
+                o
+                for o in self.outputs
+                if o.to == collateral_address
+                and float(o.value) == float(CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT)
+            ]
+            if not collateral_outputs:
+                raise InvalidTransactionException(
+                    f"Node announcement transaction must include an output of {CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT} YDA to collateral_address {collateral_address}"
+                )
 
         if len(relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value:
             raise MaxRelationshipSizeExceeded(

@@ -473,8 +473,7 @@ class Config:
             hash2 = hashlib.sha256(hash1).digest()
             calculated_checksum = hash2[:4]
             return checksum == calculated_checksum
-        except Exception as e:
-            print(f"Error: {e}")
+        except Exception:
             return False
 
     def get_username_signature(self):

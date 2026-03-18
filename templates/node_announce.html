@@ -130,27 +130,6 @@
             box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
         }
         
-        input[type="checkbox"] {
-            width: 18px;
-            height: 18px;
-            cursor: pointer;
-            margin-right: 8px;
-        }
-        
-        .checkbox-group {
-            display: flex;
-            align-items: center;
-            margin-top: 8px;
-        }
-        
-        .checkbox-group label {
-            display: flex;
-            align-items: center;
-            margin-bottom: 0;
-            font-weight: 500;
-            cursor: pointer;
-        }
-        
         .button-group {
             display: flex;
             gap: 10px;
@@ -322,30 +301,33 @@
                             <option value="http" {% if node_info.get('http_protocol') == 'http' %}selected{% end %}>HTTP</option>
                         </select>
                     </div>
-                    <div class="form-group">
-                        <label>&nbsp;</label>
-                        <div class="checkbox-group">
-                            <input type="checkbox" id="secure" name="secure" {% if node_info.get('secure') %}checked{% end %}>
-                            <label for="secure" style="margin-bottom: 0; margin-left: -8px;">Secure Connection</label>
-                        </div>
-                    </div>
                 </div>
             </div>
             
-            <!-- Registration Fee Section -->
+            <!-- Collateral Address Section -->
             <div class="section">
-                <div class="section-title">Registration Fee</div>
+                <div class="section-title">Collateral</div>
                 <div class="info-alert" style="margin-bottom: 15px;">
-                    <strong>💰 Pay-Per-Block Registration:</strong> 1 YDA = 1 block of uptime (~10 minutes)<br>
-                    <strong>Pricing:</strong> 144 YDA/day | 4,320 YDA/month | 52,560 YDA/year
+                    <strong>⚠️ Collateral Address Requirement:</strong> Please create a <b>new wallet address</b> for collateral where the balance will be <b>exactly 5000 YDA</b> at <a href="https://yadacoin.io/app" target="_blank">https://yadacoin.io/app</a> or <b>/app</b> on your local node.
                 </div>
                 <div class="form-row full">
                     <div class="form-group">
-                        <label for="fee">Registration Fee (YDA) *</label>
-                        <input type="number" id="fee" name="fee" value="4320" min="1" step="0.00000001" required>
-                        <small style="color: #666; font-size: 12px; margin-top: 4px; display: block;">
-                            Minimum 1 YDA. Suggested: 4,320 YDA for 30 days
-                        </small>
+                        <label for="collateral_address">Collateral Address *</label>
+                        <input type="text" id="collateral_address" name="collateral_address" value="{{ node_info.get('collateral_address', '') }}" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Registration Fee Section -->
+            <div class="section">
+                <div class="section-title">Registration Fee</div>
+                <div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:10px;border-radius:6px;margin-bottom:12px;font-size:13px;">
+                    <span style="color:#b91c1c;font-size:13px;font-weight:600;">Collateral fee: 5000 YDA (required)</span>
+                </div>
+                <div class="form-row full">
+                    <div class="form-group">
+                        <label for="fee">Collateral Fee (YDA) *</label>
+                        <input type="number" id="fee" name="fee" value="5000" min="5000" max="5000" step="0.00000001" required readonly disabled>
                     </div>
                 </div>
             </div>
@@ -372,14 +354,14 @@
             e.preventDefault();
             messageDiv.className = 'message';
             loadingDiv.classList.add('show');
-            
+
             const formData = {
                 host: document.getElementById('host').value,
                 port: parseInt(document.getElementById('port').value),
                 http_host: document.getElementById('http_host').value,
                 http_port: parseInt(document.getElementById('http_port').value),
                 http_protocol: document.getElementById('http_protocol').value,
-                secure: document.getElementById('secure').checked,
+                collateral_address: document.getElementById('collateral_address').value,
                 fee: parseFloat(document.getElementById('fee').value),
             };
             

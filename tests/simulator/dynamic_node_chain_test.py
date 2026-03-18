@@ -33,7 +33,7 @@ from yadacoin.core.mongo import Mongo
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.nodes import Nodes
 from yadacoin.core.processingqueue import BlockProcessingQueueItem, ProcessingQueues
-from yadacoin.core.transaction import Transaction
+from yadacoin.core.transaction import Output, Transaction
 from yadacoin.core.transactionutils import TU
 
 ROOT_DIR = os.path.abspath(os.path.join(os.path.dirname(__file__), "../.."))
@@ -133,7 +133,7 @@ def build_node_announcement(config: Config) -> NodeAnnouncement:
         "http_host": "127.0.0.1",
         "http_port": 8000,
         "http_protocol": "http",
-        "secure": False,
+        "collateral_address": config.address,
     }
     return NodeAnnouncement.from_dict(node_announcement)
 
@@ -222,6 +222,7 @@ async def main():
 
         node_announcement = build_node_announcement(config)
         relationship_str = node_announcement.to_string()
+        collateral_address = node_announcement.collateral_address
 
         # Create transaction without automatic input/output generation
         # In production, users would need sufficient funds to pay the registration fee
@@ -230,7 +231,12 @@ async def main():
             public_key=config.public_key,
             relationship=relationship_str,
             relationship_hash=hashlib.sha256(relationship_str.encode()).digest().hex(),
-            outputs=[],
+            outputs=[
+                Output(
+                    to=collateral_address,
+                    value=float(CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT),
+                )
+            ],
             inputs=[],
             fee=registration_fee,
             version=7,
@@ -378,6 +384,15 @@ async def main():
             abs(masternode_paid_total - expected_masternode_total) < reward_epsilon
         )
 
+        # Verify collateral output in the announcement transaction
+        collateral_outputs = [
+            o
+            for o in txn.outputs
+            if o.to == collateral_address
+            and float(o.value) == float(CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT)
+        ]
+        collateral_output_valid = len(collateral_outputs) > 0
+
         print("Dynamic node chain test results (separate databases)")
         print("- Miner database: yadacoin")
         print("- Peer database: yadacoin_peer")
@@ -393,6 +408,7 @@ async def main():
         print("- Miner latest block:", miner_latest.index if miner_latest else None)
         print("- Peer accepted block:", peer_accepted_block)
         print("- Peer accepted reward block:", reward_peer_accepted_block)
+        print("- Collateral output valid:", collateral_output_valid)
         print("- Dynamic node present:", dynamic_node_present)
         print("- Dynamic node paid:", dynamic_node_paid)
         print("- Masternode payout total valid:", masternode_total_matches)
@@ -405,6 +421,10 @@ async def main():
             raise RuntimeError("Peer did not accept the new block")
         if not reward_peer_accepted_block:
             raise RuntimeError("Peer did not accept the reward block")
+        if not collateral_output_valid:
+            raise RuntimeError(
+                f"Node announcement transaction missing collateral output of {CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT} YDA to {collateral_address}"
+            )
         if not dynamic_node_present:
             raise RuntimeError("Dynamic node not found in nodes list")
         if not dynamic_node_paid:

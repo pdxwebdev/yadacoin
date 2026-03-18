@@ -297,15 +297,18 @@ class TestDynamicNodes(AsyncTestCase):
             },
             "host": "192.168.1.50",
             "port": 8000,
+            "collateral_address": "1TestCollateralAddress",
         }
 
         # Block with valid node announcement
+        # fee=200 ensures expiry_height = DYNAMIC_NODES_FORK + 200 > current_height (fork+100)
         block = {
             "index": CHAIN.DYNAMIC_NODES_FORK,
             "transactions": [
                 {
                     "public_key": valid_node_def["identity"]["public_key"],
                     "relationship": {"node": valid_node_def},
+                    "fee": 200,
                 }
             ],
         }
@@ -317,37 +320,52 @@ class TestDynamicNodes(AsyncTestCase):
             async_iter
         )
 
+        # Mock BU for balance check
+        self.config.BU = AsyncMock()
+        self.config.BU.get_wallet_balance = AsyncMock(return_value=5000)
+
         # Mock verify_signature to pass validation
         with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
-            # Mock Seed.from_dict to return a valid node object
-            mock_node = Mock()
-            mock_node.identity = Mock()
-            mock_node.identity.public_key = valid_node_def["identity"]["public_key"]
-            mock_node.host = valid_node_def["host"]
-            mock_node.port = valid_node_def["port"]
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                with mock.patch(
+                    "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                    return_value="1TestCollateralAddress",
+                ):
+                    # Mock Seed.from_dict to return a valid node object
+                    mock_node = Mock()
+                    mock_node.identity = Mock()
+                    mock_node.identity.public_key = valid_node_def["identity"][
+                        "public_key"
+                    ]
+                    mock_node.host = valid_node_def["host"]
+                    mock_node.port = valid_node_def["port"]
 
-            with mock.patch.object(Seed, "from_dict", return_value=mock_node):
-                with mock.patch.object(Nodes, "_assign_node_type", return_value="seed"):
-                    initial_count = len(self.seeds_instance._NODES)
+                    with mock.patch.object(Seed, "from_dict", return_value=mock_node):
+                        with mock.patch.object(
+                            Nodes, "_assign_node_type", return_value="seed"
+                        ):
+                            initial_count = len(self.seeds_instance._NODES)
 
-                    # Load dynamic nodes
-                    await Nodes.load_dynamic_nodes_from_chain(
-                        activation_height=CHAIN.DYNAMIC_NODES_FORK
-                    )
+                            # Load dynamic nodes
+                            await Nodes.load_dynamic_nodes_from_chain(
+                                activation_height=CHAIN.DYNAMIC_NODES_FORK
+                            )
 
-                    # Should have added one node
-                    self.assertEqual(len(self.seeds_instance._NODES), initial_count + 1)
+                            # Should have added one node
+                            self.assertEqual(
+                                len(self.seeds_instance._NODES), initial_count + 1
+                            )
 
-                    # Verify the node was added with correct structure
-                    added_node = self.seeds_instance._NODES[-1]
-                    self.assertEqual(
-                        added_node["ranges"], [(CHAIN.DYNAMIC_NODES_FORK, None)]
-                    )
-                    self.assertEqual(added_node["node"], mock_node)
-                    self.assertEqual(
-                        added_node["node"].identity.public_key,
-                        valid_node_def["identity"]["public_key"],
-                    )
+                            # Verify the node was added with correct structure
+                            added_node = self.seeds_instance._NODES[-1]
+                            self.assertEqual(
+                                added_node["ranges"], [(CHAIN.DYNAMIC_NODES_FORK, None)]
+                            )
+                            self.assertEqual(added_node["node"], mock_node)
+                            self.assertEqual(
+                                added_node["node"].identity.public_key,
+                                valid_node_def["identity"]["public_key"],
+                            )
 
     async def test_count_nodes_by_type(self):
         """Test counting nodes by type."""

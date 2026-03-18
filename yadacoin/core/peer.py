@@ -41,7 +41,6 @@ class Peer:
         http_host=None,
         http_port=None,
         http_protocol=None,
-        secure=None,
         protocol_version=4,
         node_version=(0, 0, 0),
         peer_type=None,
@@ -54,7 +53,6 @@ class Peer:
         self.http_host = http_host
         self.http_port = http_port
         self.http_protocol = http_protocol
-        self.secure = secure
         self.config = Config()
         self.app_log = getLogger("tornado.application")
         self.protocol_version = protocol_version
@@ -76,7 +74,6 @@ class Peer:
             "peer_type": config.peer_type,
             "http_host": config.ssl.common_name or config.peer_host,
             "http_port": config.ssl.port or config.serve_port,
-            "secure": config.ssl.is_valid(),
             "protocol_version": 4,
             "node_version": config.node_version,
         }
@@ -132,7 +129,6 @@ class Peer:
             http_host=peer.get("http_host"),
             http_port=peer.get("http_port"),
             http_protocol=peer.get("http_protocol"),
-            secure=peer.get("secure"),
             protocol_version=peer.get("protocol_version", 1),
             node_version=peer.get("node_version", (0, 0, 0)),
             peer_type=peer.get("peer_type"),
@@ -301,7 +297,6 @@ class Peer:
             "http_host": self.http_host,
             "http_port": self.http_port,
             "http_protocol": self.http_protocol,
-            "secure": self.secure,
             "protocol_version": self.protocol_version,
             "node_version": self.node_version,
             "peer_type": self.peer_type,
