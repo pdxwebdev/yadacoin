@@ -460,9 +460,17 @@ class TestKeyEventLog(AsyncTestCase):
                 pass
 
         Config().app_log = AppLog()
+        await self._cleanup_test_blocks()
+
+    async def _cleanup_test_blocks(self):
         for block in blocks:
             xblock = await Block.from_dict(block)
-            self.config.mongo.async_db.blocks.delete_one({"index": xblock.index})
+            self.config.mongo.async_db.blocks.delete_many({"index": xblock.index})
+            if "_id" in block:
+                self.config.mongo.async_db.blocks.delete_many({"_id": block["_id"]})
+
+    async def asyncTearDown(self):
+        await self._cleanup_test_blocks()
 
     async def test_inception(self):
         xblock = await Block.from_dict(blocks[-1])
