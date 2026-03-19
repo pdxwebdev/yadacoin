@@ -735,6 +735,17 @@ class Block(object):
             masernodes_by_address = (
                 Nodes.get_all_nodes_indexed_by_address_for_block_height(self.index)
             )
+            # Merge in all on-chain registered eligible nodes so validation accepts
+            # coinbase payments to any node with valid collateral, not just those that
+            # happened to pass the connectivity test on this particular peer.
+            if (
+                self.index >= CHAIN.DYNAMIC_NODES_FORK
+                and Nodes.eligible_nodes_by_address
+            ):
+                masernodes_by_address = {
+                    **masernodes_by_address,
+                    **Nodes.eligible_nodes_by_address,
+                }
 
         if self.index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in self.transactions}

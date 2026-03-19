@@ -112,6 +112,7 @@ class TestDynamicNodes(AsyncTestCase):
         Nodes.dynamic_node_public_keys.clear()
         Nodes.dynamic_node_collateral_txns.clear()
         Nodes.dynamic_node_collateral_addresses.clear()
+        Nodes.eligible_nodes_by_address.clear()
         Nodes._last_scanned_height = 0
 
     async def test_load_dynamic_nodes_before_fork(self):
@@ -389,6 +390,17 @@ class TestDynamicNodes(AsyncTestCase):
                                 ],
                                 "test_announcement_txn_id_abc123",
                             )
+                            # Verify eligible_nodes_by_address was populated regardless of connectivity
+                            self.assertIn(
+                                "1TestCollateralAddress",
+                                Nodes.eligible_nodes_by_address,
+                            )
+                            self.assertEqual(
+                                Nodes.eligible_nodes_by_address[
+                                    "1TestCollateralAddress"
+                                ],
+                                mock_node,
+                            )
 
     async def test_load_dynamic_nodes_spent_collateral_rejected(self):
         """Test that a node whose collateral UTXO has been spent is not registered."""
@@ -464,6 +476,8 @@ class TestDynamicNodes(AsyncTestCase):
             valid_node_def["identity"]["public_key"],
             Nodes.dynamic_node_collateral_txns,
         )
+        # Verify eligible_nodes_by_address was NOT populated for a rejected node
+        self.assertEqual(len(Nodes.eligible_nodes_by_address), 0)
 
     async def test_evict_all_dynamic_nodes(self):
         """Test that _evict_all_dynamic_nodes removes tracked dynamic nodes."""
@@ -476,6 +490,7 @@ class TestDynamicNodes(AsyncTestCase):
         )
         Nodes.dynamic_node_public_keys.add("test_dynamic_pubkey")
         Nodes.dynamic_node_collateral_txns["test_dynamic_pubkey"] = "txn_abc"
+        Nodes.eligible_nodes_by_address["test_addr_for_evict"] = mock_node
 
         initial_static_count = (
             len(self.seeds_instance._NODES) - 1
@@ -486,6 +501,39 @@ class TestDynamicNodes(AsyncTestCase):
         self.assertEqual(len(self.seeds_instance._NODES), initial_static_count)
         self.assertNotIn("test_dynamic_pubkey", Nodes.dynamic_node_public_keys)
         self.assertNotIn("test_dynamic_pubkey", Nodes.dynamic_node_collateral_txns)
+        self.assertEqual(len(Nodes.eligible_nodes_by_address), 0)
+
+    async def test_evict_spent_dynamic_nodes_clears_eligible_nodes(self):
+        """Test that _evict_spent_dynamic_nodes removes the entry from eligible_nodes_by_address."""
+        pub = "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a"
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = pub
+
+        # Register the node as a tracked dynamic node
+        self.seeds_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        )
+        Nodes.dynamic_node_public_keys.add(pub)
+        Nodes.dynamic_node_collateral_txns[pub] = "spent_txn_id"
+        Nodes.dynamic_node_collateral_addresses[pub] = "1SpentCollateralAddress"
+        Nodes.eligible_nodes_by_address["1SpentCollateralAddress"] = mock_node
+
+        # Simulate the collateral UTXO being spent
+        with mock.patch.object(
+            Nodes,
+            "_collateral_utxo_is_unspent",
+            new=AsyncMock(return_value=False),
+        ):
+            with mock.patch(
+                "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+                return_value="1SpentCollateralAddress",
+            ):
+                await Nodes._evict_spent_dynamic_nodes(self.config)
+
+        self.assertNotIn(pub, Nodes.dynamic_node_public_keys)
+        self.assertNotIn(pub, Nodes.dynamic_node_collateral_txns)
+        self.assertNotIn("1SpentCollateralAddress", Nodes.eligible_nodes_by_address)
 
     async def test_count_nodes_by_type(self):
         """Test counting nodes by type."""

@@ -60,6 +60,9 @@ class Nodes:
     dynamic_node_public_keys: set = set()  # public keys of on-chain announced nodes
     dynamic_node_collateral_txns: dict = {}  # maps public_key → announcement txn_id
     dynamic_node_collateral_addresses: dict = {}  # maps public_key → collateral_address
+    eligible_nodes_by_address: dict = (
+        {}
+    )  # maps payment_address → node for ALL valid registered nodes (regardless of connectivity)
     _last_scanned_height: int = 0  # last block height fully scanned for announcements
 
     @classmethod
@@ -159,6 +162,7 @@ class Nodes:
         cls.dynamic_node_public_keys.clear()
         cls.dynamic_node_collateral_txns.clear()
         cls.dynamic_node_collateral_addresses.clear()
+        cls.eligible_nodes_by_address.clear()
         Nodes._last_scanned_height = 0
 
     @classmethod
@@ -203,6 +207,11 @@ class Nodes:
             cls.dynamic_node_public_keys.discard(pub)
             cls.dynamic_node_collateral_txns.pop(pub, None)
             cls.dynamic_node_collateral_addresses.pop(pub, None)
+            try:
+                addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+                cls.eligible_nodes_by_address.pop(addr, None)
+            except Exception:
+                pass
 
     @classmethod
     def _assign_node_type(cls):
@@ -396,6 +405,10 @@ class Nodes:
                     Nodes.dynamic_node_public_keys.add(pub)
                     Nodes.dynamic_node_collateral_txns[pub] = txn_id
                     Nodes.dynamic_node_collateral_addresses[pub] = collateral_address
+                    payment_address = str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub))
+                    )
+                    Nodes.eligible_nodes_by_address[payment_address] = node_obj
 
         Nodes._last_scanned_height = current_height
 

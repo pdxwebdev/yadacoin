@@ -1037,6 +1037,9 @@ class NodeApplication(Application):
                 self.background_node_testing,
                 60 * 60 * 1000,
             ).start()
+            # Populate eligible_nodes_by_address immediately on startup so coinbase
+            # validation works before the first hourly background_node_testing fires.
+            tornado.ioloop.IOLoop.current().call_later(0, self.background_node_testing)
 
             if self.config.peer_type in [
                 PEER_TYPES.SERVICE_PROVIDER.value,
