@@ -59,6 +59,8 @@ class Nodes:
 
     dynamic_node_public_keys: set = set()  # public keys of on-chain announced nodes
     dynamic_node_collateral_txns: dict = {}  # maps public_key → announcement txn_id
+    dynamic_node_collateral_addresses: dict = {}  # maps public_key → collateral_address
+    _last_scanned_height: int = 0  # last block height fully scanned for announcements
 
     @classmethod
     def get_nodes_for_block_height(cls, height):
@@ -156,6 +158,51 @@ class Nodes:
             owner_class()._NODES = retained
         cls.dynamic_node_public_keys.clear()
         cls.dynamic_node_collateral_txns.clear()
+        cls.dynamic_node_collateral_addresses.clear()
+        Nodes._last_scanned_height = 0
+
+    @classmethod
+    async def _evict_spent_dynamic_nodes(cls, config):
+        """Evict only those dynamic nodes whose collateral UTXO has been spent.
+
+        Called each refresh cycle instead of a full evict+rescan so that nodes
+        with intact collateral stay registered without re-scanning the entire
+        post-fork chain history.
+        """
+        if not cls.dynamic_node_collateral_txns:
+            return
+        spent_keys = []
+        for pub, txn_id in list(cls.dynamic_node_collateral_txns.items()):
+            collateral_address = cls.dynamic_node_collateral_addresses.get(pub)
+            if not collateral_address:
+                spent_keys.append(pub)
+                continue
+            try:
+                is_unspent = await cls._collateral_utxo_is_unspent(
+                    config, txn_id, collateral_address
+                )
+            except Exception:
+                continue
+            if not is_unspent:
+                spent_keys.append(pub)
+        if not spent_keys:
+            return
+        spent_set = set(spent_keys)
+        for owner_class in (Seeds, SeedGateways, ServiceProviders):
+            retained = []
+            for entry in owner_class()._NODES:
+                try:
+                    pk = entry["node"].identity.public_key
+                except Exception:
+                    pk = None
+                if pk in spent_set:
+                    continue
+                retained.append(entry)
+            owner_class()._NODES = retained
+        for pub in spent_keys:
+            cls.dynamic_node_public_keys.discard(pub)
+            cls.dynamic_node_collateral_txns.pop(pub, None)
+            cls.dynamic_node_collateral_addresses.pop(pub, None)
 
     @classmethod
     def _assign_node_type(cls):
@@ -212,8 +259,16 @@ class Nodes:
         except Exception:
             return
 
+        # Only scan blocks we haven't processed yet; on first run this equals activation_height.
+        scan_from = (
+            activation_height
+            if cls._last_scanned_height < activation_height
+            else cls._last_scanned_height + 1
+        )
+        if scan_from > current_height:
+            return
         query = {
-            "index": {"$gte": activation_height},
+            "index": {"$gte": scan_from, "$lte": current_height},
             "transactions": {"$elemMatch": {"relationship.node": {"$exists": True}}},
         }
 
@@ -340,16 +395,20 @@ class Nodes:
                     )
                     Nodes.dynamic_node_public_keys.add(pub)
                     Nodes.dynamic_node_collateral_txns[pub] = txn_id
+                    Nodes.dynamic_node_collateral_addresses[pub] = collateral_address
+
+        Nodes._last_scanned_height = current_height
 
     @classmethod
     async def apply_dynamic_nodes(cls, activation_height=None):
         """Load dynamic nodes and recompute fork points / node maps.
 
-        Evicts all previously loaded dynamic nodes first so any node whose
-        collateral UTXO has been spent since the last cycle is automatically
-        removed before the fresh set is applied.
+        On each cycle, evicts only nodes whose collateral UTXO has been spent,
+        then scans only new blocks since the last refresh for fresh announcements.
+        This avoids re-scanning the entire post-fork chain history every call.
         """
-        cls._evict_all_dynamic_nodes()
+        config = Config()
+        await cls._evict_spent_dynamic_nodes(config)
         await cls.load_dynamic_nodes_from_chain(activation_height=activation_height)
         # Clear the height→node-list cache so get_nodes_for_block_height
         # reads from the freshly rebuilt NODES dict instead of stale entries.
