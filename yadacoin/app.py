@@ -151,18 +151,6 @@ class NodeApplication(Application):
             self.init_seeds()
             self.init_seed_gateways()
             self.init_service_providers()
-            # Load dynamic nodes from chain if fork activated
-            try:
-                import asyncio
-
-                from yadacoin.core.nodes import Nodes
-
-                # Schedule applying dynamic nodes once the IOLoop is running
-                tornado.ioloop.IOLoop.current().spawn_callback(
-                    lambda: asyncio.create_task(Nodes.apply_dynamic_nodes())
-                )
-            except Exception:
-                pass
             self.init_groups()
             try:
                 self.config.app_log.info(
@@ -884,16 +872,6 @@ class NodeApplication(Application):
             self.config.processing_queues.nonce_queue.time_sum_end()
         self.config.background_nonce_processor.busy = False
 
-    async def background_apply_dynamic_nodes(self):
-        """Periodically reload dynamic node registrations from the chain."""
-        try:
-            from yadacoin.core.nodes import Nodes
-
-            await Nodes.apply_dynamic_nodes()
-            self.config.app_log.info("Dynamic nodes refreshed from chain.")
-        except Exception as e:
-            self.config.app_log.error(f"Error refreshing dynamic nodes: {e}")
-
     async def background_node_testing(self):
         """Responsible for testing masternodes in the background."""
 
@@ -921,6 +899,7 @@ class NodeApplication(Application):
             self.config.app_log.info(
                 f"Background node testing completed. Successful nodes: {len(successful_nodes)}"
             )
+            self.config.health.node_tester.last_activity = int(time())
         except Exception as e:
             self.config.app_log.error(f"Error in background_node_testing: {e}")
         finally:
@@ -1054,6 +1033,11 @@ class NodeApplication(Application):
                 self.background_message_sender, self.config.message_sender_wait * 1000
             ).start()
 
+            PeriodicCallback(
+                self.background_node_testing,
+                60 * 60 * 1000,
+            ).start()
+
             if self.config.peer_type in [
                 PEER_TYPES.SERVICE_PROVIDER.value,
                 PEER_TYPES.SEED_GATEWAY.value,
@@ -1065,20 +1049,10 @@ class NodeApplication(Application):
                     self.config.transactions_combining_wait * 1000,
                 ).start()
 
-            PeriodicCallback(
-                self.background_apply_dynamic_nodes,
-                60 * 60 * 1000,
-            ).start()
-
             if MODES.POOL.value in self.config.modes:
                 PeriodicCallback(
                     self.background_nonce_processor,
                     self.config.nonce_processor_wait * 1000,
-                ).start()
-
-                PeriodicCallback(
-                    self.background_node_testing,
-                    60 * 60 * 1000,
                 ).start()
 
         if self.config.pool_payout:

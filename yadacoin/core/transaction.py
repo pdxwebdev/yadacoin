@@ -201,7 +201,7 @@ class Transaction(object):
         relationship="",
         no_relationship=False,
         exact_match=False,
-        version=6,
+        version=7,
         miner_signature="",
         contract_generated=None,
         do_money=True,
@@ -240,7 +240,6 @@ class Transaction(object):
         )
         cls_inst.no_relationship = no_relationship
         cls_inst.exact_match = exact_match
-        cls_inst.version = 7
         cls_inst.version = version
         cls_inst.miner_signature = miner_signature
 
@@ -549,6 +548,7 @@ class Transaction(object):
         check_max_inputs=False,
         check_masternode_fee=False,
         check_kel=False,
+        check_dynamic_nodes=False,
         block=None,
         mempool=False,
     ):
@@ -590,13 +590,10 @@ class Transaction(object):
             relationship = self.relationship.to_string()
         elif isinstance(self.relationship, NodeAnnouncement):
             relationship = self.relationship.to_string()
-            # Enforce fork for node announcement transactions
-            # Only enforce if block is provided (not in mempool)
-            if block and hasattr(block, "index"):
-                if block.index < CHAIN.DYNAMIC_NODES_FORK:
-                    raise InvalidTransactionException(
-                        f"Node announcement transactions (version 7) not allowed before fork height {CHAIN.DYNAMIC_NODES_FORK}"
-                    )
+            if not check_dynamic_nodes:
+                raise InvalidTransactionException(
+                    f"Node announcement transactions (version 7) not allowed before fork height {CHAIN.DYNAMIC_NODES_FORK}"
+                )
             # Verify collateral output: must have an output of exactly COLLATERAL_AMOUNT to collateral_address
             collateral_address = self.relationship.collateral_address
             if not collateral_address:

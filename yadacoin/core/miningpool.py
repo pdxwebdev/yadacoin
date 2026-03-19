@@ -450,6 +450,10 @@ class MiningPool(object):
         if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
         async for txn in (
             self.mongo.async_db.miner_transactions.find(
                 {"relationship.smart_contract": {"$exists": True}}
@@ -463,6 +467,7 @@ class MiningPool(object):
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -511,6 +516,7 @@ class MiningPool(object):
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -588,6 +594,7 @@ class MiningPool(object):
         check_max_inputs=False,
         check_masternode_fee=False,
         check_kel=False,
+        check_dynamic_nodes=False,
     ):
         if transactions is None:
             transactions = []
@@ -613,6 +620,7 @@ class MiningPool(object):
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
                 mempool=True,
             )
 

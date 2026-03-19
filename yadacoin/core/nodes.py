@@ -58,6 +58,7 @@ class Nodes:
     }
 
     dynamic_node_public_keys: set = set()  # public keys of on-chain announced nodes
+    dynamic_node_collateral_txns: dict = {}  # maps public_key → announcement txn_id
 
     @classmethod
     def get_nodes_for_block_height(cls, height):
@@ -103,6 +104,41 @@ class Nodes:
         if gateways_count == 0:
             return 0
         return providers_count // gateways_count
+
+    @classmethod
+    async def _collateral_utxo_is_unspent(cls, config, txn_id: str) -> bool:
+        """Return True if the collateral UTXO from the announcement transaction is still
+        unspent (i.e. txn_id has not been referenced as an input in any block).
+        """
+        spent = await config.mongo.async_db.blocks.find_one(
+            {"transactions.inputs.id": txn_id},
+            {"_id": 1},
+        )
+        return spent is None
+
+    @classmethod
+    def _evict_all_dynamic_nodes(cls):
+        """Remove all on-chain registered dynamic nodes from the node lists.
+
+        Called at the start of apply_dynamic_nodes() so that each refresh cycle
+        drops nodes whose collateral UTXO has been spent since the last check,
+        then re-adds only those with an unspent collateral output.
+        """
+        if not cls.dynamic_node_public_keys:
+            return
+        for owner_class in (Seeds, SeedGateways, ServiceProviders):
+            retained = []
+            for entry in owner_class()._NODES:
+                try:
+                    pk = entry["node"].identity.public_key
+                except Exception:
+                    pk = None
+                if pk in cls.dynamic_node_public_keys:
+                    continue  # evict this node
+                retained.append(entry)
+            owner_class()._NODES = retained
+        cls.dynamic_node_public_keys.clear()
+        cls.dynamic_node_collateral_txns.clear()
 
     @classmethod
     def _assign_node_type(cls):
@@ -228,12 +264,25 @@ class Nodes:
                 ):
                     continue
 
-                # Verify collateral address holds exactly 5000 YDA
+                # Verify the announcement transaction's collateral output is still unspent.
+                # This binds registration to the specific on-chain UTXO rather than an
+                # account balance, preventing temporary-fund attacks and false positives
+                # caused by unrelated deposits to the collateral address.
+                txn_id = txn.get("id")
+                if not txn_id:
+                    continue
                 try:
-                    balance = await config.BU.get_wallet_balance(collateral_address)
-                    if balance != 5000:
+                    if not await cls._collateral_utxo_is_unspent(config, txn_id):
                         continue
                 except Exception:
+                    continue
+
+                # Prevent the same public key from being registered under a different
+                # class if topology counts shift between iterations in this refresh
+                # cycle.  dynamic_node_public_keys is cleared by _evict_all_dynamic_nodes
+                # at the top of apply_dynamic_nodes(), so this guard only fires for
+                # keys already processed in the *current* loop.
+                if pub in Nodes.dynamic_node_public_keys:
                     continue
 
                 # Assign node type dynamically based on load balancing
@@ -255,32 +304,37 @@ class Nodes:
                 except Exception:
                     continue
 
-                # Avoid duplicates by public key
-                try:
-                    pub = node_obj.identity.public_key
-                except Exception:
-                    pub = None
-
+                # pub is already validated above from identity.get("public_key").
+                # Avoid duplicates across ALL three node classes so a key that exists
+                # as a hardcoded node in a different class is not re-added here.
                 exists = False
-                for e in owner_class()._NODES:
-                    try:
-                        if e["node"].identity.public_key == pub:
-                            exists = True
-                            break
-                    except Exception:
-                        continue
+                for check_class in (Seeds, SeedGateways, ServiceProviders):
+                    for e in check_class()._NODES:
+                        try:
+                            if e["node"].identity.public_key == pub:
+                                exists = True
+                                break
+                        except Exception:
+                            continue
+                    if exists:
+                        break
 
                 if not exists:
                     owner_class()._NODES.append(
                         {"ranges": [(activation_height, None)], "node": node_obj}
                     )
                     Nodes.dynamic_node_public_keys.add(pub)
+                    Nodes.dynamic_node_collateral_txns[pub] = txn_id
 
     @classmethod
     async def apply_dynamic_nodes(cls, activation_height=None):
-        """Helper to load dynamic nodes and recompute fork points / node maps.
-        Call this at startup (await Nodes.apply_dynamic_nodes()) to enable on-chain nodes.
+        """Load dynamic nodes and recompute fork points / node maps.
+
+        Evicts all previously loaded dynamic nodes first so any node whose
+        collateral UTXO has been spent since the last cycle is automatically
+        removed before the fresh set is applied.
         """
+        cls._evict_all_dynamic_nodes()
         await cls.load_dynamic_nodes_from_chain(activation_height=activation_height)
         # Clear the height→node-list cache so get_nodes_for_block_height
         # reads from the freshly rebuilt NODES dict instead of stale entries.

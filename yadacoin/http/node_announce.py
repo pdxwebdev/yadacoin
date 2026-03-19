@@ -120,6 +120,20 @@ class NodeAnnounceHandler(BaseHandler):
                     {"status": "error", "message": "Node identity not configured."}
                 )
 
+            # Reject announcements before the dynamic-nodes fork
+            current_height = self.config.LatestBlock.block.index
+            if current_height < CHAIN.DYNAMIC_NODES_FORK:
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": (
+                            f"Node announcements are not active until block height "
+                            f"{CHAIN.DYNAMIC_NODES_FORK}. Current height: {current_height}"
+                        ),
+                    }
+                )
+
             # Parse form data
             data = json.loads(self.request.body) if self.request.body else {}
 

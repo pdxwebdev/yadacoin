@@ -487,10 +487,15 @@ class Block(object):
                 if index >= CHAIN.CHECK_KEL_FORK:
                     check_kel = True
 
+                check_dynamic_nodes = False
+                if index >= CHAIN.DYNAMIC_NODES_FORK:
+                    check_dynamic_nodes = True
+
                 await transaction_obj.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    check_dynamic_nodes=check_dynamic_nodes,
                     mempool=True,
                 )
                 for output in transaction_obj.outputs:
@@ -783,13 +788,18 @@ class Block(object):
 
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
+                    block_creator_address = address
                     for output in txn.outputs:
-                        if output.to in masernodes_by_address:
+                        if output.to == block_creator_address:
+                            coinbase_sum += float(output.value)
+                        elif output.to in masernodes_by_address:
                             if output.to not in masternode_sums:
                                 masternode_sums[output.to] = 0
                             masternode_sums[output.to] += output.value
                         else:
-                            coinbase_sum += float(output.value)
+                            raise UnknownOutputAddressException(
+                                f"Coinbase output to unknown address: {output.to}"
+                            )
                 else:
                     for output in txn.outputs:
                         coinbase_sum += float(output.value)

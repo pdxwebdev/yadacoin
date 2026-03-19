@@ -220,6 +220,17 @@ class MempoolCleanerHealth(HealthItem):
         return self.report_status(True)
 
 
+class NodeTesterHealth(HealthItem):
+    timeout = 60 * 60 * 2  # 2 hours (runs every 1 hour)
+
+    async def check_health(self):
+        if time.time() - self.last_activity > self.timeout:
+            self.report_bad_health("Background node tester health check failed")
+            return self.report_status(False)
+
+        return self.report_status(True)
+
+
 class Health:
     def __init__(self):
         self.config = Config()
@@ -235,6 +246,7 @@ class Health:
         self.pool_payer = PoolPayerHealth()
         self.cache_validator = CacheValidatorHealth()
         self.mempool_cleaner = MempoolCleanerHealth()
+        self.node_tester = NodeTesterHealth()
         self.health_items = [
             self.consensus,
             self.tcp_server,
@@ -247,6 +259,7 @@ class Health:
             self.pool_payer,
             self.cache_validator,
             self.mempool_cleaner,
+            self.node_tester,
         ]
         if MODES.POOL.value in self.config.modes:
             self.nonce_processor = NonceProcessorHealth()

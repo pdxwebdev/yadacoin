@@ -306,6 +306,7 @@ class TestDynamicNodes(AsyncTestCase):
             "index": CHAIN.DYNAMIC_NODES_FORK,
             "transactions": [
                 {
+                    "id": "test_announcement_txn_id_abc123",
                     "public_key": valid_node_def["identity"]["public_key"],
                     "relationship": {"node": valid_node_def},
                     "fee": 200,
@@ -320,9 +321,8 @@ class TestDynamicNodes(AsyncTestCase):
             async_iter
         )
 
-        # Mock BU for balance check
-        self.config.BU = AsyncMock()
-        self.config.BU.get_wallet_balance = AsyncMock(return_value=5000)
+        # Mock find_one to return None: collateral UTXO is unspent
+        self.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
 
         # Mock verify_signature to pass validation
         with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
@@ -366,6 +366,90 @@ class TestDynamicNodes(AsyncTestCase):
                                 added_node["node"].identity.public_key,
                                 valid_node_def["identity"]["public_key"],
                             )
+                            # Verify collateral txn id was recorded
+                            self.assertIn(
+                                valid_node_def["identity"]["public_key"],
+                                Nodes.dynamic_node_collateral_txns,
+                            )
+                            self.assertEqual(
+                                Nodes.dynamic_node_collateral_txns[
+                                    valid_node_def["identity"]["public_key"]
+                                ],
+                                "test_announcement_txn_id_abc123",
+                            )
+
+    async def test_load_dynamic_nodes_spent_collateral_rejected(self):
+        """Test that a node whose collateral UTXO has been spent is not registered."""
+        valid_node_def = {
+            "identity": {
+                "public_key": "029c3c4e9e091c1b5c8c3f3c3e3d3c3b3a3c3d3c3b3a3c3d3c3b3a3c3d3c3b3a",
+                "username": "valid_test_node",
+                "username_signature": base64.b64encode(b"valid_signature").decode(),
+            },
+            "host": "192.168.1.50",
+            "port": 8000,
+            "collateral_address": "1TestCollateralAddress",
+        }
+
+        block = {
+            "index": CHAIN.DYNAMIC_NODES_FORK,
+            "transactions": [
+                {
+                    "id": "spent_collateral_txn_id",
+                    "public_key": valid_node_def["identity"]["public_key"],
+                    "relationship": {"node": valid_node_def},
+                    "fee": 200,
+                }
+            ],
+        }
+
+        async_iter = AsyncMock()
+        async_iter.__aiter__.return_value = iter([block])
+        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
+            async_iter
+        )
+
+        # find_one returns a document → UTXO is spent → node must be rejected
+        self.config.mongo.async_db.blocks.find_one = AsyncMock(
+            return_value={"_id": "some_block_id"}
+        )
+
+        initial_count = len(self.seeds_instance._NODES)
+
+        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+            with mock.patch.object(self.config, "address_is_valid", return_value=True):
+                await Nodes.load_dynamic_nodes_from_chain(
+                    activation_height=CHAIN.DYNAMIC_NODES_FORK
+                )
+
+        # Node must NOT have been added because collateral is spent
+        self.assertEqual(len(self.seeds_instance._NODES), initial_count)
+        self.assertNotIn(
+            valid_node_def["identity"]["public_key"],
+            Nodes.dynamic_node_collateral_txns,
+        )
+
+    async def test_evict_all_dynamic_nodes(self):
+        """Test that _evict_all_dynamic_nodes removes tracked dynamic nodes."""
+        # Register a fake dynamic node
+        mock_node = Mock()
+        mock_node.identity = Mock()
+        mock_node.identity.public_key = "test_dynamic_pubkey"
+        self.seeds_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        )
+        Nodes.dynamic_node_public_keys.add("test_dynamic_pubkey")
+        Nodes.dynamic_node_collateral_txns["test_dynamic_pubkey"] = "txn_abc"
+
+        initial_static_count = (
+            len(self.seeds_instance._NODES) - 1
+        )  # exclude the one we just added
+
+        Nodes._evict_all_dynamic_nodes()
+
+        self.assertEqual(len(self.seeds_instance._NODES), initial_static_count)
+        self.assertNotIn("test_dynamic_pubkey", Nodes.dynamic_node_public_keys)
+        self.assertNotIn("test_dynamic_pubkey", Nodes.dynamic_node_collateral_txns)
 
     async def test_count_nodes_by_type(self):
         """Test counting nodes by type."""

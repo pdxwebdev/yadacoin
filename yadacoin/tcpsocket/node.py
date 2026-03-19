@@ -358,12 +358,17 @@ class NodeRPC(BaseRPC):
         if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
         try:
             await txn.verify(
                 check_input_spent=True,
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
                 mempool=True,
             )
         except (
@@ -606,6 +611,10 @@ class NodeRPC(BaseRPC):
         if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
             try:
@@ -613,6 +622,7 @@ class NodeRPC(BaseRPC):
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    check_dynamic_nodes=check_dynamic_nodes,
                 )
             except Exception as e:
                 await Transaction.handle_exception(e, txn)
