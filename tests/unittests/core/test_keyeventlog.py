@@ -465,9 +465,11 @@ class TestKeyEventLog(AsyncTestCase):
     async def _cleanup_test_blocks(self):
         for block in blocks:
             xblock = await Block.from_dict(block)
-            self.config.mongo.async_db.blocks.delete_many({"index": xblock.index})
+            await self.config.mongo.async_db.blocks.delete_many({"index": xblock.index})
             if "_id" in block:
-                self.config.mongo.async_db.blocks.delete_many({"_id": block["_id"]})
+                await self.config.mongo.async_db.blocks.delete_many(
+                    {"_id": block["_id"]}
+                )
 
     async def asyncTearDown(self):
         await self._cleanup_test_blocks()
@@ -481,7 +483,7 @@ class TestKeyEventLog(AsyncTestCase):
         with self.assertRaises(KELException):
             await xblock.verify()
 
-        self.config.mongo.async_db.blocks.insert_one(blocks[-1])
+        await self.config.mongo.async_db.blocks.insert_one(blocks[-1])
 
         await xblock.verify()
 
@@ -491,7 +493,7 @@ class TestKeyEventLog(AsyncTestCase):
             await xblock.verify()
 
         for block in blocks[-2:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
 
         await xblock.verify()
 
@@ -501,7 +503,7 @@ class TestKeyEventLog(AsyncTestCase):
             await xblock.verify()
 
         for block in blocks[-3:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
 
         await xblock.verify()
 
@@ -511,7 +513,7 @@ class TestKeyEventLog(AsyncTestCase):
             await xblock.verify()
 
         for block in blocks[-4:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
 
         await xblock.verify()
 
@@ -521,7 +523,7 @@ class TestKeyEventLog(AsyncTestCase):
             await xblock.verify()
 
         for block in blocks[-4:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
 
         xblock.transactions[1].twice_prerotated_key_hash = "test fail"
         with self.assertRaises(FatalKeyEventException):
@@ -533,7 +535,7 @@ class TestKeyEventLog(AsyncTestCase):
             await xblock.verify()
 
         for block in blocks[-4:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
 
         xblock.transactions[1].prerotated_key_hash = "test fail"
 
@@ -546,7 +548,7 @@ class TestKeyEventLog(AsyncTestCase):
             await xblock.verify()
 
         for block in blocks[-4:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
 
         xblock.transactions[1].public_key_hash = "test fail"
 
@@ -559,7 +561,7 @@ class TestKeyEventLog(AsyncTestCase):
             await xblock.verify()
 
         for block in blocks[-4:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
 
         xblock.transactions[1].prev_public_key_hash = "test fail"
 
@@ -573,7 +575,7 @@ class TestKeyEventLog(AsyncTestCase):
         # if this exception is raised, it means a KEL was found
         # for the public key, as it should.
         for block in blocks[-4:]:
-            self.config.mongo.async_db.blocks.insert_one(block)
+            await self.config.mongo.async_db.blocks.insert_one(block)
         xblock = await Block.from_dict(blocks[-5])
         xblock.transactions[1].twice_prerotated_key_hash = ""
         xblock.transactions[1].prerotated_key_hash = ""
@@ -585,8 +587,8 @@ class TestKeyEventLog(AsyncTestCase):
 
     async def test_transaction_spends_to_expired_key_event(self):
         # test if user will lose access to their funds by way of rotation
-        self.config.mongo.async_db.blocks.delete_one({"index": 537373})
-        self.config.mongo.async_db.blocks.insert_one(blocks[-5])
+        await self.config.mongo.async_db.blocks.delete_one({"index": 537373})
+        await self.config.mongo.async_db.blocks.insert_one(blocks[-5])
         xblock = await Block.from_dict(blocks[-1])
         xblock.transactions[0].outputs[0].to = "1DrrpfeK6eSJzDgXyQx3jwP6xwcXeNAnYi"
 
