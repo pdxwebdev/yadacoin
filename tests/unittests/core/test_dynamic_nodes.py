@@ -109,6 +109,8 @@ class TestDynamicNodes(AsyncTestCase):
             "SeedGateways": {},
             "ServiceProviders": {},
         }
+        Nodes.dynamic_node_public_keys.clear()
+        Nodes.dynamic_node_collateral_txns.clear()
 
     async def test_load_dynamic_nodes_before_fork(self):
         """Test that no dynamic nodes are loaded before activation fork."""
@@ -317,12 +319,20 @@ class TestDynamicNodes(AsyncTestCase):
         async_iter = AsyncMock()
         async_iter.__aiter__.return_value = iter([block])
 
-        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
-            async_iter
-        )
+        empty_collateral_iter = AsyncMock()
+        empty_collateral_iter.__aiter__.return_value = iter([])
 
-        # Mock find_one to return None: collateral UTXO is unspent
-        self.config.mongo.async_db.blocks.find_one = AsyncMock(return_value=None)
+        def find_side_effect_unspent(query, *args, **kwargs):
+            elem_match = {}
+            if isinstance(query, dict):
+                elem_match = query.get("transactions", {}).get("$elemMatch", {})
+            if "inputs.id" in elem_match:
+                return empty_collateral_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect_unspent
 
         # Mock verify_signature to pass validation
         with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
@@ -405,22 +415,46 @@ class TestDynamicNodes(AsyncTestCase):
 
         async_iter = AsyncMock()
         async_iter.__aiter__.return_value = iter([block])
-        self.config.mongo.async_db.blocks.find.return_value.sort.return_value = (
-            async_iter
+
+        spending_iter = AsyncMock()
+        spending_iter.__aiter__.return_value = iter(
+            [
+                {
+                    "transactions": [
+                        {
+                            "inputs": [{"id": "spent_collateral_txn_id"}],
+                            "public_key": valid_node_def["identity"]["public_key"],
+                        }
+                    ]
+                }
+            ]
         )
 
-        # find_one returns a document → UTXO is spent → node must be rejected
-        self.config.mongo.async_db.blocks.find_one = AsyncMock(
-            return_value={"_id": "some_block_id"}
-        )
+        def find_side_effect_spent(query, *args, **kwargs):
+            elem_match = {}
+            if isinstance(query, dict):
+                elem_match = query.get("transactions", {}).get("$elemMatch", {})
+            if "inputs.id" in elem_match:
+                return spending_iter
+            cursor = MagicMock()
+            cursor.sort.return_value = async_iter
+            return cursor
+
+        self.config.mongo.async_db.blocks.find.side_effect = find_side_effect_spent
 
         initial_count = len(self.seeds_instance._NODES)
 
-        with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
-            with mock.patch.object(self.config, "address_is_valid", return_value=True):
-                await Nodes.load_dynamic_nodes_from_chain(
-                    activation_height=CHAIN.DYNAMIC_NODES_FORK
-                )
+        with mock.patch(
+            "yadacoin.core.nodes.P2PKHBitcoinAddress.from_pubkey",
+            return_value="1TestCollateralAddress",
+        ):
+            with mock.patch("yadacoin.core.nodes.verify_signature", return_value=True):
+                with mock.patch.object(
+                    self.config, "address_is_valid", return_value=True
+                ):
+                    await Nodes.load_dynamic_nodes_from_chain(
+                        activation_height=CHAIN.DYNAMIC_NODES_FORK
+                    )
 
         # Node must NOT have been added because collateral is spent
         self.assertEqual(len(self.seeds_instance._NODES), initial_count)
