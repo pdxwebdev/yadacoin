@@ -111,6 +111,8 @@ class TestDynamicNodes(AsyncTestCase):
         }
         Nodes.dynamic_node_public_keys.clear()
         Nodes.dynamic_node_collateral_txns.clear()
+        Nodes.dynamic_node_collateral_addresses.clear()
+        Nodes._last_scanned_height = 0
 
     async def test_load_dynamic_nodes_before_fork(self):
         """Test that no dynamic nodes are loaded before activation fork."""
