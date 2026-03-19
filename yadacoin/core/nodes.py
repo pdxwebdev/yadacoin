@@ -106,15 +106,32 @@ class Nodes:
         return providers_count // gateways_count
 
     @classmethod
-    async def _collateral_utxo_is_unspent(cls, config, txn_id: str) -> bool:
+    async def _collateral_utxo_is_unspent(
+        cls, config, txn_id: str, collateral_address: str
+    ) -> bool:
         """Return True if the collateral UTXO from the announcement transaction is still
-        unspent (i.e. txn_id has not been referenced as an input in any block).
+        unspent. Only a spending transaction signed by the owner of collateral_address
+        counts; change-output spends by other keys are ignored.
         """
-        spent = await config.mongo.async_db.blocks.find_one(
-            {"transactions.inputs.id": txn_id},
-            {"_id": 1},
+        cursor = config.mongo.async_db.blocks.find(
+            {"transactions": {"$elemMatch": {"inputs.id": txn_id}}},
+            {"transactions": 1},
         )
-        return spent is None
+        async for block in cursor:
+            for txn in block.get("transactions", []):
+                if not any(inp.get("id") == txn_id for inp in txn.get("inputs", [])):
+                    continue
+                try:
+                    spending_address = str(
+                        P2PKHBitcoinAddress.from_pubkey(
+                            bytes.fromhex(txn["public_key"])
+                        )
+                    )
+                except Exception:
+                    continue
+                if spending_address == collateral_address:
+                    return False
+        return True
 
     @classmethod
     def _evict_all_dynamic_nodes(cls):
@@ -182,10 +199,6 @@ class Nodes:
         Expected on-chain format (inside transaction.relationship):
         { "node": { "type": "seed|seed_gateway|service_provider", "host":..., ... } }
         Announced nodes will be appended with range starting at `activation_height`.
-
-        Registration duration is determined by transaction fee:
-        - 1 YDA = 1 block of registration
-        - Expiry height = announcement_height + fee_amount
         """
         config = Config()
         if activation_height is None:
@@ -272,7 +285,9 @@ class Nodes:
                 if not txn_id:
                     continue
                 try:
-                    if not await cls._collateral_utxo_is_unspent(config, txn_id):
+                    if not await cls._collateral_utxo_is_unspent(
+                        config, txn_id, collateral_address
+                    ):
                         continue
                 except Exception:
                     continue

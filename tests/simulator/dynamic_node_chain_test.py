@@ -215,17 +215,13 @@ async def main():
         peer_node.blockchain = [latest_block]
 
         # Generate dynamic node announcement transaction
-        # Registration fee: 1 YDA per block
-        # For testing, use small fee to avoid wallet funding issues
-        # In production: 144 blocks per day * 30 days = 4,320 YDA for 1 month
-        registration_fee = 10.0  # 10 blocks for testing
+        registration_fee = 10.0
 
         node_announcement = build_node_announcement(config)
         relationship_str = node_announcement.to_string()
         collateral_address = node_announcement.collateral_address
 
         # Create transaction without automatic input/output generation
-        # In production, users would need sufficient funds to pay the registration fee
         txn = Transaction(
             txn_time=int(time.time()),
             public_key=config.public_key,
@@ -293,17 +289,8 @@ async def main():
             nonce="0000000000000000",
         )
 
-        # Verify registration expiry calculation
-        # Expected expiry: announcement_height (new_block.index) + fee blocks
-        expected_expiry_height = new_block.index + int(registration_fee)
         print(f"Node announced at block: {new_block.index}")
-        print(
-            f"Registration fee paid: {registration_fee} YDA ({int(registration_fee)} blocks)"
-        )
-        print(f"Expected expiry height: {expected_expiry_height}")
         print(f"Current height: {reward_block.index}")
-        blocks_remaining = expected_expiry_height - reward_block.index
-        print(f"Blocks remaining until expiry: {blocks_remaining}")
 
         reward_chain = Blockchain([new_block, reward_block])
         reward_queue_item = BlockProcessingQueueItem(reward_chain)
