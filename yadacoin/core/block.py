@@ -640,17 +640,18 @@ class Block(object):
 
     def generate_hash_from_header(self, height, header, nonce):
         config = Config()
-        hash_server = getattr(config, "hash_server_domain", None) or getattr(
-            config, "hash_server", None
-        )
-        if hash_server:
-            return self._generate_hash_from_remote(
-                hash_server=hash_server,
-                height=height,
-                header=header,
-                nonce=nonce,
-                timeout_ms=getattr(config, "http_request_timeout", 3000),
+        if config.network == "regnet":
+            hash_server = getattr(config, "hash_server_domain", None) or getattr(
+                config, "hash_server", None
             )
+            if hash_server:
+                return self._generate_hash_from_remote(
+                    hash_server=hash_server,
+                    height=height,
+                    header=header,
+                    nonce=nonce,
+                    timeout_ms=getattr(config, "http_request_timeout", 3000),
+                )
         if not hasattr(Block, "pyrx"):
             Block.pyrx = pyrx.PyRX()
         seed_hash = binascii.unhexlify(
