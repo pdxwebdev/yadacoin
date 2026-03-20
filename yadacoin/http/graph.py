@@ -295,9 +295,7 @@ class GraphTransactionHandler(BaseGraphHandler):
                     if await transaction.is_already_in_mempool():
                         raise KELException("Duplicate Key Event found in mempool.")
 
-                has_kel = await transaction.has_key_event_log(mempool=True)
-                if has_kel:
-                    await transaction.verify_key_event_spends_entire_balance()
+                await transaction.verify_kel_output_rules(mempool=True)
 
             except InvalidTransactionException:
                 exception_raised = True

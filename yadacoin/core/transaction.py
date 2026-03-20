@@ -1207,10 +1207,54 @@ class Transaction(object):
                 return True
         return False
 
-    async def verify_key_event_spends_entire_balance(self):
+    async def verify_kel_output_rules(self, block=None, mempool=False):
         from yadacoin.core.keyeventlog import (
             DoesNotSpendEntirelyToPrerotatedKeyHashException,
+            KeyEventLog,
         )
+
+        # Determine effective block index for fork checks
+        if block is not None:
+            effective_index = block.index
+        elif mempool:
+            effective_index = self.config.LatestBlock.block.index + 1
+        else:
+            effective_index = self.config.LatestBlock.block.index
+
+        # If KEL fields indicate this is a key event, it must not send back to its own address
+        if self.are_kel_fields_populated():
+            if self.public_key_hash in [output.to for output in self.outputs]:
+                raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                    "Key event transactions must spend entire remaining balance to prerotated_key_hash."
+                )
+
+        # Only enforce spend rules when this key's address is tracked in an existing log
+        if not await self.has_key_event_log(block=block, mempool=mempool):
+            return
+
+        key_log = await KeyEventLog.build_from_public_key(self.public_key)
+        if not key_log:
+            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                "Transaction has a key event log but the log could not be built."
+            )
+
+        if effective_index >= CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK:
+            # A transaction is a new key log entry only if its public_key_hash equals
+            # the last log entry's prerotated_key_hash (i.e. it is the next committed rotation).
+            is_new_key_log_entry = (
+                self.public_key_hash == key_log[-1].prerotated_key_hash
+            )
+
+            if not is_new_key_log_entry:
+                # Not a new key log entry: all outputs must only go to the latest
+                # key log entry's public_key_hash and nowhere else.
+                latest_public_key_hash = key_log[-1].public_key_hash
+                for output in self.outputs:
+                    if output.to != latest_public_key_hash:
+                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                            "Transaction must only send to the latest key log entry's public_key_hash."
+                        )
+                return
 
         if self.public_key_hash in [output.to for output in self.outputs]:
             raise DoesNotSpendEntirelyToPrerotatedKeyHashException(

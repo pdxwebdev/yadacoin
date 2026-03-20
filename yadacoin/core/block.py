@@ -365,19 +365,17 @@ class Block(object):
                 if txn not in block.transactions:
                     continue  # it's already been deleted due to its failed counterpart
 
-                if txn.are_kel_fields_populated():
+                if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                    try:
+                        await txn.verify_kel_output_rules()
+                    except DoesNotSpendEntirelyToPrerotatedKeyHashException:
+                        await block.remove_transaction(txn, hash_collection)
+                        continue
+                elif txn.are_kel_fields_populated():
                     if txn.public_key_hash in [output.to for output in txn.outputs]:
                         raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                             "Key event transactions must spent entire remaining balance to prerotated_key_hash."
                         )
-
-                if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                    if await txn.has_key_event_log():
-                        try:
-                            await txn.verify_key_event_spends_entire_balance()
-                        except:
-                            await block.remove_transaction(txn, hash_collection)
-                            continue
 
                 # test if already on chain
                 if await txn.is_already_onchain():
@@ -777,15 +775,15 @@ class Block(object):
                 # check if this transaction public key is listed in any KEL
                 # if it is, check if it's a valid key event
 
-                if txn.are_kel_fields_populated():
+                if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                    await txn.verify_kel_output_rules(block=self)
+                elif txn.are_kel_fields_populated():
                     if txn.public_key_hash in [output.to for output in txn.outputs]:
                         raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                             "Key event transactions must spent entire remaining balance to prerotated_key_hash."
                         )
 
                 if await txn.has_key_event_log(block=self):
-                    if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                        await txn.verify_key_event_spends_entire_balance()
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )
