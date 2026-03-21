@@ -287,7 +287,6 @@ class Nodes:
             return
 
         async for block in cursor:
-            block.get("index")
             for txn in block.get("transactions", []):
                 rel = txn.get("relationship")
                 if not isinstance(rel, dict):

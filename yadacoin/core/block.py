@@ -707,8 +707,8 @@ class Block(object):
                 CHAIN.get_version_for_height(self.index),
             )
 
-        # Validate block does not exceed 1000 transactions
-        if len(self.transactions) > 1000:
+        # Validate block does not exceed 1000 transactions (post dynamic-nodes fork only)
+        if self.index >= CHAIN.DYNAMIC_NODES_FORK and len(self.transactions) > 1000:
             raise Exception(
                 f"Block contains {len(self.transactions)} transactions, maximum is 1000"
             )
