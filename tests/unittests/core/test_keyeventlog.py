@@ -450,6 +450,7 @@ class TestKeyEventLog(AsyncTestCase):
     async def asyncSetUp(self):
         yadacoin.core.config.CONFIG = Config.generate()
         Config().mongo = Mongo()
+        Config().network = "regnet"
         self.config = Config()
 
         class AppLog:
@@ -470,6 +471,8 @@ class TestKeyEventLog(AsyncTestCase):
                 await self.config.mongo.async_db.blocks.delete_many(
                     {"_id": block["_id"]}
                 )
+        # Clean up synthetic pre-inception block used by routing fork tests
+        await self.config.mongo.async_db.blocks.delete_many({"index": 537370})
 
     async def asyncTearDown(self):
         await self._cleanup_test_blocks()
@@ -594,6 +597,229 @@ class TestKeyEventLog(AsyncTestCase):
 
         with self.assertRaises(DoesNotSpendEntirelyToPrerotatedKeyHashException):
             await xblock.verify()
+
+    async def test_check_kel_output_routing_fork_allows_send_to_latest_key(self):
+        """
+        Wallet 1 has a 3-entry KEL (inception + confirming + confirming).
+        Wallet 2 sends funds to Wallet 1's inception address.
+        Wallet 1 (using its inception key) then forwards those funds to its
+        latest key log entry's public_key_hash.
+        verify_kel_output_rules should allow this transaction through.
+
+        Wallet 1 KEL chain (using existing test block data):
+          - Inception  (blocks[-2], idx 537375):
+              public_key_hash        = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
+              prerotated_key_hash    = "1Kxegt9KhD7i6EJEYvBS5pHZdGwX6BZCar"
+              twice_prerotated       = "1NY91tSJvaFK7BYbGcXeGipoNKoqoXDSex"
+          - Confirming 1 (blocks[-5], idx 537383, txn index 1):
+              public_key_hash        = "1Kxegt9KhD7i6EJEYvBS5pHZdGwX6BZCar"
+              prev_public_key_hash   = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
+              prerotated_key_hash    = "1NY91tSJvaFK7BYbGcXeGipoNKoqoXDSex"
+              twice_prerotated       = "18Pr4uTkgLRjhopsaKrQwSgjrLXD2i2NTt"
+          - Confirming 2 (blocks[-5], idx 537383, txn index 2):
+              public_key_hash        = "1NY91tSJvaFK7BYbGcXeGipoNKoqoXDSex"  ← latest
+              prev_public_key_hash   = "1Kxegt9KhD7i6EJEYvBS5pHZdGwX6BZCar"
+              prerotated_key_hash    = "18Pr4uTkgLRjhopsaKrQwSgjrLXD2i2NTt"
+
+        Wallet 1 inception public_key:
+            "02850674626716f3d511d51d43824057f45348154735318388d51a4d436709b83d"
+        Wallet 1 inception address (= inception public_key_hash):
+            "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
+
+        For has_key_event_log to return True for wallet 1's signing key,
+        a synthetic "pre-inception" block is inserted that has
+        prerotated_key_hash = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8".
+        """
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.transaction import Transaction
+
+        # Insert the inception block and confirming block into the DB.
+        # blocks[-3] (index 537378) contains the inception txn for
+        # wallet 1 (public_key_hash = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8").
+        # blocks[-5] (index 537383) contains confirming entries 2 and 3.
+        await self.config.mongo.async_db.blocks.insert_one(blocks[-3])
+        await self.config.mongo.async_db.blocks.insert_one(blocks[-5])
+
+        # Insert a synthetic "pre-inception" block so that has_key_event_log
+        # returns True for wallet 1's inception key address.
+        # This block simulates a prior rotation that committed to rotating
+        # to wallet 1's inception address.
+        pre_inception_block = {
+            "version": 5,
+            "time": 1739295700,
+            "index": 537370,
+            "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7",
+            "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "nonce": "000001",
+            "transactions": [
+                {
+                    "time": 1739295700,
+                    "rid": "",
+                    "id": "pre_inception_txn_id",
+                    "relationship": "",
+                    "relationship_hash": "",
+                    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7",
+                    "dh_public_key": "",
+                    "fee": 0.0,
+                    "masternode_fee": 0.0,
+                    "hash": "pre_inception_hash",
+                    "inputs": [],
+                    "outputs": [
+                        {
+                            "to": "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8",
+                            "value": 0,
+                        }
+                    ],
+                    "version": 7,
+                    "private": False,
+                    "never_expire": False,
+                    # Points to wallet 1's inception address as the next rotation target
+                    "prerotated_key_hash": "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8",
+                    "twice_prerotated_key_hash": "1Kxegt9KhD7i6EJEYvBS5pHZdGwX6BZCar",
+                    "public_key_hash": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC",
+                    "prev_public_key_hash": "",
+                }
+            ],
+            "hash": "pre_inception_block_hash",
+            "merkleRoot": "pre_inception_merkle",
+            "special_min": False,
+            "target": "0000000000000000000000000000000000000000000000000000000000000001",
+            "special_target": "0000000000000000000000000000000000000000000000000000000000000001",
+            "header": "header",
+            "id": "pre_inception_block_id",
+            "updated_at": 1739295700.0,
+        }
+        await self.config.mongo.async_db.blocks.insert_one(pre_inception_block)
+
+        # Mock LatestBlock to be at a block index above CHECK_KEL_OUTPUT_ROUTING_FORK
+        self.config.LatestBlock = MagicMock()
+        self.config.LatestBlock.block = MagicMock()
+        self.config.LatestBlock.block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 100
+
+        # Wallet 1 inception key signs a spending transaction.
+        # Wallet 2 previously sent 10 YDA to wallet 1's inception address
+        # ("1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"). Wallet 1 now forwards
+        # those funds to the latest key log entry's public_key_hash.
+        wallet1_inception_pubkey = (
+            "02850674626716f3d511d51d43824057f45348154735318388d51a4d436709b83d"
+        )
+        # Latest public_key_hash from key_log[-1] (Confirming 2 in blocks[-5])
+        latest_public_key_hash = "1NY91tSJvaFK7BYbGcXeGipoNKoqoXDSex"
+
+        # Build the spending transaction (wallet 1 sending to its latest address)
+        spending_txn = Transaction(
+            txn_time=1739296100,
+            transaction_signature="wallet1_spending_txn_id",
+            public_key=wallet1_inception_pubkey,
+            fee=0.0,
+            txn_hash="wallet1_spending_hash",
+            inputs=[{"id": "wallet2_funding_txn_id"}],
+            outputs=[{"to": latest_public_key_hash, "value": 10.0}],
+            version=7,
+            # Not a key event itself — no KEL fields populated
+            prerotated_key_hash="",
+            twice_prerotated_key_hash="",
+            public_key_hash="",
+            prev_public_key_hash="",
+        )
+
+        # verify_kel_output_rules should NOT raise: sending to the latest
+        # key log entry's public_key_hash is allowed by CHECK_KEL_OUTPUT_ROUTING_FORK
+        await spending_txn.verify_kel_output_rules()
+
+    async def test_check_kel_output_routing_fork_rejects_wrong_destination(self):
+        """
+        Same scenario as test_check_kel_output_routing_fork_allows_send_to_latest_key,
+        but wallet 1 tries to send funds to an address that is NOT the latest
+        public_key_hash. This must be rejected.
+        """
+        from unittest.mock import MagicMock
+
+        from yadacoin.core.chain import CHAIN
+        from yadacoin.core.transaction import Transaction
+
+        # Insert the inception block and confirming block into the DB.
+        # blocks[-3] (index 537378) contains the inception txn for wallet 1.
+        # blocks[-5] (index 537383) contains confirming entries 2 and 3.
+        await self.config.mongo.async_db.blocks.insert_one(blocks[-3])
+        await self.config.mongo.async_db.blocks.insert_one(blocks[-5])
+
+        # Insert the synthetic pre-inception block (same as the positive test)
+        pre_inception_block = {
+            "version": 5,
+            "time": 1739295700,
+            "index": 537370,
+            "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7",
+            "prevHash": "0000000000000000000000000000000000000000000000000000000000000000",
+            "nonce": "000001",
+            "transactions": [
+                {
+                    "time": 1739295700,
+                    "rid": "",
+                    "id": "pre_inception_txn_id",
+                    "relationship": "",
+                    "relationship_hash": "",
+                    "public_key": "0255110297d7b260a65972cd2c623996e18a6aeb9cc358ac667854af7efba4f0a7",
+                    "dh_public_key": "",
+                    "fee": 0.0,
+                    "masternode_fee": 0.0,
+                    "hash": "pre_inception_hash",
+                    "inputs": [],
+                    "outputs": [
+                        {
+                            "to": "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8",
+                            "value": 0,
+                        }
+                    ],
+                    "version": 7,
+                    "private": False,
+                    "never_expire": False,
+                    "prerotated_key_hash": "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8",
+                    "twice_prerotated_key_hash": "1Kxegt9KhD7i6EJEYvBS5pHZdGwX6BZCar",
+                    "public_key_hash": "1ArsFNcc5fU3cfSUiNJCu6LhT8CeZgtEcC",
+                    "prev_public_key_hash": "",
+                }
+            ],
+            "hash": "pre_inception_block_hash",
+            "merkleRoot": "pre_inception_merkle",
+            "special_min": False,
+            "target": "0000000000000000000000000000000000000000000000000000000000000001",
+            "special_target": "0000000000000000000000000000000000000000000000000000000000000001",
+            "header": "header",
+            "id": "pre_inception_block_id",
+            "updated_at": 1739295700.0,
+        }
+        await self.config.mongo.async_db.blocks.insert_one(pre_inception_block)
+
+        self.config.LatestBlock = MagicMock()
+        self.config.LatestBlock.block = MagicMock()
+        self.config.LatestBlock.block.index = CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK + 100
+
+        wallet1_inception_pubkey = (
+            "02850674626716f3d511d51d43824057f45348154735318388d51a4d436709b83d"
+        )
+        # Wrong destination: wallet 1's own inception address instead of the latest
+        wrong_destination = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
+
+        spending_txn = Transaction(
+            txn_time=1739296100,
+            transaction_signature="wallet1_spending_txn_id_bad",
+            public_key=wallet1_inception_pubkey,
+            fee=0.0,
+            txn_hash="wallet1_spending_hash_bad",
+            inputs=[{"id": "wallet2_funding_txn_id"}],
+            outputs=[{"to": wrong_destination, "value": 10.0}],
+            version=7,
+            prerotated_key_hash="",
+            twice_prerotated_key_hash="",
+            public_key_hash="",
+            prev_public_key_hash="",
+        )
+
+        with self.assertRaises(DoesNotSpendEntirelyToPrerotatedKeyHashException):
+            await spending_txn.verify_kel_output_rules()
 
 
 if __name__ == "__main__":

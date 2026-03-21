@@ -26,6 +26,7 @@ class TestNodeAnnouncementFeeSplit(AsyncTestCase):
     async def asyncSetUp(self):
         # Initialize Config without MongoDB for pure logic tests
         c = Config.generate()
+        c.network = "regnet"
         c.mongo = None
 
     async def test_fee_split_calculation_4_ydas(self):
@@ -217,6 +218,7 @@ class TestNodeAnnouncementTransactionValidation(AsyncTestCase):
     async def asyncSetUp(self):
         # Initialize Config without MongoDB for pure logic tests
         c = Config.generate()
+        c.network = "regnet"
         c.mongo = None
 
     async def test_node_announcement_fee_objects_equal(self):

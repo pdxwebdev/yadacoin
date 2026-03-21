@@ -36,6 +36,7 @@ from yadacoin.core.mongo import Mongo
 class AsyncTestCase(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         c = Config.generate()
+        c.network = "regnet"
         c.mongo = Mongo()
         c.mongo_debug = True
 

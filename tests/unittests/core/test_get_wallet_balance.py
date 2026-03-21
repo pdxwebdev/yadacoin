@@ -28,6 +28,7 @@ class TestWalletBalance(AsyncTestCase):
         mongo.async_db = mock.MagicMock()
         mongo.async_db.blocks = mock.MagicMock()
         yadacoin.core.config.CONFIG = Config.generate()
+        Config().network = "regnet"
         Config().mongo = mongo
 
     async def setBlock(self):

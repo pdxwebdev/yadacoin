@@ -176,6 +176,7 @@ class TestUTXO(AsyncTestCase):
         - Mocks application logging to avoid conflicts during testing.
         """
         self.config = Config.generate()  # Generates default configuration for testing
+        self.config.network = "regnet"
         self.config.database = hashlib.sha256(str(time.time()).encode()).hexdigest()[
             :10
         ]
