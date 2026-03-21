@@ -129,7 +129,7 @@ class NodeRPC(BaseRPC):
             payload[
                 service_provider.peer.source_property
             ] = service_provider.peer.to_dict()
-            scheme = "wss" if service_provider.peer.secure else "ws"
+            scheme = "wss" if service_provider.peer.http_protocol == "https" else "ws"
             payload[service_provider.peer.source_property][
                 "websocket_host"
             ] = f"{scheme}://{service_provider.peer.http_host}:{service_provider.peer.http_port}"
@@ -279,7 +279,9 @@ class NodeRPC(BaseRPC):
             Transaction.from_dict(txn)
             async for txn in self.config.mongo.async_db.miner_transactions.find(
                 {"relationship.smart_contract": {"$exists": False}}
-            ).sort([("fee", -1), ("time", 1)])
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
         ]
 
         transactions = [
@@ -356,12 +358,17 @@ class NodeRPC(BaseRPC):
         if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
         try:
             await txn.verify(
                 check_input_spent=True,
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
                 mempool=True,
             )
         except (
@@ -604,6 +611,10 @@ class NodeRPC(BaseRPC):
         if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
         async for x in self.config.mongo.async_db.miner_transactions.find({}):
             txn = Transaction.from_dict(x)
             try:
@@ -611,6 +622,7 @@ class NodeRPC(BaseRPC):
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    check_dynamic_nodes=check_dynamic_nodes,
                 )
             except Exception as e:
                 await Transaction.handle_exception(e, txn)

@@ -20,6 +20,18 @@ YadaCoin includes a CLI for node management and configuration. For complete docu
 - **[Quick Start Guide](./cli/QUICKSTART.md)** - One-liner examples and common workflows
 - **[Development Guide](./cli/DEVELOPMENT.md)** - For developers adding new commands
 
+## Developer Resources
+
+### Network Simulator
+
+For testing network behavior and dynamic nodes, use the built-in network simulator:
+
+- **[Network Simulator Documentation](./tests/simulator/README.md)** - Complete simulation framework
+- **[Quick Start Guide](./tests/simulator/QUICKSTART.md)** - Run simulations in 5 minutes
+- **[Example Scripts](./tests/simulator/examples/)** - Pre-built test scenarios
+
+The simulator is essential for testing dynamic nodes, network partitions, and high-load scenarios before deploying to production.
+
 ## Configuration
 
 - modes
@@ -339,3 +351,149 @@ pre-commit install --hook-type pre-push
 pre-commit install -t commit-msg
 pre-commit autoupdate
 ```
+
+## Testing
+
+### Running Tests
+
+Tests are configured to run from the project root directory using pytest. All tests require your virtual environment to be activated.
+
+#### Run All Tests
+
+```bash
+# Activate virtual environment
+source venv37/bin/activate
+
+# Run all unit tests
+pytest tests/unittests/ -v
+```
+
+#### Run Specific Test File
+
+```bash
+# Run tests from a specific file
+pytest tests/unittests/core/test_block.py -v
+
+# Example: Run transaction tests
+pytest tests/unittests/core/test_transaction.py -v
+```
+
+#### Run Specific Test
+
+```bash
+# Run a single test by class and method
+pytest tests/unittests/core/test_block.py::TestBlock::test_copy -v
+
+# Example: Run wallet balance test
+pytest tests/unittests/core/test_get_wallet_balance.py::TestWalletBalance::test_get_wallet_balance -v
+```
+
+#### Run Tests with Quiet Output
+
+```bash
+# Run tests with minimal output
+pytest tests/unittests/ -q
+
+# Run with no traceback for failures
+pytest tests/unittests/ -q --tb=no
+```
+
+#### Using Custom Configuration Flags
+
+For systems that require remote hash servers or other custom configurations, you can pass flags via pytest:
+
+```bash
+# Run tests with a remote hash server domain
+pytest tests/unittests/ -v --hash_server_domain="http://remotelyrich.com"
+
+# Example with other pytest options
+pytest tests/unittests/core/test_block.py -v --hash_server_domain="http://your-hash-server.com"
+```
+
+### Test Organization
+
+Tests are organized in the `tests/unittests/` directory:
+
+- `core/` - Tests for core blockchain functionality
+  - `test_block.py` - Block creation, validation, and hashing
+  - `test_blockchain.py` - Blockchain operations and chain management
+  - `test_blockchainutils.py` - Utility functions for blockchain operations
+  - `test_transaction.py` - Transaction creation, validation, and signing
+  - `test_keyeventlog.py` - Key event log validation and operations
+  - `test_consensus.py` - Consensus mechanism tests
+  - `test_mongo.py` - MongoDB integration tests
+  - `test_nodes.py` - Node management and discovery tests
+  - `test_get_unspent_outputs.py` - UTXO retrieval tests
+  - `test_get_wallet_balance.py` - Wallet balance calculation tests
+- `socket/` - WebSocket and networking tests
+- `config/` - Test configuration files
+
+### Test Configuration
+
+The test configuration is specified in `pytest.ini` at the project root. Key settings:
+
+- **Test Discovery**: Follows pytest conventions (`test_*.py` files, `Test*` classes, `test_*` methods)
+- **Async Support**: Tests use `IsolatedAsyncioTestCase` for async/await testing
+- **Path Setup**: `conftest.py` automatically adds the workspace root to Python path for proper imports
+
+### Writing New Tests
+
+New tests should inherit from `AsyncTestCase` defined in `test_setup.py`:
+
+```python
+from tests.unittests.test_setup import AsyncTestCase
+
+class TestMyFeature(AsyncTestCase):
+    async def test_my_feature(self):
+        # Your test code here
+        self.assertTrue(True)
+```
+
+#### Key Test Utilities
+
+- `AsyncTestCase` - Base class for async unit tests with asyncio loop support
+- `BaseTestCase` - Base class for HTTP-based tests using Tornado
+- Mock fixtures in test files for blockchain data, transactions, and wallet state
+
+### Debugging Tests
+
+To troubleshoot test failures:
+
+```bash
+# Run with verbose output and full tracebacks
+pytest tests/unittests/ -vv
+
+# Stop on first failure
+pytest tests/unittests/ -x
+
+# Show print statements and logging
+pytest tests/unittests/ -s
+
+# Run with specific verbosity for a file
+pytest tests/unittests/core/test_block.py::TestBlock::test_verify -vv
+```
+
+### Network Simulator
+
+For testing network behavior, dynamic nodes, and distributed scenarios, YadaCoin includes a comprehensive network simulator. The simulator allows you to:
+
+- Test dynamic node joining and leaving (node churn)
+- Simulate network partitions and healing
+- Measure block and transaction propagation times
+- Stress test under high load
+- Create custom network topologies
+
+**Quick Start:**
+
+```bash
+cd tests/simulator
+python run_simulator.py dynamic-quick  # Run a quick dynamic nodes test
+```
+
+**Documentation:**
+
+- **[Network Simulator Documentation](./tests/simulator/README.md)** - Complete guide to using the simulator
+- **[Quick Start Guide](./tests/simulator/QUICKSTART.md)** - Get started in 5 minutes
+- **[Example Scripts](./tests/simulator/examples/)** - Ready-to-run simulation examples
+
+The simulator is particularly useful for testing the dynamic nodes feature before deploying to production.

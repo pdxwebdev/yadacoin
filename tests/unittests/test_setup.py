@@ -36,8 +36,18 @@ from yadacoin.core.mongo import Mongo
 class AsyncTestCase(IsolatedAsyncioTestCase):
     async def asyncSetUp(self):
         c = Config.generate()
+        c.network = "regnet"
         c.mongo = Mongo()
         c.mongo_debug = True
+
+        # Apply hash_server_domain if provided via pytest flag
+        try:
+            from conftest import _hash_server_domain
+
+            if _hash_server_domain:
+                c.hash_server_domain = _hash_server_domain
+        except ImportError:
+            pass
 
 
 class BaseTestCase(testing.AsyncHTTPTestCase):

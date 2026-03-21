@@ -5,10 +5,11 @@ import unittest
 from unittest.mock import MagicMock
 
 import yadacoin.core.config
-from tests.unittests.test_setup import AsyncTestCase
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.config import Config
 from yadacoin.core.mongo import Mongo
+
+from ..test_setup import AsyncTestCase
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s"
@@ -175,6 +176,7 @@ class TestUTXO(AsyncTestCase):
         - Mocks application logging to avoid conflicts during testing.
         """
         self.config = Config.generate()  # Generates default configuration for testing
+        self.config.network = "regnet"
         self.config.database = hashlib.sha256(str(time.time()).encode()).hexdigest()[
             :10
         ]

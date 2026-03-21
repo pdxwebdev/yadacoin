@@ -11,10 +11,14 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import base64
 from collections import defaultdict
 
 from bitcoin.wallet import P2PKHBitcoinAddress
+from coincurve import verify_signature
 
+from yadacoin.core.chain import CHAIN
+from yadacoin.core.config import Config
 from yadacoin.core.peer import Seed, SeedGateway, ServiceProvider
 
 
@@ -53,6 +57,14 @@ class Nodes:
         "ServiceProviders": {},
     }
 
+    dynamic_node_public_keys: set = set()  # public keys of on-chain announced nodes
+    dynamic_node_collateral_txns: dict = {}  # maps public_key → announcement txn_id
+    dynamic_node_collateral_addresses: dict = {}  # maps public_key → collateral_address
+    eligible_nodes_by_address: dict = (
+        {}
+    )  # maps payment_address → node for ALL valid registered nodes (regardless of connectivity)
+    _last_scanned_height: int = 0  # last block height fully scanned for announcements
+
     @classmethod
     def get_nodes_for_block_height(cls, height):
         fork_point = cls().get_fork_for_block_height(height)
@@ -81,6 +93,349 @@ class Nodes:
             ): node
             for node in nodes
         }
+
+    @classmethod
+    def _count_nodes_by_type(cls):
+        """Count existing hardcoded + dynamic nodes by type."""
+        seeds_count = len(Seeds()._NODES)
+        gateways_count = len(SeedGateways()._NODES)
+        providers_count = len(ServiceProviders()._NODES)
+        return seeds_count, gateways_count, providers_count
+
+    @classmethod
+    def _count_providers_per_gateway(cls):
+        """Estimate service providers per seed gateway (rough distribution)."""
+        seeds_count, gateways_count, providers_count = cls._count_nodes_by_type()
+        if gateways_count == 0:
+            return 0
+        return providers_count // gateways_count
+
+    @classmethod
+    async def _collateral_utxo_is_unspent(
+        cls, config, txn_id: str, collateral_address: str
+    ) -> bool:
+        """Return True if the collateral UTXO from the announcement transaction is still
+        unspent. Only a spending transaction signed by the owner of collateral_address
+        counts; change-output spends by other keys are ignored.
+        """
+        cursor = config.mongo.async_db.blocks.find(
+            {"transactions": {"$elemMatch": {"inputs.id": txn_id}}},
+            {"transactions": 1},
+        )
+        async for block in cursor:
+            for txn in block.get("transactions", []):
+                if not any(inp.get("id") == txn_id for inp in txn.get("inputs", [])):
+                    continue
+                try:
+                    spending_address = str(
+                        P2PKHBitcoinAddress.from_pubkey(
+                            bytes.fromhex(txn["public_key"])
+                        )
+                    )
+                except Exception:
+                    continue
+                if spending_address == collateral_address:
+                    return False
+        return True
+
+    @classmethod
+    def _evict_all_dynamic_nodes(cls):
+        """Remove all on-chain registered dynamic nodes from the node lists.
+
+        Called at the start of apply_dynamic_nodes() so that each refresh cycle
+        drops nodes whose collateral UTXO has been spent since the last check,
+        then re-adds only those with an unspent collateral output.
+        """
+        if not cls.dynamic_node_public_keys:
+            return
+        for owner_class in (Seeds, SeedGateways, ServiceProviders):
+            retained = []
+            for entry in owner_class()._NODES:
+                try:
+                    pk = entry["node"].identity.public_key
+                except Exception:
+                    pk = None
+                if pk in cls.dynamic_node_public_keys:
+                    continue  # evict this node
+                retained.append(entry)
+            owner_class()._NODES = retained
+        cls.dynamic_node_public_keys.clear()
+        cls.dynamic_node_collateral_txns.clear()
+        cls.dynamic_node_collateral_addresses.clear()
+        cls.eligible_nodes_by_address.clear()
+        Nodes._last_scanned_height = 0
+
+    @classmethod
+    async def _evict_spent_dynamic_nodes(cls, config):
+        """Evict only those dynamic nodes whose collateral UTXO has been spent.
+
+        Called each refresh cycle instead of a full evict+rescan so that nodes
+        with intact collateral stay registered without re-scanning the entire
+        post-fork chain history.
+        """
+        if not cls.dynamic_node_collateral_txns:
+            return
+        spent_keys = []
+        for pub, txn_id in list(cls.dynamic_node_collateral_txns.items()):
+            collateral_address = cls.dynamic_node_collateral_addresses.get(pub)
+            if not collateral_address:
+                spent_keys.append(pub)
+                continue
+            try:
+                is_unspent = await cls._collateral_utxo_is_unspent(
+                    config, txn_id, collateral_address
+                )
+            except Exception:
+                continue
+            if not is_unspent:
+                spent_keys.append(pub)
+        if not spent_keys:
+            return
+        spent_set = set(spent_keys)
+        for owner_class in (Seeds, SeedGateways, ServiceProviders):
+            retained = []
+            for entry in owner_class()._NODES:
+                try:
+                    pk = entry["node"].identity.public_key
+                except Exception:
+                    pk = None
+                if pk in spent_set:
+                    continue
+                retained.append(entry)
+            owner_class()._NODES = retained
+        for pub in spent_keys:
+            cls.dynamic_node_public_keys.discard(pub)
+            cls.dynamic_node_collateral_txns.pop(pub, None)
+            cls.dynamic_node_collateral_addresses.pop(pub, None)
+            try:
+                addr = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub)))
+                cls.eligible_nodes_by_address.pop(addr, None)
+            except Exception:
+                pass
+
+    @classmethod
+    def _assign_node_type(cls):
+        """Assign next node type based on load balancing strategy.
+
+        Strategy:
+        - Max 1 seed gateway per seed
+        - Max (Config().max_peers or 10000) service providers per seed gateway
+        - All seeds connect to each other
+        - Assignment order:
+          1. If no seeds: add Seed
+          2. If seeds exist but no gateways: add SeedGateway
+          3. If gateways < seeds: add SeedGateway
+          4. If all gateways saturated: add Seed
+          5. Otherwise: add ServiceProvider
+        """
+        seeds_count, gateways_count, providers_count = cls._count_nodes_by_type()
+        max_providers_per_gateway = Config().max_peers or 10000
+
+        # Need at least one seed
+        if seeds_count == 0:
+            return "seed"
+
+        # Need at least one gateway per seed; if not enough: add gateway
+        if gateways_count < seeds_count:
+            return "seed_gateway"
+
+        # Check if all gateways are saturated
+        providers_per_gateway = cls._count_providers_per_gateway()
+        if providers_per_gateway >= max_providers_per_gateway:
+            # All gateways full; need to scale out by adding more seeds
+            return "seed"
+
+        # Otherwise, add a service provider
+        return "service_provider"
+
+    @classmethod
+    async def load_dynamic_nodes_from_chain(cls, activation_height=None):
+        """Load dynamic node announcements from chain and append to hardcoded lists.
+
+        Expected on-chain format (inside transaction.relationship):
+        { "node": { "type": "seed|seed_gateway|service_provider", "host":..., ... } }
+        Announced nodes will be appended with range starting at `activation_height`.
+        """
+        config = Config()
+        if activation_height is None:
+            activation_height = CHAIN.DYNAMIC_NODES_FORK
+
+        # Only load dynamic nodes if chain has reached the activation fork
+        try:
+            current_height = config.LatestBlock.block.index
+            if current_height < activation_height:
+                return
+        except Exception:
+            return
+
+        # Only scan blocks we haven't processed yet; on first run this equals activation_height.
+        scan_from = (
+            activation_height
+            if cls._last_scanned_height < activation_height
+            else cls._last_scanned_height + 1
+        )
+        if scan_from > current_height:
+            return
+        query = {
+            "index": {"$gte": scan_from, "$lte": current_height},
+            "transactions": {"$elemMatch": {"relationship.node": {"$exists": True}}},
+        }
+
+        try:
+            cursor = config.mongo.async_db.blocks.find(query).sort("index", 1)
+        except Exception:
+            return
+
+        async for block in cursor:
+            for txn in block.get("transactions", []):
+                rel = txn.get("relationship")
+                if not isinstance(rel, dict):
+                    continue
+                node_blob = rel.get("node")
+                if not node_blob or not isinstance(node_blob, dict):
+                    continue
+
+                # Node type is IGNORED from transaction; assigned dynamically by load balancing
+                # Extract node data without type field
+
+                # The node definition might be nested under a "node" key or be the object itself
+                node_def = (
+                    node_blob.get("node")
+                    if isinstance(node_blob.get("node"), dict)
+                    else node_blob
+                )
+
+                # Validate identity structure
+                identity = (
+                    node_def.get("identity") if isinstance(node_def, dict) else None
+                )
+                if not identity or not isinstance(identity, dict):
+                    continue
+                pub = identity.get("public_key")
+                username_sig = identity.get("username_signature")
+                username = identity.get("username", "")
+                if not pub or not username_sig:
+                    continue
+
+                # Verify username_signature against the username using the public key
+                try:
+                    sig_bytes = base64.b64decode(username_sig)
+                    verified = verify_signature(
+                        sig_bytes, username.encode("utf-8"), bytes.fromhex(pub)
+                    )
+                except Exception:
+                    verified = False
+                if not verified:
+                    continue
+
+                # Ensure the announcing transaction was produced by the same public key
+                txn_pub = txn.get("public_key")
+                if txn_pub and txn_pub != pub:
+                    continue
+
+                # collateral_address is required and must be a valid address
+                collateral_address = node_def.get("collateral_address")
+                if not collateral_address or not config.address_is_valid(
+                    collateral_address
+                ):
+                    continue
+
+                # Verify the announcement transaction's collateral output is still unspent.
+                # This binds registration to the specific on-chain UTXO rather than an
+                # account balance, preventing temporary-fund attacks and false positives
+                # caused by unrelated deposits to the collateral address.
+                txn_id = txn.get("id")
+                if not txn_id:
+                    continue
+                try:
+                    if not await cls._collateral_utxo_is_unspent(
+                        config, txn_id, collateral_address
+                    ):
+                        continue
+                except Exception:
+                    continue
+
+                # Prevent the same public key from being registered under a different
+                # class if topology counts shift between iterations in this refresh
+                # cycle.  dynamic_node_public_keys is cleared by _evict_all_dynamic_nodes
+                # at the top of apply_dynamic_nodes(), so this guard only fires for
+                # keys already processed in the *current* loop.
+                if pub in Nodes.dynamic_node_public_keys:
+                    continue
+
+                # Assign node type dynamically based on load balancing
+                assigned_type = cls._assign_node_type()
+                if assigned_type == "seed":
+                    owner_class = Seeds
+                    creator = Seed
+                elif assigned_type == "seed_gateway":
+                    owner_class = SeedGateways
+                    creator = SeedGateway
+                elif assigned_type == "service_provider":
+                    owner_class = ServiceProviders
+                    creator = ServiceProvider
+                else:
+                    continue
+
+                try:
+                    node_obj = creator.from_dict(node_def)
+                except Exception:
+                    continue
+
+                # pub is already validated above from identity.get("public_key").
+                # Avoid duplicates across ALL three node classes so a key that exists
+                # as a hardcoded node in a different class is not re-added here.
+                exists = False
+                for check_class in (Seeds, SeedGateways, ServiceProviders):
+                    for e in check_class()._NODES:
+                        try:
+                            if e["node"].identity.public_key == pub:
+                                exists = True
+                                break
+                        except Exception:
+                            continue
+                    if exists:
+                        break
+
+                if not exists:
+                    owner_class()._NODES.append(
+                        {"ranges": [(activation_height, None)], "node": node_obj}
+                    )
+                    Nodes.dynamic_node_public_keys.add(pub)
+                    Nodes.dynamic_node_collateral_txns[pub] = txn_id
+                    Nodes.dynamic_node_collateral_addresses[pub] = collateral_address
+                    payment_address = str(
+                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(pub))
+                    )
+                    Nodes.eligible_nodes_by_address[payment_address] = node_obj
+
+        Nodes._last_scanned_height = current_height
+
+    @classmethod
+    async def apply_dynamic_nodes(cls, activation_height=None):
+        """Load dynamic nodes and recompute fork points / node maps.
+
+        On each cycle, evicts only nodes whose collateral UTXO has been spent,
+        then scans only new blocks since the last refresh for fresh announcements.
+        This avoids re-scanning the entire post-fork chain history every call.
+        """
+        config = Config()
+        await cls._evict_spent_dynamic_nodes(config)
+        await cls.load_dynamic_nodes_from_chain(activation_height=activation_height)
+        # Clear the height→node-list cache so get_nodes_for_block_height
+        # reads from the freshly rebuilt NODES dict instead of stale entries.
+        Nodes._get_nodes_for_block_height_cache = {
+            "Seeds": {},
+            "SeedGateways": {},
+            "ServiceProviders": {},
+        }
+        # Recompute fork points and node maps for each node class
+        Seeds.set_fork_points()
+        Seeds.set_nodes()
+        SeedGateways.set_fork_points()
+        SeedGateways.set_nodes()
+        ServiceProviders.set_fork_points()
+        ServiceProviders.set_nodes()
 
 
 class Seeds(Nodes):

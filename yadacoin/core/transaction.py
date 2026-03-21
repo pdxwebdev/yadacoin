@@ -28,6 +28,7 @@ from ecdsa.util import sigdecode_der
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.collections import Collections
 from yadacoin.core.config import Config
+from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.transactionutils import TU
 
 
@@ -150,6 +151,9 @@ class Transaction(object):
             self.relationship = Contract.from_dict(
                 self.relationship[Collections.SMART_CONTRACT.value]
             )
+        elif isinstance(self.relationship, dict) and "node" in self.relationship:
+            # Convert node announcement dict to NodeAnnouncement instance
+            self.relationship = NodeAnnouncement.from_dict(self.relationship["node"])
 
         for x in outputs:
             if not isinstance(x, Output):
@@ -197,7 +201,7 @@ class Transaction(object):
         relationship="",
         no_relationship=False,
         exact_match=False,
-        version=6,
+        version=7,
         miner_signature="",
         contract_generated=None,
         do_money=True,
@@ -236,7 +240,6 @@ class Transaction(object):
         )
         cls_inst.no_relationship = no_relationship
         cls_inst.exact_match = exact_match
-        cls_inst.version = 7
         cls_inst.version = version
         cls_inst.miner_signature = miner_signature
 
@@ -545,6 +548,7 @@ class Transaction(object):
         check_max_inputs=False,
         check_masternode_fee=False,
         check_kel=False,
+        check_dynamic_nodes=False,
         block=None,
         mempool=False,
     ):
@@ -584,6 +588,28 @@ class Transaction(object):
         relationship = self.relationship
         if isinstance(self.relationship, Contract):
             relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, NodeAnnouncement):
+            relationship = self.relationship.to_string()
+            if not check_dynamic_nodes:
+                raise InvalidTransactionException(
+                    f"Node announcement transactions (version 7) not allowed before fork height {CHAIN.DYNAMIC_NODES_FORK}"
+                )
+            # Verify collateral output: must have an output of exactly COLLATERAL_AMOUNT to collateral_address
+            collateral_address = self.relationship.collateral_address
+            if not collateral_address:
+                raise InvalidTransactionException(
+                    "Node announcement transaction missing collateral_address"
+                )
+            collateral_outputs = [
+                o
+                for o in self.outputs
+                if o.to == collateral_address
+                and float(o.value) == float(CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT)
+            ]
+            if not collateral_outputs:
+                raise InvalidTransactionException(
+                    f"Node announcement transaction must include an output of {CHAIN.DYNAMIC_NODES_COLLATERAL_AMOUNT} YDA to collateral_address {collateral_address}"
+                )
 
         if len(relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value:
             raise MaxRelationshipSizeExceeded(
@@ -716,6 +742,8 @@ class Transaction(object):
         inputs_concat = await self.get_input_hashes()
         outputs_concat = self.get_output_hashes()
         if isinstance(self.relationship, Contract):
+            relationship = self.relationship.to_string()
+        elif isinstance(self.relationship, NodeAnnouncement):
             relationship = self.relationship.to_string()
         else:
             relationship = self.relationship
@@ -1179,10 +1207,54 @@ class Transaction(object):
                 return True
         return False
 
-    async def verify_key_event_spends_entire_balance(self):
+    async def verify_kel_output_rules(self, block=None, mempool=False):
         from yadacoin.core.keyeventlog import (
             DoesNotSpendEntirelyToPrerotatedKeyHashException,
+            KeyEventLog,
         )
+
+        # Determine effective block index for fork checks
+        if block is not None:
+            effective_index = block.index
+        elif mempool:
+            effective_index = self.config.LatestBlock.block.index + 1
+        else:
+            effective_index = self.config.LatestBlock.block.index
+
+        # If KEL fields indicate this is a key event, it must not send back to its own address
+        if self.are_kel_fields_populated():
+            if self.public_key_hash in [output.to for output in self.outputs]:
+                raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                    "Key event transactions must spend entire remaining balance to prerotated_key_hash."
+                )
+
+        # Only enforce spend rules when this key's address is tracked in an existing log
+        if not await self.has_key_event_log(block=block, mempool=mempool):
+            return
+
+        key_log = await KeyEventLog.build_from_public_key(self.public_key)
+        if not key_log:
+            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                "Transaction has a key event log but the log could not be built."
+            )
+
+        if effective_index >= CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK:
+            # A transaction is a new key log entry only if its public_key_hash equals
+            # the last log entry's prerotated_key_hash (i.e. it is the next committed rotation).
+            is_new_key_log_entry = (
+                self.public_key_hash == key_log[-1].prerotated_key_hash
+            )
+
+            if not is_new_key_log_entry:
+                # Not a new key log entry: all outputs must only go to the latest
+                # key log entry's public_key_hash and nowhere else.
+                latest_public_key_hash = key_log[-1].public_key_hash
+                for output in self.outputs:
+                    if output.to != latest_public_key_hash:
+                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
+                            "Transaction must only send to the latest key log entry's public_key_hash."
+                        )
+                return
 
         if self.public_key_hash in [output.to for output in self.outputs]:
             raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
@@ -1249,6 +1321,9 @@ class Transaction(object):
         relationship = self.relationship
         if hasattr(relationship, "to_dict"):
             relationship = relationship.to_dict()
+            # Wrap NodeAnnouncement back in "node" key for storage
+            if isinstance(self.relationship, NodeAnnouncement):
+                relationship = {"node": relationship}
         ret = {
             "time": int(self.time),
             "rid": self.rid,

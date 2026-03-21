@@ -198,6 +198,10 @@ class Blockchain(object):
         if block.index >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
+        check_dynamic_nodes = False
+        if block.index >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
         if block.index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in block.transactions}
             for txn in block.transactions:
@@ -218,6 +222,7 @@ class Blockchain(object):
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    check_dynamic_nodes=check_dynamic_nodes,
                     block=block,
                 )
             except InvalidTransactionException as e:
@@ -380,11 +385,16 @@ class Blockchain(object):
             if block.index >= CHAIN.CHECK_KEL_FORK:
                 check_kel = True
 
+            check_dynamic_nodes = False
+            if block.index >= CHAIN.DYNAMIC_NODES_FORK:
+                check_dynamic_nodes = True
+
             for txn in block.transactions:
                 await txn.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    check_dynamic_nodes=check_dynamic_nodes,
                 )
             if last_block:
                 if int(block.index) - int(last_block.index) > 1:

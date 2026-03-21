@@ -21,6 +21,40 @@ from ..test_setup import AsyncTestCase
 
 
 class TestBlock(AsyncTestCase):
+    async def asyncSetUp(self):
+        """Set up test environment and preserve original node state."""
+        await super().asyncSetUp()
+
+        # Store original _NODES for cleanup
+        self.original_seeds = Seeds()._NODES.copy()
+        self.original_gateways = SeedGateways()._NODES.copy()
+        self.original_providers = ServiceProviders()._NODES.copy()
+
+    async def asyncTearDown(self):
+        """Clean up after tests and restore original node state."""
+        # Restore original node lists
+        Seeds()._NODES = self.original_seeds
+        SeedGateways()._NODES = self.original_gateways
+        ServiceProviders()._NODES = self.original_providers
+
+        # Recompute fork points and node maps for restored state
+        Seeds.set_fork_points()
+        Seeds.set_nodes()
+        SeedGateways.set_fork_points()
+        SeedGateways.set_nodes()
+        ServiceProviders.set_fork_points()
+        ServiceProviders.set_nodes()
+
+        from yadacoin.core.nodes import Nodes
+
+        Nodes._get_nodes_for_block_height_cache = {
+            "Seeds": {},
+            "SeedGateways": {},
+            "ServiceProviders": {},
+        }
+
+        await super().asyncTearDown()
+
     async def test_set_nodes(self):
         Seeds().set_fork_points()
         Seeds().set_nodes()

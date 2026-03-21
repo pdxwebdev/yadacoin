@@ -59,7 +59,9 @@ class BaseRPC:
 
     async def write_as_json(self, stream, method, data, rpc_type, req_id=None):
         if isinstance(stream, DummyStream):
-            self.config.app_log.warning("Stream is an instance of DummyStream, cannot send data.")
+            self.config.app_log.warning(
+                "Stream is an instance of DummyStream, cannot send data."
+            )
             return
 
         if not hasattr(stream, "peer"):
@@ -94,7 +96,9 @@ class BaseRPC:
             return
 
         except StreamClosedError:
-            self.config.app_log.warning(f"StreamClosedError: Peer {peer_host} is already disconnected.")
+            self.config.app_log.warning(
+                f"StreamClosedError: Peer {peer_host} is already disconnected."
+            )
             await self.remove_peer(stream)
             return
 
@@ -103,10 +107,7 @@ class BaseRPC:
             await self.remove_peer(stream)
             return
 
-        if (
-            hasattr(self.config, "tcp_traffic_debug")
-            and self.config.tcp_traffic_debug
-        ):
+        if hasattr(self.config, "tcp_traffic_debug") and self.config.tcp_traffic_debug:
             self.config.app_log.debug(
                 f"SENT {peer_host} {method} {data} {rpc_type} {req_id}"
             )

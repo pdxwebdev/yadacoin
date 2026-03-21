@@ -218,12 +218,17 @@ class RCPWebSocketServer(WebSocketHandler):
         if self.config.LatestBlock.block.index >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
         txn = Transaction.from_dict(params.get("transaction"))
         try:
             await txn.verify(
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
             )
         except:
             return

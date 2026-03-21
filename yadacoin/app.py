@@ -84,6 +84,7 @@ from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
 from yadacoin.http.node import NODE_HANDLERS
+from yadacoin.http.node_announce import NODE_ANNOUNCE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
 from yadacoin.http.product import PRODUCT_HANDLERS
 from yadacoin.http.wallet import WALLET_HANDLERS
@@ -891,10 +892,14 @@ class NodeApplication(Application):
 
         self.config.background_node_testing.busy = True
         try:
+            from yadacoin.core.nodes import Nodes
+
+            await Nodes.apply_dynamic_nodes()
             successful_nodes = await NodesTester.test_all_nodes(block_index)
             self.config.app_log.info(
                 f"Background node testing completed. Successful nodes: {len(successful_nodes)}"
             )
+            self.config.health.node_tester.last_activity = int(time())
         except Exception as e:
             self.config.app_log.error(f"Error in background_node_testing: {e}")
         finally:
@@ -1028,6 +1033,14 @@ class NodeApplication(Application):
                 self.background_message_sender, self.config.message_sender_wait * 1000
             ).start()
 
+            PeriodicCallback(
+                self.background_node_testing,
+                60 * 60 * 1000,
+            ).start()
+            # Populate eligible_nodes_by_address immediately on startup so coinbase
+            # validation works before the first hourly background_node_testing fires.
+            tornado.ioloop.IOLoop.current().call_later(0, self.background_node_testing)
+
             if self.config.peer_type in [
                 PEER_TYPES.SERVICE_PROVIDER.value,
                 PEER_TYPES.SEED_GATEWAY.value,
@@ -1043,11 +1056,6 @@ class NodeApplication(Application):
                 PeriodicCallback(
                     self.background_nonce_processor,
                     self.config.nonce_processor_wait * 1000,
-                ).start()
-
-                PeriodicCallback(
-                    self.background_node_testing,
-                    60 * 60 * 1000,
                 ).start()
 
         if self.config.pool_payout:
@@ -1120,6 +1128,7 @@ class NodeApplication(Application):
 
     def init_webui(self):
         self.default_handlers.extend(NODE_HANDLERS)
+        self.default_handlers.extend(NODE_ANNOUNCE_HANDLERS)
         self.default_handlers.extend(GRAPH_HANDLERS)
         self.default_handlers.extend(EXPLORER_HANDLERS)
         self.default_handlers.extend(WALLET_HANDLERS)

@@ -20,6 +20,7 @@ from decimal import Decimal, getcontext
 from logging import getLogger
 
 import pyrx
+import requests
 from bitcoin.signmessage import BitcoinMessage, VerifyMessage
 from bitcoin.wallet import P2PKHBitcoinAddress
 from coincurve.utils import verify_signature
@@ -267,35 +268,44 @@ class Block(object):
             if config.network == "regnet":
                 NodesTester.successful_nodes = NodesTester.all_nodes
 
-            if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                masternode_fee_sum = sum(
-                    [
-                        float(transaction_obj.masternode_fee)
-                        for transaction_obj in transaction_objs
-                    ]
-                )
-                masternode_reward_divided = (
-                    masternode_reward_total + masternode_fee_sum
-                ) / len(NodesTester.successful_nodes)
+            # reward_nodes includes both hardcoded static nodes and on-chain
+            # announced dynamic nodes (those with 5000 YDA collateral), since
+            # dynamic nodes are appended to _NODES during load_dynamic_nodes_from_chain
+            # and flow naturally into NodesTester.successful_nodes.
+            reward_nodes = NodesTester.successful_nodes
 
-            else:
-                masternode_reward_divided = masternode_reward_total / len(
-                    NodesTester.successful_nodes
-                )
-
-            for successful_node in NodesTester.successful_nodes:
-                outputs.append(
-                    Output.from_dict(
-                        {
-                            "value": float(masternode_reward_divided),
-                            "to": str(
-                                P2PKHBitcoinAddress.from_pubkey(
-                                    bytes.fromhex(successful_node.identity.public_key)
-                                )
-                            ),
-                        }
+            if reward_nodes:
+                if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+                    masternode_fee_sum = sum(
+                        [
+                            float(transaction_obj.masternode_fee)
+                            for transaction_obj in transaction_objs
+                        ]
                     )
-                )
+                    masternode_reward_divided = (
+                        masternode_reward_total + masternode_fee_sum
+                    ) / len(reward_nodes)
+
+                else:
+                    masternode_reward_divided = masternode_reward_total / len(
+                        reward_nodes
+                    )
+
+                for successful_node in reward_nodes:
+                    outputs.append(
+                        Output.from_dict(
+                            {
+                                "value": float(masternode_reward_divided),
+                                "to": str(
+                                    P2PKHBitcoinAddress.from_pubkey(
+                                        bytes.fromhex(
+                                            successful_node.identity.public_key
+                                        )
+                                    )
+                                ),
+                            }
+                        )
+                    )
         else:
             outputs = [
                 Output.from_dict(
@@ -355,19 +365,17 @@ class Block(object):
                 if txn not in block.transactions:
                     continue  # it's already been deleted due to its failed counterpart
 
-                if txn.are_kel_fields_populated():
+                if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                    try:
+                        await txn.verify_kel_output_rules()
+                    except DoesNotSpendEntirelyToPrerotatedKeyHashException:
+                        await block.remove_transaction(txn, hash_collection)
+                        continue
+                elif txn.are_kel_fields_populated():
                     if txn.public_key_hash in [output.to for output in txn.outputs]:
                         raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                             "Key event transactions must spent entire remaining balance to prerotated_key_hash."
                         )
-
-                if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                    if await txn.has_key_event_log():
-                        try:
-                            await txn.verify_key_event_spends_entire_balance()
-                        except:
-                            await block.remove_transaction(txn, hash_collection)
-                            continue
 
                 # test if already on chain
                 if await txn.is_already_onchain():
@@ -477,10 +485,15 @@ class Block(object):
                 if index >= CHAIN.CHECK_KEL_FORK:
                     check_kel = True
 
+                check_dynamic_nodes = False
+                if index >= CHAIN.DYNAMIC_NODES_FORK:
+                    check_dynamic_nodes = True
+
                 await transaction_obj.verify(
                     check_max_inputs=check_max_inputs,
                     check_masternode_fee=check_masternode_fee,
                     check_kel=check_kel,
+                    check_dynamic_nodes=check_dynamic_nodes,
                     mempool=True,
                 )
                 for output in transaction_obj.outputs:
@@ -626,6 +639,19 @@ class Block(object):
         )
 
     def generate_hash_from_header(self, height, header, nonce):
+        config = Config()
+        if config.network == "regnet":
+            hash_server = getattr(config, "hash_server_domain", None) or getattr(
+                config, "hash_server", None
+            )
+            if hash_server:
+                return self._generate_hash_from_remote(
+                    hash_server=hash_server,
+                    height=height,
+                    header=header,
+                    nonce=nonce,
+                    timeout_ms=getattr(config, "http_request_timeout", 3000),
+                )
         if not hasattr(Block, "pyrx"):
             Block.pyrx = pyrx.PyRX()
         seed_hash = binascii.unhexlify(
@@ -652,6 +678,26 @@ class Block(object):
                 .hex()
             )
 
+    @staticmethod
+    def _generate_hash_from_remote(hash_server, height, header, nonce, timeout_ms):
+        url = "{}/generate-hash".format(str(hash_server).rstrip("/"))
+        params = {
+            "height": str(height),
+            "nonce": str(nonce),
+            "header": str(header),
+        }
+        try:
+            response = requests.get(url, params=params, timeout=timeout_ms / 1000)
+            response.raise_for_status()
+            payload = response.json()
+        except Exception as exc:
+            raise Exception("Remote hash request failed") from exc
+
+        remote_hash = payload.get("hash") if isinstance(payload, dict) else None
+        if not remote_hash:
+            raise Exception("Remote hash response missing 'hash'")
+        return remote_hash
+
     async def verify(self):
         getcontext().prec = 8
         if int(self.version) != int(CHAIN.get_version_for_height(self.index)):
@@ -659,6 +705,12 @@ class Block(object):
                 "Wrong version for block height",
                 self.version,
                 CHAIN.get_version_for_height(self.index),
+            )
+
+        # Validate block does not exceed 1000 transactions (post dynamic-nodes fork only)
+        if self.index >= CHAIN.DYNAMIC_NODES_FORK and len(self.transactions) > 1000:
+            raise Exception(
+                f"Block contains {len(self.transactions)} transactions, maximum is 1000"
             )
 
         txns = self.get_transaction_hashes()
@@ -682,6 +734,17 @@ class Block(object):
             masernodes_by_address = (
                 Nodes.get_all_nodes_indexed_by_address_for_block_height(self.index)
             )
+            # Merge in all on-chain registered eligible nodes so validation accepts
+            # coinbase payments to any node with valid collateral, not just those that
+            # happened to pass the connectivity test on this particular peer.
+            if (
+                self.index >= CHAIN.DYNAMIC_NODES_FORK
+                and Nodes.eligible_nodes_by_address
+            ):
+                masernodes_by_address = {
+                    **masernodes_by_address,
+                    **Nodes.eligible_nodes_by_address,
+                }
 
         if self.index >= CHAIN.ALLOW_SAME_BLOCK_SPENDING_FORK:
             items_indexed = {x.transaction_signature: x for x in self.transactions}
@@ -713,15 +776,15 @@ class Block(object):
                 # check if this transaction public key is listed in any KEL
                 # if it is, check if it's a valid key event
 
-                if txn.are_kel_fields_populated():
+                if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                    await txn.verify_kel_output_rules(block=self)
+                elif txn.are_kel_fields_populated():
                     if txn.public_key_hash in [output.to for output in txn.outputs]:
                         raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
                             "Key event transactions must spent entire remaining balance to prerotated_key_hash."
                         )
 
                 if await txn.has_key_event_log(block=self):
-                    if self.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
-                        await txn.verify_key_event_spends_entire_balance()
                     kel_hash_collection = await KELHashCollection.init_async(
                         self, verify_only=True
                     )
@@ -735,9 +798,7 @@ class Block(object):
 
             if txn.coinbase:
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
-                    block_creator_address = str(
-                        P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key))
-                    )
+                    block_creator_address = address
                     for output in txn.outputs:
                         if output.to == block_creator_address:
                             coinbase_sum += float(output.value)
@@ -746,7 +807,9 @@ class Block(object):
                                 masternode_sums[output.to] = 0
                             masternode_sums[output.to] += output.value
                         else:
-                            raise UnknownOutputAddressException()
+                            raise UnknownOutputAddressException(
+                                f"Coinbase output to unknown address: {output.to}"
+                            )
                 else:
                     for output in txn.outputs:
                         coinbase_sum += float(output.value)

@@ -33,7 +33,7 @@ class MinerStatsHandler(BaseHandler):
             {
                 "$match": {
                     "time": {"$gt": current_time - miner_hashrate_seconds},
-                    "$or": [{"address": address}, {"address_only": address}]
+                    "$or": [{"address": address}, {"address_only": address}],
                 }
             },
             {
@@ -42,18 +42,20 @@ class MinerStatsHandler(BaseHandler):
                         "worker": {
                             "$ifNull": [
                                 {"$arrayElemAt": [{"$split": ["$address", "."]}, 1]},
-                                "No worker"
+                                "No worker",
                             ]
                         }
                     },
                     "total_shares": {"$sum": 1},
                     "total_weight": {"$sum": "$weight"},
-                    "last_share_time": {"$max": "$time"}
+                    "last_share_time": {"$max": "$time"},
                 }
-            }
+            },
         ]
 
-        hashrate_cursor = self.config.mongo.async_db.shares.aggregate(hashrate_aggregation)
+        hashrate_cursor = self.config.mongo.async_db.shares.aggregate(
+            hashrate_aggregation
+        )
         hashrate_result = await hashrate_cursor.to_list(None)
 
         workers = []
@@ -62,25 +64,31 @@ class MinerStatsHandler(BaseHandler):
 
         for doc in hashrate_result:
             worker_name = doc["_id"]["worker"]
-            worker_hashrate = (doc["total_shares"] * self.config.pool_diff) / miner_hashrate_seconds
+            worker_hashrate = (
+                doc["total_shares"] * self.config.pool_diff
+            ) / miner_hashrate_seconds
 
-            workers.append({
-                "worker_name": worker_name,
-                "worker_hashrate": int(worker_hashrate),
-                "worker_shares": doc["total_shares"],
-                "last_share_time": doc["last_share_time"],
-                "status": "Offline" if worker_hashrate == 0 else "Online"
-            })
+            workers.append(
+                {
+                    "worker_name": worker_name,
+                    "worker_hashrate": int(worker_hashrate),
+                    "worker_shares": doc["total_shares"],
+                    "last_share_time": doc["last_share_time"],
+                    "status": "Offline" if worker_hashrate == 0 else "Online",
+                }
+            )
 
             total_hashrate += worker_hashrate
             total_shares += doc["total_shares"]
 
-        self.render_as_json({
-            "miner_address": address,
-            "total_hashrate": int(total_hashrate),
-            "total_shares": total_shares,
-            "workers": workers
-        })
+        self.render_as_json(
+            {
+                "miner_address": address,
+                "total_hashrate": int(total_hashrate),
+                "total_shares": total_shares,
+                "workers": workers,
+            }
+        )
 
 
 class MinerPayoutsHandler(BaseHandler):
@@ -105,11 +113,15 @@ class MinerPayoutsHandler(BaseHandler):
             block = await self.config.mongo.async_db.blocks.find_one(
                 {"transactions.hash": tx_hash}, {"index": 1}
             )
-            in_mempool = await self.config.mongo.async_db.miner_transactions.count_documents(
-                {"hash": tx_hash}
+            in_mempool = (
+                await self.config.mongo.async_db.miner_transactions.count_documents(
+                    {"hash": tx_hash}
+                )
             )
-            in_failed = await self.config.mongo.async_db.failed_transactions.count_documents(
-                {"txn.hash": tx_hash}
+            in_failed = (
+                await self.config.mongo.async_db.failed_transactions.count_documents(
+                    {"txn.hash": tx_hash}
+                )
             )
 
             if block:
@@ -125,15 +137,16 @@ class MinerPayoutsHandler(BaseHandler):
                 status = "Unknown"
                 block_index = "N/A"
 
-            payout_amount = next((o["value"] for o in txn.get("outputs", []) if o["to"] == address), 0)
+            payout_amount = next(
+                (o["value"] for o in txn.get("outputs", []) if o["to"] == address), 0
+            )
 
             for_blocks = []
             for inp in txn.get("inputs", []):
                 input_txid = inp.get("id")
                 if input_txid:
                     source_blocks = self.config.mongo.async_db.blocks.find(
-                        {"transactions.id": input_txid},
-                        {"index": 1, "transactions": 1}
+                        {"transactions.id": input_txid}, {"index": 1, "transactions": 1}
                     )
                     async for source_block in source_blocks:
                         last_tx = source_block["transactions"][-1]
@@ -142,14 +155,16 @@ class MinerPayoutsHandler(BaseHandler):
 
             for_blocks_str = ", ".join(for_blocks) if for_blocks else "N/A"
 
-            payouts.append({
-                "time": tx_time,
-                "hash": tx_hash,
-                "amount": payout_amount,
-                "block_height": block_index,
-                "for_block": for_blocks_str,
-                "status": status
-            })
+            payouts.append(
+                {
+                    "time": tx_time,
+                    "hash": tx_hash,
+                    "amount": payout_amount,
+                    "block_height": block_index,
+                    "for_block": for_blocks_str,
+                    "status": status,
+                }
+            )
 
         self.render_as_json({"payouts": payouts})
 

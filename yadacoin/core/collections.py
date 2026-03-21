@@ -32,6 +32,7 @@ class Collections(Enum):
     GROUP_CHAT_FILE = "group_chat_file"
     GROUP_MAIL = "group_mail"
     MAIL = "mail"
+    NODE = "node"
     PERMISSION_REQUEST = "permission_request"
     SIGNATURE_REQUEST = "signature_request"
     SMART_CONTRACT = "smart_contract"

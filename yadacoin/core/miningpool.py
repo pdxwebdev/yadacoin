@@ -450,15 +450,24 @@ class MiningPool(object):
         if self.config.LatestBlock.block.index + 1 >= CHAIN.CHECK_KEL_FORK:
             check_kel = True
 
-        async for txn in self.mongo.async_db.miner_transactions.find(
-            {"relationship.smart_contract": {"$exists": True}}
-        ).sort([("fee", -1), ("time", 1)]):
+        check_dynamic_nodes = False
+        if self.config.LatestBlock.block.index + 1 >= CHAIN.DYNAMIC_NODES_FORK:
+            check_dynamic_nodes = True
+
+        async for txn in (
+            self.mongo.async_db.miner_transactions.find(
+                {"relationship.smart_contract": {"$exists": True}}
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
+        ):
             transaction_obj = await self.verify_pending_transaction(
                 txn,
                 used_sigs,
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -482,7 +491,9 @@ class MiningPool(object):
             txn
             async for txn in self.mongo.async_db.miner_transactions.find(
                 {"relationship.smart_contract": {"$exists": False}}
-            ).sort([("fee", -1), ("time", 1)])
+            )
+            .sort([("fee", -1), ("time", 1)])
+            .limit(1000)
         ]
         transactions = [Transaction.from_dict(txn) for txn in transactions]
         if (
@@ -505,6 +516,7 @@ class MiningPool(object):
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
             )
             if not isinstance(transaction_obj, Transaction):
                 continue
@@ -565,11 +577,14 @@ class MiningPool(object):
                     expired_blockchain_smart_contract_obj.public_key
                 )
 
-        return (
+        all_transactions = (
             list(mempool_smart_contract_objs.values())
             + TU.get_transaction_objs_list(transaction_objs)
             + generated_txns
         )
+
+        # Limit block to 1000 transactions maximum
+        return all_transactions[:1000]
 
     async def verify_pending_transaction(
         self,
@@ -579,6 +594,7 @@ class MiningPool(object):
         check_max_inputs=False,
         check_masternode_fee=False,
         check_kel=False,
+        check_dynamic_nodes=False,
     ):
         if transactions is None:
             transactions = []
@@ -604,6 +620,7 @@ class MiningPool(object):
                 check_max_inputs=check_max_inputs,
                 check_masternode_fee=check_masternode_fee,
                 check_kel=check_kel,
+                check_dynamic_nodes=check_dynamic_nodes,
                 mempool=True,
             )
 

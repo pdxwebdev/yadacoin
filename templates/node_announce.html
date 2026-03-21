@@ -1,0 +1,396 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Node Announcement</title>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+        
+        .container {
+            max-width: 600px;
+            width: 100%;
+            background: white;
+            border-radius: 8px;
+            box-shadow: 0 10px 40px rgba(0, 0, 0, 0.15);
+            padding: 40px;
+        }
+        
+        h1 {
+            color: #333;
+            margin-bottom: 10px;
+            font-size: 28px;
+        }
+        
+        .subtitle {
+            color: #666;
+            margin-bottom: 30px;
+            font-size: 14px;
+        }
+        
+        .section {
+            margin-bottom: 30px;
+        }
+        
+        .section-title {
+            font-size: 14px;
+            font-weight: 600;
+            color: #667eea;
+            text-transform: uppercase;
+            letter-spacing: 1px;
+            margin-bottom: 15px;
+            padding-bottom: 8px;
+            border-bottom: 2px solid #f0f0f0;
+        }
+        
+        .identity-box {
+            background: #f8f9fa;
+            padding: 15px;
+            border-radius: 6px;
+            margin-bottom: 15px;
+        }
+        
+        .identity-field {
+            margin-bottom: 10px;
+        }
+        
+        .identity-field:last-child {
+            margin-bottom: 0;
+        }
+        
+        .label {
+            font-size: 12px;
+            text-transform: uppercase;
+            color: #999;
+            letter-spacing: 0.5px;
+            margin-bottom: 4px;
+            display: block;
+        }
+        
+        .value {
+            font-size: 13px;
+            color: #333;
+            font-family: monospace;
+            word-break: break-all;
+        }
+        
+        .form-group {
+            margin-bottom: 20px;
+        }
+        
+        .form-row {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+        }
+        
+        .form-row.full {
+            grid-template-columns: 1fr;
+        }
+        
+        label {
+            display: block;
+            font-size: 13px;
+            font-weight: 600;
+            color: #333;
+            margin-bottom: 6px;
+        }
+        
+        input[type="text"],
+        input[type="number"],
+        select {
+            width: 100%;
+            padding: 10px 12px;
+            border: 1px solid #ddd;
+            border-radius: 4px;
+            font-size: 13px;
+            font-family: inherit;
+            transition: all 0.3s ease;
+        }
+        
+        input[type="text"]:focus,
+        input[type="number"]:focus,
+        select:focus {
+            outline: none;
+            border-color: #667eea;
+            box-shadow: 0 0 0 3px rgba(102, 126, 234, 0.1);
+        }
+        
+        .button-group {
+            display: flex;
+            gap: 10px;
+            margin-top: 30px;
+        }
+        
+        button {
+            flex: 1;
+            padding: 12px 24px;
+            border: none;
+            border-radius: 4px;
+            font-size: 14px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: all 0.3s ease;
+        }
+        
+        .btn-submit {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+        }
+        
+        .btn-submit:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 5px 20px rgba(102, 126, 234, 0.4);
+        }
+        
+        .btn-submit:active {
+            transform: translateY(0);
+        }
+        
+        .btn-reset {
+            background: #f0f0f0;
+            color: #333;
+        }
+        
+        .btn-reset:hover {
+            background: #e0e0e0;
+        }
+        
+        .message {
+            padding: 12px 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            display: none;
+            font-size: 13px;
+        }
+        
+        .message.success {
+            background: #d4edda;
+            color: #155724;
+            border: 1px solid #c3e6cb;
+            display: block;
+        }
+        
+        .message.error {
+            background: #f8d7da;
+            color: #721c24;
+            border: 1px solid #f5c6cb;
+            display: block;
+        }
+        
+        .message.info {
+            background: #d1ecf1;
+            color: #0c5460;
+            border: 1px solid #bee5eb;
+            display: block;
+        }
+        
+        .loading {
+            display: none;
+            text-align: center;
+            color: #667eea;
+            font-size: 13px;
+            margin-top: 10px;
+        }
+        
+        .loading.show {
+            display: block;
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 14px;
+            height: 14px;
+            border: 2px solid #f0f0f0;
+            border-top-color: #667eea;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+            margin-right: 8px;
+            vertical-align: middle;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .info-alert {
+            background: #e7f3ff;
+            border: 1px solid #b3d9ff;
+            color: #004085;
+            padding: 12px 15px;
+            border-radius: 4px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            line-height: 1.5;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>Node Announcement</h1>
+        <p class="subtitle">Announce your node to the YadaCoin blockchain</p>
+        
+        <div class="info-alert">
+            <strong>ℹ️ Local Access Only:</strong> This interface is restricted to local/internal access for security.
+            All signing is performed server-side using your node's private credentials.
+        </div>
+        
+        <div id="message" class="message"></div>
+        
+        <form id="nodeForm">
+            <!-- Identity Section -->
+            <div class="section">
+                <div class="section-title">Node Identity</div>
+                <div class="identity-box">
+                    <div class="identity-field">
+                        <span class="label">Username</span>
+                        <div class="value">{{ identity.get('username', 'N/A') }}</div>
+                    </div>
+                    <div class="identity-field">
+                        <span class="label">Public Key</span>
+                        <div class="value">{{ identity.get('public_key', 'N/A')[:32] }}...</div>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Network Configuration Section -->
+            <div class="section">
+                <div class="section-title">Network Configuration</div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="host">Node Host *</label>
+                        <input type="text" id="host" name="host" value="{{ node_info.get('host', '') }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="port">Node Port *</label>
+                        <input type="number" id="port" name="port" value="{{ node_info.get('port', 8003) }}" min="1" max="65535" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="http_host">HTTP Host *</label>
+                        <input type="text" id="http_host" name="http_host" value="{{ node_info.get('http_host', '') }}" required>
+                    </div>
+                    <div class="form-group">
+                        <label for="http_port">HTTP Port *</label>
+                        <input type="number" id="http_port" name="http_port" value="{{ node_info.get('http_port', 8000) }}" min="1" max="65535" required>
+                    </div>
+                </div>
+                
+                <div class="form-row">
+                    <div class="form-group">
+                        <label for="http_protocol">HTTP Protocol</label>
+                        <select id="http_protocol" name="http_protocol">
+                            <option value="https" {% if node_info.get('http_protocol') == 'https' %}selected{% end %}>HTTPS (Secure)</option>
+                            <option value="http" {% if node_info.get('http_protocol') == 'http' %}selected{% end %}>HTTP</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Collateral Address Section -->
+            <div class="section">
+                <div class="section-title">Collateral</div>
+                <div class="info-alert" style="margin-bottom: 15px;">
+                    <strong>⚠️ Collateral Address Requirement:</strong> Please create a <b>new wallet address</b> for collateral where the balance will be <b>exactly 5000 YDA</b> at <a href="https://yadacoin.io/app" target="_blank">https://yadacoin.io/app</a> or <b>/app</b> on your local node.
+                </div>
+                <div class="form-row full">
+                    <div class="form-group">
+                        <label for="collateral_address">Collateral Address *</label>
+                        <input type="text" id="collateral_address" name="collateral_address" value="{{ node_info.get('collateral_address', '') }}" required>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Registration Fee Section -->
+            <div class="section">
+                <div class="section-title">Registration Fee</div>
+                <div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:10px;border-radius:6px;margin-bottom:12px;font-size:13px;">
+                    <span style="color:#b91c1c;font-size:13px;font-weight:600;">Collateral fee: 5000 YDA (required)</span>
+                </div>
+                <div class="form-row full">
+                    <div class="form-group">
+                        <label for="fee">Collateral Fee (YDA) *</label>
+                        <input type="number" id="fee" name="fee" value="5000" min="5000" max="5000" step="0.00000001" required readonly disabled>
+                    </div>
+                </div>
+            </div>
+            
+            <!-- Actions -->
+            <div class="button-group">
+                <button type="submit" class="btn-submit">Announce Node</button>
+                <button type="reset" class="btn-reset">Reset Form</button>
+            </div>
+            
+            <div class="loading" id="loading">
+                <span class="spinner"></span>
+                Processing announcement...
+            </div>
+        </form>
+    </div>
+    
+    <script>
+        const form = document.getElementById('nodeForm');
+        const messageDiv = document.getElementById('message');
+        const loadingDiv = document.getElementById('loading');
+        
+        form.addEventListener('submit', async (e) => {
+            e.preventDefault();
+            messageDiv.className = 'message';
+            loadingDiv.classList.add('show');
+
+            const formData = {
+                host: document.getElementById('host').value,
+                port: parseInt(document.getElementById('port').value),
+                http_host: document.getElementById('http_host').value,
+                http_port: parseInt(document.getElementById('http_port').value),
+                http_protocol: document.getElementById('http_protocol').value,
+                collateral_address: document.getElementById('collateral_address').value,
+                fee: parseFloat(document.getElementById('fee').value),
+            };
+            
+            try {
+                const response = await fetch(window.location.href, {
+                    method: 'POST',
+                    headers: {
+                        'Content-Type': 'application/json',
+                    },
+                    body: JSON.stringify(formData),
+                });
+                
+                const data = await response.json();
+                loadingDiv.classList.remove('show');
+                
+                if (response.ok && data.status === 'success') {
+                    messageDiv.textContent = data.message;
+                    messageDiv.className = 'message success';
+                    console.log('Transaction signature:', data.transaction_signature);
+                } else {
+                    messageDiv.textContent = data.message || 'Unknown error occurred';
+                    messageDiv.className = 'message error';
+                }
+            } catch (error) {
+                loadingDiv.classList.remove('show');
+                messageDiv.textContent = `Error: ${error.message}`;
+                messageDiv.className = 'message error';
+            }
+        });
+    </script>
+</body>
+</html>
