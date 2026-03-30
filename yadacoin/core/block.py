@@ -253,16 +253,15 @@ class Block(object):
                 await NodesTester.test_all_nodes(block_index)
                 NodesTester.all_nodes = current_nodes
 
-            outputs = [
-                Output.from_dict(
-                    {
-                        "value": (block_reward * 0.9) + float(fee_sum),
-                        "to": str(
-                            P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key))
-                        ),
-                    }
+            masternode_fee_sum = 0.0
+            if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+                masternode_fee_sum = sum(
+                    [
+                        float(transaction_obj.masternode_fee)
+                        for transaction_obj in transaction_objs
+                    ]
                 )
-            ]
+
             masternode_reward_total = block_reward * 0.1
 
             if config.network == "regnet":
@@ -275,21 +274,21 @@ class Block(object):
             reward_nodes = NodesTester.successful_nodes
 
             if reward_nodes:
-                if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                    masternode_fee_sum = sum(
-                        [
-                            float(transaction_obj.masternode_fee)
-                            for transaction_obj in transaction_objs
-                        ]
+                outputs = [
+                    Output.from_dict(
+                        {
+                            "value": (block_reward * 0.9) + float(fee_sum),
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(public_key)
+                                )
+                            ),
+                        }
                     )
-                    masternode_reward_divided = (
-                        masternode_reward_total + masternode_fee_sum
-                    ) / len(reward_nodes)
-
-                else:
-                    masternode_reward_divided = masternode_reward_total / len(
-                        reward_nodes
-                    )
+                ]
+                masternode_reward_divided = (
+                    masternode_reward_total + masternode_fee_sum
+                ) / len(reward_nodes)
 
                 for successful_node in reward_nodes:
                     outputs.append(
@@ -306,6 +305,20 @@ class Block(object):
                             }
                         )
                     )
+            else:
+                # No masternodes: miner receives the full block reward + all fees
+                outputs = [
+                    Output.from_dict(
+                        {
+                            "value": block_reward + float(fee_sum) + masternode_fee_sum,
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(public_key)
+                                )
+                            ),
+                        }
+                    )
+                ]
         else:
             outputs = [
                 Output.from_dict(
@@ -414,6 +427,77 @@ class Block(object):
                             {"id": e.other_txn_to_delete.transaction_signature}
                         )
                         block.transactions.remove(e.other_txn_to_delete)
+
+        # Regenerate the coinbase now that all post-build transaction filtering
+        # has completed. Transactions may have been removed after the coinbase
+        # was first generated (Xeggex freeze, KEL failures, etc.), so the
+        # original fee_sum / masternode_fee_sum baked into that coinbase may be
+        # too large.  Recompute from the surviving non-coinbase transactions and
+        # rebuild the coinbase in-place.
+        if index >= CHAIN.PAY_MASTER_NODES_FORK:
+            non_coinbase = [t for t in block.transactions if not t.coinbase]
+            updated_fee_sum = sum(float(t.fee) for t in non_coinbase)
+            updated_masternode_fee_sum = 0.0
+            if index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
+                updated_masternode_fee_sum = sum(
+                    float(t.masternode_fee) for t in non_coinbase
+                )
+
+            reward_nodes = NodesTester.successful_nodes
+            if reward_nodes:
+                updated_outputs = [
+                    Output.from_dict(
+                        {
+                            "value": (block_reward * 0.9) + updated_fee_sum,
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(public_key)
+                                )
+                            ),
+                        }
+                    )
+                ]
+                masternode_reward_divided = (
+                    block_reward * 0.1 + updated_masternode_fee_sum
+                ) / len(reward_nodes)
+                for successful_node in reward_nodes:
+                    updated_outputs.append(
+                        Output.from_dict(
+                            {
+                                "value": float(masternode_reward_divided),
+                                "to": str(
+                                    P2PKHBitcoinAddress.from_pubkey(
+                                        bytes.fromhex(
+                                            successful_node.identity.public_key
+                                        )
+                                    )
+                                ),
+                            }
+                        )
+                    )
+            else:
+                updated_outputs = [
+                    Output.from_dict(
+                        {
+                            "value": block_reward
+                            + updated_fee_sum
+                            + updated_masternode_fee_sum,
+                            "to": str(
+                                P2PKHBitcoinAddress.from_pubkey(
+                                    bytes.fromhex(public_key)
+                                )
+                            ),
+                        }
+                    )
+                ]
+
+            new_coinbase = await Transaction.generate(
+                public_key=public_key,
+                private_key=private_key,
+                outputs=updated_outputs,
+                coinbase=True,
+            )
+            block.transactions = non_coinbase + [new_coinbase]
 
         txn_hashes = block.get_transaction_hashes()
         block.set_merkle_root(txn_hashes)
@@ -876,10 +960,8 @@ class Block(object):
                 if (
                     quantize_eight(coinbase_sum - fee_sum)
                     == quantize_eight(reward * 0.9)
-                    and quantize_eight(  # there was an bug where the block reward was still 90% for the miner even if no masternodes were present
-                        masternode_sum - masternode_fee_sum
-                    )
-                    == 0
+                    and masternode_sum
+                    == 0  # there was a bug where the block reward was still 90% for the miner even if no masternodes were present
                 ):
                     return
                 raise TotalValueMismatchException(
