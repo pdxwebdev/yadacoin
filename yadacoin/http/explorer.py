@@ -274,6 +274,35 @@ class ExplorerSearchHandler(BaseHandler):
             pass
 
         try:
+            re.search(r"[A-Fa-f0-9]{64}", term).group(0)
+            for field in [
+                "transactions.public_key_hash",
+                "transactions.prev_public_key_hash",
+                "transactions.prerotated_key_hash",
+                "transactions.twice_prerotated_key_hash",
+                "transactions.relationship_hash",
+                "transactions.dh_public_key",
+                "transactions.miner_signature",
+            ]:
+                res = await self.config.mongo.async_db.blocks.count_documents(
+                    {field: term}
+                )
+                if res:
+                    return self.render_as_json(
+                        {
+                            "resultType": "txn_hash",
+                            "result": [
+                                changetime(x)
+                                async for x in self.config.mongo.async_db.blocks.find(
+                                    {field: term}, {"_id": 0}
+                                )
+                            ],
+                        }
+                    )
+        except:
+            pass
+
+        try:
             res = await self.get_wallet_balance(term)
             if res:
                 return res
