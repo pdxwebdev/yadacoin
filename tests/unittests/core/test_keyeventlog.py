@@ -701,12 +701,12 @@ class TestKeyEventLog(AsyncTestCase):
         # Wallet 1 inception key signs a spending transaction.
         # Wallet 2 previously sent 10 YDA to wallet 1's inception address
         # ("1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"). Wallet 1 now forwards
-        # those funds to the latest key log entry's public_key_hash.
+        # those funds to the latest key log entry's prerotated_key_hash.
         wallet1_inception_pubkey = (
             "02850674626716f3d511d51d43824057f45348154735318388d51a4d436709b83d"
         )
-        # Latest public_key_hash from key_log[-1] (Confirming 2 in blocks[-5])
-        latest_public_key_hash = "1NY91tSJvaFK7BYbGcXeGipoNKoqoXDSex"
+        # Latest prerotated_key_hash from key_log[-1] (Confirming 2 in blocks[-5])
+        latest_prerotated_key_hash = "18Pr4uTkgLRjhopsaKrQwSgjrLXD2i2NTt"
 
         # Build the spending transaction (wallet 1 sending to its latest address)
         spending_txn = Transaction(
@@ -716,7 +716,7 @@ class TestKeyEventLog(AsyncTestCase):
             fee=0.0,
             txn_hash="wallet1_spending_hash",
             inputs=[{"id": "wallet2_funding_txn_id"}],
-            outputs=[{"to": latest_public_key_hash, "value": 10.0}],
+            outputs=[{"to": latest_prerotated_key_hash, "value": 10.0}],
             version=7,
             # Not a key event itself — no KEL fields populated
             prerotated_key_hash="",
@@ -726,7 +726,7 @@ class TestKeyEventLog(AsyncTestCase):
         )
 
         # verify_kel_output_rules should NOT raise: sending to the latest
-        # key log entry's public_key_hash is allowed by CHECK_KEL_OUTPUT_ROUTING_FORK
+        # key log entry's prerotated_key_hash is allowed by CHECK_KEL_OUTPUT_ROUTING_FORK
         await spending_txn.verify_kel_output_rules()
 
     async def test_check_kel_output_routing_fork_rejects_wrong_destination(self):
