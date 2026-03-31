@@ -1252,11 +1252,11 @@ class Transaction(object):
             if not is_new_key_log_entry:
                 # Not a new key log entry: all outputs must only go to the latest
                 # key log entry's public_key_hash and nowhere else.
-                latest_public_key_hash = key_log[-1].public_key_hash
+                latest_prerotated_key_hash = key_log[-1].prerotated_key_hash
                 for output in self.outputs:
-                    if output.to != latest_public_key_hash:
+                    if output.to != latest_prerotated_key_hash:
                         raise KELOutputRoutingViolationException(
-                            f"Non-rotating tx output {output.to!r} does not match latest KEL public_key_hash {latest_public_key_hash!r}."
+                            f"Non-rotating tx output {output.to!r} does not match latest KEL public_key_hash {latest_prerotated_key_hash!r}."
                         )
                 return
 
