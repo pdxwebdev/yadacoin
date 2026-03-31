@@ -102,6 +102,30 @@ class DoesNotSpendEntirelyToPrerotatedKeyHashException(FatalKeyEventException):
     pass
 
 
+class KELSelfSendException(DoesNotSpendEntirelyToPrerotatedKeyHashException):
+    """Tx outputs include its own public_key_hash instead of the prerotated_key_hash."""
+
+
+class KELLogUnbuildableException(DoesNotSpendEntirelyToPrerotatedKeyHashException):
+    """Key event log exists on-chain but could not be reconstructed."""
+
+
+class KELOutputRoutingViolationException(
+    DoesNotSpendEntirelyToPrerotatedKeyHashException
+):
+    """Non-rotating tx sends to an address other than the latest KEL public_key_hash."""
+
+
+class KELDoesNotSpendAllUTXOsException(
+    DoesNotSpendEntirelyToPrerotatedKeyHashException
+):
+    """Tx does not spend all available UTXOs for this key (on-chain + mempool)."""
+
+
+class KELMissingParentUTXOException(DoesNotSpendEntirelyToPrerotatedKeyHashException):
+    """Tx has inputs but no matching UTXOs found on-chain or in the mempool."""
+
+
 class KeyEvent:
     def __init__(
         self,

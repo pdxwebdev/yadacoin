@@ -1209,7 +1209,11 @@ class Transaction(object):
 
     async def verify_kel_output_rules(self, block=None, mempool=False):
         from yadacoin.core.keyeventlog import (
-            DoesNotSpendEntirelyToPrerotatedKeyHashException,
+            KELDoesNotSpendAllUTXOsException,
+            KELLogUnbuildableException,
+            KELMissingParentUTXOException,
+            KELOutputRoutingViolationException,
+            KELSelfSendException,
             KeyEventLog,
         )
 
@@ -1224,8 +1228,8 @@ class Transaction(object):
         # If KEL fields indicate this is a key event, it must not send back to its own address
         if self.are_kel_fields_populated():
             if self.public_key_hash in [output.to for output in self.outputs]:
-                raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                    "Key event transactions must spend entire remaining balance to prerotated_key_hash."
+                raise KELSelfSendException(
+                    f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
                 )
 
         # Only enforce spend rules when this key's address is tracked in an existing log
@@ -1234,8 +1238,8 @@ class Transaction(object):
 
         key_log = await KeyEventLog.build_from_public_key(self.public_key)
         if not key_log:
-            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                "Transaction has a key event log but the log could not be built."
+            raise KELLogUnbuildableException(
+                f"Key event log exists for public_key={self.public_key} but could not be reconstructed."
             )
 
         if effective_index >= CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK:
@@ -1251,14 +1255,14 @@ class Transaction(object):
                 latest_public_key_hash = key_log[-1].public_key_hash
                 for output in self.outputs:
                     if output.to != latest_public_key_hash:
-                        raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                            "Transaction must only send to the latest key log entry's public_key_hash."
+                        raise KELOutputRoutingViolationException(
+                            f"Non-rotating tx output {output.to!r} does not match latest KEL public_key_hash {latest_public_key_hash!r}."
                         )
                 return
 
         if self.public_key_hash in [output.to for output in self.outputs]:
-            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                "Key event transactions must spend entire remaining balance to prerotated_key_hash."
+            raise KELSelfSendException(
+                f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
             )
 
         all_inputs = [
@@ -1307,14 +1311,15 @@ class Transaction(object):
             mempool_chain_input_sum > 0
             and mempool_chain_input_sum - total_spent != len(self.inputs)
         ):
-            raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                "Key event transactions must spend all utxos in mempool and blockchain."
+            raise KELDoesNotSpendAllUTXOsException(
+                f"Key event tx spends {len(self.inputs)} input(s) but "
+                f"{mempool_chain_input_sum - total_spent} unspent UTXO(s) exist for public_key_hash={self.public_key_hash}."
             )
         if len(self.inputs) > 0 and mempool_chain_input_sum == 0:
             for inputx in self.inputs:
                 if not inputx.input_txn:
-                    raise DoesNotSpendEntirelyToPrerotatedKeyHashException(
-                        "Key event transactions must spend utxo from unconfirmed key event."
+                    raise KELMissingParentUTXOException(
+                        f"Key event tx input {inputx.id!r} has no matching on-chain or mempool UTXO for public_key_hash={self.public_key_hash}."
                     )
 
     def to_dict(self):
