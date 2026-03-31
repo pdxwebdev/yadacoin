@@ -578,6 +578,16 @@ class Transaction(object):
                     "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
                 )
 
+            if block is not None:
+                _kel_index = block.index
+            elif mempool:
+                _kel_index = self.config.LatestBlock.block.index + 1
+            else:
+                _kel_index = self.config.LatestBlock.block.index
+
+            if _kel_index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
+                await self.verify_kel_output_rules(block=block, mempool=mempool)
+
         if verify_hash != self.hash:
             raise InvalidTransactionException(
                 f"transaction is invalid - {verify_hash} - {self.hash}"
@@ -1236,17 +1246,21 @@ class Transaction(object):
         if not await self.has_key_event_log(block=block, mempool=mempool):
             return
 
-        key_log = await KeyEventLog.build_from_public_key(self.public_key)
+        # Use onchain_only=True so that a pending rotation in the mempool is never
+        # treated as the "latest" KEL entry when checking output routing rules.
+        key_log = await KeyEventLog.build_from_public_key(
+            self.public_key, onchain_only=True
+        )
         if not key_log:
             raise KELLogUnbuildableException(
                 f"Key event log exists for public_key={self.public_key} but could not be reconstructed."
             )
 
         if effective_index >= CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK:
-            # A transaction is a new key log entry only if its public_key_hash equals
-            # the last log entry's prerotated_key_hash (i.e. it is the next committed rotation).
-            is_new_key_log_entry = (
-                self.public_key_hash == key_log[-1].prerotated_key_hash
+            # A transaction is a new key log entry if its public_key_hash is already
+            # recorded as a confirmed entry in the on-chain key event log.
+            is_new_key_log_entry = not any(
+                entry.public_key_hash == self.public_key_hash for entry in key_log
             )
 
             if not is_new_key_log_entry:
@@ -1264,6 +1278,12 @@ class Transaction(object):
             raise KELSelfSendException(
                 f"Key event tx sends to its own public_key_hash ({self.public_key_hash}) instead of prerotated_key_hash."
             )
+
+        # UTXO completeness check is only meaningful for mempool submissions.
+        # During block verification the miner has already assembled the transactions,
+        # and counting sibling block entries creates cascading removal dependencies.
+        if block is not None:
+            return
 
         all_inputs = [
             x

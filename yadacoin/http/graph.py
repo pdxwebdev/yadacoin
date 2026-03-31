@@ -295,8 +295,6 @@ class GraphTransactionHandler(BaseGraphHandler):
                     if await transaction.is_already_in_mempool():
                         raise KELException("Duplicate Key Event found in mempool.")
 
-                await transaction.verify_kel_output_rules(mempool=True)
-
             except InvalidTransactionException:
                 exception_raised = True
                 await self.config.mongo.async_db.failed_transactions.insert_one(

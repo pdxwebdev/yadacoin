@@ -234,6 +234,42 @@ class KeyEvent:
                 "Unconfirmed key event sends to an expired key event. Removing."
             )
 
+        # Non-inception key events: enforce predecessor-existence rules.
+        # Confirming entries (single output to prerotated_key_hash, no relationship) allow
+        # one level of mempool chaining — their parent may be an unconfirmed entry in the
+        # mempool.  Unconfirmed entries (carry relationship data or non-standard outputs)
+        # always require an on-chain parent.
+        if self.txn.prev_public_key_hash:
+            # Derive classification from flag if already set, otherwise from txn properties.
+            if self.flag is not None:
+                is_confirming = self.flag == KeyEventFlag.CONFIRMING
+            else:
+                is_confirming = (
+                    not self.txn.relationship
+                    and len(self.txn.outputs) == 1
+                    and self.txn.outputs[0].to == self.txn.prerotated_key_hash
+                )
+
+            onchain_parent = await self.get_onchain_parent()
+            if not onchain_parent:
+                if is_confirming:
+                    # Confirming entries may chain off an unconfirmed mempool parent.
+                    mempool_parent = await self.config.mongo.async_db.miner_transactions.find_one(
+                        {
+                            MempoolQueryFields.PUBLIC_KEY_HASH.value: self.txn.prev_public_key_hash
+                        }
+                    )
+                    if not mempool_parent:
+                        raise KELException(
+                            "Confirming key event rejected: predecessor key event not found "
+                            "on-chain or in the mempool."
+                        )
+                else:
+                    raise KELException(
+                        "Unconfirmed key event rejected: predecessor key event is not yet "
+                        "confirmed on-chain. Wait for the previous rotation to be mined before submitting."
+                    )
+
         if await self.txn.is_already_onchain():
             key_log = await KeyEventLog.build_from_public_key(self.txn.public_key)
             if (
@@ -743,7 +779,14 @@ class KeyEventLog:
             )
 
     @staticmethod
-    async def build_from_public_key(public_key):
+    async def build_from_public_key(public_key, onchain_only=False):
+        """Build the ordered KEL for *public_key*.
+
+        When *onchain_only* is True the forward-walk stops at the confirmed
+        blockchain tip: mempool entries are never appended.  This is important
+        for output-routing validation so that a pending (unconfirmed) rotation
+        sitting in the mempool is never mistaken for the "latest" KEL entry.
+        """
         config = Config()
         log = []
         address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(public_key)))
@@ -787,6 +830,8 @@ class KeyEventLog:
                 address = txn.prev_public_key_hash
             else:
                 # This case for pending inception transactions
+                if onchain_only:
+                    break
                 result_mempool = await config.mongo.async_db.miner_transactions.find_one(
                     {
                         "$or": [
@@ -834,6 +879,8 @@ class KeyEventLog:
                     txn = Transaction.from_dict(res[0]["transactions"])
                     log.append(txn)
                 else:
+                    if onchain_only:
+                        break
                     result_mempool = (
                         await config.mongo.async_db.miner_transactions.find_one(
                             {MempoolQueryFields.PUBLIC_KEY_HASH.value: address},

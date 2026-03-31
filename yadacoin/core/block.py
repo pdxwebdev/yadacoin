@@ -382,7 +382,7 @@ class Block(object):
 
                 if block.index >= CHAIN.CHECK_KEL_SPENDS_ENTIRELY_FORK:
                     try:
-                        await txn.verify_kel_output_rules()
+                        await txn.verify_kel_output_rules(block=block)
                     except (
                         KELDoesNotSpendAllUTXOsException,
                         KELMissingParentUTXOException,
