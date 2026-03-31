@@ -58,20 +58,54 @@
       <strong>signature: </strong
       ><a href="/explorer?term={{ transaction.id }}">{{ transaction.id }}</a>
     </p>
-    <p><strong>hash: </strong>{{ transaction.hash }}</p>
+    <p><strong>hash: </strong><a href="/explorer?term={{ transaction.hash }}">{{ transaction.hash }}</a></p>
+    <p><strong>version: </strong>{{ transaction.version }}</p>
+    <p><strong>time: </strong>{{ transaction.time }}</p>
     <p><strong>fee: </strong>{{ transaction.fee }}</p>
     <p><strong>masternode_fee: </strong>{{ transaction.masternode_fee }}</p>
-    <p>
+    <p><strong>private: </strong>{{ transaction.private }}</p>
+    <p><strong>never_expire: </strong>{{ transaction.never_expire }}</p>
+    <p *ngIf="transaction.dh_public_key">
       <strong>diffie-hellman public key: </strong
-      >{{ transaction.dh_public_key }}
+      ><a href="/explorer?term={{ transaction.dh_public_key }}">{{ transaction.dh_public_key }}</a>
     </p>
     <p>
       <strong>relationship identifier: </strong
       ><a href="/explorer?term={{ transaction.rid }}">{{ transaction.rid }}</a>
     </p>
+    <p *ngIf="transaction.requester_rid">
+      <strong>requester_rid: </strong
+      ><a href="/explorer?term={{ transaction.requester_rid }}">{{
+        transaction.requester_rid
+      }}</a>
+    </p>
+    <p *ngIf="transaction.requested_rid">
+      <strong>requested_rid: </strong
+      ><a href="/explorer?term={{ transaction.requested_rid }}">{{
+        transaction.requested_rid
+      }}</a>
+    </p>
+    <p *ngIf="transaction.relationship_hash">
+      <strong>relationship_hash: </strong><a href="/explorer?term={{ transaction.relationship_hash }}">{{ transaction.relationship_hash }}</a>
+    </p>
     <p>
       <strong>relationship data: </strong
       ><textarea class="form-control">{{ transaction.relationship }}</textarea>
+    </p>
+    <p *ngIf="transaction.public_key_hash">
+      <strong>public_key_hash: </strong><a href="/explorer?term={{ transaction.public_key_hash }}">{{ transaction.public_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.prev_public_key_hash">
+      <strong>prev_public_key_hash: </strong><a href="/explorer?term={{ transaction.prev_public_key_hash }}">{{ transaction.prev_public_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.prerotated_key_hash">
+      <strong>prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.prerotated_key_hash }}">{{ transaction.prerotated_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.twice_prerotated_key_hash">
+      <strong>twice_prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.twice_prerotated_key_hash }}">{{ transaction.twice_prerotated_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.miner_signature">
+      <strong>miner_signature: </strong><a href="/explorer?term={{ transaction.miner_signature }}">{{ transaction.miner_signature }}</a>
     </p>
     <div *ngIf="transaction.inputs.length === 0">
       <strong>No inputs</strong>
@@ -114,20 +148,54 @@
       <strong>signature: </strong
       ><a href="/explorer?term={{ transaction.id }}">{{ transaction.id }}</a>
     </p>
-    <p><strong>hash: </strong>{{ transaction.hash }}</p>
+    <p><strong>hash: </strong><a href="/explorer?term={{ transaction.hash }}">{{ transaction.hash }}</a></p>
+    <p><strong>version: </strong>{{ transaction.version }}</p>
+    <p><strong>time: </strong>{{ transaction.time }}</p>
     <p><strong>fee: </strong>{{ transaction.fee }}</p>
     <p><strong>masternode_fee: </strong>{{ transaction.masternode_fee }}</p>
-    <p>
+    <p><strong>private: </strong>{{ transaction.private }}</p>
+    <p><strong>never_expire: </strong>{{ transaction.never_expire }}</p>
+    <p *ngIf="transaction.dh_public_key">
       <strong>diffie-hellman public key: </strong
-      >{{ transaction.dh_public_key }}
+      ><a href="/explorer?term={{ transaction.dh_public_key }}">{{ transaction.dh_public_key }}</a>
     </p>
     <p>
       <strong>relationship identifier: </strong
       ><a href="/explorer?term={{ transaction.rid }}">{{ transaction.rid }}</a>
     </p>
+    <p *ngIf="transaction.requester_rid">
+      <strong>requester_rid: </strong
+      ><a href="/explorer?term={{ transaction.requester_rid }}">{{
+        transaction.requester_rid
+      }}</a>
+    </p>
+    <p *ngIf="transaction.requested_rid">
+      <strong>requested_rid: </strong
+      ><a href="/explorer?term={{ transaction.requested_rid }}">{{
+        transaction.requested_rid
+      }}</a>
+    </p>
+    <p *ngIf="transaction.relationship_hash">
+      <strong>relationship_hash: </strong><a href="/explorer?term={{ transaction.relationship_hash }}">{{ transaction.relationship_hash }}</a>
+    </p>
     <p>
       <strong>relationship data: </strong
       ><textarea class="form-control">{{ transaction.relationship }}</textarea>
+    </p>
+    <p *ngIf="transaction.public_key_hash">
+      <strong>public_key_hash: </strong><a href="/explorer?term={{ transaction.public_key_hash }}">{{ transaction.public_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.prev_public_key_hash">
+      <strong>prev_public_key_hash: </strong><a href="/explorer?term={{ transaction.prev_public_key_hash }}">{{ transaction.prev_public_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.prerotated_key_hash">
+      <strong>prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.prerotated_key_hash }}">{{ transaction.prerotated_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.twice_prerotated_key_hash">
+      <strong>twice_prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.twice_prerotated_key_hash }}">{{ transaction.twice_prerotated_key_hash }}</a>
+    </p>
+    <p *ngIf="transaction.miner_signature">
+      <strong>miner_signature: </strong><a href="/explorer?term={{ transaction.miner_signature }}">{{ transaction.miner_signature }}</a>
     </p>
     <div *ngIf="transaction.inputs.length === 0">
       <strong>No inputs</strong>
@@ -229,6 +297,10 @@
       <strong>hash: </strong
       ><a href="/explorer?term={{ block.hash }}">{{ block.hash }}</a>
     </p>
+    <p *ngIf="block.special_target">
+      <strong>special_target: </strong>{{ block.special_target }}
+    </p>
+    <p *ngIf="block.header"><strong>header: </strong>{{ block.header }}</p>
     <h4>Transactions</h4>
     <ul>
       <li *ngFor="let transaction of block.transactions">
@@ -238,13 +310,17 @@
             transaction.public_key
           }}</a>
         </p>
-        <p><strong>signature: </strong>{{ transaction.id }}</p>
-        <p><strong>hash: </strong>{{ transaction.hash }}</p>
+        <p><strong>signature: </strong><a href="/explorer?term={{ transaction.id }}">{{ transaction.id }}</a></p>
+        <p><strong>hash: </strong><a href="/explorer?term={{ transaction.hash }}">{{ transaction.hash }}</a></p>
+        <p><strong>version: </strong>{{ transaction.version }}</p>
+        <p><strong>time: </strong>{{ transaction.time }}</p>
         <p><strong>fee: </strong>{{ transaction.fee }}</p>
         <p><strong>masternode_fee: </strong>{{ transaction.masternode_fee }}</p>
+        <p><strong>private: </strong>{{ transaction.private }}</p>
+        <p><strong>never_expire: </strong>{{ transaction.never_expire }}</p>
         <p>
           <strong>diffie-hellman public key: </strong
-          >{{ transaction.dh_public_key }}
+          ><a href="/explorer?term={{ transaction.dh_public_key }}">{{ transaction.dh_public_key }}</a>
         </p>
         <p>
           <strong>relationship identifier: </strong
@@ -252,11 +328,41 @@
             transaction.rid
           }}</a>
         </p>
+        <p *ngIf="transaction.requester_rid">
+          <strong>requester_rid: </strong
+          ><a href="/explorer?term={{ transaction.requester_rid }}">{{
+            transaction.requester_rid
+          }}</a>
+        </p>
+        <p *ngIf="transaction.requested_rid">
+          <strong>requested_rid: </strong
+          ><a href="/explorer?term={{ transaction.requested_rid }}">{{
+            transaction.requested_rid
+          }}</a>
+        </p>
+        <p *ngIf="transaction.relationship_hash">
+          <strong>relationship_hash: </strong><a href="/explorer?term={{ transaction.relationship_hash }}">{{ transaction.relationship_hash }}</a>
+        </p>
         <p>
           <strong>relationship data: </strong
           ><textarea class="form-control">{{
             transaction.relationship
           }}</textarea>
+        </p>
+        <p *ngIf="transaction.public_key_hash">
+          <strong>public_key_hash: </strong><a href="/explorer?term={{ transaction.public_key_hash }}">{{ transaction.public_key_hash }}</a>
+        </p>
+        <p *ngIf="transaction.prev_public_key_hash">
+          <strong>prev_public_key_hash: </strong><a href="/explorer?term={{ transaction.prev_public_key_hash }}">{{ transaction.prev_public_key_hash }}</a>
+        </p>
+        <p *ngIf="transaction.prerotated_key_hash">
+          <strong>prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.prerotated_key_hash }}">{{ transaction.prerotated_key_hash }}</a>
+        </p>
+        <p *ngIf="transaction.twice_prerotated_key_hash">
+          <strong>twice_prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.twice_prerotated_key_hash }}">{{ transaction.twice_prerotated_key_hash }}</a>
+        </p>
+        <p *ngIf="transaction.miner_signature">
+          <strong>miner_signature: </strong><a href="/explorer?term={{ transaction.miner_signature }}">{{ transaction.miner_signature }}</a>
         </p>
         <div *ngIf="transaction.inputs.length === 0">
           <strong>No inputs</strong>

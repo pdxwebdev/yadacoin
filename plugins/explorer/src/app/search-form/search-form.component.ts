@@ -33,23 +33,23 @@ export class SearchFormComponent implements OnInit {
     this.http.get(makeUrl("/api-stats")).subscribe(
       (res: any) => {
         this.difficulty = this.numberWithCommas(
-          res.json()["stats"]["difficulty"]
+          res.json()["stats"]["difficulty"],
         );
         this.hashrate = this.numberWithCommas(
-          res.json()["stats"]["network_hash_rate"]
+          res.json()["stats"]["network_hash_rate"],
         );
         this.current_height = this.numberWithCommas(
-          res.json()["stats"]["height"]
+          res.json()["stats"]["height"],
         );
         this.circulating = this.numberWithCommas(
-          res.json()["stats"]["circulating"]
+          res.json()["stats"]["circulating"],
         );
         if (!window.location.search) {
           this.http
             .get(
               makeUrl(
-                "/explorer-search?term=" + this.current_height.replace(",", "")
-              )
+                "/explorer-search?term=" + this.current_height.replace(",", ""),
+              ),
             )
             .subscribe(
               (res: any) => {
@@ -60,15 +60,20 @@ export class SearchFormComponent implements OnInit {
               },
               (err: any) => {
                 alert("something went terribly wrong!");
-              }
+              },
             );
         }
       },
       (err: any) => {
         alert("something went terribly wrong!");
-      }
+      },
     );
     if (window.location.search) {
+      const params = new URLSearchParams(window.location.search);
+      const term = params.get("term");
+      if (term) {
+        this.model.term = term;
+      }
       this.searching = true;
       this.submitted = true;
       this.http
@@ -82,7 +87,7 @@ export class SearchFormComponent implements OnInit {
           },
           (err: any) => {
             alert("something went terribly wrong!");
-          }
+          },
         );
     }
   }
@@ -94,7 +99,7 @@ export class SearchFormComponent implements OnInit {
     this.submitted = true;
     this.http
       .get(
-        makeUrl("/explorer-search?term=" + encodeURIComponent(this.model.term))
+        makeUrl("/explorer-search?term=" + encodeURIComponent(this.model.term)),
       )
       .subscribe(
         (res: any) => {
@@ -105,7 +110,7 @@ export class SearchFormComponent implements OnInit {
         },
         (err: any) => {
           alert("something went terribly wrong!");
-        }
+        },
       );
   }
 
@@ -122,7 +127,7 @@ export class SearchFormComponent implements OnInit {
     const bitcoin = Bitcoin;
     const pubkey = Bitcoin.ECPubKey(
       Bitcoin.convert.hexToBytes(publicKeyHex),
-      true
+      true,
     );
     return pubkey.getAddress().toString();
   }
