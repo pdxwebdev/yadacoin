@@ -609,6 +609,13 @@ class Block(object):
                             "Output address is invalid"
                         )
                 used_sigs.append(transaction_obj.transaction_signature)
+            except (KELExceptionPreviousKeyHashReferenceMissing,) as e:
+                # Transient: KEL inception not yet on-chain/in mempool; skip this
+                # txn for this block cycle but leave it in the mempool for next time.
+                config.app_log.warning(
+                    f"validate_transactions transient KEL skip: {e} | txn={transaction_obj.transaction_signature}"
+                )
+                continue
             except Exception as e:
                 await Transaction.handle_exception(e, transaction_obj)
                 if (
