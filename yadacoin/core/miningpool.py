@@ -22,6 +22,11 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.job import Job
+from yadacoin.core.keyeventlog import (
+    KELExceptionPredecessorNotYetInMempool,
+    KELExceptionPreviousKeyHashReferenceMissing,
+    KELLogUnbuildableException,
+)
 from yadacoin.core.peer import Peer
 from yadacoin.core.processingqueue import BlockProcessingQueueItem
 from yadacoin.core.transaction import Transaction
@@ -672,6 +677,17 @@ class MiningPool(object):
             else:
                 return transaction_obj
 
+        except (
+            KELExceptionPredecessorNotYetInMempool,
+            KELExceptionPreviousKeyHashReferenceMissing,
+            KELLogUnbuildableException,
+        ) as e:
+            # Transient: skip for this block cycle but keep in mempool
+            self.config.app_log.warning(
+                f"verify_pending_transaction, transient — skipping for this block: "
+                f"{transaction_obj.transaction_signature}: {e}"
+            )
+            return
         except Exception as e:
             await Transaction.handle_exception(e, transaction_obj, transactions)
 
