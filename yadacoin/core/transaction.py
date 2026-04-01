@@ -1246,10 +1246,12 @@ class Transaction(object):
         if not await self.has_key_event_log(block=block, mempool=mempool):
             return
 
-        # Use onchain_only=True so that a pending rotation in the mempool is never
-        # treated as the "latest" KEL entry when checking output routing rules.
+        # During block verification (block is set) use onchain_only=True so that
+        # in-flight mempool rotations are never mistaken for the confirmed KEL tip.
+        # During mempool submission (mempool=True) the inception may not yet be
+        # on-chain, so we must include mempool entries to build the log at all.
         key_log = await KeyEventLog.build_from_public_key(
-            self.public_key, onchain_only=True
+            self.public_key, onchain_only=(block is not None)
         )
         if not key_log:
             raise KELLogUnbuildableException(

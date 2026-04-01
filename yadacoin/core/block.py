@@ -35,6 +35,7 @@ from yadacoin.core.keyeventlog import (
     KELException,
     KELExceptionPreviousKeyHashReferenceMissing,
     KELHashCollection,
+    KELLogUnbuildableException,
     KELMissingParentUTXOException,
     KeyEvent,
     KeyEventChainStatus,
@@ -385,6 +386,7 @@ class Block(object):
                         await txn.verify_kel_output_rules(block=block)
                     except (
                         KELDoesNotSpendAllUTXOsException,
+                        KELLogUnbuildableException,
                         KELMissingParentUTXOException,
                     ) as e:
                         # Transient: UTXO state may change in the next block cycle
