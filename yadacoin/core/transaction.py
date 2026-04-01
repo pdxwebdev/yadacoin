@@ -1246,10 +1246,9 @@ class Transaction(object):
         if not await self.has_key_event_log(block=block, mempool=mempool):
             return
 
-        # During block verification (block is set) use onchain_only=True so that
-        # in-flight mempool rotations are never mistaken for the confirmed KEL tip.
-        # During mempool submission (mempool=True) the inception may not yet be
-        # on-chain, so we must include mempool entries to build the log at all.
+        # Build the full log (including mempool entries) so that inception transactions
+        # that are only in the mempool can still be found.  Mempool entries are tagged
+        # with txn.mempool = True by build_from_public_key.
         key_log = await KeyEventLog.build_from_public_key(
             self.public_key, onchain_only=(block is not None)
         )
@@ -1259,16 +1258,23 @@ class Transaction(object):
             )
 
         if effective_index >= CHAIN.CHECK_KEL_OUTPUT_ROUTING_FORK:
-            # A transaction is a new key log entry if its public_key_hash is already
-            # recorded as a confirmed entry in the on-chain key event log.
+            # For routing enforcement use only confirmed on-chain entries so that
+            # stacked mempool rotations do not shift the required destination before
+            # they are mined.  Fall back to the full log only when every entry is
+            # still in the mempool (i.e. nothing is confirmed yet).
+            onchain_key_log = [e for e in key_log if not getattr(e, "mempool", False)]
+            routing_log = onchain_key_log if onchain_key_log else key_log
+
+            # A transaction is a new key log entry if its public_key_hash is not yet
+            # recorded in the confirmed (on-chain) key event log.
             is_new_key_log_entry = not any(
-                entry.public_key_hash == self.public_key_hash for entry in key_log
+                entry.public_key_hash == self.public_key_hash for entry in routing_log
             )
 
             if not is_new_key_log_entry:
                 # Not a new key log entry: all outputs must only go to the latest
-                # key log entry's public_key_hash and nowhere else.
-                latest_prerotated_key_hash = key_log[-1].prerotated_key_hash
+                # confirmed key log entry's prerotated_key_hash.
+                latest_prerotated_key_hash = routing_log[-1].prerotated_key_hash
                 for output in self.outputs:
                     if output.to != latest_prerotated_key_hash:
                         raise KELOutputRoutingViolationException(
