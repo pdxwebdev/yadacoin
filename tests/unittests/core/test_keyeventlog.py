@@ -508,7 +508,18 @@ class TestKeyEventLog(AsyncTestCase):
         for block in blocks[-3:]:
             await self.config.mongo.async_db.blocks.insert_one(block)
 
-        await xblock.verify()
+        # The unconfirmed txn (txn[1]) and its confirming txn (txn[2]) are both
+        # in the same block. The confirming txn needs the unconfirmed txn's
+        # public_key_hash in the mempool to pass KeyEvent.verify().
+        await self.config.mongo.async_db.miner_transactions.insert_one(
+            xblock.transactions[1].to_dict()
+        )
+        try:
+            await xblock.verify()
+        finally:
+            await self.config.mongo.async_db.miner_transactions.delete_one(
+                {"id": xblock.transactions[1].transaction_signature}
+            )
 
     async def test_confirming_onchain_unconfirmed_and_confirming(self):
         xblock = await Block.from_dict(blocks[-5])
@@ -518,7 +529,18 @@ class TestKeyEventLog(AsyncTestCase):
         for block in blocks[-4:]:
             await self.config.mongo.async_db.blocks.insert_one(block)
 
-        await xblock.verify()
+        # txn[1] and txn[2] are both in the same block. txn[2] has
+        # prev_public_key_hash pointing to txn[1]'s public_key_hash.
+        # The confirming txn needs to find its predecessor in the mempool.
+        await self.config.mongo.async_db.miner_transactions.insert_one(
+            xblock.transactions[1].to_dict()
+        )
+        try:
+            await xblock.verify()
+        finally:
+            await self.config.mongo.async_db.miner_transactions.delete_one(
+                {"id": xblock.transactions[1].transaction_signature}
+            )
 
     async def test_misalignment_of_twice_prerotated_key_hash(self):
         xblock = await Block.from_dict(blocks[-5])
@@ -705,10 +727,14 @@ class TestKeyEventLog(AsyncTestCase):
         wallet1_inception_pubkey = (
             "02850674626716f3d511d51d43824057f45348154735318388d51a4d436709b83d"
         )
+        wallet1_inception_address = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
         # Latest prerotated_key_hash from key_log[-1] (Confirming 2 in blocks[-5])
         latest_prerotated_key_hash = "18Pr4uTkgLRjhopsaKrQwSgjrLXD2i2NTt"
 
-        # Build the spending transaction (wallet 1 sending to its latest address)
+        # Build the spending transaction (wallet 1 sending to its latest address).
+        # public_key_hash is set to the inception address so that
+        # is_new_key_log_entry resolves to False and the routing-fork enforcement
+        # path is exercised (output must go to key_log[-1].prerotated_key_hash).
         spending_txn = Transaction(
             txn_time=1739296100,
             transaction_signature="wallet1_spending_txn_id",
@@ -718,10 +744,10 @@ class TestKeyEventLog(AsyncTestCase):
             inputs=[{"id": "wallet2_funding_txn_id"}],
             outputs=[{"to": latest_prerotated_key_hash, "value": 10.0}],
             version=7,
-            # Not a key event itself — no KEL fields populated
             prerotated_key_hash="",
             twice_prerotated_key_hash="",
-            public_key_hash="",
+            # Identify this tx as spending from wallet 1's inception address
+            public_key_hash=wallet1_inception_address,
             prev_public_key_hash="",
         )
 
@@ -802,6 +828,7 @@ class TestKeyEventLog(AsyncTestCase):
         )
         # Wrong destination: wallet 1's own inception address instead of the latest
         wrong_destination = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
+        wallet1_inception_address = "1HZpCG5p3too1LxZi68ZGkUhJUJAZjDqE8"
 
         spending_txn = Transaction(
             txn_time=1739296100,
@@ -814,7 +841,8 @@ class TestKeyEventLog(AsyncTestCase):
             version=7,
             prerotated_key_hash="",
             twice_prerotated_key_hash="",
-            public_key_hash="",
+            # Set public_key_hash so is_new_key_log_entry resolves correctly
+            public_key_hash=wallet1_inception_address,
             prev_public_key_hash="",
         )
 
