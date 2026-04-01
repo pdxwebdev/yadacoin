@@ -23,7 +23,10 @@ from yadacoin.core.block import Block
 from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
-from yadacoin.core.keyeventlog import KELExceptionPreviousKeyHashReferenceMissing
+from yadacoin.core.keyeventlog import (
+    KELExceptionPreviousKeyHashReferenceMissing,
+    KELLogUnbuildableException,
+)
 from yadacoin.core.peer import (
     Group,
     Peer,
@@ -374,6 +377,7 @@ class NodeRPC(BaseRPC):
         except (
             MissingInputTransactionException,
             KELExceptionPreviousKeyHashReferenceMissing,
+            KELLogUnbuildableException,
         ):
             self.config.app_log.warning(
                 f"process_transaction_queue_item, skipping for now: {txn.transaction_signature}"
