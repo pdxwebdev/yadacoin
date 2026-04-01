@@ -126,6 +126,12 @@ class KELMissingParentUTXOException(DoesNotSpendEntirelyToPrerotatedKeyHashExcep
     """Tx has inputs but no matching UTXOs found on-chain or in the mempool."""
 
 
+class KELExceptionPredecessorNotYetInMempool(KELException):
+    """Confirming entry's predecessor is committed on-chain (via prerotated commitments)
+    but has not arrived in the mempool yet. Transient — retry when predecessor is present.
+    """
+
+
 class KeyEvent:
     def __init__(
         self,
@@ -260,7 +266,7 @@ class KeyEvent:
                         }
                     )
                     if not mempool_parent:
-                        raise KELException(
+                        raise KELExceptionPredecessorNotYetInMempool(
                             "Confirming key event rejected: predecessor key event not found "
                             "on-chain or in the mempool."
                         )

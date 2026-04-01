@@ -24,6 +24,7 @@ from yadacoin.core.blockchain import Blockchain
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.config import Config
 from yadacoin.core.keyeventlog import (
+    KELExceptionPredecessorNotYetInMempool,
     KELExceptionPreviousKeyHashReferenceMissing,
     KELLogUnbuildableException,
 )
@@ -376,11 +377,17 @@ class NodeRPC(BaseRPC):
             )
         except (
             MissingInputTransactionException,
+            KELExceptionPredecessorNotYetInMempool,
             KELExceptionPreviousKeyHashReferenceMissing,
             KELLogUnbuildableException,
         ):
+            # Transient: prerequisite txn may not have arrived yet. Store in mempool so
+            # it is available once the prerequisite is present (same behaviour as local node).
             self.config.app_log.warning(
-                f"process_transaction_queue_item, skipping for now: {txn.transaction_signature}"
+                f"process_transaction_queue_item, transient error — holding in mempool: {txn.transaction_signature}"
+            )
+            await self.config.mongo.async_db.miner_transactions.replace_one(
+                {"id": txn.transaction_signature}, txn.to_dict(), upsert=True
             )
             return
         except Exception as e:
