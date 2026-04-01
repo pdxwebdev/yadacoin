@@ -318,6 +318,29 @@ class RebroadcastFailedTransactions(BaseHandler):
         return self.render_as_json({"status": "success"})
 
 
+class GetMempoolHandler(BaseHandler):
+    async def get(self):
+        page = int(self.get_query_argument("page", 1))
+        page_size = min(int(self.get_query_argument("page_size", 25)), 100)
+        skip = (page - 1) * page_size
+        total = await self.config.mongo.async_db.miner_transactions.count_documents({})
+        cursor = (
+            self.config.mongo.async_db.miner_transactions.find({}, {"_id": 0})
+            .sort([("fee", -1), ("time", 1)])
+            .skip(skip)
+            .limit(page_size)
+        )
+        txns = await cursor.to_list(length=page_size)
+        return self.render_as_json(
+            {
+                "transactions": txns,
+                "total": total,
+                "page": page,
+                "page_size": page_size,
+            }
+        )
+
+
 class GetCurrentSmartContractTransactions(BaseHandler):
     async def get(self):
         return self.render_as_json({"txn_ids": [x["id"] for x in txns]})
@@ -512,6 +535,7 @@ NODE_HANDLERS = [
     (r"/get-transaction-tracking", GetTransactionTrackingHandler),
     (r"/rebroadcast-transactions", RebroadcastTransactions),
     (r"/rebroadcast-failed-transaction", RebroadcastFailedTransactions),
+    (r"/get-mempool", GetMempoolHandler),
     (r"/get-current-smart-contract-transactions", GetCurrentSmartContractTransactions),
     (r"/get-current-smart-contract-transaction", GetCurrentSmartContractTransaction),
     (r"/get-expired-smart-contract-transactions", GetExpiredSmartContractTransactions),
