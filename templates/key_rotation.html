@@ -1,0 +1,3534 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>
+      Key Rotation — YadaCoin Digital Cash
+    </title>
+    <style>
+      @import url("https://fonts.googleapis.com/css2?family=Cinzel+Decorative:wght@400;700&family=Cinzel:wght@400;600&family=IM+Fell+English+SC&family=IM+Fell+English:ital@0;1&display=swap");
+
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+
+      body {
+        font-family:
+          "IM Fell English", Georgia, serif;
+        background: #2d5a27;
+        background-image:
+          radial-gradient(
+            ellipse at 20% 50%,
+            #1e3d1a 0%,
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse at 80% 50%,
+            #1e3d1a 0%,
+            transparent 60%
+          );
+        min-height: 100vh;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+      }
+
+      .container {
+        max-width: 680px;
+        width: 100%;
+      }
+
+      /* ── Bill card ──────────────────────────────────────────────── */
+      .bill-flip-wrapper {
+        position: relative;
+      }
+
+      .bill-inner {
+        padding: 36px 40px 32px;
+        position: relative;
+        z-index: 2;
+        background: #f5f0dc;
+        background-image:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 28px,
+            rgba(0, 80, 0, 0.04) 28px,
+            rgba(0, 80, 0, 0.04) 29px
+          ),
+          repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 28px,
+            rgba(0, 80, 0, 0.04) 28px,
+            rgba(0, 80, 0, 0.04) 29px
+          );
+        border-radius: 4px;
+        box-shadow:
+          0 0 0 2px #8a7a40,
+          0 0 0 6px #f5f0dc,
+          0 0 0 8px #8a7a40,
+          0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      .bill-inner::before {
+        content: "";
+        position: absolute;
+        inset: 10px;
+        border: 1px solid rgba(100, 80, 20, 0.35);
+        border-radius: 2px;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .bill-inner::after {
+        content: "";
+        position: absolute;
+        inset: 13px;
+        border: 1px solid rgba(100, 80, 20, 0.2);
+        border-radius: 1px;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .bill-back {
+        display: none;
+        margin-top: 32px;
+        padding: 36px 40px 32px;
+        position: relative;
+        background: #f5f0dc;
+        background-image:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 28px,
+            rgba(0, 80, 0, 0.04) 28px,
+            rgba(0, 80, 0, 0.04) 29px
+          ),
+          repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 28px,
+            rgba(0, 80, 0, 0.04) 28px,
+            rgba(0, 80, 0, 0.04) 29px
+          );
+        border-radius: 4px;
+        box-shadow:
+          0 0 0 2px #8a7a40,
+          0 0 0 6px #f5f0dc,
+          0 0 0 8px #8a7a40,
+          0 20px 60px rgba(0, 0, 0, 0.5);
+      }
+      .bill-back::before {
+        content: "";
+        position: absolute;
+        inset: 10px;
+        border: 1px solid rgba(100, 80, 20, 0.35);
+        border-radius: 2px;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .bill-back::after {
+        content: "";
+        position: absolute;
+        inset: 13px;
+        border: 1px solid rgba(100, 80, 20, 0.2);
+        border-radius: 1px;
+        pointer-events: none;
+        z-index: 1;
+      }
+
+      .btn-flip {
+        width: 100%;
+        padding: 11px 20px;
+        background: transparent;
+        border: 1px dashed #8a7a40;
+        border-radius: 2px;
+        color: #5a7a40;
+        font-family: "IM Fell English SC", serif;
+        font-size: 11px;
+        letter-spacing: 2px;
+        cursor: pointer;
+        transition:
+          background 0.2s,
+          color 0.2s;
+        text-transform: uppercase;
+        flex: none;
+      }
+      .btn-flip:hover {
+        background: rgba(90, 122, 64, 0.1);
+        color: #1a3a1a;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .bill-header {
+        text-align: center;
+        margin-bottom: 16px;
+        padding-bottom: 14px;
+        border-bottom: 2px solid #5a7a40;
+      }
+      .bill-header::after {
+        content: "";
+        display: block;
+        height: 1px;
+        background: #5a7a40;
+        margin-top: 3px;
+      }
+      .bill-series {
+        font-family: "IM Fell English SC", serif;
+        font-size: 10px;
+        letter-spacing: 3px;
+        color: #5a7a40;
+        text-transform: uppercase;
+        margin-bottom: 4px;
+      }
+      .corner-ornament {
+        position: absolute;
+        font-size: 22px;
+        color: #5a7a40;
+        opacity: 0.6;
+        line-height: 1;
+        top: 36px;
+      }
+      .corner-ornament.left {
+        left: 40px;
+      }
+      .corner-ornament.right {
+        right: 40px;
+      }
+      .bill-divider {
+        text-align: center;
+        color: #8a9a60;
+        font-size: 14px;
+        letter-spacing: 8px;
+        margin: 4px 0 20px;
+        opacity: 0.6;
+      }
+
+      h1 {
+        font-family:
+          "Cinzel Decorative", "Cinzel", serif;
+        color: #1a3a1a;
+        font-size: 34px;
+        line-height: 1.1;
+        margin-bottom: 2px;
+        text-shadow: 1px 1px 0
+          rgba(255, 255, 255, 0.4);
+      }
+
+      .subtitle {
+        font-family: "IM Fell English SC", serif;
+        color: #4a6030;
+        font-size: 11px;
+        letter-spacing: 1.5px;
+        margin-bottom: 0;
+      }
+
+      .section {
+        margin-bottom: 22px;
+      }
+
+      .section-title {
+        font-family: "IM Fell English SC", serif;
+        font-size: 11px;
+        font-weight: 400;
+        color: #3a5a20;
+        text-transform: uppercase;
+        letter-spacing: 2px;
+        margin-bottom: 12px;
+        padding-bottom: 5px;
+        border-bottom: 1px solid #a0b870;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+      }
+
+      .info-box {
+        background: rgba(90, 122, 64, 0.08);
+        border: 1px solid #a0b870;
+        border-left: 3px solid #5a7a40;
+        color: #2a3a1a;
+        padding: 11px 14px;
+        border-radius: 2px;
+        margin-bottom: 18px;
+        font-size: 12.5px;
+        line-height: 1.65;
+        font-style: italic;
+      }
+
+      .key-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 10px;
+      }
+
+      .key-field {
+        background: rgba(255, 255, 255, 0.55);
+        border: 1px solid #c8b870;
+        border-radius: 2px;
+        padding: 10px 13px;
+      }
+
+      .key-label {
+        font-family: "IM Fell English SC", serif;
+        font-size: 9.5px;
+        font-weight: 400;
+        text-transform: uppercase;
+        color: #6a8a40;
+        letter-spacing: 1.5px;
+        display: block;
+        margin-bottom: 3px;
+      }
+
+      .key-value {
+        font-family:
+          "Courier New", Courier, monospace;
+        font-size: 12px;
+        color: #1a2a0a;
+        word-break: break-all;
+      }
+
+      .key-value.placeholder {
+        color: #b0a870;
+        font-style: italic;
+        font-family:
+          "IM Fell English", Georgia, serif;
+        font-size: 12px;
+      }
+
+      .form-group {
+        margin-bottom: 16px;
+      }
+
+      label {
+        display: block;
+        font-family: "IM Fell English SC", serif;
+        font-size: 11px;
+        font-weight: 400;
+        letter-spacing: 1px;
+        color: #3a5a20;
+        margin-bottom: 5px;
+      }
+
+      input[type="password"],
+      input[type="number"],
+      input[type="text"] {
+        width: 100%;
+        padding: 9px 13px;
+        border: 1px solid #b0a050;
+        border-radius: 2px;
+        font-size: 13px;
+        font-family:
+          "IM Fell English", Georgia, serif;
+        background: rgba(255, 255, 255, 0.7);
+        color: #1a2a0a;
+        transition:
+          border-color 0.2s,
+          box-shadow 0.2s;
+      }
+
+      input:focus {
+        outline: none;
+        border-color: #5a7a40;
+        box-shadow: 0 0 0 3px
+          rgba(90, 122, 64, 0.15);
+      }
+
+      .hint {
+        font-size: 10.5px;
+        color: #7a9050;
+        margin-top: 3px;
+        font-style: italic;
+      }
+
+      .button-group {
+        display: flex;
+        gap: 10px;
+        margin-top: 22px;
+      }
+
+      button {
+        flex: 1;
+        padding: 12px 20px;
+        border: none;
+        border-radius: 2px;
+        font-size: 13px;
+        font-weight: 600;
+        cursor: pointer;
+        transition:
+          transform 0.15s,
+          box-shadow 0.15s;
+        font-family: "IM Fell English SC", serif;
+        letter-spacing: 1px;
+      }
+
+      .btn-preview {
+        background: #e8e0c0;
+        color: #3a5a20;
+        border: 1px solid #b0a050;
+      }
+      .btn-preview:hover {
+        background: #ddd8b0;
+      }
+
+      .btn-rotate {
+        background: linear-gradient(
+          180deg,
+          #3a6a20 0%,
+          #1e4010 100%
+        );
+        color: #e8f0d0;
+        border: 1px solid #2a5010;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+        box-shadow: inset 0 1px 0
+          rgba(255, 255, 255, 0.15);
+        font-size: 14px;
+      }
+      .btn-rotate:hover {
+        transform: translateY(-1px);
+        box-shadow:
+          0 4px 14px rgba(30, 64, 16, 0.4),
+          inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      }
+      .btn-rotate:disabled {
+        opacity: 0.5;
+        cursor: not-allowed;
+        transform: none;
+        box-shadow: none;
+      }
+
+      .message {
+        display: none;
+        padding: 11px 14px;
+        border-radius: 2px;
+        margin-bottom: 16px;
+        font-size: 12.5px;
+        line-height: 1.5;
+      }
+      .message.success {
+        display: block;
+        background: #d4edda;
+        color: #1a5a28;
+        border: 1px solid #a5d6a7;
+      }
+      .message.error {
+        display: block;
+        background: #f8d7da;
+        color: #721c24;
+        border: 1px solid #f5c6cb;
+      }
+      .message.info {
+        display: block;
+        background: #e8f0d8;
+        color: #2a4a18;
+        border: 1px solid #a0b870;
+      }
+
+      .spinner-wrap {
+        display: none;
+        text-align: center;
+        color: #3a5a20;
+        font-size: 13px;
+        margin-top: 10px;
+        font-family: "IM Fell English SC", serif;
+        letter-spacing: 1px;
+      }
+      .spinner-wrap.show {
+        display: block;
+      }
+      .spinner {
+        display: inline-block;
+        width: 13px;
+        height: 13px;
+        border: 2px solid #c8b870;
+        border-top-color: #3a5a20;
+        border-radius: 50%;
+        animation: spin 0.7s linear infinite;
+        margin-right: 6px;
+        vertical-align: middle;
+      }
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      /* next-link panel */
+      #nextLinkPanel {
+        display: none;
+        margin-top: 20px;
+        background: rgba(255, 248, 220, 0.7);
+        border: 1px solid #c8a840;
+        border-radius: 2px;
+        padding: 14px;
+      }
+      #nextLinkPanel h3 {
+        font-family: "IM Fell English SC", serif;
+        font-size: 12px;
+        color: #5a4010;
+        margin-bottom: 8px;
+        letter-spacing: 1px;
+      }
+      #nextLinkUrl {
+        font-family: monospace;
+        font-size: 10.5px;
+        color: #2a2010;
+        word-break: break-all;
+        background: rgba(255, 253, 230, 0.8);
+        padding: 9px;
+        border-radius: 2px;
+        border: 1px solid #d4a840;
+        margin-bottom: 10px;
+      }
+      .copy-btn {
+        padding: 6px 14px;
+        font-size: 11px;
+        background: #5a4010;
+        color: #f5f0dc;
+        border: none;
+        border-radius: 2px;
+        cursor: pointer;
+        flex: none;
+        font-family: "IM Fell English SC", serif;
+        letter-spacing: 0.5px;
+      }
+      .copy-btn:hover {
+        background: #3a2808;
+      }
+
+      .tag {
+        display: inline-block;
+        font-size: 9px;
+        padding: 2px 6px;
+        border-radius: 10px;
+        font-weight: 700;
+        letter-spacing: 0.5px;
+        font-family: sans-serif;
+      }
+      .tag-green {
+        background: #d4edda;
+        color: #155724;
+      }
+      .tag-yellow {
+        background: #fff3cd;
+        color: #856404;
+      }
+
+      /* genesis / balance UI */
+      #genesisSetup {
+        display: none;
+      }
+      #fundingPanel {
+        display: none;
+      }
+      #setPasswordSection {
+        display: none;
+      }
+      #actionButtons {
+        display: none;
+      }
+      #genesisLinkPanel {
+        display: none;
+        margin-top: 20px;
+        background: rgba(232, 245, 233, 0.7);
+        border: 1px solid #a5d6a7;
+        border-radius: 2px;
+        padding: 14px;
+      }
+      #genesisLinkPanel h3 {
+        font-family: "IM Fell English SC", serif;
+        font-size: 12px;
+        color: #1b5e20;
+        margin-bottom: 8px;
+        letter-spacing: 1px;
+      }
+      #genesisLinkUrl {
+        font-family: monospace;
+        font-size: 10.5px;
+        color: #1a2a0a;
+        word-break: break-all;
+        background: rgba(240, 248, 234, 0.8);
+        padding: 9px;
+        border-radius: 2px;
+        border: 1px solid #c5e1a5;
+        margin-bottom: 10px;
+      }
+      .balance-display {
+        font-family: "Cinzel", serif;
+        font-size: 22px;
+        color: #1a3a1a;
+        padding: 4px 0;
+      }
+      .balance-display.funded {
+        color: #1b5e20;
+      }
+      .btn-refresh {
+        background: #e8e0c0;
+        color: #3a5a20;
+        border: 1px solid #b0a050;
+        border-radius: 2px;
+        padding: 9px 16px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        flex: none;
+        font-family: "IM Fell English SC", serif;
+        letter-spacing: 0.5px;
+      }
+      .btn-refresh:hover {
+        background: #ddd8b0;
+      }
+      .btn-generate {
+        width: 100%;
+        padding: 12px 20px;
+        border: 1px solid #2a5010;
+        border-radius: 2px;
+        font-size: 14px;
+        cursor: pointer;
+        background: linear-gradient(
+          180deg,
+          #3a6a20 0%,
+          #1e4010 100%
+        );
+        color: #e8f0d0;
+        margin-top: 8px;
+        transition:
+          transform 0.15s,
+          box-shadow 0.15s;
+        font-family: "IM Fell English SC", serif;
+        letter-spacing: 2px;
+        text-shadow: 0 1px 2px rgba(0, 0, 0, 0.4);
+        box-shadow: inset 0 1px 0
+          rgba(255, 255, 255, 0.15);
+      }
+      .btn-generate:hover {
+        transform: translateY(-1px);
+        box-shadow:
+          0 4px 14px rgba(30, 64, 16, 0.4),
+          inset 0 1px 0 rgba(255, 255, 255, 0.15);
+      }
+
+      /* spent banner */
+      #spentBanner {
+        display: none;
+        background: #1a0a06;
+        border: 2px solid #8a3020;
+        border-radius: 3px;
+        padding: 20px;
+        margin-bottom: 20px;
+        text-align: center;
+      }
+      #spentBanner h2 {
+        font-family:
+          "Cinzel Decorative", "Cinzel", serif;
+        font-size: 22px;
+        color: #e07050;
+        margin-bottom: 6px;
+      }
+      #spentBanner .spent-source {
+        font-size: 11px;
+        color: #d09080;
+        margin-bottom: 6px;
+        font-style: italic;
+      }
+      #spentBanner .spent-txid {
+        font-family: "Courier New", monospace;
+        font-size: 10px;
+        color: #c07060;
+        word-break: break-all;
+        background: #0d0402;
+        padding: 7px 9px;
+        border-radius: 2px;
+        margin-top: 8px;
+      }
+      #recoverSection {
+        display: none;
+        margin-top: 18px;
+        text-align: left;
+        border-top: 1px solid #4a1a1a;
+        padding-top: 16px;
+      }
+      #recoverSection label {
+        display: block;
+        font-family: "IM Fell English SC", serif;
+        font-size: 10.5px;
+        font-weight: 400;
+        letter-spacing: 0.8px;
+        color: #e0a090;
+        margin-bottom: 5px;
+      }
+      #recoverSection input[type="password"] {
+        width: 100%;
+        padding: 9px 12px;
+        border: 1px solid #7a3a3a;
+        border-radius: 2px;
+        font-size: 13px;
+        background: #160808;
+        color: #f0d0c0;
+        margin-bottom: 10px;
+      }
+      #recoverSection
+        input[type="password"]:focus {
+        outline: none;
+        border-color: #c04040;
+        box-shadow: 0 0 0 3px
+          rgba(192, 64, 64, 0.2);
+      }
+      .btn-recover {
+        width: 100%;
+        padding: 10px;
+        background: linear-gradient(
+          180deg,
+          #8a2010 0%,
+          #5a1008 100%
+        );
+        color: #f5e0d8;
+        border: 1px solid #5a1008;
+        border-radius: 2px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        font-family: "IM Fell English SC", serif;
+        letter-spacing: 1px;
+      }
+      .btn-recover:hover {
+        filter: brightness(1.1);
+      }
+      #recoveredLinkPanel {
+        display: none;
+        margin-top: 12px;
+        background: #0d0402;
+        border: 1px solid #8a3020;
+        border-radius: 2px;
+        padding: 12px;
+      }
+      #recoveredLinkPanel p {
+        font-size: 11px;
+        color: #e0a090;
+        margin-bottom: 7px;
+        font-style: italic;
+      }
+      #recoveredLinkUrl {
+        font-family: "Courier New", monospace;
+        font-size: 10px;
+        color: #f0c0a0;
+        word-break: break-all;
+        background: #080202;
+        padding: 7px 9px;
+        border-radius: 2px;
+        border: 1px solid #6a2818;
+        margin-bottom: 9px;
+      }
+    </style>
+
+    <style>
+      /* ================================================================
+         THEME: .theme-switcher UI
+         ================================================================ */
+      .theme-switcher {
+        position: fixed;
+        top: 16px;
+        right: 16px;
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        padding: 8px 12px;
+        background: rgba(20, 20, 20, 0.82);
+        backdrop-filter: blur(6px);
+        -webkit-backdrop-filter: blur(6px);
+        border: 1px solid
+          rgba(255, 255, 255, 0.15);
+        border-radius: 6px;
+        box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+        z-index: 9999;
+      }
+      .theme-switcher label {
+        font-family: "IM Fell English SC", serif;
+        font-size: 9px;
+        letter-spacing: 1px;
+        color: #c8c8c8;
+        text-transform: uppercase;
+        margin-bottom: 0;
+        white-space: nowrap;
+      }
+      .theme-switcher select {
+        font-family: "IM Fell English SC", serif;
+        font-size: 10px;
+        letter-spacing: 0.5px;
+        color: #f0f0f0;
+        background: rgba(255, 255, 255, 0.1);
+        border: 1px solid
+          rgba(255, 255, 255, 0.25);
+        border-radius: 4px;
+        padding: 3px 6px;
+        cursor: pointer;
+        width: auto;
+      }
+      .theme-switcher select:focus {
+        outline: none;
+        border-color: rgba(255, 255, 255, 0.5);
+      }
+      .theme-switcher select option {
+        background: #1a1a1a;
+        color: #f0f0f0;
+      }
+      /* ================================================================
+         THEME: noir  (black card, gold accents)
+         ================================================================ */
+      html[data-theme="noir"] body {
+        background: #0a0a0a;
+        background-image: radial-gradient(
+          ellipse at 30% 50%,
+          #1a1400 0%,
+          transparent 60%
+        );
+      }
+      html[data-theme="noir"] .bill-inner,
+      html[data-theme="noir"] .bill-back {
+        background: #181810;
+        background-image: none;
+        box-shadow:
+          0 0 0 2px #c8a840,
+          0 0 0 6px #181810,
+          0 0 0 8px #c8a840,
+          0 20px 60px rgba(0, 0, 0, 0.9);
+      }
+      html[data-theme="noir"] .bill-inner::before,
+      html[data-theme="noir"] .bill-back::before {
+        border-color: rgba(200, 168, 64, 0.3);
+      }
+      html[data-theme="noir"] .bill-inner::after,
+      html[data-theme="noir"] .bill-back::after {
+        border-color: rgba(200, 168, 64, 0.15);
+      }
+      html[data-theme="noir"] h1 {
+        color: #c8a840;
+        text-shadow: 0 0 30px
+          rgba(200, 168, 64, 0.3);
+      }
+      html[data-theme="noir"] .subtitle,
+      html[data-theme="noir"] .bill-series,
+      html[data-theme="noir"] .corner-ornament,
+      html[data-theme="noir"] .bill-divider {
+        color: #c8a840;
+      }
+      html[data-theme="noir"] .bill-header {
+        border-bottom-color: #c8a840;
+      }
+      html[data-theme="noir"]
+        .bill-header::after {
+        background: #c8a840;
+      }
+      html[data-theme="noir"] .section-title {
+        color: #c8a840;
+        border-bottom-color: #3a2e0a;
+      }
+      html[data-theme="noir"] .key-field {
+        background: rgba(255, 255, 255, 0.04);
+        border-color: #3a2e0a;
+      }
+      html[data-theme="noir"] .key-label {
+        color: #c8a840;
+      }
+      html[data-theme="noir"] .key-value {
+        color: #f0e0b0;
+      }
+      html[data-theme="noir"]
+        .key-value.placeholder {
+        color: #5a4a20;
+        font-style: italic;
+      }
+      html[data-theme="noir"] label {
+        color: #c8a840;
+      }
+      html[data-theme="noir"]
+        input[type="password"],
+      html[data-theme="noir"]
+        input[type="number"],
+      html[data-theme="noir"] input[type="text"] {
+        background: rgba(255, 255, 255, 0.05);
+        border-color: #3a2e0a;
+        color: #f0e0b0;
+      }
+      html[data-theme="noir"] input:focus {
+        border-color: #c8a840;
+        box-shadow: 0 0 0 3px
+          rgba(200, 168, 64, 0.2);
+      }
+      html[data-theme="noir"] .hint {
+        color: #7a6a30;
+      }
+      html[data-theme="noir"] .info-box {
+        background: rgba(200, 168, 64, 0.07);
+        border-color: #3a2e0a;
+        border-left-color: #c8a840;
+        color: #d0b880;
+      }
+      html[data-theme="noir"] .btn-rotate,
+      html[data-theme="noir"] .btn-generate {
+        background: linear-gradient(
+          180deg,
+          #b89a30 0%,
+          #7a6418 100%
+        );
+        color: #100e04;
+        border-color: #7a6418;
+        text-shadow: none;
+        box-shadow: none;
+      }
+      html[data-theme="noir"] .btn-rotate:hover,
+      html[data-theme="noir"]
+        .btn-generate:hover {
+        box-shadow: 0 4px 14px
+          rgba(200, 168, 64, 0.4);
+      }
+      html[data-theme="noir"] .btn-refresh {
+        background: #222018;
+        color: #c8a840;
+        border-color: #3a2e0a;
+      }
+      html[data-theme="noir"] .balance-display {
+        color: #c8a840;
+      }
+      html[data-theme="noir"] .message.info {
+        background: rgba(200, 168, 64, 0.08);
+        color: #d0b880;
+        border-color: #3a2e0a;
+      }
+      html[data-theme="noir"] .spinner-wrap {
+        color: #c8a840;
+      }
+      html[data-theme="noir"] .spinner {
+        border-color: #3a2e0a;
+        border-top-color: #c8a840;
+      }
+      html[data-theme="noir"] details > summary {
+        color: #7a6a30 !important;
+      }
+      html[data-theme="noir"] .btn-flip {
+        border-color: #c8a840;
+        color: #c8a840;
+      }
+      html[data-theme="noir"] .btn-flip:hover {
+        background: rgba(200, 168, 64, 0.1);
+        color: #f0e0b0;
+      }
+
+      /* ================================================================
+         THEME: arctic  (white card, blue accents)
+         ================================================================ */
+      html[data-theme="arctic"] body {
+        background: #b8cede;
+        background-image:
+          radial-gradient(
+            ellipse at 20% 50%,
+            #90aabe 0%,
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse at 80% 50%,
+            #90aabe 0%,
+            transparent 60%
+          );
+      }
+      html[data-theme="arctic"] .bill-inner,
+      html[data-theme="arctic"] .bill-back {
+        background: #ffffff;
+        background-image: none;
+        box-shadow:
+          0 0 0 2px #1a56a0,
+          0 0 0 6px #ffffff,
+          0 0 0 8px #1a56a0,
+          0 20px 60px rgba(0, 0, 0, 0.2);
+      }
+      html[data-theme="arctic"]
+        .bill-inner::before,
+      html[data-theme="arctic"]
+        .bill-back::before {
+        border-color: rgba(26, 86, 160, 0.2);
+      }
+      html[data-theme="arctic"]
+        .bill-inner::after,
+      html[data-theme="arctic"]
+        .bill-back::after {
+        border-color: rgba(26, 86, 160, 0.1);
+      }
+      html[data-theme="arctic"] h1 {
+        color: #0a2a5a;
+      }
+      html[data-theme="arctic"] .subtitle {
+        color: #1a56a0;
+      }
+      html[data-theme="arctic"] .bill-series,
+      html[data-theme="arctic"] .corner-ornament,
+      html[data-theme="arctic"] .bill-divider {
+        color: #1a56a0;
+      }
+      html[data-theme="arctic"] .bill-header {
+        border-bottom-color: #1a56a0;
+      }
+      html[data-theme="arctic"]
+        .bill-header::after {
+        background: #1a56a0;
+      }
+      html[data-theme="arctic"] .section-title {
+        color: #1a56a0;
+        border-bottom-color: #c0d0e8;
+      }
+      html[data-theme="arctic"] .key-field {
+        background: #f0f5fc;
+        border-color: #c0d0e8;
+      }
+      html[data-theme="arctic"] .key-label {
+        color: #1a56a0;
+      }
+      html[data-theme="arctic"] .key-value {
+        color: #0a2a5a;
+      }
+      html[data-theme="arctic"]
+        .key-value.placeholder {
+        color: #90a8c8;
+      }
+      html[data-theme="arctic"] label {
+        color: #1a56a0;
+      }
+      html[data-theme="arctic"]
+        input[type="password"],
+      html[data-theme="arctic"]
+        input[type="number"],
+      html[data-theme="arctic"]
+        input[type="text"] {
+        background: #f8faff;
+        border-color: #c0d0e8;
+        color: #0a2a5a;
+      }
+      html[data-theme="arctic"] input:focus {
+        border-color: #1a56a0;
+        box-shadow: 0 0 0 3px
+          rgba(26, 86, 160, 0.15);
+      }
+      html[data-theme="arctic"] .hint {
+        color: #5a7aa0;
+      }
+      html[data-theme="arctic"] .info-box {
+        background: rgba(26, 86, 160, 0.05);
+        border-color: #c0d0e8;
+        border-left-color: #1a56a0;
+        color: #0a3060;
+      }
+      html[data-theme="arctic"] .btn-rotate,
+      html[data-theme="arctic"] .btn-generate {
+        background: linear-gradient(
+          180deg,
+          #1a56a0 0%,
+          #0a3060 100%
+        );
+        color: #e8f0ff;
+        border-color: #0a3060;
+        text-shadow: none;
+      }
+      html[data-theme="arctic"] .btn-rotate:hover,
+      html[data-theme="arctic"]
+        .btn-generate:hover {
+        box-shadow: 0 4px 14px
+          rgba(26, 86, 160, 0.4);
+      }
+      html[data-theme="arctic"] .btn-refresh {
+        background: #e0ecfc;
+        color: #1a56a0;
+        border-color: #c0d0e8;
+      }
+      html[data-theme="arctic"] .balance-display {
+        color: #1a56a0;
+      }
+      html[data-theme="arctic"] .message.info {
+        background: #e8f0fc;
+        color: #0a3060;
+        border-color: #c0d0e8;
+      }
+      html[data-theme="arctic"] .spinner-wrap {
+        color: #1a56a0;
+      }
+      html[data-theme="arctic"] .spinner {
+        border-color: #c0d0e8;
+        border-top-color: #1a56a0;
+      }
+      html[data-theme="arctic"]
+        details
+        > summary {
+        color: #90a8c8 !important;
+      }
+      html[data-theme="arctic"] .btn-flip {
+        border-color: #1a56a0;
+        color: #1a56a0;
+      }
+      html[data-theme="arctic"] .btn-flip:hover {
+        background: rgba(26, 86, 160, 0.08);
+        color: #0a2a5a;
+      }
+
+      /* ================================================================
+         THEME: rouge  (dark red / crimson)
+         ================================================================ */
+      html[data-theme="rouge"] body {
+        background: #1a0505;
+        background-image: radial-gradient(
+          ellipse at 20% 50%,
+          #2a0808 0%,
+          transparent 60%
+        );
+      }
+      html[data-theme="rouge"] .bill-inner,
+      html[data-theme="rouge"] .bill-back {
+        background: #f8f0f0;
+        background-image:
+          repeating-linear-gradient(
+            0deg,
+            transparent,
+            transparent 28px,
+            rgba(120, 0, 0, 0.04) 28px,
+            rgba(120, 0, 0, 0.04) 29px
+          ),
+          repeating-linear-gradient(
+            90deg,
+            transparent,
+            transparent 28px,
+            rgba(120, 0, 0, 0.04) 28px,
+            rgba(120, 0, 0, 0.04) 29px
+          );
+        box-shadow:
+          0 0 0 2px #8a2020,
+          0 0 0 6px #f8f0f0,
+          0 0 0 8px #8a2020,
+          0 20px 60px rgba(0, 0, 0, 0.6);
+      }
+      html[data-theme="rouge"]
+        .bill-inner::before,
+      html[data-theme="rouge"]
+        .bill-back::before {
+        border-color: rgba(120, 20, 20, 0.35);
+      }
+      html[data-theme="rouge"] .bill-inner::after,
+      html[data-theme="rouge"] .bill-back::after {
+        border-color: rgba(120, 20, 20, 0.2);
+      }
+      html[data-theme="rouge"] h1 {
+        color: #6a0a0a;
+      }
+      html[data-theme="rouge"] .subtitle {
+        color: #8a2020;
+      }
+      html[data-theme="rouge"] .bill-series,
+      html[data-theme="rouge"] .corner-ornament,
+      html[data-theme="rouge"] .bill-divider {
+        color: #8a2020;
+      }
+      html[data-theme="rouge"] .bill-header {
+        border-bottom-color: #8a2020;
+      }
+      html[data-theme="rouge"]
+        .bill-header::after {
+        background: #8a2020;
+      }
+      html[data-theme="rouge"] .section-title {
+        color: #6a0a0a;
+        border-bottom-color: #e0c0c0;
+      }
+      html[data-theme="rouge"] .key-field {
+        background: rgba(255, 255, 255, 0.6);
+        border-color: #d0a0a0;
+      }
+      html[data-theme="rouge"] .key-label {
+        color: #8a2020;
+      }
+      html[data-theme="rouge"] .key-value {
+        color: #2a0a0a;
+      }
+      html[data-theme="rouge"]
+        .key-value.placeholder {
+        color: #c09090;
+      }
+      html[data-theme="rouge"] label {
+        color: #6a0a0a;
+      }
+      html[data-theme="rouge"]
+        input[type="password"],
+      html[data-theme="rouge"]
+        input[type="number"],
+      html[data-theme="rouge"]
+        input[type="text"] {
+        background: rgba(255, 255, 255, 0.7);
+        border-color: #c09090;
+        color: #2a0a0a;
+      }
+      html[data-theme="rouge"] input:focus {
+        border-color: #8a2020;
+        box-shadow: 0 0 0 3px
+          rgba(138, 32, 32, 0.15);
+      }
+      html[data-theme="rouge"] .hint {
+        color: #9a5050;
+      }
+      html[data-theme="rouge"] .info-box {
+        background: rgba(138, 32, 32, 0.07);
+        border-color: #d0a0a0;
+        border-left-color: #8a2020;
+        color: #3a0a0a;
+      }
+      html[data-theme="rouge"] .btn-rotate,
+      html[data-theme="rouge"] .btn-generate {
+        background: linear-gradient(
+          180deg,
+          #a02020 0%,
+          #601010 100%
+        );
+        color: #ffe8e8;
+        border-color: #601010;
+      }
+      html[data-theme="rouge"] .btn-rotate:hover,
+      html[data-theme="rouge"]
+        .btn-generate:hover {
+        box-shadow: 0 4px 14px
+          rgba(138, 32, 32, 0.4);
+      }
+      html[data-theme="rouge"] .btn-refresh {
+        background: #f0e0e0;
+        color: #6a0a0a;
+        border-color: #d0a0a0;
+      }
+      html[data-theme="rouge"] .balance-display {
+        color: #6a0a0a;
+      }
+      html[data-theme="rouge"] .message.info {
+        background: #fce8e8;
+        color: #6a0a0a;
+        border-color: #e0c0c0;
+      }
+      html[data-theme="rouge"] .spinner-wrap {
+        color: #8a2020;
+      }
+      html[data-theme="rouge"] .spinner {
+        border-color: #e0c0c0;
+        border-top-color: #8a2020;
+      }
+      html[data-theme="rouge"] details > summary {
+        color: #c09090 !important;
+      }
+      html[data-theme="rouge"] .btn-flip {
+        border-color: #8a2020;
+        color: #8a2020;
+      }
+      html[data-theme="rouge"] .btn-flip:hover {
+        background: rgba(138, 32, 32, 0.08);
+        color: #3a0a0a;
+      }
+
+      /* ================================================================
+         THEME: retro  (8-bit pixel / CRT green-screen)
+         ================================================================ */
+      @import url("https://fonts.googleapis.com/css2?family=Press+Start+2P&display=swap");
+      @import url("https://fonts.googleapis.com/css2?family=Dancing+Script:wght@600;700&family=Nunito:wght@400;600&display=swap");
+
+      html[data-theme="retro"] body {
+        background: #0a0a1a;
+        background-image: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 2px,
+          rgba(0, 255, 65, 0.03) 2px,
+          rgba(0, 255, 65, 0.03) 4px
+        );
+        font-family: "Press Start 2P", monospace;
+      }
+      html[data-theme="retro"] .bill-inner,
+      html[data-theme="retro"] .bill-back {
+        background: #0d1117;
+        background-image: repeating-linear-gradient(
+          0deg,
+          transparent,
+          transparent 7px,
+          rgba(0, 255, 65, 0.05) 7px,
+          rgba(0, 255, 65, 0.05) 8px
+        );
+        box-shadow:
+          0 0 0 3px #00ff41,
+          0 0 0 5px #0d1117,
+          0 0 0 7px #00ff41,
+          0 0 20px rgba(0, 255, 65, 0.4),
+          0 0 60px rgba(0, 255, 65, 0.15);
+        border-radius: 0;
+        image-rendering: pixelated;
+      }
+      html[data-theme="retro"]
+        .bill-inner::before,
+      html[data-theme="retro"]
+        .bill-back::before {
+        border-color: rgba(0, 255, 65, 0.3);
+        border-radius: 0;
+      }
+      html[data-theme="retro"] .bill-inner::after,
+      html[data-theme="retro"] .bill-back::after {
+        border-color: rgba(0, 255, 65, 0.15);
+        border-radius: 0;
+      }
+      html[data-theme="retro"] h1 {
+        font-family: "Press Start 2P", monospace;
+        color: #00ff41;
+        font-size: 18px;
+        text-shadow:
+          2px 2px 0 #005a16,
+          0 0 20px rgba(0, 255, 65, 0.8);
+        letter-spacing: 2px;
+      }
+      html[data-theme="retro"] .subtitle {
+        font-family: "Press Start 2P", monospace;
+        color: #00cc33;
+        font-size: 6px;
+        letter-spacing: 1px;
+      }
+      html[data-theme="retro"] .bill-series,
+      html[data-theme="retro"] .corner-ornament,
+      html[data-theme="retro"] .bill-divider {
+        font-family: "Press Start 2P", monospace;
+        color: #00ff41;
+      }
+      html[data-theme="retro"] .corner-ornament {
+        font-size: 14px;
+      }
+      html[data-theme="retro"] .bill-header {
+        border-bottom-color: #00ff41;
+        border-bottom-width: 3px;
+      }
+      html[data-theme="retro"]
+        .bill-header::after {
+        background: #00ff41;
+      }
+      html[data-theme="retro"] .section-title {
+        font-family: "Press Start 2P", monospace;
+        color: #00ff41;
+        font-size: 9px;
+        border-bottom-color: #005a16;
+      }
+      html[data-theme="retro"] .key-field {
+        background: #0a0f0a;
+        border-color: #00ff41;
+        border-radius: 0;
+      }
+      html[data-theme="retro"] .key-label {
+        font-family: "Press Start 2P", monospace;
+        color: #00cc33;
+        font-size: 7px;
+      }
+      html[data-theme="retro"] .key-value {
+        font-family: monospace;
+        color: #00ff41;
+        font-size: 11px;
+      }
+      html[data-theme="retro"]
+        .key-value.placeholder {
+        color: #005a16;
+      }
+      html[data-theme="retro"] label {
+        font-family: "Press Start 2P", monospace;
+        color: #00cc33;
+        font-size: 8px;
+      }
+      html[data-theme="retro"]
+        input[type="password"],
+      html[data-theme="retro"]
+        input[type="number"],
+      html[data-theme="retro"]
+        input[type="text"] {
+        background: #0a0f0a;
+        border-color: #00ff41;
+        border-radius: 0;
+        color: #00ff41;
+        font-family: "Press Start 2P", monospace;
+        font-size: 9px;
+        caret-color: #00ff41;
+      }
+      html[data-theme="retro"] input:focus {
+        border-color: #00ff41;
+        box-shadow:
+          0 0 0 3px rgba(0, 255, 65, 0.25),
+          0 0 10px rgba(0, 255, 65, 0.3);
+      }
+      html[data-theme="retro"]
+        input::placeholder {
+        color: #004d15;
+      }
+      html[data-theme="retro"] .hint {
+        font-family: "Press Start 2P", monospace;
+        color: #009920;
+        font-size: 7px;
+        line-height: 1.8;
+      }
+      html[data-theme="retro"] .info-box {
+        background: rgba(0, 255, 65, 0.05);
+        border-color: #005a16;
+        border-left-color: #00ff41;
+        border-left-width: 4px;
+        color: #00cc33;
+        font-family: "Press Start 2P", monospace;
+        font-size: 7px;
+        line-height: 2;
+        border-radius: 0;
+      }
+      html[data-theme="retro"] .btn-rotate,
+      html[data-theme="retro"] .btn-generate {
+        background: #00ff41;
+        color: #0a0a1a;
+        border-color: #00cc33;
+        border-radius: 0;
+        font-family: "Press Start 2P", monospace;
+        font-size: 10px;
+        text-transform: uppercase;
+        box-shadow: 4px 4px 0 #005a16;
+        transition: none;
+      }
+      html[data-theme="retro"] .btn-rotate:hover,
+      html[data-theme="retro"]
+        .btn-generate:hover {
+        background: #00cc33;
+        box-shadow: 2px 2px 0 #005a16;
+        transform: translate(2px, 2px);
+      }
+      html[data-theme="retro"] .btn-refresh {
+        background: #0a0f0a;
+        color: #00ff41;
+        border-color: #00ff41;
+        border-radius: 0;
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+        box-shadow: 2px 2px 0 #005a16;
+      }
+      html[data-theme="retro"] .balance-display {
+        font-family: "Press Start 2P", monospace;
+        color: #00ff41;
+        font-size: 13px;
+        text-shadow: 0 0 10px
+          rgba(0, 255, 65, 0.6);
+      }
+      html[data-theme="retro"]
+        .balance-display.funded {
+        text-shadow: 0 0 20px rgba(0, 255, 65, 1);
+      }
+      html[data-theme="retro"] .message.info {
+        background: #0a0f0a;
+        color: #00ff41;
+        border-color: #005a16;
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+      }
+      html[data-theme="retro"] .message.error {
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+      }
+      html[data-theme="retro"] .message.success {
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+      }
+      html[data-theme="retro"] .spinner-wrap {
+        font-family: "Press Start 2P", monospace;
+        color: #00ff41;
+        font-size: 9px;
+      }
+      html[data-theme="retro"] .spinner {
+        border-color: #005a16;
+        border-top-color: #00ff41;
+        border-radius: 0;
+        animation: retro-blink 0.5s steps(1)
+          infinite;
+      }
+      @keyframes retro-blink {
+        0%,
+        49% {
+          opacity: 1;
+        }
+        50%,
+        100% {
+          opacity: 0;
+        }
+      }
+      /* ===================== SAKURA PINK THEME ===================== */
+      html[data-theme="sakura"] body {
+        background: linear-gradient(
+          135deg,
+          #fce4ec 0%,
+          #fdf2f8 40%,
+          #f3e5f5 100%
+        );
+        font-family: "Nunito", sans-serif;
+      }
+      html[data-theme="sakura"] .bill-inner,
+      html[data-theme="sakura"] .bill-back {
+        background: #fff5f8;
+        background-image:
+          radial-gradient(
+            ellipse at 20% 10%,
+            rgba(255, 182, 213, 0.18) 0%,
+            transparent 60%
+          ),
+          radial-gradient(
+            ellipse at 80% 90%,
+            rgba(243, 196, 230, 0.18) 0%,
+            transparent 60%
+          );
+        box-shadow:
+          0 0 0 2px #f48fb1,
+          0 0 0 6px #fff5f8,
+          0 0 0 8px #f48fb1,
+          0 8px 40px rgba(233, 30, 140, 0.18),
+          0 20px 60px rgba(0, 0, 0, 0.12);
+        border-radius: 12px;
+      }
+      html[data-theme="sakura"]
+        .bill-inner::before,
+      html[data-theme="sakura"]
+        .bill-back::before {
+        border-color: rgba(244, 143, 177, 0.5);
+        border-radius: 10px;
+      }
+      html[data-theme="sakura"]
+        .bill-inner::after,
+      html[data-theme="sakura"]
+        .bill-back::after {
+        border-color: rgba(244, 143, 177, 0.25);
+        border-radius: 9px;
+      }
+      html[data-theme="sakura"] h1 {
+        font-family: "Dancing Script", cursive;
+        color: #c2185b;
+        font-size: 34px;
+        font-weight: 700;
+        text-shadow: 1px 1px 0
+          rgba(194, 24, 91, 0.15);
+        letter-spacing: 1px;
+      }
+      html[data-theme="sakura"] .subtitle {
+        font-family: "Nunito", sans-serif;
+        color: #e91e8c;
+        font-size: 11px;
+        letter-spacing: 2px;
+      }
+      html[data-theme="sakura"] .bill-series,
+      html[data-theme="sakura"] .corner-ornament,
+      html[data-theme="sakura"] .bill-divider {
+        color: #f06292;
+      }
+      html[data-theme="sakura"] .bill-header {
+        border-bottom-color: #f48fb1;
+      }
+      html[data-theme="sakura"]
+        .bill-header::after {
+        background: linear-gradient(
+          90deg,
+          transparent,
+          #f48fb1,
+          transparent
+        );
+      }
+      html[data-theme="sakura"] .section-title {
+        font-family: "Dancing Script", cursive;
+        color: #c2185b;
+        font-size: 16px;
+        border-bottom-color: #f8bbd0;
+      }
+      html[data-theme="sakura"] .key-field {
+        background: #fff0f6;
+        border-color: #f48fb1;
+        border-radius: 8px;
+      }
+      html[data-theme="sakura"] .key-label {
+        font-family: "Nunito", sans-serif;
+        color: #ad1457;
+        font-size: 10px;
+        font-weight: 600;
+        text-transform: uppercase;
+        letter-spacing: 1px;
+      }
+      html[data-theme="sakura"] .key-value {
+        color: #880e4f;
+        font-size: 12px;
+      }
+      html[data-theme="sakura"]
+        .key-value.placeholder {
+        color: #f8bbd0;
+      }
+      html[data-theme="sakura"] label {
+        font-family: "Nunito", sans-serif;
+        color: #ad1457;
+        font-weight: 600;
+        font-size: 13px;
+      }
+      html[data-theme="sakura"]
+        input[type="password"],
+      html[data-theme="sakura"]
+        input[type="number"],
+      html[data-theme="sakura"]
+        input[type="text"] {
+        background: #fff0f6;
+        border-color: #f48fb1;
+        border-radius: 8px;
+        color: #880e4f;
+        font-family: "Nunito", sans-serif;
+        caret-color: #e91e8c;
+      }
+      html[data-theme="sakura"] input:focus {
+        border-color: #e91e8c;
+        box-shadow: 0 0 0 3px
+          rgba(233, 30, 140, 0.15);
+      }
+      html[data-theme="sakura"]
+        input::placeholder {
+        color: #f8bbd0;
+      }
+      html[data-theme="sakura"] .hint {
+        font-family: "Nunito", sans-serif;
+        color: #c2185b;
+        font-size: 11px;
+      }
+      html[data-theme="sakura"] .info-box {
+        background: rgba(252, 228, 236, 0.6);
+        border-color: #f8bbd0;
+        border-left-color: #e91e8c;
+        color: #880e4f;
+        font-family: "Nunito", sans-serif;
+        border-radius: 8px;
+      }
+      html[data-theme="sakura"] .btn-rotate,
+      html[data-theme="sakura"] .btn-generate {
+        background: linear-gradient(
+          135deg,
+          #e91e8c 0%,
+          #c2185b 100%
+        );
+        color: #fff;
+        border-color: #ad1457;
+        border-radius: 20px;
+        font-family: "Nunito", sans-serif;
+        font-weight: 700;
+        font-size: 13px;
+        letter-spacing: 0.5px;
+        box-shadow: 0 4px 15px
+          rgba(233, 30, 140, 0.35);
+        transition:
+          box-shadow 0.2s,
+          transform 0.2s;
+      }
+      html[data-theme="sakura"] .btn-rotate:hover,
+      html[data-theme="sakura"]
+        .btn-generate:hover {
+        background: linear-gradient(
+          135deg,
+          #f06292 0%,
+          #e91e8c 100%
+        );
+        box-shadow: 0 6px 20px
+          rgba(233, 30, 140, 0.5);
+        transform: translateY(-1px);
+      }
+      html[data-theme="sakura"] .btn-refresh {
+        background: #fff0f6;
+        color: #e91e8c;
+        border-color: #f48fb1;
+        border-radius: 16px;
+        font-family: "Nunito", sans-serif;
+        font-weight: 600;
+      }
+      html[data-theme="sakura"] .balance-display {
+        font-family: "Dancing Script", cursive;
+        color: #c2185b;
+        font-size: 28px;
+        font-weight: 700;
+      }
+      html[data-theme="sakura"]
+        .balance-display.funded {
+        color: #880e4f;
+        text-shadow: 0 0 12px
+          rgba(233, 30, 140, 0.4);
+      }
+      html[data-theme="sakura"] .message.info {
+        background: #fff0f6;
+        color: #c2185b;
+        border-color: #f8bbd0;
+        font-family: "Nunito", sans-serif;
+      }
+      html[data-theme="sakura"] .message.error {
+        font-family: "Nunito", sans-serif;
+      }
+      html[data-theme="sakura"] .message.success {
+        font-family: "Nunito", sans-serif;
+      }
+      html[data-theme="sakura"] .spinner-wrap {
+        font-family: "Nunito", sans-serif;
+        color: #e91e8c;
+      }
+      html[data-theme="sakura"] .spinner {
+        border-color: #f8bbd0;
+        border-top-color: #e91e8c;
+      }
+      html[data-theme="sakura"]
+        details
+        > summary {
+        font-family:
+          "Nunito", sans-serif !important;
+        color: #e91e8c !important;
+        font-size: 12px !important;
+        font-weight: 600 !important;
+      }
+      html[data-theme="sakura"] .btn-flip {
+        border-color: #f48fb1;
+        border-radius: 16px;
+        color: #e91e8c;
+        font-family: "Nunito", sans-serif;
+      }
+      html[data-theme="sakura"] .btn-flip:hover {
+        background: rgba(233, 30, 140, 0.08);
+      }
+      html[data-theme="sakura"] .copy-btn {
+        background: #fff0f6;
+        color: #e91e8c;
+        border-color: #f48fb1;
+        border-radius: 12px;
+        font-family: "Nunito", sans-serif;
+      }
+      html[data-theme="sakura"] code {
+        background: #fff0f6;
+        color: #c2185b;
+        padding: 1px 5px;
+        border: 1px solid #f8bbd0;
+        border-radius: 4px;
+      }
+      /* ==================== END SAKURA PINK THEME ==================== */
+      html[data-theme="retro"] details > summary {
+        font-family:
+          "Press Start 2P", monospace !important;
+        color: #009920 !important;
+        font-size: 8px !important;
+      }
+      html[data-theme="retro"] .btn-flip {
+        border-color: #00ff41;
+        border-radius: 0;
+        color: #00ff41;
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+        box-shadow: 2px 2px 0 #005a16;
+      }
+      html[data-theme="retro"] .btn-flip:hover {
+        background: rgba(0, 255, 65, 0.08);
+        color: #00ff41;
+      }
+      html[data-theme="retro"] .copy-btn {
+        background: #0a0f0a;
+        color: #00ff41;
+        border-color: #00ff41;
+        border-radius: 0;
+        font-family: "Press Start 2P", monospace;
+        font-size: 8px;
+        box-shadow: 2px 2px 0 #005a16;
+      }
+      html[data-theme="retro"] code {
+        background: #0a0f0a;
+        color: #00ff41;
+        font-family: monospace;
+        padding: 1px 4px;
+        border: 1px solid #005a16;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="theme-switcher">
+      <label for="themePicker">Theme</label>
+      <select id="themePicker">
+        <option value="traditional">
+          Traditional Finance
+        </option>
+        <option value="noir">Noir Gold</option>
+        <option value="arctic">
+          Arctic Blue
+        </option>
+        <option value="rouge">Rouge</option>
+        <option value="retro">8-Bit Retro</option>
+        <option value="sakura">
+          Sakura Pink
+        </option>
+      </select>
+    </div>
+    <div class="container">
+      <div
+        class="bill-flip-wrapper"
+        id="billFlipWrapper"
+      >
+        <div class="bill-inner">
+          <span class="corner-ornament left"
+            >$</span
+          >
+          <span class="corner-ornament right"
+            >$</span
+          >
+          <div class="bill-header">
+            <div style="position: relative">
+              <div class="bill-series">
+                Series 2026 — YadaCoin Digital
+                Cash
+              </div>
+              <h1>YadaCash</h1>
+              <p class="subtitle">
+                The United Note of YadaCoin —
+                Redeemable Upon Password Entry
+              </p>
+            </div>
+          </div>
+          <div class="bill-divider">
+            $ $ $ $ $
+          </div>
+
+          <!-- ── Spent Banner ───────────────────────────────────────── -->
+          <div id="spentBanner">
+            <h2>💸 Cash Already Spent</h2>
+            <p
+              class="spent-source"
+              id="spentSource"
+            ></p>
+            <div
+              class="spent-txid"
+              id="spentTxid"
+            ></div>
+
+            <!-- ── Recover Next Link ─────────────────────────────────── -->
+            <div id="recoverSection">
+              <label for="recoverPassword"
+                >🔑 Enter the new password you
+                chose before broadcasting to
+                recover the next private
+                link</label
+              >
+              <input
+                type="password"
+                id="recoverPassword"
+                placeholder="New password you set…"
+                autocomplete="current-password"
+              />
+              <button
+                type="button"
+                class="btn-recover"
+                id="recoverLinkBtn"
+              >
+                Recover Next Link
+              </button>
+              <div id="recoveredLinkPanel">
+                <p>
+                  This is the private link for the
+                  <em>next</em> rotation — the one
+                  that can spend the rotated
+                  funds. Copy and save it.
+                </p>
+                <div id="recoveredLinkUrl"></div>
+                <button
+                  class="copy-btn"
+                  id="copyRecoveredLinkBtn"
+                >
+                  Copy Link
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Genesis Mode Setup ──────────────────────────────────── -->
+          <div class="section" id="genesisSetup">
+            <div class="section-title">
+              Create New Wallet
+            </div>
+            <div class="info-box">
+              No private link was provided. A new
+              HD wallet will be generated entirely
+              in your browser — nothing is sent to
+              the server. Choose a password: it
+              becomes the
+              <code>second_factor</code> of your
+              private link.
+              <strong
+                >Save the generated private link
+                before funding the
+                address.</strong
+              >
+            </div>
+            <div class="form-group">
+              <label for="genesisPassword"
+                >Password</label
+              >
+              <input
+                type="password"
+                id="genesisPassword"
+                placeholder="Choose a strong password…"
+                autocomplete="new-password"
+              />
+            </div>
+            <div class="form-group">
+              <label for="genesisConfirmPw"
+                >Confirm Password</label
+              >
+              <input
+                type="password"
+                id="genesisConfirmPw"
+                placeholder="Re-enter password…"
+                autocomplete="new-password"
+              />
+            </div>
+            <button
+              type="button"
+              class="btn-generate"
+              id="generateBtn"
+            >
+              Generate Wallet
+            </button>
+          </div>
+
+          <!-- ── Current Key Info ─────────────────────────────────────── -->
+          <div
+            class="section"
+            id="currentKeySection"
+          >
+            <details>
+              <summary
+                style="
+                  cursor: pointer;
+                  user-select: none;
+                  font-size: 0.85rem;
+                  color: #aaa;
+                "
+              >
+                Address &amp; QR Code
+              </summary>
+              <div style="margin-top: 12px">
+                <div class="key-field">
+                  <span class="key-label"
+                    >Address (P2PKH)</span
+                  >
+                  <div
+                    class="key-value placeholder"
+                    id="currentAddress"
+                  >
+                    Deriving from link parameters…
+                  </div>
+                </div>
+                <div
+                  style="display: none"
+                  id="currentPubKey"
+                ></div>
+                <div
+                  style="
+                    text-align: center;
+                    margin-top: 12px;
+                  "
+                  id="currentUrlQr"
+                ></div>
+              </div>
+            </details>
+            <div
+              id="message"
+              class="message"
+              style="margin-top: 12px"
+            ></div>
+          </div>
+
+          <!-- ── Genesis Private Link ────────────────────────────────── -->
+          <div id="genesisLinkPanel">
+            <h3>
+              🔐 Your Private Link — save this now
+            </h3>
+            <div id="genesisLinkUrl"></div>
+            <button
+              class="copy-btn"
+              id="copyGenesisLinkBtn"
+            >
+              Copy Link
+            </button>
+            <p
+              style="
+                font-size: 11px;
+                color: #888;
+                margin-top: 8px;
+              "
+            >
+              This is <em>your</em> link to spend
+              funds sent to this wallet. Save it
+              before sending any coins to the
+              address above.
+            </p>
+          </div>
+
+          <!-- ── Balance display (compact) ───────────────────────────── -->
+          <div class="section" id="fundingPanel">
+            <div
+              style="
+                display: flex;
+                align-items: center;
+                gap: 14px;
+                flex-wrap: wrap;
+              "
+            >
+              <div>
+                <span
+                  class="key-label"
+                  style="display: block"
+                  >Current Balance</span
+                >
+                <div
+                  class="balance-display"
+                  id="balanceDisplay"
+                >
+                  0.00000000 YDA
+                </div>
+              </div>
+              <button
+                type="button"
+                class="btn-refresh"
+                id="refreshBalanceBtn"
+              >
+                ↻ Refresh Balance
+              </button>
+            </div>
+          </div>
+
+          <!-- ── Flip to Back ──────────────────────────────────────────── -->
+        </div>
+        <!-- /.bill-inner (front face) -->
+
+        <!-- ══ BACK FACE ════════════════════════════════════════════════════ -->
+        <div class="bill-back">
+          <!-- ─ Current password + warning (shown when PARAM_SF is set) ─ -->
+          <div
+            id="passwordDisplay"
+            style="
+              display: none;
+              margin-bottom: 16px;
+            "
+          >
+            <div style="margin-bottom: 4px">
+              <span
+                class="key-label"
+                style="display: block"
+                >Current Password</span
+              >
+              <div
+                class="key-value"
+                id="displayedPassword"
+                style="
+                  font-family:
+                    &quot;IM Fell English&quot;,
+                    Georgia, serif;
+                  font-size: 15px;
+                  letter-spacing: 1px;
+                  margin-bottom: 6px;
+                "
+              ></div>
+              <div
+                style="
+                  background: #3a1a04;
+                  border: 2px solid #c85a10;
+                  border-radius: 3px;
+                  padding: 12px 16px;
+                  margin-bottom: 12px;
+                "
+              >
+                <div
+                  style="
+                    font-family:
+                      &quot;Cinzel Decorative&quot;,
+                      &quot;Cinzel&quot;, serif;
+                    font-size: 15px;
+                    color: #f0a060;
+                    text-shadow: 0 0 12px
+                      rgba(200, 90, 16, 0.5);
+                  "
+                >
+                  ⚠ Warning
+                </div>
+                <div
+                  style="
+                    font-family:
+                      &quot;IM Fell English SC&quot;,
+                      serif;
+                    font-size: 11px;
+                    color: #f0c090;
+                    letter-spacing: 0.5px;
+                    line-height: 1.7;
+                  "
+                >
+                  If this is
+                  <strong style="color: #ffd090"
+                    >NOT</strong
+                  >
+                  your password, change it
+                  immediately or someone may take
+                  this money!
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <div
+            id="backMessage"
+            class="message"
+          ></div>
+
+          <!-- ── New Password ──────────────────────────────────────────── -->
+          <div
+            class="section"
+            id="setPasswordSection"
+          >
+            <div class="section-title">
+              Set New Password
+            </div>
+
+            <div class="form-group">
+              <label for="newPassword"
+                >New Password</label
+              >
+              <input
+                type="password"
+                id="newPassword"
+                placeholder="Enter new password…"
+                autocomplete="new-password"
+              />
+            </div>
+
+            <div class="form-group">
+              <label for="confirmPassword"
+                >Confirm New Password</label
+              >
+              <input
+                type="password"
+                id="confirmPassword"
+                placeholder="Re-enter new password…"
+                autocomplete="new-password"
+              />
+            </div>
+
+            <div class="form-group">
+              <input
+                type="hidden"
+                id="fee"
+                value="0.01"
+              />
+            </div>
+
+            <div class="hint">
+              A .01 YDA fee will be applied to
+              prevent spam.
+            </div>
+            <div
+              class="form-group"
+              id="prevPubKeyHashGroup"
+              style="display: none"
+            >
+              <label for="prevPublicKeyHash">
+                Previous Public Key Hash
+              </label>
+              <input
+                type="text"
+                id="prevPublicKeyHash"
+              />
+            </div>
+          </div>
+
+          <!-- ── Derived Key Preview ───────────────────────────────────── -->
+          <div
+            class="section"
+            id="previewSection"
+            style="display: none"
+          >
+            <div class="section-title">
+              Derived Key Preview
+              <span class="tag tag-green"
+                >Preview</span
+              >
+            </div>
+            <div class="key-grid">
+              <div class="key-field">
+                <span class="key-label"
+                  >Prerotated Key Hash (output
+                  destination)</span
+                >
+                <div
+                  class="key-value"
+                  id="prerotatedKeyHash"
+                >
+                  —
+                </div>
+              </div>
+              <div class="key-field">
+                <span class="key-label"
+                  >Twice-Prerotated Key Hash
+                  (committed)</span
+                >
+                <div
+                  class="key-value"
+                  id="twicePrerotatedKeyHash"
+                >
+                  —
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- ── Actions ───────────────────────────────────────────────── -->
+          <div
+            class="button-group"
+            id="actionButtons"
+          >
+            <button
+              type="button"
+              class="btn-rotate"
+              id="rotateBtn"
+            >
+              Claim Cash
+            </button>
+          </div>
+
+          <div class="spinner-wrap" id="spinner">
+            <span class="spinner"></span>
+            Processing…
+          </div>
+
+          <!-- ── Next Private Link Panel ───────────────────────────────── -->
+          <div id="nextLinkPanel">
+            <h3>
+              🔒 Next Private Link — save this now
+            </h3>
+            <div id="nextLinkUrl"></div>
+            <button
+              class="copy-btn"
+              id="copyNextLinkBtn"
+            >
+              Copy Link
+            </button>
+            <p
+              style="
+                font-size: 11px;
+                color: #888;
+                margin-top: 8px;
+              "
+            >
+              This link will give the next holder
+              (or your future self) the ability to
+              spend these coins. Share it only
+              with the intended recipient.
+            </p>
+          </div>
+        </div>
+        <!-- /.bill-back (back face) -->
+      </div>
+      <!-- /.bill-flip-wrapper -->
+    </div>
+
+    <!-- ── Controls below the bill ──────────────────────────────────────── -->
+    <div
+      id="billControls"
+      style="
+        max-width: 680px;
+        width: 100%;
+        margin: 16px auto 0;
+        display: flex;
+        flex-direction: column;
+        gap: 10px;
+      "
+    >
+      <!-- Flip buttons removed -->
+    </div>
+
+    <script type="module">
+      import { secp256k1 } from "https://esm.sh/@noble/curves@1.7.0/secp256k1";
+      import { sha256 } from "https://esm.sh/@noble/hashes@1.7.0/sha256";
+      import { ripemd160 } from "https://esm.sh/@noble/hashes@1.7.0/ripemd160";
+      import { hmac } from "https://esm.sh/@noble/hashes@1.7.0/hmac";
+      import { sha512 } from "https://esm.sh/@noble/hashes@1.7.0/sha512";
+      import QRCode from "https://esm.sh/qrcode@1.5.4";
+
+      // -----------------------------------------------------------------------
+      // Byte utilities
+      // -----------------------------------------------------------------------
+      const hexToBytes = (hex) =>
+        Uint8Array.from(
+          hex.match(/.{1,2}/g),
+          (b) => parseInt(b, 16),
+        );
+      const bytesToHex = (bytes) =>
+        Array.from(bytes, (b) =>
+          b.toString(16).padStart(2, "0"),
+        ).join("");
+      const bytesToBase64 = (bytes) =>
+        btoa(
+          Array.from(bytes, (b) =>
+            String.fromCharCode(b),
+          ).join(""),
+        );
+
+      // -----------------------------------------------------------------------
+      // BIP32 hardened child key derivation
+      // HMAC-SHA512(key=chainCode, data=0x00||privKey||hardIndex_BE4)
+      // child_priv = (IL + parent_priv) mod CURVE_ORDER
+      // -----------------------------------------------------------------------
+      const CURVE_ORDER =
+        0xfffffffffffffffffffffffffffffffebaaedce6af48a03bbfd25e8cd0364141n;
+
+      function bip32HardenedChild(
+        parentPrivBytes,
+        parentChainCode,
+        index,
+      ) {
+        const data = new Uint8Array(37);
+        data[0] = 0x00;
+        data.set(parentPrivBytes, 1);
+        const hardIndex =
+          (0x80000000 + index) >>> 0;
+        new DataView(data.buffer).setUint32(
+          33,
+          hardIndex,
+          false,
+        ); // big-endian
+        const I = hmac(
+          sha512,
+          parentChainCode,
+          data,
+        );
+        const IL = I.slice(0, 32);
+        const IR = I.slice(32, 64);
+        const ILn = BigInt("0x" + bytesToHex(IL));
+        const pkn = BigInt(
+          "0x" + bytesToHex(parentPrivBytes),
+        );
+        const child = (ILn + pkn) % CURVE_ORDER;
+        return {
+          privateKey: hexToBytes(
+            child.toString(16).padStart(64, "0"),
+          ),
+          chainCode: IR,
+        };
+      }
+
+      // -----------------------------------------------------------------------
+      // Derive a BIP32 child index from a string factor and integer level.
+      // index = SHA256(factor + String(level)) mod 2147483647
+      // -----------------------------------------------------------------------
+      function deriveIndex(factor, level) {
+        const bytes = new TextEncoder().encode(
+          factor + String(level),
+        );
+        const hash = sha256(bytes);
+        const hashInt = BigInt(
+          "0x" + bytesToHex(hash),
+        );
+        return Number(hashInt % 2147483647n);
+      }
+
+      // -----------------------------------------------------------------------
+      // Derive a key via 4 sequential hardened BIP32 children.
+      // -----------------------------------------------------------------------
+      function deriveSecurePath(
+        privKeyBytes,
+        chainCode,
+        secondFactor,
+      ) {
+        let cur = {
+          privateKey: privKeyBytes,
+          chainCode,
+        };
+        for (let level = 0; level < 4; level++) {
+          const idx = deriveIndex(
+            secondFactor,
+            level,
+          );
+          cur = bip32HardenedChild(
+            cur.privateKey,
+            cur.chainCode,
+            idx,
+          );
+        }
+        return cur;
+      }
+
+      // -----------------------------------------------------------------------
+      // P2PKH: Base58Check(0x00 + RIPEMD160(SHA256(compressedPubKey)))
+      // -----------------------------------------------------------------------
+      const B58 =
+        "123456789ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz";
+
+      function base58Encode(bytes) {
+        let n = 0n;
+        for (const b of bytes)
+          n = n * 256n + BigInt(b);
+        const chars = [];
+        while (n > 0n) {
+          chars.push(B58[Number(n % 58n)]);
+          n = n / 58n;
+        }
+        for (const b of bytes) {
+          if (b !== 0) break;
+          chars.push("1");
+        }
+        return chars.reverse().join("");
+      }
+
+      function getP2PKH(compressedPubKeyBytes) {
+        const s = sha256(compressedPubKeyBytes);
+        const r = ripemd160(s);
+        const payload = new Uint8Array(21);
+        payload[0] = 0x00;
+        payload.set(r, 1);
+        const checksum = sha256(
+          sha256(payload),
+        ).slice(0, 4);
+        const full = new Uint8Array(25);
+        full.set(payload);
+        full.set(checksum, 21);
+        return base58Encode(full);
+      }
+
+      // -----------------------------------------------------------------------
+      // Transaction hash (version 7)
+      // SHA256(pubkey + time + "" + "" + "" + fee8f + "0.00000000" +
+      //        "" + "" + inputsConcat + outputsConcat + "7" +
+      //        prerotatedKeyHash + twicePrerotatedKeyHash +
+      //        publicKeyHash + prevPublicKeyHash)
+      // inputsConcat : sorted by id.toLowerCase(), concatenated
+      // outputsConcat: sorted by to.toLowerCase(), each as to + value.toFixed(8)
+      // -----------------------------------------------------------------------
+      function buildTxHash({
+        publicKey,
+        time,
+        fee,
+        inputs,
+        outputs,
+        prerotatedKeyHash,
+        twicePrerotatedKeyHash,
+        publicKeyHash,
+        prevPublicKeyHash,
+      }) {
+        const inputsConcat = inputs
+          .map((i) => i.id)
+          .sort((a, b) => {
+            const al = a.toLowerCase(),
+              bl = b.toLowerCase();
+            return al < bl ? -1 : al > bl ? 1 : 0;
+          })
+          .join("");
+
+        const outputsConcat = [...outputs]
+          .sort((a, b) => {
+            const al = a.to.toLowerCase(),
+              bl = b.to.toLowerCase();
+            return al < bl ? -1 : al > bl ? 1 : 0;
+          })
+          .map((o) => o.to + o.value.toFixed(8))
+          .join("");
+
+        const preimage =
+          publicKey +
+          String(time) +
+          "" + // dh_public_key
+          "" + // rid
+          "" + // relationship_hash
+          fee.toFixed(8) +
+          (0.0).toFixed(8) + // masternode_fee
+          "" + // requester_rid
+          "" + // requested_rid
+          inputsConcat +
+          outputsConcat +
+          "7" +
+          prerotatedKeyHash +
+          twicePrerotatedKeyHash +
+          publicKeyHash +
+          prevPublicKeyHash;
+
+        return bytesToHex(
+          sha256(
+            new TextEncoder().encode(preimage),
+          ),
+        );
+      }
+
+      // -----------------------------------------------------------------------
+      // Sign: base64(compact 64-byte r‖s of SHA256(txHashHex.utf8))
+      // Matches coincurve PrivateKey.sign(msg.encode('utf-8'), hasher='sha256')
+      // -----------------------------------------------------------------------
+      function signTxHash(
+        txHashHex,
+        privateKeyBytes,
+      ) {
+        const digest = sha256(
+          new TextEncoder().encode(txHashHex),
+        );
+        const sig = secp256k1.sign(
+          digest,
+          privateKeyBytes,
+        );
+        return bytesToBase64(sig.toDERRawBytes());
+      }
+
+      // -----------------------------------------------------------------------
+      // URL parameters & mode detection
+      // -----------------------------------------------------------------------
+      const params = new URLSearchParams(
+        window.location.hash.slice(1),
+      );
+      const PARAM_PK = params.get("pk") || "";
+      const PARAM_CC = params.get("cc") || "";
+      const PARAM_SF = params.get("sf") || "";
+      const PARAM_THEME =
+        params.get("theme") || "traditional";
+      const GENESIS_MODE =
+        !PARAM_PK && !PARAM_CC && !PARAM_SF;
+
+      // Apply theme immediately
+      (function applyTheme(t) {
+        if (t && t !== "traditional") {
+          document.documentElement.setAttribute(
+            "data-theme",
+            t,
+          );
+        } else {
+          document.documentElement.removeAttribute(
+            "data-theme",
+          );
+        }
+        const sel = document.getElementById(
+          "themePicker",
+        );
+        if (sel) sel.value = t || "traditional";
+      })(PARAM_THEME);
+
+      // Helper: current theme
+      function currentTheme() {
+        return (
+          document.documentElement.getAttribute(
+            "data-theme",
+          ) || "traditional"
+        );
+      }
+
+      // Theme select change
+      document
+        .getElementById("themePicker")
+        .addEventListener("change", function () {
+          const t = this.value;
+          if (t && t !== "traditional") {
+            document.documentElement.setAttribute(
+              "data-theme",
+              t,
+            );
+          } else {
+            document.documentElement.removeAttribute(
+              "data-theme",
+            );
+          }
+          // Update hash without reloading
+          const hp = new URLSearchParams(
+            window.location.hash.slice(1),
+          );
+          if (t && t !== "traditional") {
+            hp.set("theme", t);
+          } else {
+            hp.delete("theme");
+          }
+          history.replaceState(
+            null,
+            "",
+            "#" + hp.toString(),
+          );
+        });
+
+      // Mutable state
+      let signingKey = null;
+      let signingPubHex = "";
+      let signingAddr = "";
+      let prerotatedAddr = "";
+      let prerotatedKey = null; // stored globally so next-link URL uses its material
+      let twicePrerotatedAddr = "";
+      let spentPrerotatedKeyHash = ""; // set when checkAndShowSpentBanner confirms spent
+      let spentTwicePrerotatedKeyHash = ""; // used to validate newPw in recovery
+
+      // -----------------------------------------------------------------------
+      // Helper: populate the current-key section
+      // -----------------------------------------------------------------------
+      function showSigningKey(pubBytes) {
+        signingPubHex = bytesToHex(pubBytes);
+        signingAddr = getP2PKH(pubBytes);
+        const addrEl = document.getElementById(
+          "currentAddress",
+        );
+        const pkEl = document.getElementById(
+          "currentPubKey",
+        );
+        addrEl.textContent = signingAddr;
+        pkEl.textContent = signingPubHex;
+        addrEl.classList.remove("placeholder");
+        pkEl.classList.remove("placeholder");
+        // Show the password on the front face (rotation mode only)
+        if (PARAM_SF) {
+          document.getElementById(
+            "displayedPassword",
+          ).textContent = PARAM_SF;
+          document.getElementById(
+            "passwordDisplay",
+          ).style.display = "block";
+        }
+        document.getElementById(
+          "currentKeySection",
+        ).style.display = "";
+        const qrEl = document.getElementById(
+          "currentUrlQr",
+        );
+        qrEl.innerHTML = "";
+        QRCode.toCanvas(
+          document.createElement("canvas"),
+          window.location.href,
+          { width: 200, margin: 1 },
+          (err, canvas) => {
+            if (!err) {
+              canvas.style.borderRadius = "8px";
+              qrEl.appendChild(canvas);
+            }
+          },
+        );
+      }
+
+      // -----------------------------------------------------------------------
+      // Initialise
+      // -----------------------------------------------------------------------
+      // -----------------------------------------------------------------------
+      // localStorage helpers
+      // -----------------------------------------------------------------------
+      const LS_PREFIX = "yadacoin_rotation_";
+      const LS_LAST = "yadacoin_last_rotation";
+
+      function saveRotationToStorage(
+        address,
+        pk,
+        cc,
+        sf,
+      ) {
+        try {
+          localStorage.setItem(
+            LS_PREFIX + address,
+            JSON.stringify({
+              pk,
+              cc,
+              sf,
+              address,
+              savedAt: Date.now(),
+            }),
+          );
+          localStorage.setItem(LS_LAST, address);
+        } catch (_) {}
+      }
+
+      function loadRotationFromStorage(address) {
+        try {
+          return JSON.parse(
+            localStorage.getItem(
+              LS_PREFIX + address,
+            ) || "null",
+          );
+        } catch (_) {
+          return null;
+        }
+      }
+
+      function loadLastRotationFromStorage() {
+        try {
+          const addr =
+            localStorage.getItem(LS_LAST);
+          if (!addr) return null;
+          return loadRotationFromStorage(addr);
+        } catch (_) {
+          return null;
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Auto-fetch prev_public_key_hash for rotation mode
+      // -----------------------------------------------------------------------
+      async function fetchAndSetPrevKeyHash() {
+        if (!signingAddr) return;
+        try {
+          const res = await fetch(
+            "/key-rotation/prev-key-hash?address=" +
+              encodeURIComponent(signingAddr),
+          );
+          const data = await res.json();
+          const input = document.getElementById(
+            "prevPublicKeyHash",
+          );
+          if (data.prev_public_key_hash) {
+            input.value =
+              data.prev_public_key_hash;
+            input.readOnly = true;
+            input.style.background = "#f0f4ff";
+            input.style.cursor = "default";
+            // Update hint to reflect auto-fill
+            const hint = input
+              .closest(".form-group")
+              .querySelector(".hint");
+            if (hint) {
+              hint.textContent =
+                "✅ Auto-filled from " +
+                (data.source === "mempool"
+                  ? "mempool"
+                  : "blockchain") +
+                ".";
+              hint.style.color = "#155724";
+            }
+          } else {
+            // Inception — no prior KEL entry; keep blank and lock it
+            input.value = "";
+            input.readOnly = true;
+            input.style.background = "#f0f4ff";
+            input.style.cursor = "default";
+            input.placeholder =
+              "None — this is the inception event for this address";
+            const hint = input
+              .closest(".form-group")
+              .querySelector(".hint");
+            if (hint) {
+              hint.textContent =
+                "No prior key event found — this is an inception transaction.";
+            }
+          }
+        } catch (_) {
+          // Non-fatal; form remains editable as fallback
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Spent-status check
+      // -----------------------------------------------------------------------
+      async function checkAndShowSpentBanner() {
+        if (!signingAddr) return;
+        try {
+          const res = await fetch(
+            "/key-rotation/spent?address=" +
+              encodeURIComponent(signingAddr),
+          );
+          const data = await res.json();
+          if (data.spent) {
+            // Store the prerotated address recorded on chain so recovery can validate it
+            spentPrerotatedKeyHash =
+              data.prerotated_key_hash || "";
+            spentTwicePrerotatedKeyHash =
+              data.twice_prerotated_key_hash ||
+              "";
+            // Hide action UI
+            document.getElementById(
+              "setPasswordSection",
+            ).style.display = "none";
+            document.getElementById(
+              "actionButtons",
+            ).style.display = "none";
+            document.getElementById(
+              "fundingPanel",
+            ).style.display = "none";
+            // Show banner
+            document.getElementById(
+              "spentSource",
+            ).textContent =
+              data.source === "mempool"
+                ? "⏳ Found in mempool (pending confirmation)"
+                : "✅ Confirmed on blockchain";
+            const txidEl =
+              document.getElementById(
+                "spentTxid",
+              );
+            if (data.txid) {
+              txidEl.textContent =
+                "Transaction: " + data.txid;
+              txidEl.style.display = "block";
+            } else {
+              txidEl.style.display = "none";
+            }
+            document.getElementById(
+              "spentBanner",
+            ).style.display = "block";
+            // Show the link-recovery sub-section
+            document.getElementById(
+              "recoverSection",
+            ).style.display = "block";
+          }
+        } catch (_) {
+          // Non-fatal — silent fail; balance display still works
+        }
+      }
+
+      function init() {
+        if (GENESIS_MODE) {
+          // Show genesis setup panel; everything else stays hidden via CSS
+          document.querySelector(
+            "h1",
+          ).textContent = "🔑 New Cash Link";
+          document.querySelector(
+            ".subtitle",
+          ).textContent =
+            "YadaCoin HD wallet — create a new digital cash link";
+          document.getElementById(
+            "genesisSetup",
+          ).style.display = "block";
+          document.getElementById(
+            "currentKeySection",
+          ).style.display = "none";
+        } else {
+          // Rotation mode: signing key IS the raw pk/cc from the URL — no top-level
+          // deriveSecurePath here. Sub-derivations (prerotated, twice_prerotated) then
+          // use PARAM_SF, which makes chain continuity hold:
+          //   ev[N].prerotatedAddr  == ev[N+1].signingAddr
+          //   ev[N].twicePre        == ev[N+1].prerotatedAddr
+          try {
+            signingKey = {
+              privateKey: hexToBytes(PARAM_PK),
+              chainCode: hexToBytes(PARAM_CC),
+            };
+            showSigningKey(
+              secp256k1.getPublicKey(
+                signingKey.privateKey,
+                true,
+              ),
+            );
+            // Show funding panel and fetch balance immediately
+            document.getElementById(
+              "fundingPanel",
+            ).style.display = "block";
+            // Unlock the password + action sections immediately in rotation mode
+            document.getElementById(
+              "setPasswordSection",
+            ).style.display = "block";
+            document.getElementById(
+              "actionButtons",
+            ).style.display = "block";
+            document.querySelector(
+              ".bill-back",
+            ).style.display = "block";
+            // Auto-populate prev_public_key_hash for this signer
+            fetchAndSetPrevKeyHash();
+            // Check spent status (hides action UI if already rotated)
+            checkAndShowSpentBanner();
+            // Fetch balance in background (don't block render)
+            fetchAndShowBalance();
+          } catch (err) {
+            showMessage(
+              "error",
+              "Key derivation failed: " +
+                err.message,
+            );
+          }
+        }
+      }
+
+      async function fetchAndShowBalance() {
+        const btn = document.getElementById(
+          "refreshBalanceBtn",
+        );
+        btn.disabled = true;
+        btn.textContent = "↻ Checking…";
+        try {
+          const res = await fetch(
+            "/get-graph-wallet?address=" +
+              encodeURIComponent(signingAddr),
+          );
+          const data = await res.json();
+          const total =
+            parseFloat(data.chain_balance || 0) +
+            parseFloat(data.pending_balance || 0);
+          const balEl = document.getElementById(
+            "balanceDisplay",
+          );
+          balEl.textContent =
+            total.toFixed(8) + " YDA";
+          if (total > 0) {
+            balEl.classList.add("funded");
+          } else {
+            balEl.classList.remove("funded");
+          }
+          return total;
+        } catch (err) {
+          showMessage(
+            "error",
+            "Balance check failed: " +
+              err.message,
+          );
+          return null;
+        } finally {
+          btn.disabled = false;
+          btn.textContent = "↻ Refresh Balance";
+        }
+      }
+
+      // -----------------------------------------------------------------------
+      // Genesis: generate wallet button
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("generateBtn")
+        .addEventListener("click", () => {
+          const pw = document.getElementById(
+            "genesisPassword",
+          ).value;
+          const cpw = document.getElementById(
+            "genesisConfirmPw",
+          ).value;
+          if (!pw) {
+            showMessage(
+              "error",
+              "Please enter a password.",
+            );
+            return;
+          }
+          if (pw !== cpw) {
+            showMessage(
+              "error",
+              "Passwords do not match.",
+            );
+            return;
+          }
+          try {
+            // Generate cryptographically random root material (browser CSPRNG)
+            const rootPriv =
+              crypto.getRandomValues(
+                new Uint8Array(32),
+              );
+            const rootCC = crypto.getRandomValues(
+              new Uint8Array(32),
+            );
+
+            // Guard: private key must be in [1, CURVE_ORDER-1] — astronomically unlikely to fail
+            const privInt = BigInt(
+              "0x" + bytesToHex(rootPriv),
+            );
+            if (
+              privInt === 0n ||
+              privInt >= CURVE_ORDER
+            ) {
+              showMessage(
+                "error",
+                "Key generation produced an invalid value — please try again.",
+              );
+              return;
+            }
+
+            signingKey = deriveSecurePath(
+              rootPriv,
+              rootCC,
+              pw,
+            );
+            showSigningKey(
+              secp256k1.getPublicKey(
+                signingKey.privateKey,
+                true,
+              ),
+            );
+
+            // Genesis private link carries the DERIVED signingKey material so
+            // that rotation mode can use it directly (signing key = raw pk/cc).
+            const genesisUrl =
+              window.location.origin +
+              window.location.pathname +
+              "#pk=" +
+              encodeURIComponent(
+                bytesToHex(signingKey.privateKey),
+              ) +
+              "&cc=" +
+              encodeURIComponent(
+                bytesToHex(signingKey.chainCode),
+              ) +
+              "&sf=" +
+              encodeURIComponent(pw) +
+              (currentTheme() !== "traditional"
+                ? "&theme=" +
+                  encodeURIComponent(
+                    currentTheme(),
+                  )
+                : "");
+
+            // Redirect immediately into rotation mode with the generated key material.
+            window.location.href = genesisUrl;
+            window.location.reload();
+          } catch (err) {
+            showMessage(
+              "error",
+              "Wallet generation failed: " +
+                err.message,
+            );
+          }
+        });
+
+      // -----------------------------------------------------------------------
+      // Genesis: refresh balance button
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("refreshBalanceBtn")
+        .addEventListener("click", async () => {
+          if (!signingAddr) return;
+          const total =
+            await fetchAndShowBalance();
+          if (total === null) return; // error already shown by fetchAndShowBalance
+          if (total > 0) {
+            document.getElementById(
+              "setPasswordSection",
+            ).style.display = "block";
+            document.getElementById(
+              "actionButtons",
+            ).style.display = "block";
+            document.querySelector(
+              ".bill-back",
+            ).style.display = "block";
+            showMessage(
+              "success",
+              "💰 Balance confirmed: " +
+                total.toFixed(8) +
+                " YDA. Set a password and claim your cash if you haven't already!",
+            );
+          } else if (total === 0) {
+            showMessage(
+              "info",
+              "Balance is still 0. Send YDA to the address above and try again.",
+            );
+          }
+        });
+
+      // -----------------------------------------------------------------------
+      // Genesis: copy genesis private link
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("copyGenesisLinkBtn")
+        .addEventListener("click", () => {
+          const text = document.getElementById(
+            "genesisLinkUrl",
+          ).textContent;
+          navigator.clipboard
+            .writeText(text)
+            .then(() => {
+              const btn = document.getElementById(
+                "copyGenesisLinkBtn",
+              );
+              btn.textContent = "Copied!";
+              setTimeout(() => {
+                btn.textContent = "Copy Link";
+              }, 2000);
+            });
+        });
+
+      // -----------------------------------------------------------------------
+      // Rotate button — build, sign, and broadcast the key-rotation transaction
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("rotateBtn")
+        .addEventListener("click", async () => {
+          if (!validateForm()) return;
+
+          // Derive prerotated keys now if Preview wasn't clicked yet
+          if (!prerotatedAddr) {
+            const newPw0 =
+              document.getElementById(
+                "newPassword",
+              ).value;
+            try {
+              // prerotated key uses PARAM_SF; next signing key = prerotatedKey directly
+              prerotatedKey = deriveSecurePath(
+                signingKey.privateKey,
+                signingKey.chainCode,
+                PARAM_SF,
+              );
+              const prePub0 =
+                secp256k1.getPublicKey(
+                  prerotatedKey.privateKey,
+                  true,
+                );
+              prerotatedAddr = getP2PKH(prePub0);
+              // twice_prerotated uses newPw (the next-next rotation password)
+              const twiceKey0 = deriveSecurePath(
+                prerotatedKey.privateKey,
+                prerotatedKey.chainCode,
+                newPw0,
+              );
+              twicePrerotatedAddr = getP2PKH(
+                secp256k1.getPublicKey(
+                  twiceKey0.privateKey,
+                  true,
+                ),
+              );
+            } catch (err) {
+              showMessage(
+                "error",
+                "Key derivation failed: " +
+                  err.message,
+              );
+              return;
+            }
+          }
+
+          const newPw = document.getElementById(
+            "newPassword",
+          ).value;
+          const fee =
+            parseFloat(
+              document.getElementById("fee")
+                .value,
+            ) || 0.01;
+          const prevPubKeyHash = document
+            .getElementById("prevPublicKeyHash")
+            .value.trim();
+
+          showSpinner(true);
+          document.getElementById(
+            "rotateBtn",
+          ).disabled = true;
+
+          try {
+            // Use 21000000 (max supply) as amount_needed so the endpoint returns actual UTXOs
+            const walletRes = await fetch(
+              "/get-graph-wallet?address=" +
+                encodeURIComponent(signingAddr) +
+                "&amount_needed=21000000",
+            );
+            const walletData =
+              await walletRes.json();
+
+            // Build inputs from confirmed + mempool UTXOs
+            const allUtxos = (
+              walletData.unspent_transactions ||
+              []
+            ).concat(
+              walletData.unspent_mempool_txns ||
+                [],
+            );
+            const inputs = [];
+            let total = 0;
+            for (const utxo of allUtxos) {
+              const val = (
+                utxo.outputs || []
+              ).reduce(
+                (s, o) =>
+                  o.to === signingAddr
+                    ? s + parseFloat(o.value || 0)
+                    : s,
+                0,
+              );
+              if (val > 0) {
+                inputs.push({
+                  id: utxo.id || utxo._id,
+                  value: val,
+                });
+                total += val;
+              }
+            }
+
+            if (!inputs.length)
+              throw new Error(
+                "No spendable UTXOs found for " +
+                  signingAddr,
+              );
+            if (total <= fee)
+              throw new Error(
+                "Insufficient funds: balance " +
+                  total.toFixed(8) +
+                  " YDA, fee " +
+                  fee +
+                  " YDA",
+              );
+
+            const outputValue = parseFloat(
+              (total - fee).toFixed(8),
+            );
+            const outputs = [
+              {
+                to: prerotatedAddr,
+                value: outputValue,
+              },
+            ];
+            const txTime = Math.floor(
+              Date.now() / 1000,
+            );
+
+            const txHash = buildTxHash({
+              publicKey: signingPubHex,
+              time: txTime,
+              fee,
+              inputs,
+              outputs,
+              prerotatedKeyHash: prerotatedAddr,
+              twicePrerotatedKeyHash:
+                twicePrerotatedAddr,
+              publicKeyHash: signingAddr,
+              prevPublicKeyHash: prevPubKeyHash,
+            });
+
+            const txSig = signTxHash(
+              txHash,
+              signingKey.privateKey,
+            );
+
+            const txnDict = {
+              time: txTime,
+              rid: "",
+              id: txSig,
+              relationship: "",
+              relationship_hash: "",
+              public_key: signingPubHex,
+              dh_public_key: "",
+              fee,
+              masternode_fee: 0.0,
+              hash: txHash,
+              inputs,
+              outputs,
+              version: 7,
+              private: false,
+              never_expire: false,
+              prerotated_key_hash: prerotatedAddr,
+              twice_prerotated_key_hash:
+                twicePrerotatedAddr,
+              public_key_hash: signingAddr,
+              prev_public_key_hash:
+                prevPubKeyHash,
+            };
+
+            const broadcastRes = await fetch(
+              "/transaction?username_signature=1",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body: JSON.stringify([txnDict]),
+              },
+            );
+            const broadcastData =
+              await broadcastRes.json();
+
+            // /transaction returns an array on success, or {status:false,...} on error
+            if (
+              Array.isArray(broadcastData) &&
+              broadcastData.length > 0
+            ) {
+              showMessage(
+                "success",
+                "✅ Key rotation broadcast! Transaction: " +
+                  broadcastData[0].id,
+              );
+
+              // Persist the current key data so the page can detect spent status on reload
+              saveRotationToStorage(
+                signingAddr,
+                PARAM_PK,
+                PARAM_CC,
+                PARAM_SF,
+              );
+
+              // Next private link: pk/cc = prerotatedKey material (becomes the
+              // next signing key directly), sf = newPw used for its sub-derivations.
+              const nextUrl =
+                window.location.origin +
+                window.location.pathname +
+                "#pk=" +
+                encodeURIComponent(
+                  bytesToHex(
+                    prerotatedKey.privateKey,
+                  ),
+                ) +
+                "&cc=" +
+                encodeURIComponent(
+                  bytesToHex(
+                    prerotatedKey.chainCode,
+                  ),
+                ) +
+                "&sf=" +
+                encodeURIComponent(newPw) +
+                (currentTheme() !== "traditional"
+                  ? "&theme=" +
+                    encodeURIComponent(
+                      currentTheme(),
+                    )
+                  : "");
+
+              // Redirect immediately to the next rotation link.
+              window.location.href = nextUrl;
+              window.location.reload();
+            } else {
+              document.getElementById(
+                "rotateBtn",
+              ).disabled = false;
+              showMessage(
+                "error",
+                broadcastData.message ||
+                  "Broadcast failed.",
+              );
+            }
+          } catch (err) {
+            document.getElementById(
+              "rotateBtn",
+            ).disabled = false;
+            showMessage(
+              "error",
+              "Error: " + err.message,
+            );
+          } finally {
+            showSpinner(false);
+          }
+        });
+
+      // -----------------------------------------------------------------------
+      // Copy next-link button
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("copyNextLinkBtn")
+        .addEventListener("click", () => {
+          const text = document.getElementById(
+            "nextLinkUrl",
+          ).textContent;
+          navigator.clipboard
+            .writeText(text)
+            .then(() => {
+              const btn = document.getElementById(
+                "copyNextLinkBtn",
+              );
+              btn.textContent = "Copied!";
+              setTimeout(() => {
+                btn.textContent = "Copy Link";
+              }, 2000);
+            });
+        });
+
+      // -----------------------------------------------------------------------
+      // Recover next link (when page reloaded after spending)
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("recoverLinkBtn")
+        .addEventListener("click", () => {
+          if (!signingKey) {
+            alert(
+              "Signing key not available — check the page URL.",
+            );
+            return;
+          }
+          const pw = document
+            .getElementById("recoverPassword")
+            .value.trim();
+          if (!pw) {
+            document
+              .getElementById("recoverPassword")
+              .focus();
+            return;
+          }
+
+          // Validate the entered password against twice_prerotated_key_hash
+          // from the spending tx: derive prerotatedKey (using PARAM_SF, which
+          // was used when building the txn), then derive candidate twice_pre
+          // using the user's entered password and compare.
+          const prerotatedKey = deriveSecurePath(
+            signingKey.privateKey,
+            signingKey.chainCode,
+            PARAM_SF,
+          );
+          const candidateKey = deriveSecurePath(
+            prerotatedKey.privateKey,
+            prerotatedKey.chainCode,
+            pw,
+          );
+          const candidatePub =
+            secp256k1.getPublicKey(
+              candidateKey.privateKey,
+              true,
+            );
+          const candidateAddr =
+            getP2PKH(candidatePub);
+
+          // Validate against the twice_prerotated_key_hash recorded in the spending tx
+          const recoveredLinkPanel =
+            document.getElementById(
+              "recoveredLinkPanel",
+            );
+          recoveredLinkPanel.style.display =
+            "none";
+
+          if (
+            spentTwicePrerotatedKeyHash &&
+            candidateAddr !==
+              spentTwicePrerotatedKeyHash
+          ) {
+            // Wrong password — derived address doesn't match what was committed on chain
+            const pwInput =
+              document.getElementById(
+                "recoverPassword",
+              );
+            pwInput.style.border =
+              "2px solid #e94560";
+            pwInput.style.boxShadow =
+              "0 0 0 3px rgba(233,69,96,0.35)";
+            // Show inline error beneath the input
+            let errEl = document.getElementById(
+              "recoverPwError",
+            );
+            if (!errEl) {
+              errEl = document.createElement("p");
+              errEl.id = "recoverPwError";
+              errEl.style.cssText =
+                "color:#ff6b6b;font-size:12px;margin:4px 0 8px;";
+              pwInput.insertAdjacentElement(
+                "afterend",
+                errEl,
+              );
+            }
+            errEl.textContent =
+              "❌ Wrong password — the derived twice-prerotated address (" +
+              candidateAddr +
+              ") does not match the twice_prerotated_key_hash recorded on chain (" +
+              spentTwicePrerotatedKeyHash +
+              ").";
+            return;
+          }
+
+          // Password matches (or server didn't return a prerotated_key_hash to compare)
+          const pwInput = document.getElementById(
+            "recoverPassword",
+          );
+          pwInput.style.border = "";
+          pwInput.style.boxShadow = "";
+          const errEl = document.getElementById(
+            "recoverPwError",
+          );
+          if (errEl) errEl.textContent = "";
+
+          // Next link: pk/cc = prerotatedKey material (derived from signingKey + PARAM_SF)
+          // This IS the same as the next link built after a successful broadcast.
+          const recoveryPrerotatedKey =
+            prerotatedKey ||
+            deriveSecurePath(
+              signingKey.privateKey,
+              signingKey.chainCode,
+              PARAM_SF,
+            );
+          const recoveredUrl =
+            window.location.origin +
+            window.location.pathname +
+            "#pk=" +
+            encodeURIComponent(
+              bytesToHex(
+                recoveryPrerotatedKey.privateKey,
+              ),
+            ) +
+            "&cc=" +
+            encodeURIComponent(
+              bytesToHex(
+                recoveryPrerotatedKey.chainCode,
+              ),
+            ) +
+            "&sf=" +
+            encodeURIComponent(pw) +
+            (currentTheme() !== "traditional"
+              ? "&theme=" +
+                encodeURIComponent(currentTheme())
+              : "");
+          // Redirect immediately to the recovered next link
+          window.location.href = recoveredUrl;
+          window.location.reload();
+        });
+
+      document
+        .getElementById("copyRecoveredLinkBtn")
+        .addEventListener("click", () => {
+          const text = document.getElementById(
+            "recoveredLinkUrl",
+          ).textContent;
+          navigator.clipboard
+            .writeText(text)
+            .then(() => {
+              const btn = document.getElementById(
+                "copyRecoveredLinkBtn",
+              );
+              btn.textContent = "Copied!";
+              setTimeout(() => {
+                btn.textContent = "Copy Link";
+              }, 2000);
+            });
+        });
+
+      // -----------------------------------------------------------------------
+      // Utilities
+      // -----------------------------------------------------------------------
+      function validateForm() {
+        const pw = document.getElementById(
+          "newPassword",
+        ).value;
+        const cpw = document.getElementById(
+          "confirmPassword",
+        ).value;
+        if (!signingKey) {
+          showMessage(
+            "error",
+            GENESIS_MODE
+              ? "Generate your wallet first."
+              : "Signing key not derived. Check URL parameters.",
+          );
+          return false;
+        }
+        if (!pw) {
+          showMessage(
+            "error",
+            "Please enter a new password.",
+          );
+          return false;
+        }
+        if (pw !== cpw) {
+          showMessage(
+            "error",
+            "Passwords do not match.",
+          );
+          return false;
+        }
+        return true;
+      }
+
+      function showMessage(type, text) {
+        const el =
+          document.getElementById("message");
+        el.className = "message " + type;
+        el.textContent = text;
+      }
+
+      function showSpinner(show) {
+        document.getElementById(
+          "spinner",
+        ).className = show
+          ? "spinner-wrap show"
+          : "spinner-wrap";
+      }
+
+      // Toggle arrow on the current-key details element
+      const currentKeyDetails =
+        document.querySelector(
+          "#currentKeySection details",
+        );
+      if (currentKeyDetails) {
+        currentKeyDetails.addEventListener(
+          "toggle",
+          () => {
+            document.getElementById(
+              "currentKeySummaryArrow",
+            ).textContent = currentKeyDetails.open
+              ? "▼"
+              : "▶";
+          },
+        );
+      }
+
+      // Run
+      init();
+    </script>
+  </body>
+</html>

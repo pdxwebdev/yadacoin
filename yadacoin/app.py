@@ -83,6 +83,9 @@ from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.http.explorer import EXPLORER_HANDLERS
 from yadacoin.http.graph import GRAPH_HANDLERS
 from yadacoin.http.keyeventlog import KEY_EVENT_LOG_HANDLERS
+from yadacoin.http.keyrotation import (  # noqa: F401  # utxos + broadcast
+    KEY_ROTATION_HANDLERS,
+)
 from yadacoin.http.node import NODE_HANDLERS
 from yadacoin.http.node_announce import NODE_ANNOUNCE_HANDLERS
 from yadacoin.http.pool import POOL_HANDLERS
@@ -1136,6 +1139,7 @@ class NodeApplication(Application):
         self.default_handlers.extend(WEB_HANDLERS)
         self.default_handlers.extend(POOL_HANDLERS)
         self.default_handlers.extend(KEY_EVENT_LOG_HANDLERS)
+        self.default_handlers.extend(KEY_ROTATION_HANDLERS)
         if self.config.peer_type == PEER_TYPES.SERVICE_PROVIDER.value or (
             hasattr(self.config, "activate_peerjs")
             and self.config.activate_peerjs == True
