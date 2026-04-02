@@ -54,6 +54,7 @@ class MiningPool(object):
             self.index = last_block.index
         self.last_refresh = 0
         self.block_factory = None
+        self.excluded = []
         await self.refresh()
         return self
 
@@ -303,6 +304,7 @@ class MiningPool(object):
             if self.refreshing or not await Peer.is_synced():
                 return
             self.refreshing = True
+            self.excluded = []
             await self.config.LatestBlock.block_checker()
             if self.block_factory:
                 self.last_block_time = int(self.block_factory.time)
@@ -329,6 +331,23 @@ class MiningPool(object):
         if self.block_factory is None:
             # await self.refresh()
             return {}
+
+        def _txn_summary(txn):
+            relationship = txn.relationship
+            if hasattr(relationship, "to_dict"):
+                relationship = relationship.to_dict()
+            return {
+                "id": txn.transaction_signature,
+                "hash": txn.hash,
+                "inputs": [x.to_dict() for x in txn.inputs],
+                "outputs": [x.to_dict() for x in txn.outputs],
+                "relationship": relationship,
+                "prerotated_key_hash": txn.prerotated_key_hash,
+                "twice_prerotated_key_hash": txn.twice_prerotated_key_hash,
+                "public_key_hash": txn.public_key_hash,
+                "prev_public_key_hash": txn.prev_public_key_hash,
+            }
+
         res = {
             "target": hex(int(self.block_factory.target))[2:].rjust(
                 64, "0"
@@ -342,6 +361,8 @@ class MiningPool(object):
             "version": self.block_factory.version,
             "height": self.block_factory.index,  # This is the height of the one we are mining
             "previous_time": self.config.LatestBlock.block.time,  # needed for miner to recompute the real diff
+            "transactions": [_txn_summary(t) for t in self.block_factory.transactions],
+            "excluded": self.excluded,
         }
         return res
 
@@ -653,6 +674,12 @@ class MiningPool(object):
                         transaction_obj.transaction_signature
                     )
                 )
+                self.excluded.append(
+                    {
+                        "id": transaction_obj.transaction_signature,
+                        "reason": "input spent already",
+                    }
+                )
                 await self.mongo.async_db.miner_transactions.delete_many(
                     {"id": transaction_obj.transaction_signature}
                 )
@@ -664,6 +691,12 @@ class MiningPool(object):
                     "transaction removed: using an input used by another transaction in this block {}".format(
                         transaction_obj.transaction_signature
                     )
+                )
+                self.excluded.append(
+                    {
+                        "id": transaction_obj.transaction_signature,
+                        "reason": "using an input used by another transaction in this block",
+                    }
                 )
                 await self.mongo.async_db.miner_transactions.delete_many(
                     {"id": transaction_obj.transaction_signature}
@@ -687,8 +720,20 @@ class MiningPool(object):
                 f"verify_pending_transaction, transient — skipping for this block: "
                 f"{transaction_obj.transaction_signature}: {e}"
             )
+            self.excluded.append(
+                {
+                    "id": transaction_obj.transaction_signature,
+                    "reason": f"{e.__class__.__name__} - {e}",
+                }
+            )
             return
         except Exception as e:
+            self.excluded.append(
+                {
+                    "id": transaction_obj.transaction_signature,
+                    "reason": f"{e.__class__.__name__} - {e}",
+                }
+            )
             await Transaction.handle_exception(e, transaction_obj, transactions)
 
     async def accept_block(self, block):

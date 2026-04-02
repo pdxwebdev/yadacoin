@@ -1,3 +1,4 @@
+<div [hidden]="mempoolView">
 <div class="grid-container">
   <div class="grid-item">
     <h2>Current block height: {{ current_height }}</h2>
@@ -31,6 +32,11 @@
     Search
   </button>
 </form>
+</div>
+<button style="margin-bottom: 15px" class="btn btn-info" (click)="viewMempool()">
+  {{ mempoolView ? 'Hide Mempool' : 'View Mempool' }}
+</button>
+<div [hidden]="mempoolView">
 <div *ngIf="searching"><strong>Searching...</strong></div>
 <div *ngIf="!searching && submitted && result.length === 0">
   <strong>No results</strong>
@@ -440,5 +446,96 @@
         </div>
       </div>
     </div>
+  </div>
+</div>
+</div>
+
+<div *ngIf="mempoolView" style="margin-top: 25px; border-top: 2px solid #ccc; padding-top: 15px;">
+  <h2>Mempool <span *ngIf="!mempoolLoading">({{ mempoolTotal }} transaction{{ mempoolTotal !== 1 ? 's' : '' }})</span></h2>
+  <div *ngIf="mempoolLoading" style="margin: 15px 0;"><strong>Loading...</strong></div>
+  <div *ngIf="!mempoolLoading && mempoolTotal === 0"><strong>Mempool is empty</strong></div>
+  <div *ngIf="!mempoolLoading && mempoolTotal > 0" style="margin: 10px 0;">
+    <button class="btn btn-default" (click)="loadMempoolPage(mempoolPage - 1)" [disabled]="mempoolPage <= 1">&larr; Prev</button>
+    &nbsp;Page {{ mempoolPage }} of {{ mempoolTotalPages }}&nbsp;
+    <button class="btn btn-default" (click)="loadMempoolPage(mempoolPage + 1)" [disabled]="mempoolPage >= mempoolTotalPages">Next &rarr;</button>
+  </div>
+  <ul *ngIf="expertMode && mempoolTransactions.length > 0">
+    <li *ngFor="let transaction of mempoolTransactions">
+      <p><strong>public_key: </strong><a href="/explorer?term={{ transaction.public_key }}">{{ transaction.public_key }}</a></p>
+      <p><strong>signature: </strong><a href="/explorer?term={{ transaction.id }}">{{ transaction.id }}</a></p>
+      <p><strong>hash: </strong><a href="/explorer?term={{ transaction.hash }}">{{ transaction.hash }}</a></p>
+      <p><strong>version: </strong>{{ transaction.version }}</p>
+      <p><strong>time: </strong>{{ transaction.time }}</p>
+      <p><strong>fee: </strong>{{ transaction.fee }}</p>
+      <p><strong>masternode_fee: </strong>{{ transaction.masternode_fee }}</p>
+      <p><strong>private: </strong>{{ transaction.private }}</p>
+      <p><strong>never_expire: </strong>{{ transaction.never_expire }}</p>
+      <p *ngIf="transaction.dh_public_key"><strong>diffie-hellman public key: </strong><a href="/explorer?term={{ transaction.dh_public_key }}">{{ transaction.dh_public_key }}</a></p>
+      <p><strong>relationship identifier: </strong><a href="/explorer?term={{ transaction.rid }}">{{ transaction.rid }}</a></p>
+      <p *ngIf="transaction.requester_rid"><strong>requester_rid: </strong><a href="/explorer?term={{ transaction.requester_rid }}">{{ transaction.requester_rid }}</a></p>
+      <p *ngIf="transaction.requested_rid"><strong>requested_rid: </strong><a href="/explorer?term={{ transaction.requested_rid }}">{{ transaction.requested_rid }}</a></p>
+      <p *ngIf="transaction.relationship_hash"><strong>relationship_hash: </strong><a href="/explorer?term={{ transaction.relationship_hash }}">{{ transaction.relationship_hash }}</a></p>
+      <p><strong>relationship data: </strong><textarea class="form-control">{{ transaction.relationship }}</textarea></p>
+      <p *ngIf="transaction.public_key_hash"><strong>public_key_hash: </strong><a href="/explorer?term={{ transaction.public_key_hash }}">{{ transaction.public_key_hash }}</a></p>
+      <p *ngIf="transaction.prev_public_key_hash"><strong>prev_public_key_hash: </strong><a href="/explorer?term={{ transaction.prev_public_key_hash }}">{{ transaction.prev_public_key_hash }}</a></p>
+      <p *ngIf="transaction.prerotated_key_hash"><strong>prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.prerotated_key_hash }}">{{ transaction.prerotated_key_hash }}</a></p>
+      <p *ngIf="transaction.twice_prerotated_key_hash"><strong>twice_prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.twice_prerotated_key_hash }}">{{ transaction.twice_prerotated_key_hash }}</a></p>
+      <p *ngIf="transaction.miner_signature"><strong>miner_signature: </strong><a href="/explorer?term={{ transaction.miner_signature }}">{{ transaction.miner_signature }}</a></p>
+      <div *ngIf="transaction.inputs.length === 0"><strong>No inputs</strong></div>
+      <div *ngIf="transaction.inputs.length > 0">
+        <h3>Inputs</h3>
+        <ul>
+          <li *ngFor="let input of transaction.inputs"><strong>Signature: </strong><a href="/explorer?term={{ input.id }}">{{ input.id }}</a></li>
+        </ul>
+      </div>
+      <div *ngIf="transaction.outputs.length === 0"><strong>No outputs</strong></div>
+      <div *ngIf="transaction.outputs.length > 0">
+        <h3>Outputs</h3>
+        <ul *ngFor="let output of transaction.outputs">
+          <li><strong>Address: </strong><a href="/explorer?term={{ output.to }}">{{ output.to }}</a></li>
+          <li><strong>Amount: </strong>{{ output.value }}</li>
+          <hr />
+        </ul>
+      </div>
+      <hr />
+    </li>
+  </ul>
+  <div *ngIf="!expertMode && mempoolTransactions.length > 0">
+    <div *ngFor="let transaction of mempoolTransactions" class="transaction">
+      <div class="transaction-container">
+        <div class="transaction-inputs">
+          <h4>From</h4>
+          <ul>
+            <li>
+              <p><strong>Address: </strong><a href="/explorer?term={{ encodeAddress(transaction.public_key) }}">{{ encodeAddress(transaction.public_key) }}</a></p>
+            </li>
+          </ul>
+        </div>
+        <div class="transaction-outputs">
+          <h4>To</h4>
+          <ul>
+            <li *ngFor="let output of transaction.outputs">
+              <p><strong>Address: </strong><a href="/explorer?term={{ output.to }}">{{ output.to }}</a></p>
+              <p><strong>Amount: </strong>{{ output.value }}</p>
+            </li>
+          </ul>
+        </div>
+      </div>
+      <div *ngIf="transaction.public_key_hash || transaction.prerotated_key_hash || transaction.twice_prerotated_key_hash || transaction.prev_public_key_hash || transaction.relationship_hash || transaction.miner_signature">
+        <h4>KEL Fields</h4>
+        <p *ngIf="transaction.public_key_hash"><strong>public_key_hash: </strong><a href="/explorer?term={{ transaction.public_key_hash }}">{{ transaction.public_key_hash }}</a></p>
+        <p *ngIf="transaction.prev_public_key_hash"><strong>prev_public_key_hash: </strong><a href="/explorer?term={{ transaction.prev_public_key_hash }}">{{ transaction.prev_public_key_hash }}</a></p>
+        <p *ngIf="transaction.prerotated_key_hash"><strong>prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.prerotated_key_hash }}">{{ transaction.prerotated_key_hash }}</a></p>
+        <p *ngIf="transaction.twice_prerotated_key_hash"><strong>twice_prerotated_key_hash: </strong><a href="/explorer?term={{ transaction.twice_prerotated_key_hash }}">{{ transaction.twice_prerotated_key_hash }}</a></p>
+        <p *ngIf="transaction.relationship_hash"><strong>relationship_hash: </strong><a href="/explorer?term={{ transaction.relationship_hash }}">{{ transaction.relationship_hash }}</a></p>
+        <p *ngIf="transaction.miner_signature"><strong>miner_signature: </strong><a href="/explorer?term={{ transaction.miner_signature }}">{{ transaction.miner_signature }}</a></p>
+      </div>
+      <hr />
+    </div>
+  </div>
+  <div *ngIf="!mempoolLoading && mempoolTotal > mempoolPageSize" style="margin-top: 10px;">
+    <button class="btn btn-default" (click)="loadMempoolPage(mempoolPage - 1)" [disabled]="mempoolPage <= 1">&larr; Prev</button>
+    &nbsp;Page {{ mempoolPage }} of {{ mempoolTotalPages }}&nbsp;
+    <button class="btn btn-default" (click)="loadMempoolPage(mempoolPage + 1)" [disabled]="mempoolPage >= mempoolTotalPages">Next &rarr;</button>
   </div>
 </div>

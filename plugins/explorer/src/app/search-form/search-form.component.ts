@@ -28,6 +28,12 @@ export class SearchFormComponent implements OnInit {
   hashrate = "";
   difficulty = "";
   expertMode = false;
+  mempoolView = false;
+  mempoolTransactions = [];
+  mempoolPage = 1;
+  mempoolPageSize = 25;
+  mempoolTotal = 0;
+  mempoolLoading = false;
 
   constructor(public http: Http) {
     this.http.get(makeUrl("/api-stats")).subscribe(
@@ -130,5 +136,36 @@ export class SearchFormComponent implements OnInit {
       true,
     );
     return pubkey.getAddress().toString();
+  }
+
+  get mempoolTotalPages() {
+    return Math.max(1, Math.ceil(this.mempoolTotal / this.mempoolPageSize));
+  }
+
+  viewMempool() {
+    this.mempoolView = !this.mempoolView;
+    if (this.mempoolView && this.mempoolTransactions.length === 0) {
+      this.loadMempoolPage(1);
+    }
+  }
+
+  loadMempoolPage(page: number) {
+    if (page < 1 || page > this.mempoolTotalPages) { return; }
+    this.mempoolPage = page;
+    this.mempoolLoading = true;
+    this.http
+      .get(makeUrl(`/get-mempool?page=${page}&page_size=${this.mempoolPageSize}`))
+      .subscribe(
+        (res: any) => {
+          const data = res.json();
+          this.mempoolTransactions = data.transactions || [];
+          this.mempoolTotal = data.total || 0;
+          this.mempoolLoading = false;
+        },
+        (err: any) => {
+          this.mempoolLoading = false;
+          alert('Failed to load mempool!');
+        },
+      );
   }
 }

@@ -176,6 +176,19 @@ class PoolScanMissedPayoutsHandler(BaseHandler):
         self.render_as_json({"status": True})
 
 
+class CurrentMiningBlockHandler(BaseHandler):
+    async def get(self):
+        if not hasattr(self.config, "mp") or self.config.mp is None:
+            return self.render_as_json({"error": "Mining pool not active"})
+        block_info = await self.config.mp.block_to_mine_info()
+        origin = f"{self.request.protocol}://{self.request.host}"
+        block_info["excluded"] = [
+            {"id": f"{origin}/explorer?term={item['id']}", "reason": item["reason"]}
+            for item in block_info.get("excluded", [])
+        ]
+        self.render_as_json(block_info, indent=4)
+
+
 # class PoolForceRefresh(BaseHandler):
 #     async def get(self):
 #         await self.config.mp.refresh()
@@ -185,5 +198,6 @@ POOL_HANDLERS = [
     (r"/miner-stats", MinerStatsHandler),
     (r"/miner-payouts", MinerPayoutsHandler),
     (r"/scan-missed-payouts", PoolScanMissedPayoutsHandler),
+    (r"/current-mining-block", CurrentMiningBlockHandler),
     # (r"/force-refresh", PoolForceRefresh),
 ]
