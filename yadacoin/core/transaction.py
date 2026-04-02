@@ -1267,8 +1267,12 @@ class Transaction(object):
 
             # A transaction is a new key log entry if its public_key_hash is not yet
             # recorded in the confirmed (on-chain) key event log.
+            # Exclude the current transaction itself to avoid falsely treating it
+            # as an existing entry when it appears in the mempool routing_log.
             is_new_key_log_entry = not any(
-                entry.public_key_hash == self.public_key_hash for entry in routing_log
+                entry.public_key_hash == self.public_key_hash
+                and entry.transaction_signature != self.transaction_signature
+                for entry in routing_log
             )
 
             if not is_new_key_log_entry:
