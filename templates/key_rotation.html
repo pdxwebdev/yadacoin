@@ -2271,27 +2271,56 @@
           <!-- ── Next Private Link Panel ───────────────────────────────── -->
           <div id="nextLinkPanel">
             <h3>
-              🔒 Next Private Link — save this now
+              🔒 Your Private Link — save this now
             </h3>
-            <div id="nextLinkUrl"></div>
-            <button
-              class="copy-btn"
-              id="copyNextLinkBtn"
-            >
-              Copy Link
-            </button>
-            <p
+            <div id="nextLinkUrl" style="margin-bottom:10px;"></div>
+            <div style="display:flex;gap:8px;flex-wrap:wrap;">
+              <button
+                class="copy-btn"
+                id="copyNextLinkBtn"
+              >
+                Copy Link
+              </button>
+              <button
+                id="goNextLinkBtn"
+                class="copy-btn"
+              >
+                Go to Next Link →
+              </button>
+            </div>
+            <div
               style="
-                font-size: 11px;
-                color: #888;
-                margin-top: 8px;
+                margin-top: 12px;
+                background: #3a1a04;
+                border: 2px solid #c85a10;
+                border-radius: 3px;
+                padding: 12px 16px;
               "
             >
-              This link will give the next holder
-              (or your future self) the ability to
-              spend these coins. Share it only
-              with the intended recipient.
-            </p>
+              <div
+                style="
+                  font-family: 'Cinzel Decorative', 'Cinzel', serif;
+                  font-size: 13px;
+                  color: #f0a060;
+                  margin-bottom: 6px;
+                "
+              >
+                ⚠ Do NOT share this link
+              </div>
+              <div
+                style="
+                  font-family: 'IM Fell English SC', serif;
+                  font-size: 11px;
+                  color: #f0c090;
+                  letter-spacing: 0.5px;
+                  line-height: 1.7;
+                "
+              >
+                This link <strong style="color:#ffd090">IS the money</strong>.
+                Anyone who has it can claim the funds — no password needed beyond what's embedded.
+                Save it somewhere safe and do not share it unless you are intentionally giving the money away.
+              </div>
+            </div>
           </div>
         </div>
         <!-- /.bill-back (back face) -->
@@ -3284,11 +3313,11 @@
               Array.isArray(broadcastData) &&
               broadcastData.length > 0
             ) {
-              showMessage(
-                "success",
-                "✅ Key rotation broadcast! Transaction: " +
-                  broadcastData[0].id,
-              );
+              // Show success with explorer link instead of raw txid
+              const msgEl = document.getElementById("message");
+              msgEl.className = "message success";
+              const txid = broadcastData[0].id;
+              msgEl.innerHTML = "\u2705 Key rotation broadcast! <a href='https://yadacoin.io/explorer?term=" + encodeURIComponent(txid) + "' target='_blank' rel='noopener' style='color:inherit;word-break:break-all;'>View transaction</a>";
 
               // Persist the current key data so the page can detect spent status on reload
               saveRotationToStorage(
@@ -3324,9 +3353,27 @@
                     )
                   : "");
 
-              // Redirect immediately to the next rotation link.
-              window.location.href = nextUrl;
-              window.location.reload();
+              // Show the next link panel — do NOT auto-redirect.
+              const nextLinkUrlEl = document.getElementById("nextLinkUrl");
+              // Render as a clickable link so the user can confirm it's a new URL
+              nextLinkUrlEl.innerHTML = "";
+              const nextLinkAnchor = document.createElement("a");
+              nextLinkAnchor.href = nextUrl;
+              nextLinkAnchor.textContent = nextUrl;
+              nextLinkAnchor.style.cssText = "word-break:break-all;font-family:monospace;font-size:10.5px;color:#2a2010;";
+              nextLinkUrlEl.appendChild(nextLinkAnchor);
+              // Wire up the Go button to force a full reload into the new link
+              const goBtn = document.getElementById("goNextLinkBtn");
+              goBtn.onclick = () => { window.location.href = nextUrl; window.location.reload(); };
+              // Also intercept the anchor in the URL display
+              nextLinkAnchor.addEventListener("click", (e) => {
+                e.preventDefault();
+                window.location.href = nextUrl;
+                window.location.reload();
+              });
+              document.getElementById("nextLinkPanel").style.display = "block";
+              // Scroll the panel into view
+              document.getElementById("nextLinkPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
             } else {
               document.getElementById(
                 "rotateBtn",
@@ -3349,6 +3396,20 @@
             showSpinner(false);
           }
         });
+
+      // Submit rotation form on Enter in any of its password fields
+      ["newPassword", "confirmPassword"].forEach((id) => {
+        document.getElementById(id).addEventListener("keydown", (e) => {
+          if (e.key === "Enter") document.getElementById("rotateBtn").click();
+        });
+      });
+
+      // Submit genesis form on Enter in its password fields
+      ["genesisPassword", "genesisConfirmPw"].forEach((id) => {
+        document.getElementById(id).addEventListener("keydown", (e) => {
+          if (e.key === "Enter") document.getElementById("generateBtn").click();
+        });
+      });
 
       // -----------------------------------------------------------------------
       // Copy next-link button
