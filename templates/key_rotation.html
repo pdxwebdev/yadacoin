@@ -3370,12 +3370,11 @@
               nextLinkUrlEl.appendChild(nextLinkAnchor);
               // Wire up the Go button to force a full reload into the new link
               const goBtn = document.getElementById("goNextLinkBtn");
-              goBtn.onclick = () => { window.location.href = nextUrl; window.location.reload(); };
+              goBtn.onclick = () => { window.location.href = nextUrl; };
               // Also intercept the anchor in the URL display
               nextLinkAnchor.addEventListener("click", (e) => {
                 e.preventDefault();
                 window.location.href = nextUrl;
-                window.location.reload();
               });
               document.getElementById("nextLinkPanel").style.display = "block";
               // Scroll the panel into view
