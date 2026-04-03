@@ -3329,8 +3329,14 @@
 
               // Next private link: pk/cc = prerotatedKey material (becomes the
               // next signing key directly), sf = newPw used for its sub-derivations.
+              // On yadacoin.io, use the next address as a subdomain.
+              const _host = window.location.host; // e.g. yadacoin.io or 1abc.yadacoin.io
+              const _isYada = _host === "yadacoin.io" || _host.endsWith(".yadacoin.io");
+              const _nextOrigin = _isYada
+                ? window.location.protocol + "//" + prerotatedAddr + ".yadacoin.io"
+                : window.location.origin;
               const nextUrl =
-                window.location.origin +
+                _nextOrigin +
                 window.location.pathname +
                 "#pk=" +
                 encodeURIComponent(
