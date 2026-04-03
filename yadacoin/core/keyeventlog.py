@@ -223,7 +223,7 @@ class KeyEvent:
         ):
             raise KeyEventException("not a valid confirming key event. Invalid status.")
 
-    async def verify(self):
+    async def verify(self, batch_txns=None):
         address = str(
             P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.txn.public_key))
         )
@@ -266,6 +266,18 @@ class KeyEvent:
                         }
                     )
                     if not mempool_parent:
+                        if batch_txns:
+                            batch_parent = next(
+                                (
+                                    t
+                                    for t in batch_txns
+                                    if t.public_key_hash
+                                    == self.txn.prev_public_key_hash
+                                ),
+                                None,
+                            )
+                            if batch_parent:
+                                return
                         raise KELExceptionPredecessorNotYetInMempool(
                             "Confirming key event rejected: predecessor key event not found "
                             "on-chain or in the mempool."

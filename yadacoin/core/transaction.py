@@ -551,6 +551,7 @@ class Transaction(object):
         check_dynamic_nodes=False,
         block=None,
         mempool=False,
+        batch_txns=None,
     ):
         from yadacoin.contracts.base import Contract
         from yadacoin.core.keyeventlog import (
@@ -572,7 +573,7 @@ class Transaction(object):
 
             if has_kel:
                 txn_key_event = KeyEvent(self)
-                await txn_key_event.verify()
+                await txn_key_event.verify(batch_txns=batch_txns)
             elif self.prev_public_key_hash:
                 raise KELExceptionPreviousKeyHashReferenceMissing(
                     "Key event claims to have a key event log by specifying prev_public_key_hash, but no key event log found."
