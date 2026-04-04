@@ -23,14 +23,16 @@ from yadacoin.core.chain import CHAIN
 from yadacoin.core.nodeannouncement import NodeAnnouncement
 from yadacoin.core.transaction import Output, Transaction
 from yadacoin.core.transactionutils import TU
+from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.enums.peertypes import PEER_TYPES
 from yadacoin.http.base import BaseHandler
 
 
+@jwtauthwallet
 class NodeAnnounceHandler(BaseHandler):
     """Display and process node announcements to the blockchain.
 
-    POST is restricted to local access only (127.0.0.1 / ::1).
+    Requires a valid JWT wallet token (Bearer) for all requests.
     """
 
     async def get(self):
@@ -102,7 +104,18 @@ class NodeAnnounceHandler(BaseHandler):
                 return self.render_as_json(
                     {
                         "status": "error",
-                        "message": "This endpoint is only accessible locally.",
+                        "message": "This endpoint is only accessible from the local machine.",
+                    }
+                )
+
+            # Require authentication — either a valid JWT wallet token or the secure cookie
+            key_or_wif = self.get_secure_cookie("key_or_wif")
+            if not key_or_wif and self.jwt.get("key_or_wif") != "true":
+                self.set_status(401)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": "Authentication required. Please provide your node wallet WIF.",
                     }
                 )
 
@@ -206,6 +219,15 @@ class NodeAnnounceHandler(BaseHandler):
                     {
                         "status": "error",
                         "message": "collateral_address is required for node announcements",
+                    }
+                )
+
+            if node_announcement["collateral_address"] == self.config.address:
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": "collateral_address must be different from the node's wallet address",
                     }
                 )
 

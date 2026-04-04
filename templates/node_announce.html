@@ -112,6 +112,7 @@
         
         input[type="text"],
         input[type="number"],
+        input[type="password"],
         select {
             width: 100%;
             padding: 10px 12px;
@@ -124,6 +125,7 @@
         
         input[type="text"]:focus,
         input[type="number"]:focus,
+        input[type="password"]:focus,
         select:focus {
             outline: none;
             border-color: #667eea;
@@ -237,6 +239,28 @@
             font-size: 13px;
             line-height: 1.5;
         }
+
+        .auth-ok-banner {
+            background: #d4edda;
+            border: 1px solid #c3e6cb;
+            color: #155724;
+            padding: 10px 14px;
+            border-radius: 6px;
+            margin-bottom: 20px;
+            font-size: 13px;
+            display: none;
+        }
+
+        .auth-ok-banner.show {
+            display: block;
+        }
+
+        .btn-submit:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+            transform: none !important;
+            box-shadow: none !important;
+        }
     </style>
 </head>
 <body>
@@ -245,13 +269,44 @@
         <p class="subtitle">Announce your node to the YadaCoin blockchain</p>
         
         <div class="info-alert">
-            <strong>ℹ️ Local Access Only:</strong> This interface is restricted to local/internal access for security.
+            <strong>ℹ️ About Node Announcement:</strong> This form must be submitted from the machine running the node.
             All signing is performed server-side using your node's private credentials.
+            If accessing remotely, forward the port first: <code>ssh -L 8000:localhost:8000 user@your-node-ip</code>
+        </div>
+
+        <!-- Auth status banner — toggled by JS -->
+        <div id="authOkBanner" class="auth-ok-banner">
+            ✅ <strong>Already authenticated</strong> via wallet session. You may leave the WIF field empty.
         </div>
         
         <div id="message" class="message"></div>
         
         <form id="nodeForm">
+            <!-- Node Authentication Section -->
+            <div class="section">
+                <div class="section-title">Node Authentication</div>
+                <div id="wifSection">
+                    <div class="form-row full">
+                        <div class="form-group" style="display:flex;gap:8px;align-items:flex-end;">
+                            <div style="flex:1;">
+                                <label for="node_wif">Node Private Key or WIF</label>
+                                
+                                <input type="password" id="node_wif" name="node_wif" placeholder="Paste your node's private key or WIF from config.json" autocomplete="off">
+                                <small style="color:#999;font-size:11px;display:block;margin-top:4px;">Found in <code>config.json</code> as <code>wif</code> or <code>private_key</code>.</small>
+                            </div>
+                            <button type="button" id="unlockBtn" style="padding:10px 18px;background:#667eea;color:white;border:none;border-radius:4px;font-size:13px;font-weight:600;cursor:pointer;white-space:nowrap;height:40px;">Unlock</button>
+                        </div>
+                    </div>
+                    <div id="unlockMsg" style="font-size:13px;margin-top:6px;display:none;"></div>
+                </div>
+                <div id="authStatusSection" style="display:none;">
+                    <div style="background:#d4edda;border:1px solid #c3e6cb;color:#155724;padding:10px 14px;border-radius:6px;font-size:13px;display:flex;justify-content:space-between;align-items:center;">
+                        <span>✅ <strong>Authenticated.</strong> Node wallet is unlocked.</span>
+                        <button type="button" id="logoutBtn" style="background:none;border:1px solid #155724;color:#155724;border-radius:4px;padding:3px 10px;font-size:12px;cursor:pointer;">Log out</button>
+                    </div>
+                </div>
+            </div>
+
             <!-- Identity Section -->
             <div class="section">
                 <div class="section-title">Node Identity</div>
@@ -308,7 +363,12 @@
             <div class="section">
                 <div class="section-title">Collateral</div>
                 <div class="info-alert" style="margin-bottom: 15px;">
-                    <strong>⚠️ Collateral Address Requirement:</strong> Please create a <b>new wallet address</b> for collateral where the balance will be <b>exactly 5000 YDA</b> at <a href="https://yadacoin.io/app" target="_blank">https://yadacoin.io/app</a> or <b>/app</b> on your local node.
+                    <strong>⚠️ How Registration Works:</strong>
+                    <ol style="margin: 8px 0 0 18px; line-height: 1.8;">
+                        <li><b>Fund your node's wallet</b> — find the wallet address in your <code>config.json</code> (the <code>address</code> field) and send it at least <b>5000 YDA</b>. This is <em>not</em> the collateral address.</li>
+                        <li><b>Create a dedicated collateral address</b> — generate a new wallet address at <a href="/app" target="_blank">/app</a> (software wallet) or <a href="/wallet" target="_blank">/wallet</a> (hardware wallet). <strong>It must be a different address than your node's wallet address</strong> from <code>config.json</code>.</li>
+                        <li><b>Enter the collateral address below and submit</b> — the node will automatically send 5000 YDA from its wallet to your collateral address to complete registration.</li>
+                    </ol>
                 </div>
                 <div class="form-row full">
                     <div class="form-group">
@@ -322,7 +382,8 @@
             <div class="section">
                 <div class="section-title">Registration Fee</div>
                 <div style="background:#f0fdf4;border:1px solid #bbf7d0;color:#166534;padding:10px;border-radius:6px;margin-bottom:12px;font-size:13px;">
-                    <span style="color:#b91c1c;font-size:13px;font-weight:600;">Collateral fee: 5000 YDA (required)</span>
+                    <span style="color:#b91c1c;font-size:13px;font-weight:600;">Collateral fee: 5000 YDA (required)</span><br>
+                    <span>This amount is sent from your <b>node's wallet</b> to the collateral address above. Make sure your node's wallet has sufficient funds before submitting.</span>
                 </div>
                 <div class="form-row full">
                     <div class="form-group">
@@ -349,10 +410,110 @@
         const form = document.getElementById('nodeForm');
         const messageDiv = document.getElementById('message');
         const loadingDiv = document.getElementById('loading');
-        
+        const submitBtn = form.querySelector('.btn-submit');
+        const authOkBanner = document.getElementById('authOkBanner');
+        const wifSection = document.getElementById('wifSection');
+        const authStatusSection = document.getElementById('authStatusSection');
+        const unlockBtn = document.getElementById('unlockBtn');
+        const logoutBtn = document.getElementById('logoutBtn');
+        const unlockMsg = document.getElementById('unlockMsg');
+
+        const LS_KEY = 'yadacoin_node_jwt';
+
+        function setAuthed(token) {
+            if (token) localStorage.setItem(LS_KEY, token);
+            wifSection.style.display = 'none';
+            authStatusSection.style.display = 'block';
+            authOkBanner.classList.add('show');
+            submitBtn.disabled = false;
+        }
+
+        function setUnauthed() {
+            localStorage.removeItem(LS_KEY);
+            wifSection.style.display = 'block';
+            authStatusSection.style.display = 'none';
+            authOkBanner.classList.remove('show');
+            submitBtn.disabled = true;
+        }
+
+        function getToken() {
+            return localStorage.getItem(LS_KEY);
+        }
+
+        // On load: check localStorage then cookie session
+        async function checkAuth() {
+            const stored = getToken();
+            if (stored) {
+                setAuthed(null); // already in localStorage
+                return;
+            }
+            try {
+                const resp = await fetch('/unlocked', { credentials: 'include' });
+                const data = await resp.json();
+                if (data.unlocked) {
+                    setAuthed(null);
+                }
+            } catch (e) {}
+        }
+
+        submitBtn.disabled = true;
+        checkAuth();
+
+        // Unlock button: POST to /unlock, store JWT
+        unlockBtn.addEventListener('click', async () => {
+            const wif = document.getElementById('node_wif').value.trim();
+            if (!wif) {
+                unlockMsg.textContent = 'Please enter your private key or WIF.';
+                unlockMsg.style.color = '#721c24';
+                unlockMsg.style.display = 'block';
+                return;
+            }
+            unlockBtn.disabled = true;
+            unlockBtn.textContent = 'Unlocking...';
+            unlockMsg.style.display = 'none';
+            try {
+                const resp = await fetch('/unlock', {
+                    method: 'POST',
+                    credentials: 'include',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ key_or_wif: wif }),
+                });
+                const data = await resp.json();
+                if (resp.ok && data.token) {
+                    document.getElementById('node_wif').value = '';
+                    setAuthed(data.token);
+                } else {
+                    unlockMsg.textContent = data.message || 'Authentication failed. Check your private key or WIF.';
+                    unlockMsg.style.color = '#721c24';
+                    unlockMsg.style.display = 'block';
+                }
+            } catch (err) {
+                unlockMsg.textContent = `Error: ${err.message}`;
+                unlockMsg.style.color = '#721c24';
+                unlockMsg.style.display = 'block';
+            }
+            unlockBtn.disabled = false;
+            unlockBtn.textContent = 'Unlock';
+        });
+
+        // Allow Enter key in WIF field to trigger unlock
+        document.getElementById('node_wif').addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') { e.preventDefault(); unlockBtn.click(); }
+        });
+
+        logoutBtn.addEventListener('click', () => setUnauthed());
+
         form.addEventListener('submit', async (e) => {
             e.preventDefault();
             messageDiv.className = 'message';
+
+            const token = getToken();
+            if (!token) {
+                messageDiv.textContent = 'Authentication required. Please unlock your node wallet above.';
+                messageDiv.className = 'message error';
+                return;
+            }
+
             loadingDiv.classList.add('show');
 
             const formData = {
@@ -368,8 +529,10 @@
             try {
                 const response = await fetch(window.location.href, {
                     method: 'POST',
+                    credentials: 'include',
                     headers: {
                         'Content-Type': 'application/json',
+                        'Authorization': `Bearer ${token}`,
                     },
                     body: JSON.stringify(formData),
                 });
@@ -381,6 +544,11 @@
                     messageDiv.textContent = data.message;
                     messageDiv.className = 'message success';
                     console.log('Transaction signature:', data.transaction_signature);
+                } else if (response.status === 401 || response.status === 403) {
+                    // Token may have expired — clear it and prompt re-auth
+                    setUnauthed();
+                    messageDiv.textContent = 'Session expired. Please unlock your wallet again.';
+                    messageDiv.className = 'message error';
                 } else {
                     messageDiv.textContent = data.message || 'Unknown error occurred';
                     messageDiv.className = 'message error';
