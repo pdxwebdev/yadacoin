@@ -721,11 +721,13 @@ class TestNodeTypeSelfDetermination(AsyncTestCase):
         self.config.mongo.async_db = MagicMock()
         self.config.mongo.async_db.blocks = MagicMock()
         yadacoin.core.config.CONFIG = self.config
+        self.original_public_key = self.config.public_key
         self.original_seeds = self.seeds_instance._NODES.copy()
         self.original_gateways = self.gateways_instance._NODES.copy()
         self.original_providers = self.providers_instance._NODES.copy()
 
     async def asyncTearDown(self):
+        self.config.public_key = self.original_public_key
         self.seeds_instance._NODES = self.original_seeds
         self.gateways_instance._NODES = self.original_gateways
         self.providers_instance._NODES = self.original_providers
