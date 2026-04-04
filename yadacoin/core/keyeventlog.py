@@ -283,6 +283,17 @@ class KeyEvent:
                             "on-chain or in the mempool."
                         )
                 else:
+                    if batch_txns:
+                        batch_parent = next(
+                            (
+                                t
+                                for t in batch_txns
+                                if t.public_key_hash == self.txn.prev_public_key_hash
+                            ),
+                            None,
+                        )
+                        if batch_parent:
+                            return
                     raise KELException(
                         "Unconfirmed key event rejected: predecessor key event is not yet "
                         "confirmed on-chain. Wait for the previous rotation to be mined before submitting."

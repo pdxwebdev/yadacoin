@@ -571,6 +571,37 @@
         background: #3a2808;
       }
 
+      /* external send toggle and panel */
+      .external-toggle {
+        display: block;
+        text-align: center;
+        font-family: "IM Fell English SC", serif;
+        font-size: 18px;
+        color: #7a8899;
+        cursor: pointer;
+        margin-top: 8px;
+        text-decoration: none;
+        letter-spacing: 0.3px;
+      }
+      .external-toggle:hover {
+        color: #aabbcc;
+        text-decoration: underline;
+      }
+      #externalSendSection {
+        margin-top: 12px;
+        padding: 14px;
+        background: rgba(20, 28, 40, 0.55);
+        border: 1px solid #3a4a60;
+        border-radius: 2px;
+      }
+      #wrapBscSection {
+        margin-top: 12px;
+        padding: 14px;
+        background: rgba(30, 22, 5, 0.6);
+        border: 1px solid #6a4a10;
+        border-radius: 2px;
+      }
+
       .tag {
         display: inline-block;
         font-size: 9px;
@@ -2249,6 +2280,13 @@
             </div>
           </div>
 
+          <!-- ── Claim Cash toggle ────────────────────────────────────── -->
+          <a
+            class="external-toggle"
+            id="claimCashToggle"
+            >— claim your cash →</a
+          >
+
           <!-- ── Actions ───────────────────────────────────────────────── -->
           <div
             class="button-group"
@@ -2263,6 +2301,110 @@
             </button>
           </div>
 
+          <!-- ── External send toggle ──────────────────────────────────── -->
+          <a
+            class="external-toggle"
+            id="externalToggle"
+            >— or send to an external address →</a
+          >
+
+          <!-- ── External Send Section ─────────────────────────────────── -->
+          <div
+            id="externalSendSection"
+            style="display: none"
+          >
+            <div class="section-title">
+              Send to External Address
+            </div>
+            <div class="form-group">
+              <label for="externalAddress"
+                >Recipient Address</label
+              >
+              <input
+                type="text"
+                id="externalAddress"
+                placeholder="Enter YDA address…"
+                autocomplete="off"
+              />
+            </div>
+            <div class="hint">
+              All funds will be sent to the
+              recipient (minus the network fee). A
+              zero-value
+              <em>confirming</em> transaction will
+              be broadcast alongside it to commit
+              your key rotation. Both transactions
+              must be mined together.
+            </div>
+            <div
+              class="button-group"
+              style="margin-top: 10px"
+            >
+              <button
+                type="button"
+                class="btn-rotate"
+                id="sendExternalBtn"
+              >
+                Send to External
+              </button>
+            </div>
+          </div>
+
+          <!-- ── BSC wrap toggle ───────────────────────────────────────── -->
+          <a
+            class="external-toggle"
+            id="wrapBscToggle"
+            >— or wrap as WYDA on BNB Chain →</a
+          >
+
+          <!-- ── BSC Wrap Section ───────────────────────────────────────── -->
+          <div
+            id="wrapBscSection"
+            style="display: none"
+          >
+            <div class="section-title">
+              Wrap as WYDA on BNB Chain
+            </div>
+            <div class="form-group">
+              <label for="bnbAddress"
+                >Your BNB Chain Address</label
+              >
+              <input
+                type="text"
+                id="bnbAddress"
+                placeholder="0x…"
+                autocomplete="off"
+                spellcheck="false"
+              />
+            </div>
+            <div class="hint">
+              Sends all YDA to the bridge (<code
+                style="
+                  font-size: 10px;
+                  word-break: break-all;
+                "
+                >16U1gAmHazqqEkbRE9KFPShAperjJreMRA</code
+              >). Your BNB address is embedded in
+              the transaction so the bridge knows
+              where to mint Wrapped YDA (WYDA). A
+              confirming transaction is broadcast
+              alongside it to complete your key
+              rotation.
+            </div>
+            <div
+              class="button-group"
+              style="margin-top: 10px"
+            >
+              <button
+                type="button"
+                class="btn-rotate"
+                id="wrapBscBtn"
+              >
+                Wrap on BSC
+              </button>
+            </div>
+          </div>
+
           <div class="spinner-wrap" id="spinner">
             <span class="spinner"></span>
             Processing…
@@ -2273,54 +2415,25 @@
             <h3>
               🔒 Your Private Link — save this now
             </h3>
-            <div id="nextLinkUrl" style="margin-bottom:10px;"></div>
-            <div style="display:flex;gap:8px;flex-wrap:wrap;">
-              <button
-                class="copy-btn"
-                id="copyNextLinkBtn"
-              >
-                Copy Link
-              </button>
-              <button
-                id="goNextLinkBtn"
-                class="copy-btn"
-              >
-                Go to Next Link →
-              </button>
-            </div>
-            <div
+            <div id="nextLinkUrl"></div>
+            <button
+              class="copy-btn"
+              id="copyNextLinkBtn"
+            >
+              Copy Link
+            </button>
+            <p
               style="
-                margin-top: 12px;
-                background: #3a1a04;
-                border: 2px solid #c85a10;
-                border-radius: 3px;
-                padding: 12px 16px;
+                font-size: 11px;
+                color: #888;
+                margin-top: 8px;
               "
             >
-              <div
-                style="
-                  font-family: 'Cinzel Decorative', 'Cinzel', serif;
-                  font-size: 13px;
-                  color: #f0a060;
-                  margin-bottom: 6px;
-                "
-              >
-                ⚠ Do NOT share this link
-              </div>
-              <div
-                style="
-                  font-family: 'IM Fell English SC', serif;
-                  font-size: 11px;
-                  color: #f0c090;
-                  letter-spacing: 0.5px;
-                  line-height: 1.7;
-                "
-              >
-                This link <strong style="color:#ffd090">IS the money</strong>.
-                Anyone who has it can claim the funds — no password needed beyond what's embedded.
-                Save it somewhere safe and do not share it unless you are intentionally giving the money away.
-              </div>
-            </div>
+              This link will give the next holder
+              (or your future self) the ability to
+              spend these coins. Share it only
+              with the intended recipient.
+            </p>
           </div>
         </div>
         <!-- /.bill-back (back face) -->
@@ -2493,7 +2606,7 @@
 
       // -----------------------------------------------------------------------
       // Transaction hash (version 7)
-      // SHA256(pubkey + time + "" + "" + "" + fee8f + "0.00000000" +
+      // SHA256(pubkey + time + "" + "" + relationshipHash + fee8f + "0.00000000" +
       //        "" + "" + inputsConcat + outputsConcat + "7" +
       //        prerotatedKeyHash + twicePrerotatedKeyHash +
       //        publicKeyHash + prevPublicKeyHash)
@@ -2510,6 +2623,7 @@
         twicePrerotatedKeyHash,
         publicKeyHash,
         prevPublicKeyHash,
+        relationshipHash = "",
       }) {
         const inputsConcat = inputs
           .map((i) => i.id)
@@ -2534,7 +2648,7 @@
           String(time) +
           "" + // dh_public_key
           "" + // rid
-          "" + // relationship_hash
+          relationshipHash +
           fee.toFixed(8) +
           (0.0).toFixed(8) + // masternode_fee
           "" + // requester_rid
@@ -3313,11 +3427,11 @@
               Array.isArray(broadcastData) &&
               broadcastData.length > 0
             ) {
-              // Show success with explorer link instead of raw txid
-              const msgEl = document.getElementById("message");
-              msgEl.className = "message success";
-              const txid = broadcastData[0].id;
-              msgEl.innerHTML = "\u2705 Key rotation broadcast! <a href='https://yadacoin.io/explorer?term=" + encodeURIComponent(txid) + "' target='_blank' rel='noopener' style='color:inherit;word-break:break-all;'>View transaction</a>";
+              showMessage(
+                "success",
+                "✅ Key rotation broadcast! Transaction: " +
+                  broadcastData[0].id,
+              );
 
               // Persist the current key data so the page can detect spent status on reload
               saveRotationToStorage(
@@ -3329,14 +3443,8 @@
 
               // Next private link: pk/cc = prerotatedKey material (becomes the
               // next signing key directly), sf = newPw used for its sub-derivations.
-              // On yadacoin.io, use the next address as a subdomain.
-              const _host = window.location.host; // e.g. yadacoin.io or 1abc.yadacoin.io
-              const _isYada = _host === "yadacoin.io" || _host.endsWith(".yadacoin.io");
-              const _nextOrigin = _isYada
-                ? window.location.protocol + "//" + prerotatedAddr + ".yadacoin.io"
-                : window.location.origin;
               const nextUrl =
-                _nextOrigin +
+                window.location.origin +
                 window.location.pathname +
                 "#pk=" +
                 encodeURIComponent(
@@ -3359,26 +3467,9 @@
                     )
                   : "");
 
-              // Show the next link panel — do NOT auto-redirect.
-              const nextLinkUrlEl = document.getElementById("nextLinkUrl");
-              // Render as a clickable link so the user can confirm it's a new URL
-              nextLinkUrlEl.innerHTML = "";
-              const nextLinkAnchor = document.createElement("a");
-              nextLinkAnchor.href = nextUrl;
-              nextLinkAnchor.textContent = nextUrl;
-              nextLinkAnchor.style.cssText = "word-break:break-all;font-family:monospace;font-size:10.5px;color:#2a2010;";
-              nextLinkUrlEl.appendChild(nextLinkAnchor);
-              // Wire up the Go button to force a full reload into the new link
-              const goBtn = document.getElementById("goNextLinkBtn");
-              goBtn.onclick = () => { window.location.href = nextUrl; };
-              // Also intercept the anchor in the URL display
-              nextLinkAnchor.addEventListener("click", (e) => {
-                e.preventDefault();
-                window.location.href = nextUrl;
-              });
-              document.getElementById("nextLinkPanel").style.display = "block";
-              // Scroll the panel into view
-              document.getElementById("nextLinkPanel").scrollIntoView({ behavior: "smooth", block: "nearest" });
+              // Redirect immediately to the next rotation link.
+              window.location.href = nextUrl;
+              window.location.reload();
             } else {
               document.getElementById(
                 "rotateBtn",
@@ -3402,19 +3493,744 @@
           }
         });
 
-      // Submit rotation form on Enter in any of its password fields
-      ["newPassword", "confirmPassword"].forEach((id) => {
-        document.getElementById(id).addEventListener("keydown", (e) => {
-          if (e.key === "Enter") document.getElementById("rotateBtn").click();
+      // -----------------------------------------------------------------------
+      // External send toggle / BSC wrap toggle — mutually exclusive
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("claimCashToggle")
+        .addEventListener("click", () => {
+          const sec = document.getElementById(
+            "actionButtons",
+          );
+          const extSec = document.getElementById(
+            "externalSendSection",
+          );
+          const bscSec = document.getElementById(
+            "wrapBscSection",
+          );
+          extSec.style.display = "none";
+          bscSec.style.display = "none";
+          sec.style.display =
+            sec.style.display === "none"
+              ? "block"
+              : "none";
         });
-      });
 
-      // Submit genesis form on Enter in its password fields
-      ["genesisPassword", "genesisConfirmPw"].forEach((id) => {
-        document.getElementById(id).addEventListener("keydown", (e) => {
-          if (e.key === "Enter") document.getElementById("generateBtn").click();
+      document
+        .getElementById("externalToggle")
+        .addEventListener("click", () => {
+          const sec = document.getElementById(
+            "externalSendSection",
+          );
+          const other = document.getElementById(
+            "wrapBscSection",
+          );
+          const actionButtons =
+            document.getElementById(
+              "actionButtons",
+            );
+          other.style.display = "none";
+          const opening =
+            sec.style.display === "none";
+          sec.style.display = opening
+            ? "block"
+            : "none";
+          actionButtons.style.display = opening
+            ? "none"
+            : "block";
         });
-      });
+
+      document
+        .getElementById("wrapBscToggle")
+        .addEventListener("click", () => {
+          const sec = document.getElementById(
+            "wrapBscSection",
+          );
+          const other = document.getElementById(
+            "externalSendSection",
+          );
+          const actionButtons =
+            document.getElementById(
+              "actionButtons",
+            );
+          other.style.display = "none";
+          const opening =
+            sec.style.display === "none";
+          sec.style.display = opening
+            ? "block"
+            : "none";
+          actionButtons.style.display = opening
+            ? "none"
+            : "block";
+        });
+
+      // -----------------------------------------------------------------------
+      // Send to External — build unconfirmed + confirming transactions and
+      // broadcast them as a single batch.  The unconfirmed tx spends the
+      // UTXOs from signingAddr to the recipient.  The confirming tx is a
+      // zero-value key-rotation commitment signed by the prerotated key.
+      // -----------------------------------------------------------------------
+      document
+        .getElementById("sendExternalBtn")
+        .addEventListener("click", async () => {
+          if (!validateForm()) return;
+
+          const externalAddr = document
+            .getElementById("externalAddress")
+            .value.trim();
+          if (!externalAddr) {
+            showMessage(
+              "error",
+              "Please enter a recipient address.",
+            );
+            document
+              .getElementById("externalAddress")
+              .focus();
+            return;
+          }
+
+          const newPw = document.getElementById(
+            "newPassword",
+          ).value;
+          const fee =
+            parseFloat(
+              document.getElementById("fee")
+                .value,
+            ) || 0.01;
+          const prevPubKeyHash = document
+            .getElementById("prevPublicKeyHash")
+            .value.trim();
+
+          // Derive the three levels of prerotated keys.
+          let prerotatedKey,
+            prerotatedAddr,
+            prerotatedPubHex;
+          let twicePrerotatedKey,
+            twicePrerotatedAddr;
+          let thricePrerotatedAddr;
+
+          try {
+            prerotatedKey = deriveSecurePath(
+              signingKey.privateKey,
+              signingKey.chainCode,
+              PARAM_SF,
+            );
+            const prePub = secp256k1.getPublicKey(
+              prerotatedKey.privateKey,
+              true,
+            );
+            prerotatedPubHex = bytesToHex(prePub);
+            prerotatedAddr = getP2PKH(prePub);
+
+            twicePrerotatedKey = deriveSecurePath(
+              prerotatedKey.privateKey,
+              prerotatedKey.chainCode,
+              newPw,
+            );
+            const twicePub =
+              secp256k1.getPublicKey(
+                twicePrerotatedKey.privateKey,
+                true,
+              );
+            twicePrerotatedAddr =
+              getP2PKH(twicePub);
+
+            // Confirming tx needs a twice_prerotated_key_hash — derive it
+            // one more level using the same password so the next holder of
+            // the prerotated link can always reconstruct the full chain.
+            const thriceKey = deriveSecurePath(
+              twicePrerotatedKey.privateKey,
+              twicePrerotatedKey.chainCode,
+              newPw,
+            );
+            const thricePub =
+              secp256k1.getPublicKey(
+                thriceKey.privateKey,
+                true,
+              );
+            thricePrerotatedAddr =
+              getP2PKH(thricePub);
+          } catch (err) {
+            showMessage(
+              "error",
+              "Key derivation failed: " +
+                err.message,
+            );
+            return;
+          }
+
+          showSpinner(true);
+          document.getElementById(
+            "sendExternalBtn",
+          ).disabled = true;
+
+          try {
+            // Fetch all UTXOs for the current signing address.
+            const walletRes = await fetch(
+              "/get-graph-wallet?address=" +
+                encodeURIComponent(signingAddr) +
+                "&amount_needed=21000000",
+            );
+            const walletData =
+              await walletRes.json();
+            const allUtxos = (
+              walletData.unspent_transactions ||
+              []
+            ).concat(
+              walletData.unspent_mempool_txns ||
+                [],
+            );
+
+            const inputs = [];
+            let total = 0;
+            for (const utxo of allUtxos) {
+              const val = (
+                utxo.outputs || []
+              ).reduce(
+                (s, o) =>
+                  o.to === signingAddr
+                    ? s + parseFloat(o.value || 0)
+                    : s,
+                0,
+              );
+              if (val > 0) {
+                inputs.push({
+                  id: utxo.id || utxo._id,
+                  value: val,
+                });
+                total += val;
+              }
+            }
+
+            if (!inputs.length)
+              throw new Error(
+                "No spendable UTXOs found for " +
+                  signingAddr,
+              );
+            if (total <= fee)
+              throw new Error(
+                "Insufficient funds: balance " +
+                  total.toFixed(8) +
+                  " YDA, fee " +
+                  fee +
+                  " YDA",
+              );
+
+            const externalValue = parseFloat(
+              (total - fee).toFixed(8),
+            );
+
+            // ── Unconfirmed transaction (signed by signingKey) ────────────
+            // Sends all funds to the recipient.  Classified as UNCONFIRMED
+            // because the single output goes to externalAddr, not
+            // prerotated_key_hash.
+            const unconfirmedOutputs = [
+              {
+                to: externalAddr,
+                value: externalValue,
+              },
+            ];
+            const unconfirmedTime = Math.floor(
+              Date.now() / 1000,
+            );
+            const unconfirmedHash = buildTxHash({
+              publicKey: signingPubHex,
+              time: unconfirmedTime,
+              fee,
+              inputs,
+              outputs: unconfirmedOutputs,
+              prerotatedKeyHash: prerotatedAddr,
+              twicePrerotatedKeyHash:
+                twicePrerotatedAddr,
+              publicKeyHash: signingAddr,
+              prevPublicKeyHash: prevPubKeyHash,
+            });
+            const unconfirmedSig = signTxHash(
+              unconfirmedHash,
+              signingKey.privateKey,
+            );
+            const unconfirmedTxn = {
+              time: unconfirmedTime,
+              rid: "",
+              id: unconfirmedSig,
+              relationship: "",
+              relationship_hash: "",
+              public_key: signingPubHex,
+              dh_public_key: "",
+              fee,
+              masternode_fee: 0.0,
+              hash: unconfirmedHash,
+              inputs,
+              outputs: unconfirmedOutputs,
+              version: 7,
+              private: false,
+              never_expire: false,
+              prerotated_key_hash: prerotatedAddr,
+              twice_prerotated_key_hash:
+                twicePrerotatedAddr,
+              public_key_hash: signingAddr,
+              prev_public_key_hash:
+                prevPubKeyHash,
+            };
+
+            // ── Confirming transaction (signed by prerotatedKey) ──────────
+            // Zero-value, zero-fee commitment that rotates the key from
+            // signingAddr → prerotatedAddr without moving any funds.
+            // prev_public_key_hash = signingAddr  (= unconfirmed.public_key_hash)
+            // public_key_hash      = prerotatedAddr (= unconfirmed.prerotated_key_hash)
+            // prerotated_key_hash  = twicePrerotatedAddr
+            // twice_prerotated_key_hash = thricePrerotatedAddr
+            const confirmingTime =
+              unconfirmedTime + 1;
+            const confirmingOutputs = [
+              {
+                to: twicePrerotatedAddr,
+                value: 0.0,
+              },
+            ];
+            const confirmingHash = buildTxHash({
+              publicKey: prerotatedPubHex,
+              time: confirmingTime,
+              fee: 0.0,
+              inputs: [],
+              outputs: confirmingOutputs,
+              prerotatedKeyHash:
+                twicePrerotatedAddr,
+              twicePrerotatedKeyHash:
+                thricePrerotatedAddr,
+              publicKeyHash: prerotatedAddr,
+              prevPublicKeyHash: signingAddr,
+            });
+            const confirmingSig = signTxHash(
+              confirmingHash,
+              prerotatedKey.privateKey,
+            );
+            const confirmingTxn = {
+              time: confirmingTime,
+              rid: "",
+              id: confirmingSig,
+              relationship: "",
+              relationship_hash: "",
+              public_key: prerotatedPubHex,
+              dh_public_key: "",
+              fee: 0.0,
+              masternode_fee: 0.0,
+              hash: confirmingHash,
+              inputs: [],
+              outputs: confirmingOutputs,
+              version: 7,
+              private: false,
+              never_expire: false,
+              prerotated_key_hash:
+                twicePrerotatedAddr,
+              twice_prerotated_key_hash:
+                thricePrerotatedAddr,
+              public_key_hash: prerotatedAddr,
+              prev_public_key_hash: signingAddr,
+            };
+
+            // ── Broadcast both as a single batch ──────────────────────────
+            const broadcastRes = await fetch(
+              "/transaction?username_signature=1",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body: JSON.stringify([
+                  unconfirmedTxn,
+                  confirmingTxn,
+                ]),
+              },
+            );
+            const broadcastData =
+              await broadcastRes.json();
+
+            if (
+              Array.isArray(broadcastData) &&
+              broadcastData.length > 0
+            ) {
+              const msgEl =
+                document.getElementById(
+                  "backMessage",
+                );
+              msgEl.className = "message success";
+              msgEl.innerHTML =
+                "\u2705 " +
+                externalValue.toFixed(8) +
+                " YDA sent to " +
+                externalAddr +
+                ". Transactions: <a href='/explorer?term=" +
+                encodeURIComponent(
+                  unconfirmedSig,
+                ) +
+                "' target='_blank' style='color:#5a9;word-break:break-all'>" +
+                unconfirmedSig.substring(0, 24) +
+                "\u2026</a> &amp; <a href='/explorer?term=" +
+                encodeURIComponent(
+                  confirmingSig,
+                ) +
+                "' target='_blank' style='color:#5a9'>confirming</a>";
+            } else {
+              document.getElementById(
+                "sendExternalBtn",
+              ).disabled = false;
+              showMessage(
+                "error",
+                broadcastData.message ||
+                  "Broadcast failed.",
+              );
+            }
+          } catch (err) {
+            document.getElementById(
+              "sendExternalBtn",
+            ).disabled = false;
+            showMessage(
+              "error",
+              "Error: " + err.message,
+            );
+          } finally {
+            showSpinner(false);
+          }
+        });
+
+      // -----------------------------------------------------------------------
+      // Wrap on BSC — sends YDA to bridge address with BNB chain address
+      // embedded in the relationship field.  Same two-tx batch as external send.
+      // -----------------------------------------------------------------------
+      const BRIDGE_ADDRESS =
+        "16U1gAmHazqqEkbRE9KFPShAperjJreMRA";
+
+      document
+        .getElementById("wrapBscBtn")
+        .addEventListener("click", async () => {
+          if (!validateForm()) return;
+
+          const bnbAddr = document
+            .getElementById("bnbAddress")
+            .value.trim();
+          if (!bnbAddr) {
+            showMessage(
+              "error",
+              "Please enter your BNB Chain address.",
+            );
+            document
+              .getElementById("bnbAddress")
+              .focus();
+            return;
+          }
+          if (
+            !/^0x[0-9a-fA-F]{40}$/.test(bnbAddr)
+          ) {
+            showMessage(
+              "error",
+              "Invalid BNB Chain address — must be 0x followed by 40 hex characters.",
+            );
+            document
+              .getElementById("bnbAddress")
+              .focus();
+            return;
+          }
+
+          const newPw = document.getElementById(
+            "newPassword",
+          ).value;
+          const fee =
+            parseFloat(
+              document.getElementById("fee")
+                .value,
+            ) || 0.01;
+          const prevPubKeyHash = document
+            .getElementById("prevPublicKeyHash")
+            .value.trim();
+
+          // Derive key chain (same as external send)
+          let prerotatedKey,
+            prerotatedAddr,
+            prerotatedPubHex;
+          let twicePrerotatedKey,
+            twicePrerotatedAddr;
+          let thricePrerotatedAddr;
+
+          try {
+            prerotatedKey = deriveSecurePath(
+              signingKey.privateKey,
+              signingKey.chainCode,
+              PARAM_SF,
+            );
+            const prePub = secp256k1.getPublicKey(
+              prerotatedKey.privateKey,
+              true,
+            );
+            prerotatedPubHex = bytesToHex(prePub);
+            prerotatedAddr = getP2PKH(prePub);
+
+            twicePrerotatedKey = deriveSecurePath(
+              prerotatedKey.privateKey,
+              prerotatedKey.chainCode,
+              newPw,
+            );
+            const twicePub =
+              secp256k1.getPublicKey(
+                twicePrerotatedKey.privateKey,
+                true,
+              );
+            twicePrerotatedAddr =
+              getP2PKH(twicePub);
+
+            const thriceKey = deriveSecurePath(
+              twicePrerotatedKey.privateKey,
+              twicePrerotatedKey.chainCode,
+              newPw,
+            );
+            thricePrerotatedAddr = getP2PKH(
+              secp256k1.getPublicKey(
+                thriceKey.privateKey,
+                true,
+              ),
+            );
+          } catch (err) {
+            showMessage(
+              "error",
+              "Key derivation failed: " +
+                err.message,
+            );
+            return;
+          }
+
+          showSpinner(true);
+          document.getElementById(
+            "wrapBscBtn",
+          ).disabled = true;
+
+          try {
+            const walletRes = await fetch(
+              "/get-graph-wallet?address=" +
+                encodeURIComponent(signingAddr) +
+                "&amount_needed=21000000",
+            );
+            const walletData =
+              await walletRes.json();
+            const allUtxos = (
+              walletData.unspent_transactions ||
+              []
+            ).concat(
+              walletData.unspent_mempool_txns ||
+                [],
+            );
+
+            const inputs = [];
+            let total = 0;
+            for (const utxo of allUtxos) {
+              const val = (
+                utxo.outputs || []
+              ).reduce(
+                (s, o) =>
+                  o.to === signingAddr
+                    ? s + parseFloat(o.value || 0)
+                    : s,
+                0,
+              );
+              if (val > 0) {
+                inputs.push({
+                  id: utxo.id || utxo._id,
+                  value: val,
+                });
+                total += val;
+              }
+            }
+
+            if (!inputs.length)
+              throw new Error(
+                "No spendable UTXOs found for " +
+                  signingAddr,
+              );
+            if (total <= fee)
+              throw new Error(
+                "Insufficient funds: balance " +
+                  total.toFixed(8) +
+                  " YDA, fee " +
+                  fee +
+                  " YDA",
+              );
+
+            const bridgeValue = parseFloat(
+              (total - fee).toFixed(8),
+            );
+
+            // relationship = BNB address; relationship_hash = sha256(bnbAddr)
+            const bnbRelHash = bytesToHex(
+              sha256(
+                new TextEncoder().encode(bnbAddr),
+              ),
+            );
+
+            // ── Unconfirmed tx: spend to bridge, embed BNB address ────────
+            const unconfirmedOutputs = [
+              {
+                to: BRIDGE_ADDRESS,
+                value: bridgeValue,
+              },
+            ];
+            const unconfirmedTime = Math.floor(
+              Date.now() / 1000,
+            );
+            const unconfirmedHash = buildTxHash({
+              publicKey: signingPubHex,
+              time: unconfirmedTime,
+              fee,
+              inputs,
+              outputs: unconfirmedOutputs,
+              prerotatedKeyHash: prerotatedAddr,
+              twicePrerotatedKeyHash:
+                twicePrerotatedAddr,
+              publicKeyHash: signingAddr,
+              prevPublicKeyHash: prevPubKeyHash,
+              relationshipHash: bnbRelHash,
+            });
+            const unconfirmedSig = signTxHash(
+              unconfirmedHash,
+              signingKey.privateKey,
+            );
+            const unconfirmedTxn = {
+              time: unconfirmedTime,
+              rid: "",
+              id: unconfirmedSig,
+              relationship: bnbAddr,
+              relationship_hash: bnbRelHash,
+              public_key: signingPubHex,
+              dh_public_key: "",
+              fee,
+              masternode_fee: 0.0,
+              hash: unconfirmedHash,
+              inputs,
+              outputs: unconfirmedOutputs,
+              version: 7,
+              private: false,
+              never_expire: false,
+              prerotated_key_hash: prerotatedAddr,
+              twice_prerotated_key_hash:
+                twicePrerotatedAddr,
+              public_key_hash: signingAddr,
+              prev_public_key_hash:
+                prevPubKeyHash,
+            };
+
+            // ── Confirming tx: signed by prerotatedKey, zero-value ────────
+            const confirmingTime =
+              unconfirmedTime + 1;
+            const confirmingOutputs = [
+              {
+                to: twicePrerotatedAddr,
+                value: 0.0,
+              },
+            ];
+            const confirmingHash = buildTxHash({
+              publicKey: prerotatedPubHex,
+              time: confirmingTime,
+              fee: 0.0,
+              inputs: [],
+              outputs: confirmingOutputs,
+              prerotatedKeyHash:
+                twicePrerotatedAddr,
+              twicePrerotatedKeyHash:
+                thricePrerotatedAddr,
+              publicKeyHash: prerotatedAddr,
+              prevPublicKeyHash: signingAddr,
+            });
+            const confirmingSig = signTxHash(
+              confirmingHash,
+              prerotatedKey.privateKey,
+            );
+            const confirmingTxn = {
+              time: confirmingTime,
+              rid: "",
+              id: confirmingSig,
+              relationship: "",
+              relationship_hash: "",
+              public_key: prerotatedPubHex,
+              dh_public_key: "",
+              fee: 0.0,
+              masternode_fee: 0.0,
+              hash: confirmingHash,
+              inputs: [],
+              outputs: confirmingOutputs,
+              version: 7,
+              private: false,
+              never_expire: false,
+              prerotated_key_hash:
+                twicePrerotatedAddr,
+              twice_prerotated_key_hash:
+                thricePrerotatedAddr,
+              public_key_hash: prerotatedAddr,
+              prev_public_key_hash: signingAddr,
+            };
+
+            const broadcastRes = await fetch(
+              "/transaction?username_signature=1",
+              {
+                method: "POST",
+                headers: {
+                  "Content-Type":
+                    "application/json",
+                },
+                body: JSON.stringify([
+                  unconfirmedTxn,
+                  confirmingTxn,
+                ]),
+              },
+            );
+            const broadcastData =
+              await broadcastRes.json();
+
+            if (
+              Array.isArray(broadcastData) &&
+              broadcastData.length > 0
+            ) {
+              const msgEl =
+                document.getElementById(
+                  "backMessage",
+                );
+              msgEl.className = "message success";
+              msgEl.innerHTML =
+                "\u2705 " +
+                bridgeValue.toFixed(8) +
+                " YDA sent to bridge for wrapping to " +
+                bnbAddr +
+                ". Transactions: <a href='/explorer?term=" +
+                encodeURIComponent(
+                  unconfirmedSig,
+                ) +
+                "' target='_blank' style='color:#c8a040;word-break:break-all'>" +
+                unconfirmedSig.substring(0, 24) +
+                "\u2026</a> &amp; <a href='/explorer?term=" +
+                encodeURIComponent(
+                  confirmingSig,
+                ) +
+                "' target='_blank' style='color:#c8a040'>confirming</a>";
+            } else {
+              document.getElementById(
+                "wrapBscBtn",
+              ).disabled = false;
+              showMessage(
+                "error",
+                broadcastData.message ||
+                  "Broadcast failed.",
+              );
+            }
+          } catch (err) {
+            document.getElementById(
+              "wrapBscBtn",
+            ).disabled = false;
+            showMessage(
+              "error",
+              "Error: " + err.message,
+            );
+          } finally {
+            showSpinner(false);
+          }
+        });
 
       // -----------------------------------------------------------------------
       // Copy next-link button
@@ -3629,10 +4445,16 @@
       }
 
       function showMessage(type, text) {
-        const el =
-          document.getElementById("message");
-        el.className = "message " + type;
-        el.textContent = text;
+        ["message", "backMessage"].forEach(
+          (id) => {
+            const el =
+              document.getElementById(id);
+            if (el) {
+              el.className = "message " + type;
+              el.textContent = text;
+            }
+          },
+        );
       }
 
       function showSpinner(show) {
