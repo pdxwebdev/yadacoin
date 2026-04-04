@@ -192,6 +192,24 @@ class NodeAnnounceHandler(BaseHandler):
                     {"status": "error", "message": "Host cannot be empty"}
                 )
 
+            if ":" in node_announcement["host"]:
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": "IPv6 addresses are not supported, please use an IPv4 address or hostname",
+                    }
+                )
+
+            if ":" in node_announcement["http_host"]:
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": "IPv6 addresses are not supported for HTTP host, please use an IPv4 address or hostname",
+                    }
+                )
+
             if node_announcement["port"] < 1 or node_announcement["port"] > 65535:
                 self.set_status(400)
                 return self.render_as_json(

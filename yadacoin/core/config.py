@@ -91,6 +91,10 @@ class Config:
             raise Exception(
                 "Please configure your peer_post to your public ipv4 address"
             )
+        if ":" in config["peer_host"]:
+            raise Exception(
+                "IPv6 addresses are not supported for peer_host, must specify a public IPv4 address"
+            )
         self.peer_host = config["peer_host"]
         self.peer_port = config["peer_port"]
         self.peer_type = config.get("peer_type", "user")
@@ -310,7 +314,12 @@ class Config:
         try:
             import urllib.request
 
-            peer_host = urllib.request.urlopen("https://ident.me").read().decode("utf8")
+            peer_host = (
+                urllib.request.urlopen("https://4.ident.me")
+                .read()
+                .decode("utf8")
+                .strip()
+            )
         except:
             peer_host = ""
 
@@ -401,6 +410,10 @@ class Config:
         if config["peer_host"] == "[my public ip]":
             raise Exception(
                 "please configure your peer_post to your public ipv4 address"
+            )
+        if ":" in config["peer_host"]:
+            raise Exception(
+                "IPv6 addresses are not supported for peer_host, must specify a public IPv4 address"
             )
         cls.peer_host = config["peer_host"]
         cls.peer_port = config["peer_port"]
