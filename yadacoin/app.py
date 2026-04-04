@@ -898,6 +898,34 @@ class NodeApplication(Application):
             from yadacoin.core.nodes import Nodes
 
             await Nodes.apply_dynamic_nodes()
+            assigned_type = Nodes.self_determine_peer_type(self.config)
+            if assigned_type and self.config.peer_type != assigned_type:
+                self.config.peer_type = assigned_type
+                my_peer_dict = {
+                    "host": self.config.peer_host,
+                    "port": self.config.peer_port,
+                    "identity": {
+                        "username": self.config.username,
+                        "username_signature": self.config.username_signature,
+                        "public_key": self.config.public_key,
+                    },
+                    "peer_type": assigned_type,
+                    "http_host": self.config.ssl.common_name or self.config.peer_host,
+                    "http_port": self.config.ssl.port or self.config.serve_port,
+                    "protocol_version": 4,
+                    "node_version": self.config.node_version,
+                }
+                if assigned_type == PEER_TYPES.SEED.value:
+                    self.config.peer = Seed.from_dict(my_peer_dict, is_me=True)
+                elif assigned_type == PEER_TYPES.SEED_GATEWAY.value:
+                    self.config.peer = SeedGateway.from_dict(my_peer_dict, is_me=True)
+                elif assigned_type == PEER_TYPES.SERVICE_PROVIDER.value:
+                    self.config.peer = ServiceProvider.from_dict(
+                        my_peer_dict, is_me=True
+                    )
+                self.config.app_log.info(
+                    f"Dynamic node self-determined peer type: {assigned_type}"
+                )
             successful_nodes = await NodesTester.test_all_nodes(block_index)
             self.config.app_log.info(
                 f"Background node testing completed. Successful nodes: {len(successful_nodes)}"

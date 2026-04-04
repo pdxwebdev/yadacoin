@@ -363,7 +363,7 @@ class Nodes:
                 if pub in Nodes.dynamic_node_public_keys:
                     continue
 
-                # Assign node type dynamically based on load balancing
+                # Assign node type using load-balancing strategy.
                 assigned_type = cls._assign_node_type()
                 if assigned_type == "seed":
                     owner_class = Seeds
@@ -436,6 +436,37 @@ class Nodes:
         SeedGateways.set_nodes()
         ServiceProviders.set_fork_points()
         ServiceProviders.set_nodes()
+
+    @classmethod
+    def self_determine_peer_type(cls, config):
+        """Determine this running node's assigned peer type from the dynamic node lists.
+
+        Called after apply_dynamic_nodes() so the lists are current.  Checks whether
+        the node's own public key was registered as a dynamic node and, if so, returns
+        the PEER_TYPES value corresponding to the list it ended up in.
+
+        Returns the peer-type string (e.g. PEER_TYPES.SEED_GATEWAY.value) or None if
+        this node is not in any dynamic-node list.
+        """
+        from yadacoin.enums.peertypes import PEER_TYPES
+
+        my_pub = getattr(config, "public_key", None)
+        if not my_pub or my_pub not in cls.dynamic_node_public_keys:
+            return None
+
+        for owner_class, peer_type in (
+            (Seeds, PEER_TYPES.SEED.value),
+            (SeedGateways, PEER_TYPES.SEED_GATEWAY.value),
+            (ServiceProviders, PEER_TYPES.SERVICE_PROVIDER.value),
+        ):
+            for entry in owner_class()._NODES:
+                try:
+                    if entry["node"].identity.public_key == my_pub:
+                        return peer_type
+                except Exception:
+                    continue
+
+        return None
 
 
 class Seeds(Nodes):

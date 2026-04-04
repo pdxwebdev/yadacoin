@@ -11,7 +11,6 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-
 from yadacoin.core.identity import Identity
 
 

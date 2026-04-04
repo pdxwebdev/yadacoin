@@ -704,5 +704,187 @@ class TestDynamicNodes(AsyncTestCase):
         self.assertIn(provider_node, all_nodes)
 
 
+class TestNodeTypeSelfDetermination(AsyncTestCase):
+    """Tests for startup node-type self-determination and its propagation through
+    the announcement and load pipeline."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        self.config = Config()
+        self.seeds_instance = Seeds()
+        self.gateways_instance = SeedGateways()
+        self.providers_instance = ServiceProviders()
+        self.config.LatestBlock = MagicMock()
+        self.config.LatestBlock.block = MagicMock()
+        self.config.LatestBlock.block.index = CHAIN.DYNAMIC_NODES_FORK + 100
+        self.config.mongo = Mongo()
+        self.config.mongo.async_db = MagicMock()
+        self.config.mongo.async_db.blocks = MagicMock()
+        yadacoin.core.config.CONFIG = self.config
+        self.original_seeds = self.seeds_instance._NODES.copy()
+        self.original_gateways = self.gateways_instance._NODES.copy()
+        self.original_providers = self.providers_instance._NODES.copy()
+
+    async def asyncTearDown(self):
+        self.seeds_instance._NODES = self.original_seeds
+        self.gateways_instance._NODES = self.original_gateways
+        self.providers_instance._NODES = self.original_providers
+        Seeds.set_fork_points()
+        Seeds.set_nodes()
+        SeedGateways.set_fork_points()
+        SeedGateways.set_nodes()
+        ServiceProviders.set_fork_points()
+        ServiceProviders.set_nodes()
+        Nodes._get_nodes_for_block_height_cache = {
+            "Seeds": {},
+            "SeedGateways": {},
+            "ServiceProviders": {},
+        }
+        Nodes.dynamic_node_public_keys.clear()
+        Nodes.dynamic_node_collateral_txns.clear()
+        Nodes.dynamic_node_collateral_addresses.clear()
+        Nodes.eligible_nodes_by_address.clear()
+        Nodes._last_scanned_height = 0
+
+    # ------------------------------------------------------------------
+    # _assign_node_type load-balancing logic
+    # ------------------------------------------------------------------
+
+    async def test_assign_type_seed_when_no_seeds(self):
+        """When there are no seeds at all, the first node must become a seed."""
+        self.seeds_instance._NODES = []
+        self.gateways_instance._NODES = []
+        self.providers_instance._NODES = []
+        result = Nodes._assign_node_type()
+        self.assertEqual(result, "seed")
+
+    async def test_assign_type_seed_gateway_when_no_gateways(self):
+        """When seeds exist but zero gateways exist, assign seed_gateway."""
+        # Keep the hardcoded seed(s) but clear gateways and providers
+        self.gateways_instance._NODES = []
+        self.providers_instance._NODES = []
+        result = Nodes._assign_node_type()
+        self.assertEqual(result, "seed_gateway")
+
+    async def test_assign_type_seed_gateway_when_gateways_lt_seeds(self):
+        """When the number of gateways is less than seeds, assign seed_gateway."""
+        seed_node = Mock()
+        seed_node2 = Mock()
+        self.seeds_instance._NODES = [
+            {"ranges": [(0, None)], "node": seed_node},
+            {"ranges": [(0, None)], "node": seed_node2},
+        ]
+        # Only one gateway for two seeds → need another gateway
+        self.gateways_instance._NODES = [
+            {"ranges": [(0, None)], "node": Mock()},
+        ]
+        self.providers_instance._NODES = []
+        result = Nodes._assign_node_type()
+        self.assertEqual(result, "seed_gateway")
+
+    async def test_assign_type_service_provider_normally(self):
+        """When seeds and gateways are balanced and not saturated, assign service_provider."""
+        seed_node = Mock()
+        gateway_node = Mock()
+        self.seeds_instance._NODES = [{"ranges": [(0, None)], "node": seed_node}]
+        self.gateways_instance._NODES = [{"ranges": [(0, None)], "node": gateway_node}]
+        self.providers_instance._NODES = []
+        result = Nodes._assign_node_type()
+        self.assertEqual(result, "service_provider")
+
+    async def test_assign_type_seed_when_all_gateways_saturated(self):
+        """When all gateways are at max capacity, scale out by assigning a seed."""
+        seed_node = Mock()
+        gateway_node = Mock()
+        provider_node = Mock()
+        self.seeds_instance._NODES = [{"ranges": [(0, None)], "node": seed_node}]
+        self.gateways_instance._NODES = [{"ranges": [(0, None)], "node": gateway_node}]
+        # Fill providers to exactly max_providers_per_gateway
+        max_peers = self.config.max_peers or 10000
+        self.providers_instance._NODES = [
+            {"ranges": [(0, None)], "node": provider_node}
+        ] * max_peers
+        result = Nodes._assign_node_type()
+        self.assertEqual(result, "seed")
+
+    # ------------------------------------------------------------------
+    # self_determine_peer_type: runtime startup type determination
+    # ------------------------------------------------------------------
+
+    def _make_mock_node(self, public_key):
+        """Create a mock dynamic node with the given public key."""
+        node = Mock()
+        node.identity = Mock()
+        node.identity.public_key = public_key
+        return node
+
+    async def test_self_determine_returns_seed_for_seed_list(self):
+        """When this node's public key is in the Seeds list, returns SEED peer type."""
+        from yadacoin.enums.peertypes import PEER_TYPES
+
+        pub = "03aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899"
+        self.config.public_key = pub
+        mock_node = self._make_mock_node(pub)
+        self.seeds_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        )
+        Nodes.dynamic_node_public_keys.add(pub)
+
+        result = Nodes.self_determine_peer_type(self.config)
+        self.assertEqual(result, PEER_TYPES.SEED.value)
+
+    async def test_self_determine_returns_seed_gateway_for_gateway_list(self):
+        """When this node's public key is in the SeedGateways list, returns SEED_GATEWAY peer type."""
+        from yadacoin.enums.peertypes import PEER_TYPES
+
+        pub = "03bbccddeeff00112233445566778899aabbccddeeff00112233445566778899aa"
+        self.config.public_key = pub
+        mock_node = self._make_mock_node(pub)
+        self.gateways_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        )
+        Nodes.dynamic_node_public_keys.add(pub)
+
+        result = Nodes.self_determine_peer_type(self.config)
+        self.assertEqual(result, PEER_TYPES.SEED_GATEWAY.value)
+
+    async def test_self_determine_returns_service_provider_for_provider_list(self):
+        """When this node's public key is in the ServiceProviders list, returns SERVICE_PROVIDER peer type."""
+        from yadacoin.enums.peertypes import PEER_TYPES
+
+        pub = "03ccddeeff00112233445566778899aabbccddeeff00112233445566778899aabb"
+        self.config.public_key = pub
+        mock_node = self._make_mock_node(pub)
+        self.providers_instance._NODES.append(
+            {"ranges": [(CHAIN.DYNAMIC_NODES_FORK, None)], "node": mock_node}
+        )
+        Nodes.dynamic_node_public_keys.add(pub)
+
+        result = Nodes.self_determine_peer_type(self.config)
+        self.assertEqual(result, PEER_TYPES.SERVICE_PROVIDER.value)
+
+    async def test_self_determine_returns_none_when_not_a_dynamic_node(self):
+        """Returns None when this node's public key is not in dynamic_node_public_keys."""
+        pub = "03ddeeff00112233445566778899aabbccddeeff00112233445566778899aabbcc"
+        self.config.public_key = pub
+        # Do NOT add pub to dynamic_node_public_keys
+
+        result = Nodes.self_determine_peer_type(self.config)
+        self.assertIsNone(result)
+
+    async def test_self_determine_returns_none_when_not_in_any_list(self):
+        """Returns None when public key is in dynamic_node_public_keys but absent from all node lists."""
+        pub = "03eeff00112233445566778899aabbccddeeff00112233445566778899aabbccdd"
+        self.config.public_key = pub
+        Nodes.dynamic_node_public_keys.add(pub)
+        # Ensure all lists contain no entries with this key
+        self.seeds_instance._NODES = []
+        self.gateways_instance._NODES = []
+        self.providers_instance._NODES = []
+
+        result = Nodes.self_determine_peer_type(self.config)
+        self.assertIsNone(result)
+
+
 if __name__ == "__main__":
     unittest.main(argv=["first-arg-is-ignored"], exit=False)
