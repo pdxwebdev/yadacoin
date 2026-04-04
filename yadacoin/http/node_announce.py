@@ -21,7 +21,13 @@ from datetime import datetime, timezone
 
 from yadacoin.core.chain import CHAIN
 from yadacoin.core.nodeannouncement import NodeAnnouncement
-from yadacoin.core.transaction import Output, Transaction
+from yadacoin.core.transaction import (
+    InvalidTransactionException,
+    InvalidTransactionSignatureException,
+    MissingInputTransactionException,
+    Output,
+    Transaction,
+)
 from yadacoin.core.transactionutils import TU
 from yadacoin.decorators.jwtauth import jwtauthwallet
 from yadacoin.enums.peertypes import PEER_TYPES
@@ -280,6 +286,56 @@ class NodeAnnounceHandler(BaseHandler):
                     }
                 )
 
+            # Verify the transaction before inserting into the mempool
+            from yadacoin.core.keyeventlog import (
+                DoesNotSpendEntirelyToPrerotatedKeyHashException,
+                KELException,
+            )
+
+            try:
+                await txn.verify(
+                    check_input_spent=True,
+                    check_max_inputs=current_height > CHAIN.CHECK_MAX_INPUTS_FORK,
+                    check_masternode_fee=current_height
+                    >= CHAIN.CHECK_MASTERNODE_FEE_FORK,
+                    check_kel=current_height >= CHAIN.CHECK_KEL_FORK,
+                    check_dynamic_nodes=current_height >= CHAIN.DYNAMIC_NODES_FORK,
+                    mempool=True,
+                )
+            except InvalidTransactionException as e:
+                self.app_log.error(f"Transaction verification failed: {e}")
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": "error", "message": f"Invalid transaction: {str(e)}"}
+                )
+            except InvalidTransactionSignatureException as e:
+                self.app_log.error(f"Transaction signature invalid: {e}")
+                self.set_status(400)
+                return self.render_as_json(
+                    {
+                        "status": "error",
+                        "message": f"Invalid transaction signature: {str(e)}",
+                    }
+                )
+            except (
+                DoesNotSpendEntirelyToPrerotatedKeyHashException,
+                KELException,
+            ) as e:
+                self.app_log.error(f"KEL verification failed: {e}")
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": "error", "message": f"Key event log error: {str(e)}"}
+                )
+            except MissingInputTransactionException:
+                # Inputs not yet confirmed — still insert so the mempool can retry
+                pass
+            except Exception as e:
+                self.app_log.error(f"Unexpected verification error: {e}")
+                self.set_status(500)
+                return self.render_as_json(
+                    {"status": "error", "message": f"Verification error: {str(e)}"}
+                )
+
             # Insert into local miner_transactions collection for broadcasting
             # (The node will pick it up and broadcast to peers)
             try:
@@ -295,6 +351,26 @@ class NodeAnnounceHandler(BaseHandler):
                         "message": f"Failed to broadcast announcement: {str(e)}",
                     }
                 )
+
+            # Broadcast to peers
+            if "node" in self.config.modes:
+                try:
+                    async for peer_stream in self.config.peer.get_sync_peers():
+                        await self.config.nodeShared.write_params(
+                            peer_stream, "newtxn", {"transaction": txn.to_dict()}
+                        )
+                        if peer_stream.peer.protocol_version > 1:
+                            self.config.nodeClient.retry_messages[
+                                (
+                                    peer_stream.peer.rid,
+                                    "newtxn",
+                                    txn.transaction_signature,
+                                )
+                            ] = {"transaction": txn.to_dict()}
+                except Exception as e:
+                    self.app_log.warning(
+                        f"Error broadcasting to peers (transaction still in mempool): {e}"
+                    )
 
             return self.render_as_json(
                 {
