@@ -352,9 +352,17 @@
                     <div class="form-group">
                         <label for="http_protocol">HTTP Protocol</label>
                         <select id="http_protocol" name="http_protocol">
+                            {% if ssl_is_valid %}
                             <option value="https" {% if node_info.get('http_protocol') == 'https' %}selected{% end %}>HTTPS (Secure)</option>
                             <option value="http" {% if node_info.get('http_protocol') == 'http' %}selected{% end %}>HTTP</option>
+                            {% else %}
+                            <option value="http" selected>HTTP</option>
+                            <option value="https" disabled title="SSL is not configured on this node">HTTPS (SSL not configured)</option>
+                            {% end %}
                         </select>
+                        {% if not ssl_is_valid %}
+                        <small style="color:#92400e;font-size:11px;display:block;margin-top:4px;">⚠️ HTTPS requires SSL configured in <code>config.json</code> (cafile, certfile, keyfile, port).</small>
+                        {% end %}
                     </div>
                 </div>
             </div>
@@ -396,8 +404,11 @@
             <!-- Actions -->
             <div class="button-group">
                 <button type="submit" class="btn-submit">Announce Node</button>
+                <button type="button" id="testBtn" class="btn-test" style="background:#0ea5e9;color:white;">Test Configuration</button>
                 <button type="reset" class="btn-reset">Reset Form</button>
             </div>
+
+            <div id="testResults" style="display:none;margin-top:16px;"></div>
             
             <div class="loading" id="loading">
                 <span class="spinner"></span>
@@ -407,6 +418,10 @@
     </div>
     
     <script>
+        const SSL_IS_VALID = {{ 'true' if ssl_is_valid else 'false' }};
+        const SSL_PORT = {{ ssl_port if ssl_port else 'null' }};
+        const SERVE_PORT = {{ serve_port }};
+
         const form = document.getElementById('nodeForm');
         const messageDiv = document.getElementById('message');
         const loadingDiv = document.getElementById('loading');
@@ -502,6 +517,120 @@
         });
 
         logoutBtn.addEventListener('click', () => setUnauthed());
+
+        // Auto-update http_port when protocol changes
+        document.getElementById('http_protocol').addEventListener('change', function () {
+            const portField = document.getElementById('http_port');
+            if (this.value === 'https') {
+                if (!SSL_IS_VALID) {
+                    this.value = 'http';
+                    return;
+                }
+                if (SSL_PORT) portField.value = SSL_PORT;
+            } else {
+                portField.value = SERVE_PORT;
+            }
+        });
+
+        // Test Configuration button
+        document.getElementById('testBtn').addEventListener('click', async () => {
+            const token = getToken();
+            if (!token) {
+                showTestResults([{field: 'auth', status: 'error', message: 'Please unlock your node wallet before testing.'}]);
+                return;
+            }
+            const testBtn = document.getElementById('testBtn');
+            testBtn.disabled = true;
+            testBtn.textContent = 'Testing...';
+            try {
+                const resp = await fetch('/node-announce/test', {
+                    credentials: 'include',
+                    headers: { 'Authorization': `Bearer ${token}` },
+                });
+                const data = await resp.json();
+                if (!resp.ok) {
+                    showTestResults([{field: 'server', status: 'error', message: data.message || 'Test request failed.'}]);
+                    return;
+                }
+                const checks = buildChecks(data);
+                showTestResults(checks);
+            } catch (err) {
+                showTestResults([{field: 'network', status: 'error', message: `Request failed: ${err.message}`}]);
+            } finally {
+                testBtn.disabled = false;
+                testBtn.textContent = 'Test Configuration';
+            }
+        });
+
+        function buildChecks(data) {
+            const exp = data.expected;
+            const checks = [];
+            const protocol = document.getElementById('http_protocol').value;
+
+            // Protocol check
+            if (!data.ssl_is_valid && protocol === 'https') {
+                checks.push({field: 'http_protocol', status: 'error', message: 'HTTPS selected but SSL is not configured on this node.'});
+            } else if (protocol === exp.http_protocol) {
+                checks.push({field: 'http_protocol', status: 'pass', message: `Protocol "${protocol}" matches config.`});
+            } else {
+                checks.push({field: 'http_protocol', status: 'warning', message: `Protocol "${protocol}" — config suggests "${exp.http_protocol}".`});
+            }
+
+            // Host check
+            const host = document.getElementById('host').value.trim();
+            if (host && exp.host && host !== exp.host) {
+                checks.push({field: 'host', status: 'warning', message: `Node host "${host}" — config has "${exp.host}".`});
+            } else {
+                checks.push({field: 'host', status: 'pass', message: `Node host "${host}" matches config.`});
+            }
+
+            // Port check
+            const port = parseInt(document.getElementById('port').value);
+            if (exp.port && port !== exp.port) {
+                checks.push({field: 'port', status: 'warning', message: `Node port ${port} — config has ${exp.port}.`});
+            } else {
+                checks.push({field: 'port', status: 'pass', message: `Node port ${port} matches config.`});
+            }
+
+            // HTTP host check
+            const httpHost = document.getElementById('http_host').value.trim();
+            if (httpHost && exp.http_host && httpHost !== exp.http_host) {
+                checks.push({field: 'http_host', status: 'warning', message: `HTTP host "${httpHost}" — config has "${exp.http_host}".`});
+            } else {
+                checks.push({field: 'http_host', status: 'pass', message: `HTTP host "${httpHost}" matches config.`});
+            }
+
+            // HTTP port check
+            const httpPort = parseInt(document.getElementById('http_port').value);
+            const expectedHttpPort = protocol === 'https' ? exp.http_port_https : exp.http_port_http;
+            if (expectedHttpPort && httpPort !== expectedHttpPort) {
+                checks.push({field: 'http_port', status: 'warning', message: `HTTP port ${httpPort} — config expects ${expectedHttpPort} for ${protocol}.`});
+            } else {
+                checks.push({field: 'http_port', status: 'pass', message: `HTTP port ${httpPort} matches config for ${protocol}.`});
+            }
+
+            return checks;
+        }
+
+        function showTestResults(checks) {
+            const container = document.getElementById('testResults');
+            const icons = {pass: '✅', warning: '⚠️', error: '❌'};
+            const colors = {pass: '#166534', warning: '#92400e', error: '#991b1b'};
+            const bgs = {pass: '#f0fdf4', warning: '#fffbeb', error: '#fef2f2'};
+            const borders = {pass: '#bbf7d0', warning: '#fde68a', error: '#fecaca'};
+            let html = '<div style="border:1px solid #e5e7eb;border-radius:6px;overflow:hidden;">';
+            html += '<div style="background:#f8f9fa;padding:8px 12px;font-size:12px;font-weight:700;color:#374151;border-bottom:1px solid #e5e7eb;">Configuration Test Results</div>';
+            for (const c of checks) {
+                const icon = icons[c.status] || '•';
+                html += `<div style="padding:8px 12px;background:${bgs[c.status]};border-bottom:1px solid ${borders[c.status]};display:flex;gap:8px;align-items:center;">`;
+                html += `<span style="font-size:13px;">${icon}</span>`;
+                html += `<span style="font-size:12px;color:${colors[c.status]};"><strong>${c.field}:</strong> ${c.message}</span>`;
+                html += '</div>';
+            }
+            html += '</div>';
+            container.innerHTML = html;
+            container.style.display = 'block';
+        }
 
         form.addEventListener('submit', async (e) => {
             e.preventDefault();

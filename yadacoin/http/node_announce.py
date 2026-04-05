@@ -65,23 +65,34 @@ class NodeAnnounceHandler(BaseHandler):
                 ),
             }
 
+            # Determine SSL / HTTP defaults
+            ssl_is_valid = hasattr(self.config, "ssl") and bool(
+                self.config.ssl.is_valid()
+            )
+            ssl_port = self.config.ssl.port if ssl_is_valid else None
+            serve_port = self.config.serve_port or 8000
+
+            # Determine protocol: respect existing peer value, else derive from SSL
+            http_protocol = peer.http_protocol or ("https" if ssl_is_valid else "http")
+
+            # Determine port: respect existing peer value, else match the protocol
+            if peer.http_port:
+                http_port = peer.http_port
+            elif http_protocol == "https" and ssl_port:
+                http_port = ssl_port
+            else:
+                http_port = serve_port
+
             # Gather network info
             node_info = {
                 "host": peer.host or self.config.peer_host or "",
                 "port": peer.port or self.config.peer_port or 8003,
                 "http_host": peer.http_host
-                or self.config.ssl.common_name
+                or (self.config.ssl.common_name if ssl_is_valid else None)
                 or self.config.peer_host
                 or "",
-                "http_port": peer.http_port
-                or self.config.ssl.port
-                or self.config.serve_port
-                or 8000,
-                "http_protocol": (
-                    peer.http_protocol or "https"
-                    if (hasattr(self.config, "ssl") and self.config.ssl.is_valid())
-                    else "http"
-                ),
+                "http_port": http_port,
+                "http_protocol": http_protocol,
                 "peer_type": peer.peer_type or PEER_TYPES.USER.value,
                 "collateral_address": getattr(peer, "collateral_address", ""),
             }
@@ -94,6 +105,9 @@ class NodeAnnounceHandler(BaseHandler):
                     "peer_type_seed": PEER_TYPES.SEED.value,
                     "peer_type_gateway": PEER_TYPES.SEED_GATEWAY.value,
                     "peer_type_provider": PEER_TYPES.SERVICE_PROVIDER.value,
+                    "ssl_is_valid": ssl_is_valid,
+                    "ssl_port": ssl_port,
+                    "serve_port": serve_port,
                 },
             )
         except Exception as e:
@@ -407,6 +421,51 @@ class NodeAnnounceHandler(BaseHandler):
             return self.render_as_json({"status": "error", "message": str(e)})
 
 
+@jwtauthwallet
+class NodeAnnounceTestHandler(BaseHandler):
+    """Return expected config values so the form can verify its entries match."""
+
+    async def get(self):
+        try:
+            if not hasattr(self.config, "peer") or not self.config.peer:
+                self.set_status(400)
+                return self.render_as_json(
+                    {"status": "error", "message": "Node not configured."}
+                )
+
+            peer = self.config.peer
+            ssl_is_valid = hasattr(self.config, "ssl") and bool(
+                self.config.ssl.is_valid()
+            )
+            ssl_port = self.config.ssl.port if ssl_is_valid else None
+            serve_port = self.config.serve_port or 8000
+            expected_protocol = "https" if ssl_is_valid else "http"
+
+            return self.render_as_json(
+                {
+                    "status": "ok",
+                    "ssl_is_valid": ssl_is_valid,
+                    "expected": {
+                        "host": peer.host or self.config.peer_host or "",
+                        "port": peer.port or self.config.peer_port or 8003,
+                        "http_host": (
+                            self.config.ssl.common_name if ssl_is_valid else None
+                        )
+                        or self.config.peer_host
+                        or "",
+                        "http_port_https": ssl_port,
+                        "http_port_http": serve_port,
+                        "http_protocol": expected_protocol,
+                    },
+                }
+            )
+        except Exception as e:
+            self.app_log.error(f"Error in NodeAnnounceTestHandler.get: {e}")
+            self.set_status(500)
+            return self.render_as_json({"status": "error", "message": str(e)})
+
+
 NODE_ANNOUNCE_HANDLERS = [
     (r"/node-announce", NodeAnnounceHandler),
+    (r"/node-announce/test", NodeAnnounceTestHandler),
 ]
