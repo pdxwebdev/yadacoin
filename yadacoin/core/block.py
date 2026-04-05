@@ -249,6 +249,13 @@ class Block(object):
         block_reward = CHAIN.get_block_reward(index)
         if index >= CHAIN.PAY_MASTER_NODES_FORK:
             block_index = config.LatestBlock.block.index
+
+            # On startup, NodesTester.all_nodes is empty and apply_dynamic_nodes()
+            # hasn't been called yet, so dynamic nodes would be missing from
+            # Nodes._NODES. Ensure they are loaded before computing current_nodes.
+            if not NodesTester.all_nodes and block_index >= CHAIN.DYNAMIC_NODES_FORK:
+                await Nodes.apply_dynamic_nodes()
+
             current_nodes = Nodes.get_all_nodes_for_block_height(block_index)
 
             if not NodesTester.all_nodes or NodesTester.all_nodes != current_nodes:
@@ -903,7 +910,7 @@ class Block(object):
                         self, verify_only=True
                     )
                     txn_key_event = KeyEvent(txn, status=KeyEventChainStatus.MEMPOOL)
-                    await txn_key_event.verify()
+                    await txn_key_event.verify(batch_txns=self.transactions)
                     await KeyEventLog.init_async(txn_key_event, kel_hash_collection)
                 elif txn.prev_public_key_hash:
                     raise KELExceptionPreviousKeyHashReferenceMissing(

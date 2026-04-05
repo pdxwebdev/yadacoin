@@ -1,4 +1,5 @@
 import asyncio
+import ipaddress
 import socket
 import time
 
@@ -147,11 +148,17 @@ class NodesTester:
     @staticmethod
     async def has_dns(host):
         """
-        Checks if the host has a valid DNS record.
+        Checks if the host has a valid DNS record or is a direct IP address.
 
+        - If the host is a valid IP address → returns `True` (no DNS lookup needed)
         - If the host has DNS → returns `True`
         - If it doesn't → returns `False` and marks the node as `permanently_failed`
         """
+        try:
+            ipaddress.ip_address(host)
+            return True
+        except ValueError:
+            pass
         try:
             socket.gethostbyname(host)
             return True

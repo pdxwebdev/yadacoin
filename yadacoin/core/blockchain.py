@@ -224,6 +224,7 @@ class Blockchain(object):
                     check_kel=check_kel,
                     check_dynamic_nodes=check_dynamic_nodes,
                     block=block,
+                    batch_txns=block.transactions,
                 )
             except InvalidTransactionException as e:
                 config.app_log.warning(e)
