@@ -149,7 +149,10 @@ class KeyRotationSpentHandler(BaseHandler):
 
 
 KEY_ROTATION_HANDLERS = [
-    (r"/key-rotation", KeyRotationHandler),
-    (r"/key-rotation/prev-key-hash", KeyRotationPrevKeyHashHandler),
-    (r"/key-rotation/spent", KeyRotationSpentHandler),
+    (r"/key-rotation|/yadacoin-cash", KeyRotationHandler),
+    (
+        r"/key-rotation/prev-key-hash|/yadacoin-cash/prev-key-hash",
+        KeyRotationPrevKeyHashHandler,
+    ),
+    (r"/key-rotation/spent|/yadacoin-cash/spent", KeyRotationSpentHandler),
 ]
