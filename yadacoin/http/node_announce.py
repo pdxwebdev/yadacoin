@@ -118,16 +118,6 @@ class NodeAnnounceHandler(BaseHandler):
     async def post(self):
         """Process the node announcement and broadcast to the blockchain."""
         try:
-            # Restrict to local access only
-            if self.request.remote_ip not in ("127.0.0.1", "::1"):
-                self.set_status(403)
-                return self.render_as_json(
-                    {
-                        "status": "error",
-                        "message": "This endpoint is only accessible from the local machine.",
-                    }
-                )
-
             # Require authentication — either a valid JWT wallet token or the secure cookie
             key_or_wif = self.get_secure_cookie("key_or_wif")
             if not key_or_wif and self.jwt.get("key_or_wif") != "true":
