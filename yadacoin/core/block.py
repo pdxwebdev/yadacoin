@@ -1014,7 +1014,7 @@ class Block(object):
             ):
                 if (
                     quantize_eight(coinbase_sum - fee_sum)
-                    == quantize_eight(reward * 0.9)
+                    == quantize_eight(reward * Decimal("0.9"))
                     and masternode_sum
                     == 0  # there was a bug where the block reward was still 90% for the miner even if no masternodes were present
                 ):
