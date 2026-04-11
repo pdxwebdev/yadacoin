@@ -709,7 +709,7 @@ class Block(object):
             txn1 = txn_hashes[i]
             try:
                 txn2 = txn_hashes[i + 1]
-            except:
+            except IndexError:
                 txn2 = ""
             hashes.append(hashlib.sha256((txn1 + txn2).encode("utf-8")).digest().hex())
         if len(hashes) > 1:
@@ -834,6 +834,12 @@ class Block(object):
                 f"Block contains {len(self.transactions)} transactions, maximum is 1000"
             )
 
+        coinbase_count = sum(1 for t in self.transactions if t.coinbase)
+        if coinbase_count != 1:
+            raise Exception(
+                f"Block must contain exactly one coinbase transaction, found {coinbase_count}"
+            )
+
         txns = self.get_transaction_hashes()
         verify_merkle_root = self.get_merkle_root(txns)
         if verify_merkle_root != self.merkle_root:
@@ -876,9 +882,9 @@ class Block(object):
                         items_indexed[input_item.id].spent_in_txn = txn
 
         # verify reward
-        coinbase_sum = 0
-        fee_sum = 0.0
-        masternode_fee_sum = 0.0
+        coinbase_sum = Decimal("0")
+        fee_sum = Decimal("0")
+        masternode_fee_sum = Decimal("0")
         masternode_sums = {}
         for txn in self.transactions:
             if int(self.index) >= CHAIN.TXN_V3_FORK and int(txn.version) < 3:
@@ -889,9 +895,11 @@ class Block(object):
             if int(self.index) > CHAIN.CHECK_TIME_FROM and (
                 int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE
             ):
-                # await self.config.mongo.async_db.miner_transactions.delete_many({'id': txn.transaction_signature})
-                # raise Exception("Block embeds txn too far in the future")
-                pass
+                raise Exception(
+                    "Block embeds txn too far in the future: block_time={} txn_time={}".format(
+                        self.time, txn.time
+                    )
+                )
 
             if self.index >= CHAIN.CHECK_KEL_FORK:
                 # check if this transaction public key is listed in any KEL
@@ -921,19 +929,25 @@ class Block(object):
                 if self.index >= CHAIN.PAY_MASTER_NODES_FORK:
                     block_creator_address = address
                     for output in txn.outputs:
+                        if float(output.value) < 0:
+                            raise Exception("Coinbase output value cannot be negative")
                         if output.to == block_creator_address:
-                            coinbase_sum += float(output.value)
+                            coinbase_sum += Decimal(str(float(output.value)))
                         elif output.to in masernodes_by_address:
                             if output.to not in masternode_sums:
-                                masternode_sums[output.to] = 0
-                            masternode_sums[output.to] += output.value
+                                masternode_sums[output.to] = Decimal("0")
+                            masternode_sums[output.to] += Decimal(
+                                str(float(output.value))
+                            )
                         else:
                             raise UnknownOutputAddressException(
                                 f"Coinbase output to unknown address: {output.to}"
                             )
                 else:
                     for output in txn.outputs:
-                        coinbase_sum += float(output.value)
+                        if float(output.value) < 0:
+                            raise Exception("Coinbase output value cannot be negative")
+                        coinbase_sum += Decimal(str(float(output.value)))
             elif await txn.contract_generated:
                 if self.index >= CHAIN.TXN_V3_FORK_CHECK_MINER_SIGNATURE:
                     result = verify_signature(
@@ -955,17 +969,17 @@ class Block(object):
                             if x.transaction_signature != txn.transaction_signature
                         ],
                     )
-                fee_sum += float(txn.fee)
+                fee_sum += Decimal(str(float(txn.fee)))
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                    masternode_fee_sum += float(txn.masternode_fee)
+                    masternode_fee_sum += Decimal(str(float(txn.masternode_fee)))
             else:
                 if not txn.inputs and any(float(o.value) > 0 for o in txn.outputs):
                     raise Exception(
                         "Non-coinbase transaction with no inputs and non-zero outputs is not allowed"
                     )
-                fee_sum += float(txn.fee)
+                fee_sum += Decimal(str(float(txn.fee)))
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                    masternode_fee_sum += float(txn.masternode_fee)
+                    masternode_fee_sum += Decimal(str(float(txn.masternode_fee)))
 
             if (
                 self.index >= CHAIN.XEGGEX_HACK_FORK
@@ -983,7 +997,7 @@ class Block(object):
                             "Xeggex wallet has been frozen."
                         )
 
-        reward = CHAIN.get_block_reward(self.index)
+        reward = Decimal(str(CHAIN.get_block_reward(self.index)))
 
         # if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
         """
@@ -1039,7 +1053,7 @@ class Block(object):
             )
             if not result:
                 raise Exception("block signature1 is invalid")
-        except:
+        except Exception:
             try:
                 result = VerifyMessage(
                     address,
@@ -1048,7 +1062,7 @@ class Block(object):
                 )
                 if not result:
                     raise
-            except:
+            except Exception:
                 raise Exception("block signature2 is invalid")
 
     def get_transaction_hashes(self):
@@ -1057,21 +1071,23 @@ class Block(object):
 
     async def save(self):
         await self.verify()
+        used_block_inputs = {}
         for txn in self.transactions:
             if txn.inputs:
                 failed = False
-                used_ids_in_this_txn = []
+                input_ids = []
                 for x in txn.inputs:
-                    is_input_spent = (
-                        await yadacoin.core.config.CONFIG.BU.is_input_spent(
-                            x.id, txn.public_key
-                        )
-                    )
-                    if is_input_spent:
+                    if (x.id, txn.public_key) in used_block_inputs:
                         failed = True
-                    if x.id in used_ids_in_this_txn:
-                        failed = True
-                    used_ids_in_this_txn.append(x.id)
+                    used_block_inputs[(x.id, txn.public_key)] = txn
+                    input_ids.append(x.id)
+                is_input_spent = await yadacoin.core.config.CONFIG.BU.is_input_spent(
+                    input_ids, txn.public_key
+                )
+                if is_input_spent:
+                    failed = True
+                if len(input_ids) != len(set(input_ids)):
+                    failed = True
                 if failed:
                     raise Exception("double spend", [x.id for x in txn.inputs])
         res = await self.config.mongo.async_db.blocks.find_one(
@@ -1082,7 +1098,11 @@ class Block(object):
                 {"index": self.index}, self.to_dict(), upsert=True
             )
         else:
-            print("CRITICAL: block rejected...")
+            raise Exception(
+                "Block rejected: prev_hash {} does not match previous block hash {}".format(
+                    self.prev_hash, res["hash"] if res else "no previous block found"
+                )
+            )
 
     def to_dict(self):
         try:

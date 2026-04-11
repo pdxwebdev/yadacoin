@@ -154,6 +154,13 @@ class Transaction(object):
         elif isinstance(self.relationship, dict) and "node" in self.relationship:
             # Convert node announcement dict to NodeAnnouncement instance
             self.relationship = NodeAnnouncement.from_dict(self.relationship["node"])
+        elif (
+            isinstance(self.relationship, str)
+            and len(self.relationship) > TransactionConsts.RELATIONSHIP_MAX_SIZE.value
+        ):
+            raise MaxRelationshipSizeExceeded(
+                f"Relationship field cannot be greater than {TransactionConsts.RELATIONSHIP_MAX_SIZE.value} bytes"
+            )
 
         for x in outputs:
             if not isinstance(x, Output):
@@ -447,7 +454,8 @@ class Transaction(object):
         if self._contract_generated is None:
             if await self.get_generating_contract():
                 self._contract_generated = True
-            self._contract_generated = False
+            else:
+                self._contract_generated = False
         return self._contract_generated
 
     @contract_generated.setter
@@ -506,38 +514,44 @@ class Transaction(object):
                 {"id": txn.spent_in_txn.transaction_signature}
             )
 
-    def verify_signature(self, address):
+    def verify_signature(self, address, hash_value=None):
+        hash_bytes = (hash_value if hash_value is not None else self.hash).encode(
+            "utf-8"
+        )
         try:
             result = verify_signature(
                 base64.b64decode(self.transaction_signature),
-                self.hash.encode("utf-8"),
+                hash_bytes,
                 bytes.fromhex(self.public_key),
             )
             if not result:
                 raise Exception()
-        except:
+        except Exception:
             try:
                 vk = VerifyingKey.from_string(
                     bytes.fromhex(self.public_key), curve=SECP256k1
                 )
                 result = vk.verify(
                     base64.b64decode(self.transaction_signature),
-                    self.hash.encode(),
+                    hash_bytes,
                     hashlib.sha256,
                     sigdecode=sigdecode_der,
                 )
                 if not result:
                     raise Exception()
-            except:
+            except Exception:
                 try:
                     result = VerifyMessage(
                         address,
-                        BitcoinMessage(self.hash, magic=""),
+                        BitcoinMessage(
+                            hash_value if hash_value is not None else self.hash,
+                            magic="",
+                        ),
                         self.transaction_signature,
                     )
                     if not result:
                         raise
-                except:
+                except Exception:
                     raise InvalidTransactionSignatureException(
                         "transaction signature did not verify"
                     )
@@ -594,7 +608,7 @@ class Transaction(object):
                 f"transaction is invalid - {verify_hash} - {self.hash}"
             )
 
-        self.verify_signature(address)
+        self.verify_signature(address, hash_value=verify_hash)
 
         relationship = self.relationship
         if isinstance(self.relationship, Contract):
@@ -715,11 +729,15 @@ class Transaction(object):
                         "using inputs from a transaction where you were not one of the recipients."
                     )
 
-        if self.coinbase or self.miner_signature:
+        if self.coinbase:
+            return
+        if self.miner_signature and await self.contract_generated:
             return
 
         total_output = 0
         for txn in self.outputs:
+            if float(txn.value) < 0:
+                raise InvalidTransactionException("Output value cannot be negative")
             total_output += float(txn.value)
         if check_masternode_fee:
             total = float(total_output) + float(self.fee) + float(self.masternode_fee)
@@ -961,61 +979,6 @@ class Transaction(object):
                 return cb
 
     async def recover_missing_transaction(self, txn_id, exclude_ids=[]):
-        return False
-        if await self.config.mongo.async_db.failed_recoveries.find_one(
-            {"txn_id": txn_id}
-        ):
-            return False
-        self.app_log.warning("recovering missing transaction input: {}".format(txn_id))
-        address = str(P2PKHBitcoinAddress.from_pubkey(bytes.fromhex(self.public_key)))
-        missing_txns = self.config.mongo.async_db.blocks.aggregate(
-            [
-                {"$unwind": "$transactions"},
-                {"$project": {"transaction": "$transactions", "index": "$index"}},
-            ],
-            allowDiskUse=True,
-        )
-        async for missing_txn in missing_txns:
-            self.app_log.warning(
-                "recovery searching block index: {}".format(missing_txn["index"])
-            )
-            try:
-                result = verify_signature(
-                    base64.b64decode(txn_id),
-                    missing_txn["transaction"]["hash"].encode(),
-                    bytes.fromhex(self.public_key),
-                )
-                if result:
-                    block_index = await self.find_unspent_missing_index(
-                        missing_txn["transaction"]["hash"], exclude_ids
-                    )
-                    if block_index:
-                        await self.replace_missing_transaction_input(
-                            block_index, missing_txn["transaction"]["hash"], txn_id
-                        )
-                        return True
-                else:
-                    if len(base64.b64decode(txn_id)) != 65:
-                        continue
-                    result = VerifyMessage(
-                        address,
-                        BitcoinMessage(missing_txn["transaction"]["hash"], magic=""),
-                        txn_id,
-                    )
-                    if result:
-                        block_index = await self.find_unspent_missing_index(
-                            missing_txn["transaction"]["hash"], exclude_ids
-                        )
-                        if block_index:
-                            await self.replace_missing_transaction_input(
-                                block_index, missing_txn["transaction"]["hash"], txn_id
-                            )
-                            return True
-            except:
-                continue
-        await self.config.mongo.async_db.failed_recoveries.update_one(
-            {"txn_id": txn_id}, {"$set": {"txn_id": txn_id}}, upsert=True
-        )
         return False
 
     async def replace_missing_transaction_input(self, block_index, txn_hash, txn_id):
