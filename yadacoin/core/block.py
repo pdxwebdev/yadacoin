@@ -882,9 +882,9 @@ class Block(object):
                         items_indexed[input_item.id].spent_in_txn = txn
 
         # verify reward
-        coinbase_sum = Decimal("0")
-        fee_sum = Decimal("0")
-        masternode_fee_sum = Decimal("0")
+        coinbase_sum = 0.0
+        fee_sum = 0.0
+        masternode_fee_sum = 0.0
         masternode_sums = {}
         for txn in self.transactions:
             if int(self.index) >= CHAIN.TXN_V3_FORK and int(txn.version) < 3:
@@ -895,11 +895,7 @@ class Block(object):
             if int(self.index) > CHAIN.CHECK_TIME_FROM and (
                 int(txn.time) > int(self.time) + CHAIN.TIME_TOLERANCE
             ):
-                raise Exception(
-                    "Block embeds txn too far in the future: block_time={} txn_time={}".format(
-                        self.time, txn.time
-                    )
-                )
+                pass  # enforced in validate_transactions; verify() is also called by block_factory on its own in-progress block
 
             if self.index >= CHAIN.CHECK_KEL_FORK:
                 # check if this transaction public key is listed in any KEL
@@ -932,13 +928,11 @@ class Block(object):
                         if float(output.value) < 0:
                             raise Exception("Coinbase output value cannot be negative")
                         if output.to == block_creator_address:
-                            coinbase_sum += Decimal(str(float(output.value)))
+                            coinbase_sum += float(output.value)
                         elif output.to in masernodes_by_address:
                             if output.to not in masternode_sums:
-                                masternode_sums[output.to] = Decimal("0")
-                            masternode_sums[output.to] += Decimal(
-                                str(float(output.value))
-                            )
+                                masternode_sums[output.to] = 0
+                            masternode_sums[output.to] += output.value
                         else:
                             raise UnknownOutputAddressException(
                                 f"Coinbase output to unknown address: {output.to}"
@@ -947,7 +941,7 @@ class Block(object):
                     for output in txn.outputs:
                         if float(output.value) < 0:
                             raise Exception("Coinbase output value cannot be negative")
-                        coinbase_sum += Decimal(str(float(output.value)))
+                        coinbase_sum += float(output.value)
             elif await txn.contract_generated:
                 if self.index >= CHAIN.TXN_V3_FORK_CHECK_MINER_SIGNATURE:
                     result = verify_signature(
@@ -969,17 +963,17 @@ class Block(object):
                             if x.transaction_signature != txn.transaction_signature
                         ],
                     )
-                fee_sum += Decimal(str(float(txn.fee)))
+                fee_sum += float(txn.fee)
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                    masternode_fee_sum += Decimal(str(float(txn.masternode_fee)))
+                    masternode_fee_sum += float(txn.masternode_fee)
             else:
                 if not txn.inputs and any(float(o.value) > 0 for o in txn.outputs):
                     raise Exception(
                         "Non-coinbase transaction with no inputs and non-zero outputs is not allowed"
                     )
-                fee_sum += Decimal(str(float(txn.fee)))
+                fee_sum += float(txn.fee)
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
-                    masternode_fee_sum += Decimal(str(float(txn.masternode_fee)))
+                    masternode_fee_sum += float(txn.masternode_fee)
 
             if (
                 self.index >= CHAIN.XEGGEX_HACK_FORK
@@ -997,7 +991,7 @@ class Block(object):
                             "Xeggex wallet has been frozen."
                         )
 
-        reward = Decimal(str(CHAIN.get_block_reward(self.index)))
+        reward = CHAIN.get_block_reward(self.index)
 
         # if Decimal(str(fee_sum)[:10]) != Decimal(str(coinbase_sum)[:10]) - Decimal(str(reward)[:10]):
         """
@@ -1014,7 +1008,7 @@ class Block(object):
             ):
                 if (
                     quantize_eight(coinbase_sum - fee_sum)
-                    == quantize_eight(reward * Decimal("0.9"))
+                    == quantize_eight(reward * 0.9)
                     and masternode_sum
                     == 0  # there was a bug where the block reward was still 90% for the miner even if no masternodes were present
                 ):

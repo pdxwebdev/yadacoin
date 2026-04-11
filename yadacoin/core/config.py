@@ -312,14 +312,20 @@ class Config:
             raise Exception("No key")
 
         try:
+            import ipaddress
             import urllib.request
 
-            peer_host = (
-                urllib.request.urlopen("https://4.ident.me")
+            raw = (
+                urllib.request.urlopen("https://4.ident.me", timeout=5)
                 .read()
                 .decode("utf8")
                 .strip()
             )
+            # Validate that the response is a valid IPv4 address only
+            addr = ipaddress.ip_address(raw)
+            if addr.version != 4 or addr.is_private or addr.is_loopback:
+                raise ValueError(f"Unexpected IP from ident.me: {raw!r}")
+            peer_host = str(addr)
         except:
             peer_host = ""
 
@@ -560,16 +566,15 @@ class Config:
             await get_ticker()
             self.last_update = time()
 
-    def to_dict(self):
-        return {
+    def to_json(self, include_sensitive=False):
+        return json.dumps(self.to_dict(include_sensitive=include_sensitive), indent=4)
+
+    def to_dict(self, include_sensitive=False):
+        d = {
             "modes": self.modes,
             "root_app": self.root_app,
-            "seed": self.seed,
-            "xprv": self.xprv,
             "public_key": self.public_key,
             "address": self.address,
-            "private_key": self.private_key,
-            "wif": self.wif,
             "username_signature": self.username_signature,
             "mongodb_host": self.mongodb_host,
             "api_whitelist": self.api_whitelist,
@@ -607,9 +612,16 @@ class Config:
             "dns_resolvers": self.dns_resolvers,
             "dns_bypass_ips": self.dns_bypass_ips,
         }
-
-    def to_json(self):
-        return json.dumps(self.to_dict(), indent=4)
+        if include_sensitive:
+            d.update(
+                {
+                    "private_key": self.private_key,
+                    "wif": self.wif,
+                    "seed": getattr(self, "seed", ""),
+                    "xprv": getattr(self, "xprv", ""),
+                }
+            )
+        return d
 
 
 class EmailConfig:

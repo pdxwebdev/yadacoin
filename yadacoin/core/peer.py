@@ -113,9 +113,7 @@ class Peer:
             )  # in case peer_type is 'user' and pool_payout is enabled
             my_peer.update({"peer_type": PEER_TYPES.POOL.value})
             return Pool.from_dict(my_peer, is_me=True)
-        elif (
-            config.peer_type == PEER_TYPES.USER.value or True
-        ):  # default if not specified
+        else:  # default if not specified
             return User.from_dict(my_peer, is_me=True)
 
     @classmethod

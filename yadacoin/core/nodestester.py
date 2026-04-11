@@ -8,6 +8,32 @@ import aiohttp
 from yadacoin.core.config import Config
 from yadacoin.core.nodes import Nodes
 
+# Private / reserved IP networks that must never be contacted via SSRF
+_BLOCKED_NETWORKS = [
+    ipaddress.ip_network("10.0.0.0/8"),
+    ipaddress.ip_network("172.16.0.0/12"),
+    ipaddress.ip_network("192.168.0.0/16"),
+    ipaddress.ip_network("127.0.0.0/8"),
+    ipaddress.ip_network("169.254.0.0/16"),  # link-local / AWS metadata
+    ipaddress.ip_network("100.64.0.0/10"),  # shared address space
+    ipaddress.ip_network("::1/128"),
+    ipaddress.ip_network("fc00::/7"),
+]
+_ALLOWED_PROTOCOLS = {"http", "https"}
+
+
+def _is_safe_ip(host: str) -> bool:
+    """Return True only if *host* resolves to a publicly routable IP address."""
+    try:
+        resolved = socket.gethostbyname(host)
+        addr = ipaddress.ip_address(resolved)
+        for net in _BLOCKED_NETWORKS:
+            if addr in net:
+                return False
+        return True
+    except (socket.gaierror, ValueError):
+        return False
+
 
 class NodesTester:
     """
@@ -119,6 +145,20 @@ class NodesTester:
             if not node.http_port or not node.http_protocol:
                 config.app_log.warning(
                     f"Missing HTTP info for {node.host}, skipping permanently."
+                )
+                NodesTester.permanently_failed_nodes.add(node.host)
+                return None
+
+            if node.http_protocol not in _ALLOWED_PROTOCOLS:
+                config.app_log.warning(
+                    f"Invalid protocol '{node.http_protocol}' for {node.host}, skipping permanently."
+                )
+                NodesTester.permanently_failed_nodes.add(node.host)
+                return None
+
+            if not _is_safe_ip(node.host):
+                config.app_log.warning(
+                    f"Host {node.host} resolves to a private/reserved IP, skipping permanently."
                 )
                 NodesTester.permanently_failed_nodes.add(node.host)
                 return None

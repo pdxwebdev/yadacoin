@@ -11,10 +11,12 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import logging
 from time import time
 
 from motor.motor_tornado import MotorClient
 from pymongo import ASCENDING, DESCENDING, IndexModel, MongoClient
+from pymongo.errors import OperationFailure
 from pymongo.monitoring import CommandListener
 
 from yadacoin.core.config import Config
@@ -35,8 +37,13 @@ class Mongo(object):
                     pwd=self.config.mongodb_password,
                     roles=["root"],
                 )
-            except:
-                pass
+            except OperationFailure as e:
+                # User already exists — this is the expected case on subsequent starts
+                if "already exists" not in str(e):
+                    logging.getLogger("tornado.application").error(
+                        "MongoDB createUser failed: %s", e
+                    )
+                    raise
             self.client = MongoClient(
                 self.config.mongodb_host,
                 username=self.config.mongodb_username,

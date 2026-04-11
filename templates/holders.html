@@ -1,0 +1,702 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta
+      name="viewport"
+      content="width=device-width, initial-scale=1.0"
+    />
+    <title>{{ title }}</title>
+    <link
+      href="https://stackpath.bootstrapcdn.com/bootstrap/4.1.3/css/bootstrap.min.css"
+      rel="stylesheet"
+      integrity="sha384-MCw98/SFnGE8fJT3GXwEOngsV7Zt27NXFoaoApmYm81iuXoPkFOJwJ8ERdknLPMO"
+      crossorigin="anonymous"
+    />
+    <style>
+      body {
+        background-color: #1a1d21;
+        color: #e0e0e0;
+        font-family:
+          -apple-system, BlinkMacSystemFont,
+          "Segoe UI", Roboto, "Helvetica Neue",
+          Arial, sans-serif;
+      }
+
+      .navbar {
+        background-color: #23272b;
+        border-bottom: 1px solid #343a40;
+      }
+
+      .navbar-brand {
+        color: #ffffff !important;
+        font-weight: 700;
+        font-size: 1.2rem;
+      }
+
+      .navbar-brand span {
+        color: #4a9eff;
+      }
+
+      .page-header {
+        padding: 2rem 0 1.5rem;
+      }
+
+      .page-title {
+        font-size: 1.75rem;
+        font-weight: 700;
+        color: #ffffff;
+        margin-bottom: 0.25rem;
+      }
+
+      .page-subtitle {
+        color: #868e96;
+        font-size: 0.9rem;
+      }
+
+      .stats-row {
+        display: flex;
+        gap: 1rem;
+        margin-bottom: 1.5rem;
+        flex-wrap: wrap;
+      }
+
+      .stat-card {
+        background: #23272b;
+        border: 1px solid #343a40;
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        flex: 1;
+        min-width: 180px;
+      }
+
+      .stat-label {
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        color: #868e96;
+        margin-bottom: 0.25rem;
+      }
+
+      .stat-value {
+        font-size: 1.4rem;
+        font-weight: 700;
+        color: #4a9eff;
+      }
+
+      .controls-row {
+        display: flex;
+        gap: 0.75rem;
+        margin-bottom: 1rem;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+
+      .search-wrap {
+        position: relative;
+        flex: 1;
+        min-width: 220px;
+      }
+
+      .search-wrap svg {
+        position: absolute;
+        left: 0.75rem;
+        top: 50%;
+        transform: translateY(-50%);
+        color: #868e96;
+        pointer-events: none;
+      }
+
+      #searchInput {
+        background-color: #2c3036;
+        color: #e0e0e0;
+        border: 1px solid #454d55;
+        border-radius: 6px;
+        padding: 0.5rem 0.75rem 0.5rem 2.25rem;
+        width: 100%;
+        font-size: 0.9rem;
+      }
+
+      #searchInput:focus {
+        background-color: #2c3036;
+        color: #e0e0e0;
+        border-color: #4a9eff;
+        outline: none;
+        box-shadow: 0 0 0 2px
+          rgba(74, 158, 255, 0.25);
+      }
+
+      #searchInput::placeholder {
+        color: #6c757d;
+      }
+
+      .sort-btn {
+        background: #2c3036;
+        color: #c9d1d9;
+        border: 1px solid #454d55;
+        border-radius: 6px;
+        padding: 0.5rem 1rem;
+        font-size: 0.85rem;
+        cursor: pointer;
+        white-space: nowrap;
+        transition:
+          background 0.15s,
+          border-color 0.15s;
+      }
+
+      .sort-btn:hover {
+        background: #383e47;
+        border-color: #4a9eff;
+      }
+
+      .sort-btn.active {
+        background: #1c3a5e;
+        border-color: #4a9eff;
+        color: #4a9eff;
+      }
+
+      .sort-btn .arrow {
+        margin-left: 0.3rem;
+        opacity: 0.6;
+      }
+
+      .sort-btn.active .arrow {
+        opacity: 1;
+      }
+
+      .table-wrap {
+        background: #23272b;
+        border: 1px solid #343a40;
+        border-radius: 8px;
+        overflow: hidden;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 0.9rem;
+      }
+
+      thead th {
+        background: #2c3036;
+        color: #adb5bd;
+        font-size: 0.75rem;
+        text-transform: uppercase;
+        letter-spacing: 0.05em;
+        padding: 0.75rem 1rem;
+        border-bottom: 1px solid #343a40;
+        white-space: nowrap;
+        cursor: pointer;
+        user-select: none;
+      }
+
+      thead th:hover {
+        color: #4a9eff;
+      }
+
+      thead th.sorted {
+        color: #4a9eff;
+      }
+
+      tbody td {
+        padding: 0.65rem 1rem;
+        border-bottom: 1px solid #2c3036;
+        vertical-align: middle;
+      }
+
+      tbody tr:last-child td {
+        border-bottom: none;
+      }
+
+      tbody tr:hover td {
+        background: #2c3036;
+      }
+
+      .rank-cell {
+        color: #6c757d;
+        font-size: 0.8rem;
+        width: 50px;
+      }
+
+      .address-cell {
+        font-family:
+          "SFMono-Regular", Consolas,
+          "Liberation Mono", Menlo, monospace;
+        font-size: 0.82rem;
+        color: #79c0ff;
+        word-break: break-all;
+      }
+
+      .balance-cell {
+        font-weight: 600;
+        color: #56d364;
+        text-align: right;
+        white-space: nowrap;
+      }
+
+      .pct-cell {
+        color: #8b949e;
+        text-align: right;
+        white-space: nowrap;
+        font-size: 0.82rem;
+      }
+
+      .loading-overlay {
+        text-align: center;
+        padding: 4rem 1rem;
+        color: #868e96;
+      }
+
+      .spinner {
+        display: inline-block;
+        width: 2rem;
+        height: 2rem;
+        border: 3px solid #343a40;
+        border-top: 3px solid #4a9eff;
+        border-radius: 50%;
+        animation: spin 0.8s linear infinite;
+        margin-bottom: 1rem;
+      }
+
+      @keyframes spin {
+        to {
+          transform: rotate(360deg);
+        }
+      }
+
+      .error-msg {
+        background: #2d1b1b;
+        border: 1px solid #5a2222;
+        border-radius: 8px;
+        padding: 1rem 1.5rem;
+        color: #f87171;
+        margin-bottom: 1rem;
+      }
+
+      .result-count {
+        font-size: 0.82rem;
+        color: #868e96;
+        margin-left: auto;
+        white-space: nowrap;
+      }
+
+      .cache-note {
+        font-size: 0.75rem;
+        color: #6c757d;
+        text-align: right;
+        margin-top: 0.5rem;
+      }
+    </style>
+  </head>
+  <body>
+    <nav class="navbar">
+      <div class="container">
+        <a class="navbar-brand" href="#"
+          >Yada<span>Coin</span></a
+        >
+        <div style="display: flex; gap: 1.5rem">
+          <a
+            href="/explorer"
+            style="
+              color: #adb5bd;
+              text-decoration: none;
+              font-size: 0.9rem;
+            "
+            >Explorer</a
+          >
+          <a
+            href="/holders"
+            style="
+              color: #4a9eff;
+              text-decoration: none;
+              font-size: 0.9rem;
+              font-weight: 600;
+            "
+            >Holders</a
+          >
+        </div>
+      </div>
+    </nav>
+
+    <div class="container">
+      <div class="page-header">
+        <div class="page-title">Holder List</div>
+        <div class="page-subtitle">
+          All addresses with a positive YDA
+          balance
+        </div>
+      </div>
+
+      <div
+        id="errorMsg"
+        class="error-msg d-none"
+      ></div>
+
+      <div class="stats-row" id="statsRow">
+        <div class="stat-card">
+          <div class="stat-label">
+            Total Holders
+          </div>
+          <div
+            class="stat-value"
+            id="statHolders"
+          >
+            —
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">
+            Circulating Supply
+          </div>
+          <div class="stat-value" id="statSupply">
+            —
+          </div>
+        </div>
+        <div class="stat-card">
+          <div class="stat-label">
+            Top 10 Hold
+          </div>
+          <div class="stat-value" id="statTop10">
+            —
+          </div>
+        </div>
+      </div>
+
+      <div class="controls-row">
+        <div class="search-wrap">
+          <svg
+            width="16"
+            height="16"
+            fill="none"
+            stroke="currentColor"
+            stroke-width="2"
+            viewBox="0 0 24 24"
+            xmlns="http://www.w3.org/2000/svg"
+          >
+            <circle
+              cx="11"
+              cy="11"
+              r="8"
+            ></circle>
+            <line
+              x1="21"
+              y1="21"
+              x2="16.65"
+              y2="16.65"
+            ></line>
+          </svg>
+          <input
+            id="searchInput"
+            type="text"
+            placeholder="Search by address…"
+            autocomplete="off"
+          />
+        </div>
+
+        <button
+          class="sort-btn active"
+          id="btnSortBalDesc"
+          onclick="setSort('balance', 'desc')"
+        >
+          Balance <span class="arrow">↓</span>
+        </button>
+        <button
+          class="sort-btn"
+          id="btnSortBalAsc"
+          onclick="setSort('balance', 'asc')"
+        >
+          Balance <span class="arrow">↑</span>
+        </button>
+        <button
+          class="sort-btn"
+          id="btnSortAddrAsc"
+          onclick="setSort('address', 'asc')"
+        >
+          Address <span class="arrow">A–Z</span>
+        </button>
+        <button
+          class="sort-btn"
+          id="btnSortAddrDesc"
+          onclick="setSort('address', 'desc')"
+        >
+          Address <span class="arrow">Z–A</span>
+        </button>
+
+        <span
+          class="result-count"
+          id="resultCount"
+        ></span>
+      </div>
+
+      <div class="table-wrap">
+        <div
+          id="loadingDiv"
+          class="loading-overlay"
+        >
+          <div class="spinner"></div>
+          <div>
+            Loading holder data&hellip; this may
+            take a moment.
+          </div>
+        </div>
+
+        <table
+          id="holderTable"
+          style="display: none"
+        >
+          <thead>
+            <tr>
+              <th
+                class="rank-cell"
+                onclick="setSort('rank', 'asc')"
+                id="thRank"
+              >
+                #
+              </th>
+              <th
+                onclick="
+                  setSort('address', 'asc')
+                "
+                id="thAddress"
+              >
+                Address
+              </th>
+              <th
+                onclick="
+                  setSort('balance', 'desc')
+                "
+                id="thBalance"
+                style="text-align: right"
+                class="sorted"
+              >
+                Balance (YDA)
+              </th>
+              <th
+                onclick="
+                  setSort('balance', 'desc')
+                "
+                id="thPct"
+                style="text-align: right"
+              >
+                % of Supply
+              </th>
+            </tr>
+          </thead>
+          <tbody id="holderBody"></tbody>
+        </table>
+      </div>
+      <div
+        class="cache-note"
+        id="cacheNote"
+      ></div>
+    </div>
+
+    <script>
+      let allHolders = [];
+      let totalSupply = 0;
+      let sortKey = "balance";
+      let sortDir = "desc";
+      let lastFetch = null;
+
+      async function loadHolders() {
+        try {
+          const res = await fetch("/api-holders");
+          if (!res.ok)
+            throw new Error(
+              "Server returned " + res.status,
+            );
+          const data = await res.json();
+          allHolders = data.holders || [];
+          totalSupply = data.circulating_supply != null
+            ? data.circulating_supply
+            : allHolders.reduce((s, h) => s + h.balance, 0);
+          lastFetch = new Date();
+          updateStats();
+          renderTable();
+          document.getElementById(
+            "loadingDiv",
+          ).style.display = "none";
+          document.getElementById(
+            "holderTable",
+          ).style.display = "table";
+          document.getElementById(
+            "cacheNote",
+          ).textContent =
+            "Data cached for 10 min. Last loaded: " +
+            lastFetch.toLocaleTimeString();
+        } catch (e) {
+          document.getElementById(
+            "loadingDiv",
+          ).style.display = "none";
+          const err =
+            document.getElementById("errorMsg");
+          err.textContent =
+            "Failed to load holder data: " +
+            e.message;
+          err.classList.remove("d-none");
+        }
+      }
+
+      function updateStats() {
+        document.getElementById(
+          "statHolders",
+        ).textContent =
+          allHolders.length.toLocaleString();
+        document.getElementById(
+          "statSupply",
+        ).textContent =
+          totalSupply.toLocaleString(undefined, {
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          }) + " YDA";
+
+        const top10 = allHolders
+          .slice(0, 10)
+          .reduce((s, h) => s + h.balance, 0);
+        const pct =
+          totalSupply > 0
+            ? (
+                (top10 / totalSupply) *
+                100
+              ).toFixed(2)
+            : "0.00";
+        document.getElementById(
+          "statTop10",
+        ).textContent = pct + "%";
+      }
+
+      function setSort(key, dir) {
+        sortKey = key;
+        sortDir = dir;
+
+        document
+          .querySelectorAll(".sort-btn")
+          .forEach((b) =>
+            b.classList.remove("active"),
+          );
+        document
+          .querySelectorAll("thead th")
+          .forEach((th) =>
+            th.classList.remove("sorted"),
+          );
+
+        const btnMap = {
+          "balance-desc": "btnSortBalDesc",
+          "balance-asc": "btnSortBalAsc",
+          "address-asc": "btnSortAddrAsc",
+          "address-desc": "btnSortAddrDesc",
+        };
+        const btn = document.getElementById(
+          btnMap[key + "-" + dir],
+        );
+        if (btn) btn.classList.add("active");
+
+        const thMap = {
+          balance: "thBalance",
+          address: "thAddress",
+          rank: "thRank",
+        };
+        const th = document.getElementById(
+          thMap[key],
+        );
+        if (th) th.classList.add("sorted");
+
+        renderTable();
+      }
+
+      function getFiltered() {
+        const q = document
+          .getElementById("searchInput")
+          .value.trim()
+          .toLowerCase();
+        if (!q) return allHolders;
+        return allHolders.filter((h) =>
+          h.address.toLowerCase().includes(q),
+        );
+      }
+
+      function getSorted(list) {
+        return [...list].sort((a, b) => {
+          if (sortKey === "address") {
+            return sortDir === "asc"
+              ? a.address.localeCompare(b.address)
+              : b.address.localeCompare(
+                  a.address,
+                );
+          }
+          // balance or rank (rank is same as balance desc)
+          const av = a.balance,
+            bv = b.balance;
+          return sortDir === "asc"
+            ? av - bv
+            : bv - av;
+        });
+      }
+
+      function renderTable() {
+        const filtered = getFiltered();
+        const sorted = getSorted(filtered);
+
+        document.getElementById(
+          "resultCount",
+        ).textContent =
+          sorted.length.toLocaleString() +
+          " address" +
+          (sorted.length !== 1 ? "es" : "");
+
+        const tbody =
+          document.getElementById("holderBody");
+        if (sorted.length === 0) {
+          tbody.innerHTML =
+            '<tr><td colspan="4" style="text-align:center;color:#6c757d;padding:2rem;">No addresses match your search.</td></tr>';
+          return;
+        }
+
+        // Precompute original rank (position in balance-desc sorted full list)
+        const rankMap = {};
+        allHolders.forEach((h, i) => {
+          rankMap[h.address] = i + 1;
+        });
+
+        const rows = sorted.map((h) => {
+          const pct =
+            totalSupply > 0
+              ? (
+                  (h.balance / totalSupply) *
+                  100
+                ).toFixed(4)
+              : "0.0000";
+          const bal = h.balance.toLocaleString(
+            undefined,
+            {
+              minimumFractionDigits: 8,
+              maximumFractionDigits: 8,
+            },
+          );
+          const rank = rankMap[h.address] || "—";
+          return `<tr>
+          <td class="rank-cell">${rank}</td>
+          <td class="address-cell">${escHtml(h.address)}</td>
+          <td class="balance-cell">${bal}</td>
+          <td class="pct-cell">${pct}%</td>
+        </tr>`;
+        });
+
+        tbody.innerHTML = rows.join("");
+      }
+
+      function escHtml(str) {
+        return str
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;");
+      }
+
+      document
+        .getElementById("searchInput")
+        .addEventListener("input", renderTable);
+
+      loadHolders();
+    </script>
+  </body>
+</html>

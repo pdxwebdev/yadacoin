@@ -358,17 +358,25 @@ class TU(object):  # Transaction Utilities
         cls, config, smart_contract_txn, start_index=None, end_index=None
     ):
         match = {
-            "transactions": {
-                "$elemMatch": {"relationship.smart_contract": {"$exists": False}}
-            },
-            "transactions.requested_rid": smart_contract_txn.requested_rid,
-            "transactions": {
-                "$elemMatch": {
-                    "public_key": {
-                        "$ne": smart_contract_txn.relationship.identity.public_key
+            "$and": [
+                {
+                    "transactions": {
+                        "$elemMatch": {
+                            "relationship.smart_contract": {"$exists": False}
+                        }
                     }
-                }
-            },
+                },
+                {
+                    "transactions": {
+                        "$elemMatch": {
+                            "public_key": {
+                                "$ne": smart_contract_txn.relationship.identity.public_key
+                            }
+                        }
+                    }
+                },
+            ],
+            "transactions.requested_rid": smart_contract_txn.requested_rid,
         }
         if start_index and end_index:
             match["index"]["$gte"] = start_index

@@ -980,7 +980,7 @@ class NodeApplication(Application):
             except:
                 pass
             with open(options.config, "w") as f:
-                f.write(self.config.to_json())
+                f.write(self.config.to_json(include_sensitive=True))
 
         with open(options.config) as f:
             self.config = yadacoin.core.config.Config(json.loads(f.read()))

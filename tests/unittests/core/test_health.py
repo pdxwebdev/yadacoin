@@ -1,0 +1,254 @@
+"""
+YadaCoin Open Source License (YOSL) v1.1
+
+Copyright (c) 2017-2025 Matthew Vogel, Reynold Vogel, Inc.
+
+This software is licensed under YOSL v1.1 – for personal and research use only.
+NO commercial use, NO blockchain forks, and NO branding use without permission.
+
+For commercial license inquiries, contact: info@yadacoin.io
+
+Full license terms: see LICENSE.txt in this repository.
+"""
+
+import time
+import unittest
+from logging import getLogger
+from unittest.mock import AsyncMock, MagicMock, patch
+
+from yadacoin.core.config import Config
+from yadacoin.core.health import (
+    BlockCheckerHealth,
+    BlockInserterHealth,
+    CacheValidatorHealth,
+    ConsenusHealth,
+    Health,
+    HealthItem,
+    MempoolCleanerHealth,
+    NodeTesterHealth,
+    NonceProcessorHealth,
+    PoolPayerHealth,
+    TransactionProcessorHealth,
+)
+
+from ..test_setup import AsyncTestCase
+
+
+class HealthTestCase(AsyncTestCase):
+    """Base class for health tests: ensures app_log is set on Config singleton."""
+
+    async def asyncSetUp(self):
+        await super().asyncSetUp()
+        config = Config()
+        if not hasattr(config, "app_log"):
+            config.app_log = getLogger("tornado.application")
+
+
+class TestHealthItem(HealthTestCase):
+    async def test_init(self):
+        item = HealthItem()
+        self.assertIsNotNone(item)
+
+    async def test_report_status_true(self):
+        item = HealthItem()
+        result = item.report_status(True)
+        self.assertTrue(result)
+        self.assertTrue(item.status)
+
+    async def test_report_status_false(self):
+        item = HealthItem()
+        result = item.report_status(False)
+        self.assertFalse(result)
+        self.assertFalse(item.status)
+
+    async def test_report_status_ignore(self):
+        item = HealthItem()
+        item.report_status(True, ignore=True)
+        self.assertTrue(item.ignore)
+
+    async def test_to_dict(self):
+        item = HealthItem()
+        d = item.to_dict()
+        self.assertIn("status         ", d)
+        self.assertIn("last_activity  ", d)
+
+    async def test_reset(self):
+        item = HealthItem()
+        # reset is a no-op
+        await item.reset()
+
+
+class TestConsenusHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = ConsenusHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = ConsenusHealth()
+        h.last_activity = time.time() - 9999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+    async def test_reset_clears_block_queue(self):
+        h = ConsenusHealth()
+        mock_queues = MagicMock()
+        mock_queues.block_queue.queue = {"item": "value"}
+        h.config.processing_queues = mock_queues
+        await h.reset()
+        self.assertEqual(mock_queues.block_queue.queue, {})
+
+
+class TestBlockCheckerHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = BlockCheckerHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = BlockCheckerHealth()
+        h.last_activity = time.time() - 9999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestBlockInserterHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = BlockInserterHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = BlockInserterHealth()
+        h.last_activity = time.time() - 9999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestTransactionProcessorHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = TransactionProcessorHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = TransactionProcessorHealth()
+        h.last_activity = time.time() - 9999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestNonceProcessorHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = NonceProcessorHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = NonceProcessorHealth()
+        h.last_activity = time.time() - 9999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestPoolPayerHealth(HealthTestCase):
+    async def test_check_health_no_pp(self):
+        h = PoolPayerHealth()
+        h.config.pp = None
+        result = await h.check_health()
+        self.assertTrue(result)
+        self.assertTrue(h.ignore)
+
+    async def test_check_health_with_pp_within_timeout(self):
+        h = PoolPayerHealth()
+        h.config.pp = MagicMock()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_with_pp_past_timeout(self):
+        h = PoolPayerHealth()
+        h.config.pp = MagicMock()
+        h.last_activity = time.time() - 9999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestCacheValidatorHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = CacheValidatorHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = CacheValidatorHealth()
+        h.last_activity = time.time() - 9999999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestMempoolCleanerHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = MempoolCleanerHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = MempoolCleanerHealth()
+        h.last_activity = time.time() - 9999999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestNodeTesterHealth(HealthTestCase):
+    async def test_check_health_within_timeout(self):
+        h = NodeTesterHealth()
+        h.last_activity = time.time()
+        result = await h.check_health()
+        self.assertTrue(result)
+
+    async def test_check_health_past_timeout(self):
+        h = NodeTesterHealth()
+        h.last_activity = time.time() - 9999999
+        result = await h.check_health()
+        self.assertFalse(result)
+
+
+class TestHealth(HealthTestCase):
+    async def test_init(self):
+        h = Health()
+        self.assertIsNotNone(h)
+
+    async def test_to_dict_has_status(self):
+        h = Health()
+        d = h.to_dict()
+        self.assertIn("status", d)
+
+    async def test_to_dict_has_health_items(self):
+        h = Health()
+        d = h.to_dict()
+        self.assertIn("ConsenusHealth", d)
+        self.assertIn("BlockCheckerHealth", d)
+
+    async def test_check_health_all_good(self):
+        h = Health()
+        for item in h.health_items:
+            item.last_activity = time.time()
+        # TCPServerHealth and TCPClientHealth access config.peer as object with stream methods
+        # Patch these to ignore streams (returns empty list → reports True/ignore)
+        with patch.object(
+            h.tcp_server, "check_health", new=AsyncMock(return_value=True)
+        ), patch.object(h.tcp_client, "check_health", new=AsyncMock(return_value=True)):
+            result = await h.check_health()
+            self.assertTrue(result)
+
+
+if __name__ == "__main__":
+    unittest.main(argv=["first-arg-is-ignored"], exit=False)

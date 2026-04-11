@@ -55,7 +55,7 @@ class Identity:
             .hex()
         )
         wif = cls.generate_wif(private_key)
-        username_signature = cls.generate_username_signature(private_key, username)
+        username_signature = cls.get_username_signature(private_key, username)
         return cls(
             public_key=public_key,
             username=username,
@@ -90,9 +90,9 @@ class Identity:
         )
 
     @classmethod
-    def get_username_signature(self, private_key, username):
+    def get_username_signature(cls, private_key, username):
         return TU.generate_deterministic_signature(
-            private_key=private_key, message=username
+            config=None, message=username, private_key=private_key
         )
 
     @classmethod

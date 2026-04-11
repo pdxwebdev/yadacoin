@@ -11,9 +11,6 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
-import sys
-
-sys.setrecursionlimit(1000000)
 import datetime
 import json
 import logging
