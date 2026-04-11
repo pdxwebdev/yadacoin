@@ -1017,6 +1017,44 @@ class Mongo(object):
                 }
             )
 
+        # Detect and roll back the 2026 coinbase inflation exploit.
+        # The attacker embedded input-less, non-coinbase transactions with massive
+        # outputs into blocks 591762, 591765, and 591937, minting 4,515,000 YDA.
+        # Detection: check for the known hacker public key or recipient addresses
+        # in any input-less transaction that is not the canonical block coinbase.
+        HACK_PUBLIC_KEY = (
+            "02315ea6197fe2f7715b4734ba0d126ef1e4baad2595ea73682e56681baf9e3b1e"
+        )
+        HACK_ADDRESSES = [
+            "1ADXkiv184shSRqxMQ1YBqYsxsgSwfsQ6X",
+            "1BzHiVracsAWARJfQbHaq8PwheFZpymPrx",
+        ]
+        hack_present = self.db.blocks.find_one(
+            {
+                "transactions": {
+                    "$elemMatch": {
+                        "inputs": {"$eq": []},
+                        "public_key": {"$ne": None},
+                        "$or": [
+                            {"public_key": HACK_PUBLIC_KEY},
+                            {"outputs.to": {"$in": HACK_ADDRESSES}},
+                        ],
+                        "outputs.value": {"$gt": 100},
+                    }
+                },
+            }
+        )
+        if hack_present:
+            self.config.app_log.warning(
+                "Coinbase inflation exploit detected in local chain. "
+                "Truncating to block 591761 and resyncing from peers."
+            )
+            self.db.blocks.delete_many({"index": {"$gte": 591762}})
+            self.db.consensus.delete_many({"block.index": {"$gte": 591762}})
+            self.config.app_log.warning(
+                "Rollback complete. Node will resync from block 591762 on next consensus run."
+            )
+
 
 class DeuggingListener(CommandListener):
     commands = [

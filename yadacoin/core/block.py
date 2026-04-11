@@ -959,6 +959,10 @@ class Block(object):
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                     masternode_fee_sum += float(txn.masternode_fee)
             else:
+                if not txn.inputs and any(float(o.value) > 0 for o in txn.outputs):
+                    raise Exception(
+                        "Non-coinbase transaction with no inputs and non-zero outputs is not allowed"
+                    )
                 fee_sum += float(txn.fee)
                 if self.index >= CHAIN.CHECK_MASTERNODE_FEE_FORK:
                     masternode_fee_sum += float(txn.masternode_fee)
