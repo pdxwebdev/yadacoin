@@ -38,8 +38,10 @@ class Mongo(object):
                     roles=["root"],
                 )
             except OperationFailure as e:
-                # User already exists — this is the expected case on subsequent starts
-                if "already exists" not in str(e):
+                # Acceptable cases where the user already exists:
+                # - "already exists" — user was created on a previous run
+                # - code 13 (Unauthorized) — auth is already enforced, user exists
+                if "already exists" not in str(e) and e.code != 13:
                     logging.getLogger("tornado.application").error(
                         "MongoDB createUser failed: %s", e
                     )
