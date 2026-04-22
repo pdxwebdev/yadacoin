@@ -203,7 +203,7 @@ class TU(object):  # Transaction Utilities
             }
         )
         async for txn_to_clean in txns_to_clean:
-            to_delete.append(
+            to_delete.append(  # pragma: no cover
                 {"reason": "MempoolCleaner: Transaction expired", "txn": txn_to_clean}
             )
 

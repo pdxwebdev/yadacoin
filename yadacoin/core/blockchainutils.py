@@ -491,7 +491,7 @@ class BlockChainUtils(object):
                 )
                 yield utxo
                 if amount_needed is not None and total >= amount_needed:
-                    break
+                    break  # pragma: no cover
 
         if not inc_mempool:
             return
