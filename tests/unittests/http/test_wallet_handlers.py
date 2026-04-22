@@ -36,6 +36,39 @@ def _ripemd160_available():
 _HAS_RIPEMD160 = _ripemd160_available()
 
 
+class _Ripemd160Shim:
+    def __init__(self, data=b""):
+        from Crypto.Hash import RIPEMD160
+
+        self._h = RIPEMD160.new()
+        if data:
+            self._h.update(data)
+
+    def update(self, data):
+        self._h.update(data)
+
+    def digest(self):
+        return self._h.digest()
+
+    def hexdigest(self):
+        return self._h.hexdigest()
+
+
+def _patch_ripemd160_if_missing():
+    if _HAS_RIPEMD160:
+        from contextlib import nullcontext
+
+        return nullcontext()
+    real_new = hashlib.new
+
+    def _new(name, data=b"", **kw):
+        if name.lower() == "ripemd160":
+            return _Ripemd160Shim(data)
+        return real_new(name, data, **kw)
+
+    return patch.object(hashlib, "new", _new)
+
+
 def make_mock_cursor(rows=None):
     """Create a mock motor cursor that returns rows from .to_list()."""
     if rows is None:
@@ -1020,14 +1053,12 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
         self.assertIn("already exists", data["message"])
 
     def test_creates_child_wallet_successfully(self):
-        if not _HAS_RIPEMD160:
-            self.skipTest("ripemd160 not available in this OpenSSL build")
         body = json.dumps({"index": 0})
         self.mock_db.child_keys.find_one = AsyncMock(return_value=None)
         with patch(
             "yadacoin.http.wallet.GenerateChildWalletHandler.get_secure_cookie",
             return_value=b"true",
-        ):
+        ), _patch_ripemd160_if_missing():
             response = self.fetch(
                 "/generate-child-wallet",
                 method="POST",

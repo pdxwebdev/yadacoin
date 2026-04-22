@@ -32,6 +32,43 @@ def _ripemd160_available():
 _HAS_RIPEMD160 = _ripemd160_available()
 
 
+class _Ripemd160Shim:
+    """Wraps pycryptodome's RIPEMD160 to look like a hashlib hash."""
+
+    def __init__(self, data=b""):
+        from Crypto.Hash import RIPEMD160
+
+        self._h = RIPEMD160.new()
+        if data:
+            self._h.update(data)
+
+    def update(self, data):
+        self._h.update(data)
+
+    def digest(self):
+        return self._h.digest()
+
+    def hexdigest(self):
+        return self._h.hexdigest()
+
+
+def _patch_ripemd160_if_missing():
+    """Return a context manager that shims hashlib.new('ripemd160', ...) when
+    the underlying OpenSSL build (e.g. on CI) lacks native support."""
+    if _HAS_RIPEMD160:
+        from contextlib import nullcontext
+
+        return nullcontext()
+    real_new = hashlib.new
+
+    def _new(name, data=b"", **kw):
+        if name.lower() == "ripemd160":
+            return _Ripemd160Shim(data)
+        return real_new(name, data, **kw)
+
+    return patch.object(hashlib, "new", _new)
+
+
 class ConfigTestCase(AsyncTestCase):
     async def asyncSetUp(self):
         await super().asyncSetUp()
@@ -563,10 +600,8 @@ class TestGenerateBranches(unittest.TestCase):
         self.assertIsInstance(result, Config)
 
     def test_generate_with_xprv_and_child(self):
-        if not _HAS_RIPEMD160:
-            self.skipTest("ripemd160 not available in this OpenSSL build")
         xprv = "xprv9s21ZrQH143K2aPGPoRFW3xS379ajgDFzPtPd1Er3UMtVRexjWgf7nHRjsJMD9msDmudJv1C2wduLTtBNuLipjKdUBxiv6sJ8UQq5v7BDHL"
-        with self._patch_urlopen("70.166.222.226"):
+        with self._patch_urlopen("70.166.222.226"), _patch_ripemd160_if_missing():
             result = Config.generate(xprv=xprv, child=[0, 1])
         self.assertIsInstance(result, Config)
 
