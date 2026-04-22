@@ -18,9 +18,28 @@ from ipaddress import AddressValueError, IPv4Address, IPv4Network, ip_address
 import dns.resolver
 from dns.message import from_wire, make_response
 from dns.rcode import NXDOMAIN
-from networkutil.addressing import get_my_addresses
 
 from yadacoin.core.config import Config
+
+
+def get_my_addresses():
+    """Return a list of local IPv4 addresses without networkutil dependency."""
+    addrs = set()
+    try:
+        for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+            addrs.add(info[4][0])
+    except Exception:
+        pass
+    try:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        s.connect(("8.8.8.8", 80))
+        addrs.add(s.getsockname()[0])
+        s.close()
+    except Exception:
+        pass
+    return list(addrs)
+
+
 from yadacoin.core.peer import User
 
 DEFAULT_FORWARDER = "0.0.0.0"
