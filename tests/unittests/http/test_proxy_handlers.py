@@ -192,6 +192,10 @@ class TestAuthHandlerGetTemplatePath(testing.AsyncTestCase):
         self.assertTrue(path.endswith("templates"))
 
     def test_make_qr_returns_base64_png(self):
+        try:
+            import PIL  # noqa: F401
+        except ImportError:
+            self.skipTest("PIL not installed")
         import tornado.httputil
 
         app = Application([])

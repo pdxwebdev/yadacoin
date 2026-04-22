@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import hashlib
 import json
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -22,6 +23,17 @@ from yadacoin.core.config import Config
 from yadacoin.core.latestblock import LatestBlock
 from yadacoin.core.mongo import Mongo
 from yadacoin.http.wallet import WALLET_HANDLERS
+
+
+def _ripemd160_available():
+    try:
+        hashlib.new("ripemd160")
+        return True
+    except (ValueError, Exception):
+        return False
+
+
+_HAS_RIPEMD160 = _ripemd160_available()
 
 
 def make_mock_cursor(rows=None):
@@ -1008,6 +1020,8 @@ class TestGenerateChildWalletHandler(WalletHttpTestCase):
         self.assertIn("already exists", data["message"])
 
     def test_creates_child_wallet_successfully(self):
+        if not _HAS_RIPEMD160:
+            self.skipTest("ripemd160 not available in this OpenSSL build")
         body = json.dumps({"index": 0})
         self.mock_db.child_keys.find_one = AsyncMock(return_value=None)
         with patch(

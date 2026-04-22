@@ -11,6 +11,7 @@ For commercial license inquiries, contact: info@yadacoin.io
 Full license terms: see LICENSE.txt in this repository.
 """
 
+import hashlib
 import unittest
 from logging import getLogger
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -18,6 +19,17 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from yadacoin.core.config import Config, EmailConfig, SSLConfig
 
 from ..test_setup import AsyncTestCase
+
+
+def _ripemd160_available():
+    try:
+        hashlib.new("ripemd160")
+        return True
+    except (ValueError, Exception):
+        return False
+
+
+_HAS_RIPEMD160 = _ripemd160_available()
 
 
 class ConfigTestCase(AsyncTestCase):
@@ -551,6 +563,8 @@ class TestGenerateBranches(unittest.TestCase):
         self.assertIsInstance(result, Config)
 
     def test_generate_with_xprv_and_child(self):
+        if not _HAS_RIPEMD160:
+            self.skipTest("ripemd160 not available in this OpenSSL build")
         xprv = "xprv9s21ZrQH143K2aPGPoRFW3xS379ajgDFzPtPd1Er3UMtVRexjWgf7nHRjsJMD9msDmudJv1C2wduLTtBNuLipjKdUBxiv6sJ8UQq5v7BDHL"
         with self._patch_urlopen("70.166.222.226"):
             result = Config.generate(xprv=xprv, child=[0, 1])
